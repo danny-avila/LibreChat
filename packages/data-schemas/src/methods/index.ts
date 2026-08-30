@@ -65,6 +65,8 @@ import {
   type ParentSubagentTaskRecord,
   type SubagentThreadViewMessageRecord,
   type SubagentTaskResultClaim,
+  type BackgroundToolResultClaim,
+  type BackgroundToolResultRecord,
 } from './message';
 import {
   createConversationMethods,
@@ -126,6 +128,7 @@ import {
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
+  type AgentTriggerProducerLeaseStatus,
   type AgentEventActorReceiptMetric,
   type AgentEventActorReceiptStorageMetrics,
 } from './triggerDelivery';
@@ -424,6 +427,8 @@ export type {
   ParentSubagentThreadRecord,
   SubagentThreadViewMessageRecord,
   SubagentTaskResultClaim,
+  BackgroundToolResultClaim,
+  BackgroundToolResultRecord,
   ConversationMethods,
   AgentEventActorReconciliationStorageMetrics,
   ChatProjectMethods,
@@ -446,6 +451,7 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  AgentTriggerProducerLeaseStatus,
   AgentEventActorReceiptMetric,
   AgentEventActorReceiptStorageMetrics,
   ScheduleMethods,

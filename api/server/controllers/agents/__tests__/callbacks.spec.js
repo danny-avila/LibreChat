@@ -1123,6 +1123,7 @@ describe('tool input validation marker', () => {
 
     expect(data.result.tool_call.inputValidationError).toBe(true);
     expect(contentParts[0].tool_call.inputValidationError).toBe(true);
+    expect(contentParts[0].tool_call.stepId).toBe('step-1');
     expect(toolInputValidationErrors.size).toBe(0);
   });
 
@@ -1171,6 +1172,7 @@ describe('tool input validation marker', () => {
 
     expect(data.result.tool_call).not.toHaveProperty('inputValidationError');
     expect(contentParts[0].tool_call).not.toHaveProperty('inputValidationError');
+    expect(contentParts[0].tool_call.stepId).toBe('step-1');
   });
 });
 

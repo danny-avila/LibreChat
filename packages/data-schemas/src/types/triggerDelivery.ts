@@ -13,6 +13,8 @@ export type AgentTriggerDeliveryStatus =
   | 'capability_dead'
   | 'dead';
 export const AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 = 'event_actor_detached_action_v1';
+export const AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 =
+  'background_tool_completion_v1';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
 export interface AgentTriggerHandlingState {
@@ -103,6 +105,8 @@ export interface IAgentTriggerDelivery {
   capabilityLeaseBy?: string;
   capabilityLeaseUntil?: Date;
   capabilityClaimToken?: string;
+  /** Durable liveness evidence for process-owned capability work. */
+  producerLeaseUntil?: Date;
   attempts: number;
   availableAt: Date;
   envelopeBytes?: number;

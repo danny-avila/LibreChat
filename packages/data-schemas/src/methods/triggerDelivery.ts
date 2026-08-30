@@ -16,7 +16,10 @@ import type {
   IAgentTriggerUserPurge,
   IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '~/types/triggerDelivery';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+} from '~/types/triggerDelivery';
 import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
@@ -104,7 +107,13 @@ export interface EnqueueAgentTriggerDeliveryInput {
   coalesceUntil?: Date;
   awaitTerminalHandling?: boolean;
   requiredWorkerCapability?: string;
+  producerLeaseUntil?: Date;
 }
+
+export type AgentTriggerProducerLeaseStatus =
+  | { status: 'live'; leaseUntil: Date }
+  | { status: 'expired'; leaseUntil: Date }
+  | { status: 'missing' };
 
 export interface AgentTriggerDeliveryFence {
   id: string;
@@ -236,6 +245,24 @@ export interface AgentTriggerDeliveryMethods {
       awaitTerminalHandling?: true;
     },
   ) => Promise<boolean>;
+  retireAgentTriggerDelivery: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    settledAt: Date;
+    reason: string;
+    onlyIfUnclaimed?: boolean;
+    onlyIfDead?: boolean;
+  }) => Promise<boolean>;
+  renewAgentTriggerDeliveryProducerLease: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    leaseUntil: Date;
+  }) => Promise<boolean>;
+  getAgentTriggerDeliveryProducerLease: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    now: Date;
+  }) => Promise<AgentTriggerProducerLeaseStatus>;
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
@@ -892,7 +919,8 @@ export function createAgentTriggerDeliveryMethods(
   ): Promise<{ delivery: AgentTriggerDeliveryRecord; replayed: boolean }> {
     if (
       input.requiredWorkerCapability != null &&
-      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1
+      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 &&
+      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1
     ) {
       throw new TypeError('Agent trigger delivery requires an unsupported worker capability');
     }
@@ -1889,6 +1917,192 @@ export function createAgentTriggerDeliveryMethods(
       });
     }
     return true;
+  }
+
+  /** Retires an internally pre-admitted delivery when its producer can prove
+   * that the result will never become dispatchable. This transition is keyed
+   * by the immutable delivery identity rather than a worker lease so the
+   * producer can unblock the lane even while a resolver is deferring it. */
+  async function retireAgentTriggerDelivery(input: {
+    deliveryKey: string;
+    sourceId: string;
+    settledAt: Date;
+    reason: string;
+    onlyIfUnclaimed?: boolean;
+    onlyIfDead?: boolean;
+  }): Promise<boolean> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      Number.isNaN(input.settledAt.getTime()) ||
+      (input.onlyIfUnclaimed === true && input.onlyIfDead === true)
+    ) {
+      throw new TypeError('Invalid agent trigger delivery retirement');
+    }
+    const result = {
+      status: 'settled',
+      backgroundToolCompletionRetired: true,
+      reason: input.reason.slice(0, MAX_ERROR_MESSAGE_LENGTH),
+    };
+    const statusFence = (() => {
+      if (input.onlyIfDead === true) {
+        return {
+          $or: [
+            { status: { $in: ['dead', 'capability_dead'] } },
+            { status: 'leased', capabilityStatus: 'dead' },
+          ],
+        };
+      }
+      if (input.onlyIfUnclaimed === true) {
+        return {
+          $or: [
+            { status: { $in: ['pending', 'capability_pending'] } },
+            /** A capability-shielded pending row looks leased to legacy
+             * workers but has no private claimant yet. */
+            { status: 'leased', capabilityStatus: 'pending' },
+          ],
+        };
+      }
+      return {
+        status: {
+          $in: ['pending', 'leased', 'capability_pending', 'capability_leased'],
+        },
+      };
+    })();
+    const retired = await Delivery()
+      .findOneAndUpdate(
+        {
+          deliveryKey: input.deliveryKey,
+          'envelope.event.source.type': 'internal',
+          'envelope.event.source.id': input.sourceId,
+          ...statusFence,
+        },
+        {
+          $set: {
+            status: 'succeeded',
+            result,
+            settledAt: input.settledAt,
+            expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+            laneCleanupPendingAt: input.settledAt,
+          },
+          $unset: {
+            leaseBy: 1,
+            leaseUntil: 1,
+            claimToken: 1,
+            capabilityStatus: 1,
+            claimAvailableAt: 1,
+            capabilityLeaseBy: 1,
+            capabilityLeaseUntil: 1,
+            capabilityClaimToken: 1,
+            lastError: 1,
+          },
+        },
+        { new: true },
+      )
+      .select('_id orderingKey laneCleanupPendingAt')
+      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'laneCleanupPendingAt'>>();
+    if (retired?._id != null) {
+      try {
+        await fulfillLaneCleanupRequest(retired);
+      } catch (error) {
+        logger.warn('[agent-triggers] failed to finalize a retired internal delivery', {
+          deliveryKey: input.deliveryKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return true;
+    }
+    return (
+      (await Delivery().exists({
+        deliveryKey: input.deliveryKey,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+        status: 'succeeded',
+        'result.backgroundToolCompletionRetired': true,
+      })) != null
+    );
+  }
+
+  /** Refreshes process-owner liveness without changing delivery claim state.
+   * The max transition makes a lost write receipt safe to replay and prevents
+   * an older heartbeat from shortening a newer lease. */
+  async function renewAgentTriggerDeliveryProducerLease(input: {
+    deliveryKey: string;
+    sourceId: string;
+    leaseUntil: Date;
+  }): Promise<boolean> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      !(input.leaseUntil instanceof Date) ||
+      !Number.isFinite(input.leaseUntil.getTime())
+    ) {
+      throw new TypeError('Invalid agent trigger producer lease renewal');
+    }
+    const renewed = await Delivery().updateOne(
+      {
+        deliveryKey: input.deliveryKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+        status: { $in: ['pending', 'leased', 'capability_pending', 'capability_leased'] },
+        capabilityStatus: { $ne: 'dead' },
+        settledAt: { $exists: false },
+      },
+      [
+        {
+          $set: {
+            producerLeaseUntil: {
+              $cond: [
+                { $gt: ['$producerLeaseUntil', input.leaseUntil] },
+                '$producerLeaseUntil',
+                input.leaseUntil,
+              ],
+            },
+          },
+        },
+      ],
+      { timestamps: false },
+    );
+    return renewed.matchedCount === 1;
+  }
+
+  /** Reads only the private producer lease. Missing is intentionally distinct
+   * for compatibility with rows admitted before this evidence existed. */
+  async function getAgentTriggerDeliveryProducerLease(input: {
+    deliveryKey: string;
+    sourceId: string;
+    now: Date;
+  }): Promise<AgentTriggerProducerLeaseStatus> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      !(input.now instanceof Date) ||
+      !Number.isFinite(input.now.getTime())
+    ) {
+      throw new TypeError('Invalid agent trigger producer lease lookup');
+    }
+    const delivery = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+      })
+      .select('+producerLeaseUntil')
+      .lean<Pick<IAgentTriggerDelivery, 'producerLeaseUntil'>>();
+    if (delivery?.producerLeaseUntil == null) {
+      return { status: 'missing' };
+    }
+    return delivery.producerLeaseUntil.getTime() > input.now.getTime()
+      ? { status: 'live', leaseUntil: delivery.producerLeaseUntil }
+      : { status: 'expired', leaseUntil: delivery.producerLeaseUntil };
   }
 
   async function settleAgentTriggerHandlingOutcome(
@@ -3260,6 +3474,9 @@ export function createAgentTriggerDeliveryMethods(
     beginAgentTriggerDeliveryAttempt,
     deferAgentTriggerDeliveryAttempt,
     completeAgentTriggerDelivery,
+    retireAgentTriggerDelivery,
+    renewAgentTriggerDeliveryProducerLease,
+    getAgentTriggerDeliveryProducerLease,
     settleAgentTriggerHandlingOutcome,
     admitAgentEventActorAction,
     releaseAgentEventActorAction,

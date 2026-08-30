@@ -1,9 +1,13 @@
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   logger,
   runAsSystem,
 } from '@librechat/data-schemas';
-import type { AgentTriggerDeliveryStatusRecord } from '@librechat/data-schemas';
+import type {
+  AgentTriggerDeliveryMethods,
+  AgentTriggerDeliveryStatusRecord,
+} from '@librechat/data-schemas';
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryEngine,
@@ -102,6 +106,8 @@ export interface AgentTriggerDeliveryPersistence {
   beginAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['beginAttempt'];
   deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
   completeAgentTriggerDelivery: AgentTriggerDeliveryStore['complete'];
+  retireAgentTriggerDelivery: AgentTriggerDeliveryMethods['retireAgentTriggerDelivery'];
+  renewAgentTriggerDeliveryProducerLease: AgentTriggerDeliveryMethods['renewAgentTriggerDeliveryProducerLease'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
@@ -151,6 +157,13 @@ export interface AgentTriggerService {
   ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
+  retire: (
+    deliveryKey: string,
+    sourceId: string,
+    reason: string,
+    options?: { onlyIfUnclaimed?: boolean; onlyIfDead?: boolean },
+  ) => Promise<boolean>;
+  renewProducerLease: (deliveryKey: string, sourceId: string, leaseUntil: Date) => Promise<boolean>;
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
   cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
@@ -165,9 +178,12 @@ function createDeliveryStore(
     claimNext: (input) =>
       methods.claimNextAgentTriggerDelivery({
         ...input,
-        workerCapabilities: supportsDetachedActionCompletion()
-          ? [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1]
-          : [],
+        workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          ...(supportsDetachedActionCompletion()
+            ? [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1]
+            : []),
+        ],
       }),
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
     getBatch: methods.getAgentTriggerDeliveryBatch,
@@ -504,6 +520,29 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         return revived;
       }),
+    retire: (deliveryKey, sourceId, reason, options) =>
+      runAsSystem(async () => {
+        const retired = await requireCleanupMethods().retireAgentTriggerDelivery({
+          deliveryKey,
+          sourceId,
+          reason,
+          settledAt: new Date(),
+          ...(options?.onlyIfUnclaimed === true ? { onlyIfUnclaimed: true } : {}),
+          ...(options?.onlyIfDead === true ? { onlyIfDead: true } : {}),
+        });
+        if (retired) {
+          deliveryEngine?.wake();
+        }
+        return retired;
+      }),
+    renewProducerLease: (deliveryKey, sourceId, leaseUntil) =>
+      runAsSystem(async () =>
+        requireMethods().renewAgentTriggerDeliveryProducerLease({
+          deliveryKey,
+          sourceId,
+          leaseUntil,
+        }),
+      ),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () =>
