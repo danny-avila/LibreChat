@@ -54,6 +54,7 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     clientRequestId: { type: String, required: true, maxlength: 128 },
     fingerprint: { type: String, required: true, minlength: 43, maxlength: 64 },
     sequence: { type: Number, required: true, min: 1 },
+    activeSlot: { type: Number, min: 0, max: 99 },
     status: {
       type: String,
       enum: ['queued', 'claimed', 'admitted', 'cancelled', 'dead'],
@@ -83,6 +84,14 @@ queuedTurnSchema.index(
   { unique: true },
 );
 queuedTurnSchema.index({ tenantId: 1, user: 1, conversationId: 1, sequence: 1 }, { unique: true });
+queuedTurnSchema.index(
+  { tenantId: 1, user: 1, conversationId: 1, activeSlot: 1 },
+  {
+    name: 'agent_queued_turn_active_capacity',
+    unique: true,
+    partialFilterExpression: { activeSlot: { $exists: true } },
+  },
+);
 queuedTurnSchema.index(
   {
     tenantId: 1,

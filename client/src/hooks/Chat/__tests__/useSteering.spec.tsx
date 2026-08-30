@@ -17,12 +17,14 @@ const mockCancelQueuedTurn = jest.fn();
 const mockShowToast = jest.fn();
 const mockMarkUsage = jest.fn();
 let mockMessages: TMessage[] | undefined;
+let mockLatestMessage: TMessage | null | undefined;
 let mockServerQueuedTurns: unknown[] | undefined;
+const mockUseAgentQueuedTurns = jest.fn((..._args: unknown[]) => ({ data: mockServerQueuedTurns }));
 
 jest.mock('~/data-provider', () => ({
   useCancelSteerMutation: () => ({ mutateAsync: mockCancelSteer }),
   useSteerMessageMutation: () => ({ mutate: mockMutate }),
-  useAgentQueuedTurns: () => ({ data: mockServerQueuedTurns }),
+  useAgentQueuedTurns: (...args: unknown[]) => mockUseAgentQueuedTurns(...args),
   useEnqueueAgentQueuedTurnMutation: () => ({ mutate: mockEnqueueQueuedTurn }),
   useCancelAgentQueuedTurnMutation: () => ({
     mutateAsync: mockCancelQueuedTurn,
@@ -47,14 +49,18 @@ jest.mock('~/data-provider', () => ({
     const status = (error as { response?: { status?: unknown } } | undefined)?.response?.status;
     return status === 404 || status === 501;
   },
-  useGetMessagesByConvoId: (_id: string, config?: { select?: (messages: unknown) => unknown }) => ({
-    data: config?.select ? config.select(mockMessages) : mockMessages,
-  }),
   useMarkFilesUsageMutation: () => ({ mutate: mockMarkUsage }),
   supportsGenerationProtocolV2: (value: unknown) =>
     value != null &&
     typeof value === 'object' &&
     (value as { generationProtocolVersion?: unknown }).generationProtocolVersion === 2,
+}));
+
+jest.mock('~/hooks/Messages', () => ({
+  useLatestMessage: () =>
+    mockLatestMessage === undefined
+      ? (mockMessages?.[mockMessages.length - 1] ?? null)
+      : mockLatestMessage,
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -124,6 +130,7 @@ describe('useSteering', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockMessages = undefined;
+    mockLatestMessage = undefined;
     mockServerQueuedTurns = undefined;
   });
 
@@ -309,6 +316,33 @@ describe('useSteering', () => {
       );
     });
 
+    it('anchors enqueue to the selected branch tail instead of a later hidden sibling', async () => {
+      mockMessages = [
+        {
+          messageId: 'visible-assistant-tail',
+          isCreatedByUser: false,
+          content: [],
+        } as unknown as TMessage,
+        {
+          messageId: 'hidden-later-sibling',
+          isCreatedByUser: false,
+          content: [],
+        } as unknown as TMessage,
+      ];
+      mockLatestMessage = mockMessages[0];
+      const { result } = setupServerQueue();
+
+      await act(async () => {
+        result.current.steering.queueFromComposer('stay on the visible branch');
+        await Promise.resolve();
+      });
+
+      expect(mockEnqueueQueuedTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ parentMessageId: 'visible-assistant-tail' }),
+        expect.any(Object),
+      );
+    });
+
     it.each([404, 501])('falls back to the legacy local queue on definite %s', async (status) => {
       mockEnqueueQueuedTurn.mockImplementation((_input, options) => {
         options.onError({ response: { status } });
@@ -343,12 +377,20 @@ describe('useSteering', () => {
       await waitFor(() => {
         expect(result.current.queue[0]).toMatchObject({
           text: 'outcome unknown',
-          server: { status: 'uncertain' },
+          server: { status: 'uncertain', uncertainSince: expect.any(Number) },
         });
         expect(result.current.queue[0].clientRequestId).toEqual(
           expect.stringMatching(UUID_V4_PATTERN),
         );
       });
+      const clientRequestId = result.current.queue[0].clientRequestId;
+      const uncertainSince = result.current.queue[0].server?.uncertainSince;
+      expect(mockUseAgentQueuedTurns).toHaveBeenLastCalledWith(
+        CONVO_ID,
+        true,
+        [clientRequestId],
+        uncertainSince! + 60_000,
+      );
     });
 
     it('keeps a definitely rejected enqueue non-drainable but explicitly actionable', async () => {
@@ -400,6 +442,81 @@ describe('useSteering', () => {
         text: 'restored after reload',
         server: { id: 'server-snapshot-1', status: 'queued', revision: 3 },
       });
+    });
+
+    it('uses server sequence instead of Mongo timestamps for projected queue order', async () => {
+      mockServerQueuedTurns = [
+        {
+          queuedTurnId: 'server-second',
+          clientRequestId: 'client-second',
+          conversationId: CONVO_ID,
+          parentMessageId: 'visible-assistant-tail',
+          text: 'second',
+          status: 'queued',
+          position: 2,
+          revision: 20,
+          createdAt: new Date(100).toISOString(),
+          updatedAt: new Date(100).toISOString(),
+        },
+        {
+          queuedTurnId: 'server-first',
+          clientRequestId: 'client-first',
+          conversationId: CONVO_ID,
+          parentMessageId: 'visible-assistant-tail',
+          text: 'first',
+          status: 'queued',
+          position: 1,
+          revision: 10,
+          createdAt: new Date(300).toISOString(),
+          updatedAt: new Date(300).toISOString(),
+        },
+      ];
+      const { result } = setupServerQueue();
+
+      await waitFor(() => expect(result.current.queue).toHaveLength(2));
+      expect(result.current.queue.map((item) => item.text)).toEqual(['first', 'second']);
+      expect(result.current.queue.map((item) => item.server?.position)).toEqual([1, 2]);
+    });
+
+    it('keeps dead work recoverable and dismisses its durable record before local control', async () => {
+      mockServerQueuedTurns = [
+        {
+          queuedTurnId: 'server-dead-1',
+          clientRequestId: 'client-dead-1',
+          conversationId: CONVO_ID,
+          parentMessageId: 'visible-assistant-tail',
+          text: 'recover this failed turn',
+          status: 'dead',
+          revision: 4,
+          failure: { code: 'ADMISSION_FAILED', message: 'The run could not be admitted' },
+          createdAt: new Date(250).toISOString(),
+          updatedAt: new Date(300).toISOString(),
+        },
+      ];
+      mockCancelQueuedTurn.mockResolvedValueOnce({ status: 'cancelled' });
+      const { result } = setupServerQueue();
+
+      await waitFor(() => expect(result.current.queue).toHaveLength(1));
+      expect(result.current.queue[0]).toMatchObject({
+        text: 'recover this failed turn',
+        server: {
+          id: 'server-dead-1',
+          status: 'rejected',
+          errorCode: 'ADMISSION_FAILED',
+          errorMessage: 'The run could not be admitted',
+        },
+      });
+
+      await act(async () => {
+        await expect(result.current.steering.discardQueued(result.current.queue[0])).resolves.toBe(
+          true,
+        );
+      });
+      expect(mockCancelQueuedTurn).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        queuedTurnId: 'server-dead-1',
+      });
+      expect(result.current.queue[0].server).toBeUndefined();
     });
 
     it('cancels the durable copy before downgrading a row to local control', async () => {

@@ -200,8 +200,14 @@ export interface AgentTriggerDeliveryEngineDeps {
   store: AgentTriggerDeliveryStore;
   dispatch: (
     envelope: unknown,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; attempt?: number; maxAttempts?: number },
   ) => Promise<AgentTriggerExecutionResult>;
+  /** Source-owned terminalization must commit before its delivery can become
+   * dead, including recovery after a crash that exhausted the attempt budget. */
+  settleSourceBeforeDeadLetter?: (
+    envelope: unknown,
+    failure: AgentTriggerDeliveryFailure,
+  ) => Promise<void>;
   now?: () => Date;
   random?: () => number;
   workerId?: string;
@@ -365,6 +371,21 @@ export function createAgentTriggerDeliveryEngine(
       const recorded =
         delivery.lastError ??
         failure(new Error('Delivery attempt limit was already exhausted'), now());
+      try {
+        await deps.settleSourceBeforeDeadLetter?.(delivery.envelope, recorded);
+      } catch (error) {
+        logger.error('[agent-triggers] source terminalization failed before dead-lettering', {
+          deliveryKey: delivery.deliveryKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await deps.store.release({
+          id: delivery.id,
+          workerId,
+          claimToken: delivery.claimToken,
+          availableAt: now(),
+        });
+        return;
+      }
       const deadLettered = await deps.store.dead({
         id: delivery.id,
         workerId,
@@ -426,7 +447,11 @@ export function createAgentTriggerDeliveryEngine(
           members.length === 0
             ? delivery.envelope
             : createAgentTriggerBatchEnvelope(delivery, members);
-        result = await deps.dispatch(dispatchEnvelope, { signal: controller.signal });
+        result = await deps.dispatch(dispatchEnvelope, {
+          signal: controller.signal,
+          attempt,
+          maxAttempts,
+        });
       } catch (error) {
         const attemptedAt = now();
         const deletionCancelled = controller.signal.aborted && cancelledUsers.has(userId);
@@ -466,6 +491,24 @@ export function createAgentTriggerDeliveryEngine(
         }
         const recorded = failure(error, attemptedAt);
         if (!recorded.retryable || attempt >= maxAttempts) {
+          try {
+            await deps.settleSourceBeforeDeadLetter?.(delivery.envelope, recorded);
+          } catch (settlementError) {
+            logger.error('[agent-triggers] source terminalization failed before dead-lettering', {
+              deliveryKey: delivery.deliveryKey,
+              error:
+                settlementError instanceof Error
+                  ? settlementError.message
+                  : String(settlementError),
+            });
+            await deps.store.release({
+              id: delivery.id,
+              workerId,
+              claimToken: delivery.claimToken,
+              availableAt: attemptedAt,
+            });
+            return;
+          }
           const deadLettered = await deps.store.dead({
             id: delivery.id,
             workerId,

@@ -1,5 +1,8 @@
 import { Types } from 'mongoose';
-import { AgentQueuedTurnConflictError } from '@librechat/data-schemas';
+import {
+  AgentQueuedTurnCapacityError,
+  AgentQueuedTurnConflictError,
+} from '@librechat/data-schemas';
 import {
   enqueueAgentQueuedTurnSchema,
   isAgentsEndpoint,
@@ -92,7 +95,25 @@ function receipt(
     revision: turn.sequence,
     createdAt: turn.createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),
+    ...(turn.terminalReceipt?.failure != null && {
+      failure: {
+        code: turn.terminalReceipt.failure.code,
+        message: turn.terminalReceipt.failure.message,
+      },
+    }),
   };
+}
+
+function parseClientRequestIds(raw: unknown): string[] | null {
+  if (raw == null) {
+    return [];
+  }
+  const values = Array.isArray(raw) ? raw : [raw];
+  if (values.length > 100 || values.some((value) => typeof value !== 'string')) {
+    return null;
+  }
+  const normalized = [...new Set((values as string[]).map((value) => value.trim()))];
+  return normalized.some((value) => value.length === 0 || value.length > 128) ? null : normalized;
 }
 
 function sameStrings(left: readonly string[] | undefined, right: readonly string[] | undefined) {
@@ -345,6 +366,9 @@ export async function handleAgentQueuedTurnEnqueue(
       },
     };
   } catch (error) {
+    if (error instanceof AgentQueuedTurnCapacityError) {
+      return { status: 429, body: { code: 'QUEUED_TURN_QUEUE_FULL' } };
+    }
     if (error instanceof AgentQueuedTurnConflictError) {
       return {
         status: 409,
@@ -359,6 +383,7 @@ export async function handleAgentQueuedTurnList(
   user: SteerRequestUser,
   conversationId: unknown,
   deps: AgentQueuedTurnHttpDeps,
+  rawClientRequestIds?: unknown,
 ): Promise<AgentQueuedTurnHttpResult> {
   if (typeof conversationId !== 'string' || conversationId.length === 0) {
     return { status: 400, body: { code: 'INVALID_CONVERSATION' } };
@@ -367,18 +392,30 @@ export async function handleAgentQueuedTurnList(
   if (scope == null) {
     return { status: 401, body: { code: 'UNAUTHORIZED' } };
   }
+  const clientRequestIds = parseClientRequestIds(rawClientRequestIds);
+  if (clientRequestIds == null) {
+    return { status: 400, body: { code: 'INVALID_CLIENT_REQUEST_IDS' } };
+  }
   const authorized = await authorizeConversation(user, conversationId, deps);
   if ('body' in authorized) {
     return authorized;
   }
-  const turns = await deps.methods.listActiveAgentQueuedTurns({
+  const turns = await deps.methods.listAgentQueuedTurnReceipts({
     ...scope,
     conversationId,
+    clientRequestIds,
   });
+  let activePosition = 0;
   return {
     status: 200,
     body: {
-      queuedTurns: turns.map((turn, index) => receipt(turn, index + 1)),
+      queuedTurns: turns.map((turn) => {
+        if (turn.status !== 'queued' && turn.status !== 'claimed') {
+          return receipt(turn);
+        }
+        activePosition += 1;
+        return receipt(turn, activePosition);
+      }),
       capability: CAPABILITY,
       revision: turns.reduce((latest, turn) => Math.max(latest, turn.sequence), 0),
     },

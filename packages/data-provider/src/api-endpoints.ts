@@ -315,8 +315,17 @@ export const activeJobs = () => `${BASE_URL}/api/agents/chat/active`;
 
 const agentQueuedTurnsRoot = `${BASE_URL}/api/agents/chat/queued-turns`;
 export const agentQueuedTurns = () => agentQueuedTurnsRoot;
-export const agentQueuedTurnsByConversation = (conversationId: string) =>
-  `${agentQueuedTurnsRoot}?conversationId=${encodeURIComponent(conversationId)}`;
+export const agentQueuedTurnsByConversation = (
+  conversationId: string,
+  clientRequestIds: string[] = [],
+) => {
+  const uniqueIds = Array.from(new Set(clientRequestIds)).slice(0, 100);
+  const knownIds =
+    uniqueIds.length > 0
+      ? `&${uniqueIds.map((id) => `clientRequestIds=${encodeURIComponent(id)}`).join('&')}`
+      : '';
+  return `${agentQueuedTurnsRoot}?conversationId=${encodeURIComponent(conversationId)}${knownIds}`;
+};
 export const agentQueuedTurn = (queuedTurnId: string) =>
   `${agentQueuedTurnsRoot}/${encodeURIComponent(queuedTurnId)}`;
 

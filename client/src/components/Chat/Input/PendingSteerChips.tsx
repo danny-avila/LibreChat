@@ -91,8 +91,7 @@ function QueuedRow({
   const fileCount = message.files?.length ?? 0;
   const quoteCount = message.quotes?.length ?? 0;
   const isRecovered = message.recoverySteerId != null;
-  const requiresDiscard =
-    isRecovered || (message.server != null && message.server.status !== 'rejected');
+  const requiresDiscard = isRecovered || message.server?.id != null;
   const serverActionable =
     message.server == null ||
     message.server.status === 'rejected' ||

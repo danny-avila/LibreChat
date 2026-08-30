@@ -13,9 +13,11 @@ import type {
   IMessage,
   MessageMethods,
 } from '@librechat/data-schemas';
-import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
+import type { AgentContinueTriggerEnvelope, AgentTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
 import type { AgentTriggerExecutionHostDeps } from './triggers/host';
+import type { AgentTriggerDeliveryFailure } from './triggers/engine';
+import { getAgentTriggerIdempotencyKey, parseAgentTriggerEnvelope } from './triggers/envelope';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 
@@ -31,6 +33,8 @@ const PROCESS_CLAIM_OWNER = `agent-queued-turn:${process.pid}:${randomUUID()}`;
 
 interface GenerationState {
   status?: unknown;
+  createdAt?: unknown;
+  error?: unknown;
   metadata?: {
     idempotencyClientRequestId?: unknown;
     terminalPersistencePending?: unknown;
@@ -65,6 +69,45 @@ export interface AgentQueuedTurnScheduler {
   stop: () => Promise<void>;
   schedule: (turn: AgentQueuedTurnRecord) => Promise<string>;
   recover: () => Promise<number>;
+}
+
+export function createAgentQueuedTurnDeadLetterSettlement({
+  methods,
+  now = Date.now,
+}: {
+  methods: Pick<AgentQueuedTurnMethods, 'deadLetterAgentQueuedTurn'>;
+  now?: () => number;
+}) {
+  return async (rawEnvelope: unknown, failure: AgentTriggerDeliveryFailure): Promise<void> => {
+    let envelope: AgentTriggerEnvelope;
+    try {
+      envelope = parseAgentTriggerEnvelope(rawEnvelope);
+    } catch {
+      return;
+    }
+    if (envelope.mode !== 'continue') {
+      return;
+    }
+    const queuedTurnId = payloadQueuedTurnId(envelope);
+    if (queuedTurnId === undefined) {
+      return;
+    }
+    if (queuedTurnId === null || !Types.ObjectId.isValid(envelope.principal.userId)) {
+      return;
+    }
+    const settled = await methods.deadLetterAgentQueuedTurn({
+      user: new Types.ObjectId(envelope.principal.userId),
+      ...(envelope.principal.tenantId != null && { tenantId: envelope.principal.tenantId }),
+      conversationId: envelope.target.conversationId,
+      queuedTurnId,
+      deliveryKey: getAgentTriggerIdempotencyKey(envelope),
+      settledAt: new Date(now()),
+      failure: { code: failure.code, message: failure.message },
+    });
+    if (settled.outcome === 'conflict') {
+      throw new Error('Queued turn delivery no longer owns its source row');
+    }
+  };
 }
 
 function executionError(
@@ -276,6 +319,18 @@ export function createAgentQueuedTurnResolver({
     }
 
     const claim = claimed.claim;
+    if (generation?.status === 'aborted' || generation?.status === 'error') {
+      await deadClaim(
+        methods,
+        envelope,
+        claim,
+        generation.status === 'aborted' ? 'PREDECESSOR_ABORTED' : 'PREDECESSOR_FAILED',
+        generation.status === 'aborted'
+          ? 'The preceding generation was aborted. Review this turn before sending it.'
+          : 'The preceding generation failed. Review this turn before sending it.',
+      );
+      return { status: 'settled' };
+    }
     let messages: IMessage[];
     try {
       messages = await methods.getMessages(
@@ -325,15 +380,34 @@ export function createAgentQueuedTurnResolver({
       });
     }
 
+    const effectivePredecessorCreatedAt =
+      (await methods.getEffectiveAgentQueuedTurnPredecessor({
+        user: claim.user,
+        ...(claim.tenantId != null && { tenantId: claim.tenantId }),
+        conversationId: claim.conversationId,
+        sequence: claim.sequence,
+        ...(claim.expectedPredecessorCreatedAt != null && {
+          expectedPredecessorCreatedAt: claim.expectedPredecessorCreatedAt,
+        }),
+      })) ?? claim.expectedPredecessorCreatedAt;
+
     return {
       status: 'ready',
       input: claim.text,
       parentMessageId,
+      ...(effectivePredecessorCreatedAt != null && {
+        expectedPredecessorCreatedAt: effectivePredecessorCreatedAt,
+      }),
       ...(claim.files != null && { files: claim.files }),
       ...(claim.quotes != null && { quotes: claim.quotes }),
       ...(claim.manualSkills != null && { manualSkills: claim.manualSkills }),
       releaseOnDefiniteFailure: async (error) => {
-        if (error?.retryable === false) {
+        if (
+          error?.retryable === false ||
+          (context.attempt != null &&
+            context.maxAttempts != null &&
+            context.attempt >= context.maxAttempts)
+        ) {
           await deadClaim(
             methods,
             envelope,

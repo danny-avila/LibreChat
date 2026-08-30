@@ -7,11 +7,11 @@ const {
   createBackgroundToolCompletionWakeupResolver,
   BACKGROUND_TOOL_COMPLETION_SOURCE,
   createAgentQueuedTurnResolver,
+  createAgentQueuedTurnDeadLetterSettlement,
   createAgentQueuedTurnScheduler,
   AGENT_QUEUED_TURN_SOURCE,
   GenerationJobManager,
 } = require('@librechat/api');
-const { runAsSystem } = require('@librechat/data-schemas');
 const methods = require('~/models');
 
 const subagentCompletionAdapter = createSubagentCompletionWakeupResolver({
@@ -35,6 +35,7 @@ const service = createAgentTriggerService({
   methods,
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
   supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
+  settleSourceBeforeDeadLetter: createAgentQueuedTurnDeadLetterSettlement({ methods }),
   prepareContinue: createAgentContinuationResolver({
     eventActor: eventActorAdapter,
     internalSources: new Map([
@@ -62,7 +63,6 @@ const stopAgentTriggerService = async () => {
 
 const purgeAgentTriggerDeliveriesForUser = async (userId) => {
   await service.purgeUser(userId);
-  await runAsSystem(() => methods.deleteAgentQueuedTurns({ user: userId }));
 };
 
 module.exports = {

@@ -404,6 +404,13 @@ export type QueuedMessage = {
     id?: string;
     status: 'sending' | 'uncertain' | 'rejected' | 'queued' | 'claimed';
     errorCode?: string;
+    errorMessage?: string;
+    /** Observation time for a transport-ambiguous enqueue. The logical item
+     * may be much older than the request that just became uncertain. */
+    uncertainSince?: number;
+    /** Current one-based projection; server sequence remains the stable
+     * fallback when predecessors settle and positions close up. */
+    position?: number;
     revision?: number;
   };
   /** Stable identity for server enqueue/retry. Recovered steer rows also use

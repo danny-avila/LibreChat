@@ -36,6 +36,11 @@ export type TEnqueueAgentQueuedTurnRequest = z.infer<typeof enqueueAgentQueuedTu
 
 export const listAgentQueuedTurnsSchema = z.object({
   conversationId: z.string().trim().min(1),
+  clientRequestIds: z
+    .array(z.string().trim().min(1).max(128))
+    .max(100)
+    .transform((ids) => Array.from(new Set(ids)))
+    .optional(),
 });
 export type TListAgentQueuedTurnsRequest = z.infer<typeof listAgentQueuedTurnsSchema>;
 
@@ -49,6 +54,12 @@ export const agentQueuedTurnReceiptSchema = enqueueAgentQueuedTurnSchema.extend(
   status: z.enum(agentQueuedTurnStatuses),
   position: z.number().int().nonnegative().optional(),
   revision: z.number().int().nonnegative(),
+  failure: z
+    .object({
+      code: z.string().trim().min(1).max(128),
+      message: z.string().max(2048).optional(),
+    })
+    .optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

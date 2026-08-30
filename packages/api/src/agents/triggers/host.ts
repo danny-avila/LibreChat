@@ -43,6 +43,7 @@ export type AgentTriggerContinuePreparation =
       status: 'ready';
       input: string;
       parentMessageId: string;
+      expectedPredecessorCreatedAt?: number;
       /** Complete user-turn context for internal continuations that must start
        * a fresh ordinary Agent turn rather than inject into an existing run. */
       files?: Partial<TFile>[];
@@ -155,7 +156,7 @@ export interface AgentTriggerExecutionHostDeps {
 export interface AgentTriggerExecutionHost {
   dispatch: (
     envelope: unknown,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; attempt?: number; maxAttempts?: number },
   ) => Promise<AgentTriggerExecutionResult>;
 }
 
@@ -638,6 +639,9 @@ async function startRun(
           endpoint: EModelEndpoint.agents,
           agent_id: envelope.target.agentId,
           parentMessageId,
+          ...(readyPreparation?.expectedPredecessorCreatedAt != null && {
+            expectedPredecessorCreatedAt: readyPreparation.expectedPredecessorCreatedAt,
+          }),
           ...(envelope.mode === 'continue' && {
             conversationId: envelope.target.conversationId,
           }),
@@ -838,6 +842,7 @@ async function startRun(
             certainty: 'definite',
             retryable: true,
             code: 'PREPARATION_RELEASE_FAILED',
+            deferWithoutAttempt: true,
           },
         );
       }

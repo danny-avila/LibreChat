@@ -125,6 +125,7 @@ import {
 import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
   createAgentQueuedTurnMethods,
+  AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
   type AgentQueuedTurnMethods,
 } from './queuedTurn';
@@ -196,7 +197,7 @@ export {
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
 export { AgentTriggerDeliveryConflictError };
-export { AgentQueuedTurnConflictError };
+export { AgentQueuedTurnCapacityError, AgentQueuedTurnConflictError };
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -348,6 +349,13 @@ export function createMethods(
     isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
+  const agentQueuedTurnMethods = createAgentQueuedTurnMethods(mongoose);
+  const agentTriggerDeliveryMethods = createAgentTriggerDeliveryMethods(mongoose, {
+    purgeQueuedTurnsForUser: (user) =>
+      agentQueuedTurnMethods.deleteAllAgentQueuedTurnsForUser({
+        user: typeof user === 'string' ? new mongoose.Types.ObjectId(user) : user,
+      }),
+  });
 
   return {
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
@@ -390,8 +398,8 @@ export function createMethods(
     ...promptMethods,
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
-    ...createAgentTriggerDeliveryMethods(mongoose),
-    ...createAgentQueuedTurnMethods(mongoose),
+    ...agentTriggerDeliveryMethods,
+    ...agentQueuedTurnMethods,
     ...createScheduleMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,

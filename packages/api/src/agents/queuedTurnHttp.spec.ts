@@ -1,7 +1,11 @@
 import { Types } from 'mongoose';
 import type { AgentQueuedTurnMethods, AgentQueuedTurnRecord } from '@librechat/data-schemas';
 import type { AgentQueuedTurnHttpDeps } from './queuedTurnHttp';
-import { handleAgentQueuedTurnEnqueue } from './queuedTurnHttp';
+import {
+  handleAgentQueuedTurnCancel,
+  handleAgentQueuedTurnEnqueue,
+  handleAgentQueuedTurnList,
+} from './queuedTurnHttp';
 
 const USER_ID = '507f191e810c19729de860ea';
 
@@ -86,5 +90,69 @@ describe('Agent queued-turn HTTP admission receipts', () => {
     expect(enqueueAgentQueuedTurn).toHaveBeenCalledTimes(1);
     expect(methods.getConvo).toHaveBeenCalledTimes(1);
     expect(schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a dead receipt and lets the user dismiss its delivery', async () => {
+    const dead = {
+      ...turn('dead'),
+      deliveryKey: 'delivery-1',
+      settledAt: new Date('2026-08-30T12:01:00Z'),
+      terminalReceipt: {
+        outcome: 'dead' as const,
+        settledAt: new Date('2026-08-30T12:01:00Z'),
+        failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'could not admit turn' },
+      },
+    };
+    const cancelled = {
+      ...dead,
+      status: 'cancelled' as const,
+      terminalReceipt: {
+        outcome: 'cancelled' as const,
+        settledAt: new Date('2026-08-30T12:02:00Z'),
+      },
+    };
+    const methods = {
+      getConvo: jest.fn(async () => ({ agent_id: 'agent_1', endpoint: 'agents' })),
+      listAgentQueuedTurnReceipts: jest.fn(async () => [dead]),
+      cancelAgentQueuedTurn: jest.fn(async () => ({
+        outcome: 'cancelled' as const,
+        turn: cancelled,
+      })),
+    };
+    const retireDelivery = jest.fn(async () => true);
+    const deps = {
+      methods: methods as unknown as AgentQueuedTurnMethods & {
+        getConvo: typeof methods.getConvo;
+      },
+      scheduler: { schedule: jest.fn() },
+      checkAgentAccess: jest.fn(async () => true),
+      retireDelivery,
+    } satisfies AgentQueuedTurnHttpDeps;
+
+    await expect(
+      handleAgentQueuedTurnList({ id: USER_ID }, 'conversation-1', deps),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: {
+        queuedTurns: [
+          {
+            queuedTurnId: 'queued-turn-1',
+            status: 'dead',
+            failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'could not admit turn' },
+          },
+        ],
+      },
+    });
+    await expect(
+      handleAgentQueuedTurnCancel({ id: USER_ID }, 'queued-turn-1', deps),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { receipt: { queuedTurnId: 'queued-turn-1', status: 'cancelled' } },
+    });
+    expect(retireDelivery).toHaveBeenCalledWith(
+      'delivery-1',
+      'agent-queued-turn',
+      'queued_turn_cancelled',
+    );
   });
 });

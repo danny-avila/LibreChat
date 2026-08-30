@@ -37,6 +37,8 @@ export interface IAgentQueuedTurn {
   clientRequestId: string;
   fingerprint: string;
   sequence: number;
+  /** Bounded active-lane capacity token. Present only while queued/claimed. */
+  activeSlot?: number;
   status: AgentQueuedTurnStatus;
   priority: boolean;
   text: string;
@@ -85,6 +87,7 @@ export type AgentQueuedTurnActiveRecord = Pick<
   | 'parentMessageId'
   | 'clientRequestId'
   | 'sequence'
+  | 'activeSlot'
   | 'status'
   | 'priority'
   | 'text'
@@ -98,6 +101,7 @@ export type AgentQueuedTurnActiveRecord = Pick<
   | 'scheduledAt'
   | 'createdAt'
   | 'updatedAt'
+  | 'terminalReceipt'
 >;
 
 export interface AgentQueuedTurnClaim extends AgentQueuedTurnRecord {

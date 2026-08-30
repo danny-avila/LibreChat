@@ -87,6 +87,7 @@ function resolverMethods() {
     ]),
     claimNextAgentQueuedTurn: jest.fn(async () => ({ outcome: 'acquired' as const, claim: turn })),
     releaseAgentQueuedTurn: jest.fn(async () => ({ outcome: 'released' as const, turn })),
+    getEffectiveAgentQueuedTurnPredecessor: jest.fn(async () => undefined),
     markAgentQueuedTurnAdmitted: jest.fn(async () => ({
       outcome: 'admitted' as const,
       turn: { ...turn, status: 'admitted' as const },
@@ -157,6 +158,56 @@ describe('Agent queued-turn continuation', () => {
     );
   });
 
+  it('uses the latest admitted queued generation as the effective predecessor epoch', async () => {
+    const { methods, spies } = resolverMethods();
+    const claimed = claim();
+    claimed.expectedPredecessorCreatedAt = NOW;
+    spies.claimNextAgentQueuedTurn.mockResolvedValueOnce({ outcome: 'acquired', claim: claimed });
+    spies.getEffectiveAgentQueuedTurnPredecessor.mockResolvedValueOnce(NOW + 250);
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toMatchObject({
+      status: 'ready',
+      expectedPredecessorCreatedAt: NOW + 250,
+    });
+    expect(spies.getEffectiveAgentQueuedTurnPredecessor).toHaveBeenCalledWith({
+      user: new Types.ObjectId(USER_ID),
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      sequence: 1,
+      expectedPredecessorCreatedAt: NOW,
+    });
+  });
+
+  it.each([
+    ['aborted', 'PREDECESSOR_ABORTED'],
+    ['error', 'PREDECESSOR_FAILED'],
+  ] as const)('dead-letters a queued turn whose predecessor is %s', async (status, code) => {
+    const { methods, spies } = resolverMethods();
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => ({ status }),
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toEqual({
+      status: 'settled',
+    });
+    expect(spies.releaseAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        disposition: 'dead',
+        failure: expect.objectContaining({ code }),
+      }),
+    );
+    expect(spies.getMessages).not.toHaveBeenCalled();
+  });
+
   it('dead-letters the queue row when admission is definitely rejected', async () => {
     const { methods, spies } = resolverMethods();
     const resolve = createAgentQueuedTurnResolver({
@@ -214,6 +265,40 @@ describe('Agent queued-turn continuation', () => {
         claimId: 'trigger-1',
         claimBy: 'worker-1',
         disposition: 'retry',
+      }),
+    );
+  });
+
+  it('dead-letters a retryable admission rejection on the final delivery attempt', async () => {
+    const { methods, spies } = resolverMethods();
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+    const prepared = await resolve(envelope(), {
+      idempotencyKey: 'trigger-1',
+      attempt: 3,
+      maxAttempts: 3,
+    });
+    if (prepared?.status !== 'ready') {
+      throw new Error('Expected a ready queued turn');
+    }
+
+    await prepared.releaseOnDefiniteFailure?.(
+      new AgentTriggerExecutionError('still busy', {
+        mode: 'continue',
+        certainty: 'definite',
+        retryable: true,
+        status: 503,
+        code: 'ADMISSION_BUSY',
+      }),
+    );
+    expect(spies.releaseAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        disposition: 'dead',
+        failure: { code: 'ADMISSION_BUSY', message: 'still busy' },
       }),
     );
   });

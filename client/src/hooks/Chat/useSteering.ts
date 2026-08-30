@@ -18,7 +18,6 @@ import type { RunEnd, PendingSteer, QueuedMessage, QueuedMessageOrigin } from '~
 import type { AgentQueuedTurnReceipt, GenerationProtocolVersion } from '~/data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
-  useGetMessagesByConvoId,
   useCancelSteerMutation,
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
@@ -38,6 +37,7 @@ import {
   mergeRestagedQuotes,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { useLatestMessage } from '~/hooks/Messages';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -116,30 +116,23 @@ function isSameRunEpoch(a: RunEnd | null, b: RunEnd): boolean {
 
 /** True when the latest assistant message carries an unresolved tool approval —
  *  the run is (or is about to be) paused, so a steer POST would 409. */
-function hasLiveToolApproval(messages: TMessage[] | undefined): boolean {
-  if (!messages || messages.length === 0) {
+function hasLiveToolApproval(message: TMessage | null): boolean {
+  if (message?.isCreatedByUser !== false) {
     return false;
   }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message.isCreatedByUser !== false) {
-      continue;
-    }
-    const content = message.content;
-    if (!Array.isArray(content)) {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return false;
+  }
+  return content.some((part: TMessageContentParts | undefined) => {
+    if (part?.type !== ContentTypes.TOOL_CALL) {
       return false;
     }
-    return content.some((part: TMessageContentParts | undefined) => {
-      if (part?.type !== ContentTypes.TOOL_CALL) {
-        return false;
-      }
-      const toolCall = part[ContentTypes.TOOL_CALL] as
-        | { approval?: unknown; output?: string | null }
-        | undefined;
-      return toolCall?.approval != null && (toolCall.output?.length ?? 0) === 0;
-    });
-  }
-  return false;
+    const toolCall = part[ContentTypes.TOOL_CALL] as
+      | { approval?: unknown; output?: string | null }
+      | undefined;
+    return toolCall?.approval != null && (toolCall.output?.length ?? 0) === 0;
+  });
 }
 
 interface LiveMessageState {
@@ -147,22 +140,31 @@ interface LiveMessageState {
   parentMessageId?: string;
 }
 
-function selectLiveMessageState(messages: TMessage[] | undefined): LiveMessageState {
-  let parentMessageId: string | undefined;
-  if (messages != null) {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      if (message.isCreatedByUser === false && typeof message.messageId === 'string') {
-        parentMessageId = message.messageId;
-        break;
-      }
-    }
-  }
-  return { approval: hasLiveToolApproval(messages), parentMessageId };
+function selectLiveMessageState(message: TMessage | null): LiveMessageState {
+  const parentMessageId =
+    message?.isCreatedByUser === false && typeof message.messageId === 'string'
+      ? message.messageId
+      : undefined;
+  return { approval: hasLiveToolApproval(message), parentMessageId };
 }
 
 function compareQueuedMessages(a: QueuedMessage, b: QueuedMessage): number {
-  return Number(b.priority ?? false) - Number(a.priority ?? false) || a.createdAt - b.createdAt;
+  const priority = Number(b.priority ?? false) - Number(a.priority ?? false);
+  if (priority !== 0) {
+    return priority;
+  }
+  const aServerOrder = a.server?.revision;
+  const bServerOrder = b.server?.revision;
+  if (aServerOrder != null && bServerOrder != null && aServerOrder !== bServerOrder) {
+    return aServerOrder - bServerOrder;
+  }
+  if (a.server != null && b.server == null) {
+    return -1;
+  }
+  if (a.server == null && b.server != null) {
+    return 1;
+  }
+  return a.createdAt - b.createdAt;
 }
 
 function queuedTurnCreatedAt(receipt: AgentQueuedTurnReceipt): number {
@@ -200,8 +202,8 @@ function reconcileServerQueuedTurns(
     ),
   );
   const observedClientRequestIds = new Set(receipts.map((receipt) => receipt.clientRequestId));
-  const active = receipts.flatMap((receipt): QueuedMessage[] => {
-    if (receipt.status !== 'queued' && receipt.status !== 'claimed') {
+  const projected = receipts.flatMap((receipt): QueuedMessage[] => {
+    if (receipt.status === 'admitted' || receipt.status === 'cancelled') {
       return [];
     }
     const optimistic = previousByClientRequestId.get(receipt.clientRequestId);
@@ -224,8 +226,11 @@ function reconcileServerQueuedTurns(
         ...(receipt.priority === true && { priority: true }),
         server: {
           id: receipt.queuedTurnId,
-          status: receipt.status,
+          status: receipt.status === 'dead' ? 'rejected' : receipt.status,
           revision: receipt.revision,
+          ...(receipt.position != null && { position: receipt.position }),
+          ...(receipt.failure?.code != null && { errorCode: receipt.failure.code }),
+          ...(receipt.failure?.message != null && { errorMessage: receipt.failure.message }),
         },
       },
     ];
@@ -243,7 +248,7 @@ function reconcileServerQueuedTurns(
       item.server.status === 'rejected'
     );
   });
-  return [...retained, ...active].sort(compareQueuedMessages);
+  return [...retained, ...projected].sort(compareQueuedMessages);
 }
 
 export interface UseSteeringParams {
@@ -316,16 +321,28 @@ export default function useSteering({
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
   const queuedMessages = useRecoilValue(store.queuedMessagesByConvoId(queueKey));
   const setQueuedMessages = useSetRecoilState(store.queuedMessagesByConvoId(queueKey));
+  const knownClientRequestIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          queuedMessages.flatMap((item) =>
+            item.server != null && item.clientRequestId != null ? [item.clientRequestId] : [],
+          ),
+        ),
+      ).slice(0, 100),
+    [queuedMessages],
+  );
   const reconciliationUntil = queuedMessages.reduce<number | undefined>((latest, item) => {
-    if (item.server?.status !== 'uncertain') {
+    if (item.server?.status !== 'uncertain' || item.server.uncertainSince == null) {
       return latest;
     }
-    const until = item.createdAt + QUEUED_TURN_RECONCILIATION_MS;
+    const until = item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS;
     return latest == null ? until : Math.max(latest, until);
   }, undefined);
   const { data: serverQueuedTurns } = useAgentQueuedTurns(
     conversationId,
     serverQueueEnabled,
+    knownClientRequestIds,
     reconciliationUntil,
   );
   const activeGenerationCreatedAt = useRecoilValue(
@@ -448,13 +465,8 @@ export default function useSteering({
 
   /** The exact visible assistant tail is captured into a server queued turn,
    * while the approval bit keeps the steering controls honest. */
-  const { data: liveMessageState } = useGetMessagesByConvoId<LiveMessageState>(
-    hasRealConvoId ? conversationId : '',
-    {
-      enabled: hasRealConvoId,
-      select: selectLiveMessageState,
-    },
-  );
+  const latestMessage = useLatestMessage(index, hasRealConvoId ? conversationId : null);
+  const liveMessageState = useMemo(() => selectLiveMessageState(latestMessage), [latestMessage]);
   /** Both approval cards and `ask_user_question` suspend the current
    * generation while keeping its submission slot occupied. Answer mode hides
    * the ordinary during-run composer, but waiting-message controls still need
@@ -734,11 +746,7 @@ export default function useSteering({
           ...(options?.front && { priority: true }),
         };
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          [...prev, item].sort(
-            (a, b) =>
-              Number(b.priority ?? false) - Number(a.priority ?? false) ||
-              a.createdAt - b.createdAt,
-          ),
+          [...prev, item].sort(compareQueuedMessages),
         );
         if (options?.skipUsageMark !== true) {
           markQueuedFilesUsage(options?.files);
@@ -771,11 +779,7 @@ export default function useSteering({
             {
               onSuccess: (receipt) => {
                 updateQueuedMessage(item.id, (current) => {
-                  if (
-                    receipt.status === 'admitted' ||
-                    receipt.status === 'cancelled' ||
-                    receipt.status === 'dead'
-                  ) {
+                  if (receipt.status === 'admitted' || receipt.status === 'cancelled') {
                     return null;
                   }
                   return {
@@ -785,8 +789,13 @@ export default function useSteering({
                     parentMessageId: receipt.parentMessageId,
                     server: {
                       id: receipt.queuedTurnId,
-                      status: receipt.status,
+                      status: receipt.status === 'dead' ? 'rejected' : receipt.status,
                       revision: receipt.revision,
+                      ...(receipt.position != null && { position: receipt.position }),
+                      ...(receipt.failure?.code != null && { errorCode: receipt.failure.code }),
+                      ...(receipt.failure?.message != null && {
+                        errorMessage: receipt.failure.message,
+                      }),
                     },
                   };
                 });
@@ -810,7 +819,11 @@ export default function useSteering({
                   if (!isDefiniteQueuedTurnRejection(error)) {
                     return {
                       ...current,
-                      server: { ...current.server, status: 'uncertain' },
+                      server: {
+                        ...current.server,
+                        status: 'uncertain',
+                        uncertainSince: current.server?.uncertainSince ?? Date.now(),
+                      },
                     };
                   }
                   const code = getSteerErrorCode(error);
@@ -1038,7 +1051,7 @@ export default function useSteering({
   const discardQueued = useCallback(
     async (item: QueuedMessage): Promise<boolean> => {
       if (item.server != null) {
-        if (item.server.status === 'rejected') {
+        if (item.server.status === 'rejected' && item.server.id == null) {
           return downgradeServerQueuedTurn(item.id);
         }
         if (item.server.id == null || !hasRealConvoId) {

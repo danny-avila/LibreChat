@@ -50,8 +50,14 @@ describe('agent queued turn schemas', () => {
   });
 
   it('validates list and cancel identities', () => {
-    expect(listAgentQueuedTurnsSchema.parse({ conversationId: 'conversation-1' })).toEqual({
+    expect(
+      listAgentQueuedTurnsSchema.parse({
+        conversationId: 'conversation-1',
+        clientRequestIds: ['request-1', 'request-1', 'request-2'],
+      }),
+    ).toEqual({
       conversationId: 'conversation-1',
+      clientRequestIds: ['request-1', 'request-2'],
     });
     expect(cancelAgentQueuedTurnSchema.parse({ queuedTurnId: 'turn-1' })).toEqual({
       queuedTurnId: 'turn-1',
@@ -69,6 +75,20 @@ describe('agent queued turn schemas', () => {
       revision: 1,
       createdAt: '2026-08-30T12:00:00.000Z',
       updatedAt: '2026-08-30T12:00:00.000Z',
+    };
+
+    expect(agentQueuedTurnReceiptSchema.parse(receipt)).toEqual(receipt);
+  });
+
+  it('parses a bounded terminal failure projection', () => {
+    const receipt = {
+      ...request,
+      queuedTurnId: 'turn-1',
+      status: 'dead',
+      revision: 1,
+      failure: { code: 'PARENT_NOT_FOUND', message: 'The selected branch is unavailable' },
+      createdAt: '2026-08-30T12:00:00.000Z',
+      updatedAt: '2026-08-30T12:01:00.000Z',
     };
 
     expect(agentQueuedTurnReceiptSchema.parse(receipt)).toEqual(receipt);

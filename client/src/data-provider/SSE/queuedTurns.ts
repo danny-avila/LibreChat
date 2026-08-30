@@ -8,8 +8,10 @@ import type {
 export type AgentQueuedTurnReceipt = TAgentQueuedTurnReceipt;
 export type EnqueueAgentQueuedTurnRequest = TEnqueueAgentQueuedTurnRequest;
 
-export const agentQueuedTurnsQueryKey = (conversationId: string) =>
-  [QueryKeys.agentQueuedTurns, conversationId] as const;
+export const agentQueuedTurnsQueryKey = (
+  conversationId: string,
+  clientRequestIds: readonly string[] = [],
+) => [QueryKeys.agentQueuedTurns, conversationId, ...clientRequestIds] as const;
 
 function queuedTurnErrorResponse(error: unknown): { status?: number; code?: string } {
   const response = (
@@ -47,18 +49,11 @@ export function isDefiniteQueuedTurnRejection(error: unknown): boolean {
   );
 }
 
-export function shouldRetryAgentQueuedTurnEnqueue(failureCount: number, error: unknown): boolean {
-  return (
-    failureCount < 3 &&
-    !isDefiniteQueuedTurnsUnsupported(error) &&
-    !isDefiniteQueuedTurnRejection(error)
-  );
-}
-
 export async function fetchAgentQueuedTurns(
   conversationId: string,
+  clientRequestIds?: string[],
 ): Promise<AgentQueuedTurnReceipt[]> {
-  const response = await dataService.listAgentQueuedTurns(conversationId);
+  const response = await dataService.listAgentQueuedTurns(conversationId, clientRequestIds);
   return response.queuedTurns;
 }
 
@@ -80,11 +75,13 @@ export async function cancelAgentQueuedTurn(input: {
 export function useAgentQueuedTurns(
   conversationId: string,
   enabled: boolean,
+  clientRequestIds: string[] = [],
   reconcileUntil?: number,
 ) {
+  const knownIds = [...new Set(clientRequestIds)].sort();
   return useQuery({
-    queryKey: agentQueuedTurnsQueryKey(conversationId),
-    queryFn: () => fetchAgentQueuedTurns(conversationId),
+    queryKey: agentQueuedTurnsQueryKey(conversationId, knownIds),
+    queryFn: () => fetchAgentQueuedTurns(conversationId, knownIds),
     enabled: enabled && conversationId.length > 0,
     staleTime: 1_000,
     refetchOnMount: true,
@@ -105,16 +102,13 @@ export function useEnqueueAgentQueuedTurnMutation() {
   return useMutation({
     mutationKey: [MutationKeys.enqueueAgentQueuedTurn],
     mutationFn: enqueueAgentQueuedTurn,
-    /** Replay the exact body and clientRequestId. The server returns the
-     * durable receipt whether the first POST was lost, scheduling-pending, or
-     * already admitted, without creating a second logical turn. */
-    retry: shouldRetryAgentQueuedTurnEnqueue,
-    retryDelay: (attempt) => Math.min(250 * 2 ** attempt, 2_000),
-    /** Both success and failure can follow a committed POST (lost 202 or the
-     * record-first scheduler's 503). Always reconcile the stable request id. */
+    /** A retry can encounter admission middleware while the first request is
+     * still committing. Reconcile ambiguous outcomes through the read-only
+     * known-id projection instead of issuing a second mutating POST. */
+    retry: false,
     onSettled: (_receipt, _error, input) =>
       queryClient.invalidateQueries({
-        queryKey: agentQueuedTurnsQueryKey(input.conversationId),
+        queryKey: [QueryKeys.agentQueuedTurns, input.conversationId],
       }),
   });
 }
@@ -126,7 +120,7 @@ export function useCancelAgentQueuedTurnMutation() {
     mutationFn: cancelAgentQueuedTurn,
     onSuccess: (_receipt, input) =>
       queryClient.invalidateQueries({
-        queryKey: agentQueuedTurnsQueryKey(input.conversationId),
+        queryKey: [QueryKeys.agentQueuedTurns, input.conversationId],
       }),
   });
 }

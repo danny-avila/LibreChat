@@ -240,6 +240,32 @@ describe('PendingSteerChips — queued trash', () => {
     expect(mockRemoveQueued).toHaveBeenCalledWith('q-recovered');
   });
 
+  it('discards a dead server row before restoring and removing it', async () => {
+    const dead = {
+      id: 'q-dead',
+      text: 'recover dead work',
+      createdAt: 1,
+      clientRequestId: 'client-dead',
+      server: {
+        id: 'server-dead',
+        status: 'rejected' as const,
+        errorCode: 'ADMISSION_FAILED',
+      },
+    };
+    renderChips([dead]);
+
+    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+
+    await waitFor(() => expect(mockDiscardQueued).toHaveBeenCalledWith(dead));
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      'recover dead work',
+      undefined,
+      { quotes: undefined, manualSkills: undefined },
+      CONVO_ID,
+    );
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q-dead');
+  });
+
   it('offers Edit for a recovered row and leaves it untouched when discard is refused', async () => {
     const user = userEvent.setup();
     mockDiscardQueued.mockResolvedValueOnce(false);

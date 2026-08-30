@@ -44,7 +44,12 @@ const AgentQueuedTurnListController = async (req, res) => {
   try {
     return send(
       res,
-      await handleAgentQueuedTurnList(req.user ?? {}, req.query?.conversationId, dependencies(req)),
+      await handleAgentQueuedTurnList(
+        req.user ?? {},
+        req.query?.conversationId,
+        dependencies(req),
+        req.query?.clientRequestIds,
+      ),
     );
   } catch (error) {
     logger.error('[AgentQueuedTurns] Failed to list turns', error);

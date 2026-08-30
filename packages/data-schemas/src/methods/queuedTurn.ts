@@ -19,6 +19,7 @@ const MAX_QUOTES = 10;
 const MAX_QUOTE_LENGTH = 1500;
 const MAX_MANUAL_SKILLS = 32;
 const MAX_TEXT_LENGTH = 32_768;
+export const MAX_ACTIVE_AGENT_QUEUED_TURNS = 100;
 
 interface DuplicateKeyError {
   code?: number;
@@ -28,6 +29,13 @@ export class AgentQueuedTurnConflictError extends Error {
   constructor(clientRequestId: string) {
     super(`Agent queued turn idempotency conflict: ${clientRequestId}`);
     this.name = 'AgentQueuedTurnConflictError';
+  }
+}
+
+export class AgentQueuedTurnCapacityError extends Error {
+  constructor() {
+    super(`Agent queued turn capacity is limited to ${MAX_ACTIVE_AGENT_QUEUED_TURNS}`);
+    this.name = 'AgentQueuedTurnCapacityError';
   }
 }
 
@@ -72,6 +80,11 @@ export type AdmitAgentQueuedTurnResult =
   | { outcome: 'admitted' | 'already_admitted'; turn: AgentQueuedTurnRecord }
   | { outcome: 'conflict'; turn: AgentQueuedTurnRecord | null };
 
+export type DeadLetterAgentQueuedTurnResult =
+  | { outcome: 'dead' | 'already_terminal'; turn: AgentQueuedTurnRecord }
+  | { outcome: 'missing'; turn: null }
+  | { outcome: 'conflict'; turn: AgentQueuedTurnRecord };
+
 export type ScheduleAgentQueuedTurnResult =
   | { outcome: 'scheduled' | 'already_scheduled'; turn: AgentQueuedTurnRecord }
   | { outcome: 'conflict'; turn: AgentQueuedTurnRecord | null };
@@ -91,6 +104,9 @@ export interface AgentQueuedTurnMethods {
   ) => Promise<AgentQueuedTurnRecord | null>;
   listActiveAgentQueuedTurns: (
     input: AgentQueuedTurnConversationScope & { limit?: number },
+  ) => Promise<AgentQueuedTurnActiveRecord[]>;
+  listAgentQueuedTurnReceipts: (
+    input: AgentQueuedTurnConversationScope & { clientRequestIds?: readonly string[] },
   ) => Promise<AgentQueuedTurnActiveRecord[]>;
   findQueuedTurnsNeedingDelivery: (limit?: number) => Promise<AgentQueuedTurnRecord[]>;
   markQueuedTurnScheduled: (
@@ -136,6 +152,20 @@ export interface AgentQueuedTurnMethods {
       settledAt: Date;
     },
   ) => Promise<AdmitAgentQueuedTurnResult>;
+  deadLetterAgentQueuedTurn: (
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      deliveryKey: string;
+      settledAt: Date;
+      failure: AgentQueuedTurnFailure;
+    },
+  ) => Promise<DeadLetterAgentQueuedTurnResult>;
+  getEffectiveAgentQueuedTurnPredecessor: (
+    input: AgentQueuedTurnConversationScope & {
+      sequence: number;
+      expectedPredecessorCreatedAt?: number;
+    },
+  ) => Promise<number | undefined>;
   drainAgentQueuedTurns: (
     input: AgentQueuedTurnOwnerScope & {
       conversationId?: string;
@@ -145,6 +175,7 @@ export interface AgentQueuedTurnMethods {
   deleteAgentQueuedTurns: (
     input: AgentQueuedTurnOwnerScope & { conversationId?: string },
   ) => Promise<number>;
+  deleteAllAgentQueuedTurnsForUser: (input: { user: Types.ObjectId }) => Promise<number>;
 }
 
 function tenantScope(tenantId: string | undefined):
@@ -355,6 +386,7 @@ function toRecord(turn: IAgentQueuedTurn): AgentQueuedTurnRecord {
     clientRequestId: turn.clientRequestId,
     fingerprint: turn.fingerprint,
     sequence: turn.sequence,
+    ...(turn.activeSlot != null && { activeSlot: turn.activeSlot }),
     status: turn.status,
     priority: turn.priority,
     text: turn.text,
@@ -388,6 +420,7 @@ function toActiveRecord(turn: IAgentQueuedTurn): AgentQueuedTurnActiveRecord {
     parentMessageId: record.parentMessageId,
     clientRequestId: record.clientRequestId,
     sequence: record.sequence,
+    ...(record.activeSlot != null && { activeSlot: record.activeSlot }),
     status: record.status,
     priority: record.priority,
     text: record.text,
@@ -403,6 +436,7 @@ function toActiveRecord(turn: IAgentQueuedTurn): AgentQueuedTurnActiveRecord {
     ...(record.scheduledAt != null && { scheduledAt: record.scheduledAt }),
     createdAt: record.createdAt,
     ...(record.updatedAt != null && { updatedAt: record.updatedAt }),
+    ...(record.terminalReceipt != null && { terminalReceipt: record.terminalReceipt }),
   };
 }
 
@@ -471,32 +505,37 @@ export function createAgentQueuedTurnMethods(
     }
 
     const sequence = await allocateSequence(input);
-    try {
-      const created = await Turn().create({
-        ...conversationFields(input),
-        ...normalized,
-        fingerprint: requestFingerprint,
-        sequence,
-        status: 'queued',
-        attempts: 0,
-        availableAt: input.availableAt ?? new Date(),
-      });
-      return { turn: toRecord(created.toObject()), replayed: false };
-    } catch (error) {
-      if ((error as DuplicateKeyError).code !== DUPLICATE_KEY) {
-        throw error;
+    const firstSlot = sequence % MAX_ACTIVE_AGENT_QUEUED_TURNS;
+    for (let offset = 0; offset < MAX_ACTIVE_AGENT_QUEUED_TURNS; offset++) {
+      const activeSlot = (firstSlot + offset) % MAX_ACTIVE_AGENT_QUEUED_TURNS;
+      try {
+        const created = await Turn().create({
+          ...conversationFields(input),
+          ...normalized,
+          fingerprint: requestFingerprint,
+          sequence,
+          activeSlot,
+          status: 'queued',
+          attempts: 0,
+          availableAt: input.availableAt ?? new Date(),
+        });
+        return { turn: toRecord(created.toObject()), replayed: false };
+      } catch (error) {
+        if ((error as DuplicateKeyError).code !== DUPLICATE_KEY) {
+          throw error;
+        }
+        const replay = await Turn()
+          .findOne({ ...scope, clientRequestId: normalized.clientRequestId })
+          .lean<IAgentQueuedTurn>();
+        if (replay != null) {
+          if (replay.fingerprint !== requestFingerprint) {
+            throw new AgentQueuedTurnConflictError(normalized.clientRequestId);
+          }
+          return { turn: toRecord(replay), replayed: true };
+        }
       }
-      const replay = await Turn()
-        .findOne({ ...scope, clientRequestId: normalized.clientRequestId })
-        .lean<IAgentQueuedTurn>();
-      if (replay == null) {
-        throw error;
-      }
-      if (replay.fingerprint !== requestFingerprint) {
-        throw new AgentQueuedTurnConflictError(normalized.clientRequestId);
-      }
-      return { turn: toRecord(replay), replayed: true };
     }
+    throw new AgentQueuedTurnCapacityError();
   }
 
   async function listActiveAgentQueuedTurns(
@@ -515,6 +554,50 @@ export function createAgentQueuedTurnMethods(
       .limit(limit)
       .lean<IAgentQueuedTurn[]>();
     return turns.map(toActiveRecord);
+  }
+
+  async function listAgentQueuedTurnReceipts(
+    input: AgentQueuedTurnConversationScope & { clientRequestIds?: readonly string[] },
+  ): Promise<AgentQueuedTurnActiveRecord[]> {
+    const clientRequestIds = [
+      ...new Set((input.clientRequestIds ?? []).map((value) => requireBoundedString(value, 128))),
+    ];
+    if (clientRequestIds.length > MAX_ACTIVE_AGENT_QUEUED_TURNS) {
+      throw new TypeError(
+        `Agent queued turn receipt lookup is limited to ${MAX_ACTIVE_AGENT_QUEUED_TURNS} ids`,
+      );
+    }
+    const scope = conversationScope(input);
+    const [active, dead, known] = await Promise.all([
+      Turn()
+        .find({ ...scope, status: { $in: ['queued', 'claimed'] } })
+        .sort({ priority: -1, sequence: 1 })
+        .limit(MAX_ACTIVE_AGENT_QUEUED_TURNS)
+        .lean<IAgentQueuedTurn[]>(),
+      Turn()
+        .find({ ...scope, status: 'dead' })
+        .sort({ sequence: -1 })
+        .limit(MAX_ACTIVE_AGENT_QUEUED_TURNS)
+        .lean<IAgentQueuedTurn[]>(),
+      clientRequestIds.length === 0
+        ? Promise.resolve([])
+        : Turn()
+            .find({ ...scope, clientRequestId: { $in: clientRequestIds } })
+            .limit(clientRequestIds.length)
+            .lean<IAgentQueuedTurn[]>(),
+    ]);
+    const turns = new Map<string, IAgentQueuedTurn>();
+    for (const turn of [...active, ...dead, ...known]) {
+      if (turn._id != null) {
+        turns.set(turn._id.toString(), turn);
+      }
+    }
+    return [...turns.values()]
+      .sort(
+        (left, right) =>
+          Number(right.priority) - Number(left.priority) || left.sequence - right.sequence,
+      )
+      .map(toActiveRecord);
   }
 
   async function getAgentQueuedTurnByClientRequestId(
@@ -548,13 +631,14 @@ export function createAgentQueuedTurnMethods(
         {
           ...scope,
           _id: input.queuedTurnId,
-          status: 'queued',
+          status: { $in: ['queued', 'dead'] },
         },
         {
           $set: {
             status: 'cancelled',
             terminalReceipt: { outcome: 'cancelled', settledAt },
           },
+          $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
         },
         { new: true },
       )
@@ -664,7 +748,7 @@ export function createAgentQueuedTurnMethods(
     }
 
     const head = await Turn()
-      .findOne({ ...scope, status: { $in: ['queued', 'claimed'] } })
+      .findOne({ ...scope, status: { $in: ['queued', 'claimed', 'dead'] } })
       .sort({ priority: -1, sequence: 1 })
       .lean<IAgentQueuedTurn>();
     if (head == null) {
@@ -762,7 +846,7 @@ export function createAgentQueuedTurnMethods(
                 },
               },
             },
-            $unset: { claimId: 1, claimBy: 1, claimUntil: 1 },
+            $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
           };
     const turn = await Turn()
       .findOneAndUpdate(fence, update, { new: true })
@@ -815,7 +899,7 @@ export function createAgentQueuedTurnMethods(
               ...(generationCreatedAt != null && { generationCreatedAt }),
             },
           },
-          $unset: { claimId: 1, claimBy: 1, claimUntil: 1 },
+          $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
         },
         { new: true },
       )
@@ -837,6 +921,84 @@ export function createAgentQueuedTurnMethods(
       outcome: 'conflict',
       turn: current == null ? null : toRecord(current),
     };
+  }
+
+  async function deadLetterAgentQueuedTurn(
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      deliveryKey: string;
+      settledAt: Date;
+      failure: AgentQueuedTurnFailure;
+    },
+  ): Promise<DeadLetterAgentQueuedTurnResult> {
+    const scope = conversationScope(input);
+    const deliveryKey = requireBoundedString(input.deliveryKey, 128);
+    const turn = await Turn()
+      .findOneAndUpdate(
+        {
+          ...scope,
+          _id: input.queuedTurnId,
+          deliveryKey,
+          status: { $in: ['queued', 'claimed'] },
+        },
+        {
+          $set: {
+            status: 'dead',
+            terminalReceipt: {
+              outcome: 'dead',
+              settledAt: input.settledAt,
+              failure: {
+                code: requireBoundedString(input.failure.code, 128),
+                message: requireBoundedString(input.failure.message, 2048),
+              },
+            },
+          },
+          $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+        },
+        { new: true },
+      )
+      .lean<IAgentQueuedTurn>();
+    if (turn != null) {
+      return { outcome: 'dead', turn: toRecord(turn) };
+    }
+    const current = await Turn()
+      .findOne({ ...scope, _id: input.queuedTurnId })
+      .lean<IAgentQueuedTurn>();
+    if (current == null) {
+      return { outcome: 'missing', turn: null };
+    }
+    if (['admitted', 'cancelled', 'dead'].includes(current.status)) {
+      return { outcome: 'already_terminal', turn: toRecord(current) };
+    }
+    return { outcome: 'conflict', turn: toRecord(current) };
+  }
+
+  async function getEffectiveAgentQueuedTurnPredecessor(
+    input: AgentQueuedTurnConversationScope & {
+      sequence: number;
+      expectedPredecessorCreatedAt?: number;
+    },
+  ): Promise<number | undefined> {
+    if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0) {
+      throw new TypeError('Agent queued turn sequence must be a positive integer');
+    }
+    const rootEpoch = normalizePredecessor(input.expectedPredecessorCreatedAt);
+    if (rootEpoch == null) {
+      return undefined;
+    }
+    const predecessor = await Turn()
+      .findOne({
+        ...conversationScope(input),
+        sequence: { $lt: input.sequence },
+        expectedPredecessorCreatedAt: rootEpoch,
+        status: 'admitted',
+        'terminalReceipt.outcome': 'admitted',
+        'terminalReceipt.generationCreatedAt': { $exists: true },
+      })
+      .sort({ sequence: -1 })
+      .select('terminalReceipt.generationCreatedAt')
+      .lean<IAgentQueuedTurn>();
+    return predecessor?.terminalReceipt?.generationCreatedAt;
   }
 
   async function drainAgentQueuedTurns(
@@ -866,7 +1028,7 @@ export function createAgentQueuedTurnMethods(
             },
           },
         },
-        $unset: { claimId: 1, claimBy: 1, claimUntil: 1 },
+        $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
       },
     );
     return result.modifiedCount;
@@ -885,18 +1047,32 @@ export function createAgentQueuedTurnMethods(
     return turns.deletedCount;
   }
 
+  async function deleteAllAgentQueuedTurnsForUser(input: {
+    user: Types.ObjectId;
+  }): Promise<number> {
+    const [turns] = await Promise.all([
+      Turn().deleteMany({ user: input.user }),
+      Sequence().deleteMany({ user: input.user }),
+    ]);
+    return turns.deletedCount;
+  }
+
   return {
     ensureAgentQueuedTurnIndexes,
     enqueueAgentQueuedTurn,
     getAgentQueuedTurnByClientRequestId,
     listActiveAgentQueuedTurns,
+    listAgentQueuedTurnReceipts,
     findQueuedTurnsNeedingDelivery,
     markQueuedTurnScheduled,
     cancelAgentQueuedTurn,
     claimNextAgentQueuedTurn,
     releaseAgentQueuedTurn,
     markAgentQueuedTurnAdmitted,
+    deadLetterAgentQueuedTurn,
+    getEffectiveAgentQueuedTurnPredecessor,
     drainAgentQueuedTurns,
     deleteAgentQueuedTurns,
+    deleteAllAgentQueuedTurnsForUser,
   };
 }

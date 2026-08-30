@@ -35,6 +35,7 @@ export {
   MAX_AUDIT_VERIFY_ROWS,
   MAX_TOOL_FAVORITES,
   AgentTriggerDeliveryConflictError,
+  AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,

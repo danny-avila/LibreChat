@@ -598,28 +598,38 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       status: 'started' as const,
     };
     const settleOnAdmission = jest.fn(async () => undefined);
-    const fetcher = fetchMock(async () => response(admitted));
-    const host = createAgentTriggerExecutionHost(
-      deps(fetcher, {
-        prepareContinue: async () => ({
-          status: 'ready',
-          input: 'queued user turn',
-          parentMessageId: 'latest-response',
-          files: [{ file_id: 'file-1' }],
-          quotes: ['quoted context'],
-          manualSkills: ['research'],
-          settleOnAdmission,
-        }),
-      }),
-    );
-
-    await expect(host.dispatch(envelope)).resolves.toEqual(admitted);
-    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
-      text: 'queued user turn',
+    const prepareContinue = jest.fn(async () => ({
+      status: 'ready' as const,
+      input: 'queued user turn',
       parentMessageId: 'latest-response',
+      expectedPredecessorCreatedAt: 49,
       files: [{ file_id: 'file-1' }],
       quotes: ['quoted context'],
       manualSkills: ['research'],
+      settleOnAdmission,
+    }));
+    const fetcher = fetchMock(async () => response(admitted));
+    const host = createAgentTriggerExecutionHost(
+      deps(fetcher, {
+        prepareContinue,
+      }),
+    );
+
+    await expect(host.dispatch(envelope, { attempt: 3, maxAttempts: 3 })).resolves.toEqual(
+      admitted,
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+      text: 'queued user turn',
+      parentMessageId: 'latest-response',
+      expectedPredecessorCreatedAt: 49,
+      files: [{ file_id: 'file-1' }],
+      quotes: ['quoted context'],
+      manualSkills: ['research'],
+    });
+    expect(prepareContinue).toHaveBeenCalledWith(envelope, {
+      idempotencyKey: getAgentTriggerIdempotencyKey(envelope),
+      attempt: 3,
+      maxAttempts: 3,
     });
     expect(settleOnAdmission).toHaveBeenCalledWith(admitted);
   });

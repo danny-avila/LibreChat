@@ -21,7 +21,6 @@ import {
   fetchAgentQueuedTurns,
   isDefiniteQueuedTurnRejection,
   isDefiniteQueuedTurnsUnsupported,
-  shouldRetryAgentQueuedTurnEnqueue,
 } from '../queuedTurns';
 
 describe('Agent queued-turn data adapter', () => {
@@ -53,7 +52,9 @@ describe('Agent queued-turn data adapter', () => {
       receipt: { queuedTurnId: 'queued/two', status: 'cancelled' },
     });
 
-    await expect(fetchAgentQueuedTurns('conversation/one')).resolves.toEqual([]);
+    await expect(
+      fetchAgentQueuedTurns('conversation/one', ['request/one', 'request,two']),
+    ).resolves.toEqual([]);
     await expect(
       cancelAgentQueuedTurn({
         conversationId: 'conversation/one',
@@ -61,7 +62,10 @@ describe('Agent queued-turn data adapter', () => {
       }),
     ).resolves.toEqual({ queuedTurnId: 'queued/two', status: 'cancelled' });
 
-    expect(mockListAgentQueuedTurns).toHaveBeenCalledWith('conversation/one');
+    expect(mockListAgentQueuedTurns).toHaveBeenCalledWith('conversation/one', [
+      'request/one',
+      'request,two',
+    ]);
     expect(mockCancelAgentQueuedTurn).toHaveBeenCalledWith('queued/two');
   });
 
@@ -112,13 +116,4 @@ describe('Agent queued-turn data adapter', () => {
       expect(isDefiniteQueuedTurnRejection(error)).toBe(false);
     },
   );
-
-  it('bounds same-request replay to ambiguous outcomes', () => {
-    const network = new Error('connection reset');
-    expect(shouldRetryAgentQueuedTurnEnqueue(0, network)).toBe(true);
-    expect(shouldRetryAgentQueuedTurnEnqueue(2, { response: { status: 503 } })).toBe(true);
-    expect(shouldRetryAgentQueuedTurnEnqueue(3, network)).toBe(false);
-    expect(shouldRetryAgentQueuedTurnEnqueue(0, { response: { status: 413 } })).toBe(false);
-    expect(shouldRetryAgentQueuedTurnEnqueue(0, { response: { status: 404 } })).toBe(false);
-  });
 });

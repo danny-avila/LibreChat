@@ -464,6 +464,9 @@ function requireClaim(delivery: IAgentTriggerDelivery | null): AgentTriggerDeliv
 
 export function createAgentTriggerDeliveryMethods(
   mongoose: typeof import('mongoose'),
+  deps: {
+    purgeQueuedTurnsForUser?: (user: string | Types.ObjectId) => Promise<unknown>;
+  } = {},
 ): AgentTriggerDeliveryMethods {
   const Delivery = () =>
     mongoose.models.AgentTriggerDelivery as Model<IAgentTriggerDeliveryDocument>;
@@ -3539,6 +3542,7 @@ export function createAgentTriggerDeliveryMethods(
         });
         continue;
       }
+      await deps.purgeQueuedTurnsForUser?.(marker._id);
       await Promise.all([
         Delivery().deleteMany({ user: marker._id }),
         LaneSequence().deleteMany({ user: marker._id }),
@@ -3553,6 +3557,7 @@ export function createAgentTriggerDeliveryMethods(
   }
 
   async function deleteAgentTriggerDeliveriesByUser(user: string | Types.ObjectId): Promise<void> {
+    await deps.purgeQueuedTurnsForUser?.(user);
     await Promise.all([Delivery().deleteMany({ user }), LaneSequence().deleteMany({ user })]);
     await UserPurge().deleteOne({ _id: user });
   }

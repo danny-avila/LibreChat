@@ -1131,8 +1131,9 @@ export function enqueueAgentQueuedTurn(
 
 export function listAgentQueuedTurns(
   conversationId: string,
+  clientRequestIds?: string[],
 ): Promise<qt.TListAgentQueuedTurnsResponse> {
-  return request.get(endpoints.agentQueuedTurnsByConversation(conversationId));
+  return request.get(endpoints.agentQueuedTurnsByConversation(conversationId, clientRequestIds));
 }
 
 export function cancelAgentQueuedTurn(

@@ -12,6 +12,7 @@ import type {
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryEngine,
+  AgentTriggerDeliveryEngineDeps,
   AgentTriggerDeliveryEngineOptions,
   AgentTriggerDeliveryRecord,
   AgentTriggerDeliveryStore,
@@ -55,6 +56,7 @@ export interface AgentTriggerServiceDeps {
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
   supportsDetachedActionCompletion?: () => boolean;
+  settleSourceBeforeDeadLetter?: AgentTriggerDeliveryEngineDeps['settleSourceBeforeDeadLetter'];
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -308,7 +310,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
 
   const dispatchForActivePrincipal = async (
     envelope: unknown,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; attempt?: number; maxAttempts?: number },
   ): Promise<AgentTriggerExecutionResult> => {
     const parsed = parseAgentTriggerEnvelope(envelope);
     await requireActivePrincipal(parsed.principal.userId);
@@ -444,6 +446,9 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
           {
             store: createDeliveryStore(methods, supportsDetachedActionCompletion),
             dispatch: dispatchForActivePrincipal,
+            ...(deps.settleSourceBeforeDeadLetter != null && {
+              settleSourceBeforeDeadLetter: deps.settleSourceBeforeDeadLetter,
+            }),
           },
           deps.deliveryOptions,
         );

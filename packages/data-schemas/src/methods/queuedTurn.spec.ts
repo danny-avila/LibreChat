@@ -6,6 +6,7 @@ import type {
   IAgentQueuedTurnSequenceDocument,
 } from '~/types/queuedTurn';
 import {
+  AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
   createAgentQueuedTurnMethods,
   type AgentQueuedTurnMethods,
@@ -165,6 +166,92 @@ describe('agent queued turn methods', () => {
     expect(results.map(({ turn }) => turn.sequence).sort((a, b) => a - b)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8,
     ]);
+  });
+
+  it('caps each conversation at 100 active turns while preserving exact replay', async () => {
+    const inputs = Array.from({ length: 101 }, (_, index) =>
+      enqueueInput({ clientRequestId: `capacity-${index}`, text: `turn ${index}` }),
+    );
+    const results = await Promise.allSettled(
+      inputs.map((input) => methods.enqueueAgentQueuedTurn(input)),
+    );
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(100);
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(AgentQueuedTurnCapacityError);
+
+    const first = results.find(
+      (
+        result,
+      ): result is PromiseFulfilledResult<
+        Awaited<ReturnType<typeof methods.enqueueAgentQueuedTurn>>
+      > => result.status === 'fulfilled',
+    );
+    if (first == null) {
+      throw new Error('Expected one successful enqueue');
+    }
+    const replayInput = inputs.find(
+      (input) => input.clientRequestId === first.value.turn.clientRequestId,
+    );
+    if (replayInput == null) {
+      throw new Error('Expected the matching replay input');
+    }
+    await expect(methods.enqueueAgentQueuedTurn(replayInput)).resolves.toMatchObject({
+      replayed: true,
+      turn: { queuedTurnId: first.value.turn.queuedTurnId },
+    });
+    expect(await methods.listActiveAgentQueuedTurns(enqueueInput())).toHaveLength(100);
+  });
+
+  it('reuses a terminalized active slot and isolates capacity by owner scope', async () => {
+    const queued = await Promise.all(
+      Array.from({ length: 100 }, (_, index) =>
+        methods.enqueueAgentQueuedTurn(
+          enqueueInput({ clientRequestId: `slot-${index}`, text: `turn ${index}` }),
+        ),
+      ),
+    );
+    await expect(
+      methods.cancelAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued[0].turn.queuedTurnId,
+        settledAt: START,
+      }),
+    ).resolves.toMatchObject({ outcome: 'cancelled' });
+    await expect(
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ clientRequestId: 'reused-slot', text: 'replacement' }),
+      ),
+    ).resolves.toMatchObject({ replayed: false, turn: { status: 'queued' } });
+    await expect(
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ clientRequestId: 'capacity-overflow', text: 'overflow' }),
+      ),
+    ).rejects.toBeInstanceOf(AgentQueuedTurnCapacityError);
+
+    await expect(
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({
+          conversationId: 'conversation-2',
+          clientRequestId: 'other-conversation',
+        }),
+      ),
+    ).resolves.toMatchObject({ replayed: false });
+    await expect(
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ tenantId: 'tenant-2', clientRequestId: 'other-tenant' }),
+      ),
+    ).resolves.toMatchObject({ replayed: false });
+    await expect(
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ user: new mongoose.Types.ObjectId(), clientRequestId: 'other-user' }),
+      ),
+    ).resolves.toMatchObject({ replayed: false });
   });
 
   it('keeps untenant records in the untenant owner scope', async () => {
@@ -369,6 +456,13 @@ describe('agent queued turn methods', () => {
         terminalReceipt: { outcome: 'dead', failure: { code: 'BROKEN' } },
       },
     });
+    await methods.cancelAgentQueuedTurn({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: dead.turn.queuedTurnId,
+      settledAt: START,
+    });
 
     const admitted = await methods.enqueueAgentQueuedTurn(
       enqueueInput({
@@ -402,6 +496,138 @@ describe('agent queued turn methods', () => {
         admissionId: 'different',
       }),
     ).resolves.toMatchObject({ outcome: 'conflict' });
+  });
+
+  it('lists a dead receipt until the user dismisses it', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(enqueueInput());
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-dead',
+      scheduledAt: START,
+    });
+    await expect(
+      methods.deadLetterAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey: 'delivery-dead',
+        settledAt: START,
+        failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'could not admit turn' },
+      }),
+    ).resolves.toMatchObject({ outcome: 'dead' });
+
+    await expect(
+      methods.listAgentQueuedTurnReceipts({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+      }),
+    ).resolves.toMatchObject([
+      {
+        queuedTurnId: queued.turn.queuedTurnId,
+        status: 'dead',
+        terminalReceipt: {
+          outcome: 'dead',
+          failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'could not admit turn' },
+        },
+      },
+    ]);
+    await expect(
+      methods.cancelAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        settledAt: LATER,
+      }),
+    ).resolves.toMatchObject({ outcome: 'cancelled', turn: { status: 'cancelled' } });
+    await expect(
+      methods.listAgentQueuedTurnReceipts({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('scopes effective predecessor epochs to one captured queue root', async () => {
+    const first = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'root-a-1', expectedPredecessorCreatedAt: 10 }),
+    );
+    const sameRoot = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'root-a-2', expectedPredecessorCreatedAt: 10 }),
+    );
+    const laterRoot = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'root-b-1', expectedPredecessorCreatedAt: 20 }),
+    );
+    await methods.claimNextAgentQueuedTurn(claimInput(first.turn.queuedTurnId));
+    await methods.markAgentQueuedTurnAdmitted({
+      ...claimInput(first.turn.queuedTurnId),
+      admissionId: 'admission-root-a',
+      admissionMode: 'ordinary',
+      generationCreatedAt: 11,
+      settledAt: START,
+    });
+
+    await expect(
+      methods.getEffectiveAgentQueuedTurnPredecessor({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        sequence: sameRoot.turn.sequence,
+        expectedPredecessorCreatedAt: 10,
+      }),
+    ).resolves.toBe(11);
+    await expect(
+      methods.getEffectiveAgentQueuedTurnPredecessor({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        sequence: laterRoot.turn.sequence,
+        expectedPredecessorCreatedAt: 20,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('projects the newest failures when more than 100 dead receipts await dismissal', async () => {
+    const deadIds: string[] = [];
+    for (let index = 0; index < 101; index++) {
+      const queued = await methods.enqueueAgentQueuedTurn(
+        enqueueInput({ clientRequestId: `dead-${index}`, text: `dead ${index}` }),
+      );
+      const deliveryKey = `delivery-${index}`;
+      await methods.markQueuedTurnScheduled({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey,
+        scheduledAt: START,
+      });
+      await methods.deadLetterAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey,
+        settledAt: START,
+        failure: { code: 'FAILED', message: `failure ${index}` },
+      });
+      deadIds.push(queued.turn.queuedTurnId);
+    }
+
+    const receipts = await methods.listAgentQueuedTurnReceipts({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+    });
+    expect(receipts).toHaveLength(100);
+    expect(receipts.map((turn) => turn.queuedTurnId)).toContain(deadIds[100]);
+    expect(receipts.map((turn) => turn.queuedTurnId)).not.toContain(deadIds[0]);
   });
 
   it('isolates owner, tenant, and conversation scopes and drains or deletes exact scopes', async () => {
@@ -441,5 +667,27 @@ describe('agent queued turn methods', () => {
     ).toBe(1);
     expect(await Turn.countDocuments()).toBe(2);
     expect(await Sequence.countDocuments()).toBe(2);
+  });
+
+  it('purges a user across every tenant while preserving other users', async () => {
+    const otherUser = new mongoose.Types.ObjectId();
+    await Promise.all([
+      methods.enqueueAgentQueuedTurn(enqueueInput({ clientRequestId: 'tenant-one' })),
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ tenantId: 'tenant-2', clientRequestId: 'tenant-two' }),
+      ),
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ tenantId: undefined, clientRequestId: 'untenant' }),
+      ),
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ user: otherUser, clientRequestId: 'other-user' }),
+      ),
+    ]);
+
+    await expect(methods.deleteAllAgentQueuedTurnsForUser({ user })).resolves.toBe(3);
+    expect(await Turn.countDocuments({ user })).toBe(0);
+    expect(await Sequence.countDocuments({ user })).toBe(0);
+    expect(await Turn.countDocuments({ user: otherUser })).toBe(1);
+    expect(await Sequence.countDocuments({ user: otherUser })).toBe(1);
   });
 });

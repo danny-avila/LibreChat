@@ -101,6 +101,18 @@ describe('agent queued turns', () => {
     );
   });
 
+  it('encodes deduplicated known request identities as repeated bounded query values', () => {
+    expect(
+      agentQueuedTurnsByConversation('conversation/one', [
+        'request/one',
+        'request,two',
+        'request/one',
+      ]),
+    ).toBe(
+      '/api/agents/chat/queued-turns?conversationId=conversation%2Fone&clientRequestIds=request%2Fone&clientRequestIds=request%2Ctwo',
+    );
+  });
+
   it('encodes queued-turn identity as one path segment', () => {
     expect(agentQueuedTurn('turn/a b')).toBe('/api/agents/chat/queued-turns/turn%2Fa%20b');
   });

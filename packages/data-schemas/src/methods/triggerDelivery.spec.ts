@@ -4213,6 +4213,43 @@ describe('agent trigger delivery methods', () => {
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
   });
 
+  it('retains trigger purge state when queued-turn cleanup fails', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    let unavailable = true;
+    const purgeQueuedTurnsForUser = jest.fn(async () => {
+      if (unavailable) {
+        throw new Error('queued-turn store unavailable');
+      }
+    });
+    const purgeMethods = createAgentTriggerDeliveryMethods(mongoose, {
+      purgeQueuedTurnsForUser,
+    });
+    await User.create({
+      _id: user,
+      email: 'purge-callback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await purgeMethods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await purgeMethods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(purgeMethods.deleteAgentTriggerDeliveriesByUser(user)).rejects.toThrow(
+      'queued-turn store unavailable',
+    );
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    unavailable = false;
+    await expect(purgeMethods.deleteAgentTriggerDeliveriesByUser(user)).resolves.toBeUndefined();
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+    expect(purgeQueuedTurnsForUser).toHaveBeenCalledTimes(2);
+  });
+
   it('recovers an armed purge after the user deletion commits', async () => {
     const user = new mongoose.Types.ObjectId();
     const fenceStartedAt = new Date(START);
@@ -4231,6 +4268,42 @@ describe('agent trigger delivery methods', () => {
 
     await User.deleteOne({ _id: user });
     await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+  });
+
+  it('retains a recovery marker when queued-turn purge cannot be confirmed', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    let unavailable = true;
+    const purgeQueuedTurnsForUser = jest.fn(async () => {
+      if (unavailable) {
+        throw new Error('queued-turn store unavailable');
+      }
+    });
+    const purgeMethods = createAgentTriggerDeliveryMethods(mongoose, {
+      purgeQueuedTurnsForUser,
+    });
+    await User.create({
+      _id: user,
+      email: 'purge-recovery-callback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await purgeMethods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await purgeMethods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(purgeMethods.recoverAgentTriggerUserPurges()).rejects.toThrow(
+      'queued-turn store unavailable',
+    );
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    unavailable = false;
+    await expect(purgeMethods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
     expect(await Delivery.countDocuments({ user })).toBe(0);
     expect(await LaneSequence.countDocuments({ user })).toBe(0);
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
