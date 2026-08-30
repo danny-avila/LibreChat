@@ -80,6 +80,14 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
     siblingValue: 'http://localai:8081',
   },
   {
+    path: 'speech.tts.gandr.apiKey',
+    previewPath: 'speech.tts.gandr.apiKeyPreview',
+    section: 'speech',
+    object: { tts: { gandr: { apiKey: SECRET, model: 'gandr-1', voices: ['gandr-ava'] } } },
+    siblingPath: 'speech.tts.gandr.model',
+    siblingValue: 'gandr-1',
+  },
+  {
     path: 'speech.stt.openai.apiKey',
     previewPath: 'speech.stt.openai.apiKeyPreview',
     section: 'speech',

@@ -49,7 +49,7 @@ describe('useSpeechSettingsInit', () => {
     },
   );
 
-  it.each(['openai', 'azureOpenAI', 'elevenlabs', 'localai'])(
+  it.each(['openai', 'azureOpenAI', 'elevenlabs', 'localai', 'gandr'])(
     'migrates the persisted TTS provider "%s" to the external engine',
     async (engineTTS) => {
       localStorage.setItem('engineTTS', JSON.stringify(engineTTS));

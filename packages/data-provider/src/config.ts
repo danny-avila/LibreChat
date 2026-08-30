@@ -1441,12 +1441,21 @@ const ttsLocalaiSchema = z.object({
   backend: z.string(),
 });
 
+const ttsGandrSchema = z.object({
+  url: z.string().optional(),
+  apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
+  model: z.string(),
+  voices: z.array(z.string()),
+});
+
 const ttsSchema = z.object({
   allowedAddresses: allowedAddressesSchema,
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
+  gandr: ttsGandrSchema.optional(),
 });
 
 const sttOpenaiSchema = z.object({
@@ -1495,7 +1504,15 @@ const speechTab = z
         z.object({
           /** Provider names remain valid for backward compatibility and are normalized for clients. */
           engineTTS: z
-            .enum(['browser', 'external', 'openai', 'azureOpenAI', 'elevenlabs', 'localai'])
+            .enum([
+              'browser',
+              'external',
+              'openai',
+              'azureOpenAI',
+              'elevenlabs',
+              'localai',
+              'gandr',
+            ])
             .optional(),
           voice: z.string().optional(),
           languageTTS: z.string().optional(),
@@ -2465,6 +2482,7 @@ export type TProviderSchema =
   | z.infer<typeof ttsOpenaiSchema>
   | z.infer<typeof ttsElevenLabsSchema>
   | z.infer<typeof ttsLocalaiSchema>
+  | z.infer<typeof ttsGandrSchema>
   | undefined;
 
 export enum KnownEndpoints {
@@ -3210,6 +3228,10 @@ export enum TTSProviders {
    * Provider for LocalAI TTS
    */
   LOCALAI = 'localai',
+  /**
+   * Provider for Gandr TTS
+   */
+  GANDR = 'gandr',
 }
 
 /** Enum for app-wide constants */

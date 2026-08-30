@@ -12,6 +12,7 @@ const LEGACY_EXTERNAL_TTS_ENGINES = new Set<string>([
   'azureOpenAI',
   'elevenlabs',
   'localai',
+  'gandr',
 ]);
 
 const normalizeSavedSpeechEngine = (

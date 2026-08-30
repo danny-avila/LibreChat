@@ -171,7 +171,7 @@ describe('speechTab schema', () => {
     expect(result.success).toBe(false);
   });
 
-  it.each(['browser', 'external', 'openai', 'azureOpenAI', 'elevenlabs', 'localai'])(
+  it.each(['browser', 'external', 'openai', 'azureOpenAI', 'elevenlabs', 'localai', 'gandr'])(
     'accepts the text-to-speech engine "%s"',
     (engineTTS) => {
       const result = configSchema.safeParse({

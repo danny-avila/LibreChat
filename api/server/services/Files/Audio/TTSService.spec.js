@@ -13,6 +13,7 @@ jest.mock('librechat-data-provider', () => ({
     AZURE_OPENAI: 'azureOpenAI',
     ELEVENLABS: 'elevenlabs',
     LOCALAI: 'localai',
+    GANDR: 'gandr',
   },
 }));
 jest.mock('./streamAudio', () => ({
@@ -68,6 +69,30 @@ describe('TTSService provider header construction with an undecryptable apiKey',
       'voice1',
     );
     expect(headers).not.toHaveProperty('Authorization');
+  });
+
+  it('omits the Authorization header for gandrProvider with an undecryptable apiKey', () => {
+    resolveConfigSecret.mockReturnValue(undefined);
+    const [, , headers] = service.gandrProvider(
+      { apiKey: 'v3:corrupted', voices: [] },
+      'hi',
+      'voice1',
+    );
+    expect(headers).not.toHaveProperty('Authorization');
+  });
+
+  it('sets the Authorization header for gandrProvider when the key resolves', () => {
+    resolveConfigSecret.mockReturnValue('gnd-real-key');
+    const [, data, headers] = service.gandrProvider(
+      { apiKey: 'v3:ok', model: 'gandr-1', voices: ['gandr-ava'] },
+      'hi',
+      'gandr-ava',
+    );
+    expect(headers.Authorization).toBe('Bearer gnd-real-key');
+    expect(data.model).toBe('gandr-1');
+    expect(data.input).toBe('hi');
+    expect(data.voice).toBe('gandr-ava');
+    expect(data.response_format).toBe('mp3');
   });
 });
 

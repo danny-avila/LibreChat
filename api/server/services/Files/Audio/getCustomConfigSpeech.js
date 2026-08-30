@@ -2,7 +2,13 @@ const { logger } = require('@librechat/data-schemas');
 const { getAppConfig } = require('~/server/services/Config');
 
 const LEGACY_EXTERNAL_STT_ENGINES = new Set(['openai', 'azureOpenAI']);
-const LEGACY_EXTERNAL_TTS_ENGINES = new Set(['openai', 'azureOpenAI', 'elevenlabs', 'localai']);
+const LEGACY_EXTERNAL_TTS_ENGINES = new Set([
+  'openai',
+  'azureOpenAI',
+  'elevenlabs',
+  'localai',
+  'gandr',
+]);
 
 function normalizeSpeechEngine(key, value) {
   if (key === 'engineSTT' && LEGACY_EXTERNAL_STT_ENGINES.has(value)) {

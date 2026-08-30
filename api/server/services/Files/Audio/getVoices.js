@@ -43,6 +43,9 @@ async function getVoices(req, res) {
       case TTSProviders.LOCALAI:
         voices = ttsSchema.localai?.voices;
         break;
+      case TTSProviders.GANDR:
+        voices = ttsSchema.gandr?.voices;
+        break;
       default:
         throw new Error('Invalid provider');
     }

@@ -53,7 +53,7 @@ describe('getCustomConfigSpeech', () => {
     expect(res.send).toHaveBeenCalledWith(expect.objectContaining({ engineSTT }));
   });
 
-  it.each(['openai', 'azureOpenAI', 'elevenlabs', 'localai'])(
+  it.each(['openai', 'azureOpenAI', 'elevenlabs', 'localai', 'gandr'])(
     'normalizes the legacy TTS provider "%s" to the external engine',
     async (engineTTS) => {
       const req = {

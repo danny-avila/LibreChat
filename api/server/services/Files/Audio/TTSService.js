@@ -25,6 +25,7 @@ class TTSService {
       [TTSProviders.AZURE_OPENAI]: this.azureOpenAIProvider.bind(this),
       [TTSProviders.ELEVENLABS]: this.elevenLabsProvider.bind(this),
       [TTSProviders.LOCALAI]: this.localAIProvider.bind(this),
+      [TTSProviders.GANDR]: this.gandrProvider.bind(this),
     };
   }
 
@@ -236,6 +237,42 @@ class TTSService {
       input,
       model: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
       backend: ttsSchema?.backend,
+    };
+
+    const apiKey = resolveConfigSecret(ttsSchema?.apiKey) || '';
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
+    };
+
+    return [url, data, headers];
+  }
+
+  /**
+   * Prepares the request for Gandr TTS provider.
+   * @param {Object} ttsSchema - The TTS schema for Gandr.
+   * @param {string} input - The input text.
+   * @param {string} voice - The selected voice.
+   * @returns {Array} An array containing the URL, data, and headers for the request.
+   * @throws {Error} If the selected voice is not available.
+   */
+  gandrProvider(ttsSchema, input, voice) {
+    const url = ttsSchema?.url || 'https://tts.gandr.ai/v1/audio/speech';
+
+    if (
+      ttsSchema?.voices &&
+      ttsSchema.voices.length > 0 &&
+      !ttsSchema.voices.includes(voice) &&
+      !ttsSchema.voices.includes('ALL')
+    ) {
+      throw new Error(`Voice ${voice} is not available.`);
+    }
+
+    const data = {
+      model: ttsSchema?.model,
+      input,
+      voice: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
+      response_format: 'mp3',
     };
 
     const apiKey = resolveConfigSecret(ttsSchema?.apiKey) || '';
