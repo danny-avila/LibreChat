@@ -1478,9 +1478,13 @@ export default function useResumableSSE(
            *  one-shot draw-in (`SteerPart` consumes the id on mount). A
            *  replayed event is referentially stable here and an abandoned
            *  placement never reaches this branch, so neither can strand a
-           *  stale id that would animate a historical part on a later visit. */
-          if (firstApplicationIds.length > 0) {
-            setLiveAppliedSteerIds((prev) => appendAppliedSteerIds(prev, firstApplicationIds));
+           *  stale id that would animate a historical part on a later visit.
+           *  Only the id the part RENDERS with (`part.steerId`) is stamped:
+           *  the part consumes exactly that id, so a client alias would sit
+           *  in the set forever as dead weight. */
+          const renderedSteerId = event.part?.steerId ?? event.steerId;
+          if (firstApplicationIds.includes(renderedSteerId)) {
+            setLiveAppliedSteerIds((prev) => appendAppliedSteerIds(prev, [renderedSteerId]));
           }
           const nextMessages = [...messages];
           nextMessages[index] = updated;
