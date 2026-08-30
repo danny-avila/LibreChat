@@ -87,9 +87,11 @@ const consoleFormat = winston.format.combine(
   }),
 );
 
-const { level: resolvedConsoleLevel, silent: consoleSilent } = resolveConsoleLevel();
-
-const consoleLogLevel: string = useDebugConsole ? 'debug' : resolvedConsoleLevel;
+/** `DEBUG_CONSOLE` still picks the debug *format* below; here it only moves the
+ * default level, so an explicit `CONSOLE_LOG_LEVEL` stays in charge of verbosity. */
+const { level: consoleLogLevel, silent: consoleSilent } = resolveConsoleLevel(
+  useDebugConsole ? 'debug' : 'info',
+);
 
 // Add console transport
 if (useDebugConsole) {
