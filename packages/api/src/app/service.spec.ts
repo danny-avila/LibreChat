@@ -492,6 +492,25 @@ describe('createAppConfigService', () => {
       );
     });
 
+    it('falls back to the immutable base config when principal augmentation fails', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest.fn().mockResolvedValue([
+          {
+            priority: 10,
+            overrides: { endpoints: ['untrusted-override'] },
+            isActive: true,
+          },
+        ]),
+        augmentConfig: jest.fn().mockRejectedValue(new Error('authorization unavailable')),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ role: 'USER', userId: 'uid1' });
+
+      expect(config).toEqual(deps._baseConfig);
+      expect(config).not.toEqual(expect.objectContaining({ endpoints: ['untrusted-override'] }));
+    });
+
     it('passes local identity through to getUserPrincipals when provided', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);

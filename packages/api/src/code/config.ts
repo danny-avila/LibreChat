@@ -79,6 +79,13 @@ export async function mergeAccessibleCodeEnvironments({
   ) {
     return appConfig;
   }
+  const mergedEnvironments = [...filteredEnvironments, ...effectivePrincipalEnvironments];
+  if (
+    mergedEnvironments.length > 0 &&
+    !mergedEnvironments.some((environment) => environment.default === true)
+  ) {
+    mergedEnvironments[0] = { ...mergedEnvironments[0], default: true };
+  }
 
   return {
     ...appConfig,
@@ -88,7 +95,7 @@ export async function mergeAccessibleCodeEnvironments({
         ...agents,
         statefulCodeSessions: {
           ...sessions,
-          environments: [...filteredEnvironments, ...effectivePrincipalEnvironments],
+          environments: mergedEnvironments,
         },
       },
     },

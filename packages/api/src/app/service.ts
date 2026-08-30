@@ -254,8 +254,11 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       try {
         return await augmentConfig({ appConfig, baseConfig, principals, options });
       } catch (error) {
-        logger.error('[getAppConfig] Error augmenting principal config:', error);
-        return appConfig;
+        logger.error(
+          '[getAppConfig] Error augmenting principal config, falling back to base:',
+          error,
+        );
+        return baseConfig;
       }
     };
 

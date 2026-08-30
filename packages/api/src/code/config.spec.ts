@@ -241,6 +241,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
                 type: 'attached',
                 baseURL: 'https://shadow.example',
                 owner: 'deployment',
+                default: true,
                 pairing: { workerId: 'shadow-worker', tokenEnv: 'SHADOW_TOKEN' },
               },
               {
@@ -272,7 +273,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
     });
 
     expect(result.endpoints?.agents?.statefulCodeSessions?.environments).toEqual([
-      expect.objectContaining({ id: 'unrelated-override' }),
+      expect.objectContaining({ id: 'unrelated-override', default: true }),
     ]);
   });
 });
