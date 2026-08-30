@@ -318,7 +318,7 @@ describe('subagent thread parent-scoped view', () => {
     );
     const view = json.mock.calls[0][0];
     expect(view.activity).toEqual([
-      { type: 'reasoning' },
+      { type: 'reasoning', text: 'private thought' },
       expect.objectContaining({
         type: 'tool',
         toolCallId: 'inner-1',
@@ -327,7 +327,6 @@ describe('subagent thread parent-scoped view', () => {
       }),
       { type: 'writing', text: 'Final answer.' },
     ]);
-    expect(JSON.stringify(view)).not.toContain('private thought');
     expect(JSON.stringify(view)).not.toContain('response_metadata');
     expect(view.messages[0]).not.toHaveProperty('subagentTranscript');
   });

@@ -15,6 +15,7 @@ import {
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { isAbnormalTerminalStatus } from './status';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -207,7 +208,9 @@ function ChildMessage({
       }
       label={label}
       footer={
-        turn.activity.status === 'completed' ? null : <SubagentStatus activity={turn.activity} />
+        isAbnormalTerminalStatus(turn.activity.status) ? (
+          <SubagentStatus activity={turn.activity} />
+        ) : null
       }
       ariaLabel={label}
       headerPrefix=""

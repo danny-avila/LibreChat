@@ -72,7 +72,7 @@ describe('durable subagent activity projection', () => {
     });
   });
 
-  it('keeps visible text and tool lifecycle while dropping private metadata and reasoning text', () => {
+  it('keeps visible text, reasoning text, and tool lifecycle while dropping private metadata', () => {
     const projection = projectSubagentActivity(
       JSON.stringify([
         {
@@ -101,7 +101,7 @@ describe('durable subagent activity projection', () => {
 
     expect(projection).toEqual({
       activity: [
-        { type: 'reasoning' },
+        { type: 'reasoning', text: 'private chain of thought' },
         { type: 'writing', text: 'I will check.' },
         {
           type: 'tool',
@@ -114,9 +114,32 @@ describe('durable subagent activity projection', () => {
       ],
       truncated: false,
     });
-    expect(JSON.stringify(projection)).not.toContain('private chain of thought');
     expect(JSON.stringify(projection)).not.toContain('private-request');
     expect(JSON.stringify(projection)).not.toContain('never expose');
+  });
+
+  it('bounds oversized reasoning text and marks the truncation', () => {
+    const projection = projectSubagentActivity(
+      JSON.stringify([
+        {
+          type: 'ai',
+          data: {
+            content: [
+              {
+                type: 'reasoning',
+                reasoning: 'r'.repeat(SUBAGENT_ACTIVITY_LIMITS.textBytes + 1024),
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const [item] = projection.activity;
+    expect(item).toEqual(expect.objectContaining({ type: 'reasoning', textTruncated: true }));
+    expect(Buffer.byteLength((item as { text?: string }).text ?? '', 'utf8')).toBeLessThanOrEqual(
+      SUBAGENT_ACTIVITY_LIMITS.textBytes,
+    );
   });
 
   it('fails closed on invalid input and bounds adversarial activity', () => {

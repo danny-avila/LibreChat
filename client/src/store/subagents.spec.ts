@@ -234,14 +234,34 @@ describe('reduceSubagentProgress', () => {
     expect(progress?.lastActivitySequence).toBeUndefined();
   });
 
-  it('preserves a reasoning activity marker without retaining private reasoning text', () => {
+  it('keeps detached reasoning text like the parent delivery path', () => {
     const progress = reduceSubagentProgress(
       null,
       [
         update({
           activitySequence: 0,
           phase: 'reasoning_delta',
-          data: { delta: { content: [{ type: ContentTypes.THINK, think: 'private' }] } },
+          data: { delta: { content: [{ type: ContentTypes.THINK, think: 'Visible reasoning' }] } },
+          label: 'Reasoning',
+        }),
+      ],
+      'detached',
+      false,
+    );
+
+    expect(progress?.contentParts).toEqual([
+      { type: ContentTypes.THINK, think: 'Visible reasoning' },
+    ]);
+  });
+
+  it('substitutes a marker for a pre-retention reasoning event that stripped its data', () => {
+    const progress = reduceSubagentProgress(
+      null,
+      [
+        update({
+          activitySequence: 0,
+          phase: 'reasoning_delta',
+          data: undefined,
           label: 'Reasoning',
         }),
       ],
@@ -253,7 +273,6 @@ describe('reduceSubagentProgress', () => {
     expect(progress?.tickerState.lines).toEqual([
       expect.objectContaining({ kind: 'reasoning', body: '…' }),
     ]);
-    expect(JSON.stringify(progress)).not.toContain('private');
   });
 
   it('preserves visible reasoning on the authoritative parent delivery path', () => {

@@ -113,7 +113,7 @@ describe('SubagentConversation', () => {
     expect(screen.getByText('search')).toBeInTheDocument();
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_status_completed')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_status_running')).not.toBeInTheDocument();
     expect(screen.getByTestId('thinking-cursor')).toBeInTheDocument();
     expect(container.querySelectorAll('.message-render')).toHaveLength(3);
     expect(container.querySelectorAll('.user-turn')).toHaveLength(1);
