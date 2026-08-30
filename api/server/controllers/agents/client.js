@@ -402,6 +402,9 @@ class AgentClient extends BaseClient {
             hide_sequential_outputs: agent.hide_sequential_outputs,
             stateful_code_sessions: agent.stateful_code_sessions,
             stateful_code_environment: agent.stateful_code_environment,
+            execution_route_key:
+              agent.codeExecutionContext?.executionRouteKey ??
+              agent.codeExecutionContext?.executionProfile,
             artifacts: agent.artifacts,
             recursion_limit: agent.recursion_limit,
             subagents: agent.subagents,

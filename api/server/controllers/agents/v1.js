@@ -1019,8 +1019,16 @@ const updateAgentHandler = async (req, res) => {
     normalizeToolResourceFiles(req.body?.tool_resources);
     const validatedData = agentUpdateSchema.parse(req.body);
     // Preserve explicit null for avatar to allow resetting the avatar
-    const { avatar: avatarField, _id, ...rest } = validatedData;
+    const {
+      avatar: avatarField,
+      code_environment_id: codeEnvironmentIdField,
+      _id,
+      ...rest
+    } = validatedData;
     const updateData = removeNullishValues(rest);
+    if (codeEnvironmentIdField !== undefined) {
+      updateData.code_environment_id = codeEnvironmentIdField;
+    }
     let existingAgent;
 
     const includesStatefulConfiguration =
@@ -1060,7 +1068,9 @@ const updateAgentHandler = async (req, res) => {
         const effectiveStatefulEnvironment =
           updateData.stateful_code_environment ?? existingAgent.stateful_code_environment;
         const effectiveCodeEnvironmentId =
-          updateData.code_environment_id ?? existingAgent.code_environment_id;
+          updateData.code_environment_id === null
+            ? undefined
+            : (updateData.code_environment_id ?? existingAgent.code_environment_id);
         if (
           !validateStatefulCodeEnvironment(
             req,
@@ -1256,6 +1266,11 @@ const updateAgentHandler = async (req, res) => {
           updateData.mcpServerNames = Array.from(resolvedServerNames);
         }
       }
+    }
+
+    if (updateData.code_environment_id === null) {
+      delete updateData.code_environment_id;
+      updateData.$unset = { code_environment_id: 1 };
     }
 
     let updatedAgent =

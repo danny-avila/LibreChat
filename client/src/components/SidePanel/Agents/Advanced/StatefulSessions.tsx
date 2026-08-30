@@ -29,6 +29,8 @@ const ENVIRONMENT_LABELS = {
   conversation: 'com_ui_stateful_code_environment_conversation',
 } as const;
 
+const DEPLOYMENT_DEFAULT_ENVIRONMENT = '__deployment_default__';
+
 export default function StatefulSessions() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -102,18 +104,22 @@ export default function StatefulSessions() {
                 {localize('com_ui_code_environment')}
               </label>
               <Select
-                value={
-                  codeEnvironmentId ??
-                  executionEnvironments.find((candidate) => candidate.default === true)?.id
-                }
+                value={codeEnvironmentId ?? DEPLOYMENT_DEFAULT_ENVIRONMENT}
                 onValueChange={(value) => {
-                  setValue('code_environment_id', value, { shouldDirty: true });
+                  setValue(
+                    'code_environment_id',
+                    value === DEPLOYMENT_DEFAULT_ENVIRONMENT ? null : value,
+                    { shouldDirty: true },
+                  );
                 }}
               >
                 <SelectTrigger id="code-environment-id" data-testid="code-environment-id">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={DEPLOYMENT_DEFAULT_ENVIRONMENT}>
+                    {localize('com_ui_code_environment_deployment_default')}
+                  </SelectItem>
                   {executionEnvironments.map((candidate) => (
                     <SelectItem key={candidate.id} value={candidate.id}>
                       {candidate.name}

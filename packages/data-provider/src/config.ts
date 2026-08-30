@@ -1001,6 +1001,26 @@ export const checkpointerSchema = z
 
 export type TCheckpointerConfig = z.infer<typeof checkpointerSchema>;
 
+const codeEnvironmentBaseURLSchema = z
+  .string()
+  .trim()
+  .url()
+  .refine(
+    (value) => {
+      try {
+        const url = new URL(value);
+        return (
+          (url.protocol === 'http:' || url.protocol === 'https:') &&
+          url.search.length === 0 &&
+          url.hash.length === 0
+        );
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Code environment baseURL must be an HTTP(S) base URL without query or fragment' },
+  );
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1049,7 +1069,7 @@ export const agentsEndpointSchema = baseEndpointSchema
                 id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
                 name: z.string().min(1).max(100),
                 type: z.enum(['managed', 'attached']),
-                baseURL: z.string().url(),
+                baseURL: codeEnvironmentBaseURLSchema,
                 default: z.boolean().optional(),
               }),
             )

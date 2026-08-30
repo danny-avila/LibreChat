@@ -474,6 +474,53 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it.each([
+    'ftp://code.example.com/v1',
+    'https://code.example.com/v1?token=secret',
+    'https://code.example.com/v1#fragment',
+  ])('rejects a non-base execution environment URL: %s', (baseURL) => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL,
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('normalizes surrounding whitespace in an execution environment URL', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: '  https://bridge.example.com/v1/  ',
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.statefulCodeSessions?.environments?.[0]?.baseURL).toBe(
+        'https://bridge.example.com/v1/',
+      );
+    }
+  });
+
   it('rejects ambiguous execution environment routing', () => {
     const environment = {
       id: 'attached-vm',

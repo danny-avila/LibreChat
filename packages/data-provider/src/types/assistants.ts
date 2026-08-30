@@ -338,7 +338,7 @@ export type Agent = {
   /** Stateful workspace sharing scope. Defaults to one workspace per user. */
   stateful_code_environment?: StatefulCodeEnvironment;
   /** Operator-configured managed or attached stateful execution environment. */
-  code_environment_id?: string;
+  code_environment_id?: string | null;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;

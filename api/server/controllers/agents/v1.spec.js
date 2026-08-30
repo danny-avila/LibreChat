@@ -1270,6 +1270,43 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.code_environment_id).toBe('removed-vm');
     });
 
+    test('restores the deployment-default code environment', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          stateful_code_sessions: true,
+          code_environment_id: 'attached-vm',
+        },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'attached-vm',
+                  name: 'Attached VM',
+                  type: 'attached',
+                  baseURL: 'https://bridge.example.com/v1',
+                  default: true,
+                },
+              ],
+            },
+          },
+        },
+      };
+      mockReq.body = { code_environment_id: null };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.code_environment_id).toBeUndefined();
+    });
+
     test('allows unrelated edits to an existing scope after policy is tightened', async () => {
       await Agent.updateOne(
         { id: existingAgentId },

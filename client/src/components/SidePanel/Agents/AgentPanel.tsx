@@ -125,7 +125,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       hide_sequential_outputs,
       stateful_code_sessions: normalizedStatefulCodeSessions,
       stateful_code_environment: normalizedStatefulCodeEnvironment,
-      code_environment_id,
+      code_environment_id: agent_id ? code_environment_id : (code_environment_id ?? undefined),
       recursion_limit,
       category,
       support_contact,
