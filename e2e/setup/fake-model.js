@@ -1636,7 +1636,15 @@ function backgroundCompletionResponses(text) {
   }
   const status = text.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
   const echo = text.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
-  return { responses: [`E2E background notified status=${status} echo=${echo}`] };
+  return {
+    responses: [''],
+    resolveInvocation: async (_messages, options, runManager) => {
+      const agentId = getAgentIdFromInvocationOptions(options, runManager) ?? 'missing';
+      return {
+        response: `E2E background notified status=${status} echo=${echo} agent=${agentId}`,
+      };
+    },
+  };
 }
 
 function parseHandoffScript(text) {

@@ -97,7 +97,7 @@ test.describe('background tool calls', () => {
        * Triggered runs do not share the browser's original SSE connection, so
        * reload while waiting for the persisted assistant response. */
       const notification = new RegExp(
-        `E2E background notified status=completed echo=bg-${runToken}`,
+        `E2E background notified status=completed echo=bg-${runToken} agent=${createdAgentId}`,
       );
       await expect
         .poll(
