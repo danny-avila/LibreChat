@@ -1926,6 +1926,12 @@ export class MCPConnection extends EventEmitter {
         }
 
         this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
+        /** `dispose()` can land while the transport is still being constructed — it finds nothing
+         *  to close and returns, so without this check the attempt would go on to connect and
+         *  leave a live connection on a disposed object. Ownership of teardown is ours here. */
+        if (await this.abandonIfDisposed()) {
+          return;
+        }
         this.patchTransportSend();
 
         const connectTimeout = this.options.initTimeout ?? DEFAULT_INIT_TIMEOUT;
@@ -1937,6 +1943,9 @@ export class MCPConnection extends EventEmitter {
           ),
         );
 
+        if (await this.abandonIfDisposed()) {
+          return;
+        }
         this.setupTransportOnMessageHandler();
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
@@ -2057,6 +2066,24 @@ export class MCPConnection extends EventEmitter {
     })();
 
     return this.connectPromise;
+  }
+
+  /**
+   * Tears down a transport this attempt created after the connection was already disposed.
+   * Returns whether the caller should abandon the rest of the connect sequence.
+   */
+  private async abandonIfDisposed(): Promise<boolean> {
+    if (!this.isDisposed) {
+      return false;
+    }
+    logger.debug(`${this.getLogPrefix()} Disposed mid-connect; discarding the transport it opened`);
+    try {
+      await this.client.close();
+    } catch {
+      // Ignore cleanup errors
+    }
+    this.transport = null;
+    return true;
   }
 
   private patchTransportSend(): void {
@@ -2500,7 +2527,14 @@ export class MCPConnection extends EventEmitter {
       if (!refresh) {
         break;
       }
-      await refresh;
+      /** The refresh runs on the connection's own budget, not the caller's, so a refresh already
+       *  in flight can outlast this deadline. Stop waiting on it rather than adopting its budget;
+       *  it keeps running for whoever else wants it and this caller reports an incomplete read. */
+      if (deadlineMs == null) {
+        await refresh;
+      } else if (!(await this.settlesBefore(refresh, deadlineMs))) {
+        break;
+      }
       if (this.toolListRefreshRetryTimer) {
         break;
       }
@@ -2522,6 +2556,20 @@ export class MCPConnection extends EventEmitter {
     }
 
     return { tools: [], complete: false };
+  }
+
+  /** Waits for `promise` only until `deadlineMs`, reporting whether it settled in time. */
+  private async settlesBefore(promise: Promise<unknown>, deadlineMs: number): Promise<boolean> {
+    let timer: NodeJS.Timeout | undefined;
+    const expiry = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), Math.max(0, deadlineMs - Date.now()));
+      timer.unref?.();
+    });
+    try {
+      return await Promise.race([promise.then(() => true), expiry]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private warnToolsListBudgetExceeded(reason: string, toolCount: number): void {

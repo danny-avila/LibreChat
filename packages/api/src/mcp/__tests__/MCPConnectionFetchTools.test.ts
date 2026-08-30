@@ -317,6 +317,30 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(listTools).not.toHaveBeenCalled();
   });
 
+  it('stops waiting on an in-flight refresh that outlasts the caller deadline', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
+    const conn = createConnectionWithListTools(jest.fn());
+    const mutable = conn as unknown as {
+      toolListChangeGeneration: number;
+      toolListRefreshPromise: Promise<void> | null;
+    };
+    /** A `list_changed` lands mid-fetch, so the ordered read must wait on a refresh... */
+    const listTools = jest.fn(async () => {
+      mutable.toolListChangeGeneration = 1;
+      return { tools: [makeTool('a')] };
+    });
+    conn.client.listTools = listTools;
+    /** ...and that refresh never settles, standing in for one on the connection's own budget. */
+    mutable.toolListRefreshPromise = new Promise<void>(() => {});
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
+
+    const start = Date.now();
+    const snapshot = await conn.fetchOrderedToolsSnapshot(Date.now() + 30);
+
+    expect(snapshot.complete).toBe(false);
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
   it('stops and warns when the server repeats a cursor instead of looping forever', async () => {
     const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('x')], nextCursor: 'same' });
     const conn = createConnectionWithListTools(listTools);

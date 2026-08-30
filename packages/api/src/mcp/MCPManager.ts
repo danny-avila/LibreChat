@@ -280,7 +280,7 @@ export class MCPManager extends UserConnectionManager {
         ? await this.appConnections?.get(serverName)
         : null;
       if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot();
+        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot(args.deadlineMs);
         return {
           tools: snapshot.complete ? snapshot.tools : null,
           oauthRequired: false,
