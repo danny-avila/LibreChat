@@ -1696,7 +1696,10 @@ async function loadAgentTools({
       programmaticToolsEnabled,
       codeExecutionEnabled,
       authHeaders: () =>
-        codeExecutionAuthHeaders(() => getCodeApiAuthHeaders(req), codeExecutionContext),
+        codeExecutionAuthHeaders(
+          (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+          codeExecutionContext,
+        ),
       codeExecutionContext,
     });
 
@@ -2082,7 +2085,10 @@ async function loadToolsForExecution({
       for (const name of ptcToolNames) {
         const ptcTool = createBashProgrammaticToolCallingTool({
           authHeaders: () =>
-            codeExecutionAuthHeaders(() => getCodeApiAuthHeaders(req), codeExecutionContext),
+            codeExecutionAuthHeaders(
+              (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+              codeExecutionContext,
+            ),
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
@@ -2109,7 +2115,10 @@ async function loadToolsForExecution({
     try {
       const bashTool = createBashExecutionTool({
         authHeaders: () =>
-          codeExecutionAuthHeaders(() => getCodeApiAuthHeaders(req), codeExecutionContext),
+          codeExecutionAuthHeaders(
+            (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+            codeExecutionContext,
+          ),
         ...codeExecutionContext,
       });
       allLoadedTools.push(bashTool);

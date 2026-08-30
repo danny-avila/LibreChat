@@ -39,7 +39,7 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity, req, route 
   try {
     const baseURL = route.baseUrl ?? getCodeBaseURL();
     const query = buildCodeEnvDownloadQuery(identity);
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       method: 'get',
@@ -86,7 +86,6 @@ async function deleteCodeEnvFile(req, file) {
   }
 
   const missingOrUnsupportedStatuses = new Set([404, 405]);
-  const authHeaders = await getCodeApiAuthHeaders(req);
   for (const [executionRouteKey, ref] of refs) {
     const executionProfile = ref.executionProfile ?? 'default';
     const environments =
@@ -126,6 +125,9 @@ async function deleteCodeEnvFile(req, file) {
       id: ref.id,
       ...(ref.kind === 'skill' ? { version: ref.version } : {}),
     });
+    const bridgeWorkerId =
+      configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId;
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
     const baseRequest = {
       method: 'delete',
       headers: {
@@ -133,8 +135,7 @@ async function deleteCodeEnvFile(req, file) {
         ...authHeaders,
         ...codeExecutionHeaders({
           executionProfile,
-          bridgeWorkerId:
-            configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+          bridgeWorkerId,
         }),
       },
       httpAgent: codeServerHttpAgent,

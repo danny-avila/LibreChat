@@ -211,6 +211,16 @@ describe('Code API JWT minting', () => {
     expect(claims).not.toHaveProperty('planId');
   });
 
+  it('binds cached Code API tokens to the selected code worker', async () => {
+    const req = baseRequest();
+    const first = await mintCodeApiToken(req, 'principal-worker-a');
+    const second = await mintCodeApiToken(req, 'principal-worker-b');
+
+    expect(decodeToken(first).claims.code_worker_id).toBe('principal-worker-a');
+    expect(decodeToken(second).claims.code_worker_id).toBe('principal-worker-b');
+    expect(second).not.toBe(first);
+  });
+
   it('uses the single-tenant namespace when tenant context is absent outside strict mode', async () => {
     mockGetTenantId.mockReturnValue(undefined);
 

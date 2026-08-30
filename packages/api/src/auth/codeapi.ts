@@ -38,6 +38,7 @@ interface CodeApiClaims {
   service_id?: string;
   chc_user_id?: string;
   plan_id?: string;
+  code_worker_id?: string;
   auth_context_hash: string;
 }
 
@@ -263,7 +264,12 @@ function canonicalContextHash(input: {
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
-function buildClaims(req: ServerRequest, config: SigningConfig, now: number): CodeApiClaims {
+function buildClaims(
+  req: ServerRequest,
+  config: SigningConfig,
+  now: number,
+  codeWorkerId?: string,
+): CodeApiClaims {
   const user = resolveUser(req);
   const userId = resolveUserId(user);
   const tenantId = getCodeApiTenantId(req);
@@ -299,6 +305,7 @@ function buildClaims(req: ServerRequest, config: SigningConfig, now: number): Co
     ...(serviceId ? { service_id: serviceId } : {}),
     ...(chcUserId ? { chc_user_id: chcUserId } : {}),
     ...(planId ? { plan_id: planId } : {}),
+    ...(codeWorkerId != null && codeWorkerId !== '' ? { code_worker_id: codeWorkerId } : {}),
     auth_context_hash: authContextHash,
   };
 }
@@ -330,6 +337,7 @@ function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
     claims.service_id ?? '',
     claims.chc_user_id ?? '',
     claims.plan_id ?? '',
+    claims.code_worker_id ?? '',
     claims.auth_context_hash,
   ].join(':');
 }
@@ -350,7 +358,7 @@ function pruneTokenCache(now: number): void {
   }
 }
 
-export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
+export async function mintCodeApiToken(req: ServerRequest, codeWorkerId?: string): Promise<string> {
   if (!isCodeApiJwtAuthEnabled()) {
     return '';
   }
@@ -358,7 +366,7 @@ export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
   const config = getSigningConfig();
   const now = Math.floor(Date.now() / 1000);
   pruneTokenCache(now);
-  const claims = buildClaims(req, config, now);
+  const claims = buildClaims(req, config, now, codeWorkerId);
   const key = cacheKey(config, claims);
   const cached = tokenCache.get(key);
   if (
@@ -381,10 +389,13 @@ export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
   return token;
 }
 
-export async function getCodeApiAuthHeaders(req?: ServerRequest): Promise<Record<string, string>> {
+export async function getCodeApiAuthHeaders(
+  req?: ServerRequest,
+  codeWorkerId?: string,
+): Promise<Record<string, string>> {
   if (!req || !isCodeApiJwtAuthEnabled()) {
     return {};
   }
-  const token = await mintCodeApiToken(req);
+  const token = await mintCodeApiToken(req, codeWorkerId);
   return token ? { Authorization: `Bearer ${token}` } : {};
 }

@@ -180,11 +180,13 @@ export function codeExecutionHeaders(
 }
 
 export async function codeExecutionAuthHeaders(
-  authHeaders: () => Promise<Record<string, string>> | Record<string, string>,
+  authHeaders: (
+    bridgeWorkerId?: string,
+  ) => Promise<Record<string, string>> | Record<string, string>,
   context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
 ): Promise<Record<string, string>> {
   return {
-    ...(await authHeaders()),
+    ...(await authHeaders(context.bridgeWorkerId)),
     ...codeExecutionHeaders(context),
   };
 }

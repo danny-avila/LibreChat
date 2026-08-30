@@ -511,7 +511,7 @@ describe('Code Process', () => {
 
       await processCodeOutput(baseParams);
 
-      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq, undefined);
       expect(mockAxios).toHaveBeenCalledWith(
         expect.objectContaining({
           method: 'get',
@@ -1412,7 +1412,7 @@ describe('Code Process', () => {
           mockReq,
         );
 
-        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq, undefined);
         expect(mockAxios).toHaveBeenCalledWith(
           expect.objectContaining({
             method: 'get',
@@ -1934,7 +1934,7 @@ describe('Code Process', () => {
 
         await readSandboxFile({ file_path: '/mnt/data/x.txt', req: mockReq });
 
-        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq, undefined);
         expect(mockAxios).toHaveBeenCalledWith(
           expect.objectContaining({
             method: 'post',

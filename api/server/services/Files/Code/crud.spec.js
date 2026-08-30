@@ -144,7 +144,7 @@ describe('Code CRUD', () => {
       await getCodeOutputDownloadStream('session-1/file-1', userIdentity, req);
 
       const callConfig = mockAxios.mock.calls[0][0];
-      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req);
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req, undefined);
       expect(callConfig.headers.Authorization).toBe('Bearer codeapi-token');
     });
 
@@ -203,7 +203,7 @@ describe('Code CRUD', () => {
 
       await deleteCodeEnvFile(req, file);
 
-      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req);
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req, undefined);
       expect(mockAxios).toHaveBeenCalledWith(
         expect.objectContaining({
           method: 'delete',

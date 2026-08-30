@@ -382,7 +382,7 @@ const loadTools = async ({
           files,
           authHeaders: () =>
             codeExecutionAuthHeaders(
-              () => getCodeApiAuthHeaders(options.req),
+              (bridgeWorkerId) => getCodeApiAuthHeaders(options.req, bridgeWorkerId),
               codeExecutionContext,
             ),
           ...codeExecutionContext,

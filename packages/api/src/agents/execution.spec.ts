@@ -222,13 +222,15 @@ describe('resolveCodeExecutionContext', () => {
       'X-CodeAPI-Expected-Profile': 'stateful',
       'X-LibreChat-Code-Worker-ID': 'opaque-worker-id',
     });
-    await expect(
-      codeExecutionAuthHeaders(async () => ({ Authorization: 'Bearer user-token' }), context),
-    ).resolves.toEqual({
-      Authorization: 'Bearer user-token',
+    const authHeaders = jest.fn(async (workerId?: string) => ({
+      Authorization: `Bearer user-token-for-${workerId ?? 'default'}`,
+    }));
+    await expect(codeExecutionAuthHeaders(authHeaders, context)).resolves.toEqual({
+      Authorization: 'Bearer user-token-for-opaque-worker-id',
       'X-CodeAPI-Expected-Profile': 'stateful',
       'X-LibreChat-Code-Worker-ID': 'opaque-worker-id',
     });
+    expect(authHeaders).toHaveBeenCalledWith('opaque-worker-id');
   });
 
   it('namespaces configured deployments independently of the shared wire profile', () => {

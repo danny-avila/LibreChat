@@ -82,7 +82,7 @@ const downloadCodeOutputBuffer = async ({
   bridgeWorkerId,
 }) => {
   const baseURL = codeApiBaseUrl ?? getCodeExecutionBaseUrl(executionProfile);
-  const authHeaders = await getCodeApiAuthHeaders(req);
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   const downloadQuery = buildCodeEnvDownloadQuery({ kind: 'user', id: req.user.id });
   let response;
   try {
@@ -988,7 +988,7 @@ function checkIfActive(dateString) {
 async function getSessionInfo(ref, req, route = {}) {
   try {
     const baseURL = route.baseUrl ?? getCodeBaseURL();
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
     /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
      * middleware (post-Phase C). The middleware reconstructs the
      * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
@@ -1431,7 +1431,7 @@ async function readSandboxFile({
   }
 
   try {
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
     const response = await axios({
       method: 'post',
       url: `${baseURL}/exec`,
@@ -1645,7 +1645,7 @@ async function execSandboxImageChunk({
   }
 
   try {
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
     const response = await axios({
       method: 'post',
       url: `${baseURL}/exec`,
@@ -1766,7 +1766,7 @@ async function writeSandboxFile({
   }
 
   try {
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
     const response = await axios({
       method: 'post',
       url: `${baseURL}/exec`,
