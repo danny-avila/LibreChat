@@ -132,7 +132,7 @@ const {
   createSkillContentDigest,
   normalizeAgentEventActorDiscoveredTools,
   createCompactionSemanticIndexProjection,
-  restoreCompactionSemanticIndex,
+  restoreCompactionSemanticIndexSnapshot,
   MAX_AGENT_CONTEXT_SKILLS,
 } = require('@librechat/api');
 const {
@@ -291,9 +291,9 @@ class AgentClient extends BaseClient {
     this.eventActorSkillPrimeResult = undefined;
     this.eventActorDiscoveredToolNames = undefined;
     this.eventActorSummary = undefined;
-    /** Advisory compaction guidance retained across graph reconstruction.
-     * @type {import('@librechat/agents').CompactionSemanticIndex | undefined} */
-    this.compactionSemanticIndex = undefined;
+    /** Advisory compaction guidance retained and evolved across graph reconstruction.
+     * @type {import('@librechat/agents').CompactionSemanticIndexSnapshot | undefined} */
+    this.compactionSemanticIndexSnapshot = undefined;
 
     /** @type {AgentRun} */
     this.run;
@@ -1711,7 +1711,9 @@ class AgentClient extends BaseClient {
       discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
       summary = normalizeEventActorSummary(state.summary);
       contextMeta = normalizeEventActorContextMeta(state.contextMeta);
-      compactionSemanticIndex = restoreCompactionSemanticIndex(state.compactionSemanticIndex);
+      compactionSemanticIndex = restoreCompactionSemanticIndexSnapshot(
+        state.compactionSemanticIndex,
+      );
     } catch {
       return undefined;
     }
@@ -1739,7 +1741,7 @@ class AgentClient extends BaseClient {
     this.eventActorDiscoveredToolNames = discoveredToolNames;
     this.eventActorSummary = summary;
     this.contextMeta = contextMeta;
-    this.compactionSemanticIndex = compactionSemanticIndex;
+    this.compactionSemanticIndexSnapshot = compactionSemanticIndex;
     const context = await this.getEventActorContext(storedManifest, discoveredToolNames);
     const skillBodies = new Map(skillPrimeResult?.skills ?? []);
     const rootAgentContext = this.eventActorAgentContextSources?.[0];
@@ -1799,7 +1801,7 @@ class AgentClient extends BaseClient {
     const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
     this.eventActorSummary = summary;
     const compactionSemanticIndex = createCompactionSemanticIndexProjection(
-      this.compactionSemanticIndex,
+      this.compactionSemanticIndexSnapshot,
     );
     return {
       fingerprint: createInitializedAgentContextFingerprint({
@@ -1834,7 +1836,7 @@ class AgentClient extends BaseClient {
        * non-checkpointed state from durable history, never from that stale head. */
       this.eventActorSummary = undefined;
       this.contextMeta = undefined;
-      this.compactionSemanticIndex = undefined;
+      this.compactionSemanticIndexSnapshot = undefined;
     }
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
@@ -3709,7 +3711,7 @@ class AgentClient extends BaseClient {
       discoveredTools,
       activityPhaseSnapshot: this.activityPhaseWiring?.snapshot?.(),
       compactionSemanticIndex: createCompactionSemanticIndexProjection(
-        this.compactionSemanticIndex,
+        this.compactionSemanticIndexSnapshot,
       ),
     };
     if (this.eventActorInvocationId != null) {
@@ -3886,47 +3888,43 @@ class AgentClient extends BaseClient {
         this.options.agent,
         ...(this.agentConfigs?.values() ?? []),
       ]);
-      const deriveCompactionSemanticIndex = this.eventActorContinuation !== 'warm';
       const messageFormatOptions = {
         ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
         ...(freshSkillPrimeNames.size > 0 ? { skipSkillBodyNames: freshSkillPrimeNames } : {}),
         ...(useLegacyContent ? { legacyContent: true } : {}),
       };
-      let semanticIntentToolNames;
-      if (deriveCompactionSemanticIndex) {
-        semanticIntentToolNames = new Set();
-        const semanticIntentBlockedToolNames = new Set();
-        for (const agent of reachableAgents) {
-          for (const toolName of agent.semanticIntentToolNames ?? []) {
-            semanticIntentToolNames.add(toolName);
-          }
-          for (const toolName of agent.semanticIntentBlockedToolNames ?? []) {
-            semanticIntentBlockedToolNames.add(toolName);
-          }
+      const semanticIntentToolNames = new Set();
+      const semanticIntentBlockedToolNames = new Set();
+      for (const agent of reachableAgents) {
+        for (const toolName of agent.semanticIntentToolNames ?? []) {
+          semanticIntentToolNames.add(toolName);
         }
-        for (const toolName of semanticIntentBlockedToolNames) {
-          semanticIntentToolNames.delete(toolName);
+        for (const toolName of agent.semanticIntentBlockedToolNames ?? []) {
+          semanticIntentBlockedToolNames.add(toolName);
         }
+      }
+      for (const toolName of semanticIntentBlockedToolNames) {
+        semanticIntentToolNames.delete(toolName);
       }
       const hasMessageFormatOptions =
         needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent;
-      const formatOptions =
-        hasMessageFormatOptions || deriveCompactionSemanticIndex
-          ? {
-              ...messageFormatOptions,
-              ...(deriveCompactionSemanticIndex
-                ? { compactionSemanticIndex: { intentToolNames: semanticIntentToolNames } }
-                : {}),
-            }
-          : undefined;
+      const formatOptions = {
+        ...messageFormatOptions,
+        compactionSemanticIndex: {
+          ...(this.eventActorContinuation === 'warm' && this.compactionSemanticIndexSnapshot != null
+            ? { baseSnapshot: this.compactionSemanticIndexSnapshot }
+            : {}),
+          intentToolNames: semanticIntentToolNames,
+        },
+      };
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-        compactionSemanticIndex,
+        compactionSemanticIndexSnapshot,
       } = formatAgentMessages(
-        deriveCompactionSemanticIndex ? payload : stripActivityLabelParts(payload),
+        payload,
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
@@ -3934,14 +3932,13 @@ class AgentClient extends BaseClient {
       );
       if (this.eventActorContinuation !== 'warm') {
         this.eventActorSummary = initialSummary;
-        this.compactionSemanticIndex = compactionSemanticIndex;
       }
+      this.compactionSemanticIndexSnapshot =
+        compactionSemanticIndexSnapshot ??
+        (this.eventActorContinuation === 'warm' ? this.compactionSemanticIndexSnapshot : undefined);
       const continuationSummary =
         this.eventActorContinuation === 'warm' ? this.eventActorSummary : initialSummary;
-      const continuationCompactionSemanticIndex =
-        this.eventActorContinuation === 'warm'
-          ? this.compactionSemanticIndex
-          : compactionSemanticIndex;
+      const continuationCompactionSemanticIndex = this.compactionSemanticIndexSnapshot?.entries;
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -4566,7 +4563,8 @@ class AgentClient extends BaseClient {
       }
 
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
-      this.compactionSemanticIndex = restoreCompactionSemanticIndex(compactionSemanticIndex);
+      this.compactionSemanticIndexSnapshot =
+        restoreCompactionSemanticIndexSnapshot(compactionSemanticIndex);
       const agents = collectReachableAgents([
         this.options.agent,
         ...(this.agentConfigs?.size > 0 ? this.agentConfigs.values() : []),
@@ -4698,9 +4696,9 @@ class AgentClient extends BaseClient {
         // batches keep claiming slots and generating group headers.
         activityLabel,
         activityPhase,
-        ...(this.compactionSemanticIndex == null
+        ...(this.compactionSemanticIndexSnapshot == null
           ? {}
-          : { compactionSemanticIndex: this.compactionSemanticIndex }),
+          : { compactionSemanticIndex: this.compactionSemanticIndexSnapshot.entries }),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so these names restore the schemas to the
         // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
