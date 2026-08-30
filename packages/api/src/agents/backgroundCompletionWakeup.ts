@@ -7,10 +7,13 @@ import type {
   MessageMethods,
 } from '@librechat/data-schemas';
 import type {
+  BackgroundToolWakeupAdmission,
+  BackgroundToolWakeupRegistration,
+} from './backgroundCompletion';
+import type {
   AgentTriggerContinuePreparation,
   AgentTriggerExecutionHostDeps,
 } from './triggers/host';
-import type { BackgroundToolWakeupRegistration } from './backgroundCompletion';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
@@ -28,7 +31,13 @@ const EVENT_TYPE = 'background-tool.completion';
 export type EnqueueBackgroundToolCompletion = (
   envelope: unknown,
   options?: AgentTriggerEnqueueOptions,
-) => Promise<unknown>;
+) => Promise<{ deliveryKey: string }>;
+
+export type RetireBackgroundToolCompletion = (
+  deliveryKey: string,
+  sourceId: string,
+  reason: string,
+) => Promise<boolean>;
 
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
   Pick<MessageMethods, 'getMessages'> & {
@@ -299,7 +308,10 @@ export function createBackgroundToolCompletionWakeupResolver({
 /** Pre-registers the ordered completion delivery before external tool work starts. */
 export function createBackgroundToolCompletionWakeupHandler(
   enqueue: EnqueueBackgroundToolCompletion,
-): (registration: BackgroundToolWakeupRegistration) => Promise<boolean> {
+  retire: RetireBackgroundToolCompletion,
+): (
+  registration: BackgroundToolWakeupRegistration,
+) => Promise<BackgroundToolWakeupAdmission | false> {
   return async (registration) => {
     const parentAgentId = registration.parentAgentId?.trim();
     if (parentAgentId == null || parentAgentId === '' || isEphemeralAgentId(parentAgentId)) {
@@ -332,12 +344,14 @@ export function createBackgroundToolCompletionWakeupHandler(
       },
       input: 'A background tool task is waiting to complete.',
     });
-    await enqueue(envelope, {
+    const admitted = await enqueue(envelope, {
       orderingKey: `background-tool-completion:${registration.conversationId}`,
       availableAt: new Date(
         Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
       ),
     });
-    return true;
+    return {
+      retire: (reason) => retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason),
+    };
   };
 }

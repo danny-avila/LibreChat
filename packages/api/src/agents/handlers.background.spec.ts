@@ -86,9 +86,10 @@ const runBatch = async (
 describe('createToolExecuteHandler — background tool calls', () => {
   it('pre-registers an ordinary completion before invoke and persists its terminal receipt', async () => {
     const events: string[] = [];
+    const retire = jest.fn(async () => true);
     const preregister = jest.fn(async () => {
       events.push('preregister');
-      return true;
+      return { retire };
     });
     const persist = jest.fn(async () => {
       events.push('persist');
@@ -148,11 +149,12 @@ describe('createToolExecuteHandler — background tool calls', () => {
         }),
       }),
     );
+    expect(retire).not.toHaveBeenCalled();
   });
 
   it('keeps polling guidance when the completion adapter skips registration', async () => {
     const tool = makeSearchTool({ calls: 0 });
-    const preregister = jest.fn(async () => false);
+    const preregister = jest.fn(async () => false as const);
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [tool] }),
       backgroundToolCompletion: {
@@ -183,7 +185,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
 
   it('keeps repeated provider ids poll-only when the host step identity is absent', async () => {
     const tool = makeSearchTool({ calls: 0 });
-    const preregister = jest.fn(async () => true);
+    const preregister = jest.fn(async () => ({ retire: jest.fn(async () => true) }));
     const persist = jest.fn(async () => true);
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [tool] }),
@@ -212,6 +214,79 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(persist).not.toHaveBeenCalled();
     expect(JSON.parse(dispatch.content).message).toContain('Call check_background_task');
     expect(JSON.parse(dispatch.content).message).not.toContain('host will resume you');
+  });
+
+  it('retires a preregistered delivery when terminal persistence fails', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const retire = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ retire })),
+        persist: jest.fn(async () => false),
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-persistence-failure',
+          name: tool.name,
+          args: { q: 'retire', run_in_background: true },
+          stepId: 'step-persistence-failure',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(retire).toHaveBeenCalledWith('background tool result was not persisted');
+  });
+
+  it('persists ordinary background failures in the renderer-recognized error shape', async () => {
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'search docs',
+      schema: z.object({ q: z.string() }),
+      invoke: jest.fn(async () => {
+        throw new Error('boom');
+      }),
+    } as unknown as StructuredToolInterface;
+    const persist = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ retire: jest.fn(async () => true) })),
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-ordinary-failure',
+          name: tool.name,
+          args: { q: 'fail', run_in_background: true },
+          stepId: 'step-ordinary-failure',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+    await flushMicrotasks();
+
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: 'Error: [search_mcp_docs] tool call failed: boom',
+        backgroundTask: expect.objectContaining({ status: 'error' }),
+      }),
+    );
   });
 
   it('persists an Event Actor launch before invoking and terminal evidence before wakeup', async () => {

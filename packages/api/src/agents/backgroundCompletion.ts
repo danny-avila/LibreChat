@@ -10,3 +10,9 @@ export interface BackgroundToolWakeupRegistration {
   parentAgentId?: string;
   createdAt: number;
 }
+
+/** Process-local handle for the durable delivery admitted before launch. */
+export interface BackgroundToolWakeupAdmission {
+  /** Retires a delivery whose terminal result can no longer be made durable. */
+  retire: (reason: string) => Promise<boolean>;
+}

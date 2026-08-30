@@ -99,6 +99,7 @@ function deliveryMethods(
     beginAgentTriggerDeliveryAttempt: jest.fn(async () => 1),
     deferAgentTriggerDeliveryAttempt: jest.fn(async () => true),
     completeAgentTriggerDelivery: jest.fn(async () => true),
+    retireAgentTriggerDelivery: jest.fn(async () => true),
     retryAgentTriggerDelivery: jest.fn(async () => true),
     deadLetterAgentTriggerDelivery: jest.fn(async () => true),
     getAgentTriggerDelivery: jest.fn(async () => null),
@@ -418,9 +419,14 @@ describe('durable agent trigger service', () => {
       expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
       return deliveryRecord();
     });
+    const retireAgentTriggerDelivery = jest.fn(async () => {
+      expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
+      return true;
+    });
     const methods = deliveryMethods({
       getAgentTriggerDeadLetters,
       requeueAgentTriggerDelivery,
+      retireAgentTriggerDelivery,
     });
     const service = createAgentTriggerService({
       methods,
@@ -434,6 +440,16 @@ describe('durable agent trigger service', () => {
     await expect(service.requeue('delivery-row-1', START)).resolves.toMatchObject({
       status: 'pending',
     });
+    await expect(
+      service.retire('trigger_1', 'background-tool-completion', 'result unavailable'),
+    ).resolves.toBe(true);
+    expect(retireAgentTriggerDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        sourceId: 'background-tool-completion',
+        reason: 'result unavailable',
+      }),
+    );
     await service.stop();
   });
 

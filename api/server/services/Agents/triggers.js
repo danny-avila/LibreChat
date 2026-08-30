@@ -45,6 +45,7 @@ module.exports = {
   getAgentTriggerDeliveryStatus: service.getDeliveryStatus,
   getAgentTriggerDeadLetters: service.getDeadLetters,
   requeueAgentTrigger: service.requeue,
+  retireAgentTrigger: service.retire,
   drainAgentTriggerDeliveriesForUser: service.drainUser,
   prepareAgentTriggerUserPurge: service.prepareUserPurge,
   cancelAgentTriggerUserPurge: service.cancelUserPurge,

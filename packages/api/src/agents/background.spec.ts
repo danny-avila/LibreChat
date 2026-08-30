@@ -1387,7 +1387,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('returns a terminal ordinary result only after its durable manual claim wins', async () => {
+  it('returns a same-generation result through a local claim that persistence can preserve', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'claim_user',
       conversationId: 'claim_convo',
@@ -1405,7 +1405,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     const claimBackgroundToolResult = jest
       .fn()
       .mockResolvedValueOnce({ status: 'not_ready' })
-      .mockResolvedValueOnce({ status: 'acquired' });
+      .mockResolvedValueOnce({ status: 'not_ready' });
     const request = {
       userId: 'claim_user',
       conversationId: 'claim_convo',
@@ -1416,9 +1416,13 @@ describe('runCheckBackgroundTask (singleton)', () => {
       claimBackgroundToolResult,
     };
 
-    await expect(runCheckBackgroundTask(request)).resolves.toContain('result_persisting');
     const claimed = JSON.parse(await runCheckBackgroundTask(request));
     expect(claimed).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
+    const replay = JSON.parse(await runCheckBackgroundTask(request));
+    expect(replay).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
+    expect(
+      backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
+    ).toMatchObject({ kind: 'manual' });
     expect(claimBackgroundToolResult).toHaveBeenLastCalledWith(
       expect.objectContaining({
         messageId: 'response-claim',

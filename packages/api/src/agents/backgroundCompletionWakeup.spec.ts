@@ -24,9 +24,13 @@ function registration(overrides = {}) {
 
 function envelope() {
   let value: unknown;
-  const notify = createBackgroundToolCompletionWakeupHandler(async (next) => {
-    value = next;
-  });
+  const notify = createBackgroundToolCompletionWakeupHandler(
+    async (next) => {
+      value = next;
+      return { deliveryKey: 'delivery-key-1' };
+    },
+    async () => true,
+  );
   return notify(registration()).then(() => {
     const parsed = parseAgentTriggerEnvelope(value);
     if (parsed.mode !== 'continue') {
@@ -93,10 +97,12 @@ describe('background tool completion wakeups', () => {
     const enqueue = jest.fn<
       ReturnType<EnqueueBackgroundToolCompletion>,
       Parameters<EnqueueBackgroundToolCompletion>
-    >(async () => undefined);
-    const notify = createBackgroundToolCompletionWakeupHandler(enqueue);
+    >(async () => ({ deliveryKey: 'delivery-key-1' }));
+    const retire = jest.fn(async () => true);
+    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, retire);
 
-    await expect(notify(registration())).resolves.toBe(true);
+    const admission = await notify(registration());
+    expect(admission).not.toBe(false);
 
     const [value, options] = enqueue.mock.calls[0]!;
     expect(parseAgentTriggerEnvelope(value)).toMatchObject({
@@ -117,14 +123,24 @@ describe('background tool completion wakeups', () => {
       orderingKey: 'background-tool-completion:conversation-1',
       availableAt: new Date(NOW + 250),
     });
+    if (admission !== false) {
+      await expect(admission.retire('result unavailable')).resolves.toBe(true);
+    }
+    expect(retire).toHaveBeenCalledWith(
+      'delivery-key-1',
+      'background-tool-completion',
+      'result unavailable',
+    );
   });
 
   it('reports skipped registration for an ephemeral invoking agent', async () => {
-    const enqueue = jest.fn(async () => undefined);
-    const notify = createBackgroundToolCompletionWakeupHandler(enqueue);
+    const enqueue = jest.fn(async () => ({ deliveryKey: 'delivery-key-1' }));
+    const retire = jest.fn(async () => true);
+    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, retire);
 
     await expect(notify(registration({ parentAgentId: 'ephemeral-agent' }))).resolves.toBe(false);
     expect(enqueue).not.toHaveBeenCalled();
+    expect(retire).not.toHaveBeenCalled();
   });
 
   it('claims a bounded sibling batch and continues from the latest branch leaf', async () => {

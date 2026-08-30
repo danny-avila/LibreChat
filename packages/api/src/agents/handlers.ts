@@ -17,7 +17,10 @@ import type {
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
-import type { BackgroundToolWakeupRegistration } from './backgroundCompletion';
+import type {
+  BackgroundToolWakeupAdmission,
+  BackgroundToolWakeupRegistration,
+} from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
@@ -195,11 +198,14 @@ export interface ToolExecuteOptions {
     attachments?: unknown[];
     reapply?: boolean;
     backgroundTask?: BackgroundToolResultState;
+    resolveBackgroundTask?: () => BackgroundToolResultState;
   }) => Promise<{ attachments?: unknown[]; deliveryReady?: boolean } | null>;
   /** Shared ordinary-tool completion lifecycle. The delivery is registered
    * before invoke; settlement is persisted onto the original response row. */
   backgroundToolCompletion?: {
-    preregister?: (registration: BackgroundToolWakeupRegistration) => Promise<boolean>;
+    preregister?: (
+      registration: BackgroundToolWakeupRegistration,
+    ) => Promise<BackgroundToolWakeupAdmission | false>;
     persist: (params: {
       toolName: string;
       toolCallId: string;
@@ -209,6 +215,7 @@ export interface ToolExecuteOptions {
       agentId?: string;
       output?: string;
       backgroundTask: BackgroundToolResultState;
+      resolveBackgroundTask?: () => BackgroundToolResultState;
     }) => Promise<boolean>;
     claim: (params: {
       userId: string;
@@ -4185,7 +4192,7 @@ function getFileAuthoringQueueKey(
  * so wrap them identically before patching the dispatch row, or a reloaded
  * failed background run renders as clean stdout.
  */
-function toCodeToolFailure(toolName: string, message: string): string {
+function toBackgroundToolFailure(toolName: string, message: string): string {
   if (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(message)) {
     return message;
   }
@@ -4571,6 +4578,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const { task, isNew } = created;
               let completionPreregistered = task.completionWakeup === true;
+              let completionAdmission: BackgroundToolWakeupAdmission | undefined;
               if (isNew) {
                 if (
                   detachedReservation?.status !== 'reserved' &&
@@ -4580,7 +4588,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   backgroundRunId !== ''
                 ) {
                   try {
-                    const registered = await backgroundToolCompletion.preregister({
+                    const admission = await backgroundToolCompletion.preregister({
                       taskId: task.id,
                       toolCallId: tc.id,
                       toolName: tc.name,
@@ -4594,7 +4602,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       parentAgentId: agentId,
                       createdAt: task.createdAt,
                     });
-                    if (registered) {
+                    if (admission !== false) {
+                      completionAdmission = admission;
                       completionPreregistered = true;
                       backgroundTaskRegistry.markCompletionWakeup(
                         backgroundUserId,
@@ -4633,25 +4642,56 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   ) {
                     return;
                   }
+                  const resolveBackgroundTask = (): BackgroundToolResultState => {
+                    const current = backgroundTaskRegistry.get(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                    );
+                    return {
+                      taskId: task.id,
+                      toolName: tc.name,
+                      status: params.status,
+                      settledAt: new Date(current?.updatedAt ?? Date.now()),
+                      ...(current?.resultClaim != null
+                        ? {
+                            resultClaim: {
+                              kind: current.resultClaim.kind,
+                              claimId: current.resultClaim.claimId,
+                              claimedAt: new Date(current.resultClaim.claimedAt),
+                            },
+                          }
+                        : {}),
+                    };
+                  };
                   const localTask = backgroundTaskRegistry.get(
                     backgroundUserId,
                     backgroundConversationId,
                     task.id,
                   );
-                  const backgroundTask: BackgroundToolResultState = {
-                    taskId: task.id,
-                    toolName: tc.name,
-                    status: params.status,
-                    settledAt: new Date(localTask?.updatedAt ?? Date.now()),
-                    ...(localTask?.resultClaim != null
-                      ? {
-                          resultClaim: {
-                            kind: localTask.resultClaim.kind,
-                            claimId: localTask.resultClaim.claimId,
-                            claimedAt: new Date(localTask.resultClaim.claimedAt),
-                          },
-                        }
-                      : {}),
+                  const backgroundTask = resolveBackgroundTask();
+                  const retireFailedPersistence = async (reason: string): Promise<void> => {
+                    backgroundTaskRegistry.markCompletionPersistenceFailed(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                    );
+                    if (completionAdmission == null) {
+                      return;
+                    }
+                    try {
+                      const retired = await completionAdmission.retire(reason);
+                      if (!retired) {
+                        logger.warn(
+                          `[background] Could not retire failed completion delivery for task ${task.id}.`,
+                        );
+                      }
+                    } catch (retireError) {
+                      logger.warn(
+                        `[background] Failed to retire completion delivery for task ${task.id}:`,
+                        retireError,
+                      );
+                    }
                   };
                   if (!harvestEnabled || !persistBackgroundCodeResult) {
                     if (
@@ -4670,22 +4710,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         agentId,
                         output: params.output ?? localTask?.result,
                         backgroundTask,
+                        resolveBackgroundTask,
                       })
-                      .then((deliveryReady) => {
+                      .then(async (deliveryReady) => {
                         if (!deliveryReady) {
-                          backgroundTaskRegistry.markCompletionPersistenceFailed(
-                            backgroundUserId,
-                            backgroundConversationId,
-                            task.id,
-                          );
+                          await retireFailedPersistence('background tool result was not persisted');
                         }
                       })
-                      .catch((persistError) => {
-                        backgroundTaskRegistry.markCompletionPersistenceFailed(
-                          backgroundUserId,
-                          backgroundConversationId,
-                          task.id,
-                        );
+                      .catch(async (persistError) => {
+                        await retireFailedPersistence('background tool result persistence failed');
                         logger.warn(
                           `[background] Failed to persist result for task ${task.id}:`,
                           persistError,
@@ -4713,7 +4746,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         ...(detachedReservation?.status === 'reserved' ||
                         backgroundToolCompletion == null
                           ? {}
-                          : { backgroundTask }),
+                          : { backgroundTask, resolveBackgroundTask }),
                         output: params.output ?? localTask?.result,
                         artifact: params.artifact,
                       });
@@ -4729,20 +4762,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           params.artifact,
                         );
                         if (completionPreregistered) {
-                          backgroundTaskRegistry.markCompletionPersistenceFailed(
-                            backgroundUserId,
-                            backgroundConversationId,
-                            task.id,
+                          await retireFailedPersistence(
+                            'background code result had no durable message anchor',
                           );
                         }
                         return;
                       }
                       if (persisted.deliveryReady === false) {
-                        backgroundTaskRegistry.markCompletionPersistenceFailed(
-                          backgroundUserId,
-                          backgroundConversationId,
-                          task.id,
-                        );
+                        await retireFailedPersistence('background code result was not persisted');
                       }
                       backgroundTaskRegistry.finishHarvest(
                         backgroundUserId,
@@ -4752,11 +4779,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       );
                     } catch (persistError) {
                       if (completionPreregistered) {
-                        backgroundTaskRegistry.markCompletionPersistenceFailed(
-                          backgroundUserId,
-                          backgroundConversationId,
-                          task.id,
-                        );
+                        await retireFailedPersistence('background code result persistence failed');
                       }
                       if (isContentFilterError(persistError)) {
                         backgroundTaskRegistry.blockArtifact(
@@ -4867,13 +4890,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     if (filteredOutput != null) {
                       const policyError =
                         filteredOutput.errorMessage ?? 'Submitted content was blocked.';
-                      const errorOutput = isCodeCall
-                        ? toCodeToolFailure(tc.name, policyError)
-                        : policyError;
+                      const errorOutput = toBackgroundToolFailure(tc.name, policyError);
+                      const registryError = isCodeCall ? errorOutput : policyError;
                       if (
                         !(await persistDetachedTerminal({
                           status: 'succeeded',
-                          result: errorOutput,
+                          result: registryError,
                         }))
                       ) {
                         return;
@@ -4882,7 +4904,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         backgroundUserId,
                         backgroundConversationId,
                         task.id,
-                        errorOutput,
+                        registryError,
                         { harvestStarted: harvestEnabled },
                       );
                       persistBackgroundResult({ output: errorOutput, status: 'error' });
@@ -4922,8 +4944,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         ? modelBoundContentFilterErrorMessage(toolError.body)
                         : null;
                     const { message } = getSafeToolError(toolError);
-                    const errorOutput =
-                      policyError ?? (isCodeCall ? toCodeToolFailure(tc.name, message) : message);
+                    const errorOutput = policyError ?? message;
                     const filteredError =
                       policyError == null
                         ? filteredToolOutputResult(tc, backgroundReq, {
@@ -4931,10 +4952,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           })
                         : null;
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
-                    const deliveredError =
-                      isCodeCall && (policyError != null || filteredError != null)
-                        ? toCodeToolFailure(tc.name, neutralizedError)
-                        : neutralizedError;
+                    const deliveredError = toBackgroundToolFailure(tc.name, neutralizedError);
+                    const registryError = isCodeCall ? deliveredError : neutralizedError;
                     const detachedTerminalStatus =
                       toolError instanceof Error &&
                       (toolError.name === 'AbortError' ||
@@ -4944,7 +4963,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     if (
                       !(await persistDetachedTerminal({
                         status: detachedTerminalStatus,
-                        error: deliveredError,
+                        error: registryError,
                       }))
                     ) {
                       return;
@@ -4953,7 +4972,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       backgroundUserId,
                       backgroundConversationId,
                       task.id,
-                      deliveredError,
+                      registryError,
                       /** Failed code tasks join the heal path too: without this,
                        *  a full-row save reverting the error patch would leave
                        *  the dispatch card on the handle JSON forever. */
@@ -5188,11 +5207,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     ) {
                       /** Error tasks carry their message in `error`, not
                        *  `result`; reaped (timed-out) tasks store it raw, so
-                       *  wrap here — `toCodeToolFailure` is a no-op for
+                       *  wrap here — `toBackgroundToolFailure` is a no-op for
                        *  already-wrapped detached failures. */
                       const reapplyOutput =
                         delivery.status === 'error'
-                          ? toCodeToolFailure(
+                          ? toBackgroundToolFailure(
                               delivery.toolName,
                               delivery.error ?? delivery.result ?? 'Background task failed',
                             )

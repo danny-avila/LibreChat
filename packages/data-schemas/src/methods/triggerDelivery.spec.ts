@@ -491,6 +491,59 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toMatchObject({ id: ordinary.delivery.id, status: 'leased' });
   });
 
+  it('retires a failed internal completion admission and unblocks its lane successor', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'background-completion-lane';
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const first = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-1',
+        user,
+        orderingKey,
+        envelope: { event: { source } },
+      }),
+    );
+    const successor = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-2',
+        user,
+        orderingKey,
+        envelope: { event: { source } },
+      }),
+    );
+
+    const retirement = {
+      deliveryKey: first.delivery.deliveryKey,
+      sourceId: source.id,
+      settledAt: START,
+      reason: 'result persistence failed',
+    };
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    await expect(
+      methods.retireAgentTriggerDelivery({ ...retirement, sourceId: 'other-internal-source' }),
+    ).resolves.toBe(false);
+    await expect(
+      Delivery.findOne({ deliveryKey: first.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: {
+        status: 'settled',
+        backgroundToolCompletionRetired: true,
+        reason: 'result persistence failed',
+      },
+    });
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'successor-worker',
+        claimToken: 'successor-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+      }),
+    ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
   it('claims older capability work before newer ordinary work', async () => {
     const capability = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({

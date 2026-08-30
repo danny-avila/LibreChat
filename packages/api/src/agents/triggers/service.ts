@@ -3,7 +3,10 @@ import {
   logger,
   runAsSystem,
 } from '@librechat/data-schemas';
-import type { AgentTriggerDeliveryStatusRecord } from '@librechat/data-schemas';
+import type {
+  AgentTriggerDeliveryMethods,
+  AgentTriggerDeliveryStatusRecord,
+} from '@librechat/data-schemas';
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryEngine,
@@ -102,6 +105,7 @@ export interface AgentTriggerDeliveryPersistence {
   beginAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['beginAttempt'];
   deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
   completeAgentTriggerDelivery: AgentTriggerDeliveryStore['complete'];
+  retireAgentTriggerDelivery: AgentTriggerDeliveryMethods['retireAgentTriggerDelivery'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
@@ -151,6 +155,7 @@ export interface AgentTriggerService {
   ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
+  retire: (deliveryKey: string, sourceId: string, reason: string) => Promise<boolean>;
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
   cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
@@ -503,6 +508,19 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
           }
         }
         return revived;
+      }),
+    retire: (deliveryKey, sourceId, reason) =>
+      runAsSystem(async () => {
+        const retired = await requireCleanupMethods().retireAgentTriggerDelivery({
+          deliveryKey,
+          sourceId,
+          reason,
+          settledAt: new Date(),
+        });
+        if (retired) {
+          deliveryEngine?.wake();
+        }
+        return retired;
       }),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>

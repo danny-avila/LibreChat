@@ -51,6 +51,9 @@ const getPartAgentId = (part: TMessageContentParts): string | undefined =>
   (part as { agentId?: string })?.agentId ??
   (part?.[ContentTypes.TOOL_CALL] as { agentId?: string } | undefined)?.agentId;
 
+const getPartStepId = (part: TMessageContentParts): string | undefined =>
+  (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.stepId;
+
 const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
   const firstPart = parts[0];
   if (!firstPart) {
@@ -64,7 +67,7 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
   for (const { part, idx } of parts) {
     const toolCallId = getToolCallId(part);
     if (toolCallId) {
-      return `tool:${toolCallId}`;
+      return `tool:${toolCallId}:${getPartStepId(part) ?? idx}`;
     }
     if (firstToolKeyIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
       firstToolKeyIdx = getPartKeyIndex(part, idx);
@@ -400,6 +403,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           partAttachments={filterAttachmentsForPart(
             attachmentMap[getToolCallId(part)],
             getPartAgentId(part),
+            getPartStepId(part),
           )}
         />
       );
@@ -437,6 +441,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           partAttachments={filterAttachmentsForPart(
             attachmentMap[getToolCallId(part)],
             getPartAgentId(part),
+            getPartStepId(part),
           )}
           hideAttachments
           onToolExpand={onToolExpand}
@@ -499,8 +504,11 @@ const ContentPartsBody = memo(function ContentPartsBody({
         const groupId = getToolGroupId(group.parts, fallbackScope);
         const groupAttachments = group.parts.flatMap(
           ({ part }) =>
-            filterAttachmentsForPart(attachmentMap[getToolCallId(part)], getPartAgentId(part)) ??
-            [],
+            filterAttachmentsForPart(
+              attachmentMap[getToolCallId(part)],
+              getPartAgentId(part),
+              getPartStepId(part),
+            ) ?? [],
         );
         return { ...group, groupId, groupAttachments };
       }),

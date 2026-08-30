@@ -107,6 +107,9 @@ export interface CodeHarvestParams {
   attachments?: unknown[];
   reapply?: boolean;
   backgroundTask?: BackgroundToolResultState;
+  /** Re-reads local claim ownership on every retry so a same-generation
+   * manual poll cannot be overwritten by a later automatic continuation. */
+  resolveBackgroundTask?: () => BackgroundToolResultState;
 }
 
 export type CodeHarvestHandler = (
@@ -127,10 +130,17 @@ async function persistBackgroundToolResultRow(
     output?: string;
     attachments?: unknown[];
     backgroundTask?: BackgroundToolResultState;
+    resolveBackgroundTask?: () => BackgroundToolResultState;
   },
 ): Promise<boolean> {
+  const { resolveBackgroundTask, ...persistedParams } = params;
   for (let attempt = 0; attempt <= BACKGROUND_PATCH_RETRY_DELAYS_MS.length; attempt++) {
-    const result = await updateToolCallResult({ ...params, markBackgrounded: true });
+    const currentBackgroundTask = resolveBackgroundTask?.() ?? persistedParams.backgroundTask;
+    const result = await updateToolCallResult({
+      ...persistedParams,
+      ...(currentBackgroundTask == null ? {} : { backgroundTask: currentBackgroundTask }),
+      markBackgrounded: true,
+    });
     if (result.matched && !result.unfinished) {
       return true;
     }
@@ -155,6 +165,7 @@ export function createBackgroundToolResultHandler(
     output,
     attachments,
     backgroundTask,
+    resolveBackgroundTask,
   }) => {
     const userId = deps.req.user?.id;
     if (!userId || !messageId || !conversationId || backgroundTask == null) {
@@ -170,6 +181,7 @@ export function createBackgroundToolResultHandler(
       output,
       attachments,
       backgroundTask,
+      resolveBackgroundTask,
     });
   };
 }
@@ -211,6 +223,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     attachments: knownAttachments,
     reapply,
     backgroundTask,
+    resolveBackgroundTask,
   }) => {
     const userId = req.user?.id;
     if (!userId || !messageId || !conversationId) {
@@ -218,6 +231,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     }
 
     if (reapply === true) {
+      const currentBackgroundTask = resolveBackgroundTask?.() ?? backgroundTask;
       const reapplied = await updateToolCallResult({
         userId,
         messageId,
@@ -230,7 +244,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         /** The heal path must re-stamp the marker too: the full-row save it
          *  repairs reverted the whole patched part, marker included. */
         markBackgrounded: true,
-        ...(backgroundTask != null ? { backgroundTask } : {}),
+        ...(currentBackgroundTask != null ? { backgroundTask: currentBackgroundTask } : {}),
       });
       if (!reapplied.matched) {
         logger.debug(
@@ -296,6 +310,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
       output,
       attachments,
       ...(backgroundTask != null ? { backgroundTask } : {}),
+      ...(resolveBackgroundTask != null ? { resolveBackgroundTask } : {}),
     });
     if (!deliveryReady) {
       logger.warn(

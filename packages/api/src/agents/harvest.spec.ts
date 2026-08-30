@@ -1,5 +1,5 @@
 import type { ServerRequest } from '~/types';
-import { createBackgroundCodeResultHandler } from './harvest';
+import { createBackgroundCodeResultHandler, createBackgroundToolResultHandler } from './harvest';
 
 const req = {
   user: { id: 'user-1' },
@@ -96,5 +96,58 @@ describe('createBackgroundCodeResultHandler generated-file preflight', () => {
 
     expect(processCodeOutput).not.toHaveBeenCalled();
     expect(updateToolCallResult).not.toHaveBeenCalled();
+  });
+});
+
+describe('createBackgroundToolResultHandler claim ownership', () => {
+  it('re-reads a same-generation manual claim before each persistence retry', async () => {
+    let claimed = false;
+    const updateToolCallResult = jest
+      .fn()
+      .mockImplementationOnce(async () => {
+        claimed = true;
+        return { matched: false, unfinished: false };
+      })
+      .mockResolvedValueOnce({ matched: true, unfinished: false });
+    const handler = createBackgroundToolResultHandler({ req, updateToolCallResult });
+    const baseState = {
+      taskId: 'task-1',
+      toolName: 'slow_tool',
+      status: 'completed' as const,
+      settledAt: new Date('2026-08-30T00:00:00Z'),
+    };
+
+    await expect(
+      handler({
+        toolName: 'slow_tool',
+        toolCallId: 'call-1',
+        stepId: 'step-1',
+        messageId: 'message-1',
+        conversationId: 'conversation-1',
+        output: 'done',
+        backgroundTask: baseState,
+        resolveBackgroundTask: () => ({
+          ...baseState,
+          ...(claimed
+            ? {
+                resultClaim: {
+                  kind: 'manual' as const,
+                  claimId: 'poll-1',
+                  claimedAt: new Date('2026-08-30T00:00:01Z'),
+                },
+              }
+            : {}),
+        }),
+      }),
+    ).resolves.toBe(true);
+
+    expect(updateToolCallResult).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        backgroundTask: expect.objectContaining({
+          resultClaim: expect.objectContaining({ kind: 'manual', claimId: 'poll-1' }),
+        }),
+      }),
+    );
   });
 });

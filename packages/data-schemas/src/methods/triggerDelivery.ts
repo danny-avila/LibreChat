@@ -236,6 +236,12 @@ export interface AgentTriggerDeliveryMethods {
       awaitTerminalHandling?: true;
     },
   ) => Promise<boolean>;
+  retireAgentTriggerDelivery: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    settledAt: Date;
+    reason: string;
+  }) => Promise<boolean>;
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
@@ -1891,6 +1897,84 @@ export function createAgentTriggerDeliveryMethods(
     return true;
   }
 
+  /** Retires an internally pre-admitted delivery when its producer can prove
+   * that the result will never become dispatchable. This transition is keyed
+   * by the immutable delivery identity rather than a worker lease so the
+   * producer can unblock the lane even while a resolver is deferring it. */
+  async function retireAgentTriggerDelivery(input: {
+    deliveryKey: string;
+    sourceId: string;
+    settledAt: Date;
+    reason: string;
+  }): Promise<boolean> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      Number.isNaN(input.settledAt.getTime())
+    ) {
+      throw new TypeError('Invalid agent trigger delivery retirement');
+    }
+    const result = {
+      status: 'settled',
+      backgroundToolCompletionRetired: true,
+      reason: input.reason.slice(0, MAX_ERROR_MESSAGE_LENGTH),
+    };
+    const retired = await Delivery()
+      .findOneAndUpdate(
+        {
+          deliveryKey: input.deliveryKey,
+          'envelope.event.source.type': 'internal',
+          'envelope.event.source.id': input.sourceId,
+          status: { $in: ['pending', 'leased', 'capability_pending', 'capability_leased'] },
+        },
+        {
+          $set: {
+            status: 'succeeded',
+            result,
+            settledAt: input.settledAt,
+            expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+            laneCleanupPendingAt: input.settledAt,
+          },
+          $unset: {
+            leaseBy: 1,
+            leaseUntil: 1,
+            claimToken: 1,
+            capabilityStatus: 1,
+            claimAvailableAt: 1,
+            capabilityLeaseBy: 1,
+            capabilityLeaseUntil: 1,
+            capabilityClaimToken: 1,
+            lastError: 1,
+          },
+        },
+        { new: true },
+      )
+      .select('_id orderingKey laneCleanupPendingAt')
+      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'laneCleanupPendingAt'>>();
+    if (retired?._id != null) {
+      try {
+        await fulfillLaneCleanupRequest(retired);
+      } catch (error) {
+        logger.warn('[agent-triggers] failed to finalize a retired internal delivery', {
+          deliveryKey: input.deliveryKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return true;
+    }
+    return (
+      (await Delivery().exists({
+        deliveryKey: input.deliveryKey,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+        status: 'succeeded',
+        'result.backgroundToolCompletionRetired': true,
+      })) != null
+    );
+  }
+
   async function settleAgentTriggerHandlingOutcome(
     input: SettleAgentTriggerHandlingOutcomeInput,
   ): Promise<boolean> {
@@ -3260,6 +3344,7 @@ export function createAgentTriggerDeliveryMethods(
     beginAgentTriggerDeliveryAttempt,
     deferAgentTriggerDeliveryAttempt,
     completeAgentTriggerDelivery,
+    retireAgentTriggerDelivery,
     settleAgentTriggerHandlingOutcome,
     admitAgentEventActorAction,
     releaseAgentEventActorAction,

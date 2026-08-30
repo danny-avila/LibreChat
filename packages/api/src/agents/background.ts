@@ -1495,12 +1495,28 @@ export async function runCheckBackgroundTask(params: {
             });
           }
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
-            return JSON.stringify({
-              status: 'result_persisting',
-              background_task_id: taskId,
-              message:
-                'The task is finished and its result is being made durable. Retry this poll shortly.',
+            /** The dispatch response cannot become durable until this same
+             * generation ends. Elect the local poll immediately, then let the
+             * persistence retry copy that immutable claim into the receipt. */
+            const localClaim = backgroundTaskRegistry.claimResult(userId, conversationId, taskId, {
+              kind: 'manual',
+              claimId: invocationId,
             });
+            if (localClaim === 'claimed') {
+              return JSON.stringify({
+                status: 'delivery_scheduled',
+                background_task_id: taskId,
+                message: 'This result is already assigned to an automatic continuation.',
+              });
+            }
+            if (localClaim === 'not_ready') {
+              return JSON.stringify({
+                status: 'result_persisting',
+                background_task_id: taskId,
+                message:
+                  'The task is finished and its result is being made durable. Retry this poll shortly.',
+              });
+            }
           }
         } else {
           const localClaim = backgroundTaskRegistry.claimResult(userId, conversationId, taskId, {
