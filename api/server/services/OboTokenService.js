@@ -126,28 +126,25 @@ async function performOboExchange({ user, accessToken, scopes, config, tokensCac
  * after a cache miss does not produce N parallel requests to the IdP.
  *
  * @param {Object} user - User object with OpenID information
- * @param {string} accessToken - Federated access token used as OBO assertion
+ * @param {string | undefined} accessToken - Federated access token used as OBO assertion
  * @param {string} scopes - Scopes to request for the downstream service
  * @param {boolean} [fromCache=true] - When true, read from cache and join any
  *   in-flight exchange. When false, bypass both and force a fresh exchange.
+ * @param {boolean} [cacheOnly=false] - When true, return only a cached or
+ *   in-flight token and do not start a new exchange.
  * @returns {Promise<Object>} Token response with access_token and expires_in
  */
-async function exchangeOboToken(user, accessToken, scopes, fromCache = true) {
+async function exchangeOboToken(user, accessToken, scopes, fromCache = true, cacheOnly = false) {
   if (!user.openidId) {
     throw new Error('User must be authenticated via OpenID to perform OBO token exchange');
-  }
-
-  if (!accessToken) {
-    throw new Error('Access token is required for OBO exchange');
   }
 
   if (!scopes) {
     throw new Error('Scopes are required for OBO exchange');
   }
 
-  const config = getOpenIdConfig();
-  if (!config) {
-    throw new Error('OpenID configuration not available');
+  if (cacheOnly && !fromCache) {
+    throw new Error('cacheOnly requires fromCache to be enabled');
   }
 
   const cacheKey = `${user.openidId}:${scopes}`;
@@ -165,6 +162,19 @@ async function exchangeOboToken(user, accessToken, scopes, fromCache = true) {
       logger.debug(`[OboTokenService] Joining in-flight OBO exchange for user: ${user.openidId}`);
       return inFlight;
     }
+  }
+
+  if (cacheOnly) {
+    return null;
+  }
+
+  if (!accessToken) {
+    throw new Error('Access token is required for OBO exchange');
+  }
+
+  const config = getOpenIdConfig();
+  if (!config) {
+    throw new Error('OpenID configuration not available');
   }
 
   logger.debug(
