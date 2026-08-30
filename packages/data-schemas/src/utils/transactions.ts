@@ -2,6 +2,8 @@ import logger from '~/config/winston';
 
 export const CANCEL_RATE = 1.15;
 
+const TRANSACTION_PROBE_COLLECTION = '__transaction_test__';
+
 /**
  * Checks if the connected MongoDB deployment supports transactions
  * This requires a MongoDB replica set configuration
@@ -12,11 +14,22 @@ export const supportsTransactions = async (
   mongoose: typeof import('mongoose'),
 ): Promise<boolean> => {
   try {
+    /** Amazon DocumentDB rejects a transaction that touches a collection which
+     * does not exist ("Feature not supported: non-existent collection in
+     * transaction"), so probing a missing canary reports engines that fully
+     * support transactions as unsupported and silently drops every caller to
+     * the non-transactional path. Materialize the canary first; this runs once
+     * per process because the result is cached by `getTransactionSupport`. */
+    await mongoose.connection.db?.createCollection(TRANSACTION_PROBE_COLLECTION).catch(() => {
+      /** already exists, or the user cannot create collections — probe anyway */
+    });
     const session = await mongoose.startSession();
     try {
       session.startTransaction();
 
-      await mongoose.connection.db?.collection('__transaction_test__').findOne({}, { session });
+      await mongoose.connection.db
+        ?.collection(TRANSACTION_PROBE_COLLECTION)
+        .findOne({}, { session });
 
       await session.commitTransaction();
       logger.debug('MongoDB transactions are supported');

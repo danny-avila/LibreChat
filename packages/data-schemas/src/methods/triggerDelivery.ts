@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Model, Types } from 'mongoose';
+import type { FilterQuery, Model, Types } from 'mongoose';
 import type {
   AgentEventActorDetachedAction,
   AgentTriggerDeliveryClaim,
@@ -34,6 +34,9 @@ const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
+/** Bounds the claim's compare-and-swap retries. Each lost round means another
+ * worker claimed the row this one read, so the queue is making progress. */
+const CLAIM_CAS_MAX_ATTEMPTS = 16;
 /** Capability work is inert to legacy claimers while preserving their lane
  * behavior: publishing is `staging`; queued work is `leased` without a lease
  * owner/deadline; execution adds a private lease; dead work is terminal. */
@@ -1266,106 +1269,95 @@ export function createAgentTriggerDeliveryMethods(
               availableAt: { $lte: input.now },
             },
           ];
-    const claimed = await Delivery()
-      .findOneAndUpdate(
+    const claimableFilter: FilterQuery<IAgentTriggerDelivery> = {
+      $or: [
         {
-          $or: [
-            {
-              requiredWorkerCapability: { $exists: false },
-              status: 'pending',
-              availableAt: { $lte: input.now },
-            },
-            {
-              requiredWorkerCapability: { $exists: false },
-              status: 'leased',
-              leaseUntil: { $lte: expiredBefore },
-            },
-            ...capabilityConditions,
-          ],
+          requiredWorkerCapability: { $exists: false },
+          status: 'pending',
+          availableAt: { $lte: input.now },
         },
-        [
+        {
+          requiredWorkerCapability: { $exists: false },
+          status: 'leased',
+          leaseUntil: { $lte: expiredBefore },
+        },
+        ...capabilityConditions,
+      ],
+    };
+    /** The claim's written values depend on the row's own lifecycle, which a
+     * classic update cannot branch on and Amazon DocumentDB will not accept as
+     * an aggregation pipeline. Read the globally oldest candidate under the
+     * same sort, then claim that exact `_id` and lifecycle state with a
+     * compare-and-swap. Ownership is still granted only by the fenced write, so
+     * concurrent workers cannot both win. An empty queue costs the one read it
+     * costs today; a successful claim costs one additional round trip. A lost
+     * CAS means another worker advanced the row, so retrying is bounded. */
+    for (let attempt = 0; attempt < CLAIM_CAS_MAX_ATTEMPTS; attempt += 1) {
+      const candidate = await Delivery()
+        .findOne(claimableFilter)
+        .read('primary')
+        .sort({ claimAvailableAt: 1, availableAt: 1, createdAt: 1, _id: 1 })
+        .select('_id status capabilityStatus availableAt')
+        .lean<Pick<
+          IAgentTriggerDelivery,
+          '_id' | 'status' | 'capabilityStatus' | 'availableAt'
+        > | null>();
+      if (candidate == null) {
+        return null;
+      }
+      const hasCapabilityLifecycle = candidate.capabilityStatus !== undefined;
+      const adoptsDeadCapability =
+        candidate.status === 'capability_pending' && candidate.capabilityStatus === 'dead';
+      const claimedStatus: IAgentTriggerDelivery['status'] =
+        !hasCapabilityLifecycle &&
+        (candidate.status === 'capability_pending' || candidate.status === 'capability_leased')
+          ? 'capability_leased'
+          : 'leased';
+      const claimed = await Delivery()
+        .findOneAndUpdate(
+          {
+            ...claimableFilter,
+            _id: candidate._id,
+            status: candidate.status,
+            capabilityStatus: hasCapabilityLifecycle
+              ? candidate.capabilityStatus
+              : { $exists: false },
+          },
           {
             $set: {
-              status: {
-                $cond: [
-                  { $eq: [{ $type: '$capabilityStatus' }, 'missing'] },
-                  {
-                    $cond: [
-                      { $in: ['$status', ['capability_pending', 'capability_leased']] },
-                      'capability_leased',
-                      'leased',
-                    ],
-                  },
-                  'leased',
-                ],
-              },
-              claimAvailableAt: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ['$status', 'capability_pending'] },
-                      { $eq: ['$capabilityStatus', 'dead'] },
-                    ],
-                  },
-                  '$availableAt',
-                  '$claimAvailableAt',
-                ],
-              },
-              capabilityStatus: {
-                $cond: [{ $eq: [{ $type: '$capabilityStatus' }, 'missing'] }, '$$REMOVE', 'leased'],
-              },
-              capabilityLeaseBy: {
-                $cond: [
-                  { $eq: [{ $type: '$capabilityStatus' }, 'missing'] },
-                  '$$REMOVE',
-                  input.workerId,
-                ],
-              },
-              capabilityLeaseUntil: {
-                $cond: [
-                  { $eq: [{ $type: '$capabilityStatus' }, 'missing'] },
-                  '$$REMOVE',
-                  input.leaseUntil,
-                ],
-              },
-              capabilityClaimToken: {
-                $cond: [
-                  { $eq: [{ $type: '$capabilityStatus' }, 'missing'] },
-                  '$$REMOVE',
-                  input.claimToken,
-                ],
-              },
-              leaseBy: {
-                $cond: [
-                  { $eq: [{ $type: '$capabilityStatus' }, 'missing'] },
-                  input.workerId,
-                  LEGACY_CAPABILITY_SHIELD_OWNER,
-                ],
-              },
-              leaseUntil: {
-                $cond: [
-                  { $eq: [{ $type: '$capabilityStatus' }, 'missing'] },
-                  input.leaseUntil,
-                  LEGACY_CAPABILITY_SHIELD_AT,
-                ],
-              },
-              claimToken: {
-                $cond: [
-                  { $eq: [{ $type: '$capabilityStatus' }, 'missing'] },
-                  input.claimToken,
-                  LEGACY_CAPABILITY_SHIELD_OWNER,
-                ],
-              },
-              settledAt: '$$REMOVE',
-              expiresAt: '$$REMOVE',
+              status: claimedStatus,
+              ...(adoptsDeadCapability ? { claimAvailableAt: candidate.availableAt } : {}),
+              ...(hasCapabilityLifecycle
+                ? {
+                    capabilityStatus: 'leased',
+                    capabilityLeaseBy: input.workerId,
+                    capabilityLeaseUntil: input.leaseUntil,
+                    capabilityClaimToken: input.claimToken,
+                  }
+                : {}),
+              leaseBy: hasCapabilityLifecycle ? LEGACY_CAPABILITY_SHIELD_OWNER : input.workerId,
+              leaseUntil: hasCapabilityLifecycle ? LEGACY_CAPABILITY_SHIELD_AT : input.leaseUntil,
+              claimToken: hasCapabilityLifecycle
+                ? LEGACY_CAPABILITY_SHIELD_OWNER
+                : input.claimToken,
               updatedAt: input.now,
             },
+            $unset: {
+              settledAt: 1,
+              expiresAt: 1,
+              ...(hasCapabilityLifecycle
+                ? {}
+                : { capabilityLeaseBy: 1, capabilityLeaseUntil: 1, capabilityClaimToken: 1 }),
+            },
           },
-        ],
-        { new: true, sort: { claimAvailableAt: 1, availableAt: 1, createdAt: 1, _id: 1 } },
-      )
-      .lean<IAgentTriggerDelivery>();
-    return requireClaim(claimed);
+          { new: true, timestamps: false },
+        )
+        .lean<IAgentTriggerDelivery>();
+      if (claimed != null) {
+        return requireClaim(claimed);
+      }
+    }
+    return null;
   }
 
   async function findEarlierAgentTriggerDelivery(
@@ -2053,19 +2045,11 @@ export function createAgentTriggerDeliveryMethods(
         capabilityStatus: { $ne: 'dead' },
         settledAt: { $exists: false },
       },
-      [
-        {
-          $set: {
-            producerLeaseUntil: {
-              $cond: [
-                { $gt: ['$producerLeaseUntil', input.leaseUntil] },
-                '$producerLeaseUntil',
-                input.leaseUntil,
-              ],
-            },
-          },
-        },
-      ],
+      /** `$max` is the classic-operator form of "never shorten a newer lease":
+       * it writes only when the incoming deadline is later, and sets the field
+       * when it is missing. Aggregation-pipeline updates are unsupported on
+       * Amazon DocumentDB (`misc/documentdb/documentdb-compat.md`). */
+      { $max: { producerLeaseUntil: input.leaseUntil } },
       { timestamps: false },
     );
     return renewed.matchedCount === 1;

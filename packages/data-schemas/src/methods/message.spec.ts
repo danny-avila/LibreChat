@@ -1975,7 +1975,11 @@ describe('Message Operations', () => {
             message.subagentTranscriptProjectionTruncated === true,
         ),
       ).toHaveLength(1);
-      expect(aggregateSpy).toHaveBeenCalledTimes(3);
+      /** Four reads: the page, recent sources, and the selected task's messages
+       * and source. The last two were one `$facet`, a stage Amazon DocumentDB
+       * does not support; they are issued concurrently, so splitting them costs
+       * no additional wall-clock latency. */
+      expect(aggregateSpy).toHaveBeenCalledTimes(4);
       const messagesPipeline = aggregateSpy.mock.calls[0][0] as unknown as Array<
         Record<string, unknown>
       >;
@@ -1985,6 +1989,14 @@ describe('Message Operations', () => {
       const selectedPipeline = aggregateSpy.mock.calls[2][0] as unknown as Array<
         Record<string, unknown>
       >;
+      const selectedSourcePipeline = aggregateSpy.mock.calls[3][0] as unknown as Array<
+        Record<string, unknown>
+      >;
+      for (const pipeline of [selectedPipeline, selectedSourcePipeline]) {
+        expect(pipeline).not.toEqual(
+          expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
+        );
+      }
       expect(messagesPipeline[2]).toEqual({ $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT });
       expect(messagesPipeline).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ $facet: expect.anything() })]),
