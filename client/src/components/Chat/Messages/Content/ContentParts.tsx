@@ -282,12 +282,15 @@ const ContentPartsBody = memo(function ContentPartsBody({
    *  shifts — an index-only guard then reads each already-settled phase as
    *  new and replays its fold over content the reader already watched fold.
    *  The label text survives any re-key, so a re-keyed marker whose text was
-   *  already on screen mounts settled instead. Texts are counted and each
-   *  marker paired with a prior occurrence by position, not merely
-   *  remembered: a run may legitimately generate two phases with identical
-   *  summaries, and only an occurrence past the previously rendered count —
-   *  a genuinely new phase, even landing in the same commit as a re-key —
-   *  deserves its entrance.
+   *  already on screen mounts settled instead. The text layer engages ONLY
+   *  when a previously rendered key has vanished — the signature of a
+   *  re-key. A pure addition keeps key identity authoritative, so a marker
+   *  that fills out of order behind an already-rendered twin (concurrent
+   *  fills can resolve later-index first, with identical summaries) still
+   *  animates. Under a re-key, texts are counted and each marker paired
+   *  with a prior occurrence by position: a run may legitimately generate
+   *  two phases with identical summaries, and only an occurrence past the
+   *  previously rendered count deserves its entrance.
    *
    *  The recorded sets are scoped to the message they described.
    *  `MultiMessage` renders siblings without a key, so this instance survives
@@ -301,6 +304,17 @@ const ContentPartsBody = memo(function ContentPartsBody({
   } | null>(null);
   const previousPhases =
     previousPhaseRef.current?.messageId === messageId ? previousPhaseRef.current : null;
+  const hasPhaseRekey = useMemo(() => {
+    if (previousPhases == null) {
+      return false;
+    }
+    for (const key of previousPhases.indices) {
+      if (!completedPhaseKeys.indices.has(key)) {
+        return true;
+      }
+    }
+    return false;
+  }, [previousPhases, completedPhaseKeys]);
   useEffect(() => {
     previousPhaseRef.current = {
       messageId,
@@ -619,8 +633,9 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 animateEntrance={
                   previousPhases != null &&
                   !previousPhases.indices.has(phaseKeyIndex) &&
-                  (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >
-                    (previousPhases.labels.get(labelText) ?? 0)
+                  (!hasPhaseRekey ||
+                    (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >
+                      (previousPhases.labels.get(labelText) ?? 0))
                 }
                 showCursor={
                   isLast &&

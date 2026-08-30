@@ -769,6 +769,59 @@ describe('ContentParts — settled content identity across compaction', () => {
     expect(phases[1]).toHaveAttribute('data-animate-entrance', 'true');
   });
 
+  /** Concurrent fills can resolve out of order: a later-index marker
+   *  renders first, then an earlier reserved marker fills with an identical
+   *  summary. No previously rendered key vanished, so key identity stays
+   *  authoritative and the newly filled earlier marker still animates. */
+  it('animates an earlier marker that fills out of order behind a same-text twin', () => {
+    const twinPhase = (bounds: { start: number; end: number }) =>
+      ({
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Completed the activity phase',
+        activity_label_type: 'phase',
+        activity_start_index: bounds.start,
+        activity_end_index: bounds.end,
+        activity_count: 1,
+        pending: false,
+      }) as unknown as TMessageContentParts;
+    const pendingReservation = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: '',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      pending: true,
+    } as unknown as TMessageContentParts;
+    const { rerender } = render(
+      <ContentParts
+        {...baseProps}
+        content={[toolPart, pendingReservation, toolPart, twinPhase({ start: 2, end: 3 })]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    rerender(
+      <ContentParts
+        {...baseProps}
+        content={[
+          toolPart,
+          twinPhase({ start: 0, end: 1 }),
+          toolPart,
+          twinPhase({ start: 2, end: 3 }),
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    const phases = screen.getAllByTestId('activity-phase-group');
+    expect(phases).toHaveLength(2);
+    expect(phases[0]).toHaveAttribute('data-animate-entrance', 'true');
+    expect(phases[1]).toHaveAttribute('data-animate-entrance', 'false');
+  });
+
   /** A settle can re-key every existing marker AND land a new same-text
    *  phase in the same commit. Occurrences pair by position: the re-keyed
    *  first and second stay settled; only the third — past the previously
