@@ -11,6 +11,7 @@
  *
  * Every lifetime derived from a token response goes through here so the rule has one home.
  */
+import { OPENID_EXPIRY_BUFFER_SECONDS } from '../utils/oidc';
 
 /**
  * Fallback lifetime for a token response that declares none. One hour matches every hand-written
@@ -68,13 +69,18 @@ export function normalizeExpiresIn(expiresIn: unknown): number | undefined {
  * Cache TTL in milliseconds for a token response. A provider that omits `expires_in` gets
  * `fallbackSeconds` rather than an entry that outlives the credential it holds; one that declares
  * an elapsed lifetime gets the shortest positive TTL rather than `0`, which Keyv reads as no expiry.
+ *
+ * The `OPENID_EXPIRY_BUFFER_SECONDS` margin is subtracted so a cached credential is never served
+ * in its final seconds, where it would expire in transit and 401 downstream. The buffer is applied
+ * to every exchanged-token cache (OBO, Graph, OpenID strategy), matching the federated-token check
+ * in `isOpenIDTokenValid` / `isIdTokenCurrent` (#15320).
  */
 export function getTokenCacheTtlMs(expiresIn: unknown, fallbackSeconds: number): number {
   const seconds = normalizeExpiresIn(expiresIn);
   if (seconds == null) {
     return fallbackSeconds * 1000;
   }
-  return Math.max(seconds * 1000, EXPIRED_CACHE_TTL_MS);
+  return Math.max(seconds * 1000 - OPENID_EXPIRY_BUFFER_SECONDS * 1000, EXPIRED_CACHE_TTL_MS);
 }
 
 /**

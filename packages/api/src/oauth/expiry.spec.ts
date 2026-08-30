@@ -74,8 +74,14 @@ describe('normalizeExpiresIn', () => {
 });
 
 describe('getTokenCacheTtlMs', () => {
-  it('converts a declared lifetime to milliseconds', () => {
-    expect(getTokenCacheTtlMs(1800, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(1_800_000);
+  it('converts a declared lifetime to milliseconds, minus the in-transit expiry buffer', () => {
+    expect(getTokenCacheTtlMs(1800, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(1_770_000);
+  });
+
+  it('never caches a credential past its expiry buffer margin', () => {
+    const declared = 60;
+    const ttl = getTokenCacheTtlMs(declared, DEFAULT_OAUTH_TOKEN_TTL_SECONDS);
+    expect(ttl).toBeLessThan(declared * 1000);
   });
 
   it('falls back rather than returning NaN when the provider omits `expires_in`', () => {
@@ -87,6 +93,8 @@ describe('getTokenCacheTtlMs', () => {
   it('floors an elapsed lifetime to the shortest positive TTL, never 0', () => {
     expect(getTokenCacheTtlMs(0, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(1);
     expect(getTokenCacheTtlMs(-60, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(1);
+    /** buffer larger than the lifetime still lands on the floor, not 0 */
+    expect(getTokenCacheTtlMs(10, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(1);
   });
 
   it('does not hand an elapsed lifetime the fallback, which would revive a dead credential', () => {
