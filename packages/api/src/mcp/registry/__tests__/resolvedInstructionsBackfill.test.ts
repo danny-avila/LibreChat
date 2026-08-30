@@ -45,6 +45,15 @@ const runtimePlaceholderYamlEntry: t.ParsedServerConfig = {
   headers: { 'X-User-Id': '{{LIBRECHAT_USER_ID}}' },
 };
 
+const runtimeApiKeyPlaceholderYamlEntry: t.ParsedServerConfig = {
+  ...startupDeferredYamlEntry,
+  apiKey: {
+    source: 'admin',
+    authorization_type: 'bearer',
+    key: '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+  },
+};
+
 describe('MCPServersRegistry.setResolvedInstructions', () => {
   let registry: MCPServersRegistry;
 
@@ -139,6 +148,7 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
   it.each([
     ['OAuth', oauthDeferredYamlEntry],
     ['runtime placeholders', runtimePlaceholderYamlEntry],
+    ['runtime placeholders in an admin API key', runtimeApiKeyPlaceholderYamlEntry],
     [
       'configured-oauth-block',
       {
@@ -390,6 +400,7 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
       },
     ],
     ['runtime placeholders', runtimePlaceholderYamlEntry],
+    ['runtime placeholders in an admin API key', runtimeApiKeyPlaceholderYamlEntry],
     [
       'a configured oauth block with requiresOAuth stamped false',
       {

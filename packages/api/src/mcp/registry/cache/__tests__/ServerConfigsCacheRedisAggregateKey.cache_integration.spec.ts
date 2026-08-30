@@ -247,6 +247,42 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       expect(result.server1.resolvedInstructions).toBe('server one instructions');
       expect(result.server2.resolvedInstructions).toBe('server two instructions');
     });
+
+    it('routes every aggregate mutation through Redis-side atomic updates', async () => {
+      const replica = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      const cacheSetSpy = jest.spyOn(replica['cache'], 'set');
+
+      await replica.add('atomic-server', mockConfig1);
+      await replica.update('atomic-server', mockConfig2);
+      await replica.upsert('atomic-server', mockConfig3);
+      await replica.remove('atomic-server');
+
+      expect(cacheSetSpy).not.toHaveBeenCalled();
+      cacheSetSpy.mockRestore();
+    });
+
+    it('preserves patches concurrent with whole-entry mutations on other replicas', async () => {
+      const patchReplica = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      const writerReplica = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+
+      for (let i = 0; i < 20; i++) {
+        const patchedName = `patched-${i}`;
+        const updatedName = `updated-${i}`;
+        await cache.add(patchedName, mockConfig1);
+        await cache.add(updatedName, mockConfig2);
+
+        await expect(
+          Promise.all([
+            patchReplica.patch(patchedName, { resolvedInstructions: `instructions-${i}` }),
+            writerReplica.update(updatedName, { ...mockConfig3, description: `updated-${i}` }),
+          ]),
+        ).resolves.toEqual([true, undefined]);
+
+        const result = await cache.getAll();
+        expect(result[patchedName].resolvedInstructions).toBe(`instructions-${i}`);
+        expect(result[updatedName].description).toBe(`updated-${i}`);
+      }
+    });
   });
 
   describe('reset operation', () => {

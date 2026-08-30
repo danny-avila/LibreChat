@@ -211,9 +211,9 @@ type UserScopedConnectionConfig = Pick<
   ParsedServerConfig,
   'requiresOAuth' | 'source' | 'dbId' | 'startup'
 > & {
-  /** Loosened like the fields below: raw (pre-inspection) configs carry an
-   *  optional `source`, and the gating predicates only read `apiKey?.source`. */
-  apiKey?: { source?: 'user' | 'admin' } | null;
+  /** Loosened like the fields below: raw (pre-inspection) configs carry
+   *  optional API-key fields, and the gating predicates only inspect them. */
+  apiKey?: { key?: string; source?: 'user' | 'admin' } | null;
   args?: string[];
   /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
    *  scoping predicates only check key presence */
@@ -230,7 +230,15 @@ type UserScopedConnectionConfig = Pick<
 };
 
 function placeholderBearingFields(config: UserScopedConnectionConfig): PlaceholderValue[] {
-  return [config.args, config.env, config.headers, config.oauth, config.oauth_headers, config.url];
+  return [
+    config.apiKey?.key,
+    config.args,
+    config.env,
+    config.headers,
+    config.oauth,
+    config.oauth_headers,
+    config.url,
+  ];
 }
 
 /** Whether a server should use MCP OAuth handling. */
