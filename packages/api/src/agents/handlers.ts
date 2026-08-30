@@ -4464,6 +4464,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
               const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
+              const liveArtifactPollRequired =
+                !harvestEnabled &&
+                (tool as StructuredToolInterface & { responseFormat?: unknown }).responseFormat ===
+                  Constants.CONTENT_AND_ARTIFACT;
               const backgroundStepId =
                 typeof tc.stepId === 'string' && tc.stepId.trim() !== '' ? tc.stepId : undefined;
               const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);
@@ -4580,7 +4584,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const { task, isNew } = created;
               let completionPreregistered = task.completionWakeup === true;
-              let completionWakeupMode: true | 'poll' = true;
               let completionAdmission: BackgroundToolWakeupAdmission | undefined;
               if (isNew) {
                 if (
@@ -4658,9 +4661,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       toolName: tc.name,
                       status: params.status,
                       settledAt: new Date(current?.updatedAt ?? Date.now()),
-                      ...(completionPreregistered
-                        ? { completionWakeup: completionWakeupMode }
-                        : {}),
+                      ...(completionPreregistered ? { completionWakeup: true } : {}),
                       ...(current?.resultClaim != null
                         ? {
                             resultClaim: {
@@ -4995,10 +4996,36 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       return;
                     }
                     if (result.artifact != null && !harvestEnabled && completionAdmission != null) {
-                      /** Preserve the promised continuation, but leave the
-                       * result itself unclaimed so that fresh run can deliver
-                       * the process-local artifact through a live poll. */
-                      completionWakeupMode = 'poll';
+                      /** Eligibility is decided from the actual result, not the
+                       * tool's declared response format. A content-only result
+                       * from a content-and-artifact tool can wake normally; an
+                       * actual artifact still needs the live poll callback. */
+                      try {
+                        const retired = await completionAdmission.retire(
+                          'background tool artifact requires live polling',
+                        );
+                        if (!retired) {
+                          logger.warn(
+                            `[background] Could not retire artifact wakeup for task ${task.id}.`,
+                          );
+                        }
+                      } catch (retireError) {
+                        logger.warn(
+                          `[background] Failed to retire artifact wakeup for task ${task.id}:`,
+                          retireError,
+                        );
+                      } finally {
+                        /** Never publish an eligibility marker for an artifact
+                         * the continuation cannot reconstruct. An ambiguous
+                         * retire receipt therefore fails closed to polling; any
+                         * surviving delivery expires with the producer lease. */
+                        completionPreregistered = false;
+                        backgroundTaskRegistry.markCompletionPersistenceFailed(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                        );
+                      }
                     }
                     const storedContent = backgroundTaskRegistry.complete(
                       backgroundUserId,
@@ -5080,6 +5107,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 status: 'success' as const,
                 content: buildBackgroundHandleContent(task, {
                   completionWakeup: completionPreregistered,
+                  liveArtifactPollRequired,
                 }),
               };
             };

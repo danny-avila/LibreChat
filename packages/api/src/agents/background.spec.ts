@@ -1472,6 +1472,45 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(JSON.stringify(result)).not.toContain('PRIVATE UNTIL CONTINUATION');
   });
 
+  it('recovers a result whose automatic wakeup claim has dead-lettered', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'dead_claim_user',
+      conversationId: 'dead_claim_convo',
+      toolCallId: 'call_dead_claim',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-dead-claim',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('dead_claim_user', 'dead_claim_convo', created.task.id, {
+      content: 'RECOVERED CLAIMED RESULT',
+    });
+    const retire = jest.fn(async () => true);
+    backgroundTaskRegistry.markCompletionWakeup(
+      'dead_claim_user',
+      'dead_claim_convo',
+      created.task.id,
+      { renew: jest.fn(async () => true), retire },
+    );
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'dead_claim_user',
+        conversationId: 'dead_claim_convo',
+        args: { background_task_id: created.task.id },
+        toolCallId: 'poll-dead-claim',
+        runId: 'poll-run',
+        claimBackgroundToolResult: async () => ({ status: 'claimed' }),
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', result: 'RECOVERED CLAIMED RESULT' });
+    expect(retire).toHaveBeenCalledWith('dead completion claim recovered by manual poll', {
+      onlyIfDead: true,
+    });
+  });
+
   it('does not expose a local result after its automatic resolver owns the lease', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'retire_user',
@@ -2014,6 +2053,18 @@ describe('buildBackgroundHandleContent', () => {
     expect(parsed.background_task_id).toBe(created.task.id);
     expect(parsed.status).toBe('running');
     expect(parsed.message).toContain(CHECK_BACKGROUND_TASK_NAME);
+  });
+
+  it('requires polling when the tool can return a process-local live artifact', () => {
+    const parsed = JSON.parse(
+      buildBackgroundHandleContent(
+        { id: 'artifact-task', toolName: 'artifact_tool', status: 'running' },
+        { completionWakeup: true, liveArtifactPollRequired: true },
+      ),
+    );
+
+    expect(parsed.message).toContain('must call check_background_task');
+    expect(parsed.message).toContain('do not end the turn');
   });
 });
 

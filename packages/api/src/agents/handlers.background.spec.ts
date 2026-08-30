@@ -333,7 +333,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(task?.completionPersistenceFailed).toBeUndefined();
   });
 
-  it('preserves a fresh-run notification when the settled result requires live polling', async () => {
+  it('elects live polling only when the settled result actually contains an artifact', async () => {
     const retire = jest.fn(async () => true);
     const preregister = jest.fn(async () => ({
       renew: jest.fn(async () => true),
@@ -375,13 +375,14 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
 
     expect(preregister).toHaveBeenCalledTimes(1);
-    expect(retire).not.toHaveBeenCalled();
+    expect(retire).toHaveBeenCalledWith('background tool artifact requires live polling');
     expect(persist).toHaveBeenCalledWith(
       expect.objectContaining({
-        backgroundTask: expect.objectContaining({ completionWakeup: 'poll' }),
+        backgroundTask: expect.not.objectContaining({ completionWakeup: true }),
       }),
     );
-    expect(JSON.parse(dispatch.content).message).toContain('host will resume you');
+    expect(JSON.parse(dispatch.content).message).toContain('must call check_background_task');
+    expect(JSON.parse(dispatch.content).message).toContain('do not end the turn');
   });
 
   it('keeps automatic completion for a declared artifact tool that returns content only', async () => {
@@ -406,7 +407,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
       },
     });
 
-    await runBatch(handler, {
+    const [dispatch] = await runBatch(handler, {
       toolCalls: [
         {
           id: 'call-optional-artifact',
@@ -422,6 +423,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
 
     expect(retire).not.toHaveBeenCalled();
+    expect(JSON.parse(dispatch.content).message).toContain('must call check_background_task');
     expect(persist).toHaveBeenCalledWith(
       expect.objectContaining({
         backgroundTask: expect.objectContaining({ completionWakeup: true }),

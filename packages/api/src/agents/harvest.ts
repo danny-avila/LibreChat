@@ -35,8 +35,8 @@ export interface BackgroundToolResultState {
   toolName: string;
   status: 'completed' | 'error';
   settledAt: Date;
-  /** This task owns either direct-result or live-poll continuation delivery. */
-  completionWakeup?: true | 'poll';
+  /** This exact task owns a pre-registered automatic continuation delivery. */
+  completionWakeup?: true;
   resultClaim?: {
     kind: 'manual' | 'wakeup';
     claimId: string;

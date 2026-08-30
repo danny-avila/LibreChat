@@ -271,27 +271,6 @@ describe('background tool completion wakeups', () => {
     );
   });
 
-  it('starts a fresh run that polls an artifact without claiming its result', async () => {
-    const { methods, releaseBackgroundToolResultClaims } = resolverMethods();
-    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'poll_required' });
-    const resolve = createBackgroundToolCompletionWakeupResolver({
-      methods: methods as never,
-      getGenerationJob: async () => null,
-    });
-
-    const prepared = await resolve(await envelope(), { idempotencyKey: 'delivery-artifact' });
-
-    expect(prepared).toMatchObject({ status: 'ready', parentMessageId: 'response-2' });
-    expect(prepared?.status === 'ready' && prepared.input).toContain('check_background_task');
-    expect(prepared?.status === 'ready' && prepared.input).toContain('task-1');
-    if (prepared?.status === 'ready') {
-      await prepared.releaseOnDefiniteFailure?.();
-    }
-    expect(releaseBackgroundToolResultClaims).toHaveBeenCalledWith(
-      expect.objectContaining({ taskIds: ['task-1'], claimId: 'delivery-artifact' }),
-    );
-  });
-
   it('defers without claiming while the invoking generation is active', async () => {
     const { methods } = resolverMethods();
     const resolve = createBackgroundToolCompletionWakeupResolver({

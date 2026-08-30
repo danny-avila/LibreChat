@@ -1247,16 +1247,18 @@ export const backgroundTaskRegistry = new BackgroundTaskRegistryClass();
 /** Content for the synthetic ToolMessage returned when a call is backgrounded. */
 export function buildBackgroundHandleContent(
   task: Pick<BackgroundTask, 'id' | 'toolName' | 'status'>,
-  options: { completionWakeup?: boolean } = {},
+  options: { completionWakeup?: boolean; liveArtifactPollRequired?: boolean } = {},
 ): string {
   return JSON.stringify({
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
     message:
-      options.completionWakeup === true
-        ? `Started "${task.toolName}" in the background. Continue independent work or end the turn; the host will resume you when task "${task.id}" finishes. Use ${CHECK_BACKGROUND_TASK_NAME} only for an explicit status check or as a fallback.`
-        : `Started "${task.toolName}" in the background. Call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" to check progress and retrieve the result; it persists on this server, so you may poll it later in this turn or in a following turn. Do not assume it has finished until you have polled and seen status "completed".`,
+      options.liveArtifactPollRequired === true
+        ? `Started "${task.toolName}" in the background. This tool can return a live artifact, so you must call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" until it completes; do not end the turn expecting artifact delivery from an automatic continuation. If the settled result is content-only, the host may still resume you automatically.`
+        : options.completionWakeup === true
+          ? `Started "${task.toolName}" in the background. Continue independent work or end the turn; the host will resume you when task "${task.id}" finishes. Use ${CHECK_BACKGROUND_TASK_NAME} only for an explicit status check or as a fallback.`
+          : `Started "${task.toolName}" in the background. Call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" to check progress and retrieve the result; it persists on this server, so you may poll it later in this turn or in a following turn. Do not assume it has finished until you have polled and seen status "completed".`,
   });
 }
 
@@ -1539,19 +1541,59 @@ export async function runCheckBackgroundTask(params: {
             kind: 'manual' as const,
             claimId: invocationId,
           };
-          const durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
+          let durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
+          let deadFallbackRecoveredFromClaim = false;
           if (durableClaim.status === 'claimed') {
-            return JSON.stringify({
-              status: 'delivery_scheduled',
-              background_task_id: taskId,
-              message: 'This result is already assigned to an automatic continuation.',
+            let recovered = false;
+            try {
+              recovered = await backgroundTaskRegistry.retireCompletionWakeup(
+                userId,
+                conversationId,
+                taskId,
+                'dead completion claim recovered by manual poll',
+                { onlyIfDead: true },
+              );
+            } catch (error) {
+              logger.warn(
+                `[background] Failed to reconcile claimed completion for manual poll ${taskId}:`,
+                error,
+              );
+            }
+            if (!recovered) {
+              return JSON.stringify({
+                status: 'delivery_scheduled',
+                background_task_id: taskId,
+                message: 'This result is already assigned to an automatic continuation.',
+              });
+            }
+            backgroundTaskRegistry.markCompletionPersistenceFailed(userId, conversationId, taskId);
+            const localClaim = backgroundTaskRegistry.claimResult(userId, conversationId, taskId, {
+              kind: 'manual',
+              claimId: invocationId,
             });
+            if (localClaim === 'claimed') {
+              return JSON.stringify({
+                status: 'delivery_scheduled',
+                background_task_id: taskId,
+                message: 'This result is already assigned to another continuation.',
+              });
+            }
+            if (localClaim === 'not_ready') {
+              return JSON.stringify({
+                status: 'result_persisting',
+                background_task_id: taskId,
+                message:
+                  'The task is finished and its result is being recovered. Retry this poll shortly.',
+              });
+            }
+            deadFallbackRecoveredFromClaim = true;
+            durableClaim = { status: 'not_ready' };
           }
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
               task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId;
-            let deadFallbackRecovered = false;
-            if (!localReplay) {
+            let deadFallbackRecovered = deadFallbackRecoveredFromClaim;
+            if (!localReplay && !deadFallbackRecovered) {
               /** Retire the still-unclaimed delivery before creating local
                * ownership. A live resolver lease wins. Once that resolver is
                * irreversibly dead-lettered, a dead-only repair reopens the

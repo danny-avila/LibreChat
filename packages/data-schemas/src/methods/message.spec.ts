@@ -1034,7 +1034,7 @@ describe('Message Operations', () => {
     });
 
     it('does not batch a terminal sibling that elected poll-only delivery', async () => {
-      const terminal = (taskId: string, completionWakeup: true | 'poll') => ({
+      const terminal = (taskId: string, completionWakeup: boolean) => ({
         type: 'tool_call',
         tool_call: {
           id: `call-${taskId}`,
@@ -1046,13 +1046,13 @@ describe('Message Operations', () => {
             toolName: 'slow_tool',
             status: 'completed',
             settledAt: new Date(),
-            completionWakeup,
+            ...(completionWakeup ? { completionWakeup: true } : {}),
           },
         },
       });
       await saveMessage(mockCtx, {
         ...mockMessageData,
-        content: [terminal('wakeup', true), terminal('poll-only', 'poll')],
+        content: [terminal('wakeup', true), terminal('poll-only', false)],
       });
 
       await expect(
@@ -1068,46 +1068,6 @@ describe('Message Operations', () => {
         status: 'acquired',
         results: [expect.objectContaining({ taskId: 'wakeup' })],
       });
-      await expect(
-        claimBackgroundToolResults({
-          userId: 'user123',
-          conversationId: mockMessageData.conversationId as string,
-          messageId: 'msg123',
-          taskId: 'poll-only',
-          kind: 'wakeup',
-          claimId: 'delivery-poll',
-        }),
-      ).resolves.toEqual({ status: 'poll_required' });
-      await expect(
-        claimBackgroundToolResults({
-          userId: 'user123',
-          conversationId: mockMessageData.conversationId as string,
-          messageId: 'msg123',
-          taskId: 'poll-only',
-          kind: 'wakeup',
-          claimId: 'other-delivery',
-        }),
-      ).resolves.toEqual({ status: 'claimed' });
-      await expect(
-        releaseBackgroundToolResultClaims({
-          userId: 'user123',
-          conversationId: mockMessageData.conversationId as string,
-          messageId: 'msg123',
-          taskIds: ['poll-only'],
-          kind: 'wakeup',
-          claimId: 'delivery-poll',
-        }),
-      ).resolves.toBe(true);
-      await expect(
-        claimBackgroundToolResults({
-          userId: 'user123',
-          conversationId: mockMessageData.conversationId as string,
-          messageId: 'msg123',
-          taskId: 'poll-only',
-          kind: 'wakeup',
-          claimId: 'other-delivery',
-        }),
-      ).resolves.toEqual({ status: 'poll_required' });
       await expect(
         claimBackgroundToolResults({
           userId: 'user123',

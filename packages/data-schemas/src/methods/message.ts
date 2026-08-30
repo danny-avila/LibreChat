@@ -382,7 +382,6 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-metadata.thoughtSignatures',
   '-content.tool_call.backgroundTask.resultClaim',
   '-content.tool_call.backgroundTask.completionWakeup',
-  '-content.tool_call.backgroundTask.completionNotificationClaim',
   '-attachments.web_search.knowledgeGraph',
   '-attachments.web_search.peopleAlsoAsk',
   '-attachments.web_search.relatedSearches',
@@ -415,7 +414,6 @@ export interface BackgroundToolResultRecord {
 
 export type BackgroundToolResultClaim =
   | { status: 'not_found' | 'not_ready' | 'claimed' }
-  | { status: 'poll_required' }
   | { status: 'acquired'; results: BackgroundToolResultRecord[] };
 
 export type SubagentThreadViewMessageRecord = Pick<
@@ -534,7 +532,7 @@ export interface MessageMethods {
       toolName: string;
       status: 'completed' | 'error';
       settledAt: Date;
-      completionWakeup?: true | 'poll';
+      completionWakeup?: true;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
@@ -951,7 +949,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       toolName: string;
       status: 'completed' | 'error';
       settledAt: Date;
-      completionWakeup?: true | 'poll';
+      completionWakeup?: true;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
@@ -1010,10 +1008,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                                             toolName: backgroundTask.toolName,
                                             status: backgroundTask.status,
                                             settledAt: backgroundTask.settledAt,
-                                            ...(backgroundTask.completionWakeup != null
-                                              ? {
-                                                  completionWakeup: backgroundTask.completionWakeup,
-                                                }
+                                            ...(backgroundTask.completionWakeup === true
+                                              ? { completionWakeup: true }
                                               : {}),
                                           },
                                         },
@@ -1262,161 +1258,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           ?.backgroundTask?.taskId === taskId
       );
     });
-    const requestedBackgroundTask =
+    const requestedClaim =
       requestedPart == null || typeof requestedPart !== 'object'
         ? undefined
         : (
             requestedPart as {
               tool_call?: {
-                backgroundTask?: {
-                  completionWakeup?: unknown;
-                  resultClaim?: { kind?: unknown; claimId?: unknown };
-                };
+                backgroundTask?: { resultClaim?: { kind?: unknown; claimId?: unknown } };
               };
             }
-          ).tool_call?.backgroundTask;
-    const requestedClaim = requestedBackgroundTask?.resultClaim;
+          ).tool_call?.backgroundTask?.resultClaim;
     const replaying = requestedClaim?.kind === kind && requestedClaim.claimId === claimId;
-    if (kind === 'wakeup' && requestedBackgroundTask?.completionWakeup === 'poll') {
-      const claimedAt = new Date();
-      const notification = await Message.findOneAndUpdate(
-        {
-          user: userId,
-          conversationId,
-          messageId,
-          unfinished: { $ne: true },
-          content: {
-            $elemMatch: {
-              type: 'tool_call',
-              'tool_call.backgroundTask.taskId': taskId,
-              'tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
-              'tool_call.backgroundTask.completionWakeup': 'poll',
-              'tool_call.backgroundTask.resultClaim': { $exists: false },
-              $or: [
-                {
-                  'tool_call.backgroundTask.completionNotificationClaim': {
-                    $exists: false,
-                  },
-                },
-                {
-                  'tool_call.backgroundTask.completionNotificationClaim.claimId': claimId,
-                },
-              ],
-            },
-          },
-          ...(agentId != null
-            ? {
-                $expr: {
-                  $anyElementTrue: {
-                    $map: {
-                      input: { $ifNull: ['$content', []] },
-                      as: 'candidate',
-                      in: {
-                        $and: [
-                          { $eq: ['$$candidate.tool_call.backgroundTask.taskId', taskId] },
-                          {
-                            $in: [
-                              {
-                                $ifNull: [
-                                  {
-                                    $ifNull: [
-                                      '$$candidate.agentId',
-                                      '$$candidate.tool_call.agentId',
-                                    ],
-                                  },
-                                  null,
-                                ],
-                              },
-                              [null, agentId],
-                            ],
-                          },
-                        ],
-                      },
-                    },
-                  },
-                },
-              }
-            : {}),
-        },
-        [
-          {
-            $set: {
-              content: {
-                $map: {
-                  input: { $ifNull: ['$content', []] },
-                  as: 'part',
-                  in: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $eq: ['$$part.tool_call.backgroundTask.taskId', taskId] },
-                          { $eq: ['$$part.tool_call.backgroundTask.completionWakeup', 'poll'] },
-                          {
-                            $eq: [
-                              { $ifNull: ['$$part.tool_call.backgroundTask.resultClaim', null] },
-                              null,
-                            ],
-                          },
-                          {
-                            $or: [
-                              {
-                                $eq: [
-                                  {
-                                    $ifNull: [
-                                      '$$part.tool_call.backgroundTask.completionNotificationClaim',
-                                      null,
-                                    ],
-                                  },
-                                  null,
-                                ],
-                              },
-                              {
-                                $eq: [
-                                  '$$part.tool_call.backgroundTask.completionNotificationClaim.claimId',
-                                  claimId,
-                                ],
-                              },
-                            ],
-                          },
-                        ],
-                      },
-                      {
-                        $mergeObjects: [
-                          '$$part',
-                          {
-                            tool_call: {
-                              $mergeObjects: [
-                                '$$part.tool_call',
-                                {
-                                  backgroundTask: {
-                                    $mergeObjects: [
-                                      '$$part.tool_call.backgroundTask',
-                                      {
-                                        completionNotificationClaim: {
-                                          claimId,
-                                          claimedAt,
-                                        },
-                                      },
-                                    ],
-                                  },
-                                },
-                              ],
-                            },
-                          },
-                        ],
-                      },
-                      '$$part',
-                    ],
-                  },
-                },
-              },
-            },
-          },
-        ],
-        { new: true, projection: { _id: 1 } },
-      ).lean<{ _id: Types.ObjectId } | null>();
-      return notification == null ? { status: 'claimed' } : { status: 'poll_required' };
-    }
     const candidates: string[] = [];
     let requestedState: 'ready' | 'claimed' | 'missing' = 'missing';
     for (const part of row.content ?? []) {
@@ -1652,32 +1504,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                     {
                       $and: [
                         { $in: ['$$part.tool_call.backgroundTask.taskId', taskIds] },
-                        {
-                          $or: [
-                            {
-                              $and: [
-                                { $eq: ['$$part.tool_call.backgroundTask.resultClaim.kind', kind] },
-                                {
-                                  $eq: [
-                                    '$$part.tool_call.backgroundTask.resultClaim.claimId',
-                                    claimId,
-                                  ],
-                                },
-                              ],
-                            },
-                            {
-                              $and: [
-                                { $eq: [kind, 'wakeup'] },
-                                {
-                                  $eq: [
-                                    '$$part.tool_call.backgroundTask.completionNotificationClaim.claimId',
-                                    claimId,
-                                  ],
-                                },
-                              ],
-                            },
-                          ],
-                        },
+                        { $eq: ['$$part.tool_call.backgroundTask.resultClaim.kind', kind] },
+                        { $eq: ['$$part.tool_call.backgroundTask.resultClaim.claimId', claimId] },
                       ],
                     },
                     {
@@ -1695,16 +1523,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                                         $objectToArray: '$$part.tool_call.backgroundTask',
                                       },
                                       as: 'field',
-                                      cond: {
-                                        $not: [
-                                          {
-                                            $in: [
-                                              '$$field.k',
-                                              ['resultClaim', 'completionNotificationClaim'],
-                                            ],
-                                          },
-                                        ],
-                                      },
+                                      cond: { $ne: ['$$field.k', 'resultClaim'] },
                                     },
                                   },
                                 },
@@ -1728,27 +1547,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return false;
     }
     const remaining = parseBackgroundToolResults(updated, { kind, claimId });
-    const notificationRemaining = (updated.content ?? []).some((part) => {
-      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
-        return false;
-      }
-      const task = (
-        part as {
-          tool_call?: {
-            backgroundTask?: {
-              taskId?: unknown;
-              completionNotificationClaim?: { claimId?: unknown };
-            };
-          };
-        }
-      ).tool_call?.backgroundTask;
-      return (
-        typeof task?.taskId === 'string' &&
-        taskIds.includes(task.taskId) &&
-        task.completionNotificationClaim?.claimId === claimId
-      );
-    });
-    return !notificationRemaining && !remaining.some((result) => taskIds.includes(result.taskId));
+    return !remaining.some((result) => taskIds.includes(result.taskId));
   }
 
   /**
