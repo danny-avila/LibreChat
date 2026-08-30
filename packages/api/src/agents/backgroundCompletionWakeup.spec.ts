@@ -134,7 +134,10 @@ describe('background tool completion wakeups', () => {
   });
 
   it("keeps unfinished sibling tasks out of each other's delivery lanes", async () => {
-    const enqueue = jest.fn(async () => ({ deliveryKey: 'delivery-key' }));
+    const enqueue = jest.fn<
+      ReturnType<EnqueueBackgroundToolCompletion>,
+      Parameters<EnqueueBackgroundToolCompletion>
+    >(async () => ({ deliveryKey: 'delivery-key' }));
     const notify = createBackgroundToolCompletionWakeupHandler(enqueue, async () => true);
 
     await notify(registration({ taskId: 'task-slow' }));
