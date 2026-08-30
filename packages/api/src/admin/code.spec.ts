@@ -65,7 +65,7 @@ describe('createAdminCodeEnvironmentHandlers', () => {
         protocolVersion: 1,
         workerId: 'vm-1',
         code: 'one-time-code-value-that-is-long',
-        expiresAt: '2026-08-30T12:00:00.000Z',
+        expiresAt: '2099-08-30T12:00:00.000Z',
       }),
     );
     const handlers = createAdminCodeEnvironmentHandlers({
@@ -93,7 +93,7 @@ describe('createAdminCodeEnvironmentHandlers', () => {
       environmentId: 'attached-vm',
       workerId: 'vm-1',
       code: 'one-time-code-value-that-is-long',
-      expiresAt: '2026-08-30T12:00:00.000Z',
+      expiresAt: '2099-08-30T12:00:00.000Z',
     });
     expect(JSON.stringify(response.body)).not.toContain('administrator-bootstrap-token');
   });
@@ -118,7 +118,7 @@ describe('createAdminCodeEnvironmentHandlers', () => {
         protocolVersion: 1,
         workerId: 'vm-1',
         code: 'one-time-code-value-that-is-long',
-        expiresAt: '2026-08-30T12:00:00.000Z',
+        expiresAt: '2099-08-30T12:00:00.000Z',
       }),
     );
     const handlers = createAdminCodeEnvironmentHandlers({
@@ -154,8 +154,32 @@ describe('createAdminCodeEnvironmentHandlers', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('rejects an expired one-time pairing code', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      Response.json({
+        protocolVersion: 1,
+        workerId: 'vm-1',
+        code: 'expired-one-time-code-value',
+        expiresAt: '2000-01-01T00:00:00.000Z',
+      }),
+    );
+    const handlers = createAdminCodeEnvironmentHandlers({
+      getAppConfig: jest.fn().mockResolvedValue(config()),
+      readSecret: jest.fn().mockReturnValue('administrator-bootstrap-token'),
+      fetchImpl,
+    });
+    const response = mockResponse();
+
+    await handlers.createPairing(request(), response);
+
+    expect(response.statusCode).toBe(502);
+    expect(response.body).toEqual({ error: 'Code API returned an invalid pairing response' });
+  });
+
   it('revokes the environment worker without returning bridge credentials', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(Response.json({ revoked: true }));
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValue(Response.json({ protocolVersion: 1, revoked: true }));
     const handlers = createAdminCodeEnvironmentHandlers({
       getAppConfig: jest.fn().mockResolvedValue(config()),
       readSecret: jest.fn().mockReturnValue('administrator-bootstrap-token'),
@@ -176,5 +200,22 @@ describe('createAdminCodeEnvironmentHandlers', () => {
       revoked: true,
     });
     expect(JSON.stringify(response.body)).not.toContain('administrator-bootstrap-token');
+  });
+
+  it('rejects an invalid revocation acknowledgement', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValue(Response.json({ protocolVersion: 1, revoked: false }));
+    const handlers = createAdminCodeEnvironmentHandlers({
+      getAppConfig: jest.fn().mockResolvedValue(config()),
+      readSecret: jest.fn().mockReturnValue('administrator-bootstrap-token'),
+      fetchImpl,
+    });
+    const response = mockResponse();
+
+    await handlers.revokeWorker(request(), response);
+
+    expect(response.statusCode).toBe(502);
+    expect(response.body).toEqual({ error: 'Code API returned an invalid revocation response' });
   });
 });

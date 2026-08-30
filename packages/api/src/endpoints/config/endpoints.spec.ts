@@ -270,6 +270,65 @@ describe('createEndpointsConfigService', () => {
       });
     });
 
+    it('does not advertise pairing configured only by a writable override', async () => {
+      const effectiveConfig = appConfig({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['conversation'],
+              environments: [
+                {
+                  id: 'attached-vm',
+                  name: 'Attached VM',
+                  type: 'attached',
+                  baseURL: 'https://override.example.com/v1',
+                  owner: 'deployment',
+                  pairing: {
+                    workerId: 'vm-1',
+                    tokenEnv: 'DATABASE_URL',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const getAppConfig = jest.fn().mockResolvedValue(
+        appConfig({
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              statefulCodeSessions: {
+                allowedEnvironments: ['conversation'],
+                environments: [
+                  {
+                    id: 'attached-vm',
+                    name: 'Attached VM',
+                    type: 'attached',
+                    baseURL: 'https://bridge.example.com/v1',
+                    owner: 'deployment',
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      );
+      const deps = createMockDeps({
+        getAppConfig,
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+        }),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+      const result = await getEndpointsConfig(fakeReq({ config: effectiveConfig }));
+
+      expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+      expect(
+        result?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments?.[0]?.pairingAvailable,
+      ).toBe(false);
+    });
+
     it('merges bedrock availableRegions', async () => {
       const deps = createMockDeps({
         loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({

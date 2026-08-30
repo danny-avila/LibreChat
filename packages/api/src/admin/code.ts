@@ -24,6 +24,11 @@ interface CodePairingResponse {
   expiresAt: string;
 }
 
+interface CodeRevocationResponse {
+  protocolVersion: number;
+  revoked: true;
+}
+
 export interface AdminCodeEnvironmentDeps {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
   readSecret?: (name: string) => string | undefined;
@@ -60,14 +65,21 @@ function bridgeUrl(environment: ConfiguredCodeEnvironment, path: string): string
 function validPairingResponse(value: unknown, workerId: string): value is CodePairingResponse {
   if (typeof value !== 'object' || value == null) return false;
   const response = value as Partial<CodePairingResponse>;
+  const expiresAt = typeof response.expiresAt === 'string' ? Date.parse(response.expiresAt) : NaN;
   return (
     response.protocolVersion === 1 &&
     response.workerId === workerId &&
     typeof response.code === 'string' &&
     response.code.length >= 16 &&
-    typeof response.expiresAt === 'string' &&
-    Number.isFinite(Date.parse(response.expiresAt))
+    Number.isFinite(expiresAt) &&
+    expiresAt > Date.now()
   );
+}
+
+function validRevocationResponse(value: unknown): value is CodeRevocationResponse {
+  if (typeof value !== 'object' || value == null) return false;
+  const response = value as Partial<CodeRevocationResponse>;
+  return response.protocolVersion === 1 && response.revoked === true;
 }
 
 export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDeps): {
@@ -170,6 +182,10 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
           error: 'Code API rejected the revocation request',
           upstreamStatus: response.status,
         });
+      }
+      const payload = (await response.json()) as unknown;
+      if (!validRevocationResponse(payload)) {
+        return res.status(502).json({ error: 'Code API returned an invalid revocation response' });
       }
       return res.status(200).json({
         environmentId: resolved.id,
