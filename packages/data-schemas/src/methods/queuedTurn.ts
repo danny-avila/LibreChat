@@ -119,7 +119,10 @@ export type AdmitAgentQueuedTurnResult =
   | { outcome: 'conflict'; turn: AgentQueuedTurnRecord | null };
 
 export type DeadLetterAgentQueuedTurnResult =
-  | { outcome: 'dead' | 'already_terminal'; turn: AgentQueuedTurnRecord }
+  | {
+      outcome: 'dead' | 'already_terminal' | 'admission_reconciled';
+      turn: AgentQueuedTurnRecord;
+    }
   | { outcome: 'admission_indeterminate'; turn: AgentQueuedTurnRecord }
   | { outcome: 'missing'; turn: null }
   | { outcome: 'conflict'; turn: AgentQueuedTurnRecord };
@@ -138,8 +141,13 @@ export type ClaimAgentQueuedTurnResult =
   | { outcome: 'missing'; claim: null };
 
 export type BeginAgentQueuedTurnAdmissionResult =
-  | { outcome: 'started' | 'already_started'; turn: AgentQueuedTurnRecord }
+  | { outcome: 'started' | 'already_started' | 'retired'; turn: AgentQueuedTurnRecord }
   | { outcome: 'conflict'; turn: AgentQueuedTurnRecord | null };
+
+export interface AgentQueuedTurnAdmissionEvidence {
+  generationId?: string;
+  generationCreatedAt: number;
+}
 
 export interface AgentQueuedTurnMethods {
   ensureAgentQueuedTurnIndexes: () => Promise<void>;
@@ -214,6 +222,7 @@ export interface AgentQueuedTurnMethods {
       deliveryKey: string;
       settledAt: Date;
       failure: AgentQueuedTurnFailure;
+      admissionEvidence?: AgentQueuedTurnAdmissionEvidence;
     },
   ) => Promise<DeadLetterAgentQueuedTurnResult>;
   getEffectiveAgentQueuedTurnPredecessor: (
@@ -241,6 +250,9 @@ export interface AgentQueuedTurnMethods {
     targets: readonly AgentQueuedTurnDeletionTarget[];
   }) => Promise<number>;
   markAgentQueuedTurnDeliveryRetired: (input: { deliveryKey: string }) => Promise<boolean>;
+  beginAgentQueuedTurnMissingDeliveryRetirement: (input: {
+    deliveryKey: string;
+  }) => Promise<boolean>;
   markAgentQueuedTurnMissingDeliveryRetired: (input: { deliveryKey: string }) => Promise<boolean>;
   deleteAllAgentQueuedTurnsForUser: (input: { user: Types.ObjectId }) => Promise<number>;
 }
@@ -633,6 +645,19 @@ export function createAgentQueuedTurnMethods(
         if (lane.laneId == null) {
           throw new Error('Agent queued turn lane is missing its generation');
         }
+        if (lane.laneId === insertedLaneId && lane.value === 0) {
+          const predecessor = await Turn()
+            .findOne({ ...scope, sequence: { $exists: true } })
+            .sort({ sequence: -1 })
+            .select('sequence')
+            .lean<Pick<IAgentQueuedTurn, 'sequence'>>();
+          if (predecessor?.sequence != null && predecessor.sequence > 0) {
+            await Sequence().updateOne(
+              { _id, ...scope, writerId, laneId: insertedLaneId },
+              { $max: { value: predecessor.sequence } },
+            );
+          }
+        }
         return { writerId, laneId: lane.laneId };
       }
       const retired = await Sequence().exists({ _id, ...scope, retiredAt: { $exists: true } });
@@ -997,6 +1022,7 @@ export function createAgentQueuedTurnMethods(
           ...scope,
           _id: input.queuedTurnId,
           status: { $in: ['queued', 'dead'] },
+          admissionStartedAt: { $exists: false },
         },
         {
           $set: {
@@ -1373,6 +1399,36 @@ export function createAgentQueuedTurnMethods(
     if (!Number.isFinite(input.startedAt.getTime())) {
       throw new TypeError('Agent queued turn admission start is invalid');
     }
+    const retireObsoleteClaim = async (): Promise<AgentQueuedTurnRecord | null> => {
+      const retired = await Turn()
+        .findOneAndUpdate(
+          {
+            ...conversationScope(input),
+            _id: input.queuedTurnId,
+            status: 'claimed',
+            claimId: requireBoundedString(input.claimId, 128),
+            claimBy: requireBoundedString(input.claimBy, 256),
+            admissionStartedAt: { $exists: false },
+          },
+          {
+            $set: {
+              status: 'cancelled',
+              terminalReceipt: {
+                outcome: 'cancelled',
+                settledAt: input.startedAt,
+                failure: {
+                  code: 'LANE_RETIRED',
+                  message: 'The queued turn belongs to a retired conversation lane',
+                },
+              },
+            },
+            $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+          },
+          { new: true },
+        )
+        .lean<IAgentQueuedTurn>();
+      return retired == null ? null : toRecord(retired);
+    };
     return serializeLocalLane(input, async () => {
       let writer: AgentQueuedTurnLaneWriter;
       try {
@@ -1380,9 +1436,12 @@ export function createAgentQueuedTurnMethods(
       } catch (error) {
         if (
           error instanceof AgentQueuedTurnLaneRetiredError ||
-          error instanceof AgentQueuedTurnLaneMissingError ||
-          error instanceof AgentQueuedTurnLaneGenerationError
+          error instanceof AgentQueuedTurnLaneMissingError
         ) {
+          const retired = await retireObsoleteClaim();
+          if (retired != null) {
+            return { outcome: 'retired', turn: retired };
+          }
           const current = await Turn()
             .findOne({ ...conversationScope(input), _id: input.queuedTurnId })
             .lean<IAgentQueuedTurn>();
@@ -1422,6 +1481,18 @@ export function createAgentQueuedTurnMethods(
         const current = await Turn()
           .findOne({ ...conversationScope(input), _id: input.queuedTurnId })
           .lean<IAgentQueuedTurn>();
+        if (
+          current?.status === 'claimed' &&
+          current.claimId === input.claimId &&
+          current.claimBy === input.claimBy &&
+          current.admissionStartedAt == null &&
+          current.laneId !== writer.laneId
+        ) {
+          const retired = await retireObsoleteClaim();
+          if (retired != null) {
+            return { outcome: 'retired', turn: retired };
+          }
+        }
         if (
           current?.status === 'claimed' &&
           current.claimId === input.claimId &&
@@ -1518,10 +1589,55 @@ export function createAgentQueuedTurnMethods(
       deliveryKey: string;
       settledAt: Date;
       failure: AgentQueuedTurnFailure;
+      admissionEvidence?: AgentQueuedTurnAdmissionEvidence;
     },
   ): Promise<DeadLetterAgentQueuedTurnResult> {
     const scope = conversationScope(input);
     const deliveryKey = requireBoundedString(input.deliveryKey, 128);
+    if (input.admissionEvidence != null) {
+      const generationId = normalizeOptionalString(input.admissionEvidence.generationId, 256);
+      const generationCreatedAt = normalizePredecessor(input.admissionEvidence.generationCreatedAt);
+      if (generationCreatedAt == null) {
+        throw new TypeError('Agent queued turn admission evidence is invalid');
+      }
+      const reconciled = await Turn()
+        .findOneAndUpdate(
+          {
+            ...scope,
+            _id: input.queuedTurnId,
+            deliveryKey,
+            status: 'claimed',
+            admissionId: deliveryKey,
+            admissionStartedAt: { $exists: true },
+          },
+          {
+            $set: {
+              status: 'admitted',
+              terminalReceipt: {
+                outcome: 'admitted',
+                settledAt: input.settledAt,
+                admissionId: deliveryKey,
+                admissionMode: 'ordinary',
+                ...(generationId != null && { generationId }),
+                generationCreatedAt,
+              },
+            },
+            $unset: {
+              activeSlot: 1,
+              claimId: 1,
+              claimBy: 1,
+              claimUntil: 1,
+              admissionId: 1,
+              admissionStartedAt: 1,
+            },
+          },
+          { new: true },
+        )
+        .lean<IAgentQueuedTurn>();
+      if (reconciled != null) {
+        return { outcome: 'admission_reconciled', turn: toRecord(reconciled) };
+      }
+    }
     const turn = await Turn()
       .findOneAndUpdate(
         {
@@ -1562,7 +1678,36 @@ export function createAgentQueuedTurnMethods(
       current.deliveryKey === deliveryKey &&
       current.admissionStartedAt != null
     ) {
-      return { outcome: 'admission_indeterminate', turn: toRecord(current) };
+      const quarantined = await Turn()
+        .findOneAndUpdate(
+          {
+            ...scope,
+            _id: input.queuedTurnId,
+            deliveryKey,
+            status: 'claimed',
+            admissionId: deliveryKey,
+            admissionStartedAt: { $exists: true },
+          },
+          {
+            $set: {
+              status: 'dead',
+              terminalReceipt: {
+                outcome: 'dead',
+                settledAt: input.settledAt,
+                failure: {
+                  code: 'ADMISSION_INDETERMINATE',
+                  message: 'The queued turn may have been admitted and requires reconciliation',
+                },
+              },
+            },
+            $unset: { claimId: 1, claimBy: 1, claimUntil: 1 },
+          },
+          { new: true },
+        )
+        .lean<IAgentQueuedTurn>();
+      if (quarantined != null) {
+        return { outcome: 'admission_indeterminate', turn: toRecord(quarantined) };
+      }
     }
     if (['admitted', 'cancelled', 'dead'].includes(current.status)) {
       return { outcome: 'already_terminal', turn: toRecord(current) };
@@ -1612,6 +1757,7 @@ export function createAgentQueuedTurnMethods(
           conversationId: requireBoundedString(input.conversationId, 256),
         }),
         status: { $in: ['queued', 'claimed'] },
+        admissionStartedAt: { $exists: false },
       },
       {
         $set: {
@@ -1697,7 +1843,6 @@ export function createAgentQueuedTurnMethods(
       try {
         const admissionInFlight = await Turn().exists({
           ...scope,
-          status: 'claimed',
           admissionStartedAt: { $exists: true },
         });
         if (admissionInFlight != null) {
@@ -1802,6 +1947,7 @@ export function createAgentQueuedTurnMethods(
       $or: [
         { deliveryKey: { $exists: true }, deliveryState: { $ne: 'retired' } },
         { status: { $in: ['reserving', 'queued', 'claimed'] } },
+        { admissionStartedAt: { $exists: true } },
       ],
     });
     if (blocker != null) {
@@ -1832,8 +1978,35 @@ export function createAgentQueuedTurnMethods(
     return achieved != null;
   }
 
-  /** A published source proves that its delivery was durably created before
-   * the source advanced. Once that delivery has aged out, absence is therefore
+  /** Freezes a terminal source before probing another collection for an aged
+   * delivery receipt. A scheduler can only advance `publishing` to
+   * `published`, so it can never cross this fence after the absence read. */
+  async function beginAgentQueuedTurnMissingDeliveryRetirement(input: {
+    deliveryKey: string;
+  }): Promise<boolean> {
+    const deliveryKey = requireBoundedString(input.deliveryKey, 128);
+    const result = await Turn().updateOne(
+      {
+        deliveryKey,
+        status: { $in: ['admitted', 'cancelled', 'dead'] },
+        deliveryState: 'published',
+      },
+      { $set: { deliveryState: 'retiring' } },
+    );
+    if (result.modifiedCount === 1) {
+      return true;
+    }
+    return (
+      (await Turn().exists({
+        deliveryKey,
+        status: { $in: ['admitted', 'cancelled', 'dead'] },
+        deliveryState: 'retiring',
+      })) != null
+    );
+  }
+
+  /** A retirement-fenced source proves that its delivery was durably created
+   * before the absence read. Once that delivery has aged out, absence is
    * terminal proof rather than permission to publish the payload again. */
   async function markAgentQueuedTurnMissingDeliveryRetired(input: {
     deliveryKey: string;
@@ -1843,7 +2016,7 @@ export function createAgentQueuedTurnMethods(
       {
         deliveryKey,
         status: { $in: ['admitted', 'cancelled', 'dead'] },
-        deliveryState: 'published',
+        deliveryState: 'retiring',
       },
       { $set: { deliveryState: 'retired' } },
     );
@@ -1890,6 +2063,7 @@ export function createAgentQueuedTurnMethods(
     prepareAgentQueuedTurnConversationDeletion,
     deletePreparedAgentQueuedTurnConversations,
     markAgentQueuedTurnDeliveryRetired,
+    beginAgentQueuedTurnMissingDeliveryRetirement,
     markAgentQueuedTurnMissingDeliveryRetired,
     deleteAllAgentQueuedTurnsForUser,
   };

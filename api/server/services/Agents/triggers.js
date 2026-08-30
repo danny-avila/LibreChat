@@ -35,7 +35,10 @@ const service = createAgentTriggerService({
   methods,
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
   supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
-  settleSourceBeforeDeadLetter: createAgentQueuedTurnDeadLetterSettlement({ methods }),
+  settleSourceBeforeDeadLetter: createAgentQueuedTurnDeadLetterSettlement({
+    methods,
+    getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+  }),
   prepareContinue: createAgentContinuationResolver({
     eventActor: eventActorAdapter,
     internalSources: new Map([

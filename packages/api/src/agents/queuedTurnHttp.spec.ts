@@ -214,6 +214,7 @@ describe('Agent queued-turn HTTP admission receipts', () => {
         outcome: 'already_cancelled' as const,
         turn: cancelled,
       })),
+      beginAgentQueuedTurnMissingDeliveryRetirement: jest.fn(async () => true),
       markAgentQueuedTurnMissingDeliveryRetired: jest.fn(async () => true),
       markAgentQueuedTurnDeliveryRetired: jest.fn(async () => true),
     };

@@ -154,6 +154,40 @@ describe('Agent queued-turn continuation', () => {
     );
   });
 
+  it('passes exact live-generation evidence into dead-letter reconciliation', async () => {
+    const deliveryKey = getAgentTriggerIdempotencyKey(envelope());
+    const deadLetterAgentQueuedTurn = jest.fn(async () => ({
+      outcome: 'admission_reconciled' as const,
+      turn: { ...claim(), status: 'admitted' as const },
+    }));
+    const settle = createAgentQueuedTurnDeadLetterSettlement({
+      methods: { deadLetterAgentQueuedTurn },
+      getGenerationJob: async () => ({
+        streamId: 'generation-1',
+        createdAt: NOW + 1,
+        metadata: { idempotencyClientRequestId: deliveryKey },
+      }),
+      now: () => NOW,
+    });
+
+    await settle(envelope(), {
+      code: 'ATTEMPTS_EXHAUSTED',
+      message: 'admission receipt unavailable',
+      certainty: 'ambiguous',
+      retryable: true,
+      attemptedAt: new Date(NOW),
+    });
+    expect(deadLetterAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey,
+        admissionEvidence: {
+          generationId: 'generation-1',
+          generationCreatedAt: NOW + 1,
+        },
+      }),
+    );
+  });
+
   it('defers without claiming while the predecessor generation remains active', async () => {
     const { methods, spies } = resolverMethods();
     const resolve = createAgentQueuedTurnResolver({
@@ -215,6 +249,29 @@ describe('Agent queued-turn continuation', () => {
         generationCreatedAt: NOW + 1,
       }),
     );
+  });
+
+  it('settles an obsolete-lane delivery without crossing ordinary admission', async () => {
+    const { methods, spies } = resolverMethods();
+    (
+      spies.beginAgentQueuedTurnAdmission as unknown as jest.MockedFunction<
+        AgentQueuedTurnMethods['beginAgentQueuedTurnAdmission']
+      >
+    ).mockResolvedValueOnce({
+      outcome: 'retired',
+      turn: { ...claim(), status: 'cancelled' },
+    });
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toEqual({
+      status: 'settled',
+    });
+    expect(spies.markAgentQueuedTurnAdmitted).not.toHaveBeenCalled();
   });
 
   it('uses the latest admitted queued generation as the effective predecessor epoch', async () => {

@@ -469,14 +469,15 @@ export async function handleAgentQueuedTurnCancel(
         { onlyIfDead: true },
       );
     }
-    if (
-      !retired &&
-      deps.getDelivery != null &&
-      (await deps.getDelivery(cancelled.turn.deliveryKey)) == null
-    ) {
-      retired = await deps.methods.markAgentQueuedTurnMissingDeliveryRetired({
+    if (!retired && deps.getDelivery != null) {
+      const fenced = await deps.methods.beginAgentQueuedTurnMissingDeliveryRetirement({
         deliveryKey: cancelled.turn.deliveryKey,
       });
+      if (fenced && (await deps.getDelivery(cancelled.turn.deliveryKey)) == null) {
+        retired = await deps.methods.markAgentQueuedTurnMissingDeliveryRetired({
+          deliveryKey: cancelled.turn.deliveryKey,
+        });
+      }
     }
     if (retired) {
       await deps.methods.markAgentQueuedTurnDeliveryRetired({

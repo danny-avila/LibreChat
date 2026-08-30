@@ -74,7 +74,7 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     deliveryKey: { type: String, maxlength: 128 },
     deliveryState: {
       type: String,
-      enum: ['pending', 'publishing', 'published', 'retired'],
+      enum: ['pending', 'publishing', 'published', 'retiring', 'retired'],
       required: true,
       default: 'pending',
     },

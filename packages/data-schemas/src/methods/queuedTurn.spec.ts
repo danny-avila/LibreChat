@@ -723,9 +723,10 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({
       outcome: 'admission_indeterminate',
       turn: {
-        status: 'claimed',
+        status: 'dead',
         admissionId: 'delivery-ambiguous-admission',
         deliveryState: 'published',
+        terminalReceipt: { failure: { code: 'ADMISSION_INDETERMINATE' } },
       },
     });
     await expect(
@@ -744,24 +745,68 @@ describe('agent queued turn methods', () => {
           leaseUntil: new Date(LATER.getTime() + 60_000),
         }),
       ),
-    ).resolves.toMatchObject({ outcome: 'acquired' });
-    await expect(
-      methods.beginAgentQueuedTurnAdmission({
-        ...claimInput(queued.turn.queuedTurnId, {
-          claimId: 'delivery-ambiguous-admission',
-          now: LATER,
-          leaseUntil: new Date(LATER.getTime() + 60_000),
-        }),
-        admissionId: 'delivery-ambiguous-admission',
-        startedAt: LATER,
-      }),
-    ).resolves.toMatchObject({ outcome: 'already_started' });
+    ).resolves.toMatchObject({ outcome: 'missing' });
     await expect(
       methods.prepareAgentQueuedTurnConversationDeletion({
         user,
         targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
       }),
     ).rejects.toThrow('admission must settle');
+  });
+
+  it('reconciles an ambiguous admission from durable generation evidence', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'reconciled-admission' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-reconciled-admission',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-reconciled-admission',
+      scheduledAt: START,
+    });
+    await methods.claimNextAgentQueuedTurn(
+      claimInput(queued.turn.queuedTurnId, { claimId: 'delivery-reconciled-admission' }),
+    );
+    await methods.beginAgentQueuedTurnAdmission({
+      ...claimInput(queued.turn.queuedTurnId, { claimId: 'delivery-reconciled-admission' }),
+      admissionId: 'delivery-reconciled-admission',
+      startedAt: START,
+    });
+
+    await expect(
+      methods.deadLetterAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey: 'delivery-reconciled-admission',
+        settledAt: LATER,
+        failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'admission result unavailable' },
+        admissionEvidence: {
+          generationId: 'generation-reconciled',
+          generationCreatedAt: 42,
+        },
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'admission_reconciled',
+      turn: {
+        status: 'admitted',
+        terminalReceipt: {
+          admissionId: 'delivery-reconciled-admission',
+          generationId: 'generation-reconciled',
+          generationCreatedAt: 42,
+        },
+      },
+    });
   });
 
   it('scopes effective predecessor epochs to one captured queue root', async () => {
@@ -1203,6 +1248,63 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({ status: 'cancelled', deliveryState: 'retired' });
   });
 
+  it('terminalizes an obsolete claimed row before a recreated lane can continue', async () => {
+    const obsolete = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'obsolete-lane-claim' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: obsolete.turn.queuedTurnId,
+      deliveryKey: 'delivery-obsolete-lane',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: obsolete.turn.queuedTurnId,
+      deliveryKey: 'delivery-obsolete-lane',
+      scheduledAt: START,
+    });
+    await methods.claimNextAgentQueuedTurn(
+      claimInput(obsolete.turn.queuedTurnId, { claimId: 'delivery-obsolete-lane' }),
+    );
+    await Sequence.deleteOne({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+    });
+    const successor = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'recreated-lane-successor' }),
+    );
+    expect(successor.turn.sequence).toBeGreaterThan(obsolete.turn.sequence);
+    expect(successor.turn.laneId).not.toBe(obsolete.turn.laneId);
+
+    await expect(
+      methods.beginAgentQueuedTurnAdmission({
+        ...claimInput(obsolete.turn.queuedTurnId, { claimId: 'delivery-obsolete-lane' }),
+        admissionId: 'delivery-obsolete-lane',
+        startedAt: LATER,
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'retired',
+      turn: {
+        status: 'cancelled',
+        terminalReceipt: { failure: { code: 'LANE_RETIRED' } },
+      },
+    });
+    await expect(
+      methods.claimNextAgentQueuedTurn(
+        claimInput(successor.turn.queuedTurnId, {
+          claimId: 'delivery-successor',
+          now: LATER,
+          leaseUntil: new Date(LATER.getTime() + 60_000),
+        }),
+      ),
+    ).resolves.toMatchObject({ outcome: 'acquired' });
+  });
+
   it('expires deletion fences after the bounded stale-writer safety window', async () => {
     await methods.prepareAgentQueuedTurnConversationDeletion({
       user,
@@ -1246,11 +1348,58 @@ describe('agent queued turn methods', () => {
     });
 
     await expect(
+      methods.beginAgentQueuedTurnMissingDeliveryRetirement({
+        deliveryKey: 'delivery-expired',
+      }),
+    ).resolves.toBe(true);
+    await expect(
       methods.markAgentQueuedTurnMissingDeliveryRetired({ deliveryKey: 'delivery-expired' }),
     ).resolves.toBe(true);
     await expect(Turn.findById(queued.turn.queuedTurnId).lean()).resolves.toMatchObject({
       status: 'cancelled',
       deliveryState: 'retired',
+    });
+  });
+
+  it('does not infer delivery absence while publication can still cross the probe', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'publication-races-absence' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-publication-race',
+    });
+    await methods.cancelAgentQueuedTurn({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      settledAt: START,
+    });
+
+    await expect(
+      methods.beginAgentQueuedTurnMissingDeliveryRetirement({
+        deliveryKey: 'delivery-publication-race',
+      }),
+    ).resolves.toBe(false);
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-publication-race',
+      scheduledAt: LATER,
+    });
+    await expect(
+      methods.beginAgentQueuedTurnMissingDeliveryRetirement({
+        deliveryKey: 'delivery-publication-race',
+      }),
+    ).resolves.toBe(true);
+    await expect(Turn.findById(queued.turn.queuedTurnId).lean()).resolves.toMatchObject({
+      deliveryState: 'retiring',
     });
   });
 });

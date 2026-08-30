@@ -34,6 +34,7 @@ const MAX_FAILURE_MESSAGE_LENGTH = 2048;
 const PROCESS_CLAIM_OWNER = `agent-queued-turn:${process.pid}:${randomUUID()}`;
 
 interface GenerationState {
+  streamId?: unknown;
   status?: unknown;
   createdAt?: unknown;
   error?: unknown;
@@ -75,9 +76,11 @@ export interface AgentQueuedTurnScheduler {
 
 export function createAgentQueuedTurnDeadLetterSettlement({
   methods,
+  getGenerationJob,
   now = Date.now,
 }: {
   methods: Pick<AgentQueuedTurnMethods, 'deadLetterAgentQueuedTurn'>;
+  getGenerationJob?: (conversationId: string) => Promise<GenerationState | null>;
   now?: () => number;
 }) {
   return async (rawEnvelope: unknown, failure: AgentTriggerDeliveryFailure): Promise<void> => {
@@ -97,14 +100,33 @@ export function createAgentQueuedTurnDeadLetterSettlement({
     if (queuedTurnId === null || !Types.ObjectId.isValid(envelope.principal.userId)) {
       return;
     }
+    const deliveryKey = getAgentTriggerIdempotencyKey(envelope);
+    let admissionEvidence: { generationId?: string; generationCreatedAt: number } | undefined;
+    if (getGenerationJob != null) {
+      const generation = await getGenerationJob(envelope.target.conversationId);
+      if (
+        generation?.metadata?.idempotencyClientRequestId === deliveryKey &&
+        typeof generation.createdAt === 'number' &&
+        Number.isSafeInteger(generation.createdAt) &&
+        generation.createdAt >= 0
+      ) {
+        admissionEvidence = {
+          ...(typeof generation.streamId === 'string' && generation.streamId.length > 0
+            ? { generationId: generation.streamId }
+            : {}),
+          generationCreatedAt: generation.createdAt,
+        };
+      }
+    }
     const settled = await methods.deadLetterAgentQueuedTurn({
       user: new Types.ObjectId(envelope.principal.userId),
       ...(envelope.principal.tenantId != null && { tenantId: envelope.principal.tenantId }),
       conversationId: envelope.target.conversationId,
       queuedTurnId,
-      deliveryKey: getAgentTriggerIdempotencyKey(envelope),
+      deliveryKey,
       settledAt: new Date(now()),
       failure: normalizeFailure(failure.code, failure.message),
+      ...(admissionEvidence != null && { admissionEvidence }),
     });
     if (settled.outcome === 'conflict') {
       throw new Error('Queued turn delivery no longer owns its source row');
@@ -430,6 +452,9 @@ export function createAgentQueuedTurnResolver({
         retryable: true,
         deferWithoutAttempt: true,
       });
+    }
+    if (admission.outcome === 'retired') {
+      return { status: 'settled' };
     }
 
     return {

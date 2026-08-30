@@ -8,7 +8,12 @@ export type AgentQueuedTurnStatus =
   | 'cancelled'
   | 'dead';
 
-export type AgentQueuedTurnDeliveryState = 'pending' | 'publishing' | 'published' | 'retired';
+export type AgentQueuedTurnDeliveryState =
+  | 'pending'
+  | 'publishing'
+  | 'published'
+  | 'retiring'
+  | 'retired';
 
 export interface AgentQueuedTurnFileRef {
   file_id: string;
