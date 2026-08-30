@@ -1023,6 +1023,17 @@ const codeEnvironmentBaseURLSchema = z
     { message: 'Code environment baseURL must be an HTTP(S) base URL without query or fragment' },
   );
 
+export function isSecureCodeEnvironmentControlURL(baseURL: string): boolean {
+  try {
+    const url = new URL(baseURL.trim());
+    if (url.protocol === 'https:') return true;
+    if (url.protocol !== 'http:') return false;
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1098,6 +1109,16 @@ export const agentsEndpointSchema = baseEndpointSchema
                 code: z.ZodIssueCode.custom,
                 message: 'Only attached code environments may configure pairing',
                 path: ['environments', environment.id, 'pairing'],
+              });
+            }
+            if (
+              environment.pairing != null &&
+              !isSecureCodeEnvironmentControlURL(environment.baseURL)
+            ) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Paired code environments require HTTPS outside loopback development',
+                path: ['environments', environment.id, 'baseURL'],
               });
             }
             if (ids.has(environment.id)) {

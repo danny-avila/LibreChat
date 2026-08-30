@@ -154,6 +154,57 @@ describe('createAdminCodeEnvironmentHandlers', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('normalizes the bridge base URL before appending control paths', async () => {
+    const deploymentConfig = config();
+    const environment = deploymentConfig.endpoints?.agents?.statefulCodeSessions?.environments?.[0];
+    if (environment == null) throw new Error('Expected the test code environment');
+    environment.baseURL = '  https://bridge.example.com/v1/  ';
+    const fetchImpl = jest.fn().mockResolvedValue(
+      Response.json({
+        protocolVersion: 1,
+        workerId: 'vm-1',
+        code: 'one-time-code-value-that-is-long',
+        expiresAt: '2099-08-30T12:00:00.000Z',
+      }),
+    );
+    const handlers = createAdminCodeEnvironmentHandlers({
+      getAppConfig: jest.fn().mockResolvedValue(deploymentConfig),
+      readSecret: jest.fn().mockReturnValue('administrator-bootstrap-token'),
+      fetchImpl,
+    });
+
+    await handlers.createPairing(request(), mockResponse());
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://bridge.example.com/v1/bridge/pairings',
+      expect.any(Object),
+    );
+  });
+
+  it('rejects insecure non-loopback pairing before reading or sending credentials', async () => {
+    const deploymentConfig = config();
+    const environment = deploymentConfig.endpoints?.agents?.statefulCodeSessions?.environments?.[0];
+    if (environment == null) throw new Error('Expected the test code environment');
+    environment.baseURL = 'http://bridge.example.com/v1';
+    const readSecret = jest.fn().mockReturnValue('administrator-bootstrap-token');
+    const fetchImpl = jest.fn();
+    const handlers = createAdminCodeEnvironmentHandlers({
+      getAppConfig: jest.fn().mockResolvedValue(deploymentConfig),
+      readSecret,
+      fetchImpl,
+    });
+    const response = mockResponse();
+
+    await handlers.createPairing(request(), response);
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      error: 'Code environment pairing requires secure transport',
+    });
+    expect(readSecret).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('rejects an expired one-time pairing code', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       Response.json({

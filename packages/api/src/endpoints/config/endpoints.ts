@@ -72,19 +72,6 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
     if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
       const { disableBuilder, capabilities, allowedProviders, statefulCodeSessions, maxSubagents } =
         appConfig.endpoints[EModelEndpoint.agents];
-      const deploymentConfig = statefulCodeSessions?.environments?.length
-        ? await getAppConfig({ baseOnly: true })
-        : undefined;
-      const pairableEnvironmentIds = new Set(
-        deploymentConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments
-          ?.filter(
-            (environment) =>
-              environment.type === 'attached' &&
-              environment.owner === 'deployment' &&
-              environment.pairing != null,
-          )
-          .map((environment) => environment.id),
-      );
       const clientStatefulCodeSessions = statefulCodeSessions
         ? {
             allowedEnvironments: statefulCodeSessions.allowedEnvironments,
@@ -94,7 +81,6 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
                 name,
                 type,
                 default: isDefault,
-                pairingAvailable: pairableEnvironmentIds.has(id),
               }),
             ),
           }

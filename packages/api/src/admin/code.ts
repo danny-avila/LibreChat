@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isSecureCodeEnvironmentControlURL } from 'librechat-data-provider';
 
 import type { AppConfig } from '@librechat/data-schemas';
 import type { Response } from 'express';
@@ -59,7 +59,7 @@ function pairingConfig(environment: ConfiguredCodeEnvironment):
 }
 
 function bridgeUrl(environment: ConfiguredCodeEnvironment, path: string): string {
-  return `${environment.baseURL.replace(/\/+$/, '')}${path}`;
+  return `${environment.baseURL.trim().replace(/\/+$/, '')}${path}`;
 }
 
 function validPairingResponse(value: unknown, workerId: string): value is CodePairingResponse {
@@ -113,6 +113,9 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
     const pairing = pairingConfig(environment);
     if (pairing == null) {
       return res.status(409).json({ error: 'Code environment does not support pairing' });
+    }
+    if (!isSecureCodeEnvironmentControlURL(environment.baseURL)) {
+      return res.status(409).json({ error: 'Code environment pairing requires secure transport' });
     }
     const token = readSecret(pairing.tokenEnv)?.trim();
     if (!token) {

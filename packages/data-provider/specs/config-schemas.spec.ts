@@ -579,6 +579,52 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects pairing over insecure non-loopback transport', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'http://bridge.example.com/v1',
+            default: true,
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('allows loopback HTTP pairing for local development', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'http://127.0.0.1:23112/v1',
+            default: true,
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it('rejects ambiguous execution environment routing', () => {
     const environment = {
       id: 'attached-vm',
