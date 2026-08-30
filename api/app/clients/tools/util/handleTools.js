@@ -368,6 +368,7 @@ const loadTools = async ({
           agentId: agent?.id,
           codeApiBaseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
+          executionRouteKey: codeExecutionContext.executionRouteKey,
         });
         if (toolContext) {
           dynamicToolContextMap[tool] = toolContext;

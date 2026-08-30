@@ -269,6 +269,25 @@ describe('Code CRUD', () => {
       );
     });
 
+    it('skips remote cleanup instead of falling back when a historical route is unmapped', async () => {
+      const historicalRoute = 'stateful:0123456789abcdef0123456789abcdef';
+      const historicalFile = {
+        metadata: {
+          codeEnvRefs: {
+            [historicalRoute]: {
+              ...file.metadata.codeEnvRef,
+              executionProfile: 'stateful',
+              executionRouteKey: historicalRoute,
+            },
+          },
+        },
+      };
+
+      await expect(deleteCodeEnvFile(req, historicalFile)).resolves.toBeUndefined();
+
+      expect(mockAxios).not.toHaveBeenCalled();
+    });
+
     it.each([404, 405])(
       'falls back to the legacy code environment delete route after a %s',
       async (status) => {

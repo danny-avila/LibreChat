@@ -1237,6 +1237,36 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.code_environment_id).toBeUndefined();
     });
 
+    test('allows disabling stateful sessions after the configured environment is removed', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          stateful_code_sessions: true,
+          code_environment_id: 'removed-vm',
+        },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [],
+            },
+          },
+        },
+      };
+      mockReq.body = { stateful_code_sessions: false };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.stateful_code_sessions).toBe(false);
+      expect(agentInDb.code_environment_id).toBe('removed-vm');
+    });
+
     test('allows unrelated edits to an existing scope after policy is tightened', async () => {
       await Agent.updateOne(
         { id: existingAgentId },

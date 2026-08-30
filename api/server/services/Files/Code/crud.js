@@ -91,6 +91,16 @@ async function deleteCodeEnvFile(req, file) {
       (environment) =>
         createCodeExecutionRouteKey(executionProfile, environment) === executionRouteKey,
     );
+    if (
+      executionProfile === 'stateful' &&
+      executionRouteKey !== executionProfile &&
+      !configuredEnvironment
+    ) {
+      logger.warn(
+        `[deleteCodeEnvFile] Skipping remote cleanup for unmapped historical route ${executionRouteKey}`,
+      );
+      continue;
+    }
     const baseURL = getCodeExecutionBaseUrl(executionProfile, configuredEnvironment);
     const query = buildCodeEnvDownloadQuery({
       kind: ref.kind,

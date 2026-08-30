@@ -443,7 +443,17 @@ const isCodeInterpreterCapabilityEnabled = (req) => {
 /** Reject a newly selected stateful workspace scope that the deployment owner
  * has excluded. Disabled sessions and unrelated edits remain saveable so an
  * allowlist tightening never silently rewrites or strands an existing agent. */
-const validateStatefulCodeEnvironment = (req, res, enabled, environment, environmentId) => {
+const validateStatefulCodeEnvironment = (
+  req,
+  res,
+  enabled,
+  environment,
+  environmentId,
+  environmentIdSelected = false,
+) => {
+  if (enabled !== true && !environmentIdSelected) {
+    return true;
+  }
   if (environmentId != null) {
     const configuredEnvironments =
       req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
@@ -732,6 +742,7 @@ const createAgentHandler = async (req, res) => {
         agentData.stateful_code_sessions,
         agentData.stateful_code_environment,
         agentData.code_environment_id,
+        agentData.code_environment_id != null,
       )
     ) {
       return;
@@ -1055,6 +1066,7 @@ const updateAgentHandler = async (req, res) => {
             effectiveStatefulSessions,
             effectiveStatefulEnvironment,
             effectiveCodeEnvironmentId,
+            updateData.code_environment_id !== undefined,
           )
         ) {
           return;
