@@ -349,6 +349,7 @@ export const defaultAgentFormValues = {
   [Tools.web_search]: false,
   [Tools.memory]: false,
   stateful_code_environment: 'user' as const,
+  code_environment_id: undefined as string | null | undefined,
   category: 'general',
   support_contact: {
     name: '',

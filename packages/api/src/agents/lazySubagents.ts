@@ -20,6 +20,7 @@ type VersionedAgent = Pick<
   | 'skills_enabled'
   | 'stateful_code_sessions'
   | 'stateful_code_environment'
+  | 'code_environment_id'
   | 'artifacts'
   | 'recursion_limit'
   | 'agent_ids'
@@ -89,6 +90,7 @@ export function selectLazySubagentConfig(agent: VersionedAgent): Omit<VersionedA
     skills_enabled,
     stateful_code_sessions,
     stateful_code_environment,
+    code_environment_id,
     artifacts,
     recursion_limit,
     agent_ids,
@@ -118,6 +120,7 @@ export function selectLazySubagentConfig(agent: VersionedAgent): Omit<VersionedA
     skills_enabled,
     stateful_code_sessions,
     stateful_code_environment,
+    code_environment_id,
     artifacts,
     recursion_limit,
     agent_ids,

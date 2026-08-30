@@ -855,6 +855,7 @@ describe('createToolEndCallback', () => {
         codeExecutionContext: {
           baseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
+          executionRouteKey: `stateful:${'a'.repeat(32)}`,
         },
       });
       await toolEndCallback({ output: event.output }, event.metadata);
@@ -870,6 +871,7 @@ describe('createToolEndCallback', () => {
           conversationId: 'thread789',
           codeApiBaseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
+          executionRouteKey: `stateful:${'a'.repeat(32)}`,
         }),
       );
       expect(res.write).toHaveBeenCalledTimes(2);

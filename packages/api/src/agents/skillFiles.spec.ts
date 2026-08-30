@@ -550,7 +550,7 @@ describe('primeInvokedSkillsForProfiles', () => {
     mockExtract.mockReturnValue(new Set(['brand-guidelines']));
   });
 
-  it('uploads and seeds historical skill files separately for default and stateful profiles', async () => {
+  it('uploads and seeds historical skill files separately for every Code API deployment', async () => {
     const listSkillFiles = jest.fn().mockResolvedValue([
       {
         relativePath: 'references/style.md',
@@ -563,15 +563,17 @@ describe('primeInvokedSkillsForProfiles', () => {
     const getStrategyFunctions = jest.fn().mockReturnValue({
       getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from('style'))),
     });
-    const batchUploadCodeEnvFiles = jest.fn().mockImplementation(({ executionProfile }) => ({
-      storage_session_id: `${executionProfile}-session`,
-      files: [
-        {
-          fileId: `${executionProfile}-file`,
-          filename: 'skills/brand-guidelines/references/style.md',
-        },
-      ],
-    }));
+    const batchUploadCodeEnvFiles = jest
+      .fn()
+      .mockImplementation(({ executionProfile, codeApiBaseUrl }) => ({
+        storage_session_id: `${executionProfile}-${new URL(codeApiBaseUrl).hostname}-session`,
+        files: [
+          {
+            fileId: `${executionProfile}-${new URL(codeApiBaseUrl).hostname}-file`,
+            filename: 'skills/brand-guidelines/references/style.md',
+          },
+        ],
+      }));
     const updateSkillFileCodeEnvIds = jest.fn().mockResolvedValue({
       matchedCount: 1,
       modifiedCount: 1,
@@ -587,6 +589,7 @@ describe('primeInvokedSkillsForProfiles', () => {
       updateSkillFileCodeEnvIds,
     });
     const statefulKey = 'execute_code:stateful:v2:user:abc';
+    const secondStatefulKey = 'execute_code:stateful:v2:user:def';
     const deps: PrimeInvokedSkillsForProfilesDeps = {
       ...baseDeps,
       executionProfiles: [
@@ -604,32 +607,53 @@ describe('primeInvokedSkillsForProfiles', () => {
             baseUrl: 'https://stateful.example.com/v1',
             codeSessionKey: statefulKey,
             executionProfile: 'stateful',
+            executionRouteKey: 'stateful:first',
             runtimeSessionHint: 'v2:user:abc',
             statefulSessions: true,
           },
           codeSessionKeys: [statefulKey],
+        },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://second-stateful.example.com/v1',
+            codeSessionKey: secondStatefulKey,
+            executionProfile: 'stateful',
+            executionRouteKey: 'stateful:second',
+            runtimeSessionHint: 'v2:user:def',
+            statefulSessions: true,
+          },
+          codeSessionKeys: [secondStatefulKey],
         },
       ],
     };
 
     const result = await primeInvokedSkillsForProfiles(deps);
 
-    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(2);
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(3);
     expect(
       batchUploadCodeEnvFiles.mock.calls.map(([args]) => args.executionProfile).sort(),
-    ).toEqual(['default', 'stateful']);
+    ).toEqual(['default', 'stateful', 'stateful']);
     expect(result.initialSessions?.get('execute_code')?.files?.map((file) => file.id)).toEqual([
-      'default-file',
+      'default-code.example.com-file',
     ]);
     expect(result.initialSessions?.get(statefulKey)?.files?.map((file) => file.id)).toEqual([
-      'stateful-file',
+      'stateful-stateful.example.com-file',
     ]);
-    expect(updateSkillFileCodeEnvIds).toHaveBeenCalledTimes(2);
+    expect(result.initialSessions?.get(secondStatefulKey)?.files?.map((file) => file.id)).toEqual([
+      'stateful-second-stateful.example.com-file',
+    ]);
+    expect(updateSkillFileCodeEnvIds).toHaveBeenCalledTimes(3);
     expect(
       updateSkillFileCodeEnvIds.mock.calls
         .map(([updates]) => updates[0].codeEnvRef.executionProfile)
         .sort(),
-    ).toEqual(['default', 'stateful']);
+    ).toEqual(['default', 'stateful', 'stateful']);
+    expect(
+      updateSkillFileCodeEnvIds.mock.calls
+        .map(([updates]) => updates[0].codeEnvRef.executionRouteKey)
+        .filter(Boolean)
+        .sort(),
+    ).toEqual(['stateful:first', 'stateful:second']);
   });
 
   it('keeps a successful profile Skill body and identity after another profile lookup fails', async () => {

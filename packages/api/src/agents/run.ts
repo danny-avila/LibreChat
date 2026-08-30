@@ -50,6 +50,7 @@ import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
 import type { TerminalSteerHook } from '~/agents/steering/runtime';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
+import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
@@ -423,6 +424,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   statefulCodeEnvironment?: Agent['stateful_code_environment'];
   /** Trusted partition for transient code session ids and file references. */
   codeSessionKey?: string;
+  /** Trusted Code API route selected during initialization. */
+  codeExecutionContext?: CodeExecutionContext;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -466,6 +469,7 @@ type LazySubagentAgent = Pick<
   | 'codeEnvAvailable'
   | 'statefulCodeSessions'
   | 'statefulCodeEnvironment'
+  | 'codeExecutionContext'
   | 'codeSessionKey'
   | 'includeReasoningHistory'
   | 'mcpToolAliases'
@@ -487,6 +491,7 @@ type SubagentTreeNode = Pick<
   | 'codeEnvAvailable'
   | 'statefulCodeSessions'
   | 'statefulCodeEnvironment'
+  | 'codeExecutionContext'
   | 'codeSessionKey'
   | 'includeReasoningHistory'
   | 'mcpToolAliases'
