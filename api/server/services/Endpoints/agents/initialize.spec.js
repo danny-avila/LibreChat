@@ -1246,7 +1246,7 @@ describe('initializeClient — subagent loading', () => {
 
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).toEqual(
       expect.objectContaining({
-        codeSessionKey: expect.stringMatching(/^execute_code:stateful:v3:/),
+        codeSessionKey: expect.stringMatching(/^execute_code:stateful:[a-f0-9]{32}:v3:/),
         codeExecutionContext: expect.objectContaining({
           baseUrl: 'https://bridge.example.com/v1',
           environmentId: 'attached-vm',
