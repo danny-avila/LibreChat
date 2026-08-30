@@ -1641,6 +1641,10 @@ describe('GenerationJobManager startup telemetry', () => {
 
       expect(onError).not.toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
       expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(0);
+      /** Shutdown finishes cancelling on the tick after `destroy()` resolves, so settle the
+       * queue before counting. Without this the count only came back to the baseline when
+       * something else — a console write from the logger — happened to yield first. */
+      await jest.advanceTimersByTimeAsync(0);
       expect(jest.getTimerCount()).toBe(timerCountBeforeInitialize);
 
       await jest.advanceTimersByTimeAsync(
