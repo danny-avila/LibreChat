@@ -70,7 +70,7 @@ function validPairingResponse(value: unknown, workerId: string): value is CodePa
     response.protocolVersion === 1 &&
     response.workerId === workerId &&
     typeof response.code === 'string' &&
-    response.code.length >= 16 &&
+    /^[A-Za-z0-9_-]{32}$/.test(response.code) &&
     Number.isFinite(expiresAt) &&
     expiresAt > Date.now()
   );

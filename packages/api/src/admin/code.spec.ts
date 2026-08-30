@@ -227,6 +227,28 @@ describe('createAdminCodeEnvironmentHandlers', () => {
     expect(response.body).toEqual({ error: 'Code API returned an invalid pairing response' });
   });
 
+  it('rejects a pairing code outside the 32-character base64url wire format', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      Response.json({
+        protocolVersion: 1,
+        workerId: 'vm-1',
+        code: 'invalid code value with whitespace',
+        expiresAt: '2099-08-30T12:00:00.000Z',
+      }),
+    );
+    const handlers = createAdminCodeEnvironmentHandlers({
+      getAppConfig: jest.fn().mockResolvedValue(config()),
+      readSecret: jest.fn().mockReturnValue('administrator-bootstrap-token'),
+      fetchImpl,
+    });
+    const response = mockResponse();
+
+    await handlers.createPairing(request(), response);
+
+    expect(response.statusCode).toBe(502);
+    expect(response.body).toEqual({ error: 'Code API returned an invalid pairing response' });
+  });
+
   it('revokes the environment worker without returning bridge credentials', async () => {
     const fetchImpl = jest
       .fn()
