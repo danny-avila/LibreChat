@@ -121,6 +121,34 @@ describe('agent event runtime config', () => {
   });
 });
 
+describe('agent background task config', () => {
+  it('enables completion wakeups by default when the policy block is present', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: {} } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: true });
+  });
+
+  it('accepts an administrator poll-only policy', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: { completionWakeups: false } } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: false });
+  });
+});
+
 describe('speechTab schema', () => {
   it.each(['browser', 'external', 'openai', 'azureOpenAI'])(
     'accepts the speech-to-text engine "%s"',

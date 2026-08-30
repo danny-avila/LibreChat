@@ -15,6 +15,7 @@ import type {
   SubagentTaskSnapshot,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
+  SubagentTaskStore,
   SubagentUpdateEvent,
 } from '@librechat/agents';
 import type {
@@ -140,6 +141,10 @@ interface PreparedThread {
     taskId: string;
     parentRunId: string;
   };
+}
+
+interface HostSubagentTaskStartRequest extends SubagentTaskStartRequest {
+  completionDelivery?: typeof SUBAGENT_COMPLETION_DELIVERY;
 }
 
 type ThreadMessage = Pick<
@@ -3167,7 +3172,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     request: SubagentTaskStartRequest,
     task: { taskId: string; parentRunId: string; createdAt: number },
   ): Promise<void> {
-    if (this.onTaskPrepared == null) {
+    if (
+      this.onTaskPrepared == null ||
+      (request as HostSubagentTaskStartRequest).completionDelivery !== SUBAGENT_COMPLETION_DELIVERY
+    ) {
       return;
     }
     await this.onTaskPrepared({
@@ -3416,13 +3424,39 @@ export function createSubagentThreadTaskStore(
   return new SubagentThreadTaskStore(methods, options);
 }
 
+const completionWakeupStores = new WeakMap<SubagentThreadTaskStore, SubagentTaskStore>();
+
+function completionWakeupStore(store: SubagentThreadTaskStore): SubagentTaskStore {
+  const existing = completionWakeupStores.get(store);
+  if (existing != null) {
+    return existing;
+  }
+  const adapter: SubagentTaskStore = {
+    supportsThreadContinuation: store.supportsThreadContinuation,
+    start: (request) => {
+      const hostRequest: HostSubagentTaskStartRequest = {
+        ...request,
+        completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+      };
+      return store.start(hostRequest);
+    },
+    get: (scopeId, taskId) => store.get(scopeId, taskId),
+    list: (scopeId) => store.list(scopeId),
+    claim: (scopeId, taskId) => store.claim(scopeId, taskId),
+    control: (scopeId, taskId, command) => store.control(scopeId, taskId, command),
+  };
+  completionWakeupStores.set(store, adapter);
+  return adapter;
+}
+
 export function buildSubagentThreadTaskConfig(
   store: SubagentThreadTaskStore,
   scope: Omit<SubagentThreadScope, 'version'>,
   options: { completionWakeups?: boolean } = {},
 ): HostSubagentTaskConfig {
+  const taskStore = options.completionWakeups === true ? completionWakeupStore(store) : store;
   return {
-    store,
+    store: taskStore,
     scopeId: serializeScope(scope),
     ...(options.completionWakeups === true
       ? { completionDelivery: SUBAGENT_COMPLETION_DELIVERY }
