@@ -49,10 +49,6 @@ import type {
   SubagentTaskStore,
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
-import {
-  BACKGROUND_TASK_TIMEOUT_MS,
-  type BackgroundToolWakeupAdmission,
-} from './backgroundCompletion';
 import type { CapabilityToolNames } from './selection';
 import {
   resolveToolOption,
@@ -60,6 +56,10 @@ import {
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
+import {
+  BACKGROUND_TASK_TIMEOUT_MS,
+  type BackgroundToolWakeupAdmission,
+} from './backgroundCompletion';
 import { SUBAGENT_WAKEUP_GUIDANCE, agentUsesSubagentCompletionWakeups } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';

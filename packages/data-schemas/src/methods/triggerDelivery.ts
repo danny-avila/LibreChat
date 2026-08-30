@@ -1930,28 +1930,31 @@ export function createAgentTriggerDeliveryMethods(
       backgroundToolCompletionRetired: true,
       reason: input.reason.slice(0, MAX_ERROR_MESSAGE_LENGTH),
     };
-    const statusFence =
-      input.onlyIfDead === true
-        ? {
-            $or: [
-              { status: { $in: ['dead', 'capability_dead'] } },
-              { status: 'leased', capabilityStatus: 'dead' },
-            ],
-          }
-        : input.onlyIfUnclaimed === true
-          ? {
-              $or: [
-                { status: { $in: ['pending', 'capability_pending'] } },
-                /** A capability-shielded pending row looks leased to legacy
-                 * workers but has no private claimant yet. */
-                { status: 'leased', capabilityStatus: 'pending' },
-              ],
-            }
-          : {
-              status: {
-                $in: ['pending', 'leased', 'capability_pending', 'capability_leased'],
-              },
-            };
+    const statusFence = (() => {
+      if (input.onlyIfDead === true) {
+        return {
+          $or: [
+            { status: { $in: ['dead', 'capability_dead'] } },
+            { status: 'leased', capabilityStatus: 'dead' },
+          ],
+        };
+      }
+      if (input.onlyIfUnclaimed === true) {
+        return {
+          $or: [
+            { status: { $in: ['pending', 'capability_pending'] } },
+            /** A capability-shielded pending row looks leased to legacy
+             * workers but has no private claimant yet. */
+            { status: 'leased', capabilityStatus: 'pending' },
+          ],
+        };
+      }
+      return {
+        status: {
+          $in: ['pending', 'leased', 'capability_pending', 'capability_leased'],
+        },
+      };
+    })();
     const retired = await Delivery()
       .findOneAndUpdate(
         {
