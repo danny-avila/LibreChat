@@ -4489,6 +4489,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 toolName: tc.name,
                 messageId: backgroundRunId,
                 harvestStarted: harvestEnabled,
+                liveArtifactPollRequired,
                 /** Scope idempotency to the agent + run + turn so a later turn's
                  *  or a second agent's repeated provider id (e.g. `call_0`)
                  *  starts a fresh task instead of colliding. */

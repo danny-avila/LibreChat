@@ -448,15 +448,24 @@ export function createBackgroundToolCompletionWakeupHandler(
   };
 }
 
-/** Reopens every result owned by one dead automatic batch. The delivery
- * retirement proves its prepared continuation cannot still commit; releasing
- * by the batch-root claim identity then makes sibling recovery independent of
- * which task originally admitted that delivery. */
+/** Reopens every result owned by one dead automatic batch. Generation state
+ * first fences an admitted continuation that is still running/finalizing;
+ * delivery retirement then proves no retry remains, and releasing by the
+ * batch-root claim identity makes sibling recovery independent of which task
+ * originally admitted that delivery. */
 export function createBackgroundToolDeadClaimRecovery(
   retire: RetireBackgroundToolCompletion,
   releaseClaims: WakeupMethods['releaseBackgroundToolResultClaims'],
+  getGenerationJob: (conversationId: string) => Promise<GenerationState | null | undefined>,
 ): BackgroundToolDeadClaimRecovery {
   return async ({ userId, conversationId, messageId, claimId }) => {
+    const generation = await getGenerationJob(conversationId);
+    if (
+      generation?.metadata?.idempotencyClientRequestId === claimId &&
+      isParentActive(generation)
+    ) {
+      return false;
+    }
     const retired = await retire(
       claimId,
       BACKGROUND_TOOL_COMPLETION_SOURCE,

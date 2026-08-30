@@ -420,7 +420,10 @@ const initializeClient = async ({
         updateToolCallResult: db.updateToolCallResult,
       }),
       claim: db.claimBackgroundToolResults,
-      recoverDeadClaim: createDeadBackgroundToolClaimRecovery(db.releaseBackgroundToolResultClaims),
+      recoverDeadClaim: createDeadBackgroundToolClaimRecovery(
+        db.releaseBackgroundToolResultClaims,
+        (conversationId) => GenerationJobManager.getJob(conversationId),
+      ),
     },
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),

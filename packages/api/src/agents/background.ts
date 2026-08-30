@@ -640,6 +640,11 @@ export interface BackgroundTask {
     claimId: string;
     claimedAt: number;
   };
+  /** The declared tool may return a process-local live artifact. A terminal
+   * same-generation poll may therefore deliver from the local claim after it
+   * retires the unclaimed wakeup, without waiting for the dispatch row to
+   * finalize and deadlocking that same generation. */
+  liveArtifactPollRequired?: boolean;
   completionWakeup?: boolean;
   /** Process-local cancellation handle for the preregistered durable delivery.
    * A same-generation manual claim retires it before exposing the result. */
@@ -893,6 +898,7 @@ export class BackgroundTaskRegistryClass {
     agentId?: string;
     /** Set at dispatch when a settle-time harvest WILL run. */
     harvestStarted?: boolean;
+    liveArtifactPollRequired?: boolean;
     capacityPermit?: BackgroundTaskCapacityPermit;
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
     const now = Date.now();
@@ -956,6 +962,7 @@ export class BackgroundTaskRegistryClass {
       messageId: params.messageId,
       agentId: params.agentId,
       ...(params.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
+      ...(params.liveArtifactPollRequired === true ? { liveArtifactPollRequired: true } : {}),
       status: 'running',
       createdAt: nextDispatchStamp(now),
       updatedAt: now,
@@ -1597,8 +1604,8 @@ export async function runCheckBackgroundTask(params: {
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
               task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId;
-            let deadFallbackRecovered = false;
-            if (!localReplay && !deadFallbackRecovered) {
+            let localClaimNeedsNoDurableConfirmation = false;
+            if (!localReplay) {
               /** Retire the still-unclaimed delivery before creating local
                * ownership. A live resolver lease wins. Once that resolver is
                * irreversibly dead-lettered, a dead-only repair reopens the
@@ -1621,7 +1628,7 @@ export async function runCheckBackgroundTask(params: {
                     { onlyIfDead: true },
                   );
                   if (retired) {
-                    deadFallbackRecovered = true;
+                    localClaimNeedsNoDurableConfirmation = true;
                     backgroundTaskRegistry.markCompletionPersistenceFailed(
                       userId,
                       conversationId,
@@ -1664,11 +1671,22 @@ export async function runCheckBackgroundTask(params: {
                     'The task is finished and its result is being made durable. Retry this poll shortly.',
                 });
               }
+              if (task.liveArtifactPollRequired === true) {
+                /** The poll is executing inside the still-unfinished dispatch
+                 * generation, so waiting for the durable row would require
+                 * that generation to end before it can obey its mandatory
+                 * live-artifact poll. The retired unclaimed wakeup plus this
+                 * local manual claim is authoritative for this owner process;
+                 * the persistence retry re-reads and copies the claim after
+                 * the generation finalizes. */
+                localClaimNeedsNoDurableConfirmation = true;
+              }
             }
-            /** Do not expose the local result until the durable row has copied
-             * this manual claim. This closes the last-write race where a
-             * persister snapshots the task before the poll claims it. */
-            if (!deadFallbackRecovered) {
+            /** Ordinary polls do not expose the local result until the durable
+             * row has copied this manual claim. The owner-process live-artifact
+             * exception above cannot wait for its own generation to finalize;
+             * its persister re-reads the local claim after finalization. */
+            if (!localClaimNeedsNoDurableConfirmation) {
               const reconciledClaim = await params.claimBackgroundToolResult(durableClaimInput);
               if (reconciledClaim.status === 'claimed') {
                 backgroundTaskRegistry.releaseResultClaim(userId, conversationId, taskId, {

@@ -19,10 +19,14 @@ function createBackgroundToolResultPersistence({ req, updateToolCallResult }) {
   return createBackgroundToolResultHandler({ req, updateToolCallResult });
 }
 
-function createDeadBackgroundToolClaimRecovery(releaseBackgroundToolResultClaims) {
+function createDeadBackgroundToolClaimRecovery(
+  releaseBackgroundToolResultClaims,
+  getGenerationJob,
+) {
   return createBackgroundToolDeadClaimRecovery(
     retireAgentTrigger,
     releaseBackgroundToolResultClaims,
+    getGenerationJob,
   );
 }
 

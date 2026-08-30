@@ -1036,6 +1036,60 @@ describe('Message Operations', () => {
       });
     });
 
+    it('revalidates each sibling inside the atomic batch claim', async () => {
+      const terminal = (taskId: string) => ({
+        type: 'tool_call',
+        tool_call: {
+          id: `call-${taskId}`,
+          name: 'slow_tool',
+          output: taskId,
+          backgroundTask: {
+            version: 1,
+            taskId,
+            toolName: 'slow_tool',
+            status: 'completed',
+            settledAt: new Date(),
+            completionWakeup: true,
+          },
+        },
+      });
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [terminal('root'), terminal('stale-sibling')],
+      });
+      const originalFindOneAndUpdate = Message.collection.findOneAndUpdate.bind(Message.collection);
+      const claimWrite = jest
+        .spyOn(Message.collection, 'findOneAndUpdate')
+        .mockImplementationOnce(async (...args) => {
+          await Message.collection.updateOne(
+            { user: 'user123', messageId: 'msg123' },
+            { $set: { 'content.1.tool_call.backgroundTask.status': 'running' } },
+          );
+          return originalFindOneAndUpdate(...args);
+        });
+
+      try {
+        await expect(
+          claimBackgroundToolResults({
+            userId: 'user123',
+            conversationId: mockMessageData.conversationId as string,
+            messageId: 'msg123',
+            taskId: 'root',
+            kind: 'wakeup',
+            claimId: 'delivery-root',
+          }),
+        ).resolves.toMatchObject({
+          status: 'acquired',
+          results: [expect.objectContaining({ taskId: 'root' })],
+        });
+      } finally {
+        claimWrite.mockRestore();
+      }
+
+      const saved = await Message.findOne({ user: 'user123', messageId: 'msg123' }).lean();
+      expect(saved?.content?.[1]).not.toHaveProperty('tool_call.backgroundTask.resultClaim');
+    });
+
     it('does not batch a terminal sibling that elected poll-only delivery', async () => {
       const terminal = (taskId: string, completionWakeup: boolean) => ({
         type: 'tool_call',

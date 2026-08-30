@@ -1440,6 +1440,53 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
+  it('delivers a mandatory live-artifact poll without waiting for its dispatch row', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'artifact_poll_user',
+      conversationId: 'artifact_poll_convo',
+      toolCallId: 'call_artifact_poll',
+      toolName: 'artifact_tool',
+      messageId: 'response-artifact-poll',
+      liveArtifactPollRequired: true,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('artifact_poll_user', 'artifact_poll_convo', created.task.id, {
+      content: 'CONTENT WITH LIVE ARTIFACT',
+      artifact: { type: 'test-artifact' },
+    });
+    const retire = jest.fn(async () => true);
+    backgroundTaskRegistry.markCompletionWakeup(
+      'artifact_poll_user',
+      'artifact_poll_convo',
+      created.task.id,
+      { renew: jest.fn(async () => true), retire },
+    );
+    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_ready' as const }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'artifact_poll_user',
+        conversationId: 'artifact_poll_convo',
+        args: { background_task_id: created.task.id },
+        toolCallId: 'poll-live-artifact',
+        runId: 'dispatch-run',
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', result: 'CONTENT WITH LIVE ARTIFACT' });
+    expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
+    expect(
+      backgroundTaskRegistry.get('artifact_poll_user', 'artifact_poll_convo', created.task.id)
+        ?.resultClaim,
+    ).toMatchObject({ kind: 'manual' });
+  });
+
   it('does not expose a result already assigned to an automatic continuation', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'scheduled_user',

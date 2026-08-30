@@ -1406,6 +1406,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                       $and: [
                         { $eq: ['$$part.type', 'tool_call'] },
                         { $in: ['$$part.tool_call.backgroundTask.taskId', candidates] },
+                        {
+                          $in: ['$$part.tool_call.backgroundTask.status', ['completed', 'error']],
+                        },
+                        ...(kind === 'wakeup'
+                          ? [{ $eq: ['$$part.tool_call.backgroundTask.completionWakeup', true] }]
+                          : []),
                         ...(agentId != null
                           ? [
                               {

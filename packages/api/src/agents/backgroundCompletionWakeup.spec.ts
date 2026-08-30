@@ -180,7 +180,8 @@ describe('background tool completion wakeups', () => {
   it('retires the batch-root delivery before releasing all of its sibling claims', async () => {
     const retire = jest.fn(async () => true);
     const release = jest.fn(async () => true);
-    const recover = createBackgroundToolDeadClaimRecovery(retire, release);
+    const getGenerationJob = jest.fn(async () => ({ status: 'complete' }));
+    const recover = createBackgroundToolDeadClaimRecovery(retire, release, getGenerationJob);
 
     await expect(
       recover({
@@ -197,6 +198,7 @@ describe('background tool completion wakeups', () => {
       'dead background completion batch recovered by manual poll',
       { onlyIfDead: true },
     );
+    expect(getGenerationJob).toHaveBeenCalledWith('conversation-1');
     expect(release).toHaveBeenCalledWith({
       userId: 'user-1',
       conversationId: 'conversation-1',
@@ -204,6 +206,26 @@ describe('background tool completion wakeups', () => {
       kind: 'wakeup',
       claimId: 'batch-root-delivery',
     });
+  });
+
+  it('does not recover a dead delivery while its admitted generation is still active', async () => {
+    const retire = jest.fn(async () => true);
+    const release = jest.fn(async () => true);
+    const recover = createBackgroundToolDeadClaimRecovery(retire, release, async () => ({
+      status: 'running',
+      metadata: { idempotencyClientRequestId: 'batch-root-delivery' },
+    }));
+
+    await expect(
+      recover({
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        messageId: 'response-1',
+        claimId: 'batch-root-delivery',
+      }),
+    ).resolves.toBe(false);
+    expect(retire).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
   });
 
   it("keeps unfinished sibling tasks out of each other's delivery lanes", async () => {
