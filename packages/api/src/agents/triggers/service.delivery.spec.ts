@@ -441,13 +441,16 @@ describe('durable agent trigger service', () => {
       status: 'pending',
     });
     await expect(
-      service.retire('trigger_1', 'background-tool-completion', 'result unavailable'),
+      service.retire('trigger_1', 'background-tool-completion', 'result unavailable', {
+        onlyIfUnclaimed: true,
+      }),
     ).resolves.toBe(true);
     expect(retireAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
         deliveryKey: 'trigger_1',
         sourceId: 'background-tool-completion',
         reason: 'result unavailable',
+        onlyIfUnclaimed: true,
       }),
     );
     await service.stop();

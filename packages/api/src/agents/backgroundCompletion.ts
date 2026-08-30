@@ -13,6 +13,8 @@ export interface BackgroundToolWakeupRegistration {
 
 /** Process-local handle for the durable delivery admitted before launch. */
 export interface BackgroundToolWakeupAdmission {
-  /** Retires a delivery whose terminal result can no longer be made durable. */
-  retire: (reason: string) => Promise<boolean>;
+  /** Retires a delivery whose terminal result can no longer be made durable.
+   * Manual polling requires an atomic unclaimed-only transition: once a
+   * resolver owns a lease, its prepared continuation cannot be cancelled. */
+  retire: (reason: string, options?: { onlyIfUnclaimed?: boolean }) => Promise<boolean>;
 }

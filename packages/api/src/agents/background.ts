@@ -1114,12 +1114,13 @@ export class BackgroundTaskRegistryClass {
     conversationId: string,
     taskId: string,
     reason: string,
+    options?: { onlyIfUnclaimed?: boolean },
   ): Promise<boolean> {
     const task = this.get(userId, conversationId, taskId);
     if (task?.completionWakeupRetire == null) {
       return false;
     }
-    const retired = await task.completionWakeupRetire(reason);
+    const retired = await task.completionWakeupRetire(reason, options);
     if (retired) {
       task.completionWakeupRetire = undefined;
       task.updatedAt = Date.now();
@@ -1543,6 +1544,7 @@ export async function runCheckBackgroundTask(params: {
                   conversationId,
                   taskId,
                   'completion claimed by same-generation manual poll',
+                  { onlyIfUnclaimed: true },
                 );
               } catch (error) {
                 logger.warn(

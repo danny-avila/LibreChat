@@ -241,6 +241,7 @@ export interface AgentTriggerDeliveryMethods {
     sourceId: string;
     settledAt: Date;
     reason: string;
+    onlyIfUnclaimed?: boolean;
   }) => Promise<boolean>;
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
@@ -1906,6 +1907,7 @@ export function createAgentTriggerDeliveryMethods(
     sourceId: string;
     settledAt: Date;
     reason: string;
+    onlyIfUnclaimed?: boolean;
   }): Promise<boolean> {
     if (
       input.deliveryKey.length === 0 ||
@@ -1927,7 +1929,12 @@ export function createAgentTriggerDeliveryMethods(
           deliveryKey: input.deliveryKey,
           'envelope.event.source.type': 'internal',
           'envelope.event.source.id': input.sourceId,
-          status: { $in: ['pending', 'leased', 'capability_pending', 'capability_leased'] },
+          status: {
+            $in:
+              input.onlyIfUnclaimed === true
+                ? ['pending', 'capability_pending']
+                : ['pending', 'leased', 'capability_pending', 'capability_leased'],
+          },
         },
         {
           $set: {

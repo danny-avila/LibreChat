@@ -155,7 +155,12 @@ export interface AgentTriggerService {
   ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
-  retire: (deliveryKey: string, sourceId: string, reason: string) => Promise<boolean>;
+  retire: (
+    deliveryKey: string,
+    sourceId: string,
+    reason: string,
+    options?: { onlyIfUnclaimed?: boolean },
+  ) => Promise<boolean>;
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
   cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
@@ -509,13 +514,14 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         return revived;
       }),
-    retire: (deliveryKey, sourceId, reason) =>
+    retire: (deliveryKey, sourceId, reason, options) =>
       runAsSystem(async () => {
         const retired = await requireCleanupMethods().retireAgentTriggerDelivery({
           deliveryKey,
           sourceId,
           reason,
           settledAt: new Date(),
+          ...(options?.onlyIfUnclaimed === true ? { onlyIfUnclaimed: true } : {}),
         });
         if (retired) {
           deliveryEngine?.wake();

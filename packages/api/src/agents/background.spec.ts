@@ -1427,6 +1427,9 @@ describe('runCheckBackgroundTask (singleton)', () => {
       backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
     ).toMatchObject({ kind: 'manual' });
     expect(retire).toHaveBeenCalledTimes(1);
+    expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
     expect(claimBackgroundToolResult).toHaveBeenLastCalledWith(
       expect.objectContaining({
         messageId: 'response-claim',
@@ -1468,7 +1471,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(JSON.stringify(result)).not.toContain('PRIVATE UNTIL CONTINUATION');
   });
 
-  it('does not expose a local manual result until its automatic delivery retires', async () => {
+  it('does not expose a local result after its automatic resolver owns the lease', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'retire_user',
       conversationId: 'retire_convo',
@@ -1482,8 +1485,9 @@ describe('runCheckBackgroundTask (singleton)', () => {
     backgroundTaskRegistry.complete('retire_user', 'retire_convo', created.task.id, {
       content: 'DO NOT DUPLICATE',
     });
+    const retire = jest.fn(async () => false);
     backgroundTaskRegistry.markCompletionWakeup('retire_user', 'retire_convo', created.task.id, {
-      retire: async () => false,
+      retire,
     });
 
     const result = JSON.parse(
@@ -1502,6 +1506,9 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(
       backgroundTaskRegistry.get('retire_user', 'retire_convo', created.task.id)?.resultClaim,
     ).toBeUndefined();
+    expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
   });
 
   it('preserves local task lists when cross-replica subagent discovery is unavailable', async () => {

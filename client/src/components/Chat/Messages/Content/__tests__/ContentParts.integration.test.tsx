@@ -128,7 +128,7 @@ jest.mock('~/utils', () => {
 
 const MCP_DELIMITER = '_mcp_';
 
-const makeMcpToolCall = (id: string, hasOutput = true): TMessageContentParts =>
+const makeMcpToolCall = (id: string, hasOutput = true, stepId?: string): TMessageContentParts =>
   ({
     type: ContentTypes.TOOL_CALL,
     [ContentTypes.TOOL_CALL]: {
@@ -136,6 +136,7 @@ const makeMcpToolCall = (id: string, hasOutput = true): TMessageContentParts =>
       name: `getTinyImage${MCP_DELIMITER}Everything`,
       args: '{}',
       output: hasOutput ? 'image_returned' : '',
+      ...(stepId == null ? {} : { stepId }),
     },
   }) as unknown as TMessageContentParts;
 
@@ -357,7 +358,10 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
 
   it('keeps a running tool group open when an individual tool is expanded before completion', () => {
     const runningContent = [makeMcpToolCall('t1', false), makeMcpToolCall('t2', false)];
-    const completedContent = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+    const completedContent = [
+      makeMcpToolCall('t1', true, 'step-1'),
+      makeMcpToolCall('t2', true, 'step-1'),
+    ];
 
     const { rerender } = render(
       <RecoilRoot>

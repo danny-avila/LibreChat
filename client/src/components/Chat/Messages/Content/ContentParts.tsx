@@ -51,9 +51,6 @@ const getPartAgentId = (part: TMessageContentParts): string | undefined =>
   (part as { agentId?: string })?.agentId ??
   (part?.[ContentTypes.TOOL_CALL] as { agentId?: string } | undefined)?.agentId;
 
-const getPartStepId = (part: TMessageContentParts): string | undefined =>
-  (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.stepId;
-
 const getToolGroupAnchorIndex = (parts: PartWithIndex[]): number => {
   for (const { part, idx } of parts) {
     if (getToolCallId(part) || part?.type === ContentTypes.TOOL_CALL) {
@@ -76,11 +73,12 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
   for (const { part, idx } of parts) {
     const toolCallId = getToolCallId(part);
     if (toolCallId) {
-      const stepId = getPartStepId(part);
       const agentId = getPartAgentId(part);
-      return stepId == null && agentId == null
-        ? `tool:${toolCallId}`
-        : `tool:${toolCallId}:${agentId ?? 'legacy'}:${stepId ?? 'legacy'}`;
+      /** `stepId` is stamped only when a tool finishes, so it cannot be part
+       * of the render identity without remounting a live group at completion.
+       * Agent + provider id are available from the first render; message-wide
+       * occurrence numbering below distinguishes later reuse in the same row. */
+      return agentId == null ? `tool:${toolCallId}` : `tool:${toolCallId}:${agentId}`;
     }
     if (firstToolKeyIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
       firstToolKeyIdx = getPartKeyIndex(part, idx);

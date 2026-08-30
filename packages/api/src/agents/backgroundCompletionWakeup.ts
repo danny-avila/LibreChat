@@ -37,6 +37,7 @@ export type RetireBackgroundToolCompletion = (
   deliveryKey: string,
   sourceId: string,
   reason: string,
+  options?: { onlyIfUnclaimed?: boolean },
 ) => Promise<boolean>;
 
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
@@ -354,7 +355,10 @@ export function createBackgroundToolCompletionWakeupHandler(
       ),
     });
     return {
-      retire: (reason) => retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason),
+      retire: (reason, options) =>
+        options == null
+          ? retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason)
+          : retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason, options),
     };
   };
 }

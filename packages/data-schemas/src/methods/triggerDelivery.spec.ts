@@ -544,6 +544,39 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toMatchObject({ id: successor.delivery.id });
   });
 
+  it('does not retire a completion already leased by a resolver for a manual poll', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-leased',
+        user,
+        envelope: { event: { source } },
+      }),
+    );
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'completion-worker',
+        claimToken: 'completion-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({ status: 'leased', leaseBy: 'completion-worker' });
+  });
+
   it('claims older capability work before newer ordinary work', async () => {
     const capability = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({

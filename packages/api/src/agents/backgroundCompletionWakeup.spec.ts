@@ -131,6 +131,17 @@ describe('background tool completion wakeups', () => {
       'background-tool-completion',
       'result unavailable',
     );
+    if (admission !== false) {
+      await expect(
+        admission.retire('manual poll elected', { onlyIfUnclaimed: true }),
+      ).resolves.toBe(true);
+    }
+    expect(retire).toHaveBeenLastCalledWith(
+      'delivery-key-1',
+      'background-tool-completion',
+      'manual poll elected',
+      { onlyIfUnclaimed: true },
+    );
   });
 
   it("keeps unfinished sibling tasks out of each other's delivery lanes", async () => {
