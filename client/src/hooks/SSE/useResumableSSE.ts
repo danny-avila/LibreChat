@@ -798,6 +798,7 @@ export default function useResumableSSE(
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+  const setLiveAppliedSteerIds = useSetRecoilState(store.liveAppliedSteerIds);
 
   const sseRef = useRef<SSE | null>(null);
   /** Removes the foreground re-attach listener owned by the newest
@@ -865,7 +866,7 @@ export default function useResumableSSE(
         steerId: string,
         clientSteerId?: string,
         appliedPartQuotes?: string[],
-      ) => {
+      ): string[] => {
         const settledIds = clientSteerId ? [steerId, clientSteerId] : [steerId];
         /** A part applied by a pre-quotes server carries no quotes while the
          *  chip being settled may hold the only copy of the user's excerpts
@@ -885,19 +886,15 @@ export default function useResumableSSE(
             );
           }
         }
-        /** Stamped in the same batch as the chip removal, so the inline part's
-         *  first render already sees it and can play its one-shot receipt
-         *  draw-in; `SteerPart` consumes the id on mount. Only a FIRST
-         *  application stamps: a replayed applied event (resume, duplicate
-         *  frame) whose ids are already in the durable applied set must not
-         *  re-arm an animation its part already consumed. */
+        /** Ids seen by the durable set for the first time — the caller stamps
+         *  these as live-applied only when it actually commits the inline
+         *  part, so an abandoned placement (navigation away, placeholder never
+         *  found) or a replayed event cannot arm a draw-in with no part
+         *  mounting to consume it. */
         const alreadyApplied = snapshot
           .getLoadable(store.appliedSteerIdsByConvoId(conversationId))
           .getValue();
         const firstApplication = settledIds.filter((id) => !alreadyApplied.includes(id));
-        if (firstApplication.length > 0) {
-          set(store.liveAppliedSteerIds, (prev) => appendAppliedSteerIds(prev, firstApplication));
-        }
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
           appendAppliedSteerIds(prev, settledIds),
         );
@@ -927,6 +924,7 @@ export default function useResumableSSE(
               )
             : prev,
         );
+        return firstApplication;
       },
     [],
   );
@@ -1430,7 +1428,11 @@ export default function useResumableSSE(
        * actions for the inject-before-render race (the assistant placeholder
        * can land a few frames after the created event under load).
        */
-      const applySteerToMessages = (event: TSteerAppliedEvent, attempt = 0) => {
+      const applySteerToMessages = (
+        event: TSteerAppliedEvent,
+        attempt = 0,
+        liveSteerIds: string[] = [],
+      ) => {
         if (!isCurrentSubscription()) {
           return;
         }
@@ -1440,15 +1442,21 @@ export default function useResumableSSE(
          *  the inline part can wait for React to mount the target, but leaving
          *  the chip pending during that wait lets an intervening error/final
          *  convert already-applied words into a duplicate queued message. */
-        if (attempt === 0) {
-          resolveSteerChip(chipConvoId, event.steerId, event.clientSteerId, event.part?.quotes);
-        }
+        const firstApplicationIds =
+          attempt === 0
+            ? (resolveSteerChip(
+                chipConvoId,
+                event.steerId,
+                event.clientSteerId,
+                event.part?.quotes,
+              ) ?? [])
+            : liveSteerIds;
         const retryNextFrame = () => {
           if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
             const frameId = requestAnimationFrame(() => {
               steerRetryFramesRef.current.delete(frameId);
               if (isCurrentSubscription()) {
-                applySteerToMessages(event, attempt + 1);
+                applySteerToMessages(event, attempt + 1, firstApplicationIds);
               }
             });
             steerRetryFramesRef.current.add(frameId);
@@ -1465,6 +1473,15 @@ export default function useResumableSSE(
         }
         const updated = applySteerPart(messages[index], event);
         if (updated !== messages[index]) {
+          /** Stamped only when the inline part is actually committed, in the
+           *  same batch, so its first render sees the flag and plays the
+           *  one-shot draw-in (`SteerPart` consumes the id on mount). A
+           *  replayed event is referentially stable here and an abandoned
+           *  placement never reaches this branch, so neither can strand a
+           *  stale id that would animate a historical part on a later visit. */
+          if (firstApplicationIds.length > 0) {
+            setLiveAppliedSteerIds((prev) => appendAppliedSteerIds(prev, firstApplicationIds));
+          }
           const nextMessages = [...messages];
           nextMessages[index] = updated;
           setMessages(nextMessages);
@@ -3612,6 +3629,7 @@ export default function useResumableSSE(
       setRunEnd,
       clearDrainAfterAbort,
       resolveSteerChip,
+      setLiveAppliedSteerIds,
       updateSteerChips,
       seedSteerChips,
       settleAppliedSteerParts,

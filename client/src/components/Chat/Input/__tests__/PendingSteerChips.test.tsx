@@ -561,6 +561,13 @@ describe('PendingSteerChips — queued caption', () => {
     expect(screen.getAllByTestId('queued-caption')).toHaveLength(1);
   });
 
+  it('keeps the caption beside the ARIA list, never as a non-listitem child of it', () => {
+    renderChips([queuedItem], { steering: { duringRunActive: true } });
+    const list = screen.getByRole('list', { name: 'com_ui_queued_messages' });
+    expect(list).not.toContainElement(screen.getByTestId('queued-caption'));
+    expect(list).toContainElement(screen.getByTestId('queued-message-row'));
+  });
+
   it('omits the caption once the run is over, when rows drain on their own terms', () => {
     renderChips([queuedItem], { steering: { duringRunActive: false } });
     expect(screen.queryByTestId('queued-caption')).toBeNull();
