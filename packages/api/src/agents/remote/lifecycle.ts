@@ -29,6 +29,14 @@ interface AgentExecutionEnrollmentDeps {
   manager: GenerationJobManagerClass;
 }
 
+export async function waitForAgentExecutionWrites<T>(writes: readonly Promise<T>[]): Promise<void> {
+  const results = await Promise.allSettled(writes);
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure?.status === 'rejected') {
+    throw failure.reason;
+  }
+}
+
 export class AgentExecutionEnrollment {
   readonly runId: string;
   readonly createdAt: number;
@@ -71,6 +79,12 @@ export class AgentExecutionEnrollment {
     if (this.providerStarted) {
       throw new Error('Agent provider execution has already started');
     }
+    if (this.signal.aborted) {
+      throw new AgentExecutionAdmissionError(
+        'Agent execution stopped before provider startup',
+        'RUN_REPLACED',
+      );
+    }
     const started = await this.manager.beginProviderExecution(
       this.runId,
       this.createdAt,
@@ -83,6 +97,12 @@ export class AgentExecutionEnrollment {
       );
     }
     this.providerStarted = true;
+    if (this.signal.aborted) {
+      throw new AgentExecutionAdmissionError(
+        'Agent execution stopped before provider startup',
+        'RUN_REPLACED',
+      );
+    }
   }
 
   settle(error?: unknown): Promise<void> {
@@ -153,9 +173,9 @@ export async function enrollAgentExecution(
   let active = false;
   try {
     active = await isPrincipalActive(userId);
-  } catch {
-    await retireRejectedEnrollment(deps.manager, job);
-    throw new AgentExecutionAdmissionError(ACCOUNT_DELETION_ERROR, 'ACCOUNT_DELETION_IN_PROGRESS');
+  } catch (error) {
+    await retireRejectedEnrollment(deps.manager, job).catch(() => undefined);
+    throw error;
   }
   if (!active) {
     await retireRejectedEnrollment(deps.manager, job);

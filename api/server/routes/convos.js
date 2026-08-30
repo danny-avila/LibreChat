@@ -275,10 +275,26 @@ async function retryPostDeleteCancellation(cancellationPlan, deletedConversation
 }
 
 /** Confirms every exact generation is stopped before its conversation wave is removed. */
-async function confirmAgentGenerationsDrained(userId, conversationIds, leaseTaskIds = []) {
+async function confirmAgentGenerationsDrained(
+  userId,
+  conversationIds,
+  leaseTaskIds = [],
+  tenantId,
+) {
   let foundActiveGeneration = false;
   const drainErrors = [];
-  const generationIds = [...new Set([...conversationIds, ...leaseTaskIds])];
+  let conversationRunIds;
+  try {
+    conversationRunIds = await GenerationJobManager.getCleanupBlockingJobIdsForConversations(
+      userId,
+      conversationIds,
+      tenantId,
+    );
+  } catch (error) {
+    logger.warn('Conversation generation index lookup failed', error);
+    throw new Error('Conversation generations could not be confirmed drained.');
+  }
+  const generationIds = [...new Set([...conversationIds, ...leaseTaskIds, ...conversationRunIds])];
   await Promise.all(
     generationIds.map(async (conversationId) => {
       let job;
@@ -341,11 +357,12 @@ async function confirmAgentGenerationsDrained(userId, conversationIds, leaseTask
 
 /** Stops event-bound child generations on their owning replica and then removes
  * persistence that raced the first conversation cascade. */
-async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskIds = []) {
+async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskIds = [], tenantId) {
   const foundActiveGeneration = await confirmAgentGenerationsDrained(
     userId,
     conversationIds,
     leaseTaskIds,
+    tenantId,
   );
   if (!foundActiveGeneration) {
     return;
@@ -409,7 +426,7 @@ router.delete('/', configMiddleware, async (req, res) => {
       await subagentThreadTaskStore.cancelPlan(cancellationPlan);
       dbResponse = await db.deleteConvos(req.user.id, filter, {
         beforeDelete: (conversationIds) =>
-          confirmAgentGenerationsDrained(req.user.id, conversationIds),
+          confirmAgentGenerationsDrained(req.user.id, conversationIds, [], tenantId),
       });
     } else {
       /** An empty filter deletes every conversation this owner has, so it runs behind
@@ -417,7 +434,7 @@ router.delete('/', configMiddleware, async (req, res) => {
       dbResponse = await subagentThreadTaskStore.withOwnerDeletionFence(req.user.id, tenantId, () =>
         db.deleteConvos(req.user.id, filter, {
           beforeDelete: (conversationIds) =>
-            confirmAgentGenerationsDrained(req.user.id, conversationIds),
+            confirmAgentGenerationsDrained(req.user.id, conversationIds, [], tenantId),
         }),
       );
     }
@@ -441,13 +458,14 @@ router.delete('/', configMiddleware, async (req, res) => {
               deletedConversationIds.includes(lease.conversationId),
           )
           .map((lease) => lease.taskId),
+        tenantId,
       );
     } else if (deletedConversationIds.length > 0) {
       /** Owner-wide deletion drains lease-backed tasks before the cascade, but a
        * requires_action event actor has intentionally released its lease. Its durable
        * generation is still addressable by the deleted conversation id and must be
        * terminalized before its checkpoint is pruned. */
-      await drainDeletedAgentGenerations(req.user.id, deletedConversationIds);
+      await drainDeletedAgentGenerations(req.user.id, deletedConversationIds, [], tenantId);
     }
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
     // checkpoint would otherwise persist until the Mongo TTL. Never throws.
@@ -486,11 +504,11 @@ router.delete('/all', configMiddleware, async (req, res) => {
           {},
           {
             beforeDelete: (conversationIds) =>
-              confirmAgentGenerationsDrained(req.user.id, conversationIds),
+              confirmAgentGenerationsDrained(req.user.id, conversationIds, [], tenantId),
           },
         ),
     );
-    await drainDeletedAgentGenerations(req.user.id, dbResponse.conversationIds ?? []);
+    await drainDeletedAgentGenerations(req.user.id, dbResponse.conversationIds ?? [], [], tenantId);
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
     await deleteAgentCheckpoints(
       dbResponse.conversationIds,

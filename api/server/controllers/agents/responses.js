@@ -75,6 +75,7 @@ const {
   stripActivityLabelParts,
   CHILD_THREAD_READ_ONLY_ERROR,
   enrollAgentExecution,
+  waitForAgentExecutionWrites,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -577,7 +578,18 @@ const executeResponse = async (envelope, { req, res }) => {
   const conversationId = request.previous_response_id ?? uuidv4();
   let execution;
   let executionError;
-  let abortOnClose;
+  let requestClosed = req.destroyed === true || req.aborted === true;
+  /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
+  const artifactPromises = [];
+  let artifactWritesCovered = false;
+  const abortOnClose = () => {
+    requestClosed = true;
+    if (execution && !execution.signal.aborted) {
+      execution.abort();
+      logger.debug('[Responses API] Client disconnected, aborting');
+    }
+  };
+  req.once('close', abortOnClose);
   try {
     execution = await enrollAgentExecution({
       runId: responseId,
@@ -587,13 +599,10 @@ const executeResponse = async (envelope, { req, res }) => {
       protocol: 'responses',
       isPrincipalActive: db.isAgentTriggerPrincipalActive,
     });
-    abortOnClose = () => {
-      if (!execution.signal.aborted) {
-        execution.abort();
-        logger.debug('[Responses API] Client disconnected, aborting');
-      }
-    };
-    req.once('close', abortOnClose);
+    if (requestClosed || req.destroyed === true || req.aborted === true) {
+      execution.abort();
+    }
+    await execution.beginProviderExecution();
 
     if (request.previous_response_id != null) {
       if (typeof request.previous_response_id !== 'string') {
@@ -1022,8 +1031,6 @@ const executeResponse = async (envelope, { req, res }) => {
       const collectedUsage = [];
 
       // Artifact promises for processing tool outputs
-      /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
-      const artifactPromises = [];
       // Use Responses API-specific callback that emits librechat:attachment events
       const toolEndCallback = createResponsesToolEndCallback({
         req,
@@ -1139,7 +1146,6 @@ const executeResponse = async (envelope, { req, res }) => {
         version: 'v2',
       };
 
-      await execution.beginProviderExecution();
       await run.processStream({ messages: formattedMessages }, config, {
         callbacks: {
           [Callback.TOOL_ERROR]: (graph, error, toolId) => {
@@ -1220,13 +1226,14 @@ const executeResponse = async (envelope, { req, res }) => {
       // The HTTP response is complete, while destructive cleanup still waits for artifacts.
       if (artifactPromises.length > 0) {
         execution.track(
-          Promise.all(artifactPromises).catch((artifactError) => {
+          waitForAgentExecutionWrites(artifactPromises).catch((artifactError) => {
             logger.warn(
               '[Responses API] Error processing artifacts:',
               getSafeErrorMetadata(artifactError),
             );
           }),
         );
+        artifactWritesCovered = true;
       }
     } else {
       const aggregatorHandlers = createAggregatorEventHandlers(aggregator);
@@ -1234,8 +1241,6 @@ const executeResponse = async (envelope, { req, res }) => {
       // Collect usage for balance tracking
       const collectedUsage = [];
 
-      /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
-      const artifactPromises = [];
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
       const toolExecuteOptions = {
@@ -1341,7 +1346,6 @@ const executeResponse = async (envelope, { req, res }) => {
         version: 'v2',
       };
 
-      await execution.beginProviderExecution();
       await run.processStream({ messages: formattedMessages }, config, {
         callbacks: {
           [Callback.TOOL_ERROR]: (graph, error, toolId) => {
@@ -1383,13 +1387,14 @@ const executeResponse = async (envelope, { req, res }) => {
 
       if (artifactPromises.length > 0) {
         try {
-          await Promise.all(artifactPromises);
+          await waitForAgentExecutionWrites(artifactPromises);
         } catch (artifactError) {
           logger.warn(
             '[Responses API] Error processing artifacts:',
             getSafeErrorMetadata(artifactError),
           );
         }
+        artifactWritesCovered = true;
       }
 
       const response = buildAggregatedResponse(
@@ -1468,10 +1473,18 @@ const executeResponse = async (envelope, { req, res }) => {
       }
     }
   } finally {
-    if (abortOnClose) {
-      req.off('close', abortOnClose);
-    }
+    req.off('close', abortOnClose);
     if (execution) {
+      if (!artifactWritesCovered && artifactPromises.length > 0) {
+        execution.track(
+          waitForAgentExecutionWrites(artifactPromises).catch((artifactError) => {
+            logger.warn(
+              '[Responses API] Error processing artifacts:',
+              getSafeErrorMetadata(artifactError),
+            );
+          }),
+        );
+      }
       await execution.settle(executionError).catch((error) => {
         logger.error('[Responses API] Failed to settle execution:', getSafeErrorMetadata(error));
       });

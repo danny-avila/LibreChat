@@ -157,7 +157,14 @@ function resetMockExecution() {
     signal: controller.signal,
     abort: jest.fn((reason) => controller.abort(reason)),
     track: jest.fn((promise) => promise),
-    beginProviderExecution: jest.fn().mockResolvedValue(undefined),
+    beginProviderExecution: jest.fn(async () => {
+      if (controller.signal.aborted) {
+        throw Object.assign(new Error('request disconnected'), {
+          code: 'RUN_REPLACED',
+          status: 409,
+        });
+      }
+    }),
     settle: jest.fn().mockResolvedValue(undefined),
   };
   mockEnrollAgentExecution.mockResolvedValue(mockExecution);
@@ -355,6 +362,11 @@ jest.mock('@librechat/api', () => ({
     on_chat_model_end: { handle: jest.fn() },
   }),
   enrollAgentExecution: (...args) => mockEnrollAgentExecution(...args),
+  waitForAgentExecutionWrites: async (writes) => {
+    const results = await Promise.allSettled(writes);
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
+  },
 }));
 
 jest.mock('~/server/services/ToolService', () => ({
@@ -515,11 +527,58 @@ describe('createResponse controller', () => {
     const processStream = await createRun.mock.results.at(-1).value;
     expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
     expect(mockExecution.beginProviderExecution.mock.invocationCallOrder[0]).toBeLessThan(
+      require('@librechat/api').initializeAgent.mock.invocationCallOrder[0],
+    );
+    expect(mockExecution.beginProviderExecution.mock.invocationCallOrder[0]).toBeLessThan(
       processStream.processStream.mock.invocationCallOrder[0],
     );
     expect(mockExecution.settle).toHaveBeenCalledWith(undefined);
     expect(req.once).toHaveBeenCalledWith('close', expect.any(Function));
     expect(req.off).toHaveBeenCalledWith('close', expect.any(Function));
+  });
+
+  it('covers artifact writes when provider execution fails', async () => {
+    const providerError = new Error('provider aborted');
+    const artifactWrite = Promise.resolve(null);
+    const processStream = jest.fn().mockRejectedValue(providerError);
+    const { createRun } = require('@librechat/api');
+    const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
+    createRun.mockResolvedValueOnce({ processStream });
+    createToolEndCallback.mockImplementationOnce(({ artifactPromises }) => {
+      artifactPromises.push(artifactWrite);
+      return jest.fn();
+    });
+
+    await createResponse(req, res);
+
+    expect(mockExecution.track).toHaveBeenCalledWith(expect.any(Promise));
+    expect(mockExecution.track.mock.invocationCallOrder[0]).toBeLessThan(
+      mockExecution.settle.mock.invocationCallOrder[0],
+    );
+    expect(mockExecution.settle).toHaveBeenCalledWith(providerError);
+  });
+
+  it('does not initialize a provider after disconnecting during enrollment', async () => {
+    let finishEnrollment;
+    mockEnrollAgentExecution.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishEnrollment = resolve;
+        }),
+    );
+
+    const request = createResponse(req, res);
+    await Promise.resolve();
+    req.once.mock.calls[0][1]();
+    finishEnrollment(mockExecution);
+    await request;
+
+    expect(mockExecution.abort).toHaveBeenCalledTimes(1);
+    expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
+    expect(require('@librechat/api').initializeAgent).not.toHaveBeenCalled();
+    expect(mockExecution.settle).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'RUN_REPLACED' }),
+    );
   });
 
   it('resolves saved graph subagents for remote Responses API runs', async () => {

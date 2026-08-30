@@ -109,6 +109,7 @@ describe('Convos Routes', () => {
     moderatedTexts.length = 0;
     generationJobManager.getJob.mockResolvedValue(null);
     generationJobManager.abortJob.mockResolvedValue({ success: true });
+    generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([]);
   });
 
   it('binds the activity subscription adapter to the subagent task store', () => {
@@ -749,6 +750,37 @@ describe('Convos Routes', () => {
       expect(deleteMessages).toHaveBeenCalledWith({
         user: 'test-user-123',
         conversationId: { $in: ['parent-conversation', 'child-conversation'] },
+      });
+    });
+
+    it('drains response-id runs indexed under a deleted conversation', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
+        'resp_remote-run',
+      ]);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp_remote-run'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.getCleanupBlockingJobIdsForConversations).toHaveBeenCalledWith(
+        'test-user-123',
+        ['conversation-1'],
+        undefined,
+      );
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp_remote-run', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
       });
     });
 

@@ -81,7 +81,11 @@ export function createRequireApiKeyAuth(deps: ApiKeyAuthDependencies) {
         });
       }
 
-      const user = await deps.findUser({ _id: keyValidation.userId });
+      const userId = keyValidation.userId.toString();
+      const [user, principalActive] = await Promise.all([
+        deps.findUser({ _id: keyValidation.userId }),
+        deps.isPrincipalActive(userId),
+      ]);
 
       if (!user) {
         return res.status(401).json({
@@ -94,7 +98,7 @@ export function createRequireApiKeyAuth(deps: ApiKeyAuthDependencies) {
       }
 
       user.id = (user._id as Types.ObjectId).toString();
-      if (!(await deps.isPrincipalActive(user.id))) {
+      if (!principalActive) {
         return res.status(409).json({
           error: {
             message: 'Account deletion is in progress',

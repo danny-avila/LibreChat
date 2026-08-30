@@ -67,4 +67,35 @@ describe('remote Agent API key authentication', () => {
     expect(req.user?.id).toBe(userId.toString());
     expect(next).toHaveBeenCalledWith();
   });
+
+  it('starts the user and deletion-fence reads together', async () => {
+    const userId = new Types.ObjectId();
+    let resolveUser!: (user: { _id: Types.ObjectId }) => void;
+    const user = new Promise<{ _id: Types.ObjectId }>((resolve) => {
+      resolveUser = resolve;
+    });
+    const findUser = jest.fn().mockReturnValue(user);
+    const isPrincipalActive = jest.fn().mockResolvedValue(true);
+    const middleware = createRequireApiKeyAuth({
+      validateAgentApiKey: jest.fn().mockResolvedValue({
+        userId,
+        keyId: new Types.ObjectId(),
+      }),
+      findUser,
+      isPrincipalActive,
+    });
+    const { res } = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    const authentication = middleware(createRequest(), res, next);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(findUser).toHaveBeenCalledTimes(1);
+    expect(isPrincipalActive).toHaveBeenCalledWith(userId.toString());
+    expect(next).not.toHaveBeenCalled();
+
+    resolveUser({ _id: userId });
+    await authentication;
+    expect(next).toHaveBeenCalledWith();
+  });
 });

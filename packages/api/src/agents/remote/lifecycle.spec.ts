@@ -1,5 +1,9 @@
 import type { GenerationJobManagerClass } from '~/stream';
-import { enrollAgentExecution, AgentExecutionAdmissionError } from './lifecycle';
+import {
+  enrollAgentExecution,
+  AgentExecutionAdmissionError,
+  waitForAgentExecutionWrites,
+} from './lifecycle';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass as JobManager } from '~/stream';
@@ -89,6 +93,35 @@ describe('Agent execution enrollment', () => {
     });
   });
 
+  it('preserves principal-check infrastructure failures after retiring the run', async () => {
+    const infrastructureError = new Error('principal store unavailable');
+
+    await expect(
+      enrollAgentExecution(
+        {
+          ...enrollmentParams('chatcmpl-principal-error'),
+          isPrincipalActive: jest.fn().mockRejectedValue(infrastructureError),
+        },
+        { manager },
+      ),
+    ).rejects.toBe(infrastructureError);
+
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([]);
+  });
+
+  it('refuses provider admission when the request aborted during enrollment', async () => {
+    const beginProviderExecution = jest.spyOn(manager, 'beginProviderExecution');
+    const enrollment = await enrollAgentExecution(enrollmentParams('chatcmpl-disconnected'), {
+      manager,
+    });
+    enrollment.abort();
+
+    await expect(enrollment.beginProviderExecution()).rejects.toMatchObject({
+      code: 'RUN_REPLACED',
+    });
+    expect(beginProviderExecution).not.toHaveBeenCalled();
+  });
+
   it('keeps terminal work cleanup-blocking until every tracked write settles', async () => {
     const enrollment = await enrollAgentExecution(enrollmentParams('chatcmpl-tail'), { manager });
     const tail = deferred<void>();
@@ -148,5 +181,26 @@ describe('Agent execution enrollment', () => {
     await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual(
       expect.arrayContaining(['chatcmpl-a', 'chatcmpl-b']),
     );
+    await expect(
+      manager.getCleanupBlockingJobIdsForConversations('user-1', ['conversation-shared']),
+    ).resolves.toEqual(expect.arrayContaining(['chatcmpl-a', 'chatcmpl-b']));
+  });
+
+  it('waits for every trailing write before reporting the first failure', async () => {
+    const failure = new Error('artifact failed');
+    const remaining = deferred<void>();
+    let finished = false;
+    const settlement = waitForAgentExecutionWrites([
+      Promise.reject(failure),
+      remaining.promise,
+    ]).finally(() => {
+      finished = true;
+    });
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(finished).toBe(false);
+
+    remaining.resolve();
+    await expect(settlement).rejects.toBe(failure);
   });
 });
