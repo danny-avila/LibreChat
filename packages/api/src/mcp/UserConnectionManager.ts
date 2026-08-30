@@ -787,7 +787,9 @@ export abstract class UserConnectionManager {
       /** Only the YAML tier is writable here, and a config-overlay, user, or plugin
        *  server would otherwise spend a cache round-trip per connection to rediscover
        *  that. An unset source is left to proceed: it predates per-tier stamping and
-       *  the registry still resolves it by name. */
+       *  the registry still resolves it by name. A config-tier override shadowing a
+       *  YAML base keeps the base's 'yaml' tag (`overlaySource`), so `config` is also
+       *  passed through for the registry's field-level identity check. */
       if (isUserSourced(config) || isPluginSourced(config) || config.source === 'config') {
         return;
       }
@@ -807,6 +809,7 @@ export abstract class UserConnectionManager {
         serverName,
         instructions,
         userId,
+        config,
       );
       if (updated) {
         logger.info(

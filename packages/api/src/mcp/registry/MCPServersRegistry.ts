@@ -144,6 +144,23 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return true;
 }
 
+/**
+ * True when `candidate` matches `yamlEntry` on every admin-configurable field.
+ * Field-wise comparison rather than whole-object equality: inspector-derived
+ * fields (`tools`, `updatedAt`, `resolvedInstructions`, ...) may legitimately
+ * differ between a stored entry and the effective config a connection used.
+ */
+function matchesAdminConfigurableFields(
+  yamlEntry: t.ParsedServerConfig,
+  candidate: t.ParsedServerConfig,
+): boolean {
+  const yamlRecord = yamlEntry as unknown as Record<string, unknown>;
+  const candidateRecord = candidate as unknown as Record<string, unknown>;
+  return ADMIN_CONFIGURABLE_FIELDS.every((field) =>
+    deepEqual(yamlRecord[field], candidateRecord[field]),
+  );
+}
+
 const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const raw = process.env.MCP_INIT_TIMEOUT_MS;
   if (raw == null) {
@@ -566,11 +583,20 @@ export class MCPServersRegistry {
    * enabled `serverInstructions` declaration has no fetched text to resolve in
    * that case. Called once a live connection has delivered the instructions.
    *
+   * First write wins: once the stored entry carries any text, later calls are
+   * no-ops. Without this, identities racing the first backfill under stale
+   * config snapshots would churn the shared copy and rotate the global read
+   * caches on every divergence.
+   *
    * YAML-tier servers only. Config-overlay servers are cached under
    * config-hash keys and cannot be addressed by name here; DB-backed user
    * servers need an identity-preserving write through mongoose timestamps and
    * the credential-sanitization pipeline, which is its own change. Both are
-   * left untouched.
+   * left untouched. An overlaid effective config carries its base's `'yaml'`
+   * source tag (`overlaySource`), so `connectedConfig` — the config the
+   * delivering connection was actually created from — is compared against the
+   * stored entry on every admin-configurable field: text fetched from an
+   * overridden endpoint must never be stored as the shared base's.
    *
    * The entry's `updatedAt` is deliberately preserved (the storage `patch`
    * contract): the config identity did not change, and bumping it would mark
@@ -582,12 +608,19 @@ export class MCPServersRegistry {
     serverName: string,
     instructions: string,
     userId?: string,
+    connectedConfig?: t.ParsedServerConfig,
   ): Promise<boolean> {
     if (!this.cacheConfigsRepo.patch) {
       return false;
     }
     const yamlEntry = await this.cacheConfigsRepo.get(serverName);
-    if (!yamlEntry || yamlEntry.resolvedInstructions === instructions) {
+    if (!yamlEntry || yamlEntry.resolvedInstructions != null) {
+      return false;
+    }
+    if (connectedConfig && !matchesAdminConfigurableFields(yamlEntry, connectedConfig)) {
+      logger.debug(
+        `[MCPServersRegistry][${serverName}] Connection config differs from the stored YAML entry (config-tier override or stale snapshot); not storing its instructions`,
+      );
       return false;
     }
     const patched = await this.cacheConfigsRepo.patch(serverName, {

@@ -116,6 +116,59 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
     expect(updated).toBe(false);
   });
 
+  it('keeps the first stored text when a later connection delivers different instructions', async () => {
+    await registry['cacheConfigsRepo'].add('deferred_server', startupDeferredYamlEntry);
+
+    await registry.setResolvedInstructions('deferred_server', INSTRUCTIONS);
+    const updated = await registry.setResolvedInstructions(
+      'deferred_server',
+      'per-identity text for someone else',
+    );
+
+    expect(updated).toBe(false);
+    const config = await registry.getServerConfig('deferred_server');
+    expect(config?.resolvedInstructions).toBe(INSTRUCTIONS);
+  });
+
+  it('stores instructions when the connected config matches the stored YAML entry', async () => {
+    await registry['cacheConfigsRepo'].add('deferred_server', startupDeferredYamlEntry);
+
+    const updated = await registry.setResolvedInstructions(
+      'deferred_server',
+      INSTRUCTIONS,
+      'user-1',
+      {
+        ...startupDeferredYamlEntry,
+      },
+    );
+
+    expect(updated).toBe(true);
+    const config = await registry.getServerConfig('deferred_server');
+    expect(config?.resolvedInstructions).toBe(INSTRUCTIONS);
+  });
+
+  /** A config-tier override shadowing a YAML base keeps the base's 'yaml' source
+   *  tag (`overlaySource`), so the connection manager's tier guard cannot see it.
+   *  The shared base entry must not adopt instructions fetched from the
+   *  override's endpoint. */
+  it('refuses instructions delivered by a config-overlaid connection', async () => {
+    await registry['cacheConfigsRepo'].add('deferred_server', startupDeferredYamlEntry);
+
+    const updated = await registry.setResolvedInstructions(
+      'deferred_server',
+      INSTRUCTIONS,
+      'user-1',
+      {
+        ...startupDeferredYamlEntry,
+        url: 'https://tenant-override.example.com/mcp',
+      },
+    );
+
+    expect(updated).toBe(false);
+    const config = await registry.getServerConfig('deferred_server');
+    expect(config?.resolvedInstructions).toBeUndefined();
+  });
+
   it('returns false for an unknown server without a user', async () => {
     const updated = await registry.setResolvedInstructions('missing_server', INSTRUCTIONS);
     expect(updated).toBe(false);
@@ -179,15 +232,27 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
   });
 
   it('persists instructions delivered by the live connection', async () => {
-    await backfill({ ...startupDeferredYamlEntry }, connectionWith(INSTRUCTIONS));
+    const config = { ...startupDeferredYamlEntry };
+    await backfill(config, connectionWith(INSTRUCTIONS));
 
-    expect(setResolvedInstructions).toHaveBeenCalledWith('deferred_server', INSTRUCTIONS, 'user-1');
+    expect(setResolvedInstructions).toHaveBeenCalledWith(
+      'deferred_server',
+      INSTRUCTIONS,
+      'user-1',
+      config,
+    );
   });
 
   it('persists instructions for non-OAuth servers with runtime user placeholders', async () => {
-    await backfill({ ...runtimePlaceholderYamlEntry }, connectionWith(INSTRUCTIONS));
+    const config = { ...runtimePlaceholderYamlEntry };
+    await backfill(config, connectionWith(INSTRUCTIONS));
 
-    expect(setResolvedInstructions).toHaveBeenCalledWith('deferred_server', INSTRUCTIONS, 'user-1');
+    expect(setResolvedInstructions).toHaveBeenCalledWith(
+      'deferred_server',
+      INSTRUCTIONS,
+      'user-1',
+      config,
+    );
   });
 
   it('skips servers that do not enable serverInstructions', async () => {
@@ -252,7 +317,12 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
   it('still backfills when the stored config carries no source stamp', async () => {
     const { source: _source, ...unstamped } = startupDeferredYamlEntry;
     await backfill(unstamped as t.ParsedServerConfig, connectionWith(INSTRUCTIONS));
-    expect(setResolvedInstructions).toHaveBeenCalledWith('deferred_server', INSTRUCTIONS, 'user-1');
+    expect(setResolvedInstructions).toHaveBeenCalledWith(
+      'deferred_server',
+      INSTRUCTIONS,
+      'user-1',
+      unstamped,
+    );
   });
 
   it('skips connections that advertise no instructions', async () => {

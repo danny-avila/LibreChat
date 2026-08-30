@@ -24,8 +24,12 @@ import { cacheConfig, standardCache } from '~/cache';
  * IMPORTANT: The promise-based writeLock serializes writes within a single Node.js process
  * only. Concurrent writes from separate instances race at the Redis level (last-write-wins).
  * This is acceptable because writes are performed exclusively by the leader during
- * initialization via {@link MCPServersInitializer}. `reinspectServer` is manual and rare.
- * Callers must enforce this single-writer invariant externally.
+ * initialization via {@link MCPServersInitializer}. `reinspectServer` is manual and rare,
+ * and the `patch` instruction backfill fires at most once per server per registry
+ * lifetime (first-write-wins short-circuits every later attempt before it reaches
+ * this class). Callers must enforce this single-writer invariant externally; making
+ * these writes atomic across instances (per-server hash fields or Lua CAS) is the
+ * follow-up that would close the residual race for every writer here at once.
  */
 const AGGREGATE_KEY = '__all__';
 
