@@ -5,8 +5,8 @@ import {
   MAX_COMPACTION_SEMANTIC_INDEX_SOURCE_CONTENT_INDEX,
   MAX_COMPACTION_SEMANTIC_INDEX_TEXT_LENGTH,
 } from '@librechat/data-schemas';
-import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import type { CompactionSemanticIndex, CompactionSemanticIndexSnapshot } from '@librechat/agents';
+import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import {
   createCompactionSemanticIndexProjection,
   restoreCompactionSemanticIndex,

@@ -7,14 +7,14 @@ import {
   isCompactionSemanticIndexProjection,
 } from '@librechat/data-schemas';
 import type {
-  ICompactionSemanticIndexProjection,
-  TCompactionSemanticIndexEntry,
-} from '@librechat/data-schemas';
-import type {
   CompactionSemanticIndex,
   CompactionSemanticIndexEntry,
   CompactionSemanticIndexSnapshot,
 } from '@librechat/agents';
+import type {
+  ICompactionSemanticIndexProjection,
+  TCompactionSemanticIndexEntry,
+} from '@librechat/data-schemas';
 
 function snapshotEntry(
   entry: CompactionSemanticIndexEntry,
