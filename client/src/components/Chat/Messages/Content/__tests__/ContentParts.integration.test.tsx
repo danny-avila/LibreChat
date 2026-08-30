@@ -58,6 +58,7 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
+  useMediaQuery: () => false,
   Button: ({
     children,
     variant: _variant,
