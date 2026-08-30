@@ -410,14 +410,17 @@ export function canUseAppConnection(config: UserScopedConnectionConfig): boolean
 }
 
 /**
- * Returns the names of `customUserVars` declared on the server config for which
- * the user has not supplied a non-blank value (unset, empty, or whitespace-only
- * values count as missing, since they still fail auth). An empty array means
- * every declared variable is satisfied (or the server declares none).
+ * Returns the names of *required* `customUserVars` declared on the server config for which
+ * the user has not supplied a non-blank value (unset, empty, or whitespace-only values
+ * count as missing, since they still fail auth). An empty array means every required
+ * variable is satisfied (or the server declares none).
  *
- * Used to gate tool exposure: a server that requires user-provided credentials
- * should not surface its tools to the model until those values are set,
- * otherwise every tool call fails authentication. See issue #10969.
+ * Used to gate tool exposure: a server that requires user-provided credentials should not
+ * surface its tools to the model until those values are set, otherwise every tool call
+ * fails authentication. See issue #10969.
+ *
+ * Variables marked `optional` are excluded: they override a default the deployment already
+ * provides, so leaving one unset must not take the server's tools away.
  */
 export function getMissingCustomUserVars(
   config: Pick<ParsedServerConfig, 'customUserVars'>,
@@ -426,7 +429,11 @@ export function getMissingCustomUserVars(
   if (!hasCustomUserVars(config)) {
     return [];
   }
-  return Object.keys(config.customUserVars ?? {}).filter((key) => {
+  const declared = config.customUserVars ?? {};
+  return Object.keys(declared).filter((key) => {
+    if (declared[key]?.optional === true) {
+      return false;
+    }
     const value = providedVars?.[key];
     return value == null || (typeof value === 'string' && value.trim() === '');
   });
