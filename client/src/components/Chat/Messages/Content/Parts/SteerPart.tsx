@@ -76,22 +76,33 @@ const SteerPart = memo(function SteerPart({
   }, []);
 
   /** The receipt draw-in plays exactly once, at the live chip→inline hand-off:
-   *  the applied handler stamps the id before this part mounts, the initial
-   *  render captures it, and the effect consumes it so a remount (conversation
-   *  revisit, reload, share view) renders the settled checks without motion.
+   *  the applied handler stamps the id as it commits the part, the render that
+   *  first sees each identity captures it, and the effect consumes it so a
+   *  remount (conversation revisit, reload, share view) renders the settled
+   *  checks without motion. Captured per IDENTITY, not per mount — a content
+   *  slot can be overwritten with a different steer (`applySteerPart` permits
+   *  replacement at an index) while React reuses this component — and every
+   *  identity consumes its id whether it animated or not, so nothing lingers.
    *  The membership selector scopes the subscription to THIS id — stamping or
    *  consuming one steer never re-renders the other mounted parts. */
   const isLiveApplied = useRecoilValue(store.liveAppliedSteerFamily(steerId ?? ''));
   const setLiveAppliedIds = useSetRecoilState(store.liveAppliedSteerIds);
-  const [animateIn] = useState(isLiveApplied);
+  const [captured, setCaptured] = useState<{ id: string | undefined; animate: boolean }>({
+    id: steerId,
+    animate: isLiveApplied,
+  });
+  if (captured.id !== steerId) {
+    setCaptured({ id: steerId, animate: isLiveApplied });
+  }
+  const animateIn = captured.id === steerId && captured.animate;
   useEffect(() => {
-    if (!animateIn || steerId == null) {
+    if (steerId == null || steerId.length === 0) {
       return;
     }
     setLiveAppliedIds((prev) =>
       prev.includes(steerId) ? prev.filter((id) => id !== steerId) : prev,
     );
-  }, [animateIn, steerId, setLiveAppliedIds]);
+  }, [steerId, setLiveAppliedIds]);
 
   if (typeof steer !== 'string' || steer.length === 0) {
     return null;

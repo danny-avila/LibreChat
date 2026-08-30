@@ -1,6 +1,6 @@
 import React from 'react';
 import { getDefaultStore } from 'jotai';
-import { RecoilRoot, useRecoilValue } from 'recoil';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
@@ -19,6 +19,7 @@ const mockSetDefaultAction = jest.fn();
 const mockRestoreToComposer = jest.fn();
 let convertSteersForTest: ReturnType<typeof useSteerConvert>;
 let observedQueueForTest: QueuedMessage[];
+let setSteersForTest: (updater: (prev: PendingSteer[]) => PendingSteer[]) => void;
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -115,6 +116,7 @@ function steersElement(steers: PendingSteer[], options?: RenderOptions) {
   const SteerRaceProbe = () => {
     convertSteersForTest = useSteerConvert();
     observedQueueForTest = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+    setSteersForTest = useSetRecoilState(store.pendingSteersByConvoId(CONVO_ID));
     return null;
   };
   return (
@@ -1219,5 +1221,35 @@ describe('InFlightSteers delivery receipts', () => {
     expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
     // The label and pulse react instantly; the check waits for the 202.
     expect(receipt.querySelector('svg')).toBeNull();
+  });
+
+  it('honors an SSE-delivered preempt confirmation while the arm response is still pending', async () => {
+    mockArmMutateAsync.mockReturnValue(new Promise(() => {}));
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
+    fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    expect(screen.getByTestId('steer-receipt').querySelector('svg')).toBeNull();
+
+    // steer_updated relabels the chip before the arm HTTP response returns:
+    // that IS durable confirmation, and the check must not wait out the
+    // round-trip timeout.
+    await act(async () => {
+      setSteersForTest((prev) =>
+        prev.map((steer) => ({ ...steer, preempt: true, preemptRevision: 1 })),
+      );
+    });
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    expect(receipt.querySelector('svg')).not.toBeNull();
+  });
+
+  it('announces receipt transitions through the polite live region', async () => {
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'sending', createdAt: 1 }]);
+    // Mount state is not replayed: the region starts empty.
+    expect(screen.getByRole('status')).toHaveTextContent('');
+
+    await act(async () => {
+      setSteersForTest((prev) => prev.map((steer) => ({ ...steer, status: 'pending' as const })));
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_steer_delivered');
   });
 });

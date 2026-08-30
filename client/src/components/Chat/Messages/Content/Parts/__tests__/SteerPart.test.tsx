@@ -223,4 +223,40 @@ describe('SteerPart live receipt draw-in', () => {
     renderLive([]);
     expect(appliedChecks()).not.toHaveClass('animate-in');
   });
+
+  it('re-derives and consumes per identity when a slot is overwritten with another steer', () => {
+    // ContentParts keys by content index, and applySteerPart permits a
+    // different steer to overwrite that index — React reuses this component.
+    const partFor = (steerId: string) => (
+      <>
+        <SteerPart steer="steered words" steerId={steerId} createdAt={1} />
+        <LiveIdsProbe />
+      </>
+    );
+    const { rerender } = render(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.user, SEEDED_USER as never);
+          set(store.liveAppliedSteerIds, ['s2']);
+        }}
+      >
+        {partFor('s1')}
+      </RecoilRoot>,
+    );
+    expect(appliedChecks()).not.toHaveClass('animate-in');
+    expect(screen.getByTestId('live-ids')).toHaveTextContent('s2');
+
+    rerender(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.user, SEEDED_USER as never);
+          set(store.liveAppliedSteerIds, ['s2']);
+        }}
+      >
+        {partFor('s2')}
+      </RecoilRoot>,
+    );
+    expect(appliedChecks()).toHaveClass('animate-in');
+    expect(screen.getByTestId('live-ids').textContent).toBe('');
+  });
 });

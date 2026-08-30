@@ -55,6 +55,14 @@ const STEER_OVERFLOW_TOLERANCE = 8;
  *  honest unknown outcome; the idempotent arm may still complete server-side. */
 const ARM_CONFIRM_TIMEOUT_MS = 10_000;
 
+/** Live-region copy per receipt state, announced on transitions only. */
+const RECEIPT_ANNOUNCEMENTS = {
+  sending: 'com_ui_steer_sending',
+  delivered: 'com_ui_steer_delivered',
+  interrupting: 'com_ui_steer_in_flight_preempt',
+  applied: 'com_ui_steer_applied_info',
+} as const;
+
 /** The control rail flanking a bubble. `py-3` reproduces the bubble's own
  *  first-line band — its `py-2.5` padding, its 1px border, and half the gap
  *  between the 24px control and the taller text line box — so a 24px control
@@ -141,14 +149,30 @@ const InFlightSteer = memo(function InFlightSteer({
    *  ACK — the silent round trip is exactly what reads as broken. */
   const [arming, setArming] = useState(false);
   /** An interrupt shows as interrupting even before its confirmation (the
-   *  click must react instantly); `confirmed` below withholds the check until
-   *  the server durably acknowledged the enqueue/arm. */
+   *  click must react instantly); `confirmed` withholds the check until the
+   *  server durably acknowledged the enqueue/arm. A relabelled chip
+   *  (`preempt` true past `sending`) IS that confirmation — the SSE
+   *  `steer_updated` can deliver it while the arm HTTP response is still in
+   *  flight, and the check must not wait out that round trip. */
   let receiptState: SteerReceiptState = 'delivered';
   if (preempting || arming) {
     receiptState = 'interrupting';
   } else if (sending) {
     receiptState = 'sending';
   }
+  const receiptConfirmed = preempting ? !sending : !arming;
+
+  /** Mirrors each receipt TRANSITION into the row's polite live region so
+   *  keyboard and screen-reader users get the same immediate confirmation the
+   *  visible marks give; the initial state is not replayed on mount. */
+  const prevReceiptStateRef = useRef(receiptState);
+  useEffect(() => {
+    if (prevReceiptStateRef.current === receiptState) {
+      return;
+    }
+    prevReceiptStateRef.current = receiptState;
+    setEscalationAnnouncement(localize(RECEIPT_ANNOUNCEMENTS[receiptState]));
+  }, [receiptState, localize]);
 
   /** Long steers (several paragraphs) collapse to a preview so the stack stays
    *  scannable; the toggle is offered only once the content actually overflows
@@ -572,7 +596,7 @@ const InFlightSteer = memo(function InFlightSteer({
        *  present; the rail hides while sending or already escalated. */}
       <SteerReceipt
         state={receiptState}
-        confirmed={!sending && !arming}
+        confirmed={receiptConfirmed}
         className={!sending && !preempting ? 'mr-[30px]' : undefined}
       />
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
