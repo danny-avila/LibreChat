@@ -12,7 +12,6 @@ import type {
   BackgroundToolWakeupRegistration,
   BackgroundToolWakeupRetireOptions,
 } from './backgroundCompletion';
-import { BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
 import type {
   AgentTriggerContinuePreparation,
   AgentTriggerExecutionHostDeps,
@@ -23,15 +22,8 @@ import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 import { truncateMiddle } from '~/utils';
-import { BACKGROUND_RESULT_PERSISTENCE_WINDOW_MS } from './harvest';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
-/** A task may use its full invocation deadline and then the full persistence
- * retry budget before terminal evidence can exist. Leave a small scheduling
- * margin so the delivery never abandons a result while its owner can still
- * durably publish it. */
-const RESULT_READY_WAIT_MS =
-  BACKGROUND_TASK_TIMEOUT_MS + BACKGROUND_RESULT_PERSISTENCE_WINDOW_MS + 5 * 60_000;
 const MAX_WAKEUP_RESULT_CHARS = 24 * 1024;
 export const BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS: number = 16 * 1024;
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
@@ -83,7 +75,6 @@ interface GenerationState {
 export interface BackgroundToolCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
-  now?: () => number;
 }
 
 function executionError(
@@ -247,7 +238,6 @@ function buildWakeupInput(
 export function createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob,
-  now = Date.now,
 }: BackgroundToolCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
@@ -326,13 +316,10 @@ export function createBackgroundToolCompletionWakeupResolver({
       return { status: 'settled' };
     }
     if (claim.status !== 'acquired') {
-      if (now() - envelope.event.occurredAt > RESULT_READY_WAIT_MS) {
-        throw executionError('The background tool result never became durable.', {
-          code: 'BACKGROUND_TOOL_RESULT_ABANDONED',
-          retryable: false,
-          status: 410,
-        });
-      }
+      /** Wall-clock age cannot prove the invocation or a Mongo operation has
+       * stopped: abort-resistant tools intentionally remain nonterminal, and
+       * an in-flight write may succeed after an observer-side timeout. Only
+       * an acquired durable result or producer retirement is terminal truth. */
       throw executionError('The background tool result is not durable yet.', {
         code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
         retryable: true,

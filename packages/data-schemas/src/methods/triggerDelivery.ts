@@ -1938,14 +1938,20 @@ export function createAgentTriggerDeliveryMethods(
               { status: 'leased', capabilityStatus: 'dead' },
             ],
           }
-        : {
-            status: {
-              $in:
-                input.onlyIfUnclaimed === true
-                  ? ['pending', 'capability_pending']
-                  : ['pending', 'leased', 'capability_pending', 'capability_leased'],
-            },
-          };
+        : input.onlyIfUnclaimed === true
+          ? {
+              $or: [
+                { status: { $in: ['pending', 'capability_pending'] } },
+                /** A capability-shielded pending row looks leased to legacy
+                 * workers but has no private claimant yet. */
+                { status: 'leased', capabilityStatus: 'pending' },
+              ],
+            }
+          : {
+              status: {
+                $in: ['pending', 'leased', 'capability_pending', 'capability_leased'],
+              },
+            };
     const retired = await Delivery()
       .findOneAndUpdate(
         {

@@ -604,6 +604,69 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toMatchObject({ status: 'leased', leaseBy: 'completion-worker' });
   });
 
+  it('retires a capability-shielded completion before a private resolver claims it', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-shielded-pending',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'pending',
+    });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { backgroundToolCompletionRetired: true },
+    });
+  });
+
+  it('does not retire a capability completion after a private resolver claims it', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-private-lease',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'background-capable-worker',
+        claimToken: 'background-capable-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(false);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'leased',
+    });
+  });
+
   it('reconciles only an irreversibly dead completion for manual polling', async () => {
     const user = new mongoose.Types.ObjectId();
     const source = { id: 'background-tool-completion', type: 'internal' };

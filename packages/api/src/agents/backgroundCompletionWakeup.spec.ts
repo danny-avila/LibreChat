@@ -265,27 +265,17 @@ describe('background tool completion wakeups', () => {
     expect(methods.claimBackgroundToolResults).not.toHaveBeenCalled();
   });
 
-  it('waits through the invocation and persistence budgets before abandoning missing evidence', async () => {
+  it('does not manufacture terminal evidence from wall-clock age', async () => {
     const { methods } = resolverMethods();
     methods.claimBackgroundToolResults.mockResolvedValue({ status: 'missing', results: [] });
-    const deliveryEnvelope = await envelope({ createdAt: NOW });
-    const resolveDuringPersistence = createBackgroundToolCompletionWakeupResolver({
+    const deliveryEnvelope = await envelope({ createdAt: NOW - 7 * 24 * 60 * 60_000 });
+    const resolve = createBackgroundToolCompletionWakeupResolver({
       methods: methods as never,
       getGenerationJob: async () => null,
-      now: () => NOW + 36 * 60_000,
     });
 
-    await expect(
-      resolveDuringPersistence(deliveryEnvelope, { idempotencyKey: 'delivery-1' }),
-    ).rejects.toMatchObject({ code: 'BACKGROUND_TOOL_RESULT_NOT_READY', retryable: true });
-
-    const resolveAfterFullBudget = createBackgroundToolCompletionWakeupResolver({
-      methods: methods as never,
-      getGenerationJob: async () => null,
-      now: () => NOW + 52 * 60_000,
-    });
-    await expect(
-      resolveAfterFullBudget(deliveryEnvelope, { idempotencyKey: 'delivery-1' }),
-    ).rejects.toMatchObject({ code: 'BACKGROUND_TOOL_RESULT_ABANDONED', retryable: false });
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'BACKGROUND_TOOL_RESULT_NOT_READY', retryable: true },
+    );
   });
 });

@@ -12,9 +12,6 @@ import type { ServerRequest } from '~/types';
 const BACKGROUND_PATCH_RETRY_DELAYS_MS = [
   250, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 180_000, 240_000, 300_000,
 ];
-export const BACKGROUND_RESULT_PERSISTENCE_WINDOW_MS: number =
-  BACKGROUND_PATCH_RETRY_DELAYS_MS.reduce((total, delay) => total + delay, 0);
-
 interface HarvestFileRef {
   id: string;
   name: string;
