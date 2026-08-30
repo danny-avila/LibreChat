@@ -4939,14 +4939,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     ) {
                       return;
                     }
-                    backgroundTaskRegistry.complete(
+                    const storedContent = backgroundTaskRegistry.complete(
                       backgroundUserId,
                       backgroundConversationId,
                       task.id,
                       { content, artifact: result.artifact, harvestStarted: harvestEnabled },
                     );
                     persistBackgroundResult({
-                      output: typeof content === 'string' ? content : undefined,
+                      /** Use the registry's canonical bounded serialization so
+                       * structured content cannot leave the durable card on its
+                       * synthetic running handle. */
+                      output: storedContent,
                       artifact: result.artifact,
                       status: 'completed',
                     });

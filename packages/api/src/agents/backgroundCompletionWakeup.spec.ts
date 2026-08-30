@@ -1,5 +1,6 @@
 import type { EnqueueBackgroundToolCompletion } from './backgroundCompletionWakeup';
 import {
+  BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS,
   createBackgroundToolCompletionWakeupHandler,
   createBackgroundToolCompletionWakeupResolver,
 } from './backgroundCompletionWakeup';
@@ -189,6 +190,33 @@ describe('background tool completion wakeups', () => {
         claimId: 'delivery-1',
       }),
     );
+  });
+
+  it('shares one bounded input budget across a full sibling batch', async () => {
+    const { methods } = resolverMethods();
+    const results = Array.from({ length: 8 }, (_, index) => ({
+      taskId: `task-${index}`,
+      toolCallId: `call-${index}`,
+      toolName: 'large_tool',
+      status: 'completed' as const,
+      output: `${index}:` + 'large result '.repeat(10_000),
+    }));
+    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'acquired', results });
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const prepared = await resolve(await envelope(), { idempotencyKey: 'delivery-large' });
+
+    expect(prepared?.status).toBe('ready');
+    if (prepared?.status === 'ready') {
+      expect(prepared.input.length).toBeLessThanOrEqual(BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS);
+      for (const result of results) {
+        expect(prepared.input).toContain(result.taskId);
+      }
+      expect(prepared.input).toContain('[truncated:');
+    }
   });
 
   it('releases every claimed sibling when admission definitely fails', async () => {

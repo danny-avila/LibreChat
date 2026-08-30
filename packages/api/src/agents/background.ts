@@ -967,16 +967,18 @@ export class BackgroundTaskRegistryClass {
     conversationId: string,
     taskId: string,
     result: { content: unknown; artifact?: unknown; harvestStarted?: boolean },
-  ): void {
+  ): string {
+    const storedContent = toStoredContent(result.content);
     this.update(userId, conversationId, taskId, {
       status: 'completed',
-      result: toStoredContent(result.content),
+      result: storedContent,
       artifact: toStoredArtifact(taskId, result.artifact),
       ...(result.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       /** Marks that an artifact existed even after `claimArtifact` clears it,
        *  so re-polls keep the "produced an artifact" note. */
       artifactDelivered: false,
     });
+    return storedContent;
   }
 
   /**

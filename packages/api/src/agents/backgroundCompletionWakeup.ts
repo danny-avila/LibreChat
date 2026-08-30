@@ -24,6 +24,7 @@ import { truncateMiddle } from '~/utils';
 const WAKEUP_ADMISSION_DELAY_MS = 250;
 const RESULT_READY_WAIT_MS = 35 * 60_000;
 const MAX_WAKEUP_RESULT_CHARS = 24 * 1024;
+export const BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS = 16 * 1024;
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
 export const BACKGROUND_TOOL_COMPLETION_SOURCE = 'background-tool-completion';
 const EVENT_TYPE = 'background-tool.completion';
@@ -173,6 +174,64 @@ function latestAssistantDescendant(messages: IMessage[], anchorId: string): stri
   return descendants[descendants.length - 1]?.messageId;
 }
 
+function fitWakeupResult(output: string, serializedBudget: number): string {
+  if (serializedBudget <= 0 || output.length === 0) {
+    return '';
+  }
+  let low = 0;
+  let high = Math.min(output.length, MAX_WAKEUP_RESULT_CHARS);
+  let fitted = '';
+  while (low <= high) {
+    const limit = Math.floor((low + high) / 2);
+    const candidate = truncateMiddle(output, limit);
+    /** The aggregate limit applies after JSON escaping, not just to raw tool
+     * text. Subtract the empty string's two quote characters because the
+     * fixed payload budget below already includes `result: ""`. */
+    const cost = JSON.stringify(candidate).length - 2;
+    if (cost <= serializedBudget) {
+      fitted = candidate;
+      low = limit + 1;
+    } else {
+      high = limit - 1;
+    }
+  }
+  return fitted;
+}
+
+function buildWakeupInput(
+  results: Array<{
+    taskId: string;
+    toolCallId: string;
+    toolName: string;
+    status: 'completed' | 'error';
+    output: string;
+  }>,
+): string {
+  const header =
+    results.length === 1
+      ? 'A background tool task has finished. Continue using its durable result below.'
+      : `${results.length} background tool tasks have finished. Continue using their durable results below.`;
+  const payload = results.map((result) => ({
+    background_task_id: result.taskId,
+    tool_call_id: result.toolCallId,
+    tool: result.toolName,
+    status: result.status,
+    result: '',
+  }));
+  let remaining = Math.max(
+    0,
+    BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS - header.length - 1 - JSON.stringify(payload).length,
+  );
+  for (let index = 0; index < results.length; index++) {
+    const slots = results.length - index;
+    const share = Math.floor(remaining / slots);
+    const fitted = fitWakeupResult(results[index]?.output ?? '', share);
+    payload[index]!.result = fitted;
+    remaining -= JSON.stringify(fitted).length - 2;
+  }
+  return `${header}\n${JSON.stringify(payload)}`;
+}
+
 /** Resolves a pre-registered delivery only after its result is durably
  * readable. The message claim elects automatic delivery against manual polls
  * and returns a bounded sibling batch for the continuation input. */
@@ -274,20 +333,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       });
     }
     const taskIds = claim.results.map((result) => result.taskId);
-    const input = [
-      claim.results.length === 1
-        ? 'A background tool task has finished. Continue using its durable result below.'
-        : `${claim.results.length} background tool tasks have finished. Continue using their durable results below.`,
-      JSON.stringify(
-        claim.results.map((result) => ({
-          background_task_id: result.taskId,
-          tool_call_id: result.toolCallId,
-          tool: result.toolName,
-          status: result.status,
-          result: truncateMiddle(result.output, MAX_WAKEUP_RESULT_CHARS),
-        })),
-      ),
-    ].join('\n');
+    const input = buildWakeupInput(claim.results);
     return {
       status: 'ready',
       parentMessageId,

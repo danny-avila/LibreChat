@@ -152,6 +152,47 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(retire).not.toHaveBeenCalled();
   });
 
+  it('persists structured background content using the registry serialization', async () => {
+    const structuredContent = [
+      { type: 'text', text: 'structured result' },
+      { type: 'resource', uri: 'memory://result' },
+    ];
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'search docs',
+      schema: z.object({ q: z.string() }),
+      invoke: jest.fn(async () => ({ content: structuredContent })),
+    } as unknown as StructuredToolInterface;
+    const persist = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ retire: jest.fn(async () => true) })),
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-structured-wakeup',
+          name: tool.name,
+          args: { q: 'structured', run_in_background: true },
+          stepId: 'step-structured-wakeup',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-structured' },
+    });
+    await flushMicrotasks();
+
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({ output: JSON.stringify(structuredContent) }),
+    );
+  });
+
   it('keeps polling guidance when the completion adapter skips registration', async () => {
     const tool = makeSearchTool({ calls: 0 });
     const preregister = jest.fn(async () => false as const);
