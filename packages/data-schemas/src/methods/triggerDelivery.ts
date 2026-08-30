@@ -2093,7 +2093,10 @@ export function createAgentTriggerDeliveryMethods(
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': input.sourceId,
         status: 'succeeded',
-        'result.backgroundToolCompletionRetired': true,
+        $or: [
+          { handling: { $exists: false } },
+          { 'handling.status': { $in: ['applied', 'completed_no_action', 'failed', 'cancelled'] } },
+        ],
       })) != null
     );
   }

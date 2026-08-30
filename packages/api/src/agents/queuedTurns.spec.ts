@@ -103,6 +103,10 @@ function resolverMethods() {
       }),
     ),
     releaseAgentQueuedTurn: jest.fn(async () => ({ outcome: 'released' as const, turn })),
+    beginAgentQueuedTurnAdmission: jest.fn(async () => ({
+      outcome: 'started' as const,
+      turn,
+    })),
     getEffectiveAgentQueuedTurnPredecessor: jest.fn(
       async (
         ..._args: Parameters<AgentQueuedTurnMethods['getEffectiveAgentQueuedTurnPredecessor']>
@@ -161,6 +165,12 @@ describe('Agent queued-turn continuation', () => {
       throw new Error('Expected a ready queued turn');
     }
     expect(spies.markAgentQueuedTurnAdmitted).not.toHaveBeenCalled();
+    expect(spies.beginAgentQueuedTurnAdmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-1',
+        admissionId: 'trigger-1',
+      }),
+    );
     await prepared.settleOnAdmission?.({
       mode: 'continue',
       status: 'started',

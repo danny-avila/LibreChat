@@ -569,6 +569,13 @@ describe('agent queued turn methods', () => {
       generationCreatedAt: 84,
       settledAt: START,
     };
+    await expect(
+      methods.beginAgentQueuedTurnAdmission({
+        ...claimInput(admitted.turn.queuedTurnId),
+        admissionId: 'admission-1',
+        startedAt: START,
+      }),
+    ).resolves.toMatchObject({ outcome: 'started' });
     await expect(methods.markAgentQueuedTurnAdmitted(admissionInput)).resolves.toMatchObject({
       outcome: 'admitted',
       turn: {
@@ -661,6 +668,11 @@ describe('agent queued turn methods', () => {
       enqueueInput({ clientRequestId: 'root-b-1', expectedPredecessorCreatedAt: 20 }),
     );
     await methods.claimNextAgentQueuedTurn(claimInput(first.turn.queuedTurnId));
+    await methods.beginAgentQueuedTurnAdmission({
+      ...claimInput(first.turn.queuedTurnId),
+      admissionId: 'admission-root-a',
+      startedAt: START,
+    });
     await methods.markAgentQueuedTurnAdmitted({
       ...claimInput(first.turn.queuedTurnId),
       admissionId: 'admission-root-a',
@@ -930,5 +942,128 @@ describe('agent queued turn methods', () => {
         targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
       }),
     ).resolves.toEqual(['delivery-dead-before-delete']);
+  });
+
+  it('keeps an admission-crossing delivery and its conversation until admission settles', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'admission-during-delete' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-admission-during-delete',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-admission-during-delete',
+      scheduledAt: START,
+    });
+    await methods.claimNextAgentQueuedTurn(claimInput(queued.turn.queuedTurnId));
+    await expect(
+      methods.beginAgentQueuedTurnAdmission({
+        ...claimInput(queued.turn.queuedTurnId),
+        admissionId: 'delivery-admission-during-delete',
+        startedAt: START,
+      }),
+    ).resolves.toMatchObject({ outcome: 'started' });
+
+    await expect(
+      methods.prepareAgentQueuedTurnConversationDeletion({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+        settledAt: START,
+      }),
+    ).rejects.toThrow('admission must settle');
+    await expect(Turn.findById(queued.turn.queuedTurnId).lean()).resolves.toMatchObject({
+      status: 'claimed',
+      admissionId: 'delivery-admission-during-delete',
+    });
+    await expect(
+      Sequence.findOne({ user, tenantId: 'tenant-1', conversationId: 'conversation-1' }).lean(),
+    ).resolves.not.toHaveProperty('retiredAt');
+
+    await methods.markAgentQueuedTurnAdmitted({
+      ...claimInput(queued.turn.queuedTurnId),
+      admissionId: 'delivery-admission-during-delete',
+      admissionMode: 'ordinary',
+      generationCreatedAt: 42,
+      settledAt: LATER,
+    });
+    await expect(
+      methods.prepareAgentQueuedTurnConversationDeletion({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+        settledAt: LATER,
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      methods.deletePreparedAgentQueuedTurnConversations({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+      }),
+    ).resolves.toBe(1);
+  });
+
+  it('fences a stale writer that resumes after conversation deletion', async () => {
+    const remoteMethods = createAgentQueuedTurnMethods(mongoose);
+    const originalDistinct = Turn.distinct.bind(Turn);
+    let releaseDistinct!: () => void;
+    let reportDistinct!: () => void;
+    const distinctReleased = new Promise<void>((resolve) => {
+      releaseDistinct = resolve;
+    });
+    const distinctReached = new Promise<void>((resolve) => {
+      reportDistinct = resolve;
+    });
+    const distinctSpy = jest.spyOn(Turn, 'distinct').mockImplementationOnce(
+      (...args: Parameters<typeof Turn.distinct>) =>
+        (async () => {
+          const result = await originalDistinct(...args);
+          reportDistinct();
+          await distinctReleased;
+          return result;
+        })() as ReturnType<typeof Turn.distinct>,
+    );
+    const enqueue = methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'stale-writer-after-delete' }),
+    );
+    await distinctReached;
+    await Sequence.updateOne(
+      { user, tenantId: 'tenant-1', conversationId: 'conversation-1' },
+      { $set: { writerUntil: new Date(0) } },
+    );
+    await remoteMethods.prepareAgentQueuedTurnConversationDeletion({
+      user,
+      targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+      settledAt: START,
+    });
+    releaseDistinct();
+    await expect(enqueue).rejects.toBeInstanceOf(AgentQueuedTurnLaneRetiredError);
+    distinctSpy.mockRestore();
+
+    await expect(remoteMethods.findQueuedTurnsNeedingDelivery()).resolves.toEqual([]);
+    await expect(
+      Turn.findOne({ clientRequestId: 'stale-writer-after-delete' }).lean(),
+    ).resolves.toMatchObject({ status: 'cancelled', deliveryState: 'retired' });
+  });
+
+  it('expires deletion fences after the bounded stale-writer safety window', async () => {
+    await methods.prepareAgentQueuedTurnConversationDeletion({
+      user,
+      targets: [{ conversationId: 'never-queued', tenantId: 'tenant-1' }],
+      settledAt: START,
+    });
+
+    await expect(
+      Sequence.findOne({ user, tenantId: 'tenant-1', conversationId: 'never-queued' }).lean(),
+    ).resolves.toMatchObject({
+      retiredAt: START,
+      expiresAt: new Date(START.getTime() + 24 * 60 * 60_000),
+    });
   });
 });

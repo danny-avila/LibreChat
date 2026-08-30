@@ -46,6 +46,8 @@ export interface IAgentQueuedTurn {
   fingerprint: string;
   /** Assigned after the row is durably visible as `reserving`. */
   sequence?: number;
+  /** Fences a reserving row to the lane writer allowed to assign its sequence. */
+  reservationWriterId?: string;
   /** Bounded active-lane capacity token. Present only while queued/claimed. */
   activeSlot?: number;
   status: AgentQueuedTurnStatus;
@@ -63,6 +65,9 @@ export interface IAgentQueuedTurn {
   claimId?: string;
   claimBy?: string;
   claimUntil?: Date;
+  /** Durable proof that ordinary admission may have crossed the HTTP boundary. */
+  admissionStartedAt?: Date;
+  admissionId?: string;
   terminalReceipt?: AgentQueuedTurnTerminalReceipt;
   createdAt?: Date;
   updatedAt?: Date;
@@ -81,6 +86,7 @@ export interface IAgentQueuedTurnSequence {
   writerId?: string;
   writerUntil?: Date;
   retiredAt?: Date;
+  expiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

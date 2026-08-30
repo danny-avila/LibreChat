@@ -54,6 +54,7 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     clientRequestId: { type: String, required: true, maxlength: 128 },
     fingerprint: { type: String, required: true, minlength: 43, maxlength: 64 },
     sequence: { type: Number, min: 1 },
+    reservationWriterId: { type: String, maxlength: 128 },
     activeSlot: { type: Number, min: 0, max: 99 },
     status: {
       type: String,
@@ -80,6 +81,8 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     claimId: { type: String, maxlength: 128 },
     claimBy: { type: String, maxlength: 256 },
     claimUntil: { type: Date },
+    admissionStartedAt: { type: Date },
+    admissionId: { type: String, maxlength: 128 },
     terminalReceipt: { type: terminalReceiptSchema },
   },
   { timestamps: true },

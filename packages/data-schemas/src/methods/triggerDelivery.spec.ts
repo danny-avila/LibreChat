@@ -639,6 +639,50 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toMatchObject({ id: successor.delivery.id });
   });
 
+  it('treats an already successful internal delivery as terminal retirement evidence', async () => {
+    const source = { id: 'agent-queued-turn', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'queued-turn-already-succeeded',
+        envelope: { event: { source } },
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      now: START,
+    });
+    await methods.completeAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      attempt: attempt!,
+      result: { status: 'settled' },
+      settledAt: START,
+    });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: new Date(START.getTime() + 1),
+        reason: 'source already terminalized',
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { status: 'settled' },
+      settledAt: START,
+    });
+  });
+
   it('does not retire a completion already leased by a resolver for a manual poll', async () => {
     const user = new mongoose.Types.ObjectId();
     const source = { id: 'background-tool-completion', type: 'internal' };

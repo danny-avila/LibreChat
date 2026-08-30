@@ -414,6 +414,24 @@ export function createAgentQueuedTurnResolver({
         }),
       })) ?? claim.expectedPredecessorCreatedAt;
 
+    const admission = await methods.beginAgentQueuedTurnAdmission({
+      user: claim.user,
+      ...(claim.tenantId != null && { tenantId: claim.tenantId }),
+      conversationId: claim.conversationId,
+      queuedTurnId: claim.queuedTurnId,
+      claimId: claim.claimId,
+      claimBy: claim.claimBy,
+      admissionId: context.idempotencyKey,
+      startedAt: new Date(now()),
+    });
+    if (admission.outcome === 'conflict') {
+      throw executionError('The queued turn admission fence is no longer owned.', {
+        code: 'QUEUED_TURN_ADMISSION_FENCE_LOST',
+        retryable: true,
+        deferWithoutAttempt: true,
+      });
+    }
+
     return {
       status: 'ready',
       input: claim.text,

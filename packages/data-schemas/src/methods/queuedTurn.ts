@@ -23,6 +23,7 @@ export const MAX_ACTIVE_AGENT_QUEUED_TURNS = 100;
 const LANE_WRITER_LEASE_MS = 30_000;
 const LANE_WRITER_RETRY_MS = 5;
 const LANE_WRITER_RETRIES = LANE_WRITER_LEASE_MS / LANE_WRITER_RETRY_MS;
+const RETIRED_LANE_RETENTION_MS = 24 * 60 * 60_000;
 
 interface DuplicateKeyError {
   code?: number;
@@ -116,6 +117,10 @@ export type ClaimAgentQueuedTurnResult =
   | { outcome: 'blocked'; claim: null }
   | { outcome: 'missing'; claim: null };
 
+export type BeginAgentQueuedTurnAdmissionResult =
+  | { outcome: 'started' | 'already_started'; turn: AgentQueuedTurnRecord }
+  | { outcome: 'conflict'; turn: AgentQueuedTurnRecord | null };
+
 export interface AgentQueuedTurnMethods {
   ensureAgentQueuedTurnIndexes: () => Promise<void>;
   enqueueAgentQueuedTurn: (
@@ -171,6 +176,9 @@ export interface AgentQueuedTurnMethods {
           }
       ),
   ) => Promise<ReleaseAgentQueuedTurnResult>;
+  beginAgentQueuedTurnAdmission: (
+    input: AgentQueuedTurnClaimFence & { admissionId: string; startedAt: Date },
+  ) => Promise<BeginAgentQueuedTurnAdmissionResult>;
   markAgentQueuedTurnAdmitted: (
     input: AgentQueuedTurnClaimFence & {
       admissionId: string;
@@ -534,32 +542,33 @@ export function createAgentQueuedTurnMethods(
   const Turn = () => mongoose.models.AgentQueuedTurn as Model<IAgentQueuedTurnDocument>;
   const Sequence = () =>
     mongoose.models.AgentQueuedTurnSequence as Model<IAgentQueuedTurnSequenceDocument>;
+  const localLaneTails = new Map<string, Promise<void>>();
+
+  async function serializeLocalLane<T>(
+    input: AgentQueuedTurnConversationScope,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const key = laneKey(input);
+    const previous = localLaneTails.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.catch(() => undefined).then(() => current);
+    localLaneTails.set(key, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (localLaneTails.get(key) === tail) {
+        localLaneTails.delete(key);
+      }
+    }
+  }
 
   async function ensureAgentQueuedTurnIndexes(): Promise<void> {
     await Promise.all([createIndexesWithRetry(Turn()), createIndexesWithRetry(Sequence())]);
-  }
-
-  async function ensureSequenceLane(
-    input: AgentQueuedTurnConversationScope,
-  ): Promise<IAgentQueuedTurnSequence> {
-    const _id = laneKey(input);
-    try {
-      const lane = await Sequence()
-        .findOneAndUpdate(
-          { _id, ...conversationScope(input) },
-          { $setOnInsert: { ...conversationFields(input), value: 0 } },
-          { new: true, upsert: true },
-        )
-        .lean<IAgentQueuedTurnSequence>();
-      if (lane != null) {
-        return lane;
-      }
-    } catch (error) {
-      if ((error as DuplicateKeyError).code !== DUPLICATE_KEY) {
-        throw error;
-      }
-    }
-    throw new Error('Agent queued turn sequence scope conflict');
   }
 
   async function acquireLaneWriter(input: AgentQueuedTurnConversationScope): Promise<string> {
@@ -614,10 +623,27 @@ export function createAgentQueuedTurnMethods(
     );
   }
 
-  async function repairLaneReservation(input: AgentQueuedTurnConversationScope): Promise<void> {
+  async function repairLaneReservation(
+    input: AgentQueuedTurnConversationScope,
+    writerId: string,
+  ): Promise<void> {
     const _id = laneKey(input);
     const scope = conversationScope(input);
-    const lane = await ensureSequenceLane(input);
+    const liveWriter = {
+      _id,
+      ...scope,
+      writerId,
+      writerUntil: { $gt: new Date() },
+      retiredAt: { $exists: false },
+    };
+    const lane = await Sequence().findOne(liveWriter).lean<IAgentQueuedTurnSequence>();
+    if (lane == null) {
+      const retired = await Sequence().exists({ _id, ...scope, retiredAt: { $exists: true } });
+      if (retired != null) {
+        throw new AgentQueuedTurnLaneRetiredError();
+      }
+      throw new Error('Agent queued turn lane writer lease was lost');
+    }
     if (lane.reservationId != null) {
       await Turn().updateOne(
         {
@@ -626,10 +652,23 @@ export function createAgentQueuedTurnMethods(
           status: 'reserving',
           sequence: { $exists: false },
         },
-        { $set: { status: 'queued', sequence: lane.value } },
+        { $set: { reservationWriterId: writerId } },
+      );
+      await Turn().updateOne(
+        {
+          ...scope,
+          _id: lane.reservationId,
+          status: 'reserving',
+          sequence: { $exists: false },
+          reservationWriterId: writerId,
+        },
+        {
+          $set: { status: 'queued', sequence: lane.value },
+          $unset: { reservationWriterId: 1 },
+        },
       );
       await Sequence().updateOne(
-        { _id, ...scope, reservationId: lane.reservationId },
+        { ...liveWriter, reservationId: lane.reservationId },
         { $unset: { reservationId: 1 } },
       );
       return;
@@ -642,9 +681,16 @@ export function createAgentQueuedTurnMethods(
       return;
     }
     const reservationId = head._id.toString();
+    const owned = await Turn().updateOne(
+      { ...scope, _id: reservationId, status: 'reserving', sequence: { $exists: false } },
+      { $set: { reservationWriterId: writerId } },
+    );
+    if (owned.matchedCount !== 1) {
+      return;
+    }
     const claimed = await Sequence()
       .findOneAndUpdate(
-        { _id, ...scope, reservationId: { $exists: false } },
+        { ...liveWriter, reservationId: { $exists: false } },
         { $inc: { value: 1 }, $set: { reservationId } },
         { new: true },
       )
@@ -653,11 +699,20 @@ export function createAgentQueuedTurnMethods(
       return;
     }
     const assigned = await Turn().updateOne(
-      { ...scope, _id: reservationId, status: 'reserving', sequence: { $exists: false } },
-      { $set: { status: 'queued', sequence: claimed.value } },
+      {
+        ...scope,
+        _id: reservationId,
+        status: 'reserving',
+        sequence: { $exists: false },
+        reservationWriterId: writerId,
+      },
+      {
+        $set: { status: 'queued', sequence: claimed.value },
+        $unset: { reservationWriterId: 1 },
+      },
     );
     await Sequence().updateOne(
-      { _id, ...scope, reservationId, value: claimed.value },
+      { ...liveWriter, reservationId, value: claimed.value },
       assigned.modifiedCount === 1
         ? { $unset: { reservationId: 1 } }
         : { $inc: { value: -1 }, $unset: { reservationId: 1 } },
@@ -668,6 +723,7 @@ export function createAgentQueuedTurnMethods(
    * that owns its next value, so another process can complete either half. */
   async function finalizeVisibleReservation(
     target: IAgentQueuedTurn,
+    writerId: string,
   ): Promise<AgentQueuedTurnRecord> {
     if (target._id == null) {
       throw new Error('Agent queued turn reservation is missing its durable identity');
@@ -680,7 +736,7 @@ export function createAgentQueuedTurnMethods(
     const scope = conversationScope(scopeInput);
     const targetId = target._id.toString();
     for (let repair = 0; repair <= MAX_ACTIVE_AGENT_QUEUED_TURNS; repair++) {
-      await repairLaneReservation(scopeInput);
+      await repairLaneReservation(scopeInput, writerId);
       const current = await Turn()
         .findOne({ ...scope, _id: targetId })
         .lean<IAgentQueuedTurn>();
@@ -712,76 +768,82 @@ export function createAgentQueuedTurnMethods(
       }
     }
 
-    const writerId = await acquireLaneWriter(input);
-    try {
-      const replay = await Turn()
-        .findOne({ ...scope, clientRequestId: normalized.clientRequestId })
-        .lean<IAgentQueuedTurn>();
-      if (replay != null) {
-        if (replay.fingerprint !== requestFingerprint) {
-          throw new AgentQueuedTurnConflictError(normalized.clientRequestId);
+    return serializeLocalLane(input, async () => {
+      const writerId = await acquireLaneWriter(input);
+      try {
+        const replay = await Turn()
+          .findOne({ ...scope, clientRequestId: normalized.clientRequestId })
+          .lean<IAgentQueuedTurn>();
+        if (replay != null) {
+          if (replay.fingerprint !== requestFingerprint) {
+            throw new AgentQueuedTurnConflictError(normalized.clientRequestId);
+          }
+          return {
+            turn:
+              replay.status === 'reserving'
+                ? await finalizeVisibleReservation(replay, writerId)
+                : toRecord(replay),
+            replayed: true,
+          };
         }
-        return {
-          turn:
-            replay.status === 'reserving'
-              ? await finalizeVisibleReservation(replay)
-              : toRecord(replay),
-          replayed: true,
-        };
-      }
 
-      const firstSlot =
-        createHash('sha256').update(normalized.clientRequestId).digest().readUInt32BE(0) %
-        MAX_ACTIVE_AGENT_QUEUED_TURNS;
-      const usedSlots = new Set(
-        (await Turn().distinct('activeSlot', {
-          ...scope,
-          activeSlot: { $exists: true },
-        })) as number[],
-      );
-      for (let offset = 0; offset < MAX_ACTIVE_AGENT_QUEUED_TURNS; offset++) {
-        const activeSlot = (firstSlot + offset) % MAX_ACTIVE_AGENT_QUEUED_TURNS;
-        if (usedSlots.has(activeSlot)) {
-          continue;
-        }
-        try {
-          const created = await Turn().create({
-            ...conversationFields(input),
-            ...normalized,
-            fingerprint: requestFingerprint,
-            activeSlot,
-            status: 'reserving',
-            attempts: 0,
-            availableAt: input.availableAt ?? new Date(),
-            deliveryState: 'pending',
-          });
-          return { turn: await finalizeVisibleReservation(created.toObject()), replayed: false };
-        } catch (error) {
-          if ((error as DuplicateKeyError).code !== DUPLICATE_KEY) {
-            throw error;
+        const firstSlot =
+          createHash('sha256').update(normalized.clientRequestId).digest().readUInt32BE(0) %
+          MAX_ACTIVE_AGENT_QUEUED_TURNS;
+        const usedSlots = new Set(
+          (await Turn().distinct('activeSlot', {
+            ...scope,
+            activeSlot: { $exists: true },
+          })) as number[],
+        );
+        for (let offset = 0; offset < MAX_ACTIVE_AGENT_QUEUED_TURNS; offset++) {
+          const activeSlot = (firstSlot + offset) % MAX_ACTIVE_AGENT_QUEUED_TURNS;
+          if (usedSlots.has(activeSlot)) {
+            continue;
           }
-          usedSlots.add(activeSlot);
-          const racedReplay = await Turn()
-            .findOne({ ...scope, clientRequestId: normalized.clientRequestId })
-            .lean<IAgentQueuedTurn>();
-          if (racedReplay != null) {
-            if (racedReplay.fingerprint !== requestFingerprint) {
-              throw new AgentQueuedTurnConflictError(normalized.clientRequestId);
-            }
+          try {
+            const created = await Turn().create({
+              ...conversationFields(input),
+              ...normalized,
+              fingerprint: requestFingerprint,
+              activeSlot,
+              status: 'reserving',
+              attempts: 0,
+              availableAt: input.availableAt ?? new Date(),
+              deliveryState: 'pending',
+              reservationWriterId: writerId,
+            });
             return {
-              turn:
-                racedReplay.status === 'reserving'
-                  ? await finalizeVisibleReservation(racedReplay)
-                  : toRecord(racedReplay),
-              replayed: true,
+              turn: await finalizeVisibleReservation(created.toObject(), writerId),
+              replayed: false,
             };
+          } catch (error) {
+            if ((error as DuplicateKeyError).code !== DUPLICATE_KEY) {
+              throw error;
+            }
+            usedSlots.add(activeSlot);
+            const racedReplay = await Turn()
+              .findOne({ ...scope, clientRequestId: normalized.clientRequestId })
+              .lean<IAgentQueuedTurn>();
+            if (racedReplay != null) {
+              if (racedReplay.fingerprint !== requestFingerprint) {
+                throw new AgentQueuedTurnConflictError(normalized.clientRequestId);
+              }
+              return {
+                turn:
+                  racedReplay.status === 'reserving'
+                    ? await finalizeVisibleReservation(racedReplay, writerId)
+                    : toRecord(racedReplay),
+                replayed: true,
+              };
+            }
           }
         }
+        throw new AgentQueuedTurnCapacityError();
+      } finally {
+        await releaseLaneWriter(input, writerId);
       }
-      throw new AgentQueuedTurnCapacityError();
-    } finally {
-      await releaseLaneWriter(input, writerId);
-    }
+    });
   }
 
   async function listActiveAgentQueuedTurns(
@@ -929,7 +991,44 @@ export function createAgentQueuedTurnMethods(
       .limit(limit)
       .lean<IAgentQueuedTurn[]>();
     for (const reservation of reservations) {
-      await finalizeVisibleReservation(reservation);
+      const scopeInput: AgentQueuedTurnConversationScope = {
+        user: reservation.user,
+        ...(reservation.tenantId != null && { tenantId: reservation.tenantId }),
+        conversationId: reservation.conversationId,
+      };
+      try {
+        await serializeLocalLane(scopeInput, async () => {
+          const writerId = await acquireLaneWriter(scopeInput);
+          try {
+            await finalizeVisibleReservation(reservation, writerId);
+          } finally {
+            await releaseLaneWriter(scopeInput, writerId);
+          }
+        });
+      } catch (error) {
+        if (!(error instanceof AgentQueuedTurnLaneRetiredError)) {
+          throw error;
+        }
+        await Turn().updateOne(
+          { _id: reservation._id, status: 'reserving' },
+          {
+            $set: {
+              status: 'cancelled',
+              deliveryState: 'retired',
+              terminalReceipt: {
+                outcome: 'cancelled',
+                settledAt: new Date(),
+                failure: {
+                  code: 'OWNER_DRAINED',
+                  message: 'Queued turn owner was drained',
+                },
+              },
+            },
+            $unset: { activeSlot: 1, reservationWriterId: 1 },
+          },
+        );
+        continue;
+      }
     }
     const turns = await Turn()
       .find({
@@ -1164,6 +1263,8 @@ export function createAgentQueuedTurnMethods(
               claimId: 1,
               claimBy: 1,
               claimUntil: 1,
+              admissionId: 1,
+              admissionStartedAt: 1,
               terminalReceipt: 1,
             },
           }
@@ -1179,7 +1280,14 @@ export function createAgentQueuedTurnMethods(
                 },
               },
             },
-            $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+            $unset: {
+              activeSlot: 1,
+              claimId: 1,
+              claimBy: 1,
+              claimUntil: 1,
+              admissionId: 1,
+              admissionStartedAt: 1,
+            },
           };
     const turn = await Turn()
       .findOneAndUpdate(fence, update, { new: true })
@@ -1197,6 +1305,60 @@ export function createAgentQueuedTurnMethods(
       outcome: 'conflict',
       turn: current == null ? null : toRecord(current),
     };
+  }
+
+  async function beginAgentQueuedTurnAdmission(
+    input: AgentQueuedTurnClaimFence & { admissionId: string; startedAt: Date },
+  ): Promise<BeginAgentQueuedTurnAdmissionResult> {
+    const admissionId = requireBoundedString(input.admissionId, 128);
+    if (!Number.isFinite(input.startedAt.getTime())) {
+      throw new TypeError('Agent queued turn admission start is invalid');
+    }
+    return serializeLocalLane(input, async () => {
+      const writerId = await acquireLaneWriter(input);
+      try {
+        const turn = await Turn()
+          .findOneAndUpdate(
+            {
+              ...conversationScope(input),
+              _id: input.queuedTurnId,
+              status: 'claimed',
+              claimId: requireBoundedString(input.claimId, 128),
+              claimBy: requireBoundedString(input.claimBy, 256),
+              admissionId: { $exists: false },
+            },
+            {
+              $set: {
+                admissionId,
+                admissionStartedAt: input.startedAt,
+              },
+            },
+            { new: true },
+          )
+          .lean<IAgentQueuedTurn>();
+        if (turn != null) {
+          return { outcome: 'started', turn: toRecord(turn) };
+        }
+        const current = await Turn()
+          .findOne({ ...conversationScope(input), _id: input.queuedTurnId })
+          .lean<IAgentQueuedTurn>();
+        if (
+          current?.status === 'claimed' &&
+          current.claimId === input.claimId &&
+          current.claimBy === input.claimBy &&
+          current.admissionId === admissionId &&
+          current.admissionStartedAt != null
+        ) {
+          return { outcome: 'already_started', turn: toRecord(current) };
+        }
+        return {
+          outcome: 'conflict',
+          turn: current == null ? null : toRecord(current),
+        };
+      } finally {
+        await releaseLaneWriter(input, writerId);
+      }
+    });
   }
 
   async function markAgentQueuedTurnAdmitted(
@@ -1219,6 +1381,8 @@ export function createAgentQueuedTurnMethods(
           status: 'claimed',
           claimId: requireBoundedString(input.claimId, 128),
           claimBy: requireBoundedString(input.claimBy, 256),
+          admissionId,
+          admissionStartedAt: { $exists: true },
         },
         {
           $set: {
@@ -1233,7 +1397,14 @@ export function createAgentQueuedTurnMethods(
               ...(generationCreatedAt != null && { generationCreatedAt }),
             },
           },
-          $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+          $unset: {
+            activeSlot: 1,
+            claimId: 1,
+            claimBy: 1,
+            claimUntil: 1,
+            admissionId: 1,
+            admissionStartedAt: 1,
+          },
         },
         { new: true },
       )
@@ -1421,40 +1592,42 @@ export function createAgentQueuedTurnMethods(
     };
     const _id = laneKey(input);
     const scope = conversationScope(input);
-    for (let attempt = 0; attempt < LANE_WRITER_RETRIES; attempt++) {
-      const now = new Date();
-      const retired = await Sequence()
-        .findOneAndUpdate(
-          {
-            _id,
-            ...scope,
-            retiredAt: { $exists: false },
-            $or: [{ writerId: { $exists: false } }, { writerUntil: { $lte: now } }],
-          },
-          {
-            $set: { retiredAt },
-            $unset: { writerId: 1, writerUntil: 1 },
-            $setOnInsert: { ...conversationFields(input), value: 0 },
-          },
-          { new: true, upsert: true },
-        )
-        .lean<IAgentQueuedTurnSequence>()
-        .catch((error: unknown) => {
-          if ((error as DuplicateKeyError).code === DUPLICATE_KEY) {
-            return null;
-          }
-          throw error;
+    return serializeLocalLane(input, async () => {
+      let writerId: string;
+      try {
+        writerId = await acquireLaneWriter(input);
+      } catch (error) {
+        if (error instanceof AgentQueuedTurnLaneRetiredError) {
+          return;
+        }
+        throw error;
+      }
+      try {
+        const admissionInFlight = await Turn().exists({
+          ...scope,
+          status: 'claimed',
+          admissionStartedAt: { $exists: true },
         });
-      if (retired?.retiredAt != null) {
-        return;
+        if (admissionInFlight != null) {
+          throw new Error('Agent queued turn admission must settle before conversation deletion');
+        }
+        const retired = await Sequence().updateOne(
+          { _id, ...scope, writerId, retiredAt: { $exists: false } },
+          {
+            $set: {
+              retiredAt,
+              expiresAt: new Date(retiredAt.getTime() + RETIRED_LANE_RETENTION_MS),
+            },
+            $unset: { writerId: 1, writerUntil: 1 },
+          },
+        );
+        if (retired.modifiedCount !== 1) {
+          throw new Error('Agent queued turn lane retirement fence was lost');
+        }
+      } finally {
+        await releaseLaneWriter(input, writerId);
       }
-      const achieved = await Sequence().exists({ _id, ...scope, retiredAt: { $exists: true } });
-      if (achieved != null) {
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, LANE_WRITER_RETRY_MS));
-    }
-    throw new Error('Agent queued turn lane could not be retired before conversation deletion');
+    });
   }
 
   async function prepareAgentQueuedTurnConversationDeletion(input: {
@@ -1468,7 +1641,13 @@ export function createAgentQueuedTurnMethods(
       await retireConversationLane(input.user, target, settledAt);
     }
     await Turn().updateMany(
-      { ...scope, status: { $in: ['reserving', 'queued', 'claimed'] } },
+      {
+        ...scope,
+        $or: [
+          { status: { $in: ['reserving', 'queued'] } },
+          { status: 'claimed', admissionStartedAt: { $exists: false } },
+        ],
+      },
       {
         $set: {
           status: 'cancelled',
@@ -1481,7 +1660,15 @@ export function createAgentQueuedTurnMethods(
             },
           },
         },
-        $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+        $unset: {
+          activeSlot: 1,
+          reservationWriterId: 1,
+          claimId: 1,
+          claimBy: 1,
+          claimUntil: 1,
+          admissionId: 1,
+          admissionStartedAt: 1,
+        },
       },
     );
     await Promise.all([
@@ -1579,6 +1766,7 @@ export function createAgentQueuedTurnMethods(
     markQueuedTurnScheduled,
     cancelAgentQueuedTurn,
     claimNextAgentQueuedTurn,
+    beginAgentQueuedTurnAdmission,
     releaseAgentQueuedTurn,
     markAgentQueuedTurnAdmitted,
     deadLetterAgentQueuedTurn,

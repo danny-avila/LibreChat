@@ -17,8 +17,11 @@ const queuedTurnSequenceSchema: Schema<IAgentQueuedTurnSequenceDocument> = new S
     writerId: { type: String, maxlength: 128 },
     writerUntil: { type: Date },
     retiredAt: { type: Date },
+    expiresAt: { type: Date },
   },
   { timestamps: true },
 );
+
+queuedTurnSequenceSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default queuedTurnSequenceSchema;
