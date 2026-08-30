@@ -67,7 +67,8 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
   for (const { part, idx } of parts) {
     const toolCallId = getToolCallId(part);
     if (toolCallId) {
-      return `tool:${toolCallId}:${getPartStepId(part) ?? idx}`;
+      const stepId = getPartStepId(part);
+      return stepId == null ? `tool:${toolCallId}` : `tool:${toolCallId}:${stepId}`;
     }
     if (firstToolKeyIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
       firstToolKeyIdx = getPartKeyIndex(part, idx);
