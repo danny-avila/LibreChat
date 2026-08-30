@@ -1629,6 +1629,16 @@ function backgroundCollectResponses(messages, toolNames) {
   };
 }
 
+/** Fresh host-owned run started when the detached result becomes durable. */
+function backgroundCompletionResponses(text) {
+  if (!text.includes('background tool task has finished') || !text.includes('durable result')) {
+    return null;
+  }
+  const status = text.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+  const echo = text.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
+  return { responses: [`E2E background notified status=${status} echo=${echo}`] };
+}
+
 function parseHandoffScript(text) {
   const encodedScript = getMarkerValue(text, HANDOFF_MARKER);
   if (!encodedScript) {
@@ -2216,6 +2226,11 @@ function buildHandoffResponses(graph, parsed) {
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const backgroundCompletion = backgroundCompletionResponses(text);
+  if (backgroundCompletion) {
+    return backgroundCompletion;
+  }
+
   const subagentActivity = subagentActivityResponses(text);
   if (subagentActivity) {
     return subagentActivity;
