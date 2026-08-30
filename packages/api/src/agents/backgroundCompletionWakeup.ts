@@ -9,6 +9,7 @@ import type {
   MessageMethods,
 } from '@librechat/data-schemas';
 import type {
+  BackgroundToolDeadClaimRecovery,
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
   BackgroundToolWakeupRetireOptions,
@@ -66,7 +67,7 @@ type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
       userId: string;
       conversationId: string;
       messageId: string;
-      taskIds: string[];
+      taskIds?: string[];
       kind: 'manual' | 'wakeup';
       claimId: string;
     }): Promise<boolean>;
@@ -444,5 +445,33 @@ export function createBackgroundToolCompletionWakeupHandler(
           ? retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason)
           : retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason, options),
     };
+  };
+}
+
+/** Reopens every result owned by one dead automatic batch. The delivery
+ * retirement proves its prepared continuation cannot still commit; releasing
+ * by the batch-root claim identity then makes sibling recovery independent of
+ * which task originally admitted that delivery. */
+export function createBackgroundToolDeadClaimRecovery(
+  retire: RetireBackgroundToolCompletion,
+  releaseClaims: WakeupMethods['releaseBackgroundToolResultClaims'],
+): BackgroundToolDeadClaimRecovery {
+  return async ({ userId, conversationId, messageId, claimId }) => {
+    const retired = await retire(
+      claimId,
+      BACKGROUND_TOOL_COMPLETION_SOURCE,
+      'dead background completion batch recovered by manual poll',
+      { onlyIfDead: true },
+    );
+    if (!retired) {
+      return false;
+    }
+    return releaseClaims({
+      userId,
+      conversationId,
+      messageId,
+      kind: 'wakeup',
+      claimId,
+    });
   };
 }

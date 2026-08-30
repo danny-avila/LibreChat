@@ -18,6 +18,7 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type {
+  BackgroundToolDeadClaimRecovery,
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
@@ -227,7 +228,11 @@ export interface ToolExecuteOptions {
       agentId?: string;
       kind: 'manual';
       claimId: string;
-    }) => Promise<{ status: 'acquired' | 'claimed' | 'not_found' | 'not_ready' }>;
+    }) => Promise<
+      | { status: 'acquired' | 'not_found' | 'not_ready' }
+      | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
+    >;
+    recoverDeadClaim?: BackgroundToolDeadClaimRecovery;
   };
   /** Emits an `attachment` SSE event on the current request's live stream. */
   emitAttachment?: (attachment: unknown) => void;
@@ -5145,6 +5150,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
                     subagentTasks,
                     claimBackgroundToolResult: backgroundToolCompletion?.claim,
+                    recoverDeadBackgroundToolClaim: backgroundToolCompletion?.recoverDeadClaim,
                   });
                   const taskSnapshot = getBackgroundTaskSnapshot({
                     userId: backgroundUserId,

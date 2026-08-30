@@ -1472,7 +1472,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(JSON.stringify(result)).not.toContain('PRIVATE UNTIL CONTINUATION');
   });
 
-  it('recovers a result whose automatic wakeup claim has dead-lettered', async () => {
+  it('recovers a result through its dead batch-owner claim', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'dead_claim_user',
       conversationId: 'dead_claim_convo',
@@ -1486,13 +1486,19 @@ describe('runCheckBackgroundTask (singleton)', () => {
     backgroundTaskRegistry.complete('dead_claim_user', 'dead_claim_convo', created.task.id, {
       content: 'RECOVERED CLAIMED RESULT',
     });
-    const retire = jest.fn(async () => true);
     backgroundTaskRegistry.markCompletionWakeup(
       'dead_claim_user',
       'dead_claim_convo',
       created.task.id,
-      { renew: jest.fn(async () => true), retire },
     );
+    const claimBackgroundToolResult = jest
+      .fn()
+      .mockResolvedValueOnce({
+        status: 'claimed',
+        claim: { kind: 'wakeup', claimId: 'sibling-batch-root' },
+      })
+      .mockResolvedValueOnce({ status: 'acquired' });
+    const recoverDeadBackgroundToolClaim = jest.fn(async () => true);
 
     const result = JSON.parse(
       await runCheckBackgroundTask({
@@ -1501,14 +1507,19 @@ describe('runCheckBackgroundTask (singleton)', () => {
         args: { background_task_id: created.task.id },
         toolCallId: 'poll-dead-claim',
         runId: 'poll-run',
-        claimBackgroundToolResult: async () => ({ status: 'claimed' }),
+        claimBackgroundToolResult,
+        recoverDeadBackgroundToolClaim,
       }),
     );
 
     expect(result).toMatchObject({ status: 'completed', result: 'RECOVERED CLAIMED RESULT' });
-    expect(retire).toHaveBeenCalledWith('dead completion claim recovered by manual poll', {
-      onlyIfDead: true,
+    expect(recoverDeadBackgroundToolClaim).toHaveBeenCalledWith({
+      userId: 'dead_claim_user',
+      conversationId: 'dead_claim_convo',
+      messageId: 'response-dead-claim',
+      claimId: 'sibling-batch-root',
     });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
   });
 
   it('does not expose a local result after its automatic resolver owns the lease', async () => {

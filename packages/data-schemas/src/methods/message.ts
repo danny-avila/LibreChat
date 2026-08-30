@@ -413,7 +413,8 @@ export interface BackgroundToolResultRecord {
 }
 
 export type BackgroundToolResultClaim =
-  | { status: 'not_found' | 'not_ready' | 'claimed' }
+  | { status: 'not_found' | 'not_ready' }
+  | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
   | { status: 'acquired'; results: BackgroundToolResultRecord[] };
 
 export type SubagentThreadViewMessageRecord = Pick<
@@ -554,7 +555,8 @@ export interface MessageMethods {
     userId: string;
     conversationId: string;
     messageId: string;
-    taskIds: string[];
+    /** Omit to release every sibling owned by this exact batch claim. */
+    taskIds?: string[];
     kind: 'manual' | 'wakeup';
     claimId: string;
   }): Promise<boolean>;
@@ -1152,6 +1154,39 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
   const MAX_BACKGROUND_TOOL_RESULT_BATCH = 8;
 
+  function readBackgroundToolResultClaim(
+    row: Pick<IMessage, 'content'>,
+    taskId: string,
+  ): { kind: 'manual' | 'wakeup'; claimId: string } | undefined {
+    for (const part of row.content ?? []) {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const backgroundTask = (
+        part as {
+          tool_call?: {
+            backgroundTask?: {
+              taskId?: unknown;
+              resultClaim?: { kind?: unknown; claimId?: unknown };
+            };
+          };
+        }
+      ).tool_call?.backgroundTask;
+      if (backgroundTask?.taskId !== taskId) {
+        continue;
+      }
+      const claim = backgroundTask.resultClaim;
+      if (
+        (claim?.kind === 'manual' || claim?.kind === 'wakeup') &&
+        typeof claim.claimId === 'string' &&
+        claim.claimId.length > 0
+      ) {
+        return { kind: claim.kind, claimId: claim.claimId };
+      }
+      return;
+    }
+  }
+
   function parseBackgroundToolResults(
     message: IMessage,
     claim: { kind: 'manual' | 'wakeup'; claimId: string },
@@ -1249,25 +1284,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     if (row.unfinished === true) {
       return { status: 'not_ready' };
     }
-    const requestedPart = (row.content ?? []).find((part) => {
-      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
-        return false;
-      }
-      return (
-        (part as { tool_call?: { backgroundTask?: { taskId?: unknown } } }).tool_call
-          ?.backgroundTask?.taskId === taskId
-      );
-    });
-    const requestedClaim =
-      requestedPart == null || typeof requestedPart !== 'object'
-        ? undefined
-        : (
-            requestedPart as {
-              tool_call?: {
-                backgroundTask?: { resultClaim?: { kind?: unknown; claimId?: unknown } };
-              };
-            }
-          ).tool_call?.backgroundTask?.resultClaim;
+    const requestedClaim = readBackgroundToolResultClaim(row, taskId);
     const replaying = requestedClaim?.kind === kind && requestedClaim.claimId === claimId;
     const candidates: string[] = [];
     let requestedState: 'ready' | 'claimed' | 'missing' = 'missing';
@@ -1315,7 +1332,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return { status: 'not_ready' };
     }
     if (requestedState === 'claimed') {
-      return { status: 'claimed' };
+      return {
+        status: 'claimed',
+        ...(requestedClaim == null ? {} : { claim: requestedClaim }),
+      };
     }
     if (!candidates.includes(taskId)) {
       candidates.unshift(taskId);
@@ -1466,9 +1486,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return { status: 'not_ready' };
     }
     const results = parseBackgroundToolResults(updated, { kind, claimId });
+    const competingClaim = readBackgroundToolResultClaim(updated, taskId);
     return results.some((result) => result.taskId === taskId)
       ? { status: 'acquired', results }
-      : { status: 'claimed' };
+      : {
+          status: 'claimed',
+          ...(competingClaim == null ? {} : { claim: competingClaim }),
+        };
   }
 
   async function releaseBackgroundToolResultClaims({
@@ -1482,11 +1506,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     userId: string;
     conversationId: string;
     messageId: string;
-    taskIds: string[];
+    taskIds?: string[];
     kind: 'manual' | 'wakeup';
     claimId: string;
   }): Promise<boolean> {
-    if (taskIds.length === 0) {
+    if (taskIds?.length === 0) {
       return true;
     }
     const Message = mongoose.models.Message as Model<IMessage>;
@@ -1503,7 +1527,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                   $cond: [
                     {
                       $and: [
-                        { $in: ['$$part.tool_call.backgroundTask.taskId', taskIds] },
+                        ...(taskIds == null
+                          ? []
+                          : [{ $in: ['$$part.tool_call.backgroundTask.taskId', taskIds] }]),
                         { $eq: ['$$part.tool_call.backgroundTask.resultClaim.kind', kind] },
                         { $eq: ['$$part.tool_call.backgroundTask.resultClaim.claimId', claimId] },
                       ],
@@ -1547,7 +1573,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return false;
     }
     const remaining = parseBackgroundToolResults(updated, { kind, claimId });
-    return !remaining.some((result) => taskIds.includes(result.taskId));
+    return taskIds == null
+      ? remaining.length === 0
+      : !remaining.some((result) => taskIds.includes(result.taskId));
   }
 
   /**

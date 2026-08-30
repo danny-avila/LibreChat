@@ -1030,7 +1030,10 @@ describe('Message Operations', () => {
           kind: 'manual',
           claimId: 'poll-1',
         }),
-      ).resolves.toEqual({ status: 'claimed' });
+      ).resolves.toEqual({
+        status: 'claimed',
+        claim: { kind: 'wakeup', claimId: 'delivery-1' },
+      });
     });
 
     it('does not batch a terminal sibling that elected poll-only delivery', async () => {
@@ -1190,6 +1193,15 @@ describe('Message Operations', () => {
               },
             },
           },
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-3',
+              name: 'slow_tool',
+              output: 'three',
+              backgroundTask: { ...task, taskId: 'task-3' },
+            },
+          },
         ],
       });
 
@@ -1198,7 +1210,6 @@ describe('Message Operations', () => {
           userId: 'user123',
           conversationId: mockMessageData.conversationId as string,
           messageId: 'msg123',
-          taskIds: ['task-1', 'task-2'],
           kind: 'wakeup',
           claimId: 'delivery-1',
         }),
@@ -1218,11 +1229,24 @@ describe('Message Operations', () => {
           userId: 'user123',
           conversationId: mockMessageData.conversationId as string,
           messageId: 'msg123',
+          taskId: 'task-3',
+          kind: 'manual',
+          claimId: 'poll-3',
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
           taskId: 'task-2',
           kind: 'wakeup',
           claimId: 'delivery-2',
         }),
-      ).resolves.toEqual({ status: 'claimed' });
+      ).resolves.toEqual({
+        status: 'claimed',
+        claim: { kind: 'manual', claimId: 'poll-1' },
+      });
     });
 
     it('keeps a sibling AGENT’s attachment when both id and file key collide', async () => {

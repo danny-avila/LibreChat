@@ -5,6 +5,7 @@ import {
   BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS,
   createBackgroundToolCompletionWakeupHandler,
   createBackgroundToolCompletionWakeupResolver,
+  createBackgroundToolDeadClaimRecovery,
 } from './backgroundCompletionWakeup';
 import { parseAgentTriggerEnvelope } from './triggers/envelope';
 
@@ -174,6 +175,35 @@ describe('background tool completion wakeups', () => {
       'dead delivery recovered',
       { onlyIfDead: true },
     );
+  });
+
+  it('retires the batch-root delivery before releasing all of its sibling claims', async () => {
+    const retire = jest.fn(async () => true);
+    const release = jest.fn(async () => true);
+    const recover = createBackgroundToolDeadClaimRecovery(retire, release);
+
+    await expect(
+      recover({
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        messageId: 'response-1',
+        claimId: 'batch-root-delivery',
+      }),
+    ).resolves.toBe(true);
+
+    expect(retire).toHaveBeenCalledWith(
+      'batch-root-delivery',
+      'background-tool-completion',
+      'dead background completion batch recovered by manual poll',
+      { onlyIfDead: true },
+    );
+    expect(release).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      messageId: 'response-1',
+      kind: 'wakeup',
+      claimId: 'batch-root-delivery',
+    });
   });
 
   it("keeps unfinished sibling tasks out of each other's delivery lanes", async () => {

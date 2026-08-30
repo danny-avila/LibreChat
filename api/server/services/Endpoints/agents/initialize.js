@@ -69,6 +69,7 @@ const subagentThreadTaskStore = require('./subagentThreadStore');
 const {
   preregisterBackgroundToolCompletion,
   createBackgroundToolResultPersistence,
+  createDeadBackgroundToolClaimRecovery,
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
@@ -419,6 +420,7 @@ const initializeClient = async ({
         updateToolCallResult: db.updateToolCallResult,
       }),
       claim: db.claimBackgroundToolResults,
+      recoverDeadClaim: createDeadBackgroundToolClaimRecovery(db.releaseBackgroundToolResultClaims),
     },
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),

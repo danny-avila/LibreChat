@@ -33,3 +33,18 @@ export interface BackgroundToolWakeupAdmission {
    * resolver owns a lease, its prepared continuation cannot be cancelled. */
   retire: (reason: string, options?: BackgroundToolWakeupRetireOptions) => Promise<boolean>;
 }
+
+/** Durable ownership repair used by a manual poll after an automatic
+ * continuation delivery has irreversibly dead-lettered. `claimId` names the
+ * batch-root delivery that owns every claimed sibling, not necessarily the
+ * polled task's own pre-admitted delivery. */
+export interface BackgroundToolDeadClaimRecoveryInput {
+  userId: string;
+  conversationId: string;
+  messageId: string;
+  claimId: string;
+}
+
+export type BackgroundToolDeadClaimRecovery = (
+  input: BackgroundToolDeadClaimRecoveryInput,
+) => Promise<boolean>;

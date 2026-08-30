@@ -51,15 +51,16 @@ import type {
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { CapabilityToolNames } from './selection';
 import {
+  BACKGROUND_TASK_TIMEOUT_MS,
+  type BackgroundToolDeadClaimRecovery,
+  type BackgroundToolWakeupAdmission,
+} from './backgroundCompletion';
+import {
   resolveToolOption,
   getSelectionNames,
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
-import {
-  BACKGROUND_TASK_TIMEOUT_MS,
-  type BackgroundToolWakeupAdmission,
-} from './backgroundCompletion';
 import { SUBAGENT_WAKEUP_GUIDANCE, agentUsesSubagentCompletionWakeups } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
@@ -1503,7 +1504,11 @@ export async function runCheckBackgroundTask(params: {
     agentId?: string;
     kind: 'manual';
     claimId: string;
-  }) => Promise<{ status: 'acquired' | 'claimed' | 'not_found' | 'not_ready' }>;
+  }) => Promise<
+    | { status: 'acquired' | 'not_found' | 'not_ready' }
+    | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
+  >;
+  recoverDeadBackgroundToolClaim?: BackgroundToolDeadClaimRecovery;
 }): Promise<string> {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
@@ -1545,22 +1550,25 @@ export async function runCheckBackgroundTask(params: {
             claimId: invocationId,
           };
           let durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
-          let deadFallbackRecoveredFromClaim = false;
           if (durableClaim.status === 'claimed') {
             let recovered = false;
-            try {
-              recovered = await backgroundTaskRegistry.retireCompletionWakeup(
-                userId,
-                conversationId,
-                taskId,
-                'dead completion claim recovered by manual poll',
-                { onlyIfDead: true },
-              );
-            } catch (error) {
-              logger.warn(
-                `[background] Failed to reconcile claimed completion for manual poll ${taskId}:`,
-                error,
-              );
+            if (
+              durableClaim.claim?.kind === 'wakeup' &&
+              params.recoverDeadBackgroundToolClaim != null
+            ) {
+              try {
+                recovered = await params.recoverDeadBackgroundToolClaim({
+                  userId,
+                  conversationId,
+                  messageId: task.messageId,
+                  claimId: durableClaim.claim.claimId,
+                });
+              } catch (error) {
+                logger.warn(
+                  `[background] Failed to reconcile claimed completion for manual poll ${taskId}:`,
+                  error,
+                );
+              }
             }
             if (!recovered) {
               return JSON.stringify({
@@ -1569,19 +1577,15 @@ export async function runCheckBackgroundTask(params: {
                 message: 'This result is already assigned to an automatic continuation.',
               });
             }
-            backgroundTaskRegistry.markCompletionPersistenceFailed(userId, conversationId, taskId);
-            const localClaim = backgroundTaskRegistry.claimResult(userId, conversationId, taskId, {
-              kind: 'manual',
-              claimId: invocationId,
-            });
-            if (localClaim === 'claimed') {
+            durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
+            if (durableClaim.status === 'claimed') {
               return JSON.stringify({
                 status: 'delivery_scheduled',
                 background_task_id: taskId,
                 message: 'This result is already assigned to another continuation.',
               });
             }
-            if (localClaim === 'not_ready') {
+            if (durableClaim.status !== 'acquired') {
               return JSON.stringify({
                 status: 'result_persisting',
                 background_task_id: taskId,
@@ -1589,13 +1593,11 @@ export async function runCheckBackgroundTask(params: {
                   'The task is finished and its result is being recovered. Retry this poll shortly.',
               });
             }
-            deadFallbackRecoveredFromClaim = true;
-            durableClaim = { status: 'not_ready' };
           }
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
               task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId;
-            let deadFallbackRecovered = deadFallbackRecoveredFromClaim;
+            let deadFallbackRecovered = false;
             if (!localReplay && !deadFallbackRecovered) {
               /** Retire the still-unclaimed delivery before creating local
                * ownership. A live resolver lease wins. Once that resolver is

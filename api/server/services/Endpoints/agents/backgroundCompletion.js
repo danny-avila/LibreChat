@@ -1,5 +1,6 @@
 const {
   createBackgroundToolCompletionWakeupHandler,
+  createBackgroundToolDeadClaimRecovery,
   createBackgroundToolResultHandler,
 } = require('@librechat/api');
 const {
@@ -18,7 +19,15 @@ function createBackgroundToolResultPersistence({ req, updateToolCallResult }) {
   return createBackgroundToolResultHandler({ req, updateToolCallResult });
 }
 
+function createDeadBackgroundToolClaimRecovery(releaseBackgroundToolResultClaims) {
+  return createBackgroundToolDeadClaimRecovery(
+    retireAgentTrigger,
+    releaseBackgroundToolResultClaims,
+  );
+}
+
 module.exports = {
   preregisterBackgroundToolCompletion,
   createBackgroundToolResultPersistence,
+  createDeadBackgroundToolClaimRecovery,
 };
