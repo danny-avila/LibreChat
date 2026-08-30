@@ -957,6 +957,10 @@ export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  /** Saved-agent owner when provider tool-call ids repeat across handoffs. */
+  agentId?: string;
+  /** Host run-step owner when one agent repeats a provider tool-call id. */
+  stepId?: string;
   workspaceChange?: WorkspaceChange;
   [Tools.memory]?: MemoryArtifact;
   [Tools.ui_resources]?: UIResource[];

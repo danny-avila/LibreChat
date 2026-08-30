@@ -23,6 +23,7 @@ const {
   getLazySubagentConfigId,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
+  backgroundCompletionWakeupsEnabled,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -65,6 +66,11 @@ const { checkPermission, findAccessibleResources } = require('~/server/services/
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const subagentThreadTaskStore = require('./subagentThreadStore');
+const {
+  preregisterBackgroundToolCompletion,
+  createBackgroundToolResultPersistence,
+  createDeadBackgroundToolClaimRecovery,
+} = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -157,6 +163,9 @@ const initializeClient = async ({
     throw new Error('Endpoint option not provided');
   }
   const appConfig = req.config;
+  const completionWakeupsEnabled = backgroundCompletionWakeupsEnabled(
+    appConfig?.endpoints?.[EModelEndpoint.agents],
+  );
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
@@ -404,6 +413,25 @@ const initializeClient = async ({
       req,
       updateToolCallResult: db.updateToolCallResult,
     }),
+    backgroundToolCompletion: {
+      ...(completionWakeupsEnabled ? { preregister: preregisterBackgroundToolCompletion } : {}),
+      persist: createBackgroundToolResultPersistence({
+        req,
+        updateToolCallResult: db.updateToolCallResult,
+      }),
+      claim: db.claimBackgroundToolResults,
+      recoverDeadClaim: createDeadBackgroundToolClaimRecovery(
+        db.releaseBackgroundToolResultClaims,
+        (conversationId) => GenerationJobManager.getJob(conversationId),
+        ({ userId, conversationId, claimId }) =>
+          GenerationJobManager.fenceGenerationClaimForRecovery(
+            userId,
+            claimId,
+            conversationId,
+            conversationId,
+          ),
+      ),
+    },
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),
     onSkillResolved: (skill, { agentId }) => {
@@ -1330,13 +1358,13 @@ const initializeClient = async ({
               ? { tenantId: req.user.tenantId }
               : {}),
           },
-          { completionWakeups: true },
+          { completionWakeups: completionWakeupsEnabled },
         )
       : undefined;
   let hasExistingSubagentTask = false;
   if (trustedSubagentTasks != null && !(subagentsAvailableForRun && hasSpawnableSubagent)) {
     try {
-      hasExistingSubagentTask = await subagentThreadTaskStore.hasTasks(
+      hasExistingSubagentTask = await trustedSubagentTasks.store.hasTasks(
         trustedSubagentTasks.scopeId,
       );
     } catch (error) {

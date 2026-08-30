@@ -4,6 +4,7 @@ import type {
   TPendingSteer,
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
+import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import type { RunStep, StandardGraph } from '@librechat/agents';
 import type { AgentEventDetachedTerminalEvidence } from '~/agents/triggers/types';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
@@ -174,6 +175,8 @@ export interface SerializableJobData {
   discoveredTools?: string[];
   /** Bounded collector state for continuing a phase across HITL resume. */
   activityPhaseSnapshot?: ActivityPhaseSnapshot;
+  /** Exact bounded compaction guidance captured atomically with a HITL pause. */
+  compactionSemanticIndex?: ICompactionSemanticIndexProjection;
   /**
    * Whether the replica that OWNS this generation can seal mid-stream
    * (`PreemptBoundary` wiring). Recorded at createJob because the steer route
@@ -452,6 +455,7 @@ export type JobMetadataPatch = Partial<
     | 'promptTokens'
     | 'discoveredTools'
     | 'activityPhaseSnapshot'
+    | 'compactionSemanticIndex'
     | 'preemptCapable'
     | 'steerQuotesCapable'
     | 'steerQuotesExecutionId'
@@ -884,6 +888,11 @@ export interface IJobStore {
     ttlSeconds: number,
   ): Promise<IdempotencyClaimResult>;
   releaseIdempotencyKey(key: string): Promise<void>;
+
+  /** Read-only existence probe used to identify a confirmed retry before
+   * request-rate admission. Optional stores keep the conservative behavior
+   * where every request remains subject to the limiter. */
+  hasIdempotencyKey?(key: string): Promise<boolean>;
 
   deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
   hasJob(streamId: string): Promise<boolean>;

@@ -15,6 +15,7 @@ import type {
   SubagentTaskSnapshot,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
+  SubagentTaskStore,
   SubagentUpdateEvent,
 } from '@librechat/agents';
 import type {
@@ -140,6 +141,10 @@ interface PreparedThread {
     taskId: string;
     parentRunId: string;
   };
+}
+
+interface HostSubagentTaskStartRequest extends SubagentTaskStartRequest {
+  completionDelivery?: typeof SUBAGENT_COMPLETION_DELIVERY;
 }
 
 type ThreadMessage = Pick<
@@ -2395,6 +2400,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     userId: string,
     tenantId: string | undefined,
     deletion: () => Promise<T>,
+    recoverAdditionalOwnerWork?: () => Promise<void>,
   ): Promise<T> {
     const fenceWindowMs = this.ownerDrainTimeoutMs + this.ownerFenceGraceMs;
     const token = randomUUID();
@@ -2487,6 +2493,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         fencedUntil = recoveryUntil;
         fenceLapsed = false;
         await this.cancelAndDrainForOwner(userId, tenantId);
+        /** The fence is shared by host-owned execution classes that do not use the
+         * subagent lease store. Let the caller re-drain those classes after the same
+         * lapse, while the restored fence still prevents fresh admission. */
+        await recoverAdditionalOwnerWork?.();
         if (!fenceHeld()) {
           throw new Error('The subagent admission fence expired while recovering this deletion.');
         }
@@ -3167,7 +3177,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     request: SubagentTaskStartRequest,
     task: { taskId: string; parentRunId: string; createdAt: number },
   ): Promise<void> {
-    if (this.onTaskPrepared == null) {
+    if (
+      this.onTaskPrepared == null ||
+      (request as HostSubagentTaskStartRequest).completionDelivery !== SUBAGENT_COMPLETION_DELIVERY
+    ) {
       return;
     }
     await this.onTaskPrepared({
@@ -3416,13 +3429,47 @@ export function createSubagentThreadTaskStore(
   return new SubagentThreadTaskStore(methods, options);
 }
 
+type CompletionWakeupStore = SubagentTaskStore &
+  Pick<SubagentThreadTaskStore, 'claimTask' | 'controlTask' | 'hasTasks' | 'listTasks'>;
+
+const completionWakeupStores = new WeakMap<SubagentThreadTaskStore, CompletionWakeupStore>();
+
+function completionWakeupStore(store: SubagentThreadTaskStore): CompletionWakeupStore {
+  const existing = completionWakeupStores.get(store);
+  if (existing != null) {
+    return existing;
+  }
+  const adapter: CompletionWakeupStore = {
+    supportsThreadContinuation: store.supportsThreadContinuation,
+    start: (request) => {
+      const hostRequest: HostSubagentTaskStartRequest = {
+        ...request,
+        completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+      };
+      return store.start(hostRequest);
+    },
+    get: (scopeId, taskId) => store.get(scopeId, taskId),
+    list: (scopeId) => store.list(scopeId),
+    claim: (scopeId, taskId) => store.claim(scopeId, taskId),
+    control: (scopeId, taskId, command) => store.control(scopeId, taskId, command),
+    claimTask: (scopeId, taskId, invocationId) => store.claimTask(scopeId, taskId, invocationId),
+    controlTask: (scopeId, taskId, command, invocationId) =>
+      store.controlTask(scopeId, taskId, command, invocationId),
+    hasTasks: (scopeId) => store.hasTasks(scopeId),
+    listTasks: (scopeId) => store.listTasks(scopeId),
+  };
+  completionWakeupStores.set(store, adapter);
+  return adapter;
+}
+
 export function buildSubagentThreadTaskConfig(
   store: SubagentThreadTaskStore,
   scope: Omit<SubagentThreadScope, 'version'>,
   options: { completionWakeups?: boolean } = {},
 ): HostSubagentTaskConfig {
+  const taskStore = options.completionWakeups === true ? completionWakeupStore(store) : store;
   return {
-    store,
+    store: taskStore,
     scopeId: serializeScope(scope),
     ...(options.completionWakeups === true
       ? { completionDelivery: SUBAGENT_COMPLETION_DELIVERY }

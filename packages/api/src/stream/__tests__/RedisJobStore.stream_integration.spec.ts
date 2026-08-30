@@ -4229,6 +4229,26 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('probes claim existence without creating a missing key', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const key = `user-1:req-probe-${Date.now()}`;
+      await expect(store.hasIdempotencyKey(key)).resolves.toBe(false);
+
+      await store.claimIdempotencyKey(key, { streamId: 's1', conversationId: 'c1' }, 1200);
+      await expect(store.hasIdempotencyKey(key)).resolves.toBe(true);
+
+      await store.releaseIdempotencyKey(key);
+      await expect(store.hasIdempotencyKey(key)).resolves.toBe(false);
+
+      await store.destroy();
+    });
+
     test('sets a bounded TTL on the claim', async () => {
       if (!ioredisClient) {
         return;

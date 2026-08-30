@@ -6,8 +6,12 @@ const mockGenerationJobManager = {
 
 jest.mock('@librechat/api', () => ({
   createAgentTriggerService: (...args) => mockCreateAgentTriggerService(...args),
+  createAgentContinuationResolver: jest.fn(() => jest.fn()),
   createAgentEventContinueResolver: jest.fn(() => jest.fn()),
+  createBackgroundToolCompletionWakeupResolver: jest.fn(() => jest.fn()),
   createSubagentCompletionWakeupResolver: jest.fn(() => jest.fn()),
+  BACKGROUND_TOOL_COMPLETION_SOURCE: 'background-tool-completion',
+  SUBAGENT_COMPLETION_SOURCE: 'subagent-completion',
   GenerationJobManager: mockGenerationJobManager,
 }));
 

@@ -104,5 +104,8 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.activityPhaseSnapshot) {
     patch.activityPhaseSnapshot = metadata.activityPhaseSnapshot;
   }
+  if (metadata.compactionSemanticIndex) {
+    patch.compactionSemanticIndex = metadata.compactionSemanticIndex;
+  }
   return patch;
 }

@@ -2658,6 +2658,7 @@ class GenerationJobManagerClass {
         // replay them into createRun (the rebuilt graph passes `messages: []`).
         discoveredTools: jobData.discoveredTools,
         activityPhaseSnapshot: jobData.activityPhaseSnapshot,
+        compactionSemanticIndex: jobData.compactionSemanticIndex,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
@@ -2921,6 +2922,70 @@ class GenerationJobManagerClass {
       await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, legacy, primary);
     }
     return { claimed: false, existing: primary, source: 'primary' };
+  }
+
+  /** Checks the mixed-version admission key without creating or repairing a
+   * claim. This is deliberately weaker than `claimGeneration`: callers may
+   * use it only to exempt a confirmed retry from request rate limiting; the
+   * controller must still perform the authoritative claim transition. */
+  async hasGenerationClaim(userId: string, clientRequestId: string): Promise<boolean> {
+    if (!CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)) {
+      return false;
+    }
+    return (
+      (await this.jobStore.hasIdempotencyKey?.(
+        this.legacyGenerationClaimKey(userId, clientRequestId),
+      )) === true
+    );
+  }
+
+  /** Atomically prevents an unpublished automatic continuation from starting
+   * after its delivery has been retired for manual recovery. If recovery wins
+   * the unstarted idempotency claim (directly or through the existing takeover
+   * CAS), it converts that exact token into a started tombstone. A concurrent
+   * `createJob` still holding the predecessor token then fails its atomic
+   * create, while later duplicate POSTs take the settled/refetch path.
+   *
+   * `started` means job creation won the claim race; the caller must inspect
+   * the generation itself before releasing any result ownership. */
+  async fenceGenerationClaimForRecovery(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    conversationId: string,
+  ): Promise<'fenced' | 'started' | 'unavailable'> {
+    const observed = await this.claimGeneration(userId, clientRequestId, streamId, conversationId);
+    if (observed.existing == null) {
+      return 'unavailable';
+    }
+    if (observed.existing.startedAt != null) {
+      return 'started';
+    }
+
+    let owned = observed;
+    if (!observed.claimed) {
+      owned = await this.takeoverGeneration(userId, clientRequestId, streamId, observed.existing);
+      if (owned.existing?.startedAt != null) {
+        return 'started';
+      }
+      if (!owned.claimed || owned.existing == null) {
+        return 'unavailable';
+      }
+    }
+
+    const claim = normalizeTokenClaim(owned.existing, 'background completion recovery fence');
+    if (claim.startedAt != null) {
+      return 'started';
+    }
+    await this.tombstoneObservedGenerationClaim(
+      userId,
+      clientRequestId,
+      streamId,
+      claim,
+      Date.now(),
+      claim.generationProtocolVersion === 2 ? 2 : 1,
+    );
+    return 'fenced';
   }
 
   private generationClaimKey(userId: string, clientRequestId: string, streamId: string): string {
@@ -7957,6 +8022,26 @@ class GenerationJobManagerClass {
    * including a terminal generation whose controller is finishing trailing writes. */
   async getCleanupBlockingJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
     return this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+  }
+
+  /** Resolves every cleanup-blocking run attached to any target conversation.
+   * Remote API runs use response IDs as stream identities, so conversation
+   * deletion cannot assume one stream per conversation. */
+  async getCleanupBlockingJobIdsForConversations(
+    userId: string,
+    conversationIds: readonly string[],
+    tenantId?: string,
+  ): Promise<string[]> {
+    if (conversationIds.length === 0) {
+      return [];
+    }
+    const targets = new Set(conversationIds);
+    const streamIds = await this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+    const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
+    return streamIds.filter((_, index) => {
+      const job = jobs[index];
+      return job != null && job.userId === userId && targets.has(job.conversationId ?? '');
+    });
   }
 
   private async finalizeOwnedJobsForShutdown(): Promise<void> {

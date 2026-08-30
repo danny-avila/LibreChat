@@ -33,6 +33,10 @@ const mockRegistryInstance = {
   }),
 };
 let mockMCPUseAllowed = true;
+const mockLoadMCPServerCatalogs = jest.fn().mockResolvedValue({
+  serverTools: new Map(),
+  serversWithoutTools: [],
+});
 
 jest.mock('@librechat/api', () => {
   const actual = jest.requireActual('@librechat/api');
@@ -174,6 +178,7 @@ jest.mock('~/server/middleware', () => ({
 
 jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
+  loadMCPServerCatalogs: (...args) => mockLoadMCPServerCatalogs(...args),
 }));
 
 const mockOAuthCompletion = (tokens) => {
@@ -225,6 +230,10 @@ describe('MCP Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockLoadMCPServerCatalogs.mockResolvedValue({
+      serverTools: new Map(),
+      serversWithoutTools: [],
+    });
     currentUser = undefined;
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
@@ -2449,6 +2458,38 @@ describe('MCP Routes', () => {
       });
     });
 
+    /**
+     * Codex Finding 2 regression: the reinitialize route must forward a
+     * session-aware upstream-token closure to reinitMCPServer so OBO servers
+     * can mint a downstream token. The closure is built at the route boundary
+     * (from req/res) and passed as `upstreamTokenProvider`; the raw `req` is
+     * NOT threaded into the MCP layer.
+     */
+    it('forwards an upstream-token closure (not req) into reinitMCPServer for OBO session access', async () => {
+      const mockMcpManager = {
+        disconnectUserConnection: jest.fn().mockResolvedValue(),
+      };
+      mockRegistryInstance.getServerConfig.mockResolvedValue({});
+      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+      require('~/config').getFlowStateManager.mockReturnValue({});
+      require('~/cache').getLogStores.mockReturnValue({});
+      const reinitSpy = require('~/server/services/Tools/mcp').reinitMCPServer;
+      reinitSpy.mockResolvedValue({ success: true, serverName: 'obo-server' });
+
+      await request(app).post('/api/mcp/obo-server/reinitialize');
+
+      expect(reinitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          upstreamTokenProvider: expect.any(Function),
+          oboIdentityContext: expect.objectContaining({
+            appUserId: 'test-user-id',
+          }),
+        }),
+      );
+      const [params] = reinitSpy.mock.calls[reinitSpy.mock.calls.length - 1];
+      expect(params).not.toHaveProperty('req');
+    });
+
     it('should return 500 when unexpected error occurs', async () => {
       const mockMcpManager = {
         disconnectUserConnection: jest.fn(),
@@ -3252,9 +3293,8 @@ describe('MCP Routes', () => {
       expect(mockResolveAllMcpConfigs).not.toHaveBeenCalled();
     });
 
-    it('caches a live user snapshot with its connection-bound publication generation', async () => {
+    it('delegates catalog loading and renders the returned tools', async () => {
       const { Constants } = require('librechat-data-provider');
-      const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
       const pluginKey = `search${Constants.mcp_delimiter}user-server`;
       const serverTools = {
         [pluginKey]: {
@@ -3268,58 +3308,80 @@ describe('MCP Routes', () => {
       };
       const serverConfig = { type: 'sse', url: 'https://user.example.com/sse' };
       mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'user-server': serverConfig });
-      getMCPServerTools.mockResolvedValueOnce(null);
-      cacheMCPServerTools.mockResolvedValueOnce();
-      require('~/config').getMCPManager.mockReturnValue({
-        getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({
-          tools: serverTools,
-          publicationGeneration: 'connection-generation',
-        }),
+      mockLoadMCPServerCatalogs.mockResolvedValueOnce({
+        serverTools: new Map([['user-server', serverTools]]),
+        serversWithoutTools: [],
       });
 
       const response = await request(app).get('/api/mcp/tools');
 
       expect(response.status).toBe(200);
-      expect(cacheMCPServerTools).toHaveBeenCalledWith({
-        userId: 'test-user-id',
-        serverName: 'user-server',
-        serverTools,
-        serverConfig,
-        publicationGeneration: 'connection-generation',
+      expect(response.body.servers['user-server'].tools).toEqual([
+        { name: 'search', pluginKey, description: 'Search' },
+      ]);
+      expect(mockLoadMCPServerCatalogs).toHaveBeenCalledWith({
+        user: { id: 'test-user-id' },
+        servers: [{ serverName: 'user-server', serverConfig }],
+        upstreamTokenProvider: expect.any(Function),
+        oboIdentityContext: expect.any(Object),
       });
     });
 
-    it('re-caches an authoritative empty live snapshot after a cache miss', async () => {
-      const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+    it('renders an authoritative empty catalog as a configured server', async () => {
       const serverConfig = { type: 'sse', url: 'https://empty.example.com/sse' };
       mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'empty-server': serverConfig });
-      getMCPServerTools.mockResolvedValueOnce(null);
-      cacheMCPServerTools.mockResolvedValueOnce();
-      const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
-        tools: {},
-        publicationGeneration: undefined,
+      mockLoadMCPServerCatalogs.mockResolvedValueOnce({
+        serverTools: new Map([['empty-server', {}]]),
+        serversWithoutTools: [],
       });
-      require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
 
       const response = await request(app).get('/api/mcp/tools');
 
       expect(response.status).toBe(200);
       expect(response.body.servers['empty-server'].tools).toEqual([]);
-      expect(cacheMCPServerTools).toHaveBeenCalledWith({
-        userId: 'test-user-id',
-        serverName: 'empty-server',
-        serverTools: {},
-        serverConfig,
-        publicationGeneration: undefined,
+    });
+
+    it('renders a passively recovered catalog returned by the loader', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const pluginKey = `search${Constants.mcp_delimiter}connected-server`;
+      const serverTools = {
+        [pluginKey]: {
+          type: 'function',
+          function: {
+            name: pluginKey,
+            description: 'Search',
+            parameters: { type: 'object' },
+          },
+        },
+      };
+      const serverConfig = { type: 'sse', url: 'https://connected.example.com/sse' };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'connected-server': serverConfig });
+      mockLoadMCPServerCatalogs.mockResolvedValueOnce({
+        serverTools: new Map([['connected-server', serverTools]]),
+        serversWithoutTools: [],
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers['connected-server'].tools).toEqual([
+        {
+          name: 'search',
+          pluginKey,
+          description: 'Search',
+        },
+      ]);
+      expect(mockLoadMCPServerCatalogs).toHaveBeenCalledWith({
+        user: { id: 'test-user-id' },
+        servers: [{ serverName: 'connected-server', serverConfig }],
+        upstreamTokenProvider: expect.any(Function),
+        oboIdentityContext: expect.any(Object),
       });
     });
 
-    it('should continue returning MCP tools when one server cache lookup fails', async () => {
+    it('continues rendering available tools when another server has no catalog', async () => {
       const { Constants } = require('librechat-data-provider');
-      const { logger } = require('@librechat/data-schemas');
-      const { getMCPServerTools } = require('~/server/services/Config');
-
-      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+      const configs = {
         'bad-server': {
           type: 'sse',
           url: 'https://bad.example.com/sse',
@@ -3329,45 +3391,30 @@ describe('MCP Routes', () => {
           url: 'https://good.example.com/sse',
           iconPath: '/icons/good.svg',
         },
-      });
-
-      // Mock order matches Object.keys() order from the config above.
-      getMCPServerTools
-        .mockRejectedValueOnce(new Error('cache unavailable'))
-        .mockResolvedValueOnce({
-          [`search${Constants.mcp_delimiter}good-server`]: {
-            type: 'function',
-            function: {
-              name: `search${Constants.mcp_delimiter}good-server`,
-              description: 'Search good server',
-              parameters: { type: 'object' },
+      };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce(configs);
+      mockLoadMCPServerCatalogs.mockResolvedValueOnce({
+        serverTools: new Map([
+          [
+            'good-server',
+            {
+              [`search${Constants.mcp_delimiter}good-server`]: {
+                type: 'function',
+                function: {
+                  name: `search${Constants.mcp_delimiter}good-server`,
+                  description: 'Search good server',
+                  parameters: { type: 'object' },
+                },
+              },
             },
-          },
-        });
-
-      const mockGetServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
-        tools: null,
-        publicationGeneration: 'test-generation',
-      });
-      require('~/config').getMCPManager.mockReturnValue({
-        getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
+          ],
+        ]),
+        serversWithoutTools: ['bad-server'],
       });
 
       const response = await request(app).get('/api/mcp/tools');
 
       expect(response.status).toBe(200);
-      expect(logger.error).toHaveBeenCalledWith(
-        '[getMCPTools] Error fetching cached tools for bad-server:',
-        expect.any(Error),
-      );
-      expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledWith(
-        'test-user-id',
-        'bad-server',
-        {
-          type: 'sse',
-          url: 'https://bad.example.com/sse',
-        },
-      );
       expect(response.body.servers['good-server']).toMatchObject({
         name: 'good-server',
         icon: '/icons/good.svg',
@@ -3387,9 +3434,7 @@ describe('MCP Routes', () => {
 
     it('should return configured servers when all cache lookups fail', async () => {
       const { logger } = require('@librechat/data-schemas');
-      const { getMCPServerTools } = require('~/server/services/Config');
-
-      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+      const configs = {
         'first-server': {
           type: 'sse',
           url: 'https://first.example.com/sse',
@@ -3398,16 +3443,11 @@ describe('MCP Routes', () => {
           type: 'sse',
           url: 'https://second.example.com/sse',
         },
-      });
-
-      getMCPServerTools.mockRejectedValue(new Error('cache unavailable'));
-
-      const mockGetServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
-        tools: null,
-        publicationGeneration: 'test-generation',
-      });
-      require('~/config').getMCPManager.mockReturnValue({
-        getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
+      };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce(configs);
+      mockLoadMCPServerCatalogs.mockResolvedValueOnce({
+        serverTools: new Map(),
+        serversWithoutTools: ['first-server', 'second-server'],
       });
 
       const response = await request(app).get('/api/mcp/tools');
@@ -3425,8 +3465,16 @@ describe('MCP Routes', () => {
       expect(logger.debug).toHaveBeenCalledWith(
         '[getMCPTools] No tools (2): first-server, second-server',
       );
-      expect(logger.error).toHaveBeenCalledTimes(2);
-      expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledTimes(2);
+      expect(mockLoadMCPServerCatalogs).toHaveBeenCalledTimes(1);
+      expect(mockLoadMCPServerCatalogs).toHaveBeenCalledWith({
+        user: { id: 'test-user-id' },
+        servers: Object.entries(configs).map(([serverName, serverConfig]) => ({
+          serverName,
+          serverConfig,
+        })),
+        upstreamTokenProvider: expect.any(Function),
+        oboIdentityContext: expect.any(Object),
+      });
     });
   });
 

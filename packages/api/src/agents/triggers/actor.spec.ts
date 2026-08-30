@@ -82,6 +82,7 @@ describe('event actor host adapter', () => {
         discoveredToolNames,
         summary,
         contextMeta,
+        compactionSemanticIndex,
       }) => {
         if (
           expectedEpoch !== epoch ||
@@ -95,6 +96,8 @@ describe('event actor host adapter', () => {
                 JSON.stringify(state.discoveredToolNames) ||
               JSON.stringify(expected.summary) !== JSON.stringify(state.summary) ||
               JSON.stringify(expected.contextMeta) !== JSON.stringify(state.contextMeta) ||
+              JSON.stringify(expected.compactionSemanticIndex) !==
+                JSON.stringify(state.compactionSemanticIndex) ||
               (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
         ) {
           return { status: 'stale' as const, ...(state == null ? {} : { state }) };
@@ -108,6 +111,7 @@ describe('event actor host adapter', () => {
           ...(discoveredToolNames == null ? {} : { discoveredToolNames }),
           ...(summary == null ? {} : { summary }),
           ...(contextMeta == null ? {} : { contextMeta }),
+          ...(compactionSemanticIndex == null ? {} : { compactionSemanticIndex }),
           ...(previous == null ? {} : { previousCheckpoint: previous }),
         };
         return { status: 'committed' as const, state };
@@ -685,6 +689,19 @@ describe('event actor host adapter', () => {
     const current = createAgentContextFingerprint({ agents: [{ id: 'agent-1', version: 2 }] });
     const storedSkill = { id: 'skill-1', name: 'analysis', version: 3 };
     const invokedSkill = { id: 'skill-2', name: 'reporting', version: 1 };
+    const storedCompactionSemanticIndex = {
+      version: 1 as const,
+      entries: [
+        {
+          type: 'activity_phase' as const,
+          sourceMessageId: 'assistant-history',
+          sourceContentIndex: 1,
+          revision: 1,
+          status: 'committed' as const,
+          text: 'Verified the release state',
+        },
+      ],
+    };
     state = {
       generation: 1,
       checkpoint: {
@@ -697,6 +714,7 @@ describe('event actor host adapter', () => {
       discoveredToolNames: ['deferred_lookup'],
       summary: { text: 'Earlier compacted context.', tokenCount: 12 },
       contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex: storedCompactionSemanticIndex,
     };
     let continuation: 'warm' | 'cold' | undefined;
     const checkpointMessageOverlay = { source: 'skill', messages: [] };
@@ -714,6 +732,7 @@ describe('event actor host adapter', () => {
           discoveredToolNames: observed.discoveredToolNames ?? [],
           summary: observed.summary,
           contextMeta: observed.contextMeta,
+          compactionSemanticIndex: observed.compactionSemanticIndex,
           checkpointMessageOverlay,
         }),
         readResultContext: async () => ({
@@ -722,6 +741,7 @@ describe('event actor host adapter', () => {
           discoveredToolNames: ['deferred_lookup', 'deferred_write'],
           summary: { text: 'Updated compacted context.', tokenCount: 15 },
           contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+          compactionSemanticIndex: storedCompactionSemanticIndex,
         }),
         invoke: async (context) => {
           continuation = context.continuation;
@@ -737,6 +757,7 @@ describe('event actor host adapter', () => {
     expect(state?.discoveredToolNames).toEqual(['deferred_lookup', 'deferred_write']);
     expect(state?.summary).toEqual({ text: 'Updated compacted context.', tokenCount: 15 });
     expect(state?.contextMeta).toEqual({ calibrationRatio: 1.3, encoding: 'o200k_base' });
+    expect(state?.compactionSemanticIndex).toEqual(storedCompactionSemanticIndex);
     expect(mockedFork).toHaveBeenCalledWith(
       expect.anything(),
       expect.any(String),

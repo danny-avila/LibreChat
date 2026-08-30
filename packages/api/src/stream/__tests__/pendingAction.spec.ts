@@ -249,6 +249,33 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(paused?.metadata.activityPhaseSnapshot).toEqual(activityPhaseSnapshot);
     });
 
+    test('persists compaction guidance in the same transition as the pause', async () => {
+      const streamId = 'stream-pause-compaction-index';
+      await manager.createJob(streamId, 'user-1');
+      const compactionSemanticIndex = {
+        version: 1 as const,
+        entries: [
+          {
+            type: 'activity_phase' as const,
+            sourceMessageId: 'assistant-history',
+            sourceContentIndex: 1,
+            revision: 1,
+            status: 'committed' as const,
+            text: 'Verified the release state',
+          },
+        ],
+      };
+
+      expect(
+        await manager.approvals.pause(streamId, buildAction(streamId), {
+          compactionSemanticIndex,
+        }),
+      ).toBe(true);
+
+      const paused = await manager.getJob(streamId);
+      expect(paused?.metadata.compactionSemanticIndex).toEqual(compactionSemanticIndex);
+    });
+
     test('does not write a stale pause or discoveries onto a replacement job', async () => {
       const streamId = 'stream-pause-replaced';
       const original = await manager.createJob(streamId, 'user-1');

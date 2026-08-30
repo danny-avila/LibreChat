@@ -25,7 +25,6 @@ export interface AgentEventContinueResolverDeps {
     | null
     | undefined
   >;
-  fallback?: ContinueResolver;
 }
 
 function invalidBinding(message: string, retryable = false): AgentTriggerExecutionError {
@@ -42,15 +41,14 @@ function invalidBinding(message: string, retryable = false): AgentTriggerExecuti
 export function createAgentEventContinueResolver({
   methods,
   getGenerationJob,
-  fallback,
 }: AgentEventContinueResolverDeps): ContinueResolver {
   return async (
     envelope: AgentContinueTriggerEnvelope,
-    context: AgentTriggerDispatchContext,
+    _context: AgentTriggerDispatchContext,
   ): Promise<AgentTriggerContinuePreparation | undefined> => {
     const { bindingId, sourceKeyId } = envelope.target;
     if (bindingId == null || sourceKeyId == null) {
-      return fallback?.(envelope, context);
+      return;
     }
     let binding;
     let latestAssistant;

@@ -74,6 +74,8 @@ const {
   getLangfuseTraceMessageFields,
   stripActivityLabelParts,
   CHILD_THREAD_READ_ONLY_ERROR,
+  enrollAgentExecution,
+  waitForAgentExecutionWrites,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -573,18 +575,40 @@ const executeResponse = async (envelope, { req, res }) => {
     `[Responses API] Request ${responseId} started for agent ${agentId}, stream: ${isStreaming}`,
   );
 
-  // Set up abort controller
-  const abortController = new AbortController();
-
-  // Handle client disconnect
-  req.on('close', () => {
-    if (!abortController.signal.aborted) {
-      abortController.abort();
+  const conversationId = request.previous_response_id ?? uuidv4();
+  let execution;
+  let executionError;
+  let responseClosed = res.destroyed === true && res.writableEnded !== true;
+  /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
+  const artifactPromises = [];
+  let artifactWritesCovered = false;
+  const abortOnResponseClose = () => {
+    if (res.writableEnded === true) {
+      return;
+    }
+    responseClosed = true;
+    if (execution && !execution.signal.aborted) {
+      execution.abort();
       logger.debug('[Responses API] Client disconnected, aborting');
     }
-  });
-
+  };
+  res.once('close', abortOnResponseClose);
   try {
+    execution = await enrollAgentExecution({
+      runId: responseId,
+      userId: principal.userId,
+      conversationId,
+      agentId,
+      protocol: 'responses',
+      /** Conversation delete-all uses the shared owner-admission fence. Remote
+       * execution must observe it after durable enrollment and before provider work. */
+      isPrincipalActive: db.isSubagentOwnerAdmissible,
+    });
+    if (responseClosed || (res.destroyed === true && res.writableEnded !== true)) {
+      execution.abort();
+    }
+    await execution.beginProviderExecution();
+
     if (request.previous_response_id != null) {
       if (typeof request.previous_response_id !== 'string') {
         return sendResponsesErrorResponse(
@@ -612,7 +636,6 @@ const executeResponse = async (envelope, { req, res }) => {
       }
     }
 
-    const conversationId = request.previous_response_id ?? uuidv4();
     const parentMessageId = null;
     const mcpRequestBody = createMCPRuntimeRequestBody({ messageId: responseId, conversationId });
     const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
@@ -631,7 +654,7 @@ const executeResponse = async (envelope, { req, res }) => {
     const allowedProviders = new Set(agentsEConfig?.allowedProviders);
 
     // Create tool loader
-    const loadTools = createToolLoader(abortController.signal);
+    const loadTools = createToolLoader(execution.signal);
     const skillDbMethods = getSkillDbMethods();
 
     // Initialize the agent first to check for disableStreaming
@@ -1013,8 +1036,6 @@ const executeResponse = async (envelope, { req, res }) => {
       const collectedUsage = [];
 
       // Artifact promises for processing tool outputs
-      /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
-      const artifactPromises = [];
       // Use Responses API-specific callback that emits librechat:attachment events
       const toolEndCallback = createResponsesToolEndCallback({
         req,
@@ -1036,7 +1057,7 @@ const executeResponse = async (envelope, { req, res }) => {
             requestBody: mcpRequestBody,
             toolNames,
             agent: ctx.agent ?? agent,
-            signal: abortController.signal,
+            signal: execution.signal,
             toolRegistry: ctx.toolRegistry,
             callerCapabilityProjection,
             backgroundToolNames: ctx.backgroundToolNames,
@@ -1100,7 +1121,7 @@ const executeResponse = async (envelope, { req, res }) => {
         runId: responseId,
         summarizationConfig,
         appConfig,
-        signal: abortController.signal,
+        signal: execution.signal,
         customHandlers: handlers,
         initialSessions,
         requestBody: mcpRequestBody,
@@ -1125,7 +1146,7 @@ const executeResponse = async (envelope, { req, res }) => {
           requestBody: mcpRequestBody,
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
-        signal: abortController.signal,
+        signal: execution.signal,
         streamMode: 'values',
         version: 'v2',
       };
@@ -1141,28 +1162,33 @@ const executeResponse = async (envelope, { req, res }) => {
       // Record token usage against balance
       const balanceConfig = getBalanceConfig(appConfig);
       const transactionsConfig = getTransactionsConfig(appConfig);
-      recordCollectedUsage(
-        {
-          spendTokens: db.spendTokens,
-          spendStructuredTokens: db.spendStructuredTokens,
-          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
-        },
-        {
-          user: userId,
-          conversationId,
-          collectedUsage,
-          context: 'message',
-          messageId: responseId,
-          balance: balanceConfig,
-          transactions: transactionsConfig,
-          model: primaryConfig.model || agent.model_parameters?.model,
-          endpointTokenConfig: primaryConfig.endpointTokenConfig,
-          resolveEndpointTokenConfig,
-        },
-      ).catch((err) => {
-        logger.error('[Responses API] Error recording usage:', getSafeErrorMetadata(err));
-      });
+      execution.track(
+        recordCollectedUsage(
+          {
+            spendTokens: db.spendTokens,
+            spendStructuredTokens: db.spendStructuredTokens,
+            pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+            bulkWriteOps: {
+              insertMany: db.bulkInsertTransactions,
+              updateBalance: db.updateBalance,
+            },
+          },
+          {
+            user: userId,
+            conversationId,
+            collectedUsage,
+            context: 'message',
+            messageId: responseId,
+            balance: balanceConfig,
+            transactions: transactionsConfig,
+            model: primaryConfig.model || agent.model_parameters?.model,
+            endpointTokenConfig: primaryConfig.endpointTokenConfig,
+            resolveEndpointTokenConfig,
+          },
+        ).catch((err) => {
+          logger.error('[Responses API] Error recording usage:', getSafeErrorMetadata(err));
+        }),
+      );
 
       const usage = buildResponsesUsage(collectedUsage);
 
@@ -1202,14 +1228,17 @@ const executeResponse = async (envelope, { req, res }) => {
         }
       }
 
-      // Wait for artifact processing after response ends (non-blocking)
+      // The HTTP response is complete, while destructive cleanup still waits for artifacts.
       if (artifactPromises.length > 0) {
-        Promise.all(artifactPromises).catch((artifactError) => {
-          logger.warn(
-            '[Responses API] Error processing artifacts:',
-            getSafeErrorMetadata(artifactError),
-          );
-        });
+        execution.track(
+          waitForAgentExecutionWrites(artifactPromises).catch((artifactError) => {
+            logger.warn(
+              '[Responses API] Error processing artifacts:',
+              getSafeErrorMetadata(artifactError),
+            );
+          }),
+        );
+        artifactWritesCovered = true;
       }
     } else {
       const aggregatorHandlers = createAggregatorEventHandlers(aggregator);
@@ -1217,8 +1246,6 @@ const executeResponse = async (envelope, { req, res }) => {
       // Collect usage for balance tracking
       const collectedUsage = [];
 
-      /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
-      const artifactPromises = [];
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
       const toolExecuteOptions = {
@@ -1233,7 +1260,7 @@ const executeResponse = async (envelope, { req, res }) => {
             requestBody: mcpRequestBody,
             toolNames,
             agent: ctx.agent ?? agent,
-            signal: abortController.signal,
+            signal: execution.signal,
             toolRegistry: ctx.toolRegistry,
             callerCapabilityProjection,
             backgroundToolNames: ctx.backgroundToolNames,
@@ -1295,7 +1322,7 @@ const executeResponse = async (envelope, { req, res }) => {
         runId: responseId,
         summarizationConfig,
         appConfig,
-        signal: abortController.signal,
+        signal: execution.signal,
         customHandlers: handlers,
         initialSessions,
         requestBody: mcpRequestBody,
@@ -1319,7 +1346,7 @@ const executeResponse = async (envelope, { req, res }) => {
           requestBody: mcpRequestBody,
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
-        signal: abortController.signal,
+        signal: execution.signal,
         streamMode: 'values',
         version: 'v2',
       };
@@ -1335,38 +1362,44 @@ const executeResponse = async (envelope, { req, res }) => {
       // Record token usage against balance
       const balanceConfig = getBalanceConfig(appConfig);
       const transactionsConfig = getTransactionsConfig(appConfig);
-      recordCollectedUsage(
-        {
-          spendTokens: db.spendTokens,
-          spendStructuredTokens: db.spendStructuredTokens,
-          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
-        },
-        {
-          user: userId,
-          conversationId,
-          collectedUsage,
-          context: 'message',
-          messageId: responseId,
-          balance: balanceConfig,
-          transactions: transactionsConfig,
-          model: primaryConfig.model || agent.model_parameters?.model,
-          endpointTokenConfig: primaryConfig.endpointTokenConfig,
-          resolveEndpointTokenConfig,
-        },
-      ).catch((err) => {
-        logger.error('[Responses API] Error recording usage:', getSafeErrorMetadata(err));
-      });
+      execution.track(
+        recordCollectedUsage(
+          {
+            spendTokens: db.spendTokens,
+            spendStructuredTokens: db.spendStructuredTokens,
+            pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+            bulkWriteOps: {
+              insertMany: db.bulkInsertTransactions,
+              updateBalance: db.updateBalance,
+            },
+          },
+          {
+            user: userId,
+            conversationId,
+            collectedUsage,
+            context: 'message',
+            messageId: responseId,
+            balance: balanceConfig,
+            transactions: transactionsConfig,
+            model: primaryConfig.model || agent.model_parameters?.model,
+            endpointTokenConfig: primaryConfig.endpointTokenConfig,
+            resolveEndpointTokenConfig,
+          },
+        ).catch((err) => {
+          logger.error('[Responses API] Error recording usage:', getSafeErrorMetadata(err));
+        }),
+      );
 
       if (artifactPromises.length > 0) {
         try {
-          await Promise.all(artifactPromises);
+          await waitForAgentExecutionWrites(artifactPromises);
         } catch (artifactError) {
           logger.warn(
             '[Responses API] Error processing artifacts:',
             getSafeErrorMetadata(artifactError),
           );
         }
+        artifactWritesCovered = true;
       }
 
       const response = buildAggregatedResponse(
@@ -1407,6 +1440,7 @@ const executeResponse = async (envelope, { req, res }) => {
       );
     }
   } catch (error) {
+    executionError = error;
     logger.error('[Responses API] Error:', getSafeErrorMetadata(error));
     const protectionEnabled = hasModelBoundContentProtection(
       appConfig?.filters,
@@ -1442,6 +1476,23 @@ const executeResponse = async (envelope, { req, res }) => {
       } else {
         sendResponsesErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
       }
+    }
+  } finally {
+    res.off('close', abortOnResponseClose);
+    if (execution) {
+      if (!artifactWritesCovered && artifactPromises.length > 0) {
+        execution.track(
+          waitForAgentExecutionWrites(artifactPromises).catch((artifactError) => {
+            logger.warn(
+              '[Responses API] Error processing artifacts:',
+              getSafeErrorMetadata(artifactError),
+            );
+          }),
+        );
+      }
+      await execution.settle(executionError).catch((error) => {
+        logger.error('[Responses API] Failed to settle execution:', getSafeErrorMetadata(error));
+      });
     }
   }
 };

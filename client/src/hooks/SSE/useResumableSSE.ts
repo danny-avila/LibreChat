@@ -1667,6 +1667,28 @@ export default function useResumableSSE(
         sse.close();
       };
 
+      let foregroundStatusCheckInFlight = false;
+      const reattachOnForeground = () => {
+        logger.log('ResumableSSE', 'Re-attaching stream on foreground');
+        /** Any backoff still pending targets this same attachment, so returning
+         *  to the app supersedes it rather than waiting the delay out; its
+         *  callback finds a superseded subscription and does nothing. */
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
+        closeStream();
+        subscribeToStream(
+          currentStreamId,
+          currentSubmission,
+          true,
+          generationCreatedAt,
+          generationProtocolVersion,
+          lifecycleSignal,
+        );
+      };
+
       /**
        * A suspended page can lose its stream without the transport ever
        * reporting it. When a mobile browser freezes the tab, an intermediary
@@ -1676,15 +1698,16 @@ export default function useResumableSSE(
        * else re-reads the conversation while the pane stays mounted, which is
        * why the response the run finished writing only appears after a reload.
        *
-       * Re-attaching on the way back costs one request and only when this
-       * subscription's transport is already gone with no terminal event and no
-       * recovery of its own in flight. A live job replays what was missed; a
-       * finished one 404s into the durable refetch.
+       * Some mobile WebViews leave the XHR marked OPEN even after the suspended
+       * request stopped delivering events. In that case the durable run status
+       * is the only authority that distinguishes a healthy live attachment from
+       * a terminal one holding stale partial content. A terminal status forces
+       * the same resume path as a closed transport; it returns the synthesized
+       * terminal frame or 404 that reconciles persisted messages.
        */
       const handleForegroundReattach = () => {
         if (
           document.visibilityState !== 'visible' ||
-          sse.readyState !== SSE.CLOSED ||
           finalReceived ||
           subscriptionRetired ||
           replacementHandoffRef.current ||
@@ -1693,23 +1716,52 @@ export default function useResumableSSE(
         ) {
           return;
         }
-        logger.log('ResumableSSE', 'Stream was closed while hidden - re-attaching on foreground');
-        /** Any backoff still pending targets this same attachment, so returning
-         *  to the app supersedes it rather than waiting the delay out; its
-         *  callback finds a superseded subscription and does nothing. */
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = null;
+
+        if (sse.readyState === SSE.CLOSED) {
+          reattachOnForeground();
+          return;
         }
-        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
-        subscribeToStream(
-          currentStreamId,
-          submissionRef.current,
-          true,
-          generationCreatedAt,
-          generationProtocolVersion,
-          lifecycleSignal,
-        );
+
+        if (foregroundStatusCheckInFlight) {
+          return;
+        }
+        foregroundStatusCheckInFlight = true;
+        const foregroundConvoId = currentSubmission.conversation?.conversationId ?? currentStreamId;
+        void fetchStreamStatus(foregroundConvoId)
+          .then((status) => {
+            if (
+              status.active !== false ||
+              (status.createdAt != null &&
+                generationCreatedAt != null &&
+                status.createdAt !== generationCreatedAt) ||
+              !isCurrentSubscription() ||
+              finalReceived ||
+              subscriptionRetired ||
+              replacementHandoffRef.current ||
+              document.visibilityState !== 'visible'
+            ) {
+              return;
+            }
+            logger.log(
+              'ResumableSSE',
+              'Apparently open stream is terminal - reconciling on foreground',
+              { conversationId: foregroundConvoId, generationCreatedAt },
+            );
+            reattachOnForeground();
+          })
+          .catch((error) => {
+            if (!isCurrentSubscription()) {
+              return;
+            }
+            logger.warn('ResumableSSE', 'Could not verify stream on foreground', {
+              conversationId: foregroundConvoId,
+              generationCreatedAt,
+              error,
+            });
+          })
+          .finally(() => {
+            foregroundStatusCheckInFlight = false;
+          });
       };
       stopForegroundReattachRef.current?.();
       document.addEventListener('visibilitychange', handleForegroundReattach);

@@ -1963,6 +1963,29 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {
+      await expect(
+        deleteConvos(
+          'user123',
+          { conversationId: { $in: ['already-absent'] } },
+          { allowEmpty: true },
+        ),
+      ).resolves.toEqual({
+        acknowledged: true,
+        deletedCount: 0,
+        messages: { acknowledged: true, deletedCount: 0 },
+        conversationIds: [],
+      });
+
+      const find = jest.spyOn(Conversation, 'find').mockImplementationOnce(() => {
+        throw new Error('database unavailable');
+      });
+      await expect(deleteConvos('user123', {}, { allowEmpty: true })).rejects.toThrow(
+        'database unavailable',
+      );
+      find.mockRestore();
+    });
+
     it('should decrement tag counts for a deleted bookmarked conversation', async () => {
       await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
       const convoId = uuidv4();
@@ -4655,6 +4678,19 @@ describe('Conversation Operations', () => {
       const discoveredToolNames = ['deferred_lookup', 'deferred_write'];
       const summary = { text: 'Earlier compacted context.', tokenCount: 12 };
       const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base' };
+      const compactionSemanticIndex = {
+        version: 1 as const,
+        entries: [
+          {
+            type: 'activity_phase' as const,
+            sourceMessageId: 'assistant-history',
+            sourceContentIndex: 1,
+            revision: 1,
+            status: 'committed' as const,
+            text: 'Verified the release state',
+          },
+        ],
+      };
       await Conversation.create({
         conversationId,
         user: 'actor-context-user',
@@ -4700,6 +4736,7 @@ describe('Conversation Operations', () => {
         discoveredToolNames,
         summary,
         contextMeta,
+        compactionSemanticIndex,
       });
 
       expect(committed).toMatchObject({
@@ -4712,6 +4749,7 @@ describe('Conversation Operations', () => {
           discoveredToolNames,
           summary,
           contextMeta,
+          compactionSemanticIndex,
         },
       });
       await expect(
@@ -4723,6 +4761,7 @@ describe('Conversation Operations', () => {
           discoveredToolNames,
           summary,
           contextMeta,
+          compactionSemanticIndex,
         },
       });
 
@@ -4777,6 +4816,21 @@ describe('Conversation Operations', () => {
           contextMeta: { calibrationRatio: 9, encoding: 'o200k_base' },
         }),
       ).rejects.toThrow('Event actor context calibration is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-compaction-index',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          compactionSemanticIndex: {
+            version: 1,
+            entries: [{ ...compactionSemanticIndex.entries[0], sourceContentIndex: -1 }],
+          },
+        }),
+      ).rejects.toThrow('Event actor compaction semantic index is invalid');
     });
 
     it('retains exact legacy settled receipts until delivery-ledger migration', async () => {

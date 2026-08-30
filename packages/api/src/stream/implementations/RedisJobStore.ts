@@ -2713,6 +2713,10 @@ export class RedisJobStore implements IJobStoreV2 {
     }
   }
 
+  async hasIdempotencyKey(key: string): Promise<boolean> {
+    return (await this.redis.exists(KEYS.idempotency(key))) === 1;
+  }
+
   async takeoverIdempotencyKey(
     key: string,
     expected: IdempotencyClaimValue,
@@ -4912,6 +4916,9 @@ export class RedisJobStore implements IJobStoreV2 {
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       activityPhaseSnapshot: data.activityPhaseSnapshot
         ? JSON.parse(data.activityPhaseSnapshot)
+        : undefined,
+      compactionSemanticIndex: data.compactionSemanticIndex
+        ? JSON.parse(data.compactionSemanticIndex)
         : undefined,
       /** The owning replica's seal capability. `serializeJob` writes every
        *  boolean generically, but this mapper is explicit — omitting it here

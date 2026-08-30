@@ -145,6 +145,8 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     capabilityLeaseBy: { type: String },
     capabilityLeaseUntil: { type: Date },
     capabilityClaimToken: { type: String },
+    /** Private process-owner heartbeat; never projected to legacy consumers. */
+    producerLeaseUntil: { type: Date, select: false },
     attempts: { type: Number, required: true, default: 0, min: 0 },
     availableAt: { type: Date, required: true },
     envelopeBytes: { type: Number, min: 0 },

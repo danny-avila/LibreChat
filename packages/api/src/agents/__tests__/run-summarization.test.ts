@@ -6,9 +6,9 @@ import {
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
 } from 'librechat-data-provider';
+import type { CompactionSemanticIndex, SubagentTaskConfig } from '@librechat/agents';
 import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
-import type { SubagentTaskConfig } from '@librechat/agents';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import { createRun, isAskUserQuestionAdminDisabled } from '~/agents/run';
@@ -182,6 +182,7 @@ async function callAndCapture(
     appConfig?: AppConfig;
     messages?: BaseMessage[];
     discoveredToolNames?: string[];
+    compactionSemanticIndex?: CompactionSemanticIndex;
     subagentTasks?: SubagentTaskConfig;
     modelCallbacks?: readonly ModelBoundChatModelCallback[];
   } = {},
@@ -197,6 +198,7 @@ async function callAndCapture(
     appConfig: opts.appConfig,
     messages: opts.messages,
     discoveredToolNames: opts.discoveredToolNames,
+    compactionSemanticIndex: opts.compactionSemanticIndex,
     subagentTasks: opts.subagentTasks,
     modelCallbacks: opts.modelCallbacks,
     streaming: true,
@@ -258,6 +260,57 @@ beforeEach(() => {
   delete process.env.LANGFUSE_TRACING_ENABLED;
   delete process.env.LANGFUSE_SAMPLE_RATE;
   process.env.TENANT_ISOLATION_STRICT = 'true';
+});
+
+describe('compaction semantic index forwarding', () => {
+  it('forwards one host-derived snapshot to every top-level agent input', async () => {
+    const compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'message-1',
+        sourceContentIndex: 3,
+        revision: 2,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ] satisfies CompactionSemanticIndex;
+
+    const agents = await callAndCapture({
+      agents: [makeAgent({ id: 'agent_1' }), makeAgent({ id: 'agent_2' })],
+      compactionSemanticIndex,
+    });
+
+    expect(agents).toHaveLength(2);
+    expect(agents[0].compactionSemanticIndex).toBe(compactionSemanticIndex);
+    expect(agents[1].compactionSemanticIndex).toBe(compactionSemanticIndex);
+  });
+
+  it('does not leak the parent history index into an isolated subagent', async () => {
+    const compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'message-1',
+        sourceContentIndex: 3,
+        revision: 2,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ] satisfies CompactionSemanticIndex;
+    const child = makeAgent({ id: 'agent_child' });
+    const [root] = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+      compactionSemanticIndex,
+    });
+    const [childConfig] = root.subagentConfigs as Array<Record<string, unknown>>;
+
+    expect(root.compactionSemanticIndex).toBe(compactionSemanticIndex);
+    expect(childConfig.agentInputs).not.toHaveProperty('compactionSemanticIndex');
+  });
 });
 
 afterAll(() => {

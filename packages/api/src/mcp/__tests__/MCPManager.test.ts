@@ -2576,6 +2576,11 @@ describe('MCPManager', () => {
     } as unknown as MCPConnection;
 
     const mockOboTokenResolver = jest.fn();
+    const mockUpstreamTokenProvider = jest.fn().mockResolvedValue({
+      access_token: 'live-access-token',
+      id_token: 'live-id-token',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    });
 
     const serverConfig: t.SSEOptions & { obo: { scopes: string } } = {
       type: 'sse',
@@ -2590,6 +2595,7 @@ describe('MCPManager', () => {
 
     beforeEach(() => {
       mockResolveOboToken.mockReset();
+      mockUpstreamTokenProvider.mockClear();
     });
 
     it('should bypass shared app connections for OBO servers and use a user-scoped connection', async () => {
@@ -2645,6 +2651,7 @@ describe('MCPManager', () => {
           typeof manager.callTool
         >[0]['flowManager'],
         oboTokenResolver: mockOboTokenResolver,
+        upstreamTokenProvider: mockUpstreamTokenProvider,
       });
 
       expect(appConnections.get).not.toHaveBeenCalled();
@@ -2695,12 +2702,15 @@ describe('MCPManager', () => {
           typeof manager.callTool
         >[0]['flowManager'],
         oboTokenResolver: mockOboTokenResolver,
+        upstreamTokenProvider: mockUpstreamTokenProvider,
       });
 
       expect(mockResolveOboToken).toHaveBeenCalledWith(
         mockUser,
         serverConfig.obo,
         mockOboTokenResolver,
+        mockUpstreamTokenProvider,
+        undefined,
       );
       expect(appConnections.get).not.toHaveBeenCalled();
       expect(getUserConnectionSpy).toHaveBeenCalled();
@@ -2744,6 +2754,7 @@ describe('MCPManager', () => {
             typeof manager.callTool
           >[0]['flowManager'],
           oboTokenResolver: mockOboTokenResolver,
+          upstreamTokenProvider: mockUpstreamTokenProvider,
         }),
       ).rejects.toMatchObject({
         message: expect.stringContaining('Temporary OBO token exchange failure.'),
@@ -2790,6 +2801,7 @@ describe('MCPManager', () => {
             typeof manager.callTool
           >[0]['flowManager'],
           oboTokenResolver: mockOboTokenResolver,
+          upstreamTokenProvider: mockUpstreamTokenProvider,
         }),
       ).rejects.toMatchObject({
         message: expect.stringContaining('verify the configured OBO scopes'),
@@ -2799,6 +2811,35 @@ describe('MCPManager', () => {
       expect(getUserConnectionSpy).toHaveBeenCalled();
       expect(mockConnection.setRequestHeaders).not.toHaveBeenCalled();
       expect(mockConnection.client.request).not.toHaveBeenCalled();
+    });
+
+    it('should fail with an internal error when upstreamTokenProvider is omitted on an OBO call', async () => {
+      const appConnections = {
+        get: jest.fn().mockResolvedValue(mockConnection),
+      };
+
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+
+      await expect(
+        manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          oboTokenResolver: mockOboTokenResolver,
+          /** upstreamTokenProvider intentionally omitted */
+        }),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining('upstreamTokenProvider not plumbed'),
+      });
+      expect(mockResolveOboToken).not.toHaveBeenCalled();
     });
   });
 
@@ -2914,6 +2955,110 @@ describe('MCPManager', () => {
       expect(result.oauthRequired).toBe(false);
       expect(result.oauthUrl).toBeNull();
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
+    });
+
+    it('gives a budgeted caller an abort signal for the app-connection probe and snapshot', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      const deadlineMs = Date.now() + 3000;
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName, deadlineMs });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(mockConnection.isConnected).toHaveBeenCalledWith(expect.any(AbortSignal));
+      expect(mockConnection.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(
+        deadlineMs,
+        expect.any(AbortSignal),
+      );
+    });
+
+    it('lets the caller signal cancel app-connection work even without a deadline', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      const controller = new AbortController();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(mockConnection.isConnected).toHaveBeenCalledWith(controller.signal);
+      expect(mockConnection.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(
+        undefined,
+        controller.signal,
+      );
+    });
+
+    it('does not start discovery fallback for a caller whose signal already aborted', async () => {
+      const isConnected = jest.fn().mockResolvedValue(false);
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue({ ...mockConnection, isConnected }),
+      });
+      const controller = new AbortController();
+      controller.abort();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(result.tools).toBeNull();
+      expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
+    });
+
+    it('forwards the caller signal into non-OAuth fallback discovery', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+      const controller = new AbortController();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('does not reuse an app connection for a tenant-scoped config override', async () => {
+      const configOverride = {
+        type: 'streamable-http' as const,
+        url: 'https://tenant.example.com/mcp',
+        source: 'config' as const,
+      };
+      const appConnections = { get: jest.fn().mockResolvedValue(mockConnection) };
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(configOverride);
+      (mockRegistryInstance.isAppServerConfig as jest.Mock).mockResolvedValue(false);
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({
+        serverName,
+        user: { id: 'tenant-user' } as IUser,
+        configServers: { [serverName]: configOverride },
+      });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(serverName, 'tenant-user', {
+        [serverName]: configOverride,
+      });
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({ serverConfig: configOverride }),
+        expect.objectContaining({ user: expect.objectContaining({ id: 'tenant-user' }) }),
+      );
     });
 
     it('should use MCPConnectionFactory.discoverTools when no app connection available', async () => {
@@ -3140,6 +3285,15 @@ describe('MCPManager', () => {
       refreshToolList: jest.fn().mockResolvedValue(undefined),
       on: jest.fn(),
     } as unknown as MCPConnection;
+    const newUserConnection = () =>
+      ({
+        isConnected: jest.fn().mockResolvedValue(true),
+        isStale: jest.fn().mockReturnValue(false),
+        refreshToolList: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn(),
+        removeAllListeners: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      }) as unknown as MCPConnection;
 
     it('should pass useOAuth for servers with configured oauth and no requiresOAuth value', async () => {
       mockAppConnections({
@@ -3263,14 +3417,8 @@ describe('MCPManager', () => {
     it.each([false, true])(
       'cancels and disposes a pending connection during mutation teardown (forceNew=%s)',
       async (forceNew) => {
-        const pendingConnection = {
-          isConnected: jest.fn().mockResolvedValue(true),
-          isStale: jest.fn().mockReturnValue(false),
-          refreshToolList: jest.fn().mockResolvedValue(undefined),
-          on: jest.fn(),
-          removeAllListeners: jest.fn(),
-          dispose: jest.fn().mockResolvedValue(undefined),
-        } as unknown as MCPConnection;
+        const pendingConnection = newUserConnection();
+        const neverReached = newUserConnection();
         let resolveConnection: ((connection: MCPConnection) => void) | undefined;
         const factoryResult = new Promise<MCPConnection>((resolve) => {
           resolveConnection = resolve;
@@ -3282,7 +3430,9 @@ describe('MCPManager', () => {
           source: 'user',
           dbId: 'server-1',
         });
-        (MCPConnectionFactory.create as jest.Mock).mockReturnValue(factoryResult);
+        (MCPConnectionFactory.create as jest.Mock)
+          .mockReturnValueOnce(factoryResult)
+          .mockResolvedValue(neverReached);
 
         const manager = await MCPManager.createInstance(newMCPServersConfig());
         const creation = manager.getUserConnection({ serverName, user: mockUser, forceNew });
@@ -3297,21 +3447,277 @@ describe('MCPManager', () => {
         expect(pendingConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
         expect(pendingConnection.dispose).toHaveBeenCalledTimes(1);
         expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+        /** A committed mutation invalidates what the caller resolved, so nothing re-establishes. */
+        expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
       },
     );
 
+    it('resolves both callers when a forced replacement races a plain creation', async () => {
+      const original = newUserConnection();
+      const replacement = newUserConnection();
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(original);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({ serverName, user: mockUser });
+
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(replacement);
+      const results = await Promise.allSettled([
+        manager.getUserConnection({ serverName, user: mockUser, forceNew: true }),
+        manager.getUserConnection({ serverName, user: mockUser }),
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+      expect(manager.getUserConnections(userId)?.get(serverName)).toBe(replacement);
+      expect(original.dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('tears down idle users with a lifecycle teardown', async () => {
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(newUserConnection());
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({ serverName, user: mockUser });
+      const internals = manager as unknown as {
+        userLastActivity: Map<string, number>;
+        checkIdleConnections(currentUserId?: string): void;
+      };
+      internals.userLastActivity.set(userId, 0);
+      const disconnectSpy = jest
+        .spyOn(manager, 'disconnectUserConnections')
+        .mockResolvedValue(undefined);
+
+      internals.checkIdleConnections();
+
+      expect(disconnectSpy).toHaveBeenCalledWith(userId, { reason: 'lifecycle' });
+      disconnectSpy.mockRestore();
+    });
+
+    it('re-establishes a creation cancelled by a user-wide lifecycle teardown', async () => {
+      const cancelledConnection = newUserConnection();
+      const reestablishedConnection = newUserConnection();
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockReturnValueOnce(factoryResult)
+        .mockResolvedValue(reestablishedConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const creation = manager.getUserConnection({ serverName, user: mockUser });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      await manager.disconnectUserConnections(userId, { reason: 'lifecycle' });
+      resolveConnection?.(cancelledConnection);
+
+      await expect(creation).resolves.toBe(reestablishedConnection);
+      expect(cancelledConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(manager.getUserConnections(userId)?.get(serverName)).toBe(reestablishedConnection);
+    });
+    it('fails a caller-resolved creation fenced by a credential mutation', async () => {
+      const fencedConnection = newUserConnection();
+      const neverReached = newUserConnection();
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      };
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockReturnValueOnce(factoryResult)
+        .mockResolvedValue(neverReached);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      /** Callers resolve the config and credentials per request and hand them in; a mutation
+       *  teardown invalidates both, and only the caller can resolve them again. */
+      const creation = manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        serverConfig,
+        customUserVars: { API_KEY: 'revoked-key' },
+      });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      await manager.disconnectUserConnection(userId, serverName);
+      resolveConnection?.(fencedConnection);
+
+      await expect(creation).rejects.toThrow('Connection creation was cancelled during teardown');
+      expect(fencedConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+    });
+
+    it('keeps the activity timestamp for a connection installed during a user-wide teardown', async () => {
+      const otherServer = 'other_server';
+      const installedConnection = newUserConnection();
+      let resolveDispose: (() => void) | undefined;
+      (installedConnection.dispose as jest.Mock).mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveDispose = () => resolve();
+        }),
+      );
+      const fencedConnection = newUserConnection();
+      const reestablishedConnection = newUserConnection();
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockResolvedValueOnce(installedConnection)
+        .mockReturnValueOnce(factoryResult)
+        .mockResolvedValue(reestablishedConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({ serverName, user: mockUser });
+      const creation = manager.getUserConnection({ serverName: otherServer, user: mockUser });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length < 2) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      /** The sweep is still disposing the first connection when the fenced one re-establishes. */
+      const teardown = manager.disconnectUserConnections(userId, { reason: 'lifecycle' });
+      resolveConnection?.(fencedConnection);
+      await expect(creation).resolves.toBe(reestablishedConnection);
+      resolveDispose?.();
+      await teardown;
+
+      const internals = manager as unknown as { userLastActivity: Map<string, number> };
+      expect(manager.getUserConnections(userId)?.get(otherServer)).toBe(reestablishedConnection);
+      expect(internals.userLastActivity.has(userId)).toBe(true);
+    });
+
+    it('does not re-establish a lifecycle-fenced creation whose caller aborted', async () => {
+      const fencedConnection = newUserConnection();
+      const neverReached = newUserConnection();
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockReturnValueOnce(factoryResult)
+        .mockResolvedValue(neverReached);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const controller = new AbortController();
+      const creation = manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        signal: controller.signal,
+      });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      controller.abort();
+      await manager.disconnectUserConnection(userId, serverName, { reason: 'lifecycle' });
+      resolveConnection?.(fencedConnection);
+
+      await expect(creation).rejects.toThrow('Connection creation was cancelled during teardown');
+      expect(fencedConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+    });
+
+    it('cancels pending tool publications before it starts disposing', async () => {
+      const connection = newUserConnection();
+      const cancelSpy = jest.spyOn(toolsChanged, 'cancelMCPToolsChanged');
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser });
+        cancelSpy.mockClear();
+
+        await manager.disconnectUserConnection(userId, serverName);
+
+        /** A creation re-established while disposal is still awaited publishes its own catalog;
+         *  a cancellation issued after that point would drop the replacement's pending change. */
+        expect(cancelSpy).toHaveBeenCalledWith({ userId, serverName });
+        expect(cancelSpy.mock.invocationCallOrder[0]).toBeLessThan(
+          (connection.dispose as jest.Mock).mock.invocationCallOrder[0],
+        );
+      } finally {
+        cancelSpy.mockRestore();
+      }
+    });
+
+    it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      (MCPConnectionFactory.create as jest.Mock).mockReset();
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(async () => {
+        const connection = newUserConnection();
+        await manager.disconnectUserConnection(userId, serverName, { reason: 'lifecycle' });
+        return connection;
+      });
+
+      await expect(manager.getUserConnection({ serverName, user: mockUser })).rejects.toThrow(
+        'Connection creation was cancelled during teardown',
+      );
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(4);
+      expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+    });
+
     it('disposes the tracked durable connection before a forced replacement', async () => {
-      const createConnection = () =>
-        ({
-          isConnected: jest.fn().mockResolvedValue(true),
-          isStale: jest.fn().mockReturnValue(false),
-          refreshToolList: jest.fn().mockResolvedValue(undefined),
-          on: jest.fn(),
-          removeAllListeners: jest.fn(),
-          dispose: jest.fn().mockResolvedValue(undefined),
-        }) as unknown as MCPConnection;
-      const previousConnection = createConnection();
-      const replacementConnection = createConnection();
+      const previousConnection = newUserConnection();
+      const replacementConnection = newUserConnection();
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
         type: 'streamable-http',
@@ -3341,18 +3747,9 @@ describe('MCPManager', () => {
     });
 
     it('serializes an ordinary load with multiple queued forced replacements', async () => {
-      const createConnection = () =>
-        ({
-          isConnected: jest.fn().mockResolvedValue(true),
-          isStale: jest.fn().mockReturnValue(false),
-          refreshToolList: jest.fn().mockResolvedValue(undefined),
-          on: jest.fn(),
-          removeAllListeners: jest.fn(),
-          dispose: jest.fn().mockResolvedValue(undefined),
-        }) as unknown as MCPConnection;
-      const initial = createConnection();
-      const firstReplacement = createConnection();
-      const secondReplacement = createConnection();
+      const initial = newUserConnection();
+      const firstReplacement = newUserConnection();
+      const secondReplacement = newUserConnection();
       let resolveFirst: ((connection: MCPConnection) => void) | undefined;
       let resolveSecond: ((connection: MCPConnection) => void) | undefined;
       const firstFactoryResult = new Promise<MCPConnection>((resolve) => {

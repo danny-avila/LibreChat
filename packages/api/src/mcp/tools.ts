@@ -83,6 +83,35 @@ export interface MCPToolCacheService {
   ) => Promise<LCAvailableTools | null>;
 }
 
+/** Converts an MCP tools/list response into LibreChat's server-qualified catalog format. */
+export function formatMCPServerTools(serverName: string, tools: MCPToolInput[]): LCAvailableTools {
+  const serverTools: LCAvailableTools = {};
+  const keyServerName = normalizeServerName(serverName);
+  const keyToolNames = stripServerNamePrefixes(
+    tools.map((tool) => tool.name),
+    keyServerName,
+  );
+  for (const tool of tools) {
+    const keyToolName = keyToolNames.get(tool.name) ?? tool.name;
+    const name = `${keyToolName}${Constants.mcp_delimiter}${keyServerName}`;
+    const entry: LCFunctionTool = {
+      type: 'function',
+      ['function']: {
+        name,
+        description: tool.description ?? '',
+        parameters: tool.inputSchema
+          ? (normalizeJsonSchema(resolveJsonSchemaRefs(tool.inputSchema)) as JsonSchemaType)
+          : ({ type: 'object', properties: {} } as JsonSchemaType),
+      },
+    };
+    if (keyToolName !== tool.name) {
+      entry.serverToolName = tool.name;
+    }
+    serverTools[name] = entry;
+  }
+  return serverTools;
+}
+
 interface AppServerBoundary {
   serverName: string;
   suffix: string;
@@ -222,42 +251,12 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     const { userId, serverName, tools, serverConfig, publicationGeneration, publicationRevision } =
       params;
     try {
-      const serverTools: LCAvailableTools = {};
-      const mcpDelimiter = Constants.mcp_delimiter;
-
       if (tools == null) {
         logger.debug('[MCP Cache] No tools to update');
-        return serverTools;
+        return {};
       }
-
-      /** Cache keys are MODEL-FACING: they become builder tool ids, agent.tools
-       *  entries, tool_options keys, and definition names, and must equal the
-       *  runtime instance name (`createToolInstance` in MCP.js), which embeds
-       *  `normalizeServerName(serverName)`. The cache STORE itself stays keyed
-       *  by the raw config name. */
-      const keyServerName = normalizeServerName(serverName);
-      const keyToolNames = stripServerNamePrefixes(
-        tools.map((tool) => tool.name),
-        keyServerName,
-      );
-      for (const tool of tools) {
-        const keyToolName = keyToolNames.get(tool.name) ?? tool.name;
-        const name = `${keyToolName}${mcpDelimiter}${keyServerName}`;
-        const entry: LCFunctionTool = {
-          type: 'function',
-          ['function']: {
-            name,
-            description: tool.description ?? '',
-            parameters: tool.inputSchema
-              ? (normalizeJsonSchema(resolveJsonSchemaRefs(tool.inputSchema)) as JsonSchemaType)
-              : ({ type: 'object', properties: {} } as JsonSchemaType),
-          },
-        };
-        if (keyToolName !== tool.name) {
-          entry.serverToolName = tool.name;
-        }
-        serverTools[name] = entry;
-      }
+      /** Cache keys are model-facing and must match runtime tool instance names. */
+      const serverTools = formatMCPServerTools(serverName, tools);
 
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
       const configGeneration = resolvedConfig

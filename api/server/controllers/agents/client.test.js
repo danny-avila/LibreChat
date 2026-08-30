@@ -16,6 +16,9 @@ const mockFormatAgentMessages = jest.fn(() => ({
   summary: undefined,
   boundaryTokenAdjustment: undefined,
 }));
+const mockStripActivityLabelParts = jest.fn((payload) =>
+  jest.requireActual('@librechat/api').stripActivityLabelParts(payload),
+);
 
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
@@ -82,10 +85,24 @@ jest.mock('@librechat/api', () => ({
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
   getAgentCheckpointer: mockGetAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint: (...args) => mockHasDurableAgentInterruptCheckpoint(...args),
+  stripActivityLabelParts: (...args) => mockStripActivityLabelParts(...args),
 }));
 
 describe('AgentClient - event actor history adapter', () => {
   const fingerprint = { algorithm: 'sha256', version: 1, digest: 'context' };
+  const compactionSemanticIndex = {
+    version: 1,
+    entries: [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-history',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ],
+  };
 
   it('loads no durable history after compatibility selected a warm continuation', async () => {
     const loadHistory = jest.spyOn(BaseClient.prototype, 'loadHistory');
@@ -129,6 +146,7 @@ describe('AgentClient - event actor history adapter', () => {
       discoveredToolNames: ['deferred_tool'],
       summary: { text: 'Earlier compacted context.', tokenCount: 12 },
       contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex,
     });
 
     await expect(
@@ -138,6 +156,7 @@ describe('AgentClient - event actor history adapter', () => {
         discoveredToolNames: ['deferred_tool'],
         summary: { text: 'Earlier compacted context.', tokenCount: 12 },
         contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+        compactionSemanticIndex,
       }),
     ).resolves.toMatchObject({
       fingerprint,
@@ -145,6 +164,7 @@ describe('AgentClient - event actor history adapter', () => {
       discoveredToolNames: ['deferred_tool'],
       summary: { text: 'Earlier compacted context.', tokenCount: 12 },
       contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex,
       checkpointMessageOverlay: {
         source: 'skill',
         messages: [
@@ -167,6 +187,7 @@ describe('AgentClient - event actor history adapter', () => {
       tokenCount: 12,
     });
     expect(client.contextMeta).toEqual({ calibrationRatio: 1.25, encoding: 'o200k_base' });
+    expect(client.compactionSemanticIndex).toEqual(compactionSemanticIndex.entries);
   });
 
   it('falls back when a durable Skill resolves to a different revision', async () => {
@@ -280,12 +301,14 @@ describe('AgentClient - event actor history adapter', () => {
       },
     ];
     client.contextMeta = { calibrationRatio: 1.3, encoding: 'o200k_base' };
+    client.compactionSemanticIndex = compactionSemanticIndex.entries;
     client.getEventActorAgents = jest.fn(() => []);
     client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
 
     await expect(client.getEventActorContext()).resolves.toMatchObject({
       summary: { text: 'Fresh compacted context.', tokenCount: 18 },
       contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+      compactionSemanticIndex,
     });
   });
 
@@ -851,6 +874,16 @@ describe('AgentClient - interrupt discovery persistence', () => {
     client.conversationId = streamId;
     client.responseMessageId = 'response-discovered-pause';
     client.jobCreatedAt = job.createdAt;
+    client.compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-before-pause',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Prepared the change',
+      },
+    ];
 
     await client.handleRunInterrupt(
       {
@@ -871,6 +904,10 @@ describe('AgentClient - interrupt discovery persistence', () => {
     const paused = await GenerationJobManager.getJob(streamId);
     expect(paused?.status).toBe('requires_action');
     expect(paused?.metadata.discoveredTools).toEqual(['save_issue_mcp_linear']);
+    expect(paused?.metadata.compactionSemanticIndex).toEqual({
+      version: 1,
+      entries: client.compactionSemanticIndex,
+    });
   });
 
   it('caps an event-bound pause at the inherited binding deadline', async () => {
@@ -1713,6 +1750,186 @@ describe('AgentClient - startup telemetry', () => {
     expect(processStream.mock.calls[0][1]).not.toHaveProperty('callbacks');
   });
 
+  it('derives and forwards compaction guidance without stripping activity labels', async () => {
+    jest.clearAllMocks();
+    mockIsHITLEnabled.mockReturnValue(false);
+    const compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-history',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ];
+    const payload = [
+      {
+        messageId: 'assistant-history',
+        content: [
+          { type: ContentTypes.TEXT, text: 'Details' },
+          {
+            type: ContentTypes.ACTIVITY_LABEL,
+            activity_label: 'Verified the release state',
+            activity_label_type: 'phase',
+          },
+        ],
+      },
+    ];
+    mockFormatAgentMessages.mockReturnValueOnce({
+      messages: [],
+      indexTokenCountMap: {},
+      summary: undefined,
+      boundaryTokenAdjustment: undefined,
+      compactionSemanticIndex,
+    });
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'semantic-index-conversation',
+      },
+      res: {},
+      agent: {
+        id: 'agent-primary',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+        semanticIntentToolNames: ['web_search'],
+        semanticIntentBlockedToolNames: ['create_record'],
+      },
+      agentConfigs: new Map([
+        [
+          'agent-secondary',
+          {
+            id: 'agent-secondary',
+            endpoint: EModelEndpoint.openAI,
+            provider: EModelEndpoint.openAI,
+            model_parameters: { model: 'gpt-4' },
+            semanticIntentToolNames: ['read_file', 'create_record'],
+          },
+        ],
+      ]),
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'semantic-index-conversation';
+    client.responseMessageId = 'semantic-index-response';
+    client.parentMessageId = 'semantic-index-parent';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload });
+
+    expect(mockFormatAgentMessages).toHaveBeenCalledTimes(1);
+    const [formattedPayload, , , , formatOptions] = mockFormatAgentMessages.mock.calls[0];
+    expect(formattedPayload).toBe(payload);
+    expect(formattedPayload[0].content).toContainEqual(
+      expect.objectContaining({ type: ContentTypes.ACTIVITY_LABEL }),
+    );
+    expect(mockStripActivityLabelParts).not.toHaveBeenCalled();
+    expect(formatOptions.compactionSemanticIndex.intentToolNames).toEqual(
+      new Set(['web_search', 'read_file']),
+    );
+    expect(mockCreateRun).toHaveBeenCalledWith(
+      expect.objectContaining({ compactionSemanticIndex }),
+    );
+    expect(processStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves provider messages while deriving the full semantic index', () => {
+    const { formatAgentMessages } = jest.requireActual('@librechat/agents');
+    const { stripActivityLabelParts } = jest.requireActual('@librechat/api');
+    const payload = [
+      {
+        role: 'assistant',
+        messageId: 'semantic-history',
+        content: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              id: 'search-1',
+              name: 'search_docs',
+              args: JSON.stringify({ intent: 'Locate the cache implementation', query: 'cache' }),
+              output: 'Found the implementation.',
+              outcome: 'Located the cache implementation',
+            },
+          },
+          {
+            type: ContentTypes.THINK,
+            think: 'Private reasoning stays out of compaction guidance.',
+            reasoning_label: 'Checking cache ownership',
+            reasoning_label_step_id: 'reasoning-1',
+            reasoning_label_revision: 2,
+            reasoning_label_status: 'complete',
+          },
+          {
+            type: ContentTypes.ACTIVITY_LABEL,
+            activity_label: 'Mapped the cache request path',
+            activity_label_type: 'phase',
+            activity_start_index: 0,
+            pending: false,
+          },
+          { type: ContentTypes.TEXT, text: 'The cache is initialized in the request adapter.' },
+        ],
+      },
+    ];
+
+    const legacyProjection = formatAgentMessages(
+      stripActivityLabelParts(payload),
+      undefined,
+      undefined,
+      undefined,
+      { preserveReasoningContent: true },
+    );
+    const baseline = formatAgentMessages(payload, undefined, undefined, undefined, {
+      preserveReasoningContent: true,
+    });
+    const derived = formatAgentMessages(payload, undefined, undefined, undefined, {
+      preserveReasoningContent: true,
+      compactionSemanticIndex: { intentToolNames: new Set(['search_docs']) },
+    });
+
+    expect(derived.messages.map((message) => message.toDict())).toEqual(
+      baseline.messages.map((message) => message.toDict()),
+    );
+    const providerShape = (messages) =>
+      messages.map((message) => {
+        const serialized = message.toDict();
+        const {
+          sourceMessageId: _sourceMessageId,
+          sourceMessageIds: _sourceMessageIds,
+          provenance: _provenance,
+          ...additional_kwargs
+        } = serialized.data.additional_kwargs;
+        const { response_metadata: _responseMetadata, ...data } = serialized.data;
+        return { ...serialized, data: { ...data, additional_kwargs } };
+      });
+    expect(providerShape(derived.messages)).toEqual(providerShape(legacyProjection.messages));
+    expect(derived.compactionSemanticIndex).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'tool_intent', text: 'Locate the cache implementation' }),
+        expect.objectContaining({
+          type: 'tool_outcome',
+          text: 'Located the cache implementation',
+        }),
+        expect.objectContaining({ type: 'reasoning_label', text: 'Checking cache ownership' }),
+        expect.objectContaining({ type: 'activity_phase', text: 'Mapped the cache request path' }),
+      ]),
+    );
+  });
+
   it('propagates final model callback policy errors instead of persisting a generic error part', async () => {
     jest.clearAllMocks();
     let policyError;
@@ -1830,6 +2047,16 @@ describe('AgentClient - startup telemetry', () => {
     client.eventActorDiscoveredToolNames = ['deferred_tool'];
     client.eventActorSummary = { text: 'summary of earlier turns', tokenCount: 40 };
     client.contextMeta = { calibrationRatio: 1.25, encoding: client.getEncoding() };
+    client.compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-history',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ];
     client.recordCollectedUsage = jest.fn().mockResolvedValue();
 
     await client.chatCompletion({ payload: [] });
@@ -1847,8 +2074,12 @@ describe('AgentClient - startup telemetry', () => {
         indexTokenCountMap: {},
         initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
         calibrationRatio: 1.25,
+        compactionSemanticIndex: client.compactionSemanticIndex,
       }),
     );
+    expect(mockFormatAgentMessages.mock.calls[0][4]).toBeUndefined();
+    expect(mockFormatAgentMessages).toHaveBeenCalledTimes(1);
+    expect(mockStripActivityLabelParts).toHaveBeenCalledTimes(1);
     expect(processStream).toHaveBeenCalledWith(
       { messages: [currentEvent] },
       expect.objectContaining({
@@ -6702,12 +6933,29 @@ describe('AgentClient - resumeCompletion content protection', () => {
       },
     });
 
-    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+    const compactionSemanticIndex = {
+      version: 1,
+      entries: [
+        {
+          type: 'activity_phase',
+          sourceMessageId: 'assistant-history',
+          sourceContentIndex: 1,
+          revision: 1,
+          status: 'committed',
+          text: 'Verified the release state',
+        },
+      ],
+    };
+    await AgentClient.prototype.resumeCompletion.call(context, {
+      resumeValue: {},
+      compactionSemanticIndex,
+    });
 
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
     expect(mockCreateRun.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         modelCallbacks: [expect.objectContaining({ name: 'librechat-model-bound-content-filter' })],
+        compactionSemanticIndex: compactionSemanticIndex.entries,
       }),
     );
     expect(resume).toHaveBeenCalledTimes(1);
