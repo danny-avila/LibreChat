@@ -26,4 +26,4 @@ export const codeEnvRefSchema: Schema = new Schema(
  * bracket access to `.get()`. Values are produced through the typed
  * CodeEnvRef write paths and the singular compatibility field remains fully
  * schema-validated. */
-export const codeEnvRefMapSchema = Schema.Types.Mixed;
+export const codeEnvRefMapSchema: typeof Schema.Types.Mixed = Schema.Types.Mixed;
