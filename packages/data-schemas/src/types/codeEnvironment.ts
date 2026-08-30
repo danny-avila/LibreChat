@@ -7,6 +7,7 @@ export type CodeEnvironment = {
   baseURL: string;
   controlPlaneId: string;
   createdBy: Types.ObjectId;
+  ownerSlot?: number;
   workerId?: string;
   controlPlaneId?: string;
   revocationTokenEnv?: string;

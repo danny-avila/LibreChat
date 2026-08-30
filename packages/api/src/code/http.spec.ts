@@ -1,6 +1,6 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { CodeEnvironmentValidationError } from './environments';
+import { CodeEnvironmentLimitError, CodeEnvironmentValidationError } from './environments';
 import { createCodeEnvironmentHttpHandlers } from './http';
 
 function response() {
@@ -119,6 +119,7 @@ describe('code environment HTTP handlers', () => {
         role: 'USER',
         idOnTheSource: null,
       },
+      maxOwned: 5,
       environment: {
         id: 'code-generated',
         name: 'Personal VM',
@@ -138,6 +139,70 @@ describe('code environment HTTP handlers', () => {
         endpoint: 'https://code.librechat.example/v1',
       }),
     });
+  });
+
+  test('revokes an upstream pairing when the atomic owner quota is exhausted', async () => {
+    const fetchImpl = jest.fn(async (url: string) => ({
+      ok: true,
+      json: async () =>
+        url.endsWith('/bridge/pairings')
+          ? {
+              protocolVersion: 1,
+              workerId: 'code-generated',
+              code: 'a'.repeat(32),
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            }
+          : { protocolVersion: 1, revoked: true },
+    }));
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example/v1',
+                  owner: 'deployment',
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_ADMIN_TOKEN',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: {
+        register: jest.fn().mockRejectedValue(new CodeEnvironmentLimitError()),
+        listAccessible: jest.fn(),
+        remove: jest.fn(),
+      },
+      createEnvironmentId: () => 'code-generated',
+      readSecret: () => 'administrator-token',
+      principalAuthEnabled: () => true,
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Personal code environment limit reached' });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.librechat.example/v1/bridge/workers/code-generated/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   test('rejects self-service pairing without principal-aware Code API auth', async () => {

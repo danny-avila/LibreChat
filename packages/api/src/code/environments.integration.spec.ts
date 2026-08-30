@@ -150,6 +150,63 @@ describe('code environment registry', () => {
     ]);
   });
 
+  test('computes delete permissions for an environment list in one batch', async () => {
+    const batchSpy = jest.spyOn(AccessControlService.prototype, 'getResourcePermissionsMap');
+    const singleSpy = jest.spyOn(AccessControlService.prototype, 'checkPermission');
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const ownerId = new Types.ObjectId();
+    for (const id of ['batch-one', 'batch-two']) {
+      await registry.register({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environment: {
+          id,
+          name: id,
+          type: 'attached',
+          baseURL: 'https://code.example.com',
+        },
+      });
+    }
+
+    await expect(
+      registry.listAccessible({ userId: ownerId, role: 'USER', idOnTheSource: null }),
+    ).resolves.toHaveLength(2);
+    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(singleSpy).not.toHaveBeenCalled();
+
+    batchSpy.mockRestore();
+    singleSpy.mockRestore();
+  });
+
+  test('atomically limits concurrent environment registrations for one owner', async () => {
+    await mongoose.models.CodeEnvironment.syncIndexes();
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const ownerId = new Types.ObjectId();
+
+    const results = await Promise.allSettled(
+      ['quota-one', 'quota-two', 'quota-three'].map((id) =>
+        registry.register({
+          actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+          environment: {
+            id,
+            name: id,
+            type: 'attached',
+            baseURL: 'https://code.example.com',
+          },
+          maxOwned: 2,
+        } as never),
+      ),
+    );
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(2);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    expect(results.find(({ status }) => status === 'rejected')).toMatchObject({
+      reason: { name: 'CodeEnvironmentLimitError' },
+    });
+    await expect(
+      mongoose.models.CodeEnvironment.countDocuments({ createdBy: ownerId }),
+    ).resolves.toBe(2);
+  });
+
   test('keeps a user-bound worker private even if its ACL is granted to a role', async () => {
     const registry = createCodeEnvironmentRegistry(mongoose);
     const access = new AccessControlService(mongoose);
@@ -264,6 +321,45 @@ describe('code environment registry', () => {
       'https://code.example.com/v1/bridge/workers/account-worker/revoke',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+  test('reports successful revocations without aborting after another worker fails', async () => {
+    const ownerId = new Types.ObjectId();
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    for (const id of ['worker-ok', 'worker-unreachable']) {
+      await registry.register({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environment: {
+          id,
+          name: id,
+          type: 'attached',
+          baseURL: `https://${id}.example.com/v1`,
+          workerId: id,
+          revocationTokenEnv: 'CODE_ADMIN_TOKEN',
+          workerPrincipal: { type: 'user', id: ownerId.toString() },
+        },
+      });
+    }
+    const fetchImpl = jest.fn(async (url: string) => {
+      if (url.includes('unreachable')) {
+        throw new Error('control plane unavailable');
+      }
+      return {
+        ok: true,
+        json: async () => ({ protocolVersion: 1, revoked: true }),
+      } as Response;
+    });
+
+    await expect(
+      revokeUserCodeEnvironmentWorkers({
+        mongoose,
+        userId: ownerId.toString(),
+        appConfig: {} as never,
+        readSecret: () => 'administrator-token',
+        fetchImpl,
+      }),
+    ).resolves.toBe(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   test('removes creator-owned environment records and grants when the user is deleted', async () => {

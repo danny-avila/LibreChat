@@ -34,6 +34,8 @@ require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const {
   GenerationJobManager,
   createStreamServices,
+  getAppConfig,
+  revokeUserCodeEnvironmentWorkers,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
@@ -194,6 +196,8 @@ async function gracefulExit(code = 0) {
       );
     }
 
+    const deletionAppConfig = await getAppConfig({ baseOnly: true });
+
     // 5) Build and run deletion tasks
     const tasks = [
       Action.deleteMany({ user: uid }),
@@ -234,6 +238,16 @@ async function gracefulExit(code = 0) {
       throw new Error('User disappeared before account deletion could commit');
     }
     userDeleted = true;
+    await revokeUserCodeEnvironmentWorkers({
+      mongoose,
+      userId: uid,
+      appConfig: deletionAppConfig,
+    }).catch((error) =>
+      console.error('Failed to revoke code environment workers after account deletion:', error),
+    );
+    await runAsSystem(() => methods.deleteUserCodeEnvironments(uid)).catch((error) =>
+      console.error('Failed to delete code environment records after account deletion:', error),
+    );
     await runAsSystem(() => methods.deleteAgentTriggerDeliveriesByUser(uid));
   } finally {
     // RESTORE BEFORE RELEASING THE FENCE. While the user-deletion fence is still armed, new

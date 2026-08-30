@@ -406,11 +406,6 @@ const deleteUserController = async (req, res) => {
       await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
     }
     const deletionAppConfig = await getAppConfig({ baseOnly: true });
-    await revokeUserCodeEnvironmentWorkers({
-      mongoose,
-      userId: user.id,
-      appConfig: deletionAppConfig,
-    });
     await drainAgentTriggerDeliveriesForUser(user.id);
     await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
     // Reversibly suspend the user's schedules under a per-attempt token BEFORE draining.
@@ -467,10 +462,6 @@ const deleteUserController = async (req, res) => {
     await db.deleteAllUserMemories(user.id);
     await db.deleteUserPrompts(user.id);
     await db.deleteUserSkills(user.id);
-    await db.deleteUserCodeEnvironments(user.id);
-    await invalidateCodeEnvironmentConfigCache(user.tenantId).catch((error) => {
-      logger.error('[deleteUserController] code environment cache invalidation failed:', error);
-    });
     await deleteUserMcpServers(user.id);
     await db.deleteActions({ user: user.id });
     await db.deleteTokens({ userId: user.id });
@@ -482,6 +473,23 @@ const deleteUserController = async (req, res) => {
       throw new Error('User disappeared before account deletion could commit');
     }
     userDeleted = true;
+    try {
+      await revokeUserCodeEnvironmentWorkers({
+        mongoose,
+        userId: user.id,
+        appConfig: deletionAppConfig,
+      });
+    } catch (error) {
+      logger.error('[deleteUserController] Failed to revoke code environment workers', error);
+    }
+    try {
+      await db.deleteUserCodeEnvironments(user.id);
+    } catch (error) {
+      logger.error('[deleteUserController] Failed to delete code environments', error);
+    }
+    await invalidateCodeEnvironmentConfigCache(user.tenantId).catch((error) => {
+      logger.error('[deleteUserController] code environment cache invalidation failed:', error);
+    });
     await purgeAgentTriggerDeliveriesForUser(user.id);
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });

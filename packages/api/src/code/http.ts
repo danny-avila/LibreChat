@@ -20,6 +20,7 @@ import {
 } from './bridge';
 import {
   CodeEnvironmentInUseError,
+  CodeEnvironmentLimitError,
   CodeEnvironmentValidationError,
   normalizeCodeEnvironmentName,
 } from './environments';
@@ -34,9 +35,9 @@ type Registry = {
   register: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environment: CodeEnvironmentRegistration;
+    maxOwned?: number;
   }) => Promise<CodeEnvironmentSummary>;
   listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
-  countOwned?: (actor: CodeEnvironmentPrincipalContext) => Promise<number>;
   remove: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environmentId: string;
@@ -304,12 +305,6 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
 
     const workerId = createEnvironmentId();
-    if (
-      deps.registry.countOwned != null &&
-      (await deps.registry.countOwned(principal)) >= maxPrincipalEnvironments
-    ) {
-      return res.status(409).json({ error: 'Personal code environment limit reached' });
-    }
     if (!(await principalIsActive(principal.userId.toString()))) {
       return res.status(409).json({ error: 'Account deletion is already in progress' });
     }
@@ -342,6 +337,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     try {
       const environment = await deps.registry.register({
         actor: principal,
+        maxOwned: maxPrincipalEnvironments,
         environment: {
           id: workerId,
           name,
@@ -392,6 +388,9 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         (error as { code?: number }).code === 11000;
       if (duplicate) {
         return res.status(409).json({ error: 'Code environment already exists' });
+      }
+      if (error instanceof CodeEnvironmentLimitError) {
+        return res.status(409).json({ error: error.message });
       }
       if (error instanceof CodeEnvironmentValidationError) {
         return res.status(400).json({ error: error.message });

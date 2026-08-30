@@ -15,6 +15,10 @@ type CreateCodeEnvironmentInput = Pick<
 
 export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')): {
   createCodeEnvironment: (input: CreateCodeEnvironmentInput) => Promise<CodeEnvironmentDocument>;
+  createCodeEnvironmentWithinOwnerLimit: (
+    input: CreateCodeEnvironmentInput,
+    maxOwned: number,
+  ) => Promise<CodeEnvironmentDocument | null>;
   findCodeEnvironmentsByIds: (
     ids: Array<string | Types.ObjectId>,
   ) => Promise<CodeEnvironmentDocument[]>;
@@ -36,6 +40,33 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     input: CreateCodeEnvironmentInput,
   ): Promise<CodeEnvironmentDocument> {
     return (await model().create(input)).toObject() as CodeEnvironmentDocument;
+  }
+
+  async function createCodeEnvironmentWithinOwnerLimit(
+    input: CreateCodeEnvironmentInput,
+    maxOwned: number,
+  ): Promise<CodeEnvironmentDocument | null> {
+    for (let ownerSlot = 0; ownerSlot < maxOwned; ownerSlot++) {
+      try {
+        return (
+          await model().create({ ...input, ownerSlot })
+        ).toObject() as CodeEnvironmentDocument;
+      } catch (error) {
+        const duplicateOwnerSlot =
+          typeof error === 'object' &&
+          error != null &&
+          'code' in error &&
+          error.code === 11000 &&
+          'keyPattern' in error &&
+          typeof error.keyPattern === 'object' &&
+          error.keyPattern != null &&
+          'ownerSlot' in error.keyPattern;
+        if (!duplicateOwnerSlot) {
+          throw error;
+        }
+      }
+    }
+    return null;
   }
 
   async function findCodeEnvironmentsByIds(
@@ -94,6 +125,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
 
   return {
     createCodeEnvironment,
+    createCodeEnvironmentWithinOwnerLimit,
     findCodeEnvironmentsByIds,
     findCodeEnvironmentByEnvironmentId,
     listCodeEnvironmentIds,

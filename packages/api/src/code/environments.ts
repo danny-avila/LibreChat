@@ -95,6 +95,13 @@ export class CodeEnvironmentValidationError extends Error {
   }
 }
 
+export class CodeEnvironmentLimitError extends Error {
+  constructor() {
+    super('Personal code environment limit reached');
+    this.name = 'CodeEnvironmentLimitError';
+  }
+}
+
 function normalizeRegistration(input: CodeEnvironmentRegistration): CodeEnvironmentRegistration {
   const id = input.id.trim();
   const name = normalizeCodeEnvironmentName(input.name);
@@ -152,6 +159,7 @@ export function createCodeEnvironmentRegistry(
   register: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environment: CodeEnvironmentRegistration;
+    maxOwned?: number;
   }) => Promise<CodeEnvironmentSummary>;
   listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
   listAccessibleConfigurations: (
@@ -159,7 +167,6 @@ export function createCodeEnvironmentRegistry(
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
   listRegisteredIds: () => Promise<string[]>;
   invalidateAccessibleConfigurations: (tenantId?: string) => Promise<void>;
-  countOwned: (actor: CodeEnvironmentPrincipalContext) => Promise<number>;
   remove: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environmentId: string;
@@ -209,12 +216,14 @@ export function createCodeEnvironmentRegistry(
   async function register({
     actor,
     environment: input,
+    maxOwned,
   }: {
     actor: CodeEnvironmentPrincipalContext;
     environment: CodeEnvironmentRegistration;
+    maxOwned?: number;
   }): Promise<CodeEnvironmentSummary> {
     const environment = normalizeRegistration(input);
-    const created = await methods.createCodeEnvironment({
+    const createInput = {
       environmentId: environment.id,
       name: environment.name,
       type: environment.type,
@@ -224,7 +233,14 @@ export function createCodeEnvironmentRegistry(
       revocationTokenEnv: environment.revocationTokenEnv,
       workerPrincipal: environment.workerPrincipal,
       createdBy: new Types.ObjectId(actor.userId),
-    });
+    };
+    const created =
+      maxOwned == null
+        ? await methods.createCodeEnvironment(createInput)
+        : await methods.createCodeEnvironmentWithinOwnerLimit(createInput, maxOwned);
+    if (created == null) {
+      throw new CodeEnvironmentLimitError();
+    }
     try {
       const permission = await access.grantPermission({
         principalType: PrincipalType.USER,
@@ -280,20 +296,16 @@ export function createCodeEnvironmentRegistry(
     actor: CodeEnvironmentPrincipalContext,
   ): Promise<CodeEnvironmentSummary[]> {
     const environments = await findAccessible(actor);
-    return await Promise.all(
-      environments.map(async (environment) =>
-        toSummary(
-          environment,
-          await access.checkPermission({
-            userId: actor.userId.toString(),
-            role: actor.role,
-            resourceType: ResourceType.CODE_ENVIRONMENT,
-            resourceId: environment._id,
-            requiredPermission: PermissionBits.DELETE,
-          }),
-        ),
-      ),
-    );
+    const permissions = await access.getResourcePermissionsMap({
+      userId: actor.userId,
+      role: actor.role ?? '',
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceIds: environments.map((environment) => environment._id),
+    });
+    return environments.map((environment) => {
+      const permission = permissions.get(environment._id.toString()) ?? 0;
+      return toSummary(environment, (permission & PermissionBits.DELETE) === PermissionBits.DELETE);
+    });
   }
 
   async function listAccessibleConfigurations(
@@ -374,10 +386,6 @@ export function createCodeEnvironmentRegistry(
     return configurations.map(toPublicConfiguration);
   }
 
-  async function countOwned(actor: CodeEnvironmentPrincipalContext): Promise<number> {
-    return (await methods.findCodeEnvironmentsByCreator(actor.userId)).length;
-  }
-
   async function remove({
     actor,
     environmentId,
@@ -436,7 +444,6 @@ export function createCodeEnvironmentRegistry(
     listAccessibleConfigurations,
     listRegisteredIds,
     invalidateAccessibleConfigurations,
-    countOwned,
     remove,
   };
 }

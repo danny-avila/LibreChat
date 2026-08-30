@@ -59,6 +59,7 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     prepareAgentTriggerUserPurge: jest.fn().mockResolvedValue(undefined),
     cancelAgentTriggerUserPurge: jest.fn().mockResolvedValue(true),
     purgeAgentTriggerDeliveriesForUser: jest.fn().mockResolvedValue(undefined),
+    revokeUserCodeEnvironmentWorkers: jest.fn().mockResolvedValue(0),
     deleteUserById: jest
       .fn()
       .mockResolvedValue({ deletedCount: 1, message: 'User was deleted successfully.' }),
@@ -584,12 +585,18 @@ describe('createAdminUsersHandlers', () => {
       const drainOrder = (deps.drainAgentTriggerDeliveriesForUser as jest.Mock).mock
         .invocationCallOrder[0];
       const deleteOrder = (deps.deleteUserById as jest.Mock).mock.invocationCallOrder[0];
+      const revokeCodeOrder = (deps.revokeUserCodeEnvironmentWorkers as jest.Mock).mock
+        .invocationCallOrder[0];
+      const deleteCodeOrder = (deps.deleteUserCodeEnvironments as jest.Mock).mock
+        .invocationCallOrder[0];
       const purgeOrder = (deps.purgeAgentTriggerDeliveriesForUser as jest.Mock).mock
         .invocationCallOrder[0];
       expect(beginOrder).toBeLessThan(drainOrder);
       expect(beginOrder).toBeLessThan(prepareOrder);
       expect(prepareOrder).toBeLessThan(drainOrder);
       expect(drainOrder).toBeLessThan(deleteOrder);
+      expect(deleteOrder).toBeLessThan(revokeCodeOrder);
+      expect(revokeCodeOrder).toBeLessThan(deleteCodeOrder);
       expect(deleteOrder).toBeLessThan(purgeOrder);
     });
 

@@ -219,9 +219,6 @@ describe('deleteUserController - 2FA enforcement', () => {
       mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
     );
     expect(mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0]).toBeLessThan(
-      mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0],
-    );
-    expect(mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0]).toBeLessThan(
       mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
     );
     expect(mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0]).toBeLessThan(
@@ -229,6 +226,12 @@ describe('deleteUserController - 2FA enforcement', () => {
     );
     expect(mockDeleteMessages.mock.invocationCallOrder[0]).toBeLessThan(
       mockDeleteUserById.mock.invocationCallOrder[0],
+    );
+    expect(mockDeleteUserById.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0],
+    );
+    expect(mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteUserCodeEnvironments.mock.invocationCallOrder[0],
     );
     expect(mockCancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
     expect(mockCancelAgentTriggerUserPurge).not.toHaveBeenCalled();
@@ -252,7 +255,7 @@ describe('deleteUserController - 2FA enforcement', () => {
     );
   });
 
-  it('keeps the account when a personal code worker cannot be revoked', async () => {
+  it('finishes committed account deletion when a personal code worker cannot be revoked', async () => {
     const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
@@ -260,12 +263,13 @@ describe('deleteUserController - 2FA enforcement', () => {
 
     await deleteUserController(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.status).toHaveBeenCalledWith(200);
     expect(mockBeginAgentTriggerUserDeletion).toHaveBeenCalledTimes(1);
-    expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledTimes(1);
-    expect(mockCancelAgentTriggerUserDeletion).toHaveBeenCalledTimes(1);
-    expect(mockDeleteMessages).not.toHaveBeenCalled();
-    expect(mockDeleteUserById).not.toHaveBeenCalled();
+    expect(mockDeleteMessages).toHaveBeenCalled();
+    expect(mockDeleteUserById).toHaveBeenCalledWith('user1');
+    expect(mockDeleteUserCodeEnvironments).toHaveBeenCalledWith('user1');
+    expect(mockCancelAgentTriggerUserPurge).not.toHaveBeenCalled();
+    expect(mockCancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
   });
 
   it('proceeds with deletion when user has no 2FA record', async () => {

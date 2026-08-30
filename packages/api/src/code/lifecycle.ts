@@ -1,4 +1,4 @@
-import { createMethods } from '@librechat/data-schemas';
+import { createMethods, logger } from '@librechat/data-schemas';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { CodeBridgeFetch } from './bridge';
@@ -20,11 +20,11 @@ export async function revokeUserCodeEnvironmentWorkers({
   const environments = await createMethods(mongoose).findCodeEnvironmentsByCreator(userId);
   const controlPlanes =
     appConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
-  const targets = environments
-    .filter(
-      (environment) => environment.workerPrincipal?.type === 'user' && environment.workerId != null,
-    )
-    .map((environment) => {
+  const targets = environments.filter(
+    (environment) => environment.workerPrincipal?.type === 'user' && environment.workerId != null,
+  );
+  const results = await Promise.allSettled(
+    targets.map(async (environment) => {
       const workerId = environment.workerId;
       if (workerId == null) {
         throw new Error(
@@ -46,25 +46,25 @@ export async function revokeUserCodeEnvironmentWorkers({
           `Code environment revocation is unavailable for ${environment.environmentId}`,
         );
       }
-      return { environment, token, workerId };
-    });
-  const results = await Promise.allSettled(
-    targets.map(({ environment, token, workerId }) =>
-      revokeCodeBridgeWorker({
+      await revokeCodeBridgeWorker({
         baseURL: environment.baseURL,
         token,
         workerId,
         fetchImpl,
-      }),
-    ),
+      });
+      return environment.environmentId;
+    }),
   );
-  const failures = results.filter((result) => result.status === 'rejected');
-  if (failures.length > 0) {
-    const error = new Error(
-      'One or more code environment workers could not be revoked',
-    ) as Error & { errors: unknown[] };
-    error.errors = failures.map((failure) => failure.reason);
-    throw error;
+  let revoked = 0;
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      revoked += 1;
+      continue;
+    }
+    logger.error(
+      `[code-environments] worker revocation failed during committed user deletion: ${userId}`,
+      result.reason,
+    );
   }
-  return targets.length;
+  return revoked;
 }

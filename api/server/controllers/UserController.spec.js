@@ -163,6 +163,7 @@ const {
   deleteConvos,
   acceptTerms,
   deleteUserById,
+  deleteUserCodeEnvironments,
   deleteMessages,
   beginAgentTriggerUserDeletion,
   cancelAgentTriggerUserDeletion,
@@ -492,6 +493,12 @@ describe('deleteUserController', () => {
     );
     expect(deleteUserById.mock.invocationCallOrder[0]).toBeLessThan(
       mockPurgeAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
+    );
+    expect(deleteUserById.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0],
+    );
+    expect(mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteUserCodeEnvironments.mock.invocationCallOrder[0],
     );
     expect(mockPurgeAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
     expect(cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
