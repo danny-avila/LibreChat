@@ -103,6 +103,11 @@ test.describe('background tool calls', () => {
         .poll(
           async () => {
             await page.reload();
+            /** `reload()` resolves before the asynchronously fetched message
+             * list is hydrated. Anchor each observation to the already-known
+             * dispatch response so a fast polling interval cannot repeatedly
+             * sample the transient empty conversation. */
+            await expect(dispatchAck).toBeVisible({ timeout: 5000 });
             return messagesView(page).getByText(notification).count();
           },
           { timeout: 30000, intervals: [1500] },
