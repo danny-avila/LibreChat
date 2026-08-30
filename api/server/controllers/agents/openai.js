@@ -350,18 +350,21 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
   const conversationId = request.conversation_id ?? nanoid();
   let execution;
   let executionError;
-  let requestClosed = req.destroyed === true || req.aborted === true;
+  let responseClosed = res.destroyed === true && res.writableEnded !== true;
   /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
   const artifactPromises = [];
   let artifactWritesCovered = false;
-  const abortOnClose = () => {
-    requestClosed = true;
+  const abortOnResponseClose = () => {
+    if (res.writableEnded === true) {
+      return;
+    }
+    responseClosed = true;
     if (execution && !execution.signal.aborted) {
       execution.abort();
       logger.debug('[OpenAI API] Client disconnected, aborting');
     }
   };
-  req.once('close', abortOnClose);
+  res.once('close', abortOnResponseClose);
   try {
     execution = await enrollAgentExecution({
       runId: responseId,
@@ -371,7 +374,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       protocol: 'chat.completions',
       isPrincipalActive: db.isAgentTriggerPrincipalActive,
     });
-    if (requestClosed || req.destroyed === true || req.aborted === true) {
+    if (responseClosed || (res.destroyed === true && res.writableEnded !== true)) {
       execution.abort();
     }
     await execution.beginProviderExecution();
@@ -1152,7 +1155,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       sendErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
     }
   } finally {
-    req.off('close', abortOnClose);
+    res.off('close', abortOnResponseClose);
     if (execution) {
       if (!artifactWritesCovered && artifactPromises.length > 0) {
         execution.track(

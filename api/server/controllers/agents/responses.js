@@ -578,18 +578,21 @@ const executeResponse = async (envelope, { req, res }) => {
   const conversationId = request.previous_response_id ?? uuidv4();
   let execution;
   let executionError;
-  let requestClosed = req.destroyed === true || req.aborted === true;
+  let responseClosed = res.destroyed === true && res.writableEnded !== true;
   /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
   const artifactPromises = [];
   let artifactWritesCovered = false;
-  const abortOnClose = () => {
-    requestClosed = true;
+  const abortOnResponseClose = () => {
+    if (res.writableEnded === true) {
+      return;
+    }
+    responseClosed = true;
     if (execution && !execution.signal.aborted) {
       execution.abort();
       logger.debug('[Responses API] Client disconnected, aborting');
     }
   };
-  req.once('close', abortOnClose);
+  res.once('close', abortOnResponseClose);
   try {
     execution = await enrollAgentExecution({
       runId: responseId,
@@ -599,7 +602,7 @@ const executeResponse = async (envelope, { req, res }) => {
       protocol: 'responses',
       isPrincipalActive: db.isAgentTriggerPrincipalActive,
     });
-    if (requestClosed || req.destroyed === true || req.aborted === true) {
+    if (responseClosed || (res.destroyed === true && res.writableEnded !== true)) {
       execution.abort();
     }
     await execution.beginProviderExecution();
@@ -1473,7 +1476,7 @@ const executeResponse = async (envelope, { req, res }) => {
       }
     }
   } finally {
-    req.off('close', abortOnClose);
+    res.off('close', abortOnResponseClose);
     if (execution) {
       if (!artifactWritesCovered && artifactPromises.length > 0) {
         execution.track(

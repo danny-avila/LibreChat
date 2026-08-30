@@ -429,6 +429,8 @@ describe('OpenAIChatCompletionController', () => {
       flushHeaders: jest.fn(),
       end: jest.fn(),
       write: jest.fn(),
+      once: jest.fn(),
+      off: jest.fn(),
     };
   });
 
@@ -451,8 +453,8 @@ describe('OpenAIChatCompletionController', () => {
       mockProcessStream.mock.invocationCallOrder[0],
     );
     expect(mockExecution.settle).toHaveBeenCalledWith(undefined);
-    expect(req.once).toHaveBeenCalledWith('close', expect.any(Function));
-    expect(req.off).toHaveBeenCalledWith('close', expect.any(Function));
+    expect(res.once).toHaveBeenCalledWith('close', expect.any(Function));
+    expect(res.off).toHaveBeenCalledWith('close', expect.any(Function));
   });
 
   it('covers artifact writes when provider execution fails', async () => {
@@ -485,7 +487,7 @@ describe('OpenAIChatCompletionController', () => {
 
     const request = OpenAIChatCompletionController(req, res);
     await Promise.resolve();
-    req.once.mock.calls[0][1]();
+    res.once.mock.calls[0][1]();
     finishEnrollment(mockExecution);
     await request;
 
@@ -495,6 +497,15 @@ describe('OpenAIChatCompletionController', () => {
     expect(mockExecution.settle).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'RUN_REPLACED' }),
     );
+  });
+
+  it('does not treat a consumed request stream as a response disconnect', async () => {
+    req.destroyed = true;
+
+    await OpenAIChatCompletionController(req, res);
+
+    expect(mockExecution.abort).not.toHaveBeenCalled();
+    expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
   });
 
   it('resolves saved graph subagents for remote chat-completion runs', async () => {

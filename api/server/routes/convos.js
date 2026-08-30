@@ -312,6 +312,7 @@ async function confirmAgentGenerationsDrained(
       const needsDrain =
         job.status === 'running' ||
         job.status === 'requires_action' ||
+        job.metadata?.providerDrained === false ||
         job.metadata?.terminalPersistencePending === true;
       if (!needsDrain) return;
       foundActiveGeneration = true;
@@ -355,8 +356,10 @@ async function confirmAgentGenerationsDrained(
   return true;
 }
 
-/** Stops event-bound child generations on their owning replica and then removes
- * persistence that raced the first conversation cascade. */
+/** Repeats generation discovery after the conversation wave is gone. Remote
+ * enrollment commits its job before validating an existing conversation, so a
+ * run that misses the pre-delete snapshot either fails that validation or is
+ * visible to this post-delete drain before persistence is repaired. */
 async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskIds = [], tenantId) {
   const foundActiveGeneration = await confirmAgentGenerationsDrained(
     userId,

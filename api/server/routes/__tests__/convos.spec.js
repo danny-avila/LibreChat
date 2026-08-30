@@ -784,6 +784,67 @@ describe('Convos Routes', () => {
       });
     });
 
+    it('waits for terminal response-id runs whose provider writes are undrained', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
+        'resp_terminal-run',
+      ]);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp_terminal-run'
+          ? {
+              metadata: { userId: 'test-user-123', providerDrained: false },
+              status: 'complete',
+              createdAt,
+            }
+          : null,
+      );
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp_terminal-run', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+    });
+
+    it('catches a response-id run admitted after the pre-delete snapshot', async () => {
+      const createdAt = Date.now();
+      let deletionCommitted = false;
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockImplementation(async () =>
+        deletionCommitted ? ['resp_late-run'] : [],
+      );
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp_late-run'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        deletionCommitted = true;
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.getCleanupBlockingJobIdsForConversations).toHaveBeenCalledTimes(
+        2,
+      );
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp_late-run', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+    });
+
     it('does not prune generation persistence when provider stop is unconfirmed', async () => {
       const createdAt = Date.now();
       let deletionCommitted = false;
