@@ -48,6 +48,9 @@ export async function mergeAccessibleCodeEnvironments({
     },
   );
   if (principalEnvironments.length === 0) return appConfig;
+  const principalEnvironmentIds = new Set(
+    principalEnvironments.map((environment) => environment.id),
+  );
 
   return {
     ...appConfig,
@@ -57,7 +60,12 @@ export async function mergeAccessibleCodeEnvironments({
         ...agents,
         statefulCodeSessions: {
           ...sessions,
-          environments: [...(sessions.environments ?? []), ...principalEnvironments],
+          environments: [
+            ...(sessions.environments ?? []).filter(
+              (environment) => !principalEnvironmentIds.has(environment.id),
+            ),
+            ...principalEnvironments,
+          ],
         },
       },
     },

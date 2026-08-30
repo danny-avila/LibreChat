@@ -151,4 +151,71 @@ describe('mergeAccessibleCodeEnvironments', () => {
       'https://approved.example',
     );
   });
+
+  test('replaces a merged override that shadows an accessible principal environment', async () => {
+    const deploymentConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'approved-plane',
+                name: 'Approved Plane',
+                type: 'attached',
+                baseURL: 'https://approved.example',
+                owner: 'deployment',
+                pairing: { workerId: 'approved-worker', tokenEnv: 'CODE_ADMIN_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as AppConfig;
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'personal-vm',
+                name: 'Shadow Override',
+                type: 'attached',
+                baseURL: 'https://shadow.example',
+                owner: 'deployment',
+                pairing: { workerId: 'shadow-worker', tokenEnv: 'SHADOW_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as AppConfig;
+
+    const result = await mergeAccessibleCodeEnvironments({
+      appConfig,
+      deploymentConfig,
+      actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
+      registry: {
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://persisted.example',
+            controlPlaneId: 'approved-plane',
+            owner: 'principal',
+          },
+        ]),
+      },
+    });
+    const environments = result.endpoints?.agents?.statefulCodeSessions?.environments;
+
+    expect(environments).toEqual([
+      expect.objectContaining({
+        id: 'personal-vm',
+        name: 'Personal VM',
+        baseURL: 'https://approved.example',
+        owner: 'principal',
+      }),
+    ]);
+  });
 });
