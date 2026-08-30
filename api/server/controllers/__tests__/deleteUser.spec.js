@@ -19,6 +19,7 @@ const mockDeleteToolCalls = jest.fn();
 const mockDeleteUserAgents = jest.fn();
 const mockDeleteUserPrompts = jest.fn();
 const mockDeleteUserSkills = jest.fn();
+const mockDeleteUserCodeEnvironments = jest.fn();
 const mockGetCleanupBlockingJobIdsForUser = jest.fn();
 const mockAbortJob = jest.fn();
 const mockDrainAgentTriggerDeliveriesForUser = jest.fn();
@@ -77,6 +78,7 @@ jest.mock('~/models', () => ({
   deleteUserAgents: (...args) => mockDeleteUserAgents(...args),
   deleteUserPrompts: (...args) => mockDeleteUserPrompts(...args),
   deleteUserSkills: (...args) => mockDeleteUserSkills(...args),
+  deleteUserCodeEnvironments: (...args) => mockDeleteUserCodeEnvironments(...args),
   deleteTransactions: jest.fn(),
   deleteBalances: jest.fn(),
   deleteAllAgentApiKeys: jest.fn(),

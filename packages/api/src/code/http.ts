@@ -1,0 +1,118 @@
+import { nanoid } from 'nanoid';
+import { EModelEndpoint } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import type { Response } from 'express';
+import type { GetAppConfigOptions } from '~/app/service';
+import type { ServerRequest } from '~/types/http';
+import type {
+  CodeEnvironmentPrincipalContext,
+  CodeEnvironmentRegistration,
+  CodeEnvironmentSummary,
+} from './environments';
+
+type Registry = {
+  register: (params: {
+    actor: CodeEnvironmentPrincipalContext;
+    environment: CodeEnvironmentRegistration;
+  }) => Promise<CodeEnvironmentSummary>;
+  listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
+};
+
+type StatefulCodeConfig = NonNullable<
+  NonNullable<AppConfig['endpoints']>[EModelEndpoint.agents]
+>['statefulCodeSessions'];
+type ConfiguredCodeEnvironment = NonNullable<
+  NonNullable<StatefulCodeConfig>['environments']
+>[number];
+
+export interface CodeEnvironmentHttpDeps {
+  getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
+  registry: Registry;
+  createEnvironmentId?: () => string;
+}
+
+function actor(req: ServerRequest): CodeEnvironmentPrincipalContext | null {
+  if (!req.user?.id) return null;
+  return {
+    userId: req.user.id,
+    role: req.user.role ?? null,
+    idOnTheSource: req.user.idOnTheSource ?? null,
+  };
+}
+
+function configuredControlPlane(
+  appConfig: AppConfig,
+  controlPlaneId: string,
+): ConfiguredCodeEnvironment | undefined {
+  return appConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments?.find(
+    (environment) =>
+      environment.id === controlPlaneId &&
+      environment.type === 'attached' &&
+      environment.owner === 'deployment' &&
+      environment.pairing != null,
+  );
+}
+
+export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps): {
+  list: (req: ServerRequest, res: Response) => Promise<Response>;
+  register: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
+  const createEnvironmentId = deps.createEnvironmentId ?? (() => `code-${nanoid(20)}`);
+
+  async function list(req: ServerRequest, res: Response): Promise<Response> {
+    const principal = actor(req);
+    if (principal == null) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const environments = await deps.registry.listAccessible(principal);
+    return res.status(200).json({ environments });
+  }
+
+  async function register(req: ServerRequest, res: Response): Promise<Response> {
+    const principal = actor(req);
+    if (principal == null) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const controlPlaneId =
+      typeof req.body?.controlPlaneId === 'string' ? req.body.controlPlaneId.trim() : '';
+    if (!name || !controlPlaneId) {
+      return res.status(400).json({
+        error: 'name and controlPlaneId are required',
+      });
+    }
+
+    /** Control-plane destinations are deployment policy. Client-provided URLs
+     * are deliberately ignored to prevent an authenticated SSRF primitive. */
+    const appConfig = await deps.getAppConfig({ baseOnly: true });
+    const controlPlane = configuredControlPlane(appConfig, controlPlaneId);
+    if (controlPlane == null) {
+      return res.status(404).json({ error: 'Code control plane was not found' });
+    }
+
+    try {
+      const environment = await deps.registry.register({
+        actor: principal,
+        environment: {
+          id: createEnvironmentId(),
+          name,
+          type: 'attached',
+          baseURL: controlPlane.baseURL,
+          workerId: controlPlane.pairing?.workerId,
+        },
+      });
+      return res.status(201).json({ environment });
+    } catch (error) {
+      const duplicate =
+        typeof error === 'object' &&
+        error != null &&
+        'code' in error &&
+        (error as { code?: number }).code === 11000;
+      return res.status(duplicate ? 409 : 400).json({
+        error: error instanceof Error ? error.message : 'Code environment registration failed',
+      });
+    }
+  }
+
+  return { list, register };
+}

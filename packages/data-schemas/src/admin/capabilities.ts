@@ -179,6 +179,7 @@ export function expandImplications(directCaps: string[]): string[] {
  */
 export const ResourceCapabilityMap: Record<ResourceType, SystemCapability> = {
   [ResourceType.AGENT]: SystemCapabilities.MANAGE_AGENTS,
+  [ResourceType.CODE_ENVIRONMENT]: SystemCapabilities.MANAGE_CODE_ENVIRONMENTS,
   [ResourceType.PROMPTGROUP]: SystemCapabilities.MANAGE_PROMPTS,
   [ResourceType.MCPSERVER]: SystemCapabilities.MANAGE_MCP_SERVERS,
   [ResourceType.REMOTE_AGENT]: SystemCapabilities.MANAGE_AGENTS,

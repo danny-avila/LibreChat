@@ -5,6 +5,7 @@ export * from './artifacts';
 /* Admin */
 export * from './admin';
 export * from './cdn';
+export * from './code';
 /* Auth */
 export * from './auth';
 /* API Keys */

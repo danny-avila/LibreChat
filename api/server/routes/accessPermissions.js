@@ -88,6 +88,12 @@ const checkResourcePermissionAccess = (requiredPermission) => (req, res, next) =
       resourceIdParam: 'resourceId',
       idResolver: getSkillById,
     });
+  } else if (resourceType === ResourceType.CODE_ENVIRONMENT) {
+    middleware = canAccessResource({
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      requiredPermission,
+      resourceIdParam: 'resourceId',
+    });
   } else if (resourceType === ResourceType.SHARED_LINK) {
     middleware = canAccessResource({
       resourceType: ResourceType.SHARED_LINK,

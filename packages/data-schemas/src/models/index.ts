@@ -9,6 +9,7 @@ import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createAgentCategoryModel } from './agentCategory';
 import { createChatProjectModel } from './chatProject';
+import { createCodeEnvironmentModel } from './codeEnvironment';
 import { createAgentApiKeyModel } from './agentApiKey';
 import { createTransactionModel } from './transaction';
 import { createPromptGroupModel } from './promptGroup';
@@ -53,6 +54,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Balance: ReturnType<typeof createBalanceModel>;
   Conversation: ReturnType<typeof createConversationModel>;
   ChatProject: ReturnType<typeof createChatProjectModel>;
+  CodeEnvironment: ReturnType<typeof createCodeEnvironmentModel>;
   Message: ReturnType<typeof createMessageModel>;
   Agent: ReturnType<typeof createAgentModel>;
   AgentApiKey: ReturnType<typeof createAgentApiKeyModel>;
@@ -99,6 +101,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Balance: createBalanceModel(mongoose),
     Conversation: createConversationModel(mongoose),
     ChatProject: createChatProjectModel(mongoose),
+    CodeEnvironment: createCodeEnvironmentModel(mongoose),
     Message: createMessageModel(mongoose),
     Agent: createAgentModel(mongoose),
     AgentApiKey: createAgentApiKeyModel(mongoose),
