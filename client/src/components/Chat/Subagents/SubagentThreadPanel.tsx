@@ -12,6 +12,8 @@ import {
 import {
   Button,
   Alert,
+  composerSurfaceClasses,
+  composerSurfaceShadow,
   Select,
   SelectContent,
   SelectItem,
@@ -50,7 +52,6 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
-import { composerSurfaceClasses, composerSurfaceShadow } from '~/components/Chat/Input/styles';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';

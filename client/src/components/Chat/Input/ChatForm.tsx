@@ -1,8 +1,8 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
-import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
+import { composerSurfaceClasses, composerSurfaceShadow, TextareaAutosize } from '@librechat/client';
 import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
@@ -31,7 +31,6 @@ import {
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
-import { composerSurfaceClasses, composerSurfaceShadow } from './styles';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
@@ -596,8 +595,11 @@ const ChatForm = memo(function ChatForm({
               onClick={handleContainerClick}
               className={cn(
                 'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl pb-4 sm:rounded-3xl sm:pb-0',
-                composerSurfaceClasses({ temporary: isTemporary }),
+                composerSurfaceClasses(),
                 isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
+                /* Temporary-chat accent is a ChatForm-only override, not part of
+                   the shared composer-surface decision. */
+                isTemporary && 'border-violet-800/60 bg-violet-950/10',
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}

@@ -237,6 +237,8 @@ jest.mock('@librechat/client', () => {
         </button>
       );
     },
+    composerSurfaceClasses: () => '',
+    composerSurfaceShadow: { focused: '', blurred: '', within: '' },
     TextareaAutosize: ({
       minRows: _minRows,
       maxRows: _maxRows,
