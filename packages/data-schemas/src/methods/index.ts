@@ -339,6 +339,17 @@ export function createMethods(
               onlyIfDead: true,
             });
           }
+          if (!retired) {
+            /** Successful and dead delivery receipts have bounded retention.
+             * A source in `published` proves the delivery existed, so a missing
+             * receipt after both retirement attempts is terminal absence. */
+            const delivery = await agentTriggerDeliveryMethods.getAgentTriggerDelivery(deliveryKey);
+            if (delivery == null) {
+              retired = await agentQueuedTurnMethods.markAgentQueuedTurnMissingDeliveryRetired({
+                deliveryKey,
+              });
+            }
+          }
           if (retired) {
             await agentQueuedTurnMethods.markAgentQueuedTurnDeliveryRetired({ deliveryKey });
           }

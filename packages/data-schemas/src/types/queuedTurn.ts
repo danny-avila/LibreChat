@@ -44,6 +44,8 @@ export interface IAgentQueuedTurn {
   parentMessageId: string;
   clientRequestId: string;
   fingerprint: string;
+  /** Immutable generation of the conversation lane that admitted this row. */
+  laneId?: string;
   /** Assigned after the row is durably visible as `reserving`. */
   sequence?: number;
   /** Fences a reserving row to the lane writer allowed to assign its sequence. */
@@ -80,6 +82,8 @@ export interface IAgentQueuedTurnSequence {
   user: Types.ObjectId;
   tenantId?: string;
   conversationId: string;
+  /** Changes whenever a fully retired lane is recreated. */
+  laneId: string;
   value: number;
   /** Visible reservation currently owning `value`; recovery completes it. */
   reservationId?: string;

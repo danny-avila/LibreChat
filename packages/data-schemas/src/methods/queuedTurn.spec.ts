@@ -175,6 +175,14 @@ describe('agent queued turn methods', () => {
     const first = await methods.enqueueAgentQueuedTurn(
       enqueueInput({ clientRequestId: 'visible-first' }),
     );
+    const lane = await Sequence.findOne({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+    }).lean();
+    if (lane?.laneId == null) {
+      throw new Error('Expected a durable queued-turn lane');
+    }
     await Turn.create({
       user,
       tenantId: 'tenant-1',
@@ -183,6 +191,7 @@ describe('agent queued turn methods', () => {
       parentMessageId: 'parent-1',
       clientRequestId: 'interrupted-reservation',
       fingerprint: 'x'.repeat(43),
+      laneId: lane.laneId,
       activeSlot: ((first.turn.activeSlot ?? 0) + 1) % 100,
       status: 'reserving',
       priority: false,
@@ -560,6 +569,21 @@ describe('agent queued turn methods', () => {
         priority: true,
       }),
     );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: admitted.turn.queuedTurnId,
+      deliveryKey: 'admission-1',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: admitted.turn.queuedTurnId,
+      deliveryKey: 'admission-1',
+      scheduledAt: START,
+    });
     await methods.claimNextAgentQueuedTurn(claimInput(admitted.turn.queuedTurnId));
     const admissionInput = {
       ...claimInput(admitted.turn.queuedTurnId),
@@ -580,6 +604,7 @@ describe('agent queued turn methods', () => {
       outcome: 'admitted',
       turn: {
         status: 'admitted',
+        deliveryState: 'published',
         terminalReceipt: { admissionId: 'admission-1' },
       },
     });
@@ -657,6 +682,88 @@ describe('agent queued turn methods', () => {
     ).resolves.toEqual([]);
   });
 
+  it('keeps an ambiguous admission fenced when its delivery exhausts', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'ambiguous-admission' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-ambiguous-admission',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-ambiguous-admission',
+      scheduledAt: START,
+    });
+    await methods.claimNextAgentQueuedTurn(
+      claimInput(queued.turn.queuedTurnId, { claimId: 'delivery-ambiguous-admission' }),
+    );
+    await methods.beginAgentQueuedTurnAdmission({
+      ...claimInput(queued.turn.queuedTurnId, { claimId: 'delivery-ambiguous-admission' }),
+      admissionId: 'delivery-ambiguous-admission',
+      startedAt: START,
+    });
+
+    await expect(
+      methods.deadLetterAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey: 'delivery-ambiguous-admission',
+        settledAt: LATER,
+        failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'admission result unavailable' },
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'admission_indeterminate',
+      turn: {
+        status: 'claimed',
+        admissionId: 'delivery-ambiguous-admission',
+        deliveryState: 'published',
+      },
+    });
+    await expect(
+      methods.cancelAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+      }),
+    ).resolves.toMatchObject({ outcome: 'not_cancellable' });
+    await expect(
+      methods.claimNextAgentQueuedTurn(
+        claimInput(queued.turn.queuedTurnId, {
+          claimId: 'delivery-ambiguous-admission',
+          now: LATER,
+          leaseUntil: new Date(LATER.getTime() + 60_000),
+        }),
+      ),
+    ).resolves.toMatchObject({ outcome: 'acquired' });
+    await expect(
+      methods.beginAgentQueuedTurnAdmission({
+        ...claimInput(queued.turn.queuedTurnId, {
+          claimId: 'delivery-ambiguous-admission',
+          now: LATER,
+          leaseUntil: new Date(LATER.getTime() + 60_000),
+        }),
+        admissionId: 'delivery-ambiguous-admission',
+        startedAt: LATER,
+      }),
+    ).resolves.toMatchObject({ outcome: 'already_started' });
+    await expect(
+      methods.prepareAgentQueuedTurnConversationDeletion({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+      }),
+    ).rejects.toThrow('admission must settle');
+  });
+
   it('scopes effective predecessor epochs to one captured queue root', async () => {
     const first = await methods.enqueueAgentQueuedTurn(
       enqueueInput({ clientRequestId: 'root-a-1', expectedPredecessorCreatedAt: 10 }),
@@ -667,6 +774,21 @@ describe('agent queued turn methods', () => {
     const laterRoot = await methods.enqueueAgentQueuedTurn(
       enqueueInput({ clientRequestId: 'root-b-1', expectedPredecessorCreatedAt: 20 }),
     );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.turn.queuedTurnId,
+      deliveryKey: 'admission-root-a',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.turn.queuedTurnId,
+      deliveryKey: 'admission-root-a',
+      scheduledAt: START,
+    });
     await methods.claimNextAgentQueuedTurn(claimInput(first.turn.queuedTurnId));
     await methods.beginAgentQueuedTurnAdmission({
       ...claimInput(first.turn.queuedTurnId),
@@ -1000,7 +1122,18 @@ describe('agent queued turn methods', () => {
         targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
         settledAt: LATER,
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual(['delivery-admission-during-delete']);
+    await expect(
+      methods.deletePreparedAgentQueuedTurnConversations({
+        user,
+        targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
+      }),
+    ).rejects.toThrow('deliveries must retire');
+    await expect(
+      methods.markAgentQueuedTurnDeliveryRetired({
+        deliveryKey: 'delivery-admission-during-delete',
+      }),
+    ).resolves.toBe(true);
     await expect(
       methods.deletePreparedAgentQueuedTurnConversations({
         user,
@@ -1042,11 +1175,29 @@ describe('agent queued turn methods', () => {
       targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
       settledAt: START,
     });
+    const retiredLane = await Sequence.findOne({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+    }).lean();
+    await Sequence.deleteOne({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      retiredAt: START,
+    });
     releaseDistinct();
-    await expect(enqueue).rejects.toBeInstanceOf(AgentQueuedTurnLaneRetiredError);
+    await expect(enqueue).rejects.toThrow('lane writer lease was lost');
     distinctSpy.mockRestore();
 
-    await expect(remoteMethods.findQueuedTurnsNeedingDelivery()).resolves.toEqual([]);
+    const recreated = await remoteMethods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'recreated-lane-generation' }),
+    );
+    expect(recreated.turn.laneId).not.toBe(retiredLane?.laneId);
+
+    await expect(remoteMethods.findQueuedTurnsNeedingDelivery()).resolves.toEqual([
+      expect.objectContaining({ queuedTurnId: recreated.turn.queuedTurnId, status: 'queued' }),
+    ]);
     await expect(
       Turn.findOne({ clientRequestId: 'stale-writer-after-delete' }).lean(),
     ).resolves.toMatchObject({ status: 'cancelled', deliveryState: 'retired' });
@@ -1064,6 +1215,42 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({
       retiredAt: START,
       expiresAt: new Date(START.getTime() + 24 * 60 * 60_000),
+    });
+  });
+
+  it('retires a terminal source when its published delivery receipt has expired', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'expired-delivery' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-expired',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey: 'delivery-expired',
+      scheduledAt: START,
+    });
+    await methods.cancelAgentQueuedTurn({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      settledAt: LATER,
+    });
+
+    await expect(
+      methods.markAgentQueuedTurnMissingDeliveryRetired({ deliveryKey: 'delivery-expired' }),
+    ).resolves.toBe(true);
+    await expect(Turn.findById(queued.turn.queuedTurnId).lean()).resolves.toMatchObject({
+      status: 'cancelled',
+      deliveryState: 'retired',
     });
   });
 });

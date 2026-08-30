@@ -12,6 +12,7 @@ const queuedTurnSequenceSchema: Schema<IAgentQueuedTurnSequenceDocument> = new S
     },
     tenantId: { type: String, index: true },
     conversationId: { type: String, required: true, maxlength: 256 },
+    laneId: { type: String, required: true, maxlength: 128 },
     value: { type: Number, required: true, min: 0 },
     reservationId: { type: String, maxlength: 24 },
     writerId: { type: String, maxlength: 128 },

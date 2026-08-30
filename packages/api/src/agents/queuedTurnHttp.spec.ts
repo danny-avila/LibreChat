@@ -197,4 +197,40 @@ describe('Agent queued-turn HTTP admission receipts', () => {
       deliveryKey: 'delivery-1',
     });
   });
+
+  it('retires a cancelled source after its published delivery receipt expires', async () => {
+    const cancelled = {
+      ...turn('cancelled'),
+      deliveryKey: 'delivery-expired',
+      deliveryState: 'published' as const,
+      terminalReceipt: {
+        outcome: 'cancelled' as const,
+        settledAt: new Date('2026-08-30T12:02:00Z'),
+      },
+    };
+    const methods = {
+      getConvo: jest.fn(async () => ({ agent_id: 'agent_1', endpoint: 'agents' })),
+      cancelAgentQueuedTurn: jest.fn(async () => ({
+        outcome: 'already_cancelled' as const,
+        turn: cancelled,
+      })),
+      markAgentQueuedTurnMissingDeliveryRetired: jest.fn(async () => true),
+      markAgentQueuedTurnDeliveryRetired: jest.fn(async () => true),
+    };
+    const deps = {
+      methods: methods as unknown as AgentQueuedTurnMethods & {
+        getConvo: typeof methods.getConvo;
+      },
+      scheduler: { schedule: jest.fn() },
+      retireDelivery: jest.fn(async () => false),
+      getDelivery: jest.fn(async () => null),
+    } satisfies AgentQueuedTurnHttpDeps;
+
+    await expect(
+      handleAgentQueuedTurnCancel({ id: USER_ID }, 'queued-turn-1', deps),
+    ).resolves.toMatchObject({ status: 200 });
+    expect(methods.markAgentQueuedTurnMissingDeliveryRetired).toHaveBeenCalledWith({
+      deliveryKey: 'delivery-expired',
+    });
+  });
 });

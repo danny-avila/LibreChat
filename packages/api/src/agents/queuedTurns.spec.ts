@@ -10,6 +10,7 @@ import type {
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import {
   AGENT_QUEUED_TURN_SOURCE,
+  createAgentQueuedTurnDeadLetterSettlement,
   createAgentQueuedTurnResolver,
   createAgentQueuedTurnScheduler,
 } from './queuedTurns';
@@ -126,6 +127,33 @@ function resolverMethods() {
 }
 
 describe('Agent queued-turn continuation', () => {
+  it('dead-letters a delivery while preserving an admission-indeterminate source', async () => {
+    const deadLetterAgentQueuedTurn = jest.fn(async () => ({
+      outcome: 'admission_indeterminate' as const,
+      turn: claim(),
+    }));
+    const settle = createAgentQueuedTurnDeadLetterSettlement({
+      methods: { deadLetterAgentQueuedTurn },
+      now: () => NOW,
+    });
+
+    await expect(
+      settle(envelope(), {
+        code: 'ATTEMPTS_EXHAUSTED',
+        message: 'admission receipt unavailable',
+        certainty: 'ambiguous',
+        retryable: true,
+        attemptedAt: new Date(NOW),
+      }),
+    ).resolves.toBeUndefined();
+    expect(deadLetterAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-1',
+        deliveryKey: getAgentTriggerIdempotencyKey(envelope()),
+      }),
+    );
+  });
+
   it('defers without claiming while the predecessor generation remains active', async () => {
     const { methods, spies } = resolverMethods();
     const resolve = createAgentQueuedTurnResolver({

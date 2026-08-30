@@ -12,6 +12,7 @@ const dependencies = (req) => {
    * middleware probes does not initialize or require the worker graph. */
   const {
     scheduleAgentQueuedTurn,
+    getAgentTriggerDelivery,
     retireAgentTrigger,
   } = require('~/server/services/Agents/triggers');
   return {
@@ -23,6 +24,7 @@ const dependencies = (req) => {
     isPrincipalActive: db.isAgentTriggerPrincipalActive,
     retireDelivery: (deliveryKey, _sourceId, reason, options) =>
       retireAgentTrigger(deliveryKey, AGENT_QUEUED_TURN_SOURCE, reason, options),
+    getDelivery: getAgentTriggerDelivery,
   };
 };
 

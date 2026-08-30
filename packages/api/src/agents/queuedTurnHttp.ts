@@ -57,6 +57,7 @@ export interface AgentQueuedTurnHttpDeps {
     reason: string,
     options?: { onlyIfDead?: boolean },
   ) => Promise<boolean>;
+  getDelivery?: (deliveryKey: string) => Promise<unknown | null>;
 }
 
 export interface AgentQueuedTurnHttpResult {
@@ -467,6 +468,15 @@ export async function handleAgentQueuedTurnCancel(
         'queued_turn_cancelled',
         { onlyIfDead: true },
       );
+    }
+    if (
+      !retired &&
+      deps.getDelivery != null &&
+      (await deps.getDelivery(cancelled.turn.deliveryKey)) == null
+    ) {
+      retired = await deps.methods.markAgentQueuedTurnMissingDeliveryRetired({
+        deliveryKey: cancelled.turn.deliveryKey,
+      });
     }
     if (retired) {
       await deps.methods.markAgentQueuedTurnDeliveryRetired({

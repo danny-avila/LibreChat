@@ -53,6 +53,7 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     parentMessageId: { type: String, required: true, maxlength: 256 },
     clientRequestId: { type: String, required: true, maxlength: 128 },
     fingerprint: { type: String, required: true, minlength: 43, maxlength: 64 },
+    laneId: { type: String, required: true, maxlength: 128 },
     sequence: { type: Number, min: 1 },
     reservationWriterId: { type: String, maxlength: 128 },
     activeSlot: { type: Number, min: 0, max: 99 },

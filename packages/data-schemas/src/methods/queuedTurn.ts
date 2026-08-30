@@ -50,6 +50,25 @@ export class AgentQueuedTurnLaneRetiredError extends Error {
   }
 }
 
+class AgentQueuedTurnLaneMissingError extends Error {
+  constructor() {
+    super('Agent queued turn lane is missing');
+    this.name = 'AgentQueuedTurnLaneMissingError';
+  }
+}
+
+class AgentQueuedTurnLaneGenerationError extends Error {
+  constructor() {
+    super('Agent queued turn belongs to a retired lane generation');
+    this.name = 'AgentQueuedTurnLaneGenerationError';
+  }
+}
+
+interface AgentQueuedTurnLaneWriter {
+  writerId: string;
+  laneId: string;
+}
+
 export interface AgentQueuedTurnOwnerScope {
   user: Types.ObjectId;
   tenantId?: string;
@@ -101,6 +120,7 @@ export type AdmitAgentQueuedTurnResult =
 
 export type DeadLetterAgentQueuedTurnResult =
   | { outcome: 'dead' | 'already_terminal'; turn: AgentQueuedTurnRecord }
+  | { outcome: 'admission_indeterminate'; turn: AgentQueuedTurnRecord }
   | { outcome: 'missing'; turn: null }
   | { outcome: 'conflict'; turn: AgentQueuedTurnRecord };
 
@@ -221,6 +241,7 @@ export interface AgentQueuedTurnMethods {
     targets: readonly AgentQueuedTurnDeletionTarget[];
   }) => Promise<number>;
   markAgentQueuedTurnDeliveryRetired: (input: { deliveryKey: string }) => Promise<boolean>;
+  markAgentQueuedTurnMissingDeliveryRetired: (input: { deliveryKey: string }) => Promise<boolean>;
   deleteAllAgentQueuedTurnsForUser: (input: { user: Types.ObjectId }) => Promise<number>;
 }
 
@@ -466,6 +487,7 @@ function toRecord(turn: IAgentQueuedTurn): AgentQueuedTurnRecord {
     parentMessageId: turn.parentMessageId,
     clientRequestId: turn.clientRequestId,
     fingerprint: turn.fingerprint,
+    ...(turn.laneId != null && { laneId: turn.laneId }),
     sequence: turn.sequence,
     ...(turn.activeSlot != null && { activeSlot: turn.activeSlot }),
     status: turn.status,
@@ -485,6 +507,8 @@ function toRecord(turn: IAgentQueuedTurn): AgentQueuedTurnRecord {
     ...(turn.claimId != null && { claimId: turn.claimId }),
     ...(turn.claimBy != null && { claimBy: turn.claimBy }),
     ...(turn.claimUntil != null && { claimUntil: turn.claimUntil }),
+    ...(turn.admissionId != null && { admissionId: turn.admissionId }),
+    ...(turn.admissionStartedAt != null && { admissionStartedAt: turn.admissionStartedAt }),
     ...(turn.terminalReceipt != null && {
       terminalReceipt: turn.terminalReceipt,
     }),
@@ -571,10 +595,14 @@ export function createAgentQueuedTurnMethods(
     await Promise.all([createIndexesWithRetry(Turn()), createIndexesWithRetry(Sequence())]);
   }
 
-  async function acquireLaneWriter(input: AgentQueuedTurnConversationScope): Promise<string> {
+  async function acquireLaneWriter(
+    input: AgentQueuedTurnConversationScope,
+    createIfMissing = true,
+  ): Promise<AgentQueuedTurnLaneWriter> {
     const _id = laneKey(input);
     const scope = conversationScope(input);
     const writerId = randomUUID();
+    const insertedLaneId = randomUUID();
     for (let attempt = 0; attempt < LANE_WRITER_RETRIES; attempt++) {
       const now = new Date();
       const lane = await Sequence()
@@ -590,9 +618,9 @@ export function createAgentQueuedTurnMethods(
               writerId,
               writerUntil: new Date(now.getTime() + LANE_WRITER_LEASE_MS),
             },
-            $setOnInsert: { ...conversationFields(input), value: 0 },
+            $setOnInsert: { ...conversationFields(input), laneId: insertedLaneId, value: 0 },
           },
-          { new: true, upsert: true },
+          { new: true, upsert: createIfMissing },
         )
         .lean<IAgentQueuedTurnSequence>()
         .catch((error: unknown) => {
@@ -602,11 +630,17 @@ export function createAgentQueuedTurnMethods(
           throw error;
         });
       if (lane?.writerId === writerId) {
-        return writerId;
+        if (lane.laneId == null) {
+          throw new Error('Agent queued turn lane is missing its generation');
+        }
+        return { writerId, laneId: lane.laneId };
       }
       const retired = await Sequence().exists({ _id, ...scope, retiredAt: { $exists: true } });
       if (retired != null) {
         throw new AgentQueuedTurnLaneRetiredError();
+      }
+      if (!createIfMissing && (await Sequence().exists({ _id, ...scope })) == null) {
+        throw new AgentQueuedTurnLaneMissingError();
       }
       await new Promise((resolve) => setTimeout(resolve, LANE_WRITER_RETRY_MS));
     }
@@ -625,14 +659,14 @@ export function createAgentQueuedTurnMethods(
 
   async function repairLaneReservation(
     input: AgentQueuedTurnConversationScope,
-    writerId: string,
+    writer: AgentQueuedTurnLaneWriter,
   ): Promise<void> {
     const _id = laneKey(input);
     const scope = conversationScope(input);
     const liveWriter = {
       _id,
       ...scope,
-      writerId,
+      writerId: writer.writerId,
       writerUntil: { $gt: new Date() },
       retiredAt: { $exists: false },
     };
@@ -644,23 +678,28 @@ export function createAgentQueuedTurnMethods(
       }
       throw new Error('Agent queued turn lane writer lease was lost');
     }
+    if (lane.laneId !== writer.laneId) {
+      throw new AgentQueuedTurnLaneGenerationError();
+    }
     if (lane.reservationId != null) {
       await Turn().updateOne(
         {
           ...scope,
           _id: lane.reservationId,
+          laneId: writer.laneId,
           status: 'reserving',
           sequence: { $exists: false },
         },
-        { $set: { reservationWriterId: writerId } },
+        { $set: { reservationWriterId: writer.writerId } },
       );
       await Turn().updateOne(
         {
           ...scope,
           _id: lane.reservationId,
+          laneId: writer.laneId,
           status: 'reserving',
           sequence: { $exists: false },
-          reservationWriterId: writerId,
+          reservationWriterId: writer.writerId,
         },
         {
           $set: { status: 'queued', sequence: lane.value },
@@ -674,7 +713,12 @@ export function createAgentQueuedTurnMethods(
       return;
     }
     const head = await Turn()
-      .findOne({ ...scope, status: 'reserving', sequence: { $exists: false } })
+      .findOne({
+        ...scope,
+        laneId: writer.laneId,
+        status: 'reserving',
+        sequence: { $exists: false },
+      })
       .sort({ createdAt: 1, _id: 1 })
       .lean<IAgentQueuedTurn>();
     if (head?._id == null) {
@@ -682,8 +726,14 @@ export function createAgentQueuedTurnMethods(
     }
     const reservationId = head._id.toString();
     const owned = await Turn().updateOne(
-      { ...scope, _id: reservationId, status: 'reserving', sequence: { $exists: false } },
-      { $set: { reservationWriterId: writerId } },
+      {
+        ...scope,
+        _id: reservationId,
+        laneId: writer.laneId,
+        status: 'reserving',
+        sequence: { $exists: false },
+      },
+      { $set: { reservationWriterId: writer.writerId } },
     );
     if (owned.matchedCount !== 1) {
       return;
@@ -702,9 +752,10 @@ export function createAgentQueuedTurnMethods(
       {
         ...scope,
         _id: reservationId,
+        laneId: writer.laneId,
         status: 'reserving',
         sequence: { $exists: false },
-        reservationWriterId: writerId,
+        reservationWriterId: writer.writerId,
       },
       {
         $set: { status: 'queued', sequence: claimed.value },
@@ -723,7 +774,7 @@ export function createAgentQueuedTurnMethods(
    * that owns its next value, so another process can complete either half. */
   async function finalizeVisibleReservation(
     target: IAgentQueuedTurn,
-    writerId: string,
+    writer: AgentQueuedTurnLaneWriter,
   ): Promise<AgentQueuedTurnRecord> {
     if (target._id == null) {
       throw new Error('Agent queued turn reservation is missing its durable identity');
@@ -735,8 +786,11 @@ export function createAgentQueuedTurnMethods(
     };
     const scope = conversationScope(scopeInput);
     const targetId = target._id.toString();
+    if (target.laneId !== writer.laneId) {
+      throw new AgentQueuedTurnLaneGenerationError();
+    }
     for (let repair = 0; repair <= MAX_ACTIVE_AGENT_QUEUED_TURNS; repair++) {
-      await repairLaneReservation(scopeInput, writerId);
+      await repairLaneReservation(scopeInput, writer);
       const current = await Turn()
         .findOne({ ...scope, _id: targetId })
         .lean<IAgentQueuedTurn>();
@@ -769,7 +823,7 @@ export function createAgentQueuedTurnMethods(
     }
 
     return serializeLocalLane(input, async () => {
-      const writerId = await acquireLaneWriter(input);
+      const writer = await acquireLaneWriter(input);
       try {
         const replay = await Turn()
           .findOne({ ...scope, clientRequestId: normalized.clientRequestId })
@@ -781,7 +835,7 @@ export function createAgentQueuedTurnMethods(
           return {
             turn:
               replay.status === 'reserving'
-                ? await finalizeVisibleReservation(replay, writerId)
+                ? await finalizeVisibleReservation(replay, writer)
                 : toRecord(replay),
             replayed: true,
           };
@@ -806,15 +860,16 @@ export function createAgentQueuedTurnMethods(
               ...conversationFields(input),
               ...normalized,
               fingerprint: requestFingerprint,
+              laneId: writer.laneId,
               activeSlot,
               status: 'reserving',
               attempts: 0,
               availableAt: input.availableAt ?? new Date(),
               deliveryState: 'pending',
-              reservationWriterId: writerId,
+              reservationWriterId: writer.writerId,
             });
             return {
-              turn: await finalizeVisibleReservation(created.toObject(), writerId),
+              turn: await finalizeVisibleReservation(created.toObject(), writer),
               replayed: false,
             };
           } catch (error) {
@@ -832,7 +887,7 @@ export function createAgentQueuedTurnMethods(
               return {
                 turn:
                   racedReplay.status === 'reserving'
-                    ? await finalizeVisibleReservation(racedReplay, writerId)
+                    ? await finalizeVisibleReservation(racedReplay, writer)
                     : toRecord(racedReplay),
                 replayed: true,
               };
@@ -841,7 +896,7 @@ export function createAgentQueuedTurnMethods(
         }
         throw new AgentQueuedTurnCapacityError();
       } finally {
-        await releaseLaneWriter(input, writerId);
+        await releaseLaneWriter(input, writer.writerId);
       }
     });
   }
@@ -998,15 +1053,19 @@ export function createAgentQueuedTurnMethods(
       };
       try {
         await serializeLocalLane(scopeInput, async () => {
-          const writerId = await acquireLaneWriter(scopeInput);
+          const writer = await acquireLaneWriter(scopeInput, false);
           try {
-            await finalizeVisibleReservation(reservation, writerId);
+            await finalizeVisibleReservation(reservation, writer);
           } finally {
-            await releaseLaneWriter(scopeInput, writerId);
+            await releaseLaneWriter(scopeInput, writer.writerId);
           }
         });
       } catch (error) {
-        if (!(error instanceof AgentQueuedTurnLaneRetiredError)) {
+        if (
+          !(error instanceof AgentQueuedTurnLaneRetiredError) &&
+          !(error instanceof AgentQueuedTurnLaneMissingError) &&
+          !(error instanceof AgentQueuedTurnLaneGenerationError)
+        ) {
           throw error;
         }
         await Turn().updateOne(
@@ -1315,7 +1374,25 @@ export function createAgentQueuedTurnMethods(
       throw new TypeError('Agent queued turn admission start is invalid');
     }
     return serializeLocalLane(input, async () => {
-      const writerId = await acquireLaneWriter(input);
+      let writer: AgentQueuedTurnLaneWriter;
+      try {
+        writer = await acquireLaneWriter(input, false);
+      } catch (error) {
+        if (
+          error instanceof AgentQueuedTurnLaneRetiredError ||
+          error instanceof AgentQueuedTurnLaneMissingError ||
+          error instanceof AgentQueuedTurnLaneGenerationError
+        ) {
+          const current = await Turn()
+            .findOne({ ...conversationScope(input), _id: input.queuedTurnId })
+            .lean<IAgentQueuedTurn>();
+          return {
+            outcome: 'conflict',
+            turn: current == null ? null : toRecord(current),
+          };
+        }
+        throw error;
+      }
       try {
         const turn = await Turn()
           .findOneAndUpdate(
@@ -1325,6 +1402,9 @@ export function createAgentQueuedTurnMethods(
               status: 'claimed',
               claimId: requireBoundedString(input.claimId, 128),
               claimBy: requireBoundedString(input.claimBy, 256),
+              deliveryKey: admissionId,
+              deliveryState: 'published',
+              laneId: writer.laneId,
               admissionId: { $exists: false },
             },
             {
@@ -1346,6 +1426,9 @@ export function createAgentQueuedTurnMethods(
           current?.status === 'claimed' &&
           current.claimId === input.claimId &&
           current.claimBy === input.claimBy &&
+          current.deliveryKey === admissionId &&
+          current.deliveryState === 'published' &&
+          current.laneId === writer.laneId &&
           current.admissionId === admissionId &&
           current.admissionStartedAt != null
         ) {
@@ -1356,7 +1439,7 @@ export function createAgentQueuedTurnMethods(
           turn: current == null ? null : toRecord(current),
         };
       } finally {
-        await releaseLaneWriter(input, writerId);
+        await releaseLaneWriter(input, writer.writerId);
       }
     });
   }
@@ -1381,13 +1464,14 @@ export function createAgentQueuedTurnMethods(
           status: 'claimed',
           claimId: requireBoundedString(input.claimId, 128),
           claimBy: requireBoundedString(input.claimBy, 256),
+          deliveryKey: admissionId,
+          deliveryState: 'published',
           admissionId,
           admissionStartedAt: { $exists: true },
         },
         {
           $set: {
             status: 'admitted',
-            deliveryState: 'retired',
             terminalReceipt: {
               outcome: 'admitted',
               settledAt: input.settledAt,
@@ -1445,6 +1529,7 @@ export function createAgentQueuedTurnMethods(
           _id: input.queuedTurnId,
           deliveryKey,
           status: { $in: ['queued', 'claimed'] },
+          admissionStartedAt: { $exists: false },
         },
         {
           $set: {
@@ -1471,6 +1556,13 @@ export function createAgentQueuedTurnMethods(
       .lean<IAgentQueuedTurn>();
     if (current == null) {
       return { outcome: 'missing', turn: null };
+    }
+    if (
+      current.status === 'claimed' &&
+      current.deliveryKey === deliveryKey &&
+      current.admissionStartedAt != null
+    ) {
+      return { outcome: 'admission_indeterminate', turn: toRecord(current) };
     }
     if (['admitted', 'cancelled', 'dead'].includes(current.status)) {
       return { outcome: 'already_terminal', turn: toRecord(current) };
@@ -1593,9 +1685,9 @@ export function createAgentQueuedTurnMethods(
     const _id = laneKey(input);
     const scope = conversationScope(input);
     return serializeLocalLane(input, async () => {
-      let writerId: string;
+      let writer: AgentQueuedTurnLaneWriter;
       try {
-        writerId = await acquireLaneWriter(input);
+        writer = await acquireLaneWriter(input);
       } catch (error) {
         if (error instanceof AgentQueuedTurnLaneRetiredError) {
           return;
@@ -1612,7 +1704,7 @@ export function createAgentQueuedTurnMethods(
           throw new Error('Agent queued turn admission must settle before conversation deletion');
         }
         const retired = await Sequence().updateOne(
-          { _id, ...scope, writerId, retiredAt: { $exists: false } },
+          { _id, ...scope, writerId: writer.writerId, retiredAt: { $exists: false } },
           {
             $set: {
               retiredAt,
@@ -1625,7 +1717,7 @@ export function createAgentQueuedTurnMethods(
           throw new Error('Agent queued turn lane retirement fence was lost');
         }
       } finally {
-        await releaseLaneWriter(input, writerId);
+        await releaseLaneWriter(input, writer.writerId);
       }
     });
   }
@@ -1679,7 +1771,7 @@ export function createAgentQueuedTurnMethods(
       Turn().updateMany(
         {
           ...scope,
-          status: { $in: ['cancelled', 'dead'] },
+          status: { $in: ['admitted', 'cancelled', 'dead'] },
           deliveryKey: { $exists: true },
           deliveryState: { $exists: false },
         },
@@ -1689,7 +1781,7 @@ export function createAgentQueuedTurnMethods(
     const turns = await Turn()
       .find({
         ...scope,
-        status: { $in: ['cancelled', 'dead'] },
+        status: { $in: ['admitted', 'cancelled', 'dead'] },
         deliveryKey: { $exists: true },
         deliveryState: { $ne: 'retired' },
       })
@@ -1706,15 +1798,10 @@ export function createAgentQueuedTurnMethods(
   }): Promise<number> {
     const scope = deletionScope(input);
     const blocker = await Turn().exists({
-      $and: [
-        scope,
-        {
-          status: { $ne: 'admitted' },
-          $or: [
-            { deliveryKey: { $exists: true }, deliveryState: { $ne: 'retired' } },
-            { status: { $in: ['reserving', 'queued', 'claimed'] } },
-          ],
-        },
+      ...scope,
+      $or: [
+        { deliveryKey: { $exists: true }, deliveryState: { $ne: 'retired' } },
+        { status: { $in: ['reserving', 'queued', 'claimed'] } },
       ],
     });
     if (blocker != null) {
@@ -1743,6 +1830,33 @@ export function createAgentQueuedTurnMethods(
       deliveryState: 'retired',
     });
     return achieved != null;
+  }
+
+  /** A published source proves that its delivery was durably created before
+   * the source advanced. Once that delivery has aged out, absence is therefore
+   * terminal proof rather than permission to publish the payload again. */
+  async function markAgentQueuedTurnMissingDeliveryRetired(input: {
+    deliveryKey: string;
+  }): Promise<boolean> {
+    const deliveryKey = requireBoundedString(input.deliveryKey, 128);
+    const result = await Turn().updateOne(
+      {
+        deliveryKey,
+        status: { $in: ['admitted', 'cancelled', 'dead'] },
+        deliveryState: 'published',
+      },
+      { $set: { deliveryState: 'retired' } },
+    );
+    if (result.modifiedCount === 1) {
+      return true;
+    }
+    return (
+      (await Turn().exists({
+        deliveryKey,
+        status: { $in: ['admitted', 'cancelled', 'dead'] },
+        deliveryState: 'retired',
+      })) != null
+    );
   }
 
   async function deleteAllAgentQueuedTurnsForUser(input: {
@@ -1776,6 +1890,7 @@ export function createAgentQueuedTurnMethods(
     prepareAgentQueuedTurnConversationDeletion,
     deletePreparedAgentQueuedTurnConversations,
     markAgentQueuedTurnDeliveryRetired,
+    markAgentQueuedTurnMissingDeliveryRetired,
     deleteAllAgentQueuedTurnsForUser,
   };
 }
