@@ -1,7 +1,9 @@
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
 import { createScheduleModel, createScheduleRunModel } from './schedule';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createOpenIDRefreshFlightModel } from './openidRefreshFlight';
 import { createAgentTriggerUserPurgeModel } from './triggerUserPurge';
+import { createRefreshTokenBridgeModel } from './refreshTokenBridge';
 import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
@@ -87,6 +89,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
   AgentTriggerUserPurge: ReturnType<typeof createAgentTriggerUserPurgeModel>;
   Schedule: ReturnType<typeof createScheduleModel>;
   ScheduleRun: ReturnType<typeof createScheduleRunModel>;
+  RefreshTokenBridge: ReturnType<typeof createRefreshTokenBridgeModel>;
+  OpenIDRefreshFlight: ReturnType<typeof createOpenIDRefreshFlightModel>;
 } {
   const models = {
     User: createUserModel(mongoose),
@@ -131,6 +135,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
     AgentTriggerUserPurge: createAgentTriggerUserPurgeModel(mongoose),
     Schedule: createScheduleModel(mongoose),
     ScheduleRun: createScheduleRunModel(mongoose),
+    RefreshTokenBridge: createRefreshTokenBridgeModel(mongoose),
+    OpenIDRefreshFlight: createOpenIDRefreshFlightModel(mongoose),
   };
   /**
    * Background index builds fail silently unless an 'index' listener is
