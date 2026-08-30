@@ -369,6 +369,7 @@ jest.mock('@librechat/api', () => ({
     connection,
     isPrincipalActive,
     execute,
+    handleExecutionError,
     beforeSettle,
   }) => {
     let execution;
@@ -393,6 +394,7 @@ jest.mock('@librechat/api', () => ({
       return await execute(execution);
     } catch (error) {
       executionError = error;
+      if (handleExecutionError) return await handleExecutionError(error);
       throw error;
     } finally {
       removeCloseListener();

@@ -104,6 +104,32 @@ describe('executeAgentRun', () => {
     expect(manager.completeJob).toHaveBeenCalledWith('run-1', 'Remote agent execution failed', 10);
   });
 
+  it('renders an execution error before terminal settlement', async () => {
+    const events: string[] = [];
+    manager.completeJob.mockImplementation(async () => {
+      events.push('settled');
+      return true;
+    });
+
+    await expect(
+      executeAgentRun({
+        envelope: createEnvelope(),
+        runId: 'run-1',
+        conversationId: 'conversation-1',
+        isPrincipalActive: async () => true,
+        execute: async () => {
+          throw new Error('provider failed');
+        },
+        handleExecutionError: () => {
+          events.push('rendered');
+          return 'handled';
+        },
+      }),
+    ).resolves.toBe('handled');
+
+    expect(events).toEqual(['rendered', 'settled']);
+  });
+
   it('settles even when trailing-write registration fails', async () => {
     const failure = new Error('trailing write registration failed');
 

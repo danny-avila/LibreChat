@@ -15,6 +15,7 @@ export interface ExecuteAgentRunParams<Result> {
   connection?: AgentExecutionConnection;
   isPrincipalActive: (userId: string) => Promise<boolean>;
   execute: (execution: AgentExecutionEnrollment) => Promise<Result>;
+  handleExecutionError?: (error: unknown) => Result | Promise<Result>;
   beforeSettle?: (
     execution: AgentExecutionEnrollment,
     executionError: unknown,
@@ -34,6 +35,7 @@ export async function executeAgentRun<Result>({
   connection,
   isPrincipalActive,
   execute,
+  handleExecutionError,
   beforeSettle,
   onSettlementError,
 }: ExecuteAgentRunParams<Result>): Promise<Result> {
@@ -63,6 +65,9 @@ export async function executeAgentRun<Result>({
     return await execute(execution);
   } catch (error) {
     executionError = error;
+    if (handleExecutionError != null) {
+      return await handleExecutionError(error);
+    }
     throw error;
   } finally {
     removeCloseListener();
