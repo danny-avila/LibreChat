@@ -8,6 +8,10 @@ export type CodeEnvironment = {
   controlPlaneId: string;
   createdBy: Types.ObjectId;
   workerId?: string;
+  workerPrincipal?: {
+    type: 'deployment' | 'tenant' | 'user' | 'role' | 'group';
+    id: string;
+  };
   tenantId?: string;
   createdAt: Date;
   updatedAt: Date;

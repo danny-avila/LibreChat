@@ -138,6 +138,33 @@ describe('resolveCodeExecutionContext', () => {
     expect(context.executionRouteKey).toMatch(/^stateful:[a-f0-9]{32}$/);
   });
 
+  it('routes a deployment worker declared in pairing metadata', () => {
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environmentId: 'deployment-vm',
+      environments: [
+        {
+          id: 'deployment-vm',
+          name: 'Deployment VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1',
+          owner: 'deployment',
+          pairing: {
+            workerId: 'deployment-worker',
+            allowPrincipalWorkers: false,
+            tokenEnv: 'CODE_ADMIN_TOKEN',
+          },
+        },
+      ],
+      userId: 'user-1',
+    });
+
+    expect(context.bridgeWorkerId).toBe('deployment-worker');
+    expect(codeExecutionHeaders(context)).toMatchObject({
+      'X-LibreChat-Code-Worker-ID': 'deployment-worker',
+    });
+  });
+
   it('adds the server-selected worker to execution auth without replacing authentication', async () => {
     const context = resolveCodeExecutionContext({
       statefulSessions: true,

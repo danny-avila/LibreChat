@@ -11,7 +11,7 @@ import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
 import type { CodeBridgeFetch } from './bridge';
 import { CodeBridgePairingError, createCodeBridgePairing, readCodeBridgeSecret } from './bridge';
-import { CodeEnvironmentValidationError } from './environments';
+import { CodeEnvironmentValidationError, normalizeCodeEnvironmentName } from './environments';
 import { getCodeApiTenantId } from '~/auth/codeapi';
 
 type Registry = {
@@ -56,7 +56,7 @@ function configuredControlPlane(
       environment.id === controlPlaneId &&
       environment.type === 'attached' &&
       environment.owner === 'deployment' &&
-      environment.pairing != null,
+      environment.pairing?.workerId != null,
   );
 }
 
@@ -129,6 +129,13 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         error: 'name and controlPlaneId are required',
       });
     }
+    try {
+      normalizeCodeEnvironmentName(name);
+    } catch (error) {
+      return res.status(400).json({
+        error: error instanceof Error ? error.message : 'Code environment name is invalid',
+      });
+    }
 
     /** Control-plane destinations are deployment policy. Client-provided URLs
      * are deliberately ignored to prevent an authenticated SSRF primitive. */
@@ -148,6 +155,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           baseURL: controlPlane.baseURL,
           controlPlaneId,
           workerId: controlPlane.pairing?.workerId,
+          workerPrincipal: { type: 'deployment', id: controlPlane.id },
         },
       });
       return res.status(201).json({ environment });
@@ -179,6 +187,13 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       typeof body.controlPlaneId === 'string' ? body.controlPlaneId.trim() : '';
     if (!name || !controlPlaneId) {
       return res.status(400).json({ error: 'name and controlPlaneId are required' });
+    }
+    try {
+      normalizeCodeEnvironmentName(name);
+    } catch (error) {
+      return res.status(400).json({
+        error: error instanceof Error ? error.message : 'Code environment name is invalid',
+      });
     }
 
     const appConfig = await deps.getAppConfig({ baseOnly: true });
@@ -218,6 +233,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           type: 'attached',
           baseURL: controlPlane.baseURL,
           workerId,
+          workerPrincipal: { type: 'user', id: principal.userId.toString() },
         },
       });
       return res.status(201).json({

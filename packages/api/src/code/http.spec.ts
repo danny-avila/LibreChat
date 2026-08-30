@@ -123,6 +123,7 @@ describe('code environment HTTP handlers', () => {
         type: 'attached',
         baseURL: 'https://code.librechat.example/v1',
         workerId: 'code-generated',
+        workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
       },
     });
     expect(res.body).toEqual({
@@ -189,25 +190,30 @@ describe('code environment HTTP handlers', () => {
         baseURL: 'https://code.librechat.example',
         controlPlaneId: 'shared-code-api',
         workerId: 'deployment-worker',
+        workerPrincipal: { type: 'deployment', id: 'shared-code-api' },
       },
     });
   });
 
-  test('returns a generic 500 for operational registration failures', async () => {
-    const register = jest.fn().mockRejectedValue(new Error('mongo connection details'));
+  test('does not register a fixed environment on a self-service-only control plane', async () => {
+    const register = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {
           [EModelEndpoint.agents]: {
             statefulCodeSessions: {
+              allowedEnvironments: ['user'],
               environments: [
                 {
-                  id: 'shared-code-api',
-                  name: 'Shared Code API',
+                  id: 'self-service',
+                  name: 'Self-service',
                   type: 'attached',
                   baseURL: 'https://code.librechat.example',
                   owner: 'deployment',
-                  pairing: { workerId: 'deployment-worker' },
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_ADMIN_TOKEN',
+                  },
                 },
               ],
             },
@@ -220,52 +226,103 @@ describe('code environment HTTP handlers', () => {
 
     await handlers.register(
       {
-        user: { id: '68b2f0c498f24c1e78fa0001' },
-        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'ADMIN' },
+        body: { name: 'Invalid fixed route', controlPlaneId: 'self-service' },
       } as never,
       res as never,
     );
 
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Code environment registration failed' });
+    expect(res.statusCode).toBe(404);
+    expect(register).not.toHaveBeenCalled();
   });
 
-  test('returns 400 for validated registration input failures', async () => {
-    const register = jest
-      .fn()
-      .mockRejectedValue(new CodeEnvironmentValidationError('Code environment id is invalid'));
+  test('validates a pairing name before creating upstream state', async () => {
+    const fetchImpl = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {
           [EModelEndpoint.agents]: {
             statefulCodeSessions: {
+              allowedEnvironments: ['user'],
               environments: [
                 {
-                  id: 'shared-code-api',
-                  name: 'Shared Code API',
+                  id: 'self-service',
+                  name: 'Self-service',
                   type: 'attached',
                   baseURL: 'https://code.librechat.example',
                   owner: 'deployment',
-                  pairing: { workerId: 'deployment-worker' },
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_ADMIN_TOKEN',
+                  },
                 },
               ],
             },
           },
         },
       } as AppConfig),
-      registry: { register, listAccessible: jest.fn() },
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      readSecret: jest.fn(() => 'administrator-token'),
+      fetchImpl,
     });
     const res = response();
 
-    await handlers.register(
+    await handlers.pair(
       {
-        user: { id: '68b2f0c498f24c1e78fa0001' },
-        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'x'.repeat(101), controlPlaneId: 'self-service' },
       } as never,
       res as never,
     );
 
     expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Code environment id is invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    {
+      error: new Error('mongo connection details'),
+      status: 500,
+      body: { error: 'Code environment registration failed' },
+    },
+    {
+      error: new CodeEnvironmentValidationError('Code environment id is invalid'),
+      status: 400,
+      body: { error: 'Code environment id is invalid' },
+    },
+  ])('classifies registration failure with status $status', async ({ error, status, body }) => {
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example',
+                  owner: 'deployment',
+                  pairing: { workerId: 'deployment-worker' },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: { register: jest.fn().mockRejectedValue(error), listAccessible: jest.fn() },
+    });
+    const res = response();
+
+    await handlers.register(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(status);
+    expect(res.body).toEqual(body);
   });
 });

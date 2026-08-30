@@ -154,7 +154,7 @@ export function resolveCodeExecutionContext(params: {
     statefulSessions: true,
     environmentId: configuredEnvironment?.id,
     environmentType: configuredEnvironment?.type,
-    bridgeWorkerId: configuredEnvironment?.workerId,
+    bridgeWorkerId: configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
   };
 }
 

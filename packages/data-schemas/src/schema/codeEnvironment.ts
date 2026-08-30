@@ -1,6 +1,21 @@
 import { Schema } from 'mongoose';
 import type { CodeEnvironmentDocument } from '~/types';
 
+const workerPrincipalSchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: ['deployment', 'tenant', 'user', 'role', 'group'],
+      required: true,
+    },
+    id: {
+      type: String,
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
 const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEnvironmentDocument>(
   {
     environmentId: {
@@ -32,6 +47,9 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
     },
     workerId: {
       type: String,
+    },
+    workerPrincipal: {
+      type: workerPrincipalSchema,
     },
     tenantId: {
       type: String,
