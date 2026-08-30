@@ -11,6 +11,7 @@ const mockCancelAndDrainSubagentThreads = jest.fn().mockResolvedValue(undefined)
 const mockQuiesceUserSchedules = jest.fn().mockResolvedValue(true);
 const mockRestoreUserSchedules = jest.fn().mockResolvedValue(undefined);
 const mockGetWebSearchInstallEntries = jest.fn();
+const mockInvalidateCodeEnvironmentConfigCache = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -120,6 +121,8 @@ jest.mock('~/server/services/Config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
   getMCPServersRegistry: jest.fn(),
+  invalidateCodeEnvironmentConfigCache: (...args) =>
+    mockInvalidateCodeEnvironmentConfigCache(...args),
 }));
 
 jest.mock('~/cache', () => ({

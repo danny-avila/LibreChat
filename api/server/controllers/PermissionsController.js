@@ -159,7 +159,11 @@ const updateResourcePermissions = async (req, res) => {
     });
 
     if (resourceType === ResourceType.CODE_ENVIRONMENT) {
-      await invalidateCodeEnvironmentConfigCache(req.user.tenantId);
+      await invalidateCodeEnvironmentConfigCache(req.user.tenantId).catch((error) => {
+        // Cached environment metadata is authorization-filtered against the live ACL on every
+        // read, so a failed revision write may delay a grant but cannot preserve a revocation.
+        logger.error('[PermissionsController] code environment cache invalidation failed:', error);
+      });
     }
 
     const isAgentResource =

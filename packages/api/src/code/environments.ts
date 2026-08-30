@@ -43,6 +43,10 @@ export type AccessibleCodeEnvironmentConfiguration = {
   owner: 'principal';
 };
 
+type CachedAccessibleCodeEnvironmentConfiguration = AccessibleCodeEnvironmentConfiguration & {
+  resourceId: string;
+};
+
 const ENVIRONMENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const CONFIGURATION_CACHE_TTL_MS = 5_000;
@@ -186,13 +190,17 @@ export function createCodeEnvironmentRegistry(
     }
   }
 
-  async function findAccessible(actor: CodeEnvironmentPrincipalContext) {
-    const principals = actor.principals ?? (await methods.getUserPrincipals(actor));
-    const ids = await access.findAccessibleResourcesForPrincipals({
+  async function findAccessibleResourceIds(principals: ResolvedPrincipal[]) {
+    return await access.findAccessibleResourcesForPrincipals({
       principalsList: principals,
       resourceType: ResourceType.CODE_ENVIRONMENT,
       requiredPermissions: PermissionBits.VIEW,
     });
+  }
+
+  async function findAccessible(actor: CodeEnvironmentPrincipalContext) {
+    const principals = actor.principals ?? (await methods.getUserPrincipals(actor));
+    const ids = await findAccessibleResourceIds(principals);
     return await methods.findCodeEnvironmentsByIds(ids);
   }
 
@@ -217,9 +225,16 @@ export function createCodeEnvironmentRegistry(
           .join('\n'),
       )
       .digest('base64url');
-    const load = async (): Promise<AccessibleCodeEnvironmentConfiguration[]> => {
-      const environments = await findAccessible({ ...actor, principals });
+    const toPublicConfiguration = ({
+      resourceId: _resourceId,
+      ...configuration
+    }: CachedAccessibleCodeEnvironmentConfiguration): AccessibleCodeEnvironmentConfiguration =>
+      configuration;
+    const load = async (): Promise<CachedAccessibleCodeEnvironmentConfiguration[]> => {
+      const ids = await findAccessibleResourceIds(principals);
+      const environments = await methods.findCodeEnvironmentsByIds(ids);
       return environments.map((environment) => ({
+        resourceId: environment._id.toString(),
         id: environment.environmentId,
         name: environment.name,
         type: environment.type,
@@ -228,7 +243,7 @@ export function createCodeEnvironmentRegistry(
         owner: 'principal',
       }));
     };
-    if (configurationCache == null) return await load();
+    if (configurationCache == null) return (await load()).map(toPublicConfiguration);
 
     const tenant = tenantCacheKey();
     const revision = String((await configurationCache.get(revisionKey())) ?? '0');
@@ -236,8 +251,25 @@ export function createCodeEnvironmentRegistry(
       `${CONFIGURATION_CACHE_USER_PREFIX}:${tenant}:${actor.userId.toString()}:` +
       `${principalFingerprint}:${revision}`;
     const cached = await configurationCache.get(key);
-    if (Array.isArray(cached)) {
-      return cached as AccessibleCodeEnvironmentConfiguration[];
+    if (
+      Array.isArray(cached) &&
+      cached.every(
+        (configuration) =>
+          configuration != null &&
+          typeof configuration === 'object' &&
+          typeof (configuration as { resourceId?: unknown }).resourceId === 'string',
+      )
+    ) {
+      // The cache accelerates configuration lookup, not authorization. Re-check the current
+      // ACL on every use so a failed revision write can delay grants but can never preserve a
+      // revocation. Entries written before resourceId was cached are deliberately treated as
+      // misses during rolling upgrades.
+      const accessibleIds = new Set(
+        (await findAccessibleResourceIds(principals)).map((id) => id.toString()),
+      );
+      return (cached as CachedAccessibleCodeEnvironmentConfiguration[])
+        .filter(({ resourceId }) => accessibleIds.has(resourceId))
+        .map(toPublicConfiguration);
     }
 
     const configurations = await load();
@@ -246,7 +278,7 @@ export function createCodeEnvironmentRegistry(
       return await listAccessibleConfigurations(actor);
     }
     await configurationCache.set(key, configurations, CONFIGURATION_CACHE_TTL_MS);
-    return configurations;
+    return configurations.map(toPublicConfiguration);
   }
 
   return {

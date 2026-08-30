@@ -404,6 +404,31 @@ describe('PermissionsController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
+    it('keeps the committed ACL response successful when cache invalidation fails', async () => {
+      mockInvalidateCodeEnvironmentConfigCache.mockRejectedValueOnce(
+        new Error('redis unavailable'),
+      );
+      const req = createMockReq({
+        params: { resourceType: ResourceType.CODE_ENVIRONMENT, resourceId: agentObjectId },
+        body: {
+          updated: [],
+          removed: [{ type: PrincipalType.USER, id: revokedUserId }],
+          public: false,
+        },
+        user: { id: 'user-1', role: 'USER', tenantId: 'tenant-a' },
+      });
+      const res = createMockRes();
+
+      await updateResourcePermissions(req, res);
+
+      expect(mockInvalidateCodeEnvironmentConfigCache).toHaveBeenCalledWith('tenant-a');
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[PermissionsController] code environment cache invalidation failed:',
+        expect.any(Error),
+      );
+    });
+
     it('handles agent not found gracefully', async () => {
       mockRemoveAgentFromUserFavorites.mockResolvedValue(undefined);
 

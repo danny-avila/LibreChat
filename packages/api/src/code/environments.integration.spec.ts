@@ -231,6 +231,47 @@ describe('code environment registry', () => {
     await expect(registry.listAccessibleConfigurations(teammate)).resolves.toEqual([]);
   });
 
+  test('does not reuse revoked access when cache invalidation fails', async () => {
+    const cache = createSharedCache();
+    const registry = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const ownerId = new Types.ObjectId();
+    const teammateId = new Types.ObjectId();
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'fail-closed-vm',
+        name: 'Fail Closed VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    const access = new AccessControlService(mongoose);
+    await access.grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: teammateId,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment.resourceId,
+      accessRoleId: AccessRoleIds.CODE_ENVIRONMENT_VIEWER,
+      grantedBy: ownerId,
+    });
+    const teammate = { userId: teammateId, role: 'USER', idOnTheSource: null };
+    await expect(registry.listAccessibleConfigurations(teammate)).resolves.toHaveLength(1);
+
+    await mongoose.models.AclEntry.deleteMany({
+      principalType: PrincipalType.USER,
+      principalId: teammateId,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment.resourceId,
+    });
+    cache.set.mockRejectedValueOnce(new Error('redis unavailable'));
+    await expect(registry.invalidateAccessibleConfigurations()).rejects.toThrow(
+      'redis unavailable',
+    );
+
+    await expect(registry.listAccessibleConfigurations(teammate)).resolves.toEqual([]);
+  });
+
   test('does not reuse cached access after group membership changes', async () => {
     const cache = createSharedCache();
     const registry = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
