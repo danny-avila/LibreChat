@@ -8,9 +8,11 @@ export const eventSubagentSelection = (
   parentConversationId: string,
   child: ParentSubagentSummary,
   siblingParentMessageIds?: string[],
+  requestedTaskId?: string,
 ): ActiveSubagentPanel | null => {
-  const taskId = child.latestTaskId;
+  const taskId = requestedTaskId ?? child.latestTaskId;
   if (child.origin !== 'event' || child.actorId == null || taskId == null) return null;
+  const pinnedTask = requestedTaskId != null && requestedTaskId !== child.latestTaskId;
   return {
     host: 'conversation',
     parentConversationId,
@@ -25,6 +27,7 @@ export const eventSubagentSelection = (
       actorId: child.actorId,
       progressKey: eventTaskProgressKey(child.threadId, taskId),
       ...(siblingParentMessageIds == null ? {} : { siblingParentMessageIds }),
+      ...(pinnedTask ? { pinnedTask: true } : {}),
     },
   };
 };
@@ -38,7 +41,7 @@ export const durableSubagentSelection = (
   taskId: string,
 ): ActiveSubagentPanel | null => {
   if (child.origin === 'event') {
-    return eventSubagentSelection(parentConversationId, child);
+    return eventSubagentSelection(parentConversationId, child, undefined, taskId);
   }
   const taskStatus = child.tasks.find((task) => task.taskId === taskId)?.status ?? child.status;
   return {

@@ -5,16 +5,13 @@ import type { ParentSubagentSummary } from 'librechat-data-provider';
 import { activeSubagentPanel } from '~/store/subagents';
 import Wakeup from '../Wakeup';
 
+/** The hooks barrel drags the full data-provider graph into jsdom, so only
+ *  localization is faked; the collapse hooks the card depends on stay real. */
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, vars?: Record<string, string>) =>
     vars == null ? key : `${key}:${Object.values(vars).join(',')}`,
-  useExpandCollapse: () => ({ style: {}, ref: { current: null } }),
-  useLazyCollapseBody: (isExpanded: boolean) => ({
-    shouldRenderBody: true,
-    mountBody: jest.fn(),
-    handleTransitionEnd: jest.fn(),
-    isExpanded,
-  }),
+  useExpandCollapse: jest.requireActual('~/hooks/Messages/useExpandCollapse').default,
+  useLazyCollapseBody: jest.requireActual('~/hooks/Messages/useLazyCollapseBody').default,
 }));
 
 jest.mock('~/hooks/MCP', () => ({
@@ -44,6 +41,7 @@ jest.mock('@librechat/client', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
     <button {...props}>{children}</button>
   ),
+  useMediaQuery: () => false,
 }));
 
 const child: ParentSubagentSummary = {
@@ -97,6 +95,7 @@ describe('Wakeup', () => {
 
     const header = screen.getByRole('button', { name: 'com_ui_wakeup_subagent_completed' });
     expect(header).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('markdown')).not.toBeInTheDocument();
     fireEvent.click(header);
     expect(header).toHaveAttribute('aria-expanded', 'true');
 
@@ -106,6 +105,33 @@ describe('Wakeup', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_wakeup_view_activity' }));
     expect(screen.getByTestId('selection')).toHaveTextContent('task-1');
+  });
+
+  it('keeps the panel affordance for a thread omitted from the bounded index', () => {
+    render(
+      <RecoilRoot>
+        <Wakeup
+          display={{
+            kind: 'subagent',
+            tasks: [
+              {
+                taskId: 'task-9',
+                status: 'completed',
+                result: 'ok',
+                threadId: 'thread-9',
+                subagentType: 'self',
+              },
+            ],
+          }}
+          conversationId="conversation-1"
+        />
+        <SelectionProbe />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_wakeup_subagent_completed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_wakeup_view_activity' }));
+    expect(screen.getByTestId('selection')).toHaveTextContent('task-9');
   });
 
   it('renders a failed background tool batch with per-task statuses and no panel affordance', () => {
@@ -136,9 +162,8 @@ describe('Wakeup', () => {
       </RecoilRoot>,
     );
 
-    expect(
-      screen.getByRole('button', { name: 'com_ui_wakeup_tasks_finished:2' }),
-    ).toBeInTheDocument();
+    const header = screen.getByRole('button', { name: 'com_ui_wakeup_tasks_finished:2' });
+    fireEvent.click(header);
     expect(screen.getByTestId('stacked-tool-icons')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_thread_status_completed')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_thread_status_failed')).toBeInTheDocument();

@@ -3,6 +3,7 @@ import { Button } from '@librechat/client';
 import { ChevronDown, Users } from 'lucide-react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { WakeupDisplay, WakeupTask } from './Parts/wakeup';
+import type { ActiveSubagentPanel } from '~/store/subagents';
 import type { TranslationKeys } from '~/hooks';
 import { subagentStatusIcon, subagentStatusLabelKey } from '~/components/Chat/Subagents/status';
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
@@ -11,6 +12,7 @@ import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { activeSubagentPanel } from '~/store/subagents';
 import { cn, getToolDisplayLabel } from '~/utils';
+import { useMessageContext } from '~/Providers';
 import { StackedToolIcons } from './ToolOutput';
 import MarkdownLite from './MarkdownLite';
 import store from '~/store';
@@ -35,22 +37,41 @@ function WakeupTaskCard({
 }) {
   const localize = useLocalize();
   const mcpServerNames = useMCPServerNames();
+  const { messageId } = useMessageContext();
   const { byThreadId } = useParentSubagents();
   const setSelection = useSetRecoilState(activeSubagentPanel);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const child = task.threadId == null ? undefined : byThreadId.get(task.threadId);
-  const selection =
-    child == null || conversationId == null || conversationId === ''
-      ? null
-      : durableSubagentSelection(conversationId, child, task.taskId);
+  const selection = useMemo<ActiveSubagentPanel | null>(() => {
+    if (task.threadId == null || conversationId == null || conversationId === '') {
+      return null;
+    }
+    if (child != null) {
+      return durableSubagentSelection(conversationId, child, task.taskId);
+    }
+    /** The bounded discovery index can omit older children; the wake-up payload
+     *  already carries the exact durable identities, so link to the authorized
+     *  thread query directly instead of requiring index membership. */
+    return {
+      host: 'conversation',
+      parentConversationId: conversationId,
+      parentMessageId: messageId,
+      toolCallId: `wakeup:${task.threadId}`,
+      partIndex: 0,
+      subagentType: task.subagentType ?? '',
+      initialProgress: task.status === 'completed' ? 1 : 0,
+      isSubmitting: false,
+      durable: { threadId: task.threadId, taskId: task.taskId },
+    };
+  }, [child, conversationId, messageId, task]);
   const status = threadStatus(task.status);
   const StatusIcon = subagentStatusIcon(status);
   const title =
     kind === 'subagent'
       ? (task.subagentType ?? '')
       : getToolDisplayLabel(task.toolName ?? '', localize, mcpServerNames);
-  const result = task.result.trim();
+  const hasResult = task.result.trim() !== '';
 
   const openActivity = useCallback(() => {
     if (selection == null) return;
@@ -81,9 +102,9 @@ function WakeupTaskCard({
           </Button>
         )}
       </div>
-      {result !== '' && (
+      {hasResult && (
         <div className="markdown prose prose-sm message-content light dark:prose-invert mt-2 max-h-96 w-full max-w-none overflow-y-auto break-words pr-1 text-text-primary">
-          <MarkdownLite content={result} codeExecution={false} />
+          <MarkdownLite content={task.result} codeExecution={false} />
         </div>
       )}
     </div>

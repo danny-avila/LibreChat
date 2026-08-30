@@ -50,6 +50,7 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
+import { composerSurfaceClasses, composerSurfaceShadow } from '~/components/Chat/Input/styles';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
@@ -58,6 +59,7 @@ import { useParentSubagents } from './ParentSubagentsProvider';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
+import { cn } from '~/utils';
 
 const EVENT_TASK_PAGE_SIZE = 3;
 const TERMINAL_CONTROL_REASONS = new Set([
@@ -230,6 +232,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   useEffect(() => {
     if (
       selection.event == null ||
+      selection.event.pinnedTask === true ||
       eventSummary?.latestTaskId == null ||
       eventSummary.latestTaskId === taskId
     ) {
@@ -1126,7 +1129,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           )}
           {controlAvailable && (
             /* Same surface language as the main chat composer, scaled to the panel. */
-            <div className="flex w-full flex-col gap-1.5 rounded-3xl border border-border-light bg-surface-chat p-2.5 shadow-md transition-shadow duration-200 focus-within:shadow-lg">
+            <div
+              className={cn(
+                'flex w-full flex-col gap-1.5 rounded-3xl p-2.5',
+                composerSurfaceClasses(),
+                composerSurfaceShadow.within,
+              )}
+            >
               <TextareaAutosize
                 value={controlMessage}
                 onChange={(event) => setControlMessage(event.target.value)}
