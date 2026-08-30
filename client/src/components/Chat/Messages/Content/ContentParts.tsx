@@ -14,8 +14,12 @@ import {
   filterAttachmentsForPart,
   groupSequentialToolCalls,
 } from '~/utils';
+import {
+  groupActivityPhases,
+  lastCursorContentIdx,
+  getActivityLabelText,
+} from '~/utils/activityLabels';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
-import { groupActivityPhases, lastCursorContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { MessageContext, SearchContext } from '~/Providers';
@@ -169,6 +173,8 @@ type ContentPartsProps = {
     | undefined;
   /** Internal recursion guard for nested phase segments. */
   nestedActivityPhase?: boolean;
+  /** Internal signal that this segment renders inside a completed phase card. */
+  withinActivityPhase?: boolean;
   /** Internal signal that the parent already removed message-level workspace attachments. */
   workspaceAttachmentsPartitioned?: boolean;
   /** Absolute transcript index represented by `content[0]` in a phase slice. */
@@ -205,6 +211,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   isLatestMessage,
   createdAt,
   nestedActivityPhase = false,
+  withinActivityPhase = false,
   workspaceAttachmentsPartitioned = false,
   contentIndexOffset = 0,
   contentIndices,
@@ -249,30 +256,72 @@ const ContentPartsBody = memo(function ContentPartsBody({
     () => (nestedActivityPhase ? undefined : groupActivityPhases(content)),
     [nestedActivityPhase, content],
   );
-  const completedPhaseIndices = useMemo(() => {
+  const completedPhaseKeys = useMemo(() => {
     const indices = new Set<number>();
+    const labels = new Map<string, number>();
+    const ordinals = new Map<number, number>();
     for (const segment of phaseSegments ?? []) {
       if (segment.type === 'phase') {
+        const text = getActivityLabelText(segment.labelPart);
+        const occurrence = (labels.get(text) ?? 0) + 1;
         indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
+        labels.set(text, occurrence);
+        ordinals.set(getPartKeyIndex(segment.labelPart, segment.labelIndex), occurrence);
       }
     }
-    return indices;
+    return { indices, labels, ordinals };
   }, [phaseSegments]);
   /** A phase label can finish after the root text stream settles, so
    *  `isSubmitting` is not a reliable entrance signal. Compare committed
    *  phase markers instead: a marker that appears after this renderer has
    *  mounted is live; markers present on the first render are history.
    *
-   *  The recorded set is scoped to the message it described. `MultiMessage`
-   *  renders siblings without a key, so this instance survives a sibling
-   *  switch with its refs intact — an unscoped set would report the previous
-   *  sibling's phases and animate the newly selected sibling's history. */
-  const previousPhaseRef = useRef<{ messageId: string; indices: Set<number> } | null>(null);
-  const previousPhaseIndices =
-    previousPhaseRef.current?.messageId === messageId ? previousPhaseRef.current.indices : null;
+   *  Both the render key AND the label text identify a known marker. The
+   *  final event swaps in the server's compacted content, and when the
+   *  streamed-index stamp cannot pair the two arrays every index-derived key
+   *  shifts — an index-only guard then reads each already-settled phase as
+   *  new and replays its fold over content the reader already watched fold.
+   *  The label text survives any re-key, so a re-keyed marker whose text was
+   *  already on screen mounts settled instead. The text layer engages ONLY
+   *  when a previously rendered key has vanished — the signature of a
+   *  re-key. A pure addition keeps key identity authoritative, so a marker
+   *  that fills out of order behind an already-rendered twin (concurrent
+   *  fills can resolve later-index first, with identical summaries) still
+   *  animates. Under a re-key, texts are counted and each marker paired
+   *  with a prior occurrence by position: a run may legitimately generate
+   *  two phases with identical summaries, and only an occurrence past the
+   *  previously rendered count deserves its entrance.
+   *
+   *  The recorded sets are scoped to the message they described.
+   *  `MultiMessage` renders siblings without a key, so this instance survives
+   *  a sibling switch with its refs intact — unscoped sets would report the
+   *  previous sibling's phases and animate the newly selected sibling's
+   *  history. */
+  const previousPhaseRef = useRef<{
+    messageId: string;
+    indices: Set<number>;
+    labels: Map<string, number>;
+  } | null>(null);
+  const previousPhases =
+    previousPhaseRef.current?.messageId === messageId ? previousPhaseRef.current : null;
+  const hasPhaseRekey = useMemo(() => {
+    if (previousPhases == null) {
+      return false;
+    }
+    for (const key of previousPhases.indices) {
+      if (!completedPhaseKeys.indices.has(key)) {
+        return true;
+      }
+    }
+    return false;
+  }, [previousPhases, completedPhaseKeys]);
   useEffect(() => {
-    previousPhaseRef.current = { messageId, indices: completedPhaseIndices };
-  }, [messageId, completedPhaseIndices]);
+    previousPhaseRef.current = {
+      messageId,
+      indices: completedPhaseKeys.indices,
+      labels: completedPhaseKeys.labels,
+    };
+  }, [messageId, completedPhaseKeys]);
 
   const handleGroupExpansionChange = useCallback(
     (groupId: string, state: ToolCallGroupExpansionState) => {
@@ -527,6 +576,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       segmentStartIndex: number,
       segmentIndices: ReadonlyArray<number>,
       key: string,
+      withinPhase = false,
     ) => {
       return (
         <ContentPartsBody
@@ -543,6 +593,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           isSubmitting={isSubmitting}
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
+          withinActivityPhase={withinPhase}
           workspaceAttachmentsPartitioned
           contentIndexOffset={segmentStartIndex}
           contentIndices={segmentIndices}
@@ -570,6 +621,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               );
             }
             const phaseKeyIndex = getPartKeyIndex(segment.labelPart, segment.labelIndex);
+            const labelText = getActivityLabelText(segment.labelPart);
             return (
               <ActivityPhaseGroup
                 key={`activity-phase-${messageId}-${phaseKeyIndex}`}
@@ -579,7 +631,11 @@ const ContentPartsBody = memo(function ContentPartsBody({
                   (part) => part != null && hasPendingApprovalInPart(part),
                 )}
                 animateEntrance={
-                  previousPhaseIndices != null && !previousPhaseIndices.has(phaseKeyIndex)
+                  previousPhases != null &&
+                  !previousPhases.indices.has(phaseKeyIndex) &&
+                  (!hasPhaseRekey ||
+                    (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >
+                      (previousPhases.labels.get(labelText) ?? 0))
                 }
                 showCursor={
                   isLast &&
@@ -592,6 +648,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
                   absoluteIndexAt(segment.startIndex),
                   segment.contentIndices.map(absoluteIndexAt),
                   `phase-content-${phaseKeyIndex}`,
+                  true,
                 )}
               </ActivityPhaseGroup>
             );
@@ -698,6 +755,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               initialExpansionState={expansionState.get(groupId)}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
               labelPart={group.labelPart}
+              withinActivityPhase={withinActivityPhase}
             />,
           );
           return nodes;
