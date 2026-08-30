@@ -48,6 +48,7 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
+import type { TerminalSteerHook } from '~/agents/steering/runtime';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
@@ -64,6 +65,11 @@ import {
   usesSubagentCompletionWakeups,
 } from '~/agents/subagentDelivery';
 import {
+  isSteeringSupported,
+  isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
+} from '~/agents/steering/runtime';
+import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
   exemptAskUserQuestionFromApproval,
@@ -74,12 +80,6 @@ import {
 } from '~/agents/hitl/askUserQuestionTool';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
-import {
-  isSteeringSupported,
-  isSteerPreemptSupported,
-  isSteerTerminalContinuationSupported,
-} from '~/agents/steering/runtime';
-import type { TerminalSteerHook } from '~/agents/steering/runtime';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
