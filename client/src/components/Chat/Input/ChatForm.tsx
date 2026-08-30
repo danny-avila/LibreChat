@@ -51,9 +51,9 @@ import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import SkillsCommand from './SkillsCommand';
 import AudioRecorder from './AudioRecorder';
+import AutoPlayAudio from './AutoPlayAudio';
 import CollapseChat from './CollapseChat';
 import QuoteButton from './QuoteButton';
-import StreamAudio from './StreamAudio';
 import TokenUsage from './TokenUsage';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -769,7 +769,7 @@ const ChatForm = memo(function ChatForm({
                       )}
                 </div>
               </div>
-              {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+              {TextToSpeech && automaticPlayback && <AutoPlayAudio index={index} />}
             </div>
           </div>
         </div>
