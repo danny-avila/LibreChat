@@ -1510,9 +1510,10 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         type: 'background_task_status',
         /** Agent-suffixed: sibling agents' `call_0` markers must not upsert
          *  over each other client-side. */
-        file_id: 'bg-call_code-a',
+        file_id: 'bg-call_code-a-step_1',
         messageId: 'msg-dispatch',
         toolCallId: 'call_code',
+        stepId: 'step_1',
         status: 'completed',
       }),
     ]);

@@ -1518,18 +1518,6 @@ export async function runCheckBackgroundTask(params: {
               });
             }
           }
-        } else {
-          const localClaim = backgroundTaskRegistry.claimResult(userId, conversationId, taskId, {
-            kind: 'manual',
-            claimId: invocationId,
-          });
-          if (localClaim === 'claimed') {
-            return JSON.stringify({
-              status: 'delivery_scheduled',
-              background_task_id: taskId,
-              message: 'This result is already assigned to an automatic continuation.',
-            });
-          }
         }
       }
       return JSON.stringify(serializeTask(task, { includeResult: true }));

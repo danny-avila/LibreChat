@@ -396,7 +396,7 @@ describe('registerBackgroundTaskTool', () => {
     );
   });
 
-  it('advertises automatic delivery only for wakeup-enabled subagents', () => {
+  it('advertises automatic delivery for wakeup-enabled background work', () => {
     const registry: LCToolRegistry = new Map();
     const manual = registerBackgroundTaskTool({ toolRegistry: registry, toolDefinitions: [] });
     const manualDescription = manual.toolDefinitions[0].description ?? '';
@@ -409,10 +409,10 @@ describe('registerBackgroundTaskTool', () => {
     });
     expect(automatic.toolDefinitions).toHaveLength(1);
     expect(automatic.toolDefinitions[0].description).toContain(
-      'Detached subagent tasks use automatic completion delivery',
+      'Background tools and detached subagents use automatic completion delivery',
     );
     expect(automatic.toolDefinitions[0].description).toContain(
-      'Ordinary background tool tasks require polling',
+      'Ordinary tool execution remains process-local',
     );
   });
 });
