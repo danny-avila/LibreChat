@@ -154,6 +154,25 @@ describe('createAdminCodeEnvironmentHandlers', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('treats inherited process environment properties as missing secrets', async () => {
+    const deploymentConfig = config();
+    const environment = deploymentConfig.endpoints?.agents?.statefulCodeSessions?.environments?.[0];
+    if (environment?.pairing == null) throw new Error('Expected the test pairing configuration');
+    environment.pairing.tokenEnv = 'constructor';
+    const fetchImpl = jest.fn();
+    const handlers = createAdminCodeEnvironmentHandlers({
+      getAppConfig: jest.fn().mockResolvedValue(deploymentConfig),
+      fetchImpl,
+    });
+    const response = mockResponse();
+
+    await handlers.createPairing(request(), response);
+
+    expect(response.statusCode).toBe(503);
+    expect(response.body).toEqual({ error: 'Code environment pairing is not configured' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('normalizes the bridge base URL before appending control paths', async () => {
     const deploymentConfig = config();
     const environment = deploymentConfig.endpoints?.agents?.statefulCodeSessions?.environments?.[0];

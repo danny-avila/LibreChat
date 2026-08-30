@@ -87,7 +87,10 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
   revokeWorker: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const readSecret = deps.readSecret ?? ((name: string) => process.env[name]);
+  const readSecret =
+    deps.readSecret ??
+    ((name: string) =>
+      Object.prototype.hasOwnProperty.call(process.env, name) ? process.env[name] : undefined);
 
   async function resolve(
     req: ServerRequest,
