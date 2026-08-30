@@ -17,10 +17,10 @@ import type {
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
+import type { BackgroundToolWakeupRegistration } from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
-import type { CodeExecutionContext } from './execution';
 import type { BackgroundToolResultState } from './harvest';
-import type { BackgroundToolWakeupRegistration } from './backgroundCompletionWakeup';
+import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
 import type { ServerRequest } from '~/types';
 import {

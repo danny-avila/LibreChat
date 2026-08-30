@@ -10,6 +10,7 @@ import type {
   AgentTriggerContinuePreparation,
   AgentTriggerExecutionHostDeps,
 } from './triggers/host';
+import type { BackgroundToolWakeupRegistration } from './backgroundCompletion';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
@@ -23,18 +24,6 @@ const MAX_WAKEUP_RESULT_CHARS = 24 * 1024;
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
 export const BACKGROUND_TOOL_COMPLETION_SOURCE = 'background-tool-completion';
 const EVENT_TYPE = 'background-tool.completion';
-
-export interface BackgroundToolWakeupRegistration {
-  taskId: string;
-  toolCallId: string;
-  toolName: string;
-  userId: string;
-  tenantId?: string;
-  conversationId: string;
-  parentMessageId: string;
-  parentAgentId?: string;
-  createdAt: number;
-}
 
 export type EnqueueBackgroundToolCompletion = (
   envelope: unknown,
