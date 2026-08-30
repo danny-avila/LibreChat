@@ -8,7 +8,7 @@ import {
   stripHeavyErrorFields,
 } from './parsers';
 import { appendLogContext, attachRequestContext } from './requestLogContext';
-import { getLogDirectory, resolveConsoleLevel } from './utils';
+import { getLogDirectory, logLevels, resolveConsoleLevel } from './utils';
 
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;
 
@@ -19,17 +19,6 @@ const useDebugConsole = typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE.toLow
 const useDebugLogging = typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING.toLowerCase() === 'true';
 
 const useFileLogging = typeof LOG_TO_FILE !== 'string' || LOG_TO_FILE.toLowerCase() !== 'false';
-
-const levels: winston.config.AbstractConfigSetLevels = {
-  error: 0,
-  warn: 1,
-  info: 2,
-  http: 3,
-  verbose: 4,
-  debug: 5,
-  activity: 6,
-  silly: 7,
-};
 
 const requestContextFormat = winston.format(attachRequestContext);
 
@@ -134,7 +123,7 @@ if (useDebugConsole) {
 // Create logger
 const logger: winston.Logger = winston.createLogger({
   level: level(),
-  levels,
+  levels: logLevels,
   transports,
 });
 
