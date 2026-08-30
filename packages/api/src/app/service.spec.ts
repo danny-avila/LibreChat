@@ -464,6 +464,33 @@ describe('createAppConfigService', () => {
       });
     });
 
+    it('caches principal config augmentation with the already-resolved principals', async () => {
+      const augmentConfig = jest.fn(async ({ appConfig, principals }) => ({
+        ...appConfig,
+        principalCount: principals.length,
+      }));
+      const deps = createDeps({ augmentConfig });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const first = await getAppConfig({ role: 'USER', userId: 'uid1' });
+      const second = await getAppConfig({ role: 'USER', userId: 'uid1' });
+
+      expect(first).toEqual(expect.objectContaining({ principalCount: 2 }));
+      expect(second).toEqual(expect.objectContaining({ principalCount: 2 }));
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(1);
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
+      expect(augmentConfig).toHaveBeenCalledTimes(1);
+      expect(augmentConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          principals: [
+            { principalType: 'role', principalId: 'USER' },
+            { principalType: 'user', principalId: 'uid1' },
+          ],
+          options: expect.objectContaining({ role: 'USER', userId: 'uid1' }),
+        }),
+      );
+    });
+
     it('passes local identity through to getUserPrincipals when provided', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);

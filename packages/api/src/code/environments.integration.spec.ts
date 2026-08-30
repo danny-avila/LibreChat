@@ -38,9 +38,11 @@ describe('code environment registry', () => {
         name: "Danny's VM",
         type: 'attached',
         baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
       },
     });
 
+    expect(mongoose.models.CodeEnvironment.schema.path('controlPlaneId')).toBeDefined();
     expect(created).toEqual({
       resourceId: expect.any(String),
       id: 'danny-vm',
@@ -65,6 +67,7 @@ describe('code environment registry', () => {
         name: "Danny's VM",
         type: 'attached',
         baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
         owner: 'principal',
       },
     ]);
@@ -88,6 +91,7 @@ describe('code environment registry', () => {
         name: 'Role VM',
         type: 'attached',
         baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
       },
     });
     const groupEnvironment = await registry.register({
@@ -97,6 +101,7 @@ describe('code environment registry', () => {
         name: 'Group VM',
         type: 'attached',
         baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
       },
     });
 
@@ -137,6 +142,7 @@ describe('code environment registry', () => {
         name: 'Departing user VM',
         type: 'attached',
         baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
       },
     });
 

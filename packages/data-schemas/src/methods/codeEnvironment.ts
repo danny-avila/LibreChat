@@ -6,7 +6,7 @@ import type { IAclEntry } from '~/types';
 
 type CreateCodeEnvironmentInput = Pick<
   CodeEnvironmentDocument,
-  'environmentId' | 'name' | 'type' | 'baseURL' | 'createdBy'
+  'environmentId' | 'name' | 'type' | 'baseURL' | 'controlPlaneId' | 'createdBy'
 > &
   Pick<Partial<CodeEnvironmentDocument>, 'workerId'>;
 

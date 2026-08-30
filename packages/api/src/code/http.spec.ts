@@ -63,10 +63,12 @@ describe('code environment HTTP handlers', () => {
         },
       },
     } as AppConfig;
+    const clearOverrideCache = jest.fn().mockResolvedValue(undefined);
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue(appConfig),
       registry: { register, listAccessible: jest.fn() },
       createEnvironmentId: () => 'personal-vm',
+      clearOverrideCache,
     });
     const req = {
       user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
@@ -93,9 +95,11 @@ describe('code environment HTTP handlers', () => {
         name: 'Personal VM',
         type: 'attached',
         baseURL: 'https://code.librechat.example',
+        controlPlaneId: 'shared-code-api',
         workerId: 'deployment-worker',
       },
     });
+    expect(clearOverrideCache).toHaveBeenCalledWith(undefined);
   });
 
   test('returns a generic 500 for operational registration failures', async () => {

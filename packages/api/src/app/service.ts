@@ -59,6 +59,12 @@ export interface AppConfigServiceDeps {
     role?: string | null;
     idOnTheSource?: string | null;
   }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
+  /** Add principal-scoped runtime configuration before the merged config is cached. */
+  augmentConfig?: (context: {
+    appConfig: AppConfig;
+    principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>;
+    options: GetAppConfigOptions;
+  }) => Promise<AppConfig>;
   /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
   overrideCacheTtl?: number;
 }
@@ -142,6 +148,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     cacheKeys,
     getApplicableConfigs,
     getUserPrincipals,
+    augmentConfig,
     overrideCacheTtl = DEFAULT_OVERRIDE_CACHE_TTL,
   } = deps;
 
@@ -249,21 +256,28 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       );
     }
 
+    let merged = baseConfig;
     try {
       const configs = await getApplicableConfigs(principals);
-
-      if (configs.length === 0) {
-        await cache.set(cacheKey, baseConfig, overrideCacheTtl);
-        return baseConfig;
+      if (configs.length > 0) {
+        merged = materializeConfigModelSpecs(mergeConfigOverrides(baseConfig, configs));
       }
-
-      const merged = materializeConfigModelSpecs(mergeConfigOverrides(baseConfig, configs));
-      await cache.set(cacheKey, merged, overrideCacheTtl);
-      return merged;
     } catch (error) {
       logger.error('[getAppConfig] Error resolving config overrides, falling back to base:', error);
       return baseConfig;
     }
+
+    if (augmentConfig != null) {
+      try {
+        merged = await augmentConfig({ appConfig: merged, principals, options });
+      } catch (error) {
+        logger.error('[getAppConfig] Error augmenting principal config:', error);
+        return merged;
+      }
+    }
+
+    await cache.set(cacheKey, merged, overrideCacheTtl);
+    return merged;
   }
 
   /**

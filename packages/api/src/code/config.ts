@@ -26,9 +26,22 @@ export async function mergeAccessibleCodeEnvironments({
 
   const accessible = await registry.listAccessibleConfigurations(actor);
   if (accessible.length === 0) return appConfig;
-  const deploymentIds = new Set(sessions.environments?.map((environment) => environment.id) ?? []);
-  const principalEnvironments = accessible.filter(
-    (environment) => !deploymentIds.has(environment.id),
+  const deploymentEnvironments = new Map(
+    sessions.environments
+      ?.filter(
+        (environment) =>
+          environment.owner === 'deployment' &&
+          environment.type === 'attached' &&
+          environment.pairing != null,
+      )
+      .map((environment) => [environment.id, environment]) ?? [],
+  );
+  const principalEnvironments = accessible.flatMap(
+    ({ controlPlaneId, baseURL: _persistedBaseURL, ...environment }) => {
+      const controlPlane = deploymentEnvironments.get(controlPlaneId);
+      if (controlPlane == null || deploymentEnvironments.has(environment.id)) return [];
+      return [{ ...environment, baseURL: controlPlane.baseURL }];
+    },
   );
   if (principalEnvironments.length === 0) return appConfig;
 

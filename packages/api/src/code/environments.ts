@@ -7,12 +7,14 @@ import {
   ResourceType,
   isSecureCodeEnvironmentControlURL,
 } from 'librechat-data-provider';
+import type { ResolvedPrincipal } from '~/types/principal';
 import { AccessControlService } from '~/acl/accessControlService';
 
 export type CodeEnvironmentPrincipalContext = {
   userId: string | Types.ObjectId;
   role?: string | null;
   idOnTheSource?: string | null;
+  principals?: ResolvedPrincipal[];
 };
 
 export type CodeEnvironmentSummary = {
@@ -27,6 +29,7 @@ export type CodeEnvironmentRegistration = {
   name: string;
   type: 'managed' | 'attached';
   baseURL: string;
+  controlPlaneId: string;
   workerId?: string;
 };
 
@@ -35,6 +38,7 @@ export type AccessibleCodeEnvironmentConfiguration = {
   name: string;
   type: 'managed' | 'attached';
   baseURL: string;
+  controlPlaneId: string;
   owner: 'principal';
 };
 
@@ -52,6 +56,7 @@ function normalizeRegistration(input: CodeEnvironmentRegistration): CodeEnvironm
   const id = input.id.trim();
   const name = input.name.trim();
   const baseURL = input.baseURL.trim().replace(/\/+$/, '');
+  const controlPlaneId = input.controlPlaneId.trim();
   const workerId = input.workerId?.trim();
   if (!ENVIRONMENT_ID_PATTERN.test(id)) {
     throw new CodeEnvironmentValidationError('Code environment id is invalid');
@@ -64,10 +69,13 @@ function normalizeRegistration(input: CodeEnvironmentRegistration): CodeEnvironm
   if (!isSecureCodeEnvironmentControlURL(baseURL)) {
     throw new CodeEnvironmentValidationError('Code environment control requires secure transport');
   }
+  if (!ENVIRONMENT_ID_PATTERN.test(controlPlaneId)) {
+    throw new CodeEnvironmentValidationError('Code environment control plane id is invalid');
+  }
   if (workerId != null && !WORKER_ID_PATTERN.test(workerId)) {
     throw new CodeEnvironmentValidationError('Code environment worker id is invalid');
   }
-  return { ...input, id, name, baseURL, workerId };
+  return { ...input, id, name, baseURL, controlPlaneId, workerId };
 }
 
 function toSummary(environment: {
@@ -110,6 +118,7 @@ export function createCodeEnvironmentRegistry(mongoose: typeof import('mongoose'
       name: environment.name,
       type: environment.type,
       baseURL: environment.baseURL,
+      controlPlaneId: environment.controlPlaneId,
       workerId: environment.workerId,
       createdBy: new Types.ObjectId(actor.userId),
     });
@@ -133,7 +142,7 @@ export function createCodeEnvironmentRegistry(mongoose: typeof import('mongoose'
   }
 
   async function findAccessible(actor: CodeEnvironmentPrincipalContext) {
-    const principals = await methods.getUserPrincipals(actor);
+    const principals = actor.principals ?? (await methods.getUserPrincipals(actor));
     const ids = await access.findAccessibleResourcesForPrincipals({
       principalsList: principals,
       resourceType: ResourceType.CODE_ENVIRONMENT,
@@ -158,6 +167,7 @@ export function createCodeEnvironmentRegistry(mongoose: typeof import('mongoose'
       name: environment.name,
       type: environment.type,
       baseURL: environment.baseURL,
+      controlPlaneId: environment.controlPlaneId,
       owner: 'principal',
     }));
   }

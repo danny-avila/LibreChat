@@ -5,6 +5,7 @@ export type CodeEnvironment = {
   name: string;
   type: 'managed' | 'attached';
   baseURL: string;
+  controlPlaneId: string;
   createdBy: Types.ObjectId;
   workerId?: string;
   tenantId?: string;

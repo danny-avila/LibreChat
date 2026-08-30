@@ -1,12 +1,20 @@
+const mongoose = require('mongoose');
 const { CacheKeys } = require('librechat-data-provider');
 const { AppService, logger } = require('@librechat/data-schemas');
-const { createAppConfigService, clearMcpConfigCache } = require('@librechat/api');
+const {
+  createAppConfigService,
+  clearMcpConfigCache,
+  createCodeEnvironmentRegistry,
+  mergeAccessibleCodeEnvironments,
+} = require('@librechat/api');
 const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
 const loadCustomConfig = require('./loadCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
 const paths = require('~/config/paths');
 const db = require('~/models');
+
+const codeEnvironmentRegistry = createCodeEnvironmentRegistry(mongoose);
 
 const loadBaseConfig = async () => {
   /** @type {TCustomConfig} */
@@ -27,6 +35,19 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
   cacheKeys: CacheKeys,
   getApplicableConfigs: db.getApplicableConfigs,
   getUserPrincipals: db.getUserPrincipals,
+  augmentConfig: ({ appConfig, principals, options }) => {
+    if (!options.userId) return appConfig;
+    return mergeAccessibleCodeEnvironments({
+      appConfig,
+      actor: {
+        userId: options.userId,
+        role: options.role ?? null,
+        idOnTheSource: options.idOnTheSource ?? null,
+        principals,
+      },
+      registry: codeEnvironmentRegistry,
+    });
+  },
 });
 
 /**
@@ -58,5 +79,6 @@ async function invalidateConfigCaches(tenantId) {
 module.exports = {
   getAppConfig,
   clearAppConfigCache,
+  clearOverrideCache,
   invalidateConfigCaches,
 };
