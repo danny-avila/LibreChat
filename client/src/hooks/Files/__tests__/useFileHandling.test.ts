@@ -154,13 +154,14 @@ jest.mock('../useUpdateFiles', () => ({
 }));
 
 jest.mock('~/utils', () => {
-  const { partitionUploads, validateFileSizes, validateFileDuplicates } =
+  const { partitionUploads, validateFileSizes, validateFileLimit, validateFileDuplicates } =
     jest.requireActual('~/utils/files');
   return {
     logger: { log: jest.fn() },
     validateFiles: jest.fn(() => true),
     partitionUploads: jest.fn(partitionUploads),
     validateFileSizes: jest.fn(validateFileSizes),
+    validateFileLimit: jest.fn(validateFileLimit),
     validateFileDuplicates: jest.fn(validateFileDuplicates),
     cachePreview: jest.fn(),
     getCachedPreview: jest.fn(() => undefined),
@@ -171,6 +172,7 @@ jest.mock('~/utils', () => {
 const mockValidateFiles = jest.requireMock('~/utils').validateFiles;
 const mockPartitionUploads = jest.requireMock('~/utils').partitionUploads;
 const mockValidateFileSizes = jest.requireMock('~/utils').validateFileSizes;
+const mockValidateFileLimit = jest.requireMock('~/utils').validateFileLimit;
 const mockValidateFileDuplicates = jest.requireMock('~/utils').validateFileDuplicates;
 
 describe('useFileHandling', () => {
@@ -179,6 +181,7 @@ describe('useFileHandling', () => {
     mockValidateFiles.mockImplementation(() => true);
     mockPartitionUploads.mockImplementation(jest.requireActual('~/utils/files').partitionUploads);
     mockValidateFileSizes.mockImplementation(jest.requireActual('~/utils/files').validateFileSizes);
+    mockValidateFileLimit.mockImplementation(jest.requireActual('~/utils/files').validateFileLimit);
     mockValidateFileDuplicates.mockImplementation(
       jest.requireActual('~/utils/files').validateFileDuplicates,
     );
@@ -478,6 +481,47 @@ describe('useFileHandling', () => {
         expect(mockLocalize).toHaveBeenCalledWith('com_error_files_skipped_dupe', {
           0: 'report.txt',
         });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('does not let an oversized file spend the last file limit slot', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileLimit: 2, fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('attached.txt', 'text/plain', 1 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+
+        /** One slot is left, so counting the oversized file would reject the valid one with it. */
+        let accepted: boolean | undefined;
+        await act(async () => {
+          accepted = await result.current.handleFiles([
+            makeSizedFile('huge.txt', 'text/plain', 21 * megabyte),
+            makeSizedFile('valid.txt', 'text/plain', 2 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(accepted).toBe(true);
+        expect(mockMutate).toHaveBeenCalledTimes(2);
+        expect(mockMutate.mock.calls[1][0].get('file').name).toBe('valid.txt');
+        /** The count sees the survivors, not the selection it was picked from. */
+        const [countedAgainst] = mockValidateFileLimit.mock.calls.at(-1) ?? [];
+        expect(countedAgainst?.fileList.map((file: File) => file.name)).toEqual(['valid.txt']);
       } finally {
         jest.useRealTimers();
       }

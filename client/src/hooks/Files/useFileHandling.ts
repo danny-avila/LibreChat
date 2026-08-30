@@ -29,6 +29,7 @@ import {
   cachePreview,
   partitionUploads,
   validateFileSizes,
+  validateFileLimit,
   getCachedPreview,
   removePreviewEntry,
   validateFileDuplicates,
@@ -515,8 +516,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     })();
 
     /** Drop duplicates one by one rather than rejecting everything picked alongside them, and hand
-     * the survivors to `validateFiles` so skipped files do not spend `fileLimit` slots. Sizes wait
-     * for the partition below, once processing has settled each file's final bytes. */
+     * the survivors to `validateFiles`. Sizes wait for the partition below, once processing has
+     * settled each file's final bytes, which is also where the file count is finally applied: a
+     * file still headed for the discard pile must not spend a `fileLimit` slot. */
     const selection = partitionUploads({
       files: filesForValidation,
       fileList,
@@ -541,7 +543,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         endpointFileConfig,
         toolResource: _toolResource,
         skipSizeValidation: true,
-        skipDuplicateValidation: selection.keptIndices.length > 0,
+        skipBatchRules: selection.keptIndices.length > 0,
       });
     } catch (error) {
       console.error('file validation error', error);
@@ -701,13 +703,20 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         endpointFileConfig,
       });
       acceptedUploads = batch.keptIndices.map((index) => processedUploads[index]);
-      /** `totalSizeLimit` describes the batch rather than any one file, so it is applied to
-       * whatever survived the per-file partition above. */
+      const acceptedFiles = acceptedUploads.map(({ extendedFile }) => extendedFile.file as File);
+      /** `fileLimit` and `totalSizeLimit` describe the batch rather than any one file, so both are
+       * applied to whatever survived the per-file partition above. */
       const batchIsValid =
         acceptedUploads.length > 0 &&
+        validateFileLimit({
+          files: filesForValidation,
+          fileList: acceptedFiles,
+          setError,
+          endpointFileConfig,
+        }) &&
         validateFileSizes({
           files: filesForValidation,
-          fileList: acceptedUploads.map(({ extendedFile }) => extendedFile.file as File),
+          fileList: acceptedFiles,
           setError,
           endpointFileConfig,
         });

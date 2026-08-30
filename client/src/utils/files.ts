@@ -294,6 +294,20 @@ export const validateFileSizes = ({
   return true;
 };
 
+export const validateFileLimit = ({
+  files,
+  fileList,
+  setError,
+  endpointFileConfig,
+}: FileSizeValidationParams): boolean => {
+  const { fileLimit } = endpointFileConfig;
+  if (fileLimit && fileList.length + files.size > fileLimit) {
+    setError(`File limit reached: ${fileLimit} files`);
+    return false;
+  }
+  return true;
+};
+
 export type UploadSkipReason = 'duplicate' | 'fileSize';
 
 export type SkippedUpload = {
@@ -399,7 +413,7 @@ export const validateFiles = ({
   toolResource,
   fileConfig,
   skipSizeValidation = false,
-  skipDuplicateValidation = false,
+  skipBatchRules = false,
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
@@ -409,10 +423,11 @@ export const validateFiles = ({
   fileConfig: FileConfig | null;
   /** Defer size checks to `partitionUploads` once processing has settled each file's final bytes */
   skipSizeValidation?: boolean;
-  /** Defer duplicate checks to `partitionUploads` so a single duplicate cannot reject the batch */
-  skipDuplicateValidation?: boolean;
+  /** The caller partitions the selection itself, so the rules that would reject the batch as a
+   * whole — the file count and duplicates — wait until it has dropped what it can */
+  skipBatchRules?: boolean;
 }) => {
-  const { fileLimit, supportedMimeTypes, disabled } = endpointFileConfig;
+  const { supportedMimeTypes, disabled } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
   if (disabled === true) {
     setError('com_ui_attach_error_disabled');
@@ -424,8 +439,7 @@ export const validateFiles = ({
     return false;
   }
 
-  if (fileLimit && fileList.length + files.size > fileLimit) {
-    setError(`File limit reached: ${fileLimit} files`);
+  if (!skipBatchRules && !validateFileLimit({ files, fileList, setError, endpointFileConfig })) {
     return false;
   }
 
@@ -468,7 +482,7 @@ export const validateFiles = ({
     return false;
   }
 
-  if (skipDuplicateValidation) {
+  if (skipBatchRules) {
     return true;
   }
 
