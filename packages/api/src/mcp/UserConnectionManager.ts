@@ -764,6 +764,15 @@ export abstract class UserConnectionManager {
    * resolve until the first live user connection. Persist the instructions from
    * that connection so subsequent context builds include them. Best-effort: a
    * failure here must never break connection creation.
+   *
+   * `resolvedInstructions` is one field on a config shared by every user of the
+   * server, so the first connection to deliver text wins and later ones only
+   * read it. That is exact for a server advertising one static block, which is
+   * the ordinary case. A server that tailors instructions per authenticated
+   * identity cannot be represented by that single field, so rather than let the
+   * stored copy churn per connection — each write invalidates the read-through
+   * cache globally, and the model context would vary by whoever connected last
+   * — the first text is kept and the divergence is logged.
    */
   protected async backfillResolvedInstructions(
     serverName: string,
@@ -772,11 +781,19 @@ export abstract class UserConnectionManager {
     userId: string,
   ): Promise<void> {
     try {
-      if (!config || !isEnabled(config.serverInstructions) || config.resolvedInstructions != null) {
+      if (!config || !isEnabled(config.serverInstructions)) {
         return;
       }
       const instructions = connection.client.getInstructions();
       if (!instructions) {
+        return;
+      }
+      if (config.resolvedInstructions != null) {
+        if (config.resolvedInstructions !== instructions) {
+          logger.debug(
+            `[MCP][User: ${userId}][${serverName}] Live connection advertised different instructions than the stored copy; keeping the stored text. This server tailors instructions per authenticated identity, which one shared server config cannot represent.`,
+          );
+        }
         return;
       }
       const updated = await MCPServersRegistry.getInstance().setResolvedInstructions(

@@ -1,5 +1,5 @@
 import './helpers/setupCredsEnv';
-import { tenantStorage } from '@librechat/data-schemas';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
@@ -197,6 +197,32 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
       connectionWith('newer text'),
     );
     expect(setResolvedInstructions).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stored text and logs when a connection advertises different instructions', async () => {
+    const debug = jest.spyOn(logger, 'debug').mockImplementation(() => logger);
+
+    await backfill(
+      { ...startupDeferredYamlEntry, resolvedInstructions: INSTRUCTIONS },
+      connectionWith('per-identity text for someone else'),
+    );
+
+    expect(setResolvedInstructions).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledWith(
+      expect.stringContaining('advertised different instructions than the stored copy'),
+    );
+  });
+
+  it('stays silent when the connection repeats the stored instructions', async () => {
+    const debug = jest.spyOn(logger, 'debug').mockImplementation(() => logger);
+
+    await backfill(
+      { ...startupDeferredYamlEntry, resolvedInstructions: INSTRUCTIONS },
+      connectionWith(INSTRUCTIONS),
+    );
+
+    expect(setResolvedInstructions).not.toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalled();
   });
 
   it('skips connections that advertise no instructions', async () => {
