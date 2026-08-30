@@ -3,6 +3,7 @@ import { Constants, getCodeBaseURL } from '@librechat/agents';
 import type { StatefulCodeEnvironment, TAgentsEndpoint } from 'librechat-data-provider';
 
 export const CODE_API_EXPECTED_PROFILE_HEADER = 'X-CodeAPI-Expected-Profile';
+export const CODE_API_BRIDGE_WORKER_HEADER = 'X-LibreChat-Code-Worker-ID';
 
 export type CodeExecutionProfile = 'default' | 'stateful';
 export type CodeEnvironmentConfig = NonNullable<
@@ -21,6 +22,7 @@ export interface CodeExecutionContext {
   statefulSessions: boolean;
   environmentId?: string;
   environmentType?: CodeEnvironmentConfig['type'];
+  bridgeWorkerId?: string;
 }
 
 export function createCodeExecutionRouteKey(
@@ -152,11 +154,27 @@ export function resolveCodeExecutionContext(params: {
     statefulSessions: true,
     environmentId: configuredEnvironment?.id,
     environmentType: configuredEnvironment?.type,
+    bridgeWorkerId: configuredEnvironment?.workerId,
   };
 }
 
 export function codeExecutionHeaders(
-  context: Pick<CodeExecutionContext, 'executionProfile'>,
+  context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
 ): Record<string, string> {
-  return { [CODE_API_EXPECTED_PROFILE_HEADER]: context.executionProfile };
+  return {
+    [CODE_API_EXPECTED_PROFILE_HEADER]: context.executionProfile,
+    ...(context.bridgeWorkerId != null
+      ? { [CODE_API_BRIDGE_WORKER_HEADER]: context.bridgeWorkerId }
+      : {}),
+  };
+}
+
+export async function codeExecutionAuthHeaders(
+  authHeaders: () => Promise<Record<string, string>> | Record<string, string>,
+  context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
+): Promise<Record<string, string>> {
+  return {
+    ...(await authHeaders()),
+    ...codeExecutionHeaders(context),
+  };
 }

@@ -1,4 +1,8 @@
-import { resolveCodeExecutionContext } from './execution';
+import {
+  codeExecutionAuthHeaders,
+  codeExecutionHeaders,
+  resolveCodeExecutionContext,
+} from './execution';
 
 jest.mock('@librechat/agents', () => ({
   Constants: { EXECUTE_CODE: 'execute_code' },
@@ -113,6 +117,7 @@ describe('resolveCodeExecutionContext', () => {
           name: 'My VM',
           type: 'attached',
           baseURL: 'https://bridge.example/v1/',
+          workerId: 'opaque-worker-id',
           owner: 'deployment',
         },
       ],
@@ -126,10 +131,41 @@ describe('resolveCodeExecutionContext', () => {
         environmentId: 'my-vm',
         environmentType: 'attached',
         executionProfile: 'stateful',
+        bridgeWorkerId: 'opaque-worker-id',
       }),
     );
     expect(context.runtimeSessionHint).toMatch(/^v3:[a-f0-9]{12}:agent-user:/);
     expect(context.executionRouteKey).toMatch(/^stateful:[a-f0-9]{32}$/);
+  });
+
+  it('adds the server-selected worker to execution auth without replacing authentication', async () => {
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environmentId: 'my-vm',
+      environments: [
+        {
+          id: 'my-vm',
+          name: 'My VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1',
+          owner: 'principal',
+          workerId: 'opaque-worker-id',
+        },
+      ],
+      userId: 'user-1',
+    });
+
+    expect(codeExecutionHeaders(context)).toEqual({
+      'X-CodeAPI-Expected-Profile': 'stateful',
+      'X-LibreChat-Code-Worker-ID': 'opaque-worker-id',
+    });
+    await expect(
+      codeExecutionAuthHeaders(async () => ({ Authorization: 'Bearer user-token' }), context),
+    ).resolves.toEqual({
+      Authorization: 'Bearer user-token',
+      'X-CodeAPI-Expected-Profile': 'stateful',
+      'X-LibreChat-Code-Worker-ID': 'opaque-worker-id',
+    });
   });
 
   it('namespaces configured deployments independently of the shared wire profile', () => {

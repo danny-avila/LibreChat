@@ -37,6 +37,100 @@ describe('code environment HTTP handlers', () => {
     expect(register).not.toHaveBeenCalled();
   });
 
+  test('pairs a generated worker to the authenticated user and persists its private route', async () => {
+    const register = jest.fn().mockResolvedValue({
+      resourceId: '68b2f0c498f24c1e78fa0111',
+      id: 'code-generated',
+      name: 'Personal VM',
+      type: 'attached',
+    });
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        protocolVersion: 1,
+        workerId: 'code-generated',
+        code: 'a'.repeat(32),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    });
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            environments: [
+              {
+                id: 'shared-code-api',
+                name: 'Shared Code API',
+                type: 'attached',
+                baseURL: 'https://code.librechat.example/v1',
+                owner: 'deployment',
+                pairing: {
+                  allowPrincipalWorkers: true,
+                  tokenEnv: 'CODE_ADMIN_TOKEN',
+                },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue(appConfig),
+      registry: { register, listAccessible: jest.fn() },
+      createEnvironmentId: () => 'code-generated',
+      readSecret: jest.fn(() => 'administrator-token'),
+      resolveTenantId: jest.fn(() => 'tenant-1'),
+      fetchImpl,
+    });
+    const req = {
+      user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+      body: {
+        name: 'Personal VM',
+        controlPlaneId: 'shared-code-api',
+        workerId: 'attacker-worker',
+        baseURL: 'https://attacker.example',
+      },
+    };
+    const res = response();
+
+    await handlers.pair(req as never, res as never);
+
+    expect(res.statusCode).toBe(201);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.librechat.example/v1/bridge/pairings',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer administrator-token' }),
+        body: JSON.stringify({
+          workerId: 'code-generated',
+          binding: {
+            tenantId: 'tenant-1',
+            principal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
+          },
+        }),
+      }),
+    );
+    expect(register).toHaveBeenCalledWith({
+      actor: {
+        userId: '68b2f0c498f24c1e78fa0001',
+        role: 'USER',
+        idOnTheSource: null,
+      },
+      environment: {
+        id: 'code-generated',
+        name: 'Personal VM',
+        type: 'attached',
+        baseURL: 'https://code.librechat.example/v1',
+        workerId: 'code-generated',
+      },
+    });
+    expect(res.body).toEqual({
+      environment: expect.objectContaining({ id: 'code-generated' }),
+      pairing: expect.objectContaining({ workerId: 'code-generated', code: 'a'.repeat(32) }),
+    });
+  });
+
   test('registers against an operator-configured control plane and ignores client URLs', async () => {
     const register = jest.fn().mockResolvedValue({
       resourceId: '68b2f0c498f24c1e78fa0111',

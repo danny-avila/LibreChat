@@ -194,6 +194,11 @@ describe('createEndpointsConfigService', () => {
                       name: 'Attached VM',
                       type: 'attached',
                       baseURL: 'https://internal-code.example.com/v1',
+                      workerId: 'private-worker-route',
+                      pairing: {
+                        workerId: 'private-worker-route',
+                        tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+                      },
                       default: true,
                     },
                   ],

@@ -21,6 +21,7 @@ const {
   ASK_USER_QUESTION_TOOL_NAME,
   resolveWebSearchSSRFAgents,
   buildWebSearchDynamicContext,
+  codeExecutionAuthHeaders,
   resolveCodeExecutionContext,
 } = require('@librechat/api');
 const {
@@ -379,7 +380,11 @@ const loadTools = async ({
         return createCodeExecutionTool({
           user_id: user,
           files,
-          authHeaders: () => getCodeApiAuthHeaders(options.req),
+          authHeaders: () =>
+            codeExecutionAuthHeaders(
+              () => getCodeApiAuthHeaders(options.req),
+              codeExecutionContext,
+            ),
           ...codeExecutionContext,
         });
       };

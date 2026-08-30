@@ -578,11 +578,21 @@ endpoints:
   #         name: Engineering VM
   #         type: attached
   #         baseURL: https://code-bridge.example.com/v1
-  #         # Enables the admin pairing API without placing the administrator
-  #         # secret in YAML or returning its environment-variable name to users.
+  #         # Pins an administrator-managed environment to one worker.
   #         owner: deployment
   #         pairing:
   #           workerId: engineering-vm
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #       - id: personal-workers
+  #         name: Personal Code Workers
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Lets authenticated users create principal-bound environments and
+  #         # receive a one-time code for an outbound @librechat/code worker.
+  #         # The administrator secret stays in the named environment variable.
+  #         owner: deployment
+  #         pairing:
+  #           allowPrincipalWorkers: true
   #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
   #   # (optional) Trusted origin for internal event delivery. By default, LibreChat
   #   # uses its own bound listener; override only for an internal TLS/front-door route.

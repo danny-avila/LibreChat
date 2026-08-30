@@ -16,6 +16,7 @@ const mockGetCodeEnvironmentRegistry = jest.fn(() => mockRegistry);
 const mockHandlers = {
   list: jest.fn((_req, res) => res.status(200).json({ environments: [] })),
   register: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
+  pair: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
 };
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -73,5 +74,15 @@ describe('code environment routes', () => {
 
     expect(middlewareCalls).toEqual(['jwt', 'manage:code_environments']);
     expect(mockHandlers.register).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an authenticated user to pair through an opted-in control plane', async () => {
+    await request(createApp())
+      .post('/api/code-environments/pairings')
+      .send({ name: 'Personal VM', controlPlaneId: 'shared-code-api' })
+      .expect(201);
+
+    expect(middlewareCalls).toEqual(['jwt']);
+    expect(mockHandlers.pair).toHaveBeenCalledTimes(1);
   });
 });

@@ -41,6 +41,7 @@ export type AccessibleCodeEnvironmentConfiguration = {
   baseURL: string;
   controlPlaneId: string;
   owner: 'principal';
+  workerId?: string;
 };
 
 type CachedAccessibleCodeEnvironmentConfiguration = AccessibleCodeEnvironmentConfiguration & {
@@ -266,6 +267,7 @@ export function createCodeEnvironmentRegistry(
         baseURL: environment.baseURL,
         controlPlaneId: environment.controlPlaneId,
         owner: 'principal',
+        workerId: environment.workerId,
       }));
     };
     if (configurationCache == null) return (await load()).map(toPublicConfiguration);

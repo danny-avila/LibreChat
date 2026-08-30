@@ -50,6 +50,7 @@ describe('code environment registry', () => {
         type: 'attached',
         baseURL: 'https://code.example.com',
         controlPlaneId: 'shared-code-api',
+        workerId: 'danny-worker',
       },
     });
 
@@ -81,6 +82,7 @@ describe('code environment registry', () => {
         baseURL: 'https://code.example.com',
         controlPlaneId: 'shared-code-api',
         owner: 'principal',
+        workerId: 'danny-worker',
       },
     ]);
   });

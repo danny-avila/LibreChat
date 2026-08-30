@@ -576,6 +576,29 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a principal-worker control plane without a singleton worker', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-code-control-plane',
+            name: 'Personal Code',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            pairing: {
+              allowPrincipalWorkers: true,
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it('rejects pairing metadata on a principal-owned environment', () => {
     const result = agentsEndpointSchema.safeParse({
       statefulCodeSessions: {
@@ -591,6 +614,26 @@ describe('agentsEndpointSchema', () => {
               workerId: 'vm-1',
               tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
             },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects pairing configuration without a singleton or principal workers', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'invalid-control-plane',
+            name: 'Invalid',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            pairing: { tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN' },
           },
         ],
       },

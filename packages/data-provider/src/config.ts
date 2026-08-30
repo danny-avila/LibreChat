@@ -1084,6 +1084,11 @@ export const agentsEndpointSchema = baseEndpointSchema
                 type: z.enum(['managed', 'attached']),
                 baseURL: codeEnvironmentBaseURLSchema,
                 default: z.boolean().optional(),
+                /** Server-only outbound worker route. Removed from public config. */
+                workerId: z
+                  .string()
+                  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
+                  .optional(),
                 /** Distinguishes operator policy from a principal-authorized
                  * environment merged into request-scoped server config. */
                 owner: z.enum(['deployment', 'principal']).optional().default('deployment'),
@@ -1091,8 +1096,21 @@ export const agentsEndpointSchema = baseEndpointSchema
                  * environment variable and never contains the token itself. */
                 pairing: z
                   .object({
-                    workerId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+                    workerId: z
+                      .string()
+                      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
+                      .optional(),
+                    allowPrincipalWorkers: z.boolean().optional().default(false),
                     tokenEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+                  })
+                  .superRefine((pairing, pairingContext) => {
+                    if (pairing.workerId != null || pairing.allowPrincipalWorkers === true) {
+                      return;
+                    }
+                    pairingContext.addIssue({
+                      code: z.ZodIssueCode.custom,
+                      message: 'Pairing requires a workerId or principal workers',
+                    });
                   })
                   .optional(),
               }),

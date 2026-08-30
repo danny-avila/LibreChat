@@ -44,6 +44,7 @@ const {
   isNormalizationSensitiveName,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
+  codeExecutionAuthHeaders,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
   getTransactionsConfig,
@@ -1694,7 +1695,8 @@ async function loadAgentTools({
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
-      authHeaders: () => getCodeApiAuthHeaders(req),
+      authHeaders: () =>
+        codeExecutionAuthHeaders(() => getCodeApiAuthHeaders(req), codeExecutionContext),
       codeExecutionContext,
     });
 
@@ -2079,7 +2081,8 @@ async function loadToolsForExecution({
        */
       for (const name of ptcToolNames) {
         const ptcTool = createBashProgrammaticToolCallingTool({
-          authHeaders: () => getCodeApiAuthHeaders(req),
+          authHeaders: () =>
+            codeExecutionAuthHeaders(() => getCodeApiAuthHeaders(req), codeExecutionContext),
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
@@ -2105,7 +2108,8 @@ async function loadToolsForExecution({
   if (isBashTool) {
     try {
       const bashTool = createBashExecutionTool({
-        authHeaders: () => getCodeApiAuthHeaders(req),
+        authHeaders: () =>
+          codeExecutionAuthHeaders(() => getCodeApiAuthHeaders(req), codeExecutionContext),
         ...codeExecutionContext,
       });
       allLoadedTools.push(bashTool);

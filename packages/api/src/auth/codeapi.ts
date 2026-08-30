@@ -218,6 +218,14 @@ function resolveTenantId(user: CodeApiUserContext): string | undefined {
   return resolveSingleTenantId();
 }
 
+export function getCodeApiTenantId(req: ServerRequest): string {
+  const tenantId = resolveTenantId(resolveUser(req));
+  if (!tenantId) {
+    throw new Error('Code API JWT auth requires tenant context');
+  }
+  return tenantId;
+}
+
 function isManagedCodeApiJwtMode(): boolean {
   const provider = process.env.CODEAPI_AUTH_PROVIDER;
   return provider === 'librechat-jwt' || provider === 'both';
@@ -258,10 +266,7 @@ function canonicalContextHash(input: {
 function buildClaims(req: ServerRequest, config: SigningConfig, now: number): CodeApiClaims {
   const user = resolveUser(req);
   const userId = resolveUserId(user);
-  const tenantId = resolveTenantId(user);
-  if (!tenantId) {
-    throw new Error('Code API JWT auth requires tenant context');
-  }
+  const tenantId = getCodeApiTenantId(req);
 
   const role = user.role ?? 'USER';
   const principalSource = resolvePrincipalSource(req);
