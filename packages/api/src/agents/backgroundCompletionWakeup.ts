@@ -345,7 +345,10 @@ export function createBackgroundToolCompletionWakeupHandler(
       input: 'A background tool task is waiting to complete.',
     });
     const admitted = await enqueue(envelope, {
-      orderingKey: `background-tool-completion:${registration.conversationId}`,
+      /** Pending work gets a task-local lane so a slow tool cannot block an
+       * independently completed sibling. The generation admission fence and
+       * atomic result claim serialize the actual continuations. */
+      orderingKey: `background-tool-completion:${registration.conversationId}:${registration.taskId}`,
       availableAt: new Date(
         Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
       ),

@@ -49,6 +49,7 @@ import type {
   SubagentTaskStore,
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { BackgroundToolWakeupAdmission } from './backgroundCompletion';
 import type { CapabilityToolNames } from './selection';
 import {
   resolveToolOption,
@@ -636,6 +637,9 @@ export interface BackgroundTask {
     claimedAt: number;
   };
   completionWakeup?: boolean;
+  /** Process-local cancellation handle for the preregistered durable delivery.
+   * A same-generation manual claim retires it before exposing the result. */
+  completionWakeupRetire?: BackgroundToolWakeupAdmission['retire'];
   completionPersistenceFailed?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -1086,12 +1090,41 @@ export class BackgroundTaskRegistryClass {
     });
   }
 
-  markCompletionWakeup(userId: string, conversationId: string, taskId: string): void {
-    this.update(userId, conversationId, taskId, { completionWakeup: true });
+  markCompletionWakeup(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    admission?: BackgroundToolWakeupAdmission,
+  ): void {
+    this.update(userId, conversationId, taskId, {
+      completionWakeup: true,
+      ...(admission == null ? {} : { completionWakeupRetire: admission.retire }),
+    });
   }
 
   markCompletionPersistenceFailed(userId: string, conversationId: string, taskId: string): void {
-    this.update(userId, conversationId, taskId, { completionPersistenceFailed: true });
+    this.update(userId, conversationId, taskId, {
+      completionPersistenceFailed: true,
+      completionWakeupRetire: undefined,
+    });
+  }
+
+  async retireCompletionWakeup(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    reason: string,
+  ): Promise<boolean> {
+    const task = this.get(userId, conversationId, taskId);
+    if (task?.completionWakeupRetire == null) {
+      return false;
+    }
+    const retired = await task.completionWakeupRetire(reason);
+    if (retired) {
+      task.completionWakeupRetire = undefined;
+      task.updatedAt = Date.now();
+    }
+    return retired;
   }
 
   claimResult(
@@ -1502,6 +1535,34 @@ export async function runCheckBackgroundTask(params: {
               kind: 'manual',
               claimId: invocationId,
             });
+            if (localClaim === 'acquired') {
+              let retired = false;
+              try {
+                retired = await backgroundTaskRegistry.retireCompletionWakeup(
+                  userId,
+                  conversationId,
+                  taskId,
+                  'completion claimed by same-generation manual poll',
+                );
+              } catch (error) {
+                logger.warn(
+                  `[background] Failed to retire automatic completion for manual claim ${taskId}:`,
+                  error,
+                );
+              }
+              if (!retired) {
+                backgroundTaskRegistry.releaseResultClaim(userId, conversationId, taskId, {
+                  kind: 'manual',
+                  claimId: invocationId,
+                });
+                return JSON.stringify({
+                  status: 'result_persisting',
+                  background_task_id: taskId,
+                  message:
+                    'The task is finished and completion ownership is being settled. Retry this poll shortly.',
+                });
+              }
+            }
             if (localClaim === 'claimed') {
               return JSON.stringify({
                 status: 'delivery_scheduled',

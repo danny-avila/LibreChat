@@ -276,6 +276,36 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     );
   });
 
+  it('keeps repeated legacy provider-id groups independently expanded', () => {
+    const content = [
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_1'),
+      makeTextPart('between batches'),
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_2'),
+    ];
+    const nextContent = [makeTextPart('streamed preface'), ...content];
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    fireEvent.click(toggles[1]);
+    expect(toggles[0]).toHaveAttribute('aria-expanded', 'false');
+    expect(toggles[1]).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={nextContent} />
+      </RecoilRoot>,
+    );
+    const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
+    expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('keeps a running tool group open when an individual tool is expanded before completion', () => {
     const runningContent = [makeMcpToolCall('t1', false), makeMcpToolCall('t2', false)];
     const completedContent = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];

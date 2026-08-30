@@ -120,7 +120,7 @@ describe('background tool completion wakeups', () => {
       },
     });
     expect(options).toEqual({
-      orderingKey: 'background-tool-completion:conversation-1',
+      orderingKey: 'background-tool-completion:conversation-1:task-1',
       availableAt: new Date(NOW + 250),
     });
     if (admission !== false) {
@@ -131,6 +131,19 @@ describe('background tool completion wakeups', () => {
       'background-tool-completion',
       'result unavailable',
     );
+  });
+
+  it("keeps unfinished sibling tasks out of each other's delivery lanes", async () => {
+    const enqueue = jest.fn(async () => ({ deliveryKey: 'delivery-key' }));
+    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, async () => true);
+
+    await notify(registration({ taskId: 'task-slow' }));
+    await notify(registration({ taskId: 'task-fast' }));
+
+    expect(enqueue.mock.calls.map(([, options]) => options?.orderingKey)).toEqual([
+      'background-tool-completion:conversation-1:task-slow',
+      'background-tool-completion:conversation-1:task-fast',
+    ]);
   });
 
   it('reports skipped registration for an ephemeral invoking agent', async () => {

@@ -4482,7 +4482,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                  *  or a second agent's repeated provider id (e.g. `call_0`)
                  *  starts a fresh task instead of colliding. */
                 agentId,
-                runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+                runId: `${backgroundRunId ?? ''}:${tc.turn ?? backgroundStepId ?? ''}`,
               };
               const capacityAdmission =
                 eventActorDetachedAction == null
@@ -4609,6 +4609,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         backgroundUserId,
                         backgroundConversationId,
                         task.id,
+                        admission,
                       );
                     }
                   } catch (registrationError) {
@@ -4638,7 +4639,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   if (
                     detachedReservation?.status !== 'reserved' &&
                     backgroundToolCompletion != null &&
-                    backgroundStepId == null
+                    backgroundStepId == null &&
+                    !harvestEnabled
                   ) {
                     return;
                   }
@@ -4743,8 +4745,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          *  overwrite it. */
                         dispatchedAt: task.createdAt,
                         codeExecutionContext,
-                        ...(detachedReservation?.status === 'reserved' ||
-                        backgroundToolCompletion == null
+                        ...(detachedReservation?.status === 'reserved' || !completionPreregistered
                           ? {}
                           : { backgroundTask, resolveBackgroundTask }),
                         output: params.output ?? localTask?.result,

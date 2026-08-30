@@ -966,6 +966,39 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(state.calls).toBe(1);
   });
 
+  it('uses host step identity when repeated provider ids have no turn number', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeSearchTool(state)] }),
+    });
+
+    const results = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_repeated',
+          name: 'search_mcp_docs',
+          args: { q: 'first', run_in_background: true },
+          stepId: 'step-first',
+        },
+        {
+          id: 'call_repeated',
+          name: 'search_mcp_docs',
+          args: { q: 'second', run_in_background: true },
+          stepId: 'step-second',
+        },
+      ],
+      agentId: 'a',
+      configurable: buildConfig(),
+      metadata: { thread_id: 'exec_convo_repeated_steps', run_id: 'response-repeated' },
+    });
+    await flushMicrotasks();
+
+    expect(state.calls).toBe(2);
+    expect(JSON.parse(results[0].content).background_task_id).not.toBe(
+      JSON.parse(results[1].content).background_task_id,
+    );
+  });
+
   it('runs the tool synchronously when background is not requested', async () => {
     const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
     const searchTool = makeSearchTool(state);
@@ -1412,6 +1445,54 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     },
     runtimeSessionHint: 'convo-hint',
     ...overrides,
+  });
+
+  it('keeps step-less code harvests available to the legacy poll path', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const preregister = jest.fn(async () => ({ retire: jest.fn(async () => true) }));
+    const persistBackgroundCodeResult = jest.fn(async () => ({ attachments: [] }));
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult,
+      backgroundToolCompletion: {
+        preregister,
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_step_less_code', run_id: 'response-step-less' };
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_step_less_code', stepId: undefined, turn: undefined })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(preregister).not.toHaveBeenCalled();
+    expect(persistBackgroundCodeResult).toHaveBeenCalledWith(
+      expect.not.objectContaining({ backgroundTask: expect.anything() }),
+    );
+
+    const taskId = JSON.parse(dispatch.content).background_task_id;
+    const [poll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'poll_step_less_code',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: metadata.thread_id, run_id: 'poll-step-less' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    expect(JSON.parse(poll.content)).toMatchObject({ status: 'completed' });
+    expect(poll.artifact).toEqual(CODE_ARTIFACT);
   });
 
   it('carries full code-session config into the detached invoke, harvests onto the dispatch turn, and re-emits on poll', async () => {

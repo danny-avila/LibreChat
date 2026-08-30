@@ -68,7 +68,10 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
     const toolCallId = getToolCallId(part);
     if (toolCallId) {
       const stepId = getPartStepId(part);
-      return stepId == null ? `tool:${toolCallId}` : `tool:${toolCallId}:${stepId}`;
+      const agentId = getPartAgentId(part);
+      return stepId == null && agentId == null
+        ? `tool:${toolCallId}`
+        : `tool:${toolCallId}:${agentId ?? 'legacy'}:${stepId ?? 'legacy'}`;
     }
     if (firstToolKeyIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
       firstToolKeyIdx = getPartKeyIndex(part, idx);
@@ -496,25 +499,30 @@ const ContentPartsBody = memo(function ContentPartsBody({
   }, [absoluteIndexAt, content]);
   const postSteerAuthors = resumeAuthors ?? detectedResumeAuthors;
 
-  const groupedParts = useMemo(
-    () =>
-      groupSequentialToolCalls(sequentialParts).map((group) => {
-        if (group.type === 'single') {
-          return group;
-        }
-        const groupId = getToolGroupId(group.parts, fallbackScope);
-        const groupAttachments = group.parts.flatMap(
-          ({ part }) =>
-            filterAttachmentsForPart(
-              attachmentMap[getToolCallId(part)],
-              getPartAgentId(part),
-              getPartStepId(part),
-            ) ?? [],
-        );
-        return { ...group, groupId, groupAttachments };
-      }),
-    [sequentialParts, attachmentMap, fallbackScope],
-  );
+  const groupedParts = useMemo(() => {
+    const groupIdOccurrences = new Map<string, number>();
+    return groupSequentialToolCalls(sequentialParts).map((group) => {
+      if (group.type === 'single') {
+        return group;
+      }
+      const baseGroupId = getToolGroupId(group.parts, fallbackScope);
+      const occurrence = (groupIdOccurrences.get(baseGroupId) ?? 0) + 1;
+      groupIdOccurrences.set(baseGroupId, occurrence);
+      /** Legacy rows lack run-step identity. Their provider ids may repeat,
+       * so preserve the first group's historic stable key and distinguish
+       * later occurrences by sequence rather than a shifting content index. */
+      const groupId = occurrence === 1 ? baseGroupId : `${baseGroupId}:occurrence:${occurrence}`;
+      const groupAttachments = group.parts.flatMap(
+        ({ part }) =>
+          filterAttachmentsForPart(
+            attachmentMap[getToolCallId(part)],
+            getPartAgentId(part),
+            getPartStepId(part),
+          ) ?? [],
+      );
+      return { ...group, groupId, groupAttachments };
+    });
+  }, [sequentialParts, attachmentMap, fallbackScope]);
 
   /** The re-attribution node for a part resuming after a steer block, shared
    *  by the sequential path and the parallel renderer's sequential stretches. */

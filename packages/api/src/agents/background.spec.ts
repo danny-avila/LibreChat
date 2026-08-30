@@ -1401,7 +1401,10 @@ describe('runCheckBackgroundTask (singleton)', () => {
     backgroundTaskRegistry.complete('claim_user', 'claim_convo', created.task.id, {
       content: 'CLAIMED RESULT',
     });
-    backgroundTaskRegistry.markCompletionWakeup('claim_user', 'claim_convo', created.task.id);
+    const retire = jest.fn(async () => true);
+    backgroundTaskRegistry.markCompletionWakeup('claim_user', 'claim_convo', created.task.id, {
+      retire,
+    });
     const claimBackgroundToolResult = jest
       .fn()
       .mockResolvedValueOnce({ status: 'not_ready' })
@@ -1423,6 +1426,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(
       backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
     ).toMatchObject({ kind: 'manual' });
+    expect(retire).toHaveBeenCalledTimes(1);
     expect(claimBackgroundToolResult).toHaveBeenLastCalledWith(
       expect.objectContaining({
         messageId: 'response-claim',
@@ -1462,6 +1466,42 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
     expect(result).toMatchObject({ status: 'delivery_scheduled' });
     expect(JSON.stringify(result)).not.toContain('PRIVATE UNTIL CONTINUATION');
+  });
+
+  it('does not expose a local manual result until its automatic delivery retires', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'retire_user',
+      conversationId: 'retire_convo',
+      toolCallId: 'call_retire',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-retire',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('retire_user', 'retire_convo', created.task.id, {
+      content: 'DO NOT DUPLICATE',
+    });
+    backgroundTaskRegistry.markCompletionWakeup('retire_user', 'retire_convo', created.task.id, {
+      retire: async () => false,
+    });
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'retire_user',
+        conversationId: 'retire_convo',
+        args: { background_task_id: created.task.id },
+        toolCallId: 'poll-retire',
+        runId: 'poll-run',
+        claimBackgroundToolResult: async () => ({ status: 'not_ready' }),
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'result_persisting' });
+    expect(JSON.stringify(result)).not.toContain('DO NOT DUPLICATE');
+    expect(
+      backgroundTaskRegistry.get('retire_user', 'retire_convo', created.task.id)?.resultClaim,
+    ).toBeUndefined();
   });
 
   it('preserves local task lists when cross-replica subagent discovery is unavailable', async () => {
