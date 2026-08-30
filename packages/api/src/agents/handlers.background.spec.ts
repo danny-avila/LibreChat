@@ -333,7 +333,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(task?.completionPersistenceFailed).toBeUndefined();
   });
 
-  it('elects live polling only when the settled result actually contains an artifact', async () => {
+  it('preserves a fresh-run notification when the settled result requires live polling', async () => {
     const retire = jest.fn(async () => true);
     const preregister = jest.fn(async () => ({
       renew: jest.fn(async () => true),
@@ -375,10 +375,10 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
 
     expect(preregister).toHaveBeenCalledTimes(1);
-    expect(retire).toHaveBeenCalledWith('background tool artifact requires live polling');
+    expect(retire).not.toHaveBeenCalled();
     expect(persist).toHaveBeenCalledWith(
       expect.objectContaining({
-        backgroundTask: expect.not.objectContaining({ completionWakeup: true }),
+        backgroundTask: expect.objectContaining({ completionWakeup: 'poll' }),
       }),
     );
     expect(JSON.parse(dispatch.content).message).toContain('host will resume you');

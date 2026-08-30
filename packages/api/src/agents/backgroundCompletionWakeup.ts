@@ -328,6 +328,23 @@ export function createBackgroundToolCompletionWakeupResolver({
     if (claim.status === 'claimed') {
       return { status: 'settled' };
     }
+    if (claim.status === 'poll_required') {
+      return {
+        status: 'ready',
+        parentMessageId,
+        input: `Background task ${registration.taskId} (${registration.toolName}) completed with a live artifact. Call check_background_task with background_task_id "${registration.taskId}" now to receive its result and artifact.`,
+        releaseOnDefiniteFailure: async () => {
+          await methods.releaseBackgroundToolResultClaims({
+            userId,
+            conversationId: envelope.target.conversationId,
+            messageId: envelope.target.parentMessageId,
+            taskIds: [registration.taskId],
+            kind: 'wakeup',
+            claimId: context.idempotencyKey,
+          });
+        },
+      };
+    }
     if (claim.status !== 'acquired') {
       let producerLease: AgentTriggerProducerLeaseStatus;
       try {
