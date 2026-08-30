@@ -437,13 +437,7 @@ export function canBackfillSharedServerInstructions(config: UserScopedConnection
      *  `isOAuthServer` still arms the OAuth machinery for the unstamped case. */
     config.oauth == null &&
     config.oauth_headers == null &&
-    config.apiKey?.source !== 'user' &&
-    /** An admin key value can itself carry a runtime identity placeholder
-     *  ({{LIBRECHAT_USER_ID}}, {{LIBRECHAT_OPENID_ACCESS_TOKEN}}, ...):
-     *  processMCPEnv copies it into the request headers before per-user
-     *  placeholder resolution, so the connection is identity-scoped even
-     *  though `placeholderBearingFields` never sees `apiKey.key`. */
-    !hasRuntimeContextPlaceholder(config.apiKey?.key)
+    config.apiKey?.source !== 'user'
   );
 }
 
