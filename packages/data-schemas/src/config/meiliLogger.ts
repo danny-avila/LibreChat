@@ -1,6 +1,6 @@
 import winston from 'winston';
 import 'winston-daily-rotate-file';
-import { getLogDirectory } from './utils';
+import { getLogDirectory, resolveConsoleLevel } from './utils';
 
 const { NODE_ENV, DEBUG_LOGGING = 'false', LOG_TO_FILE } = process.env;
 
@@ -65,9 +65,12 @@ const consoleFormat = winston.format.combine(
   winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`),
 );
 
+const { level: consoleLevel, silent: consoleSilent } = resolveConsoleLevel();
+
 transports.push(
   new winston.transports.Console({
-    level: 'info',
+    level: consoleLevel,
+    silent: consoleSilent,
     format: consoleFormat,
   }),
 );

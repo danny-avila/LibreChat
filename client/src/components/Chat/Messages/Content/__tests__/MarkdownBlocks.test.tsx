@@ -1,11 +1,35 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import ReactMarkdown from 'react-markdown';
+import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from '../markdownConfig';
 import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import Markdown from '../Markdown';
+
+/**
+ * Mermaid blocks in the fixtures reach `useLocation`, so the markdown tree needs a
+ * router the same way it has one in the app — without it the diagram throws into its
+ * error boundary and the assertions compare two fallbacks instead of two renderers.
+ */
+const TestProviders = ({ children }: { children: React.ReactNode }) => (
+  <MemoryRouter>
+    <RecoilRoot>{children}</RecoilRoot>
+  </MemoryRouter>
+);
+
+/**
+ * `mermaid` ships ESM that this suite's transform does not cover, so the real
+ * component only ever reaches its error boundary here. Stub it — these cases
+ * assert code-block indices, and a fallback on both sides of the comparison
+ * would hide a genuine divergence between the two renderers.
+ */
+jest.mock('~/components/Messages/Content/Mermaid', () => ({
+  __esModule: true,
+  default: ({ id }: { id?: string }) => <div data-testid="mermaid" data-id={String(id)} />,
+  MermaidErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
 /**
  * Stub CodeBlock so we can read the blockIndex each executable code block
@@ -57,15 +81,15 @@ const streamThrough = (
 ): HTMLElement => {
   const lines = content.split('\n');
   const { container, rerender } = render(
-    <RecoilRoot>
+    <TestProviders>
       <Component content={lines[0]} />
-    </RecoilRoot>,
+    </TestProviders>,
   );
   for (let i = 2; i <= lines.length; i += 1) {
     rerender(
-      <RecoilRoot>
+      <TestProviders>
         <Component content={lines.slice(0, i).join('\n')} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
   }
   return container;
@@ -118,14 +142,14 @@ const NewMarkdown = ({ content }: { content: string }) => (
 describe('MarkdownBlocks code-block index parity', () => {
   it('assigns document-order indices on a direct render (matches whole-message renderer)', () => {
     const { container: oldC } = render(
-      <RecoilRoot>
+      <TestProviders>
         <OldMarkdown content={MIXED} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
     const { container: newC } = render(
-      <RecoilRoot>
+      <TestProviders>
         <Markdown content={MIXED} isLatestMessage={false} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
 
     expect(indicesIn(oldC)).toEqual(EXPECTED);
@@ -143,9 +167,9 @@ describe('MarkdownBlocks code-block index parity', () => {
   it('streamed indices match a fresh direct render (stable for stored execution results)', () => {
     const streamed = streamThrough(NewMarkdown, MIXED);
     const { container: fresh } = render(
-      <RecoilRoot>
+      <TestProviders>
         <Markdown content={MIXED} isLatestMessage={false} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
     expect(indicesIn(streamed)).toEqual(indicesIn(fresh));
   });
@@ -154,16 +178,16 @@ describe('MarkdownBlocks code-block index parity', () => {
     const before = 'intro\n\n```js\na\n```';
     const after = '```py\nx\n```\n\n```js\na\n```';
     const { container, rerender } = render(
-      <RecoilRoot>
+      <TestProviders>
         <Markdown content={before} isLatestMessage={false} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
     expect(indicesIn(container)).toEqual([{ idx: '0', lang: 'js' }]);
 
     rerender(
-      <RecoilRoot>
+      <TestProviders>
         <Markdown content={after} isLatestMessage={false} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
     // The js block's base shifted 0 -> 1; without forcing a remount its ref-cached
     // index would stay 0 (duplicating py). It must become 1.
@@ -188,14 +212,14 @@ describe('MarkdownBlocks DOM equivalence (non-code blocks)', () => {
 
   it.each(cases)('renders identical DOM to the whole-message renderer: %s', (_label, content) => {
     const { container: oldC } = render(
-      <RecoilRoot>
+      <TestProviders>
         <OldMarkdown content={content} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
     const { container: newC } = render(
-      <RecoilRoot>
+      <TestProviders>
         <Markdown content={content} isLatestMessage={false} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
     expect(normalizeHtml(newC.innerHTML)).toBe(normalizeHtml(oldC.innerHTML));
   });
@@ -204,18 +228,18 @@ describe('MarkdownBlocks DOM equivalence (non-code blocks)', () => {
 describe('MarkdownBlocks rendering smoke', () => {
   it('renders an empty cursor placeholder while initializing', () => {
     const { container } = render(
-      <RecoilRoot>
+      <TestProviders>
         <Markdown content="" isLatestMessage={true} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
     expect(container.querySelector('.result-thinking')).not.toBeNull();
   });
 
   it('renders executable code blocks for a multi-code message', () => {
     render(
-      <RecoilRoot>
+      <TestProviders>
         <Markdown content={MIXED} isLatestMessage={false} />
-      </RecoilRoot>,
+      </TestProviders>,
     );
     expect(screen.getAllByTestId('cb')).toHaveLength(4);
   });
@@ -227,9 +251,9 @@ describe('MarkdownBlocks document-level definitions', () => {
     const content = 'See [docs][d] for details.\n\n[d]: https://example.com/docs';
     render(
       <QueryClientProvider client={queryClient}>
-        <RecoilRoot>
+        <TestProviders>
           <Markdown content={content} isLatestMessage={false} />
-        </RecoilRoot>
+        </TestProviders>
       </QueryClientProvider>,
     );
     expect(screen.getByRole('link', { name: 'docs' })).toHaveAttribute(

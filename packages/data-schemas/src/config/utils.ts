@@ -35,3 +35,19 @@ export const getLogDirectory = (): string => {
   // Default to logs directory relative to current working directory
   return path.join(cwd, 'logs');
 };
+
+/**
+ * Console verbosity for every winston logger in this package.
+ *
+ * Each logger's Console transport used to hard-code `level: 'info'`, which
+ * silently overrides the logger's own level — winston resolves a transport's
+ * explicit level ahead of its parent's. `CONSOLE_LOG_LEVEL` makes that
+ * verbosity configurable, and `silent` turns console output off entirely.
+ */
+export const resolveConsoleLevel = (fallback = 'info'): { level: string; silent: boolean } => {
+  const requested = process.env.CONSOLE_LOG_LEVEL?.toLowerCase();
+  if (requested === 'silent') {
+    return { level: fallback, silent: true };
+  }
+  return { level: requested || fallback, silent: false };
+};

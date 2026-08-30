@@ -8,7 +8,7 @@ import {
   stripHeavyErrorFields,
 } from './parsers';
 import { appendLogContext, attachRequestContext } from './requestLogContext';
-import { getLogDirectory } from './utils';
+import { getLogDirectory, resolveConsoleLevel } from './utils';
 
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;
 
@@ -98,16 +98,16 @@ const consoleFormat = winston.format.combine(
   }),
 );
 
-let consoleLogLevel: string = 'info';
-if (useDebugConsole) {
-  consoleLogLevel = 'debug';
-}
+const { level: resolvedConsoleLevel, silent: consoleSilent } = resolveConsoleLevel();
+
+const consoleLogLevel: string = useDebugConsole ? 'debug' : resolvedConsoleLevel;
 
 // Add console transport
 if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: useConsoleJson
         ? winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json())
         : winston.format.combine(fileFormat, debugTraverse),
@@ -117,6 +117,7 @@ if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json()),
     }),
   );
@@ -124,6 +125,7 @@ if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: consoleFormat,
     }),
   );

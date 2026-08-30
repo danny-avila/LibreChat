@@ -207,7 +207,6 @@ const AuthContextProvider = ({
 
   const silentRefresh = useCallback(() => {
     if (authConfig?.test === true) {
-      console.log('Test mode. Skipping silent refresh.');
       return;
     }
     if (isExternalRedirectRef.current) {
