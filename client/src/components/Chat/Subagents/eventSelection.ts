@@ -12,7 +12,9 @@ export const eventSubagentSelection = (
 ): ActiveSubagentPanel | null => {
   const taskId = requestedTaskId ?? child.latestTaskId;
   if (child.origin !== 'event' || child.actorId == null || taskId == null) return null;
-  const pinnedTask = requestedTaskId != null && requestedTaskId !== child.latestTaskId;
+  /** Any explicitly requested task stays pinned — even today's latest task can
+   *  be displaced by a newer delivery while the panel is open. */
+  const pinnedTask = requestedTaskId != null;
   return {
     host: 'conversation',
     parentConversationId,

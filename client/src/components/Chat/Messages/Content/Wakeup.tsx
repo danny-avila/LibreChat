@@ -10,6 +10,7 @@ import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsP
 import { durableSubagentSelection } from '~/components/Chat/Subagents/eventSelection';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { useShareContext } from '~/Providers/ShareContext';
 import { activeSubagentPanel } from '~/store/subagents';
 import { cn, getToolDisplayLabel } from '~/utils';
 import { useMessageContext } from '~/Providers';
@@ -37,6 +38,7 @@ function WakeupTaskCard({
 }) {
   const localize = useLocalize();
   const mcpServerNames = useMCPServerNames();
+  const { isSharedConvo } = useShareContext();
   const { messageId } = useMessageContext();
   const { byThreadId } = useParentSubagents();
   const setSelection = useSetRecoilState(activeSubagentPanel);
@@ -44,7 +46,14 @@ function WakeupTaskCard({
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const child = task.threadId == null ? undefined : byThreadId.get(task.threadId);
   const selection = useMemo<ActiveSubagentPanel | null>(() => {
-    if (task.threadId == null || conversationId == null || conversationId === '') {
+    /** Share pages have no authenticated durable-thread panel; a conversation
+     *  selection there would be written and silently ignored. */
+    if (
+      isSharedConvo === true ||
+      task.threadId == null ||
+      conversationId == null ||
+      conversationId === ''
+    ) {
       return null;
     }
     if (child != null) {
@@ -64,7 +73,7 @@ function WakeupTaskCard({
       isSubmitting: false,
       durable: { threadId: task.threadId, taskId: task.taskId },
     };
-  }, [child, conversationId, messageId, task]);
+  }, [child, conversationId, isSharedConvo, messageId, task]);
   const status = threadStatus(task.status);
   const StatusIcon = subagentStatusIcon(status);
   const title =
@@ -91,11 +100,16 @@ function WakeupTaskCard({
         {title !== '' && <span className="min-w-0 truncate font-medium">{title}</span>}
         <span className="shrink-0">{localize(subagentStatusLabelKey(status))}</span>
         {selection != null && (
+          /** The trigger identity attributes let the panel's close handler
+           *  return keyboard focus to this button. */
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={openActivity}
+            data-subagent-tool-call={selection.toolCallId}
+            data-subagent-parent-message={selection.parentMessageId}
+            data-subagent-part-index={selection.partIndex}
             className="ml-auto h-6 shrink-0 px-2 text-xs"
           >
             {localize('com_ui_wakeup_view_activity')}
