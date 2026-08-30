@@ -85,11 +85,19 @@ export class AgentExecutionEnrollment {
         'RUN_REPLACED',
       );
     }
-    const started = await this.manager.beginProviderExecution(
-      this.runId,
-      this.createdAt,
-      this.providerExecutionId,
-    );
+    let started: boolean;
+    try {
+      started = await this.manager.beginProviderExecution(
+        this.runId,
+        this.createdAt,
+        this.providerExecutionId,
+      );
+    } catch (error) {
+      /** The CAS may have committed before its response was lost. Provider work has
+       * not begun, but settlement still owns acknowledgement of that possible fence. */
+      this.providerStarted = true;
+      throw error;
+    }
     if (!started) {
       throw new AgentExecutionAdmissionError(
         'Agent execution stopped before provider startup',

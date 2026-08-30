@@ -122,6 +122,30 @@ describe('Agent execution enrollment', () => {
     expect(beginProviderExecution).not.toHaveBeenCalled();
   });
 
+  it('retains drain ownership when provider-start commits but its acknowledgement is lost', async () => {
+    const enrollment = await enrollAgentExecution(enrollmentParams('chatcmpl-start-ambiguous'), {
+      manager,
+    });
+    const originalBeginProviderExecution = manager.beginProviderExecution.bind(manager);
+    const beginProviderExecution = jest.spyOn(manager, 'beginProviderExecution');
+    beginProviderExecution.mockImplementationOnce(async (...args) => {
+      const started = await originalBeginProviderExecution(...args);
+      expect(started).toBe(true);
+      throw new Error('provider-start response lost');
+    });
+
+    await expect(enrollment.beginProviderExecution()).rejects.toThrow(
+      'provider-start response lost',
+    );
+    await expect(enrollment.settle(new Error('provider did not start'))).resolves.toBeUndefined();
+
+    await expect(manager.getJobStore().getJob('chatcmpl-start-ambiguous')).resolves.toMatchObject({
+      status: 'error',
+      providerDrained: true,
+    });
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([]);
+  });
+
   it('keeps terminal work cleanup-blocking until every tracked write settles', async () => {
     const enrollment = await enrollAgentExecution(enrollmentParams('chatcmpl-tail'), { manager });
     const tail = deferred<void>();

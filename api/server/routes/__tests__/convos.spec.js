@@ -506,6 +506,30 @@ describe('Convos Routes', () => {
       });
       expect(deleteConvos).toHaveBeenCalledTimes(2);
       expect(deleteMessages).toHaveBeenCalledWith({ user: 'test-user-123' });
+      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(['original', 'gap-conversation']);
+    });
+
+    it('retries owner message cleanup after conversations were already removed', async () => {
+      deleteConvos
+        .mockResolvedValueOnce({ deletedCount: 1, conversationIds: ['original'] })
+        .mockResolvedValueOnce({ deletedCount: 0, conversationIds: [] });
+      deleteMessages
+        .mockRejectedValueOnce(new Error('message database unavailable'))
+        .mockResolvedValueOnce({ deletedCount: 1 });
+
+      const first = await request(app).delete('/api/convos/all');
+      const retry = await request(app).delete('/api/convos/all');
+
+      expect(first.status).toBe(500);
+      expect(retry.status).toBe(201);
+      expect(deleteConvos).toHaveBeenNthCalledWith(
+        2,
+        'test-user-123',
+        {},
+        expect.objectContaining({ allowEmpty: true }),
+      );
+      expect(deleteMessages).toHaveBeenCalledTimes(2);
+      expect(deleteMessages).toHaveBeenLastCalledWith({ user: 'test-user-123' });
     });
 
     it('should delete all conversations, tool calls, and shared links for a user', async () => {

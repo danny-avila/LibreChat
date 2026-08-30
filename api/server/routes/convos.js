@@ -374,7 +374,8 @@ async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskId
  * fence ever lapses and must be reacquired after deletion has started. */
 async function withAgentOwnerDeletionFence(userId, tenantId, deletion, recoverPersistence) {
   const drainRemoteRuns = () => confirmAgentGenerationsDrained(userId, [], [], tenantId, true);
-  return subagentThreadTaskStore.withOwnerDeletionFence(
+  let recoveryConversationIds = [];
+  const result = await subagentThreadTaskStore.withOwnerDeletionFence(
     userId,
     tenantId,
     async () => {
@@ -385,19 +386,23 @@ async function withAgentOwnerDeletionFence(userId, tenantId, deletion, recoverPe
       await drainRemoteRuns();
       /** Runs only after the fence was restored. No new provider may enter while
        * persistence created during the gap is removed idempotently. */
-      await recoverPersistence();
+      const recovery = await recoverPersistence();
+      recoveryConversationIds = recovery.conversationIds ?? [];
     },
   );
+  return { result, recoveryConversationIds };
 }
 
-async function recoverOwnerConversationPersistence(userId, filter, tenantId) {
-  await db.deleteConvos(userId, filter, {
+async function deleteOwnerConversationPersistence(userId, filter, tenantId) {
+  const result = await db.deleteConvos(userId, filter, {
     allowEmpty: true,
     beforeDelete: (conversationIds) =>
       confirmAgentGenerationsDrained(userId, conversationIds, [], tenantId),
   });
-  /** Covers an interrupted writer that persisted messages before its conversation. */
+  /** Always runs, including an empty conversation retry, so an interrupted writer
+   * that persisted messages first cannot make its cleanup permanently unreachable. */
   await db.deleteMessages({ user: userId });
+  return result;
 }
 
 router.delete('/', configMiddleware, async (req, res) => {
@@ -438,6 +443,7 @@ router.delete('/', configMiddleware, async (req, res) => {
         : undefined;
     let cancellationPlan;
     let dbResponse;
+    let recoveryConversationIds = [];
     if (filter.conversationId) {
       /** Resolve the targets while the conversations still exist: the second pass
        * runs after their rows are gone and can only reach registered owners. */
@@ -454,19 +460,21 @@ router.delete('/', configMiddleware, async (req, res) => {
     } else {
       /** An empty filter deletes every conversation this owner has, so it runs behind
        * the same admission fence as `DELETE /all` rather than a bare drain. */
-      dbResponse = await withAgentOwnerDeletionFence(
+      const fencedDeletion = await withAgentOwnerDeletionFence(
         req.user.id,
         tenantId,
-        () =>
-          db.deleteConvos(req.user.id, filter, {
-            beforeDelete: (conversationIds) =>
-              confirmAgentGenerationsDrained(req.user.id, conversationIds, [], tenantId),
-          }),
-        () => recoverOwnerConversationPersistence(req.user.id, filter, tenantId),
+        () => deleteOwnerConversationPersistence(req.user.id, filter, tenantId),
+        () => deleteOwnerConversationPersistence(req.user.id, filter, tenantId),
       );
+      dbResponse = fencedDeletion.result;
+      recoveryConversationIds = fencedDeletion.recoveryConversationIds;
     }
-    const deletedConversationIds =
-      dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : []);
+    const deletedConversationIds = [
+      ...new Set([
+        ...(dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : [])),
+        ...recoveryConversationIds,
+      ]),
+    ];
     /** Root deletion closes new child admission. Replay the plan to catch a task
      * admitted after the first pass but before that fence, extended with the cascade
      * this deletion reported. */
@@ -522,23 +530,22 @@ router.delete('/all', configMiddleware, async (req, res) => {
     /** Fences new child admission for this owner, drains the live ones, and deletes
      * inside that fence: a child admitted on another replica mid-deletion would
      * otherwise keep running against conversations that no longer exist. */
-    const dbResponse = await withAgentOwnerDeletionFence(
+    const fencedDeletion = await withAgentOwnerDeletionFence(
       req.user.id,
       tenantId,
-      () =>
-        db.deleteConvos(
-          req.user.id,
-          {},
-          {
-            beforeDelete: (conversationIds) =>
-              confirmAgentGenerationsDrained(req.user.id, conversationIds, [], tenantId),
-          },
-        ),
-      () => recoverOwnerConversationPersistence(req.user.id, {}, tenantId),
+      () => deleteOwnerConversationPersistence(req.user.id, {}, tenantId),
+      () => deleteOwnerConversationPersistence(req.user.id, {}, tenantId),
     );
+    const dbResponse = fencedDeletion.result;
+    const deletedConversationIds = [
+      ...new Set([
+        ...(dbResponse.conversationIds ?? []),
+        ...fencedDeletion.recoveryConversationIds,
+      ]),
+    ];
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
     await deleteAgentCheckpoints(
-      dbResponse.conversationIds,
+      deletedConversationIds,
       req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
     );
     await db.deleteToolCalls(req.user.id);
