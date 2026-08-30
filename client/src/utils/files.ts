@@ -250,18 +250,32 @@ type FileSizeValidationParams = {
   endpointFileConfig: EndpointFileConfig;
 };
 
+/** Identity used to detect a file already selected or attached: name, byte size, and MIME group. */
+const getFileSignature = (
+  name: string | undefined,
+  size: number | undefined,
+  type: string | undefined,
+): string => `${name}-${size}-${type?.split('/')[0] ?? 'file'}`;
+
+/** Normalizes the configured per-file cap: absent, zero, and negative all mean "no limit". */
+const getFileSizeLimit = ({ fileSizeLimit }: EndpointFileConfig): number | null =>
+  fileSizeLimit != null && fileSizeLimit > 0 ? fileSizeLimit : null;
+
 export const validateFileSizes = ({
   files,
   fileList,
   setError,
   endpointFileConfig,
 }: FileSizeValidationParams): boolean => {
-  const { fileSizeLimit, totalSizeLimit } = endpointFileConfig;
+  const { totalSizeLimit } = endpointFileConfig;
+  const fileSizeLimit = getFileSizeLimit(endpointFileConfig);
 
-  for (const file of fileList) {
-    if (fileSizeLimit && file.size >= fileSizeLimit) {
-      setError(`File size limit exceeded: ${fileSizeLimit / megabyte} MB`);
-      return false;
+  if (fileSizeLimit != null) {
+    for (const file of fileList) {
+      if (file.size >= fileSizeLimit) {
+        setError(`File size limit exceeded: ${fileSizeLimit / megabyte} MB`);
+        return false;
+      }
     }
   }
 
@@ -280,6 +294,87 @@ export const validateFileSizes = ({
   return true;
 };
 
+export const validateFileLimit = ({
+  files,
+  fileList,
+  setError,
+  endpointFileConfig,
+}: FileSizeValidationParams): boolean => {
+  const { fileLimit } = endpointFileConfig;
+  if (fileLimit && fileList.length + files.size > fileLimit) {
+    setError(`File limit reached: ${fileLimit} files`);
+    return false;
+  }
+  return true;
+};
+
+export type UploadSkipReason = 'duplicate' | 'fileSize';
+
+export type SkippedUpload = {
+  /** Position in the `fileList` handed to `partitionUploads`, so callers can map back to their own parallel arrays */
+  index: number;
+  file: File;
+  reason: UploadSkipReason;
+};
+
+export type UploadPartition = {
+  keptIndices: number[];
+  skipped: SkippedUpload[];
+};
+
+/**
+ * Splits a selection into the files that may be uploaded and the ones that cannot, so a single
+ * offender no longer rejects everything picked alongside it. Duplicates are matched against files
+ * already attached and against earlier entries in the same selection. Only per-file rules belong
+ * here: `totalSizeLimit` is a property of the batch as a whole, so callers still run
+ * `validateFileSizes` over whatever survives.
+ */
+export const partitionUploads = ({
+  files,
+  fileList,
+  endpointFileConfig,
+  skipSizeValidation = false,
+}: {
+  fileList: File[];
+  files: Map<string, ExtendedFile>;
+  endpointFileConfig: EndpointFileConfig;
+  skipSizeValidation?: boolean;
+}): UploadPartition => {
+  const fileSizeLimit = skipSizeValidation ? null : getFileSizeLimit(endpointFileConfig);
+  const keptIndices: number[] = [];
+  const skipped: SkippedUpload[] = [];
+
+  const signatures = new Set<string>();
+  for (const existingFile of files.values()) {
+    signatures.add(
+      getFileSignature(
+        existingFile.file?.name ?? existingFile.filename,
+        existingFile.size,
+        existingFile.type,
+      ),
+    );
+  }
+
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    const signature = getFileSignature(file.name, file.size, file.type);
+    if (signatures.has(signature)) {
+      skipped.push({ index: i, file, reason: 'duplicate' });
+      continue;
+    }
+    signatures.add(signature);
+
+    if (fileSizeLimit != null && file.size >= fileSizeLimit) {
+      skipped.push({ index: i, file, reason: 'fileSize' });
+      continue;
+    }
+
+    keptIndices.push(i);
+  }
+
+  return { keptIndices, skipped };
+};
+
 type FileDuplicateValidationParams = {
   fileList: File[];
   files: Map<string, ExtendedFile>;
@@ -292,13 +387,11 @@ export const validateFileDuplicates = ({
   setError,
 }: FileDuplicateValidationParams): boolean => {
   const combinedFilesInfo = [
-    ...Array.from(files.values()).map(
-      (file) =>
-        `${file.file?.name ?? file.filename}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
+    ...Array.from(files.values()).map((file) =>
+      getFileSignature(file.file?.name ?? file.filename, file.size, file.type),
     ),
-    ...fileList.map(
-      (file: File | undefined) =>
-        `${file?.name}-${file?.size}-${file?.type.split('/')[0] ?? 'file'}`,
+    ...fileList.map((file: File | undefined) =>
+      getFileSignature(file?.name, file?.size, file?.type),
     ),
   ];
 
@@ -320,6 +413,7 @@ export const validateFiles = ({
   toolResource,
   fileConfig,
   skipSizeValidation = false,
+  skipBatchRules = false,
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
@@ -327,9 +421,13 @@ export const validateFiles = ({
   endpointFileConfig: EndpointFileConfig;
   toolResource?: string;
   fileConfig: FileConfig | null;
+  /** Defer size checks to `partitionUploads` once processing has settled each file's final bytes */
   skipSizeValidation?: boolean;
+  /** The caller partitions the selection itself, so the rules that would reject the batch as a
+   * whole — the file count and duplicates — wait until it has dropped what it can */
+  skipBatchRules?: boolean;
 }) => {
-  const { fileLimit, supportedMimeTypes, disabled } = endpointFileConfig;
+  const { supportedMimeTypes, disabled } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
   if (disabled === true) {
     setError('com_ui_attach_error_disabled');
@@ -341,8 +439,7 @@ export const validateFiles = ({
     return false;
   }
 
-  if (fileLimit && fileList.length + files.size > fileLimit) {
-    setError(`File limit reached: ${fileLimit} files`);
+  if (!skipBatchRules && !validateFileLimit({ files, fileList, setError, endpointFileConfig })) {
     return false;
   }
 
@@ -383,6 +480,10 @@ export const validateFiles = ({
     !validateFileSizes({ files, fileList, setError, endpointFileConfig })
   ) {
     return false;
+  }
+
+  if (skipBatchRules) {
+    return true;
   }
 
   return validateFileDuplicates({ files, fileList, setError });
