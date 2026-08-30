@@ -1249,16 +1249,19 @@ export function buildBackgroundHandleContent(
   task: Pick<BackgroundTask, 'id' | 'toolName' | 'status'>,
   options: { completionWakeup?: boolean; liveArtifactPollRequired?: boolean } = {},
 ): string {
+  let message: string;
+  if (options.liveArtifactPollRequired === true) {
+    message = `Started "${task.toolName}" in the background. This tool can return a live artifact, so you must call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" until it completes; do not end the turn expecting artifact delivery from an automatic continuation. If the settled result is content-only, the host may still resume you automatically.`;
+  } else if (options.completionWakeup === true) {
+    message = `Started "${task.toolName}" in the background. Continue independent work or end the turn; the host will resume you when task "${task.id}" finishes. Use ${CHECK_BACKGROUND_TASK_NAME} only for an explicit status check or as a fallback.`;
+  } else {
+    message = `Started "${task.toolName}" in the background. Call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" to check progress and retrieve the result; it persists on this server, so you may poll it later in this turn or in a following turn. Do not assume it has finished until you have polled and seen status "completed".`;
+  }
   return JSON.stringify({
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
-    message:
-      options.liveArtifactPollRequired === true
-        ? `Started "${task.toolName}" in the background. This tool can return a live artifact, so you must call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" until it completes; do not end the turn expecting artifact delivery from an automatic continuation. If the settled result is content-only, the host may still resume you automatically.`
-        : options.completionWakeup === true
-          ? `Started "${task.toolName}" in the background. Continue independent work or end the turn; the host will resume you when task "${task.id}" finishes. Use ${CHECK_BACKGROUND_TASK_NAME} only for an explicit status check or as a fallback.`
-          : `Started "${task.toolName}" in the background. Call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" to check progress and retrieve the result; it persists on this server, so you may poll it later in this turn or in a following turn. Do not assume it has finished until you have polled and seen status "completed".`,
+    message,
   });
 }
 
