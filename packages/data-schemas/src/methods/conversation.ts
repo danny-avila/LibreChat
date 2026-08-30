@@ -456,7 +456,10 @@ export interface ConversationMethods {
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
-    options?: { beforeDelete?: (conversationIds: string[]) => Promise<void> },
+    options?: {
+      beforeDelete?: (conversationIds: string[]) => Promise<void>;
+      allowEmpty?: boolean;
+    },
   ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
   archiveAllConvos(user: string): Promise<{ archivedCount: number }>;
 }
