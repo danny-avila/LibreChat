@@ -4388,6 +4388,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             );
             const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
             const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
+            const executionRouteKey =
+              codeExecutionContext?.executionRouteKey ?? codeExecutionContext?.executionProfile;
             const sandboxConversationId =
               ((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
               (mergedConfigurable?.thread_id as string | undefined) ??
@@ -4398,7 +4400,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               )?.conversationId;
             const markCodeSandboxWarm = (): void => {
               if (runtimeSessionHint) {
-                void markSandboxReady(runtimeSessionHint);
+                void markSandboxReady(runtimeSessionHint, executionRouteKey);
               }
               if (sandboxConversationId) {
                 void markSandboxReady(sandboxConversationId);

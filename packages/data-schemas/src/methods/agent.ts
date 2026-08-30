@@ -1200,7 +1200,14 @@ export function createAgentMethods(
       }
     }
 
-    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
+    const restoresDeploymentDefault = !Object.prototype.hasOwnProperty.call(
+      revertToVersion,
+      'code_environment_id',
+    );
+    const revertUpdate = restoresDeploymentDefault
+      ? { $set: revertToVersion, $unset: { code_environment_id: 1 } }
+      : { $set: revertToVersion };
+    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
       new: true,
     }).lean<IAgent>();
     if (!revertedAgent) {

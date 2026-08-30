@@ -220,6 +220,41 @@ describe('maybePrewarmCodeSandbox', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('prewarms a replacement route even when its runtime session hint is unchanged', async () => {
+    const context = (executionRouteKey: string, baseUrl: string): TestAgent => ({
+      id: `agent-${executionRouteKey}`,
+      statefulCodeSessions: true,
+      codeExecutionContext: {
+        baseUrl,
+        codeSessionKey: `execute_code:${executionRouteKey}`,
+        executionProfile: 'stateful',
+        executionRouteKey,
+        runtimeSessionHint: 'v3:stable:user:scope',
+        statefulSessions: true,
+        environmentType: 'managed',
+      },
+    });
+
+    maybePrewarmCodeSandbox({
+      req,
+      conversationId: 'convo-1',
+      agents: agents(context(`stateful:${'a'.repeat(32)}`, 'https://old-code.example.com')),
+    });
+    await flushAsync();
+    maybePrewarmCodeSandbox({
+      req,
+      conversationId: 'convo-2',
+      agents: agents(context(`stateful:${'b'.repeat(32)}`, 'https://new-code.example.com')),
+    });
+    await flushAsync();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://old-code.example.com/exec',
+      'https://new-code.example.com/exec',
+    ]);
+  });
+
   it('does not refire while a prewarm is in flight', async () => {
     fetchMock.mockImplementation(() => new Promise(() => undefined));
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });

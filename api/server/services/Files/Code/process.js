@@ -229,6 +229,7 @@ const prepareCodeOutputForInspection = async ({
  * @param {string} params.messageId - The current message ID.
  * @param {number} params.expiresAt - Expiration timestamp (24 hours from creation).
  * @param {'default'|'stateful'} [params.executionProfile] - Code API route for later fallback download.
+ * @param {string} [params.executionRouteKey] - Deployment-local route identity.
  * @returns {Object} Fallback response with download URL.
  */
 const createDownloadFallback = ({
@@ -241,12 +242,20 @@ const createDownloadFallback = ({
   toolCallId,
   conversationId,
   executionProfile,
+  executionRouteKey,
 }) => {
   const basePath = getBasePath();
-  const profileQuery = executionProfile === 'stateful' ? '?execution_profile=stateful' : '';
+  const query = new URLSearchParams();
+  if (executionProfile === 'stateful') {
+    query.set('execution_profile', 'stateful');
+  }
+  if (executionRouteKey && executionRouteKey !== executionProfile) {
+    query.set('execution_route_key', executionRouteKey);
+  }
+  const routeQuery = query.size > 0 ? `?${query.toString()}` : '';
   return {
     filename: name,
-    filepath: `${basePath}/api/files/code/download/${session_id}/${id}${profileQuery}`,
+    filepath: `${basePath}/api/files/code/download/${session_id}/${id}${routeQuery}`,
     expiresAt,
     conversationId,
     toolCallId,
@@ -494,6 +503,7 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
  * @param {string} params.messageId - The current message ID.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
  * @param {Buffer} [params.preparedBuffer] - Bytes downloaded during a
  *   no-write content inspection preflight.
  * @param {boolean} [params.downloadFallback] - Return the bounded download
@@ -512,6 +522,7 @@ const processCodeOutput = async ({
   freshClaimAfter,
   codeApiBaseUrl,
   executionProfile = 'default',
+  executionRouteKey = executionProfile,
   preparedBuffer,
   downloadFallback,
 }) => {
@@ -535,6 +546,7 @@ const processCodeOutput = async ({
           session_id,
           conversationId,
           executionProfile,
+          executionRouteKey,
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
@@ -565,6 +577,7 @@ const processCodeOutput = async ({
           session_id,
           conversationId,
           executionProfile,
+          executionRouteKey,
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
@@ -579,6 +592,7 @@ const processCodeOutput = async ({
       storage_session_id: session_id,
       file_id: id,
       executionProfile,
+      ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
     };
 
     /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
@@ -752,6 +766,7 @@ const processCodeOutput = async ({
           session_id,
           conversationId,
           executionProfile,
+          executionRouteKey,
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
@@ -935,6 +950,7 @@ const processCodeOutput = async ({
         session_id,
         conversationId,
         executionProfile,
+        executionRouteKey,
         expiresAt: currentDate.getTime() + 86400000,
       }),
     };

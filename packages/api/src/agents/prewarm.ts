@@ -74,14 +74,18 @@ function inflightKey(conversationId: string): string {
  * any in-flight prewarm marker. Callers on hot paths should not await this;
  * `void markSandboxReady(...)` is the expected usage.
  */
-export async function markSandboxReady(conversationId: string): Promise<void> {
+export async function markSandboxReady(
+  conversationId: string,
+  executionRouteKey?: string,
+): Promise<void> {
   if (!conversationId) {
     return;
   }
+  const cacheId = executionRouteKey ? `${executionRouteKey}:${conversationId}` : conversationId;
   const cache = sandboxCache();
   await Promise.all([
-    cache.set(readyKey(conversationId), true, coldAfterMs()),
-    cache.delete(inflightKey(conversationId)),
+    cache.set(readyKey(cacheId), true, coldAfterMs()),
+    cache.delete(inflightKey(cacheId)),
   ]);
 }
 
@@ -134,7 +138,10 @@ async function sendPrewarmRequest(
    * Draining also releases the socket instead of leaving the body for
    * undici to reap. */
   await response.arrayBuffer();
-  await markSandboxReady(context.runtimeSessionHint ?? '');
+  await markSandboxReady(
+    context.runtimeSessionHint ?? '',
+    context.executionRouteKey ?? context.executionProfile,
+  );
   logger.debug(`[prewarmCodeSandbox] Sandbox warm for ${context.runtimeSessionHint}`);
 }
 
@@ -181,10 +188,11 @@ async function maybePrewarmContext(
   if (!runtimeSessionHint) {
     return true;
   }
+  const runtimeCacheId = `${context.executionRouteKey ?? context.executionProfile}:${runtimeSessionHint}`;
   const cache = sandboxCache();
   const [ready, inflight] = await Promise.all([
-    cache.get(readyKey(runtimeSessionHint)),
-    cache.get(inflightKey(runtimeSessionHint)),
+    cache.get(readyKey(runtimeCacheId)),
+    cache.get(inflightKey(runtimeCacheId)),
   ]);
   if (ready != null) {
     return true;
@@ -194,7 +202,7 @@ async function maybePrewarmContext(
     return false;
   }
   await Promise.all([
-    cache.set(inflightKey(runtimeSessionHint), true, PREWARM_INFLIGHT_COOLDOWN_MS),
+    cache.set(inflightKey(runtimeCacheId), true, PREWARM_INFLIGHT_COOLDOWN_MS),
     cache.set(inflightKey(conversationId), true, PREWARM_INFLIGHT_COOLDOWN_MS),
   ]);
   await sendPrewarmRequest(req, context);
