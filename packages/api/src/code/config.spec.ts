@@ -182,6 +182,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
                 type: 'attached',
                 baseURL: 'https://shadow.example',
                 owner: 'deployment',
+                default: true,
                 pairing: { workerId: 'shadow-worker', tokenEnv: 'SHADOW_TOKEN' },
               },
             ],
@@ -215,6 +216,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
         name: 'Personal VM',
         baseURL: 'https://approved.example',
         owner: 'principal',
+        default: true,
       }),
     ]);
   });

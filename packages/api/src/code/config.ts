@@ -51,6 +51,19 @@ export async function mergeAccessibleCodeEnvironments({
   const principalEnvironmentIds = new Set(
     principalEnvironments.map((environment) => environment.id),
   );
+  const shadowedDefaultIds = new Set(
+    (sessions.environments ?? [])
+      .filter(
+        (environment) =>
+          environment.default === true && principalEnvironmentIds.has(environment.id),
+      )
+      .map((environment) => environment.id),
+  );
+  const effectivePrincipalEnvironments = principalEnvironments.map((environment) =>
+    shadowedDefaultIds.has(environment.id)
+      ? { ...environment, default: true as const }
+      : environment,
+  );
 
   return {
     ...appConfig,
@@ -64,7 +77,7 @@ export async function mergeAccessibleCodeEnvironments({
             ...(sessions.environments ?? []).filter(
               (environment) => !principalEnvironmentIds.has(environment.id),
             ),
-            ...principalEnvironments,
+            ...effectivePrincipalEnvironments,
           ],
         },
       },
