@@ -159,7 +159,7 @@ export interface AgentTriggerService {
     deliveryKey: string,
     sourceId: string,
     reason: string,
-    options?: { onlyIfUnclaimed?: boolean },
+    options?: { onlyIfUnclaimed?: boolean; onlyIfDead?: boolean },
   ) => Promise<boolean>;
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
@@ -522,6 +522,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
           reason,
           settledAt: new Date(),
           ...(options?.onlyIfUnclaimed === true ? { onlyIfUnclaimed: true } : {}),
+          ...(options?.onlyIfDead === true ? { onlyIfDead: true } : {}),
         });
         if (retired) {
           deliveryEngine?.wake();

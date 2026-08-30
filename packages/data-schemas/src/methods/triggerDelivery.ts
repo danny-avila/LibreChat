@@ -242,6 +242,7 @@ export interface AgentTriggerDeliveryMethods {
     settledAt: Date;
     reason: string;
     onlyIfUnclaimed?: boolean;
+    onlyIfDead?: boolean;
   }) => Promise<boolean>;
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
@@ -1908,13 +1909,15 @@ export function createAgentTriggerDeliveryMethods(
     settledAt: Date;
     reason: string;
     onlyIfUnclaimed?: boolean;
+    onlyIfDead?: boolean;
   }): Promise<boolean> {
     if (
       input.deliveryKey.length === 0 ||
       input.deliveryKey.length > 256 ||
       input.sourceId.length === 0 ||
       input.sourceId.length > 256 ||
-      Number.isNaN(input.settledAt.getTime())
+      Number.isNaN(input.settledAt.getTime()) ||
+      (input.onlyIfUnclaimed === true && input.onlyIfDead === true)
     ) {
       throw new TypeError('Invalid agent trigger delivery retirement');
     }
@@ -1923,18 +1926,29 @@ export function createAgentTriggerDeliveryMethods(
       backgroundToolCompletionRetired: true,
       reason: input.reason.slice(0, MAX_ERROR_MESSAGE_LENGTH),
     };
+    const statusFence =
+      input.onlyIfDead === true
+        ? {
+            $or: [
+              { status: { $in: ['dead', 'capability_dead'] } },
+              { status: 'leased', capabilityStatus: 'dead' },
+            ],
+          }
+        : {
+            status: {
+              $in:
+                input.onlyIfUnclaimed === true
+                  ? ['pending', 'capability_pending']
+                  : ['pending', 'leased', 'capability_pending', 'capability_leased'],
+            },
+          };
     const retired = await Delivery()
       .findOneAndUpdate(
         {
           deliveryKey: input.deliveryKey,
           'envelope.event.source.type': 'internal',
           'envelope.event.source.id': input.sourceId,
-          status: {
-            $in:
-              input.onlyIfUnclaimed === true
-                ? ['pending', 'capability_pending']
-                : ['pending', 'leased', 'capability_pending', 'capability_leased'],
-          },
+          ...statusFence,
         },
         {
           $set: {

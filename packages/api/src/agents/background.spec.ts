@@ -1408,7 +1408,8 @@ describe('runCheckBackgroundTask (singleton)', () => {
     const claimBackgroundToolResult = jest
       .fn()
       .mockResolvedValueOnce({ status: 'not_ready' })
-      .mockResolvedValueOnce({ status: 'not_ready' });
+      .mockResolvedValueOnce({ status: 'not_ready' })
+      .mockResolvedValueOnce({ status: 'acquired', results: [] });
     const request = {
       userId: 'claim_user',
       conversationId: 'claim_convo',
@@ -1419,8 +1420,9 @@ describe('runCheckBackgroundTask (singleton)', () => {
       claimBackgroundToolResult,
     };
 
-    const claimed = JSON.parse(await runCheckBackgroundTask(request));
-    expect(claimed).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
+    const persisting = JSON.parse(await runCheckBackgroundTask(request));
+    expect(persisting).toMatchObject({ status: 'result_persisting' });
+    expect(JSON.stringify(persisting)).not.toContain('CLAIMED RESULT');
     const replay = JSON.parse(await runCheckBackgroundTask(request));
     expect(replay).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
     expect(
@@ -1509,6 +1511,57 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
       onlyIfUnclaimed: true,
     });
+    expect(retire).toHaveBeenCalledWith(
+      'dead completion recovered by same-generation manual poll',
+      {
+        onlyIfDead: true,
+      },
+    );
+  });
+
+  it('recovers a dead automatic completion into process-local polling', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'dead_user',
+      conversationId: 'dead_convo',
+      toolCallId: 'call_dead',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-dead',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('dead_user', 'dead_convo', created.task.id, {
+      content: 'RECOVERED RESULT',
+    });
+    const retire = jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    backgroundTaskRegistry.markCompletionWakeup('dead_user', 'dead_convo', created.task.id, {
+      retire,
+    });
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'dead_user',
+        conversationId: 'dead_convo',
+        args: { background_task_id: created.task.id },
+        toolCallId: 'poll-dead',
+        runId: 'poll-run',
+        claimBackgroundToolResult: async () => ({ status: 'not_ready' }),
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', result: 'RECOVERED RESULT' });
+    expect(retire).toHaveBeenNthCalledWith(1, 'completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    expect(retire).toHaveBeenNthCalledWith(
+      2,
+      'dead completion recovered by same-generation manual poll',
+      { onlyIfDead: true },
+    );
+    expect(
+      backgroundTaskRegistry.get('dead_user', 'dead_convo', created.task.id)
+        ?.completionPersistenceFailed,
+    ).toBe(true);
   });
 
   it('preserves local task lists when cross-replica subagent discovery is unavailable', async () => {

@@ -1835,6 +1835,7 @@ describe('useStepHandler', () => {
       expect(toolCallContent?.tool_call?.output).toBe('Tool result output');
       expect(toolCallContent?.tool_call?.progress).toBe(1);
       expect(toolCallContent?.tool_call?.inputValidationError).toBe(true);
+      expect(toolCallContent?.tool_call?.stepId).toBe('step-tool-1');
     });
 
     it('signals skill authoring when a completed create_file call targets a skill path', () => {

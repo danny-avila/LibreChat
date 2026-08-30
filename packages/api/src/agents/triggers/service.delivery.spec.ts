@@ -453,6 +453,14 @@ describe('durable agent trigger service', () => {
         onlyIfUnclaimed: true,
       }),
     );
+    await expect(
+      service.retire('trigger_1', 'background-tool-completion', 'dead recovery', {
+        onlyIfDead: true,
+      }),
+    ).resolves.toBe(true);
+    expect(retireAgentTriggerDelivery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ onlyIfDead: true }),
+    );
     await service.stop();
   });
 

@@ -143,6 +143,17 @@ describe('background tool completion wakeups', () => {
       'manual poll elected',
       { onlyIfUnclaimed: true },
     );
+    if (admission !== false) {
+      await expect(admission.retire('dead delivery recovered', { onlyIfDead: true })).resolves.toBe(
+        true,
+      );
+    }
+    expect(retire).toHaveBeenLastCalledWith(
+      'delivery-key-1',
+      'background-tool-completion',
+      'dead delivery recovered',
+      { onlyIfDead: true },
+    );
   });
 
   it("keeps unfinished sibling tasks out of each other's delivery lanes", async () => {

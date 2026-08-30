@@ -9,6 +9,7 @@ import type {
 import type {
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
+  BackgroundToolWakeupRetireOptions,
 } from './backgroundCompletion';
 import type {
   AgentTriggerContinuePreparation,
@@ -38,7 +39,7 @@ export type RetireBackgroundToolCompletion = (
   deliveryKey: string,
   sourceId: string,
   reason: string,
-  options?: { onlyIfUnclaimed?: boolean },
+  options?: BackgroundToolWakeupRetireOptions,
 ) => Promise<boolean>;
 
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &

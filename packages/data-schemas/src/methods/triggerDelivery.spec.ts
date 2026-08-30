@@ -577,6 +577,38 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toMatchObject({ status: 'leased', leaseBy: 'completion-worker' });
   });
 
+  it('reconciles only an irreversibly dead completion for manual polling', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-dead',
+        user,
+        envelope: { event: { source } },
+      }),
+    );
+    await Delivery.updateOne(
+      { _id: queued.delivery.id },
+      { $set: { status: 'dead', settledAt: START } },
+    );
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: new Date(START.getTime() + 1),
+        reason: 'manual poll recovered dead completion',
+        onlyIfDead: true,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { backgroundToolCompletionRetired: true },
+    });
+  });
+
   it('claims older capability work before newer ordinary work', async () => {
     const capability = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({

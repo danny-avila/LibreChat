@@ -285,9 +285,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(retire).toHaveBeenCalledWith('background tool result was not persisted', {
-      onlyIfUnclaimed: true,
-    });
+    expect(retire).toHaveBeenCalledWith('background tool result was not persisted', undefined);
   });
 
   it('keeps durable ownership active when an ambiguous persistence failure cannot retire a lease', async () => {
@@ -327,6 +325,48 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const task = backgroundTaskRegistry.get('exec_user', 'exec_convo', taskId);
     expect(task?.completionWakeup).toBe(true);
     expect(task?.completionPersistenceFailed).toBeUndefined();
+  });
+
+  it('keeps declared artifact-producing tools on the live poll path', async () => {
+    const preregister = jest.fn(async () => ({ retire: jest.fn(async () => true) }));
+    const persist = jest.fn(async () => true);
+    const tool = {
+      name: 'artifact_tool',
+      description: 'returns a live artifact',
+      schema: z.object({ q: z.string() }),
+      responseFormat: 'content_and_artifact',
+      invoke: jest.fn(async () => ({
+        content: 'artifact result',
+        artifact: { files: ['report.pdf'] },
+      })),
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister,
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-artifact-poll',
+          name: tool.name,
+          args: { q: 'artifact', run_in_background: true },
+          stepId: 'step-artifact-poll',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-artifact' },
+    });
+    await flushMicrotasks();
+
+    expect(preregister).not.toHaveBeenCalled();
+    expect(JSON.parse(dispatch.content).message).toContain('Call check_background_task');
+    expect(JSON.parse(dispatch.content).message).not.toContain('host will resume you');
   });
 
   it('persists ordinary background failures in the renderer-recognized error shape', async () => {

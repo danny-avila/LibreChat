@@ -4463,6 +4463,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
               const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
+              /** Content-and-artifact tools require a live poll turn to route
+               * their artifact through `toolEndCallback`. Code tools are the
+               * exception because their completion harvester durably anchors
+               * generated files before the automatic continuation runs. */
+              const completionWakeupEligible =
+                harvestEnabled || tool.responseFormat !== Constants.CONTENT_AND_ARTIFACT;
               const backgroundStepId =
                 typeof tc.stepId === 'string' && tc.stepId.trim() !== '' ? tc.stepId : undefined;
               const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);
@@ -4583,6 +4589,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               if (isNew) {
                 if (
                   detachedReservation?.status !== 'reserved' &&
+                  completionWakeupEligible &&
                   backgroundToolCompletion?.preregister != null &&
                   backgroundStepId != null &&
                   backgroundRunId != null &&
@@ -4673,7 +4680,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     task.id,
                   );
                   const backgroundTask = resolveBackgroundTask();
-                  const retireFailedPersistence = async (reason: string): Promise<void> => {
+                  const retireFailedPersistence = async (
+                    reason: string,
+                    certainty: 'definite' | 'ambiguous',
+                  ): Promise<void> => {
                     if (completionAdmission == null) {
                       backgroundTaskRegistry.markCompletionPersistenceFailed(
                         backgroundUserId,
@@ -4683,13 +4693,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       return;
                     }
                     try {
-                      /** A rejected write receipt is ambiguous: Mongo may have
-                       * applied the terminal row before the response was lost.
-                       * Poll-only fallback is safe only if no resolver owns the
-                       * delivery that could already be preparing that receipt. */
-                      const retired = await completionAdmission.retire(reason, {
-                        onlyIfUnclaimed: true,
-                      });
+                      /** A thrown write receipt is ambiguous: Mongo may have
+                       * applied it before the response was lost, so only an
+                       * unclaimed delivery may fall back. A returned `false`
+                       * proves no terminal row was anchored and may retire a
+                       * live deferring lease before it dead-letters forever. */
+                      const retired = await completionAdmission.retire(
+                        reason,
+                        certainty === 'ambiguous' ? { onlyIfUnclaimed: true } : undefined,
+                      );
                       if (!retired) {
                         logger.warn(
                           `[background] Could not retire failed completion delivery for task ${task.id}.`,
@@ -4729,11 +4741,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       })
                       .then(async (deliveryReady) => {
                         if (!deliveryReady) {
-                          await retireFailedPersistence('background tool result was not persisted');
+                          await retireFailedPersistence(
+                            'background tool result was not persisted',
+                            'definite',
+                          );
                         }
                       })
                       .catch(async (persistError) => {
-                        await retireFailedPersistence('background tool result persistence failed');
+                        await retireFailedPersistence(
+                          'background tool result persistence failed',
+                          'ambiguous',
+                        );
                         logger.warn(
                           `[background] Failed to persist result for task ${task.id}:`,
                           persistError,
@@ -4778,12 +4796,16 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         if (completionPreregistered) {
                           await retireFailedPersistence(
                             'background code result had no durable message anchor',
+                            'definite',
                           );
                         }
                         return;
                       }
                       if (persisted.deliveryReady === false) {
-                        await retireFailedPersistence('background code result was not persisted');
+                        await retireFailedPersistence(
+                          'background code result was not persisted',
+                          'definite',
+                        );
                       }
                       backgroundTaskRegistry.finishHarvest(
                         backgroundUserId,
@@ -4793,7 +4815,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       );
                     } catch (persistError) {
                       if (completionPreregistered) {
-                        await retireFailedPersistence('background code result persistence failed');
+                        await retireFailedPersistence(
+                          'background code result persistence failed',
+                          'ambiguous',
+                        );
                       }
                       if (isContentFilterError(persistError)) {
                         backgroundTaskRegistry.blockArtifact(
