@@ -92,6 +92,21 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
     expect((await getInTenant('tenant-b'))?.resolvedInstructions).toBe(INSTRUCTIONS);
   });
 
+  /** `MCPManager.getInstructions` reads through `getAllServerConfigs`, a different
+   *  read-through cache than `getServerConfig`. Backfilling into a cache the context
+   *  path never consults would leave the reported bug unfixed. */
+  it('reaches the model-context read path through getAllServerConfigs', async () => {
+    await registry['cacheConfigsRepo'].add('deferred_server', startupDeferredYamlEntry);
+
+    const primed = await registry.getAllServerConfigs();
+    expect(resolveServerInstructions(primed['deferred_server'])).toBeUndefined();
+
+    await registry.setResolvedInstructions('deferred_server', INSTRUCTIONS);
+
+    const after = await registry.getAllServerConfigs();
+    expect(resolveServerInstructions(after['deferred_server'])).toBe(INSTRUCTIONS);
+  });
+
   it('is a no-op when the stored instructions already match', async () => {
     await registry['cacheConfigsRepo'].add('deferred_server', startupDeferredYamlEntry);
 
