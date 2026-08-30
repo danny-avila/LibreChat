@@ -154,10 +154,12 @@ jest.mock('../useUpdateFiles', () => ({
 }));
 
 jest.mock('~/utils', () => {
-  const { validateFileSizes, validateFileDuplicates } = jest.requireActual('~/utils/files');
+  const { partitionUploads, validateFileSizes, validateFileDuplicates } =
+    jest.requireActual('~/utils/files');
   return {
     logger: { log: jest.fn() },
     validateFiles: jest.fn(() => true),
+    partitionUploads: jest.fn(partitionUploads),
     validateFileSizes: jest.fn(validateFileSizes),
     validateFileDuplicates: jest.fn(validateFileDuplicates),
     cachePreview: jest.fn(),
@@ -167,6 +169,7 @@ jest.mock('~/utils', () => {
 });
 
 const mockValidateFiles = jest.requireMock('~/utils').validateFiles;
+const mockPartitionUploads = jest.requireMock('~/utils').partitionUploads;
 const mockValidateFileSizes = jest.requireMock('~/utils').validateFileSizes;
 const mockValidateFileDuplicates = jest.requireMock('~/utils').validateFileDuplicates;
 
@@ -174,6 +177,7 @@ describe('useFileHandling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockValidateFiles.mockImplementation(() => true);
+    mockPartitionUploads.mockImplementation(jest.requireActual('~/utils/files').partitionUploads);
     mockValidateFileSizes.mockImplementation(jest.requireActual('~/utils/files').validateFileSizes);
     mockValidateFileDuplicates.mockImplementation(
       jest.requireActual('~/utils/files').validateFileDuplicates,
@@ -374,6 +378,145 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('uploads the files under the limit when one of them is oversized', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const batch = [
+          makeSizedFile('small.txt', 'text/plain', 1 * megabyte),
+          makeSizedFile('huge.txt', 'text/plain', 21 * megabyte),
+          makeSizedFile('medium.txt', 'text/plain', 5 * megabyte),
+        ];
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        let accepted: boolean | undefined;
+        await act(async () => {
+          accepted = await result.current.handleFiles(batch);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(accepted).toBe(true);
+        expect(mockMutate).toHaveBeenCalledTimes(2);
+        expect(mockLocalize).toHaveBeenCalledWith('com_error_files_skipped_size', {
+          0: '20',
+          1: 'huge.txt',
+        });
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_error_files_skipped_size',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('names every oversized file it skipped', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const batch = [
+          makeSizedFile('huge.txt', 'text/plain', 21 * megabyte),
+          makeSizedFile('small.txt', 'text/plain', 1 * megabyte),
+          makeSizedFile('massive.txt', 'text/plain', 40 * megabyte),
+        ];
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles(batch);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockLocalize).toHaveBeenCalledWith('com_error_files_skipped_size', {
+          0: '20',
+          1: 'huge.txt, massive.txt',
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('uploads the rest of a batch when one file duplicates an attachment', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const alreadyAttached = makeSizedFile('report.txt', 'text/plain', 1 * megabyte);
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([alreadyAttached]);
+          await Promise.resolve();
+        });
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('report.txt', 'text/plain', 1 * megabyte),
+            makeSizedFile('notes.txt', 'text/plain', 2 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(2);
+        expect(mockLocalize).toHaveBeenCalledWith('com_error_files_skipped_dupe', {
+          0: 'report.txt',
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('still applies the total size limit to the files left after a skip', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 10, totalSizeLimit: 7 } },
+        });
+        const batch = [
+          makeSizedFile('huge.txt', 'text/plain', 21 * megabyte),
+          makeSizedFile('one.txt', 'text/plain', 4 * megabyte),
+          makeSizedFile('two.txt', 'text/plain', 4 * megabyte),
+        ];
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        let accepted: boolean | undefined;
+        await act(async () => {
+          accepted = await result.current.handleFiles(batch);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(accepted).toBe(false);
+        expect(mockMutate).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('applies the total size limit to the complete transformed batch', async () => {
       jest.useFakeTimers();
       try {
@@ -509,7 +652,11 @@ describe('useFileHandling', () => {
           jest.advanceTimersByTime(250);
         });
 
-        expect(mockValidateFileDuplicates).toHaveBeenCalledTimes(2);
+        /** The duplicate only emerges once resizing has run, so it is the processed batch that
+         * has to catch it — and with nothing left to upload the batch still reports the plain
+         * duplicate error rather than a per-file skip notice. */
+        const [lastPartition] = mockPartitionUploads.mock.calls.at(-1) ?? [];
+        expect(lastPartition?.fileList[0].size).toBe(4 * megabyte);
         expect(mockMutate).toHaveBeenCalledTimes(1);
         expect(mockShowToast).toHaveBeenCalledWith({
           message: 'com_error_files_dupe',
@@ -1329,7 +1476,7 @@ describe('useFileHandling', () => {
       });
 
       rerender();
-      mockValidateFileDuplicates.mockClear();
+      mockPartitionUploads.mockClear();
       mockImageDecodes = true;
       await act(async () => {
         await result.current.handleFiles([pick()]);
@@ -1338,7 +1485,7 @@ describe('useFileHandling', () => {
       /** A reservation the failed decode left behind is merged into the next batch's
        * validation, so re-picking the same file reads as a duplicate and its size
        * keeps counting against the composer's limits. */
-      const [{ files: validatedAgainst }] = mockValidateFileDuplicates.mock.calls[0];
+      const [{ files: validatedAgainst }] = mockPartitionUploads.mock.calls[0];
       expect(validatedAgainst.size).toBe(0);
       expect(mockMutate).toHaveBeenCalledTimes(1);
     });

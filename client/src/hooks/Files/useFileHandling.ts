@@ -5,6 +5,7 @@ import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import {
+  megabyte,
   QueryKeys,
   Constants,
   EToolResources,
@@ -13,13 +14,20 @@ import {
   getEndpointFileConfig,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
-import type { EModelEndpoint, TEndpointsConfig, TError } from 'librechat-data-provider';
+import type {
+  TError,
+  EModelEndpoint,
+  TEndpointsConfig,
+  EndpointFileConfig,
+} from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
+import type { SkippedUpload, UploadPartition } from '~/utils';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   logger,
   validateFiles,
   cachePreview,
+  partitionUploads,
   validateFileSizes,
   getCachedPreview,
   removePreviewEntry,
@@ -158,6 +166,37 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   );
   const isTemporary = useRecoilValue(store.isTemporary);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
+
+  /** Names the files left out of a batch that is otherwise still uploading. Callers report a batch
+   * rejected in full through the existing all-or-nothing errors instead. */
+  const reportSkippedUploads = (
+    skipped: SkippedUpload[],
+    endpointFileConfig: EndpointFileConfig,
+  ) => {
+    if (skipped.length === 0) {
+      return;
+    }
+    const duplicates: string[] = [];
+    const oversized: string[] = [];
+    for (const { file, reason } of skipped) {
+      if (reason === 'duplicate') {
+        duplicates.push(file.name);
+        continue;
+      }
+      oversized.push(file.name);
+    }
+    if (duplicates.length > 0) {
+      setError(localize('com_error_files_skipped_dupe', { 0: duplicates.join(', ') }));
+    }
+    if (oversized.length > 0) {
+      setError(
+        localize('com_error_files_skipped_size', {
+          0: `${(endpointFileConfig.fileSizeLimit ?? 0) / megabyte}`,
+          1: oversized.join(', '),
+        }),
+      );
+    }
+  };
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(fileSetter);
   const { isConfigPending, waitForConfig, resizeImageIfNeeded } = useClientResize();
 
@@ -486,6 +525,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         endpointFileConfig,
         toolResource: _toolResource,
         skipSizeValidation: true,
+        skipDuplicateValidation: true,
       });
     } catch (error) {
       console.error('file validation error', error);
@@ -498,9 +538,25 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       return false;
     }
 
+    /** Drop duplicates one by one rather than rejecting everything picked alongside them. Sizes
+     * are left to the partition below, once processing has settled each file's final bytes. */
+    const selection = partitionUploads({
+      files: filesForValidation,
+      fileList,
+      endpointFileConfig,
+      skipSizeValidation: true,
+    });
+    if (selection.keptIndices.length === 0) {
+      validateFileDuplicates({ files: filesForValidation, fileList, setError });
+      setFilesLoading(false);
+      return false;
+    }
+    reportSkippedUploads(selection.skipped, endpointFileConfig);
+    const acceptedFileList = selection.keptIndices.map((index) => fileList[index]);
+
     /* Process files */
     const processedUploads: ProcessedUpload[] = [];
-    for (const [fileIndex, originalFile] of fileList.entries()) {
+    for (const [fileIndex, originalFile] of acceptedFileList.entries()) {
       const file_id =
         fileIndex === 0 && uploadLifecycle?.fileId != null && uploadLifecycle.fileId !== ''
           ? uploadLifecycle.fileId
@@ -619,31 +675,62 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       }
     }
 
+    const discardProcessedUpload = ({ extendedFile, preview }: ProcessedUpload) => {
+      deleteFileById(extendedFile.file_id);
+      removePreviewEntry(extendedFile.file_id);
+      URL.revokeObjectURL(preview);
+    };
+
     const discardProcessedUploads = () => {
-      for (const { extendedFile, preview } of processedUploads) {
-        deleteFileById(extendedFile.file_id);
-        removePreviewEntry(extendedFile.file_id);
-        URL.revokeObjectURL(preview);
+      for (const upload of processedUploads) {
+        discardProcessedUpload(upload);
       }
       filesRef.current = existingFiles;
     };
 
     const processedFileList = processedUploads.map(({ extendedFile }) => extendedFile.file as File);
 
-    let batchIsValid: boolean;
+    let batch: UploadPartition;
+    let acceptedUploads: ProcessedUpload[];
     try {
-      batchIsValid =
-        validateFileDuplicates({
-          files: filesForValidation,
-          fileList: processedFileList,
-          setError,
-        }) &&
+      batch = partitionUploads({
+        files: filesForValidation,
+        fileList: processedFileList,
+        endpointFileConfig,
+      });
+      acceptedUploads = batch.keptIndices.map((index) => processedUploads[index]);
+      /** `totalSizeLimit` describes the batch rather than any one file, so it is applied to
+       * whatever survived the per-file partition above. */
+      const batchIsValid =
+        acceptedUploads.length > 0 &&
         validateFileSizes({
           files: filesForValidation,
-          fileList: processedFileList,
+          fileList: acceptedUploads.map(({ extendedFile }) => extendedFile.file as File),
           setError,
           endpointFileConfig,
         });
+      if (!batchIsValid) {
+        /** Nothing is left to upload, so this is the pre-existing all-or-nothing rejection and it
+         * keeps reporting itself that way instead of as per-file skip notices. */
+        if (acceptedUploads.length === 0) {
+          const noDuplicates = validateFileDuplicates({
+            files: filesForValidation,
+            fileList: processedFileList,
+            setError,
+          });
+          if (noDuplicates) {
+            validateFileSizes({
+              files: filesForValidation,
+              fileList: processedFileList,
+              setError,
+              endpointFileConfig,
+            });
+          }
+        }
+        discardProcessedUploads();
+        setFilesLoading(false);
+        return false;
+      }
     } catch (error) {
       console.error('file validation error', error);
       setError('com_error_files_validation');
@@ -651,14 +738,14 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       setFilesLoading(false);
       return false;
     }
-    if (!batchIsValid) {
-      discardProcessedUploads();
-      setFilesLoading(false);
-      return false;
+
+    for (const { index } of batch.skipped) {
+      discardProcessedUpload(processedUploads[index]);
     }
+    reportSkippedUploads(batch.skipped, endpointFileConfig);
 
     const filesWithProcessedUploads = new Map(existingFiles);
-    for (const { extendedFile } of processedUploads) {
+    for (const { extendedFile } of acceptedUploads) {
       filesWithProcessedUploads.set(extendedFile.file_id, extendedFile);
       if (tracksReservations) {
         uploadScope.recent.set(extendedFile.file_id, extendedFile);
@@ -666,7 +753,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     }
     filesRef.current = filesWithProcessedUploads;
 
-    for (const { extendedFile, preview, resizeDetails } of processedUploads) {
+    for (const { extendedFile, preview, resizeDetails } of acceptedUploads) {
       if (resizeDetails) {
         const { originalSize, newSize, compressionRatio } = resizeDetails;
         showToast({
@@ -688,7 +775,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       await startUpload(extendedFile, uploadLifecycle);
     }
 
-    return processedUploads.length > 0;
+    return acceptedUploads.length > 0;
   };
 
   const handleFiles = async (
