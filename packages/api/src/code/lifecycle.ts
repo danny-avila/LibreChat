@@ -20,36 +20,44 @@ export async function revokeUserCodeEnvironmentWorkers({
   const environments = await createMethods(mongoose).findCodeEnvironmentsByCreator(userId);
   const controlPlanes =
     appConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
-  let revoked = 0;
-  for (const environment of environments) {
-    if (environment.workerPrincipal?.type !== 'user' || environment.workerId == null) continue;
-    const controlPlane = controlPlanes.find(
-      (candidate) =>
-        candidate.id === environment.controlPlaneId &&
-        candidate.owner === 'deployment' &&
-        candidate.type === 'attached' &&
-        candidate.pairing?.allowPrincipalWorkers === true &&
-        candidate.baseURL === environment.baseURL,
-    );
-    if (controlPlane == null) {
-      throw new Error(
-        `Code environment control plane is unavailable for ${environment.environmentId}`,
+  const targets = environments
+    .filter(
+      (environment) => environment.workerPrincipal?.type === 'user' && environment.workerId != null,
+    )
+    .map((environment) => {
+      const fallbackControlPlane = controlPlanes.find(
+        (candidate) =>
+          candidate.id === environment.controlPlaneId &&
+          candidate.owner === 'deployment' &&
+          candidate.type === 'attached' &&
+          candidate.pairing?.allowPrincipalWorkers === true &&
+          candidate.baseURL === environment.baseURL,
       );
-    }
-    const tokenEnv = controlPlane.pairing?.tokenEnv;
-    const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
-    if (!token) {
-      throw new Error(
-        `Code environment revocation is unavailable for ${environment.environmentId}`,
-      );
-    }
-    await revokeCodeBridgeWorker({
-      baseURL: controlPlane.baseURL,
-      token,
-      workerId: environment.workerId,
-      fetchImpl,
+      const tokenEnv = environment.revocationTokenEnv ?? fallbackControlPlane?.pairing?.tokenEnv;
+      const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
+      if (!token) {
+        throw new Error(
+          `Code environment revocation is unavailable for ${environment.environmentId}`,
+        );
+      }
+      return { environment, token };
     });
-    revoked += 1;
+  const results = await Promise.allSettled(
+    targets.map(({ environment, token }) =>
+      revokeCodeBridgeWorker({
+        baseURL: environment.baseURL,
+        token,
+        workerId: environment.workerId,
+        fetchImpl,
+      }),
+    ),
+  );
+  const failures = results.filter((result) => result.status === 'rejected');
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures.map((failure) => failure.reason),
+      'One or more code environment workers could not be revoked',
+    );
   }
-  return revoked;
+  return targets.length;
 }

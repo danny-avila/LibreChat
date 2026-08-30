@@ -22,7 +22,10 @@ export function usePairCodeEnvironmentMutation() {
     Error,
     { name: string; controlPlaneId: string }
   >([MutationKeys.pairCodeEnvironment], dataService.pairCodeEnvironment, {
-    onSuccess: () => queryClient.invalidateQueries([QueryKeys.codeEnvironments]),
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.codeEnvironments]);
+      queryClient.invalidateQueries([QueryKeys.endpoints]);
+    },
   });
 }
 

@@ -391,19 +391,6 @@ const deleteUserController = async (req, res) => {
       }
     }
 
-    const deletionAppConfig =
-      req.config ??
-      (await getAppConfig({
-        role: req.user?.role,
-        userId: req.user?.id,
-        tenantId: req.user?.tenantId,
-      }));
-    await revokeUserCodeEnvironmentWorkers({
-      mongoose,
-      userId: user.id,
-      appConfig: deletionAppConfig,
-    });
-
     // Block new trigger admissions across replicas while preserving the user
     // principal so a transient cleanup failure remains retryable.
     triggerDeletionFence = new Date();
@@ -418,6 +405,12 @@ const deleteUserController = async (req, res) => {
     if (triggerDeletionFence != null) {
       await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
     }
+    const deletionAppConfig = await getAppConfig({ baseOnly: true });
+    await revokeUserCodeEnvironmentWorkers({
+      mongoose,
+      userId: user.id,
+      appConfig: deletionAppConfig,
+    });
     await drainAgentTriggerDeliveriesForUser(user.id);
     await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
     // Reversibly suspend the user's schedules under a per-attempt token BEFORE draining.

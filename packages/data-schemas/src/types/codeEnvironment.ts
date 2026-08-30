@@ -9,6 +9,7 @@ export type CodeEnvironment = {
   createdBy: Types.ObjectId;
   workerId?: string;
   controlPlaneId?: string;
+  revocationTokenEnv?: string;
   workerPrincipal?: {
     type: 'deployment' | 'tenant' | 'user' | 'role' | 'group';
     id: string;

@@ -2183,6 +2183,7 @@
   "com_ui_code_environment_control_plane": "Code control plane",
   "com_ui_code_environment_pair": "Connect VM",
   "com_ui_code_environment_unavailable": "This LibreChat instance has not enabled self-service code workers.",
+  "com_ui_code_environment_load_error": "Code environments could not be loaded. Try again shortly.",
   "com_ui_code_environment_pairing_ready": "One-time worker command",
   "com_ui_code_environment_pairing_description": "Run this on your VM, then start librechat-code with LIBRECHAT_CODE_SANDBOX_ENDPOINT set to your sandbox service. The command expires shortly and is shown only once.",
   "com_ui_code_environment_pairing_created": "Code environment created",

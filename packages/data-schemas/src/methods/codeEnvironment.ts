@@ -8,7 +8,10 @@ type CreateCodeEnvironmentInput = Pick<
   CodeEnvironmentDocument,
   'environmentId' | 'name' | 'type' | 'baseURL' | 'controlPlaneId' | 'createdBy'
 > &
-  Pick<Partial<CodeEnvironmentDocument>, 'workerId' | 'controlPlaneId' | 'workerPrincipal'>;
+  Pick<
+    Partial<CodeEnvironmentDocument>,
+    'workerId' | 'controlPlaneId' | 'revocationTokenEnv' | 'workerPrincipal'
+  >;
 
 export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')): {
   createCodeEnvironment: (input: CreateCodeEnvironmentInput) => Promise<CodeEnvironmentDocument>;

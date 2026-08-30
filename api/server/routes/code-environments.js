@@ -5,6 +5,7 @@ const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { codeEnvironmentPairingLimiter } = require('~/server/middleware/limiters/code');
 const { getAppConfig, getCodeEnvironmentRegistry } = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
+const db = require('~/models');
 
 const router = express.Router();
 let handlers;
@@ -13,6 +14,7 @@ function getHandlers() {
     handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig,
       registry: getCodeEnvironmentRegistry(),
+      principalIsActive: db.isAgentTriggerPrincipalActive,
     });
   }
   return handlers;

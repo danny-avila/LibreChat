@@ -215,13 +215,13 @@ describe('deleteUserController - 2FA enforcement', () => {
       expect.objectContaining({ userId: 'user1' }),
     );
     expect(mockVerifyOTPOrBackupCode).not.toHaveBeenCalled();
-    expect(mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0]).toBeLessThan(
-      mockBeginAgentTriggerUserDeletion.mock.invocationCallOrder[0],
-    );
     expect(mockBeginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
       mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
     );
     expect(mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0],
+    );
+    expect(mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0]).toBeLessThan(
       mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
     );
     expect(mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0]).toBeLessThan(
@@ -261,7 +261,9 @@ describe('deleteUserController - 2FA enforcement', () => {
     await deleteUserController(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(mockBeginAgentTriggerUserDeletion).not.toHaveBeenCalled();
+    expect(mockBeginAgentTriggerUserDeletion).toHaveBeenCalledTimes(1);
+    expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledTimes(1);
+    expect(mockCancelAgentTriggerUserDeletion).toHaveBeenCalledTimes(1);
     expect(mockDeleteMessages).not.toHaveBeenCalled();
     expect(mockDeleteUserById).not.toHaveBeenCalled();
   });

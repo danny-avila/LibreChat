@@ -45,6 +45,7 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
   getCodeEnvironmentRegistry: mockGetCodeEnvironmentRegistry,
 }));
+jest.mock('~/models', () => ({ isAgentTriggerPrincipalActive: jest.fn() }));
 
 function createApp() {
   delete require.cache[require.resolve('./code-environments')];

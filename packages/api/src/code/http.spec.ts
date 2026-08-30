@@ -126,6 +126,7 @@ describe('code environment HTTP handlers', () => {
         baseURL: 'https://code.librechat.example/v1',
         workerId: 'code-generated',
         controlPlaneId: 'shared-code-api',
+        revocationTokenEnv: 'CODE_ADMIN_TOKEN',
         workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
       },
     });
@@ -510,6 +511,7 @@ describe('code environment HTTP handlers', () => {
         baseURL: 'https://code.librechat.example/v1',
         workerId: 'code-generated',
         controlPlaneId: 'self-service',
+        revocationTokenEnv: 'CODE_ADMIN_TOKEN',
         workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
       });
       return {
@@ -519,7 +521,10 @@ describe('code environment HTTP handlers', () => {
         type: 'attached' as const,
       };
     });
-    const fetchImpl = jest.fn().mockResolvedValue({ ok: true });
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ protocolVersion: 1, revoked: true }),
+    });
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {

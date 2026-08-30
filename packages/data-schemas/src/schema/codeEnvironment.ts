@@ -51,6 +51,9 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
     controlPlaneId: {
       type: String,
     },
+    revocationTokenEnv: {
+      type: String,
+    },
     workerPrincipal: {
       type: workerPrincipalSchema,
     },

@@ -18,7 +18,11 @@ import {
   readCodeBridgeSecret,
   revokeCodeBridgeWorker,
 } from './bridge';
-import { CodeEnvironmentValidationError, normalizeCodeEnvironmentName } from './environments';
+import {
+  CodeEnvironmentInUseError,
+  CodeEnvironmentValidationError,
+  normalizeCodeEnvironmentName,
+} from './environments';
 import {
   assertCodeApiJwtSigningReady,
   getCodeApiTenantId,
@@ -32,6 +36,7 @@ type Registry = {
     environment: CodeEnvironmentRegistration;
   }) => Promise<CodeEnvironmentSummary>;
   listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
+  countOwned?: (actor: CodeEnvironmentPrincipalContext) => Promise<number>;
   remove: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environmentId: string;
@@ -54,6 +59,8 @@ export interface CodeEnvironmentHttpDeps {
   resolveTenantId?: (req: ServerRequest) => string;
   principalAuthEnabled?: () => boolean;
   principalAuthReady?: () => Promise<void> | void;
+  principalIsActive?: (userId: string) => Promise<boolean>;
+  maxPrincipalEnvironments?: number;
   fetchImpl?: CodeBridgeFetch;
 }
 
@@ -146,6 +153,8 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   const resolveTenantId = deps.resolveTenantId ?? getCodeApiTenantId;
   const principalAuthEnabled = deps.principalAuthEnabled ?? isCodeApiJwtAuthEnabled;
   const principalAuthReady = deps.principalAuthReady ?? assertCodeApiJwtSigningReady;
+  const principalIsActive = deps.principalIsActive ?? (async () => true);
+  const maxPrincipalEnvironments = deps.maxPrincipalEnvironments ?? 5;
 
   async function list(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
@@ -295,6 +304,15 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
 
     const workerId = createEnvironmentId();
+    if (
+      deps.registry.countOwned != null &&
+      (await deps.registry.countOwned(principal)) >= maxPrincipalEnvironments
+    ) {
+      return res.status(409).json({ error: 'Personal code environment limit reached' });
+    }
+    if (!(await principalIsActive(principal.userId.toString()))) {
+      return res.status(409).json({ error: 'Account deletion is already in progress' });
+    }
     let pairing;
     try {
       pairing = await createCodeBridgePairing({
@@ -311,6 +329,16 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       return pairingErrorResponse(error, res);
     }
 
+    if (!(await principalIsActive(principal.userId.toString()))) {
+      await revokeCodeBridgeWorker({
+        baseURL: controlPlane.baseURL,
+        token,
+        workerId,
+        fetchImpl: deps.fetchImpl,
+      });
+      return res.status(409).json({ error: 'Account deletion is already in progress' });
+    }
+
     try {
       const environment = await deps.registry.register({
         actor: principal,
@@ -321,9 +349,20 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           baseURL: controlPlane.baseURL,
           workerId,
           controlPlaneId: controlPlane.id,
+          revocationTokenEnv: tokenEnv,
           workerPrincipal: { type: 'user', id: principal.userId.toString() },
         },
       });
+      if (!(await principalIsActive(principal.userId.toString()))) {
+        await revokeCodeBridgeWorker({
+          baseURL: controlPlane.baseURL,
+          token,
+          workerId,
+          fetchImpl: deps.fetchImpl,
+        });
+        await deps.registry.remove({ actor: principal, environmentId: workerId });
+        return res.status(409).json({ error: 'Account deletion is already in progress' });
+      }
       return res.status(201).json({
         environment,
         pairing: {
@@ -372,24 +411,13 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (!environmentId) {
       return res.status(400).json({ error: 'Code environment id is required' });
     }
-    const appConfig = await deps.getAppConfig({ baseOnly: true });
     try {
       const environment = await deps.registry.remove({
         actor: principal,
         environmentId,
         beforeDelete: async (target) => {
           if (target.workerPrincipal?.type !== 'user' || target.workerId == null) return;
-          const controlPlane = configuredPrincipalControlPlane(
-            appConfig,
-            target.controlPlaneId ?? '',
-          );
-          if (controlPlane == null || controlPlane.baseURL !== target.baseURL) {
-            throw new CodeEnvironmentLifecycleHttpError(
-              409,
-              'Code environment control plane is no longer configured',
-            );
-          }
-          const tokenEnv = controlPlane.pairing?.tokenEnv;
+          const tokenEnv = target.revocationTokenEnv;
           const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
           if (!token) {
             throw new CodeEnvironmentLifecycleHttpError(
@@ -398,7 +426,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
             );
           }
           await revokeCodeBridgeWorker({
-            baseURL: controlPlane.baseURL,
+            baseURL: target.baseURL,
             token,
             workerId: target.workerId,
             fetchImpl: deps.fetchImpl,
@@ -412,6 +440,9 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     } catch (error) {
       if (error instanceof CodeEnvironmentLifecycleHttpError) {
         return res.status(error.status).json({ error: error.message });
+      }
+      if (error instanceof CodeEnvironmentInUseError) {
+        return res.status(409).json({ error: error.message });
       }
       if (error instanceof CodeBridgeLifecycleError) {
         return res.status(error.reason === 'timeout' ? 504 : 502).json({

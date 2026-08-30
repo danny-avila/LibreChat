@@ -61,6 +61,7 @@ describe('code environment registry', () => {
       id: 'danny-vm',
       name: "Danny's VM",
       type: 'attached',
+      canDelete: true,
     });
     await expect(registry.listRegisteredIds()).resolves.toEqual(['danny-vm']);
     await expect(
@@ -143,7 +144,10 @@ describe('code environment registry', () => {
         role: 'CODE_USER',
         idOnTheSource: null,
       }),
-    ).resolves.toEqual([roleEnvironment, groupEnvironment]);
+    ).resolves.toEqual([
+      { ...roleEnvironment, canDelete: false },
+      { ...groupEnvironment, canDelete: false },
+    ]);
   });
 
   test('keeps a user-bound worker private even if its ACL is granted to a role', async () => {
@@ -229,10 +233,14 @@ describe('code environment registry', () => {
         baseURL: 'https://code.example.com/v1',
         workerId: 'account-worker',
         controlPlaneId: 'self-service',
+        revocationTokenEnv: 'CODE_ADMIN_TOKEN',
         workerPrincipal: { type: 'user', id: ownerId.toString() },
       },
     });
-    const fetchImpl = jest.fn().mockResolvedValue({ ok: true });
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ protocolVersion: 1, revoked: true }),
+    });
 
     await expect(
       revokeUserCodeEnvironmentWorkers({
@@ -243,19 +251,7 @@ describe('code environment registry', () => {
             agents: {
               statefulCodeSessions: {
                 allowedEnvironments: ['user'],
-                environments: [
-                  {
-                    id: 'self-service',
-                    name: 'Self-service',
-                    type: 'attached',
-                    baseURL: 'https://code.example.com/v1',
-                    owner: 'deployment',
-                    pairing: {
-                      allowPrincipalWorkers: true,
-                      tokenEnv: 'CODE_ADMIN_TOKEN',
-                    },
-                  },
-                ],
+                environments: [],
               },
             },
           },

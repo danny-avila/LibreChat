@@ -539,6 +539,7 @@ export type TCodeEnvironmentSummary = {
   id: string;
   name: string;
   type: 'managed' | 'attached';
+  canDelete: boolean;
 };
 
 export type TCodeControlPlane = {

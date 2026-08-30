@@ -34,7 +34,7 @@ export class CodeBridgePairingError extends Error {
 
 export class CodeBridgeLifecycleError extends Error {
   constructor(
-    public readonly reason: 'rejected' | 'timeout' | 'failed',
+    public readonly reason: 'rejected' | 'invalid' | 'timeout' | 'failed',
     public readonly upstreamStatus?: number,
   ) {
     super(`Code bridge lifecycle request ${reason}`);
@@ -120,6 +120,15 @@ export async function revokeCodeBridgeWorker({
     );
     if (!response.ok) {
       throw new CodeBridgeLifecycleError('rejected', response.status);
+    }
+    const payload = (await response.json()) as unknown;
+    if (
+      typeof payload !== 'object' ||
+      payload == null ||
+      (payload as { protocolVersion?: unknown }).protocolVersion !== 1 ||
+      (payload as { revoked?: unknown }).revoked !== true
+    ) {
+      throw new CodeBridgeLifecycleError('invalid');
     }
   } catch (error) {
     if (error instanceof CodeBridgeLifecycleError) throw error;

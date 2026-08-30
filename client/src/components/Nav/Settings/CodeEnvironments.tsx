@@ -25,7 +25,8 @@ import { useLocalize } from '~/hooks';
 function WorkerCommand({ pairing }: { pairing: CodeEnvironmentPairingResponse['pairing'] }) {
   const { showToast } = useToastContext();
   const localize = useLocalize();
-  const command = `librechat-code pair ${pairing.endpoint} '${pairing.code}' --worker-id ${pairing.workerId}`;
+  const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+  const command = `librechat-code pair ${shellQuote(pairing.endpoint)} ${shellQuote(pairing.code)} --worker-id ${shellQuote(pairing.workerId)}`;
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border-medium bg-surface-secondary p-3">
       <p className="text-sm font-medium text-text-primary">
@@ -88,6 +89,51 @@ export default function CodeEnvironments() {
     );
   };
 
+  let pairingControls = (
+    <p className="text-sm text-text-secondary">{localize('com_ui_code_environment_unavailable')}</p>
+  );
+  if (query.isLoading) {
+    pairingControls = (
+      <div className="flex items-center gap-2 text-sm text-text-secondary">
+        <Spinner />
+        {localize('com_ui_loading')}
+      </div>
+    );
+  } else if (query.isError) {
+    pairingControls = (
+      <p className="text-sm text-text-destructive">
+        {localize('com_ui_code_environment_load_error')}
+      </p>
+    );
+  } else if (controlPlanes.length > 0) {
+    pairingControls = (
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <Input
+          id="code-environment-name"
+          value={name}
+          maxLength={100}
+          placeholder={localize('com_ui_code_environment_name_placeholder')}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <Select value={selectedControlPlane} onValueChange={setControlPlaneId}>
+          <SelectTrigger aria-label={localize('com_ui_code_environment_control_plane')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {controlPlanes.map((controlPlane) => (
+              <SelectItem key={controlPlane.id} value={controlPlane.id}>
+                {controlPlane.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button type="button" disabled={!name.trim() || pairMutation.isLoading} onClick={pair}>
+          {pairMutation.isLoading ? <Spinner /> : localize('com_ui_code_environment_pair')}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex w-full flex-col gap-4">
       <div>
@@ -97,36 +143,7 @@ export default function CodeEnvironments() {
         </p>
       </div>
 
-      {controlPlanes.length > 0 ? (
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-          <Input
-            id="code-environment-name"
-            value={name}
-            maxLength={100}
-            placeholder={localize('com_ui_code_environment_name_placeholder')}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <Select value={selectedControlPlane} onValueChange={setControlPlaneId}>
-            <SelectTrigger aria-label={localize('com_ui_code_environment_control_plane')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {controlPlanes.map((controlPlane) => (
-                <SelectItem key={controlPlane.id} value={controlPlane.id}>
-                  {controlPlane.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button type="button" disabled={!name.trim() || pairMutation.isLoading} onClick={pair}>
-            {pairMutation.isLoading ? <Spinner /> : localize('com_ui_code_environment_pair')}
-          </Button>
-        </div>
-      ) : (
-        <p className="text-sm text-text-secondary">
-          {localize('com_ui_code_environment_unavailable')}
-        </p>
-      )}
+      {pairingControls}
 
       {pairing != null && <WorkerCommand pairing={pairing} />}
 
@@ -140,40 +157,42 @@ export default function CodeEnvironments() {
               <p className="truncate text-sm font-medium text-text-primary">{environment.name}</p>
               <p className="truncate text-xs text-text-secondary">{environment.id}</p>
             </div>
-            <OGDialog>
-              <OGDialogTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  {localize('com_ui_delete')}
-                </Button>
-              </OGDialogTrigger>
-              <OGDialogTemplate
-                showCloseButton={false}
-                title={localize('com_ui_code_environment_remove_title')}
-                main={
-                  <p className="text-sm text-text-secondary">
-                    {localize('com_ui_code_environment_remove_description')}
-                  </p>
-                }
-                selection={{
-                  selectHandler: () =>
-                    deleteMutation.mutate(environment.id, {
-                      onSuccess: () =>
-                        showToast({
-                          message: localize('com_ui_code_environment_removed'),
-                          status: 'success',
-                        }),
-                      onError: () =>
-                        showToast({
-                          message: localize('com_ui_code_environment_remove_error'),
-                          status: 'error',
-                        }),
-                    }),
-                  selectClasses:
-                    'bg-surface-destructive text-white transition-all duration-200 hover:bg-surface-destructive-hover',
-                  selectText: localize('com_ui_delete'),
-                }}
-              />
-            </OGDialog>
+            {environment.canDelete && (
+              <OGDialog>
+                <OGDialogTrigger asChild>
+                  <Button type="button" variant="outline" size="sm">
+                    {localize('com_ui_delete')}
+                  </Button>
+                </OGDialogTrigger>
+                <OGDialogTemplate
+                  showCloseButton={false}
+                  title={localize('com_ui_code_environment_remove_title')}
+                  main={
+                    <p className="text-sm text-text-secondary">
+                      {localize('com_ui_code_environment_remove_description')}
+                    </p>
+                  }
+                  selection={{
+                    selectHandler: () =>
+                      deleteMutation.mutate(environment.id, {
+                        onSuccess: () =>
+                          showToast({
+                            message: localize('com_ui_code_environment_removed'),
+                            status: 'success',
+                          }),
+                        onError: () =>
+                          showToast({
+                            message: localize('com_ui_code_environment_remove_error'),
+                            status: 'error',
+                          }),
+                      }),
+                    selectClasses:
+                      'bg-surface-destructive text-text-on-status transition-all duration-200 hover:bg-surface-destructive-hover',
+                    selectText: localize('com_ui_delete'),
+                  }}
+                />
+              </OGDialog>
+            )}
           </div>
         ))}
       </div>
