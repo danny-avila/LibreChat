@@ -263,6 +263,84 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain('Request timed out');
   });
 
+  it('caps the request timeout by a caller deadline shorter than the global budget', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
+    const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('a')] });
+    const conn = createConnectionWithListTools(listTools);
+
+    const snapshot = await conn.fetchToolsSnapshot(Date.now() + 40);
+
+    expect(snapshot.complete).toBe(true);
+    const options = listTools.mock.calls[0][1]!;
+    expect(options.timeout).toBeGreaterThan(0);
+    expect(options.timeout).toBeLessThanOrEqual(40);
+  });
+
+  it('keeps the global budget when the caller deadline is further out', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 25;
+    const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('a')] });
+    const conn = createConnectionWithListTools(listTools);
+
+    await conn.fetchToolsSnapshot(Date.now() + 10_000);
+
+    const options = listTools.mock.calls[0][1]!;
+    expect(options.timeout).toBeLessThanOrEqual(25);
+  });
+
+  it('stops paginating and reports incomplete when the caller deadline expires mid-walk', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
+    const listTools = jest.fn(async () => ({ tools: [makeTool('a')], nextCursor: 'c1' }));
+    const conn = createConnectionWithListTools(listTools);
+    const deadline = Date.now() + 20;
+    const dateNow = jest
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(deadline - 20)
+      .mockReturnValueOnce(deadline - 20)
+      .mockReturnValue(deadline + 1);
+
+    const snapshot = await conn.fetchToolsSnapshot(deadline);
+
+    expect(snapshot.tools.map((t) => t.name)).toEqual(['a']);
+    expect(snapshot.complete).toBe(false);
+    expect(listTools).toHaveBeenCalledTimes(1);
+    dateNow.mockRestore();
+  });
+
+  it('returns an incomplete empty snapshot without a request when the deadline has passed', async () => {
+    const listTools = jest.fn();
+    const conn = createConnectionWithListTools(listTools);
+
+    const snapshot = await conn.fetchToolsSnapshot(Date.now() - 1);
+
+    expect(snapshot.tools).toEqual([]);
+    expect(snapshot.complete).toBe(false);
+    expect(listTools).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting on an in-flight refresh that outlasts the caller deadline', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
+    const conn = createConnectionWithListTools(jest.fn());
+    const mutable = conn as unknown as {
+      toolListChangeGeneration: number;
+      toolListRefreshPromise: Promise<void> | null;
+    };
+    /** A `list_changed` lands mid-fetch, so the ordered read must wait on a refresh... */
+    const listTools = jest.fn(async () => {
+      mutable.toolListChangeGeneration = 1;
+      return { tools: [makeTool('a')] };
+    });
+    conn.client.listTools = listTools;
+    /** ...and that refresh never settles, standing in for one on the connection's own budget. */
+    mutable.toolListRefreshPromise = new Promise<void>(() => {});
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
+
+    const start = Date.now();
+    const snapshot = await conn.fetchOrderedToolsSnapshot(Date.now() + 30);
+
+    expect(snapshot.complete).toBe(false);
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
   it('stops and warns when the server repeats a cursor instead of looping forever', async () => {
     const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('x')], nextCursor: 'same' });
     const conn = createConnectionWithListTools(listTools);
