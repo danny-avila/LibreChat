@@ -1,4 +1,5 @@
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   logger,
   runAsSystem,
@@ -175,9 +176,12 @@ function createDeliveryStore(
     claimNext: (input) =>
       methods.claimNextAgentTriggerDelivery({
         ...input,
-        workerCapabilities: supportsDetachedActionCompletion()
-          ? [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1]
-          : [],
+        workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          ...(supportsDetachedActionCompletion()
+            ? [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1]
+            : []),
+        ],
       }),
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
     getBatch: methods.getAgentTriggerDeliveryBatch,

@@ -6,11 +6,13 @@ import type {
   IMessage,
   MessageMethods,
 } from '@librechat/data-schemas';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 } from '@librechat/data-schemas';
 import type {
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
   BackgroundToolWakeupRetireOptions,
 } from './backgroundCompletion';
+import { BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
 import type {
   AgentTriggerContinuePreparation,
   AgentTriggerExecutionHostDeps,
@@ -21,9 +23,15 @@ import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 import { truncateMiddle } from '~/utils';
+import { BACKGROUND_RESULT_PERSISTENCE_WINDOW_MS } from './harvest';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
-const RESULT_READY_WAIT_MS = 35 * 60_000;
+/** A task may use its full invocation deadline and then the full persistence
+ * retry budget before terminal evidence can exist. Leave a small scheduling
+ * margin so the delivery never abandons a result while its owner can still
+ * durably publish it. */
+const RESULT_READY_WAIT_MS =
+  BACKGROUND_TASK_TIMEOUT_MS + BACKGROUND_RESULT_PERSISTENCE_WINDOW_MS + 5 * 60_000;
 const MAX_WAKEUP_RESULT_CHARS = 24 * 1024;
 export const BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS: number = 16 * 1024;
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
@@ -400,6 +408,7 @@ export function createBackgroundToolCompletionWakeupHandler(
       availableAt: new Date(
         Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
       ),
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
     });
     return {
       retire: (reason, options) =>

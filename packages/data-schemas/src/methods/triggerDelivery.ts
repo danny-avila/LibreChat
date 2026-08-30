@@ -16,7 +16,10 @@ import type {
   IAgentTriggerUserPurge,
   IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '~/types/triggerDelivery';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+} from '~/types/triggerDelivery';
 import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
@@ -900,7 +903,8 @@ export function createAgentTriggerDeliveryMethods(
   ): Promise<{ delivery: AgentTriggerDeliveryRecord; replayed: boolean }> {
     if (
       input.requiredWorkerCapability != null &&
-      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1
+      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 &&
+      input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1
     ) {
       throw new TypeError('Agent trigger delivery requires an unsupported worker capability');
     }

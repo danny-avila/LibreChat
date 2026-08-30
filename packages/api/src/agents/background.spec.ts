@@ -944,7 +944,7 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(JSON.stringify(task)).not.toContain('raw failure');
   });
 
-  it('exposes reaped (timed-out) tasks to the heal path when harvest was armed at dispatch', () => {
+  it('keeps abort-resistant tasks nonterminal instead of exposing false timeout evidence', () => {
     jest.useFakeTimers();
     try {
       const created = backgroundTaskRegistry.create({
@@ -959,9 +959,8 @@ describe('BackgroundTaskRegistryClass', () => {
         throw new Error('unexpected capacity');
       }
 
-      /** Past the running TTL the sweeper reaps the task to an error; the
-       *  dispatch-time harvest flag keeps it visible to marker/re-anchor
-       *  delivery so the original card doesn't stay on "running" forever. */
+      /** The invocation owner may have requested abort, but registry age alone
+       * cannot prove that an external side effect stopped. */
       jest.advanceTimersByTime(31 * 60 * 1000);
       const delivery = getBackgroundCodeDelivery({
         userId: 'reap_user',
@@ -970,10 +969,9 @@ describe('BackgroundTaskRegistryClass', () => {
       });
       expect(delivery).toEqual(
         expect.objectContaining({
-          status: 'error',
+          status: 'running',
           toolCallId: 'call_reaped',
           messageId: 'dispatch-msg',
-          error: 'Background task timed out',
         }),
       );
     } finally {
@@ -1047,7 +1045,7 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
   });
 
-  it('reaps a stuck running task past the running TTL (frees the slot)', () => {
+  it('does not reap an abort-resistant running task by wall clock alone', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
       userId: 'u1',
@@ -1058,11 +1056,11 @@ describe('BackgroundTaskRegistryClass', () => {
     if ('atCapacity' in created) {
       throw new Error('unexpected capacity');
     }
-    // backdate creation past the 30-min running TTL, then trigger a sweep
+    // Backdate past the abort deadline; only invocation settlement is terminal proof.
     created.task.createdAt = Date.now() - 31 * 60 * 1000;
     registry.list('u1', 'c1');
-    expect(created.task.status).toBe('error');
-    expect(created.task.error).toBe('Background task timed out');
+    expect(created.task.status).toBe('running');
+    expect(created.task.error).toBeUndefined();
   });
 
   it('sweeps an expired completed task on direct get() (no indefinite retention)', () => {

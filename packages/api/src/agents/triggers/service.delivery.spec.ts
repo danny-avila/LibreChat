@@ -1,4 +1,5 @@
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   getTenantId,
   SYSTEM_TENANT_ID,
@@ -176,7 +177,10 @@ describe('durable agent trigger service', () => {
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalled();
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
-        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+        workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+        ],
       }),
     );
     expect(methods.enqueueAgentTriggerDelivery).toHaveBeenCalledWith(
@@ -198,7 +202,7 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
-  it('does not advertise detached completion capability without durable generation storage', async () => {
+  it('advertises ordinary completion but not detached-action capability without durable storage', async () => {
     const methods = deliveryMethods();
     const service = createAgentTriggerService({
       methods,
@@ -209,7 +213,9 @@ describe('durable agent trigger service', () => {
     await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
 
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ workerCapabilities: [] }),
+      expect.objectContaining({
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+      }),
     );
     await service.stop();
   });

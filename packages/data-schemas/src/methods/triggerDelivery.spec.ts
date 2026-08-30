@@ -15,7 +15,10 @@ import {
   setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '~/types/triggerDelivery';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+} from '~/types/triggerDelivery';
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
 import { createAgentTriggerUserPurgeModel } from '../models/triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from '../models/triggerDelivery';
@@ -352,6 +355,30 @@ describe('agent trigger delivery methods', () => {
         workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
       }),
     ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
+  it('shields background completion work from workers that cannot resolve it', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    const claimInput = {
+      workerId: 'worker',
+      claimToken: 'claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    };
+
+    await expect(methods.claimNextAgentTriggerDelivery(claimInput)).resolves.toBeNull();
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        ...claimInput,
+        workerId: 'background-capable-worker',
+        claimToken: 'background-capable-claim',
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
   });
 
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {

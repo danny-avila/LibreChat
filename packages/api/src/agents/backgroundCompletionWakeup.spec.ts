@@ -1,3 +1,4 @@
+import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 } from '@librechat/data-schemas';
 import type { EnqueueBackgroundToolCompletion } from './backgroundCompletionWakeup';
 import {
   BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS,
@@ -23,7 +24,7 @@ function registration(overrides = {}) {
   };
 }
 
-function envelope() {
+function envelope(registrationOverrides = {}) {
   let value: unknown;
   const notify = createBackgroundToolCompletionWakeupHandler(
     async (next) => {
@@ -32,7 +33,7 @@ function envelope() {
     },
     async () => true,
   );
-  return notify(registration()).then(() => {
+  return notify(registration(registrationOverrides)).then(() => {
     const parsed = parseAgentTriggerEnvelope(value);
     if (parsed.mode !== 'continue') {
       throw new Error('Expected a continue envelope');
@@ -123,6 +124,7 @@ describe('background tool completion wakeups', () => {
     expect(options).toEqual({
       orderingKey: 'background-tool-completion:conversation-1:task-1',
       availableAt: new Date(NOW + 250),
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
     });
     if (admission !== false) {
       await expect(admission.retire('result unavailable')).resolves.toBe(true);
@@ -261,5 +263,29 @@ describe('background tool completion wakeups', () => {
       },
     );
     expect(methods.claimBackgroundToolResults).not.toHaveBeenCalled();
+  });
+
+  it('waits through the invocation and persistence budgets before abandoning missing evidence', async () => {
+    const { methods } = resolverMethods();
+    methods.claimBackgroundToolResults.mockResolvedValue({ status: 'missing' });
+    const deliveryEnvelope = await envelope({ createdAt: NOW });
+    const resolveDuringPersistence = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+      now: () => NOW + 36 * 60_000,
+    });
+
+    await expect(
+      resolveDuringPersistence(deliveryEnvelope, { idempotencyKey: 'delivery-1' }),
+    ).rejects.toMatchObject({ code: 'BACKGROUND_TOOL_RESULT_NOT_READY', retryable: true });
+
+    const resolveAfterFullBudget = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+      now: () => NOW + 52 * 60_000,
+    });
+    await expect(
+      resolveAfterFullBudget(deliveryEnvelope, { idempotencyKey: 'delivery-1' }),
+    ).rejects.toMatchObject({ code: 'BACKGROUND_TOOL_RESULT_ABANDONED', retryable: false });
   });
 });

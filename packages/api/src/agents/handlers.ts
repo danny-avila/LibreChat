@@ -4752,7 +4752,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       .catch(async (persistError) => {
                         await retireFailedPersistence(
                           'background tool result persistence failed',
-                          'ambiguous',
+                          isContentFilterError(persistError) ? 'definite' : 'ambiguous',
                         );
                         logger.warn(
                           `[background] Failed to persist result for task ${task.id}:`,
@@ -4819,7 +4819,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       if (completionPreregistered) {
                         await retireFailedPersistence(
                           'background code result persistence failed',
-                          'ambiguous',
+                          isContentFilterError(persistError) ? 'definite' : 'ambiguous',
                         );
                       }
                       if (isContentFilterError(persistError)) {
@@ -4850,6 +4850,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   })();
                 };
                 let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
+                const backgroundAbortController = new AbortController();
                 try {
                   invokePromise = Promise.resolve(
                     tool.invoke(normalizedArgs, {
@@ -4858,6 +4859,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  `_runtime_session_hint` or it runs fileless on the
                        *  Code API's default runtime session. */
                       toolCall: buildToolCallConfig(tc, mergedConfigurable),
+                      signal: backgroundAbortController.signal,
                       configurable: {
                         ...mergedConfigurable,
                         ...(detachedReservation?.status === 'reserved'
@@ -4916,7 +4918,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
                 void (async () => {
                   try {
-                    const result = await withBackgroundTaskTimeout(invokePromise);
+                    const result = await withBackgroundTaskTimeout(invokePromise, () =>
+                      backgroundAbortController.abort(
+                        new DOMException('Background task timed out', 'AbortError'),
+                      ),
+                    );
                     if (isCodeCall) {
                       markCodeSandboxWarm();
                     }
@@ -5246,7 +5252,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                     if (persistBackgroundCodeResult && delivery.messageId) {
                       /** Error tasks carry their message in `error`, not
-                       *  `result`; reaped (timed-out) tasks store it raw, so
+                       *  `result`; abort-confirmed timeouts store it raw, so
                        *  wrap here — `toBackgroundToolFailure` is a no-op for
                        *  already-wrapped detached failures. */
                       const reapplyOutput =

@@ -1,3 +1,6 @@
+/** Deadline after which an invocation owner requests cancellation. */
+export const BACKGROUND_TASK_TIMEOUT_MS: number = 30 * 60 * 1000;
+
 /** Host-owned identity recorded before ordinary background tool work begins. */
 export interface BackgroundToolWakeupRegistration {
   taskId: string;

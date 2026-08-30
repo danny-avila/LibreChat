@@ -418,7 +418,17 @@ describe('createToolExecuteHandler — background tool calls', () => {
         name: 'search_mcp_docs',
         description: 'search docs',
         schema: z.object({ q: z.string() }),
-        invoke: jest.fn(() => new Promise(() => undefined)),
+        invoke: jest.fn(
+          (_input: unknown, config?: { signal?: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              const signal = config?.signal;
+              if (signal?.aborted === true) {
+                reject(signal.reason);
+                return;
+              }
+              signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+            }),
+        ),
       } as unknown as StructuredToolInterface;
       const persist = jest.fn(async () => true);
       const handler = createToolExecuteHandler({
@@ -457,6 +467,50 @@ describe('createToolExecuteHandler — background tool calls', () => {
           }),
         }),
       );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps an abort-resistant invocation running without a false timeout receipt', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      const tool = {
+        name: 'search_mcp_docs',
+        description: 'search docs',
+        schema: z.object({ q: z.string() }),
+        invoke: jest.fn(() => new Promise(() => undefined)),
+      } as unknown as StructuredToolInterface;
+      const persist = jest.fn(async () => true);
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [tool] }),
+        backgroundToolCompletion: {
+          preregister: jest.fn(async () => ({ retire: jest.fn(async () => true) })),
+          persist,
+          claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        },
+      });
+
+      const [dispatch] = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-timeout-resistant',
+            name: tool.name,
+            args: { q: 'hang', run_in_background: true },
+            stepId: 'step-timeout-resistant',
+          },
+        ],
+        agentId: 'agent_parent_1',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'exec_convo', run_id: 'response-timeout-resistant' },
+      });
+
+      jest.advanceTimersByTime(31 * 60 * 1000);
+      await flushMicrotasks();
+
+      const taskId = JSON.parse(dispatch.content).background_task_id as string;
+      expect(backgroundTaskRegistry.get('exec_user', 'exec_convo', taskId)?.status).toBe('running');
+      expect(persist).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
     }
@@ -2018,10 +2072,16 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       });
     });
     const toolEndCallback = jest.fn();
+    const retire = jest.fn(async () => true);
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [codeTool] }),
       toolEndCallback,
       persistBackgroundCodeResult,
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ retire })),
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
     });
     const configurable = buildConfig(['execute_code']);
     const metadata = {
@@ -2038,6 +2098,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     const taskId = JSON.parse(dispatch[0].content).background_task_id;
     await flushMicrotasks();
     await flushMicrotasks();
+    expect(retire).toHaveBeenCalledWith('background code result persistence failed', undefined);
     await flushMicrotasks();
 
     for (const pollId of ['call_policy_poll_1', 'call_policy_poll_2']) {
@@ -2509,7 +2570,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(JSON.stringify(polled)).not.toContain(detectorRule);
   });
 
-  it('re-anchors reaped (timed-out) tasks with the client-recognized failure wrapper', async () => {
+  it('re-anchors abort-confirmed timeout failures with the client-recognized wrapper', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate'] });
     try {
       const persistCalls: Array<Record<string, unknown>> = [];
@@ -2517,7 +2578,15 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         name: 'execute_code',
         description: 'never settles',
         schema: z.object({ lang: z.string(), code: z.string() }),
-        invoke: () => new Promise(() => undefined),
+        invoke: (_input: unknown, config?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            const signal = config?.signal;
+            if (signal?.aborted === true) {
+              reject(signal.reason);
+              return;
+            }
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
       } as unknown as StructuredToolInterface;
       const handler = createToolExecuteHandler({
         loadTools: async () => ({ loadedTools: [hangingTool] }),
@@ -2535,8 +2604,10 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         metadata: { thread_id: 'exec_convo_reap', run_id: 'msg-reap' },
       });
 
-      /** Past the running TTL the registry reaps the never-settling task. */
+      /** Past the deadline the tool acknowledges abort by rejecting. */
       jest.advanceTimersByTime(31 * 60 * 1000);
+      await flushMicrotasks();
+      await flushMicrotasks();
 
       const poll = await runBatch(handler, {
         toolCalls: [

@@ -9,13 +9,13 @@
  * a backgrounded call and the poll call are both synchronous from the graph's
  * view.
  *
- * Scope: cross-turn parallelism on a single Node process. The run's abort
- * signal does not reach the detached invoke (the graph forwards only
- * `configurable`/`metadata` to the tool-execute handler, never `signal`), so
- * the floating promise keeps running past turn completion and its result stays
- * in the in-process registry for a later turn to poll. Two boundaries: results
- * are lost on restart and are not shared across replicas (durable follow-up),
- * and ephemeral request-scoped MCP tools (runtime `{{LIBRECHAT_BODY_*}}`
+ * Scope: execution remains owned by one Node process, independently of the
+ * dispatch turn's abort signal. The host gives the detached invoke a separate
+ * deadline signal and accepts a timeout only after the invoke settles; an
+ * abort-resistant tool remains indeterminate and pollable. Terminal results
+ * can also be persisted onto the invoking response so another run or replica
+ * can consume them, but process death during execution does not recreate the
+ * live tool. Ephemeral request-scoped MCP tools (runtime `{{LIBRECHAT_BODY_*}}`
  * placeholders) are never backgrounded — their connection is torn down at
  * request end, so the executor runs them in the foreground instead. Detached
  * subagents use the separate host task store; Redis-backed hosts may route
@@ -49,7 +49,10 @@ import type {
   SubagentTaskStore,
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
-import type { BackgroundToolWakeupAdmission } from './backgroundCompletion';
+import {
+  BACKGROUND_TASK_TIMEOUT_MS,
+  type BackgroundToolWakeupAdmission,
+} from './backgroundCompletion';
 import type { CapabilityToolNames } from './selection';
 import {
   resolveToolOption,
@@ -664,10 +667,6 @@ export interface BackgroundTaskCapacityPermit {
 
 const COMPLETED_TASK_TTL_MS = 60 * 60 * 1000;
 const IDLE_BUCKET_TTL_MS = 6 * 60 * 60 * 1000;
-/** Max wall-clock a task may stay `running` before being reaped as timed-out,
- *  so a detached call that never settles (hung network / lost MCP connection)
- *  can't hold a running slot and exhaust the per-conversation cap forever. */
-export const BACKGROUND_TASK_TIMEOUT_MS: number = 30 * 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
 const MAX_TASKS_PER_BUCKET = 200;
 const MAX_RESULT_CHARS = 100_000;
@@ -675,18 +674,18 @@ const MAX_ARTIFACT_CHARS = 10_000_000;
 const GLOBAL_SWEEP_INTERVAL_MS = 60 * 1000;
 
 /**
- * Gives the invocation owner the same terminal deadline enforced by the
- * registry sweeper. A timeout must flow through the ordinary invocation
- * failure path so admitted completion wakeups receive a durable terminal
- * receipt; merely changing the process-local registry row would leave the
- * continuation resolver waiting for evidence that can never arrive.
+ * Requests cancellation at the invocation deadline, but accepts terminal
+ * timeout evidence only when the invocation subsequently settles. Rejecting
+ * this wrapper while the underlying tool can still mutate externally would
+ * publish a false failure and make a duplicate side effect appear safe.
  */
 export function withBackgroundTaskTimeout<T>(
   invocation: Promise<T>,
+  requestAbort: () => void,
   timeoutMs: number = BACKGROUND_TASK_TIMEOUT_MS,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Background task timed out')), timeoutMs);
+    const timeout = setTimeout(requestAbort, timeoutMs);
     timeout.unref?.();
     invocation.then(
       (result) => {
@@ -761,14 +760,6 @@ export class BackgroundTaskRegistryClass {
 
   private sweepBucketTasks(bucket: TaskBucket, now: number): void {
     for (const [taskId, task] of bucket.tasks) {
-      if (task.status === 'running' && now - task.createdAt > BACKGROUND_TASK_TIMEOUT_MS) {
-        /** Reap a stuck task: freeing the running slot (it no longer counts
-         *  toward the cap) and letting the completed-task TTL evict it. */
-        task.status = 'error';
-        task.error = 'Background task timed out';
-        task.updatedAt = now;
-        continue;
-      }
       if (task.status !== 'running' && now - task.updatedAt > COMPLETED_TASK_TTL_MS) {
         bucket.tasks.delete(taskId);
       }
@@ -899,9 +890,7 @@ export class BackgroundTaskRegistryClass {
     messageId?: string;
     runId?: string;
     agentId?: string;
-    /** Set at dispatch when a settle-time harvest WILL run, so tasks that
-     *  never settle (reaped as timed out) still take the marker/heal path
-     *  instead of leaving the original card on "running" forever. */
+    /** Set at dispatch when a settle-time harvest WILL run. */
     harvestStarted?: boolean;
     capacityPermit?: BackgroundTaskCapacityPermit;
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
