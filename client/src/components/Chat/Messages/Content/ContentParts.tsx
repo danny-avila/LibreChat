@@ -259,14 +259,17 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const completedPhaseKeys = useMemo(() => {
     const indices = new Set<number>();
     const labels = new Map<string, number>();
+    const ordinals = new Map<number, number>();
     for (const segment of phaseSegments ?? []) {
       if (segment.type === 'phase') {
-        indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
         const text = getActivityLabelText(segment.labelPart);
-        labels.set(text, (labels.get(text) ?? 0) + 1);
+        const occurrence = (labels.get(text) ?? 0) + 1;
+        indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
+        labels.set(text, occurrence);
+        ordinals.set(getPartKeyIndex(segment.labelPart, segment.labelIndex), occurrence);
       }
     }
-    return { indices, labels };
+    return { indices, labels, ordinals };
   }, [phaseSegments]);
   /** A phase label can finish after the root text stream settles, so
    *  `isSubmitting` is not a reliable entrance signal. Compare committed
@@ -279,9 +282,11 @@ const ContentPartsBody = memo(function ContentPartsBody({
    *  shifts — an index-only guard then reads each already-settled phase as
    *  new and replays its fold over content the reader already watched fold.
    *  The label text survives any re-key, so a re-keyed marker whose text was
-   *  already on screen mounts settled instead. Texts are counted, not merely
+   *  already on screen mounts settled instead. Texts are counted and each
+   *  marker paired with a prior occurrence by position, not merely
    *  remembered: a run may legitimately generate two phases with identical
-   *  summaries, and the second one — a grown count, not a re-key — still
+   *  summaries, and only an occurrence past the previously rendered count —
+   *  a genuinely new phase, even landing in the same commit as a re-key —
    *  deserves its entrance.
    *
    *  The recorded sets are scoped to the message they described.
@@ -297,7 +302,11 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const previousPhases =
     previousPhaseRef.current?.messageId === messageId ? previousPhaseRef.current : null;
   useEffect(() => {
-    previousPhaseRef.current = { messageId, ...completedPhaseKeys };
+    previousPhaseRef.current = {
+      messageId,
+      indices: completedPhaseKeys.indices,
+      labels: completedPhaseKeys.labels,
+    };
   }, [messageId, completedPhaseKeys]);
 
   const handleGroupExpansionChange = useCallback(
@@ -610,7 +619,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 animateEntrance={
                   previousPhases != null &&
                   !previousPhases.indices.has(phaseKeyIndex) &&
-                  (completedPhaseKeys.labels.get(labelText) ?? 0) >
+                  (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >
                     (previousPhases.labels.get(labelText) ?? 0)
                 }
                 showCursor={

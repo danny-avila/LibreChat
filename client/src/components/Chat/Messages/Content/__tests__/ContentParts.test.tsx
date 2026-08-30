@@ -769,6 +769,59 @@ describe('ContentParts — settled content identity across compaction', () => {
     expect(phases[1]).toHaveAttribute('data-animate-entrance', 'true');
   });
 
+  /** A settle can re-key every existing marker AND land a new same-text
+   *  phase in the same commit. Occurrences pair by position: the re-keyed
+   *  first and second stay settled; only the third — past the previously
+   *  rendered count — animates. */
+  it('animates only the new occurrence when a re-key lands with a repeated label', () => {
+    const repeatedPhase = (bounds: { start: number; end: number }) =>
+      ({
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Completed the activity phase',
+        activity_label_type: 'phase',
+        activity_start_index: bounds.start,
+        activity_end_index: bounds.end,
+        activity_count: 1,
+        pending: false,
+      }) as unknown as TMessageContentParts;
+    const { rerender } = render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          toolPart,
+          repeatedPhase({ start: 0, end: 1 }),
+          toolPart,
+          repeatedPhase({ start: 2, end: 3 }),
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    rerender(
+      <ContentParts
+        {...baseProps}
+        content={[
+          toolPart,
+          toolPart,
+          repeatedPhase({ start: 0, end: 2 }),
+          toolPart,
+          repeatedPhase({ start: 3, end: 4 }),
+          toolPart,
+          repeatedPhase({ start: 5, end: 6 }),
+        ]}
+        isLast
+      />,
+    );
+
+    const phases = screen.getAllByTestId('activity-phase-group');
+    expect(phases).toHaveLength(3);
+    expect(phases[0]).toHaveAttribute('data-animate-entrance', 'false');
+    expect(phases[1]).toHaveAttribute('data-animate-entrance', 'false');
+    expect(phases[2]).toHaveAttribute('data-animate-entrance', 'true');
+  });
+
   it('still animates a phase whose label first appears at settle', () => {
     const { rerender } = renderStreaming();
 
