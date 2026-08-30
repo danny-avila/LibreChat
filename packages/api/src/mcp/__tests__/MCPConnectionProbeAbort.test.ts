@@ -70,5 +70,11 @@ describe('MCPConnection health-probe abort', () => {
     expect(Date.now() - start).toBeLessThan(2000);
     const state = (connection as unknown as { connectionState: string }).connectionState;
     expect(state).toBe('connected');
+
+    /** The aborted probe answered nothing, so it must not stamp the health-check TTL: with the
+     *  server now genuinely gone, the next unbudgeted caller has to probe for real and see it —
+     *  a TTL-cached result would report a dead shared connection as healthy for 60 seconds. */
+    await server?.close();
+    expect(await connection.isConnected()).toBe(false);
   });
 });

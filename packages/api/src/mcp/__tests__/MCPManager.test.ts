@@ -2974,6 +2974,22 @@ describe('MCPManager', () => {
       );
     });
 
+    it('lets the caller signal cancel app-connection work even without a deadline', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      const controller = new AbortController();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(mockConnection.isConnected).toHaveBeenCalledWith(controller.signal);
+      expect(mockConnection.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(
+        undefined,
+        controller.signal,
+      );
+    });
+
     it('does not reuse an app connection for a tenant-scoped config override', async () => {
       const configOverride = {
         type: 'streamable-http' as const,

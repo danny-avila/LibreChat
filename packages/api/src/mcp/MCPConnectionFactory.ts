@@ -22,8 +22,8 @@ import {
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
+import { createDeadlineAbortSignal, isClientRejectionMessage, isOAuthServer } from './utils';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
-import { isClientRejectionMessage, isOAuthServer } from './utils';
 import { isOAuthAuthenticationError } from './errors';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { withTimeout } from '~/utils/promise';
@@ -177,6 +177,12 @@ export class MCPConnectionFactory {
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
+    /** Rechecked here because credential preparation in `discoverTools` is uncancellable: a
+     *  budget that expired while it ran must not go on to token resolution or a connect. */
+    if (this.isPastDeadline()) {
+      logger.debug(`${this.logPrefix} [Discovery] Budget exhausted before discovery began`);
+      return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
+    }
     const oauthUrl: string | null = null;
     let oauthRequired = false;
     let shouldAttemptAuthenticatedDiscovery = true;
@@ -304,14 +310,7 @@ export class MCPConnectionFactory {
    * must finish, so cancelling it would trade a bounded overrun for a leaked session.
    */
   private createDiscoveryAbortSignal(): AbortSignal | undefined {
-    const budget =
-      this.deadlineMs != null
-        ? AbortSignal.timeout(Math.max(1, this.deadlineMs - Date.now()))
-        : undefined;
-    if (budget != null && this.signal != null) {
-      return AbortSignal.any([budget, this.signal]);
-    }
-    return budget ?? this.signal;
+    return createDeadlineAbortSignal(this.deadlineMs, this.signal);
   }
 
   private async disposeQuietly(connection: MCPConnection): Promise<void> {

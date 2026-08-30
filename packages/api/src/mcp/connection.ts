@@ -2647,14 +2647,26 @@ export class MCPConnection extends EventEmitter {
     if (now - this.lastConnectionCheckAt < mcpConfig.CONNECTION_CHECK_TTL) {
       return true;
     }
+    const previousCheckAt = this.lastConnectionCheckAt;
     this.lastConnectionCheckAt = now;
     this.lastConnectionCheckError = undefined;
+    /** An aborted probe answered nothing: restore the TTL stamp so the next caller probes for
+     *  real, instead of a dead shared connection reading as healthy for the whole TTL window. */
+    const probeAborted = (): boolean => signal?.aborted === true;
+    const abandonProbe = (): false => {
+      this.lastConnectionCheckAt = previousCheckAt;
+      logger.debug(`${this.getLogPrefix()} Health probe aborted by caller signal`);
+      return false;
+    };
 
     try {
       // Try ping first as it's the lightest check
       await this.client.ping({ signal });
       return this.connectionState === 'connected';
     } catch (error) {
+      if (probeAborted()) {
+        return abandonProbe();
+      }
       // Check if the error is because ping is not supported (method not found)
       const pingUnsupported =
         error instanceof Error &&
@@ -2697,6 +2709,9 @@ export class MCPConnection extends EventEmitter {
           return this.connectionState === 'connected';
         }
       } catch (capabilityError) {
+        if (probeAborted()) {
+          return abandonProbe();
+        }
         // If capability check fails, the connection is likely broken
         this.lastConnectionCheckError = capabilityError;
         logger.error(`${this.getLogPrefix()} Connection verification failed`);

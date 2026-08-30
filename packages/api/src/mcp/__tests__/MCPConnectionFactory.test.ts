@@ -4251,6 +4251,24 @@ describe('MCPConnectionFactory', () => {
         expect(mockPreProcessGraphTokens).not.toHaveBeenCalled();
       });
 
+      it('stops before token resolution when the budget expires during credential preparation', async () => {
+        const events: string[] = [];
+        trackConnections(events);
+        mockPreProcessGraphTokens.mockImplementationOnce(async (options) => {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          return options;
+        });
+
+        const result = await MCPConnectionFactory.discoverTools(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          { deadlineMs: Date.now() + 20, graphTokenResolver: jest.fn() },
+        );
+
+        expect(result.tools).toBeNull();
+        expect(events).toEqual([]);
+        expect(mockMCPConnection).not.toHaveBeenCalled();
+      });
+
       it('forwards the deadline to the tools/list snapshot', async () => {
         const deadlineMs = Date.now() + 5000;
         mockConnectionInstance.connect.mockResolvedValue(undefined);

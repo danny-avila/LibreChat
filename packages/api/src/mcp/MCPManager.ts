@@ -13,6 +13,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  createDeadlineAbortSignal,
   canUseAppConnection,
   isOAuthServer,
   isUserSourced,
@@ -280,10 +281,11 @@ export class MCPManager extends UserConnectionManager {
         ? await this.appConnections?.get(serverName)
         : null;
       /** Cancels the shared connection's health probe and `tools/list` for THIS caller only —
-       *  an aborted probe reports false without touching the shared connection's state. */
+       *  an aborted probe reports false without touching the shared connection's state. Combines
+       *  the budget with the caller's own signal so cancelling the request also stops the work. */
       const budgetSignal =
-        existingAppConnection != null && args.deadlineMs != null
-          ? AbortSignal.timeout(Math.max(1, args.deadlineMs - Date.now()))
+        existingAppConnection != null
+          ? createDeadlineAbortSignal(args.deadlineMs, args.signal)
           : undefined;
       if (existingAppConnection && (await existingAppConnection.isConnected(budgetSignal))) {
         const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot(
