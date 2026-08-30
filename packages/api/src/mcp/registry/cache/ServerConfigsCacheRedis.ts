@@ -3,7 +3,14 @@ import { logger } from '@librechat/data-schemas';
 import type Keyv from 'keyv';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
-import { keyvRedisClient, observeRedisOperation, RedisUseCases, standardCache } from '~/cache';
+import {
+  cacheConfig,
+  evalKeyvRedisScript,
+  keyvRedisClient,
+  observeRedisOperation,
+  RedisUseCases,
+  standardCache,
+} from '~/cache';
 import { BaseRegistryCache } from './BaseRegistryCache';
 
 /**
@@ -14,6 +21,20 @@ import { BaseRegistryCache } from './BaseRegistryCache';
  * Data persists across server restarts and is accessible from any instance in the cluster.
  */
 const BATCH_SIZE = 100;
+
+const PATCH_ENTRY = `
+local encoded = redis.call('GET', KEYS[1])
+if not encoded then return 0 end
+local envelope = cjson.decode(encoded)
+if not envelope.value then return 0 end
+local fields = cjson.decode(ARGV[1])
+if fields.resolvedInstructions and envelope.value.resolvedInstructions then return 0 end
+local ttl = redis.call('PTTL', KEYS[1])
+for field, value in pairs(fields) do envelope.value[field] = value end
+redis.call('SET', KEYS[1], cjson.encode(envelope))
+if ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
+return 1
+`;
 
 export class ServerConfigsCacheRedis
   extends BaseRegistryCache
@@ -26,6 +47,20 @@ export class ServerConfigsCacheRedis
     super(leaderOnly);
     this.namespace = namespace;
     this.cache = standardCache(`${this.PREFIX}::Servers::${namespace}`);
+  }
+
+  private usesRedisStore(): boolean {
+    return (
+      keyvRedisClient != null &&
+      !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(this.cache.namespace)
+    );
+  }
+
+  private redisKey(serverName: string): string {
+    const prefix = cacheConfig.REDIS_KEY_PREFIX
+      ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}`
+      : '';
+    return `${prefix}${this.cache.namespace}:${serverName}`;
   }
 
   public async add(serverName: string, config: ParsedServerConfig): Promise<AddServerResult> {
@@ -62,8 +97,18 @@ export class ServerConfigsCacheRedis
    * see the interface doc: a bump would mark live connections stale. */
   public async patch(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean> {
     if (this.leaderOnly) await this.leaderCheck(`patch ${this.namespace} MCP servers`);
+    if (this.usesRedisStore()) {
+      const result = await evalKeyvRedisScript(PATCH_ENTRY, {
+        keys: [this.redisKey(serverName)],
+        arguments: [JSON.stringify(fields)],
+      });
+      return result === 1;
+    }
     const existing = (await this.cache.get(serverName)) as ParsedServerConfig | undefined;
     if (!existing) {
+      return false;
+    }
+    if (fields.resolvedInstructions != null && existing.resolvedInstructions != null) {
       return false;
     }
     const success = await this.cache.set(serverName, { ...existing, ...fields });

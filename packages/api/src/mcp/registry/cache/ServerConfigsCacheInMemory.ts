@@ -39,6 +39,9 @@ export class ServerConfigsCacheInMemory {
     if (!existing) {
       return false;
     }
+    if (fields.resolvedInstructions != null && existing.resolvedInstructions != null) {
+      return false;
+    }
     /** Spreading a Partial over the transport-discriminated union widens it past the
      * discriminant; the merge only touches shared inspector-derived fields. */
     this.cache.set(serverName, { ...existing, ...fields } as ParsedServerConfig);

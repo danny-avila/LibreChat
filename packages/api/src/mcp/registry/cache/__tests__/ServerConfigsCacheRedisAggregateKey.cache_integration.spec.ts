@@ -229,6 +229,24 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
         expect(result.server3).toMatchObject(mockConfig3);
       }
     });
+
+    it('atomically preserves concurrent instruction backfills from separate replicas', async () => {
+      const replicaA = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      const replicaB = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      await cache.add('server1', mockConfig1);
+      await cache.add('server2', mockConfig2);
+
+      await expect(
+        Promise.all([
+          replicaA.patch('server1', { resolvedInstructions: 'server one instructions' }),
+          replicaB.patch('server2', { resolvedInstructions: 'server two instructions' }),
+        ]),
+      ).resolves.toEqual([true, true]);
+
+      const result = await cache.getAll();
+      expect(result.server1.resolvedInstructions).toBe('server one instructions');
+      expect(result.server2.resolvedInstructions).toBe('server two instructions');
+    });
   });
 
   describe('reset operation', () => {

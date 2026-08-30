@@ -18,7 +18,9 @@ export interface IServerConfigsRepositoryInterface {
    * live connection for the server stale. Returns false when the server is
    * unknown. Optional: DB-backed storage does not implement it yet — an
    * identity-preserving write there has to thread mongoose timestamps and the
-   * credential-sanitization pipeline, which is its own change.
+   * credential-sanitization pipeline, which is its own change. When the patch
+   * includes `resolvedInstructions`, a previously stored value wins so a
+   * concurrent first connection cannot replace shared instructions.
    */
   patch?(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean>;
 

@@ -2,7 +2,7 @@ import type Keyv from 'keyv';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { BaseRegistryCache } from './BaseRegistryCache';
-import { cacheConfig, standardCache } from '~/cache';
+import { cacheConfig, evalKeyvRedisScript, keyvRedisClient, standardCache } from '~/cache';
 
 /**
  * Redis-backed MCP server configs cache that stores all entries under a single aggregate key.
@@ -21,17 +21,30 @@ import { cacheConfig, standardCache } from '~/cache';
  * - Cross-instance visibility is preserved: all instances read/write the same Redis key,
  *   so reinspection results propagate automatically after readThroughCache TTL expiry.
  *
- * IMPORTANT: The promise-based writeLock serializes writes within a single Node.js process
- * only. Concurrent writes from separate instances race at the Redis level (last-write-wins).
- * This is acceptable because writes are performed exclusively by the leader during
- * initialization via {@link MCPServersInitializer}. `reinspectServer` is manual and rare,
- * and the `patch` instruction backfill fires at most once per server per registry
- * lifetime (first-write-wins short-circuits every later attempt before it reaches
- * this class). Callers must enforce this single-writer invariant externally; making
- * these writes atomic across instances (per-server hash fields or Lua CAS) is the
- * follow-up that would close the residual race for every writer here at once.
+ * `patch` uses a Redis-side Lua compare-and-set when Redis backs this cache.
+ * This keeps simultaneous replicas from losing another server's patch and makes
+ * `resolvedInstructions` first-write-wins. Initialization writes remain leader
+ * coordinated, and manual reinspection is intentionally rare.
  */
 const AGGREGATE_KEY = '__all__';
+
+/** Keyv stores its serialized value in an envelope with a `value` member. This script
+ * updates that envelope atomically and preserves a configured Redis expiration. */
+const PATCH_AGGREGATE_ENTRY = `
+local encoded = redis.call('GET', KEYS[1])
+if not encoded then return 0 end
+local envelope = cjson.decode(encoded)
+if not envelope.value then return 0 end
+local entry = envelope.value[ARGV[1]]
+if not entry then return 0 end
+local fields = cjson.decode(ARGV[2])
+if fields.resolvedInstructions and entry.resolvedInstructions then return 0 end
+local ttl = redis.call('PTTL', KEYS[1])
+for field, value in pairs(fields) do entry[field] = value end
+redis.call('SET', KEYS[1], cjson.encode(envelope))
+if ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
+return 1
+`;
 
 export class ServerConfigsCacheRedisAggregateKey
   extends BaseRegistryCache
@@ -68,6 +81,20 @@ export class ServerConfigsCacheRedisAggregateKey
   private invalidateLocalSnapshot(): void {
     this.localSnapshot = null;
     this.localSnapshotExpiry = 0;
+  }
+
+  private usesRedisStore(): boolean {
+    return (
+      keyvRedisClient != null &&
+      !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(this.cache.namespace)
+    );
+  }
+
+  private aggregateRedisKey(): string {
+    const prefix = cacheConfig.REDIS_KEY_PREFIX
+      ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}`
+      : '';
+    return `${prefix}${this.cache.namespace}:${AGGREGATE_KEY}`;
   }
 
   /**
@@ -169,10 +196,20 @@ export class ServerConfigsCacheRedisAggregateKey
   public async patch(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean> {
     if (this.leaderOnly) await this.leaderCheck('patch MCP servers');
     return this.withWriteLock(async () => {
+      if (this.usesRedisStore()) {
+        const result = await evalKeyvRedisScript(PATCH_AGGREGATE_ENTRY, {
+          keys: [this.aggregateRedisKey()],
+          arguments: [serverName, JSON.stringify(fields)],
+        });
+        return result === 1;
+      }
       this.invalidateLocalSnapshot(); // Force fresh Redis read (see add() comment)
       const all = await this.getAll();
       const existing = all[serverName];
       if (!existing) {
+        return false;
+      }
+      if (fields.resolvedInstructions != null && existing.resolvedInstructions != null) {
         return false;
       }
       const newAll = { ...all, [serverName]: { ...existing, ...fields } };

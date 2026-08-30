@@ -9,6 +9,7 @@ import {
   renewMCPToolsChangedGeneration,
 } from '~/mcp/toolsChanged';
 import {
+  canBackfillSharedServerInstructions,
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
   isUserSourced,
@@ -758,21 +759,13 @@ export abstract class UserConnectionManager {
   }
 
   /**
-   * Startup inspection defers servers that need user/runtime context, including
-   * OAuth/OBO, custom variables, user API keys, and runtime placeholders. An
-   * enabled `serverInstructions` declaration therefore has no fetched text to
-   * resolve until the first live user connection. Persist the instructions from
-   * that connection so subsequent context builds include them. Best-effort: a
-   * failure here must never break connection creation.
-   *
-   * `resolvedInstructions` is one field on a config shared by every user of the
-   * server, so the first connection to deliver text wins and later ones only
-   * read it. That is exact for a server advertising one static block, which is
-   * the ordinary case. A server that tailors instructions per authenticated
-   * identity cannot be represented by that single field, so rather than let the
-   * stored copy churn per connection — each write invalidates the read-through
-   * cache globally, and the model context would vary by whoever connected last
-   * — the first text is kept and the divergence is logged.
+   * An explicitly startup-deferred, context-independent YAML server has no
+   * fetched text until its first live connection. Persist that static text so
+   * subsequent context builds include it. OAuth/OBO, user credentials, custom
+   * variables, and runtime placeholders stay connection-scoped: their
+   * instructions can vary by identity or request and must never enter the
+   * shared registry. Best-effort: a failure here must never break connection
+   * creation.
    */
   protected async backfillResolvedInstructions(
     serverName: string,
@@ -790,7 +783,12 @@ export abstract class UserConnectionManager {
        *  the registry still resolves it by name. A config-tier override shadowing a
        *  YAML base keeps the base's 'yaml' tag (`overlaySource`), so `config` is also
        *  passed through for the registry's field-level identity check. */
-      if (isUserSourced(config) || isPluginSourced(config) || config.source === 'config') {
+      if (
+        isUserSourced(config) ||
+        isPluginSourced(config) ||
+        config.source === 'config' ||
+        !canBackfillSharedServerInstructions(config)
+      ) {
         return;
       }
       const instructions = connection.client.getInstructions();
@@ -798,11 +796,6 @@ export abstract class UserConnectionManager {
         return;
       }
       if (config.resolvedInstructions != null) {
-        if (config.resolvedInstructions !== instructions) {
-          logger.debug(
-            `[MCP][User: ${userId}][${serverName}] Live connection advertised different instructions than the stored copy; keeping the stored text. This server tailors instructions per authenticated identity, which one shared server config cannot represent.`,
-          );
-        }
         return;
       }
       const updated = await MCPServersRegistry.getInstance().setResolvedInstructions(

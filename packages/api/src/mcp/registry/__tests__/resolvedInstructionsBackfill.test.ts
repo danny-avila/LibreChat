@@ -1,5 +1,5 @@
 import './helpers/setupCredsEnv';
-import { logger, tenantStorage } from '@librechat/data-schemas';
+import { tenantStorage } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
@@ -27,15 +27,21 @@ const FIXED_TIME = 1699564800000;
 const startupDeferredYamlEntry: t.ParsedServerConfig = {
   type: 'streamable-http',
   url: 'https://mcp.example.com/mcp',
-  requiresOAuth: true,
+  requiresOAuth: false,
+  startup: false,
   serverInstructions: true,
   source: 'yaml',
   updatedAt: FIXED_TIME,
 };
 
+const oauthDeferredYamlEntry: t.ParsedServerConfig = {
+  ...startupDeferredYamlEntry,
+  startup: true,
+  requiresOAuth: true,
+};
+
 const runtimePlaceholderYamlEntry: t.ParsedServerConfig = {
   ...startupDeferredYamlEntry,
-  requiresOAuth: false,
   headers: { 'X-User-Id': '{{LIBRECHAT_USER_ID}}' },
 };
 
@@ -130,6 +136,18 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
     expect(config?.resolvedInstructions).toBe(INSTRUCTIONS);
   });
 
+  it.each([
+    ['OAuth', oauthDeferredYamlEntry],
+    ['runtime placeholders', runtimePlaceholderYamlEntry],
+  ])('refuses a %s-deferred server at the shared-registry boundary', async (_reason, config) => {
+    await registry['cacheConfigsRepo'].add('deferred_server', config);
+
+    const updated = await registry.setResolvedInstructions('deferred_server', INSTRUCTIONS);
+
+    expect(updated).toBe(false);
+    expect((await registry.getServerConfig('deferred_server'))?.resolvedInstructions).toBeUndefined();
+  });
+
   it('stores instructions when the connected config matches the stored YAML entry', async () => {
     await registry['cacheConfigsRepo'].add('deferred_server', startupDeferredYamlEntry);
 
@@ -200,6 +218,19 @@ describe('MCPServersRegistry.setResolvedInstructions', () => {
     expect(after?.updatedAt).toBe(stored?.updatedAt);
     expect(await repo.patch!('unknown_server', { resolvedInstructions: INSTRUCTIONS })).toBe(false);
   });
+
+  it('keeps the first resolved instructions when patches race', async () => {
+    const repo = registry['cacheConfigsRepo'];
+    await repo.add('deferred_server', startupDeferredYamlEntry);
+
+    await expect(repo.patch!('deferred_server', { resolvedInstructions: INSTRUCTIONS })).resolves.toBe(
+      true,
+    );
+    await expect(
+      repo.patch!('deferred_server', { resolvedInstructions: 'later connection instructions' }),
+    ).resolves.toBe(false);
+    expect((await repo.get('deferred_server'))?.resolvedInstructions).toBe(INSTRUCTIONS);
+  });
 });
 
 describe('UserConnectionManager.backfillResolvedInstructions', () => {
@@ -243,16 +274,11 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
     );
   });
 
-  it('persists instructions for non-OAuth servers with runtime user placeholders', async () => {
+  it('does not persist instructions for servers with runtime user placeholders', async () => {
     const config = { ...runtimePlaceholderYamlEntry };
     await backfill(config, connectionWith(INSTRUCTIONS));
 
-    expect(setResolvedInstructions).toHaveBeenCalledWith(
-      'deferred_server',
-      INSTRUCTIONS,
-      'user-1',
-      config,
-    );
+    expect(setResolvedInstructions).not.toHaveBeenCalled();
   });
 
   it('skips servers that do not enable serverInstructions', async () => {
@@ -279,30 +305,13 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
     expect(setResolvedInstructions).not.toHaveBeenCalled();
   });
 
-  it('keeps the stored text and logs when a connection advertises different instructions', async () => {
-    const debug = jest.spyOn(logger, 'debug').mockImplementation(() => logger);
-
+  it('does not reach the registry when instructions are already resolved', async () => {
     await backfill(
       { ...startupDeferredYamlEntry, resolvedInstructions: INSTRUCTIONS },
       connectionWith('per-identity text for someone else'),
     );
 
     expect(setResolvedInstructions).not.toHaveBeenCalled();
-    expect(debug).toHaveBeenCalledWith(
-      expect.stringContaining('advertised different instructions than the stored copy'),
-    );
-  });
-
-  it('stays silent when the connection repeats the stored instructions', async () => {
-    const debug = jest.spyOn(logger, 'debug').mockImplementation(() => logger);
-
-    await backfill(
-      { ...startupDeferredYamlEntry, resolvedInstructions: INSTRUCTIONS },
-      connectionWith(INSTRUCTIONS),
-    );
-
-    expect(setResolvedInstructions).not.toHaveBeenCalled();
-    expect(debug).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -311,6 +320,29 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
     ['config', { source: 'config' as const }],
   ])('does not reach the registry for a %s-tier server', async (_label, overrides) => {
     await backfill({ ...startupDeferredYamlEntry, ...overrides }, connectionWith(INSTRUCTIONS));
+    expect(setResolvedInstructions).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['OAuth', oauthDeferredYamlEntry],
+    [
+      'OBO',
+      { ...startupDeferredYamlEntry, obo: {} } as unknown as t.ParsedServerConfig,
+    ],
+    [
+      'user API keys',
+      { ...startupDeferredYamlEntry, apiKey: { source: 'user' } } as unknown as t.ParsedServerConfig,
+    ],
+    [
+      'custom user variables',
+      {
+        ...startupDeferredYamlEntry,
+        customUserVars: { apiKey: { title: 'API key', description: 'Per-user credential' } },
+      },
+    ],
+    ['runtime placeholders', runtimePlaceholderYamlEntry],
+  ])('does not persist instructions for %s context', async (_reason, config) => {
+    await backfill(config, connectionWith(INSTRUCTIONS));
     expect(setResolvedInstructions).not.toHaveBeenCalled();
   });
 

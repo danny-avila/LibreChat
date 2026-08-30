@@ -209,7 +209,7 @@ export interface MCPRequestScope {
 
 type UserScopedConnectionConfig = Pick<
   ParsedServerConfig,
-  'requiresOAuth' | 'source' | 'dbId' | 'startup'
+  'apiKey' | 'requiresOAuth' | 'source' | 'dbId' | 'startup'
 > & {
   args?: string[];
   /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
@@ -406,6 +406,21 @@ export function requiresUserScopedConnection(config: UserScopedConnectionConfig)
 export function canUseAppConnection(config: UserScopedConnectionConfig): boolean {
   return (
     config.startup !== false && !isUserSourced(config) && !requiresUserScopedConnection(config)
+  );
+}
+
+/**
+ * Server instructions fetched from a connection are safe to retain in the
+ * shared YAML registry only when the connection cannot vary by identity or
+ * request. `startup: false` is the one context-independent reason startup
+ * inspection leaves instructions unresolved; every other deferred case can
+ * expose authenticated or request-specific instructions to another user.
+ */
+export function canBackfillSharedServerInstructions(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.startup === false &&
+    !requiresUserScopedConnection(config) &&
+    config.apiKey?.source !== 'user'
   );
 }
 

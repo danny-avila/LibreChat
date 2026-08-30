@@ -16,6 +16,7 @@ import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache';
+import { canBackfillSharedServerInstructions } from '~/mcp/utils';
 import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
@@ -579,9 +580,10 @@ export class MCPServersRegistry {
 
   /**
    * Backfills the inspector-derived `resolvedInstructions` for a server whose
-   * startup inspection was deferred because it needs user/runtime context. An
-   * enabled `serverInstructions` declaration has no fetched text to resolve in
-   * that case. Called once a live connection has delivered the instructions.
+   * operator explicitly deferred startup inspection. An enabled
+   * `serverInstructions` declaration has no fetched text to resolve in that
+   * case. Identity- or request-scoped servers are deliberately rejected:
+   * their live instructions cannot safely be stored in a shared config.
    *
    * First write wins: once the stored entry carries any text, later calls are
    * no-ops. Without this, identities racing the first backfill under stale
@@ -614,7 +616,11 @@ export class MCPServersRegistry {
       return false;
     }
     const yamlEntry = await this.cacheConfigsRepo.get(serverName);
-    if (!yamlEntry || yamlEntry.resolvedInstructions != null) {
+    if (
+      !yamlEntry ||
+      yamlEntry.resolvedInstructions != null ||
+      !canBackfillSharedServerInstructions(yamlEntry)
+    ) {
       return false;
     }
     if (connectedConfig && !matchesAdminConfigurableFields(yamlEntry, connectedConfig)) {
