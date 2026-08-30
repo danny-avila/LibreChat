@@ -230,7 +230,6 @@ describe('durable agent trigger service', () => {
           fingerprint: input.fingerprint,
           orderingKey: input.orderingKey,
           envelope: input.envelope,
-          requiredWorkerCapability: input.requiredWorkerCapability,
           availableAt: new Date('9999-12-31T23:59:59.999Z'),
         }),
         replayed: false,
