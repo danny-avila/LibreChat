@@ -586,7 +586,6 @@ describe('agentsEndpointSchema', () => {
             name: 'Personal Code',
             type: 'attached',
             baseURL: 'https://bridge.example.com/v1',
-            default: true,
             pairing: {
               allowPrincipalWorkers: true,
               tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
@@ -597,6 +596,53 @@ describe('agentsEndpointSchema', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('rejects a pairing-only control plane as the execution default', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-code-control-plane',
+            name: 'Personal Code',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            pairing: {
+              allowPrincipalWorkers: true,
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects conflicting direct and pairing worker routes', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            workerId: 'direct-worker',
+            pairing: {
+              workerId: 'paired-worker',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it('rejects pairing metadata on a principal-owned environment', () => {

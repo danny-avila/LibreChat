@@ -165,6 +165,42 @@ describe('resolveCodeExecutionContext', () => {
     });
   });
 
+  it('does not execute a pairing-only control plane', () => {
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+    const environments = [
+      {
+        id: 'self-service',
+        name: 'Self-service',
+        type: 'attached' as const,
+        baseURL: 'https://bridge.example/v1',
+        default: true,
+        owner: 'deployment' as const,
+        pairing: {
+          allowPrincipalWorkers: true,
+          tokenEnv: 'CODE_ADMIN_TOKEN',
+        },
+      },
+    ];
+
+    expect(
+      resolveCodeExecutionContext({ statefulSessions: true, environments, userId: 'user-1' }),
+    ).toEqual(
+      expect.objectContaining({
+        baseUrl: 'http://code-stateful.test/v1',
+        environmentId: undefined,
+        bridgeWorkerId: undefined,
+      }),
+    );
+    expect(() =>
+      resolveCodeExecutionContext({
+        statefulSessions: true,
+        environmentId: 'self-service',
+        environments,
+        userId: 'user-1',
+      }),
+    ).toThrow('Stateful code environment "self-service" is not configured');
+  });
+
   it('adds the server-selected worker to execution auth without replacing authentication', async () => {
     const context = resolveCodeExecutionContext({
       statefulSessions: true,

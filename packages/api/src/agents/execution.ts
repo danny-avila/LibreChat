@@ -104,14 +104,24 @@ function resolveConfiguredEnvironment(params: {
   environments?: readonly CodeEnvironmentConfig[];
 }): CodeEnvironmentConfig | undefined {
   const { environmentId, environments } = params;
+  const executableEnvironments = environments?.filter(
+    (environment) =>
+      !(
+        environment.pairing?.allowPrincipalWorkers === true &&
+        environment.pairing.workerId == null &&
+        environment.workerId == null
+      ),
+  );
   if (environmentId) {
-    const configured = environments?.find((environment) => environment.id === environmentId);
+    const configured = executableEnvironments?.find(
+      (environment) => environment.id === environmentId,
+    );
     if (!configured) {
       throw new Error(`Stateful code environment "${environmentId}" is not configured.`);
     }
     return configured;
   }
-  return environments?.find((environment) => environment.default === true);
+  return executableEnvironments?.find((environment) => environment.default === true);
 }
 
 export function resolveCodeExecutionContext(params: {

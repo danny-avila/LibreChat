@@ -12,7 +12,7 @@ import type { ServerRequest } from '~/types/http';
 import type { CodeBridgeFetch } from './bridge';
 import { CodeBridgePairingError, createCodeBridgePairing, readCodeBridgeSecret } from './bridge';
 import { CodeEnvironmentValidationError, normalizeCodeEnvironmentName } from './environments';
-import { getCodeApiTenantId } from '~/auth/codeapi';
+import { getCodeApiTenantId, isCodeApiJwtAuthEnabled } from '~/auth/codeapi';
 
 type Registry = {
   register: (params: {
@@ -35,6 +35,7 @@ export interface CodeEnvironmentHttpDeps {
   createEnvironmentId?: () => string;
   readSecret?: (name: string) => string | undefined;
   resolveTenantId?: (req: ServerRequest) => string;
+  principalAuthEnabled?: () => boolean;
   fetchImpl?: CodeBridgeFetch;
 }
 
@@ -102,6 +103,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   const createEnvironmentId = deps.createEnvironmentId ?? (() => `code-${nanoid(20)}`);
   const readSecret = deps.readSecret ?? readCodeBridgeSecret;
   const resolveTenantId = deps.resolveTenantId ?? getCodeApiTenantId;
+  const principalAuthEnabled = deps.principalAuthEnabled ?? isCodeApiJwtAuthEnabled;
 
   async function list(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
@@ -181,7 +183,15 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (principal == null) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const body = req.body as unknown as Record<string, unknown>;
+    if (!principalAuthEnabled()) {
+      return res.status(409).json({
+        error: 'Principal code workers require Code API JWT authentication',
+      });
+    }
+    const body =
+      typeof req.body === 'object' && req.body != null
+        ? (req.body as unknown as Record<string, unknown>)
+        : {};
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const controlPlaneId =
       typeof body.controlPlaneId === 'string' ? body.controlPlaneId.trim() : '';

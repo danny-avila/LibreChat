@@ -81,6 +81,7 @@ describe('code environment HTTP handlers', () => {
       createEnvironmentId: () => 'code-generated',
       readSecret: jest.fn(() => 'administrator-token'),
       resolveTenantId: jest.fn(() => 'tenant-1'),
+      principalAuthEnabled: jest.fn(() => true),
       fetchImpl,
     });
     const req = {
@@ -130,6 +131,28 @@ describe('code environment HTTP handlers', () => {
       environment: expect.objectContaining({ id: 'code-generated' }),
       pairing: expect.objectContaining({ workerId: 'code-generated', code: 'a'.repeat(32) }),
     });
+  });
+
+  test('rejects self-service pairing without principal-aware Code API auth', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(),
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      principalAuthEnabled: jest.fn(() => false),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   test('registers against an operator-configured control plane and ignores client URLs', async () => {
@@ -263,6 +286,7 @@ describe('code environment HTTP handlers', () => {
       } as AppConfig),
       registry: { register: jest.fn(), listAccessible: jest.fn() },
       readSecret: jest.fn(() => 'administrator-token'),
+      principalAuthEnabled: jest.fn(() => true),
       fetchImpl,
     });
     const res = response();

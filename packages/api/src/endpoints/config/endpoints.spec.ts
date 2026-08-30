@@ -225,6 +225,45 @@ describe('createEndpointsConfigService', () => {
       });
     });
 
+    it('does not expose a pairing-only control plane as an execution environment', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.agents]: {
+                statefulCodeSessions: {
+                  allowedEnvironments: ['user'],
+                  environments: [
+                    {
+                      id: 'self-service',
+                      name: 'Self-service',
+                      type: 'attached',
+                      baseURL: 'https://internal-code.example.com/v1',
+                      pairing: {
+                        allowPrincipalWorkers: true,
+                        tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          }),
+        ),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+      const result = await getEndpointsConfig(fakeReq());
+
+      expect(result?.[EModelEndpoint.agents]?.statefulCodeSessions).toEqual({
+        allowedEnvironments: ['user'],
+        environments: [],
+      });
+    });
+
     it('merges bedrock availableRegions', async () => {
       const deps = createMockDeps({
         loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({

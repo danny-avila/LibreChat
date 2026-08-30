@@ -1121,7 +1121,12 @@ export const agentsEndpointSchema = baseEndpointSchema
           if (!value?.environments) return;
           const ids = new Set<string>();
           let defaults = 0;
+          let executableEnvironments = 0;
           for (const environment of value.environments) {
+            const pairingOnly =
+              environment.pairing?.allowPrincipalWorkers === true &&
+              environment.pairing.workerId == null &&
+              environment.workerId == null;
             if (environment.pairing != null && environment.type !== 'attached') {
               context.addIssue({
                 code: z.ZodIssueCode.custom,
@@ -1146,6 +1151,24 @@ export const agentsEndpointSchema = baseEndpointSchema
                 path: ['environments', environment.id, 'baseURL'],
               });
             }
+            if (
+              environment.workerId != null &&
+              environment.pairing?.workerId != null &&
+              environment.workerId !== environment.pairing.workerId
+            ) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Code environment workerId must match pairing.workerId',
+                path: ['environments', environment.id, 'workerId'],
+              });
+            }
+            if (pairingOnly && environment.default === true) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Pairing-only code control planes cannot be execution defaults',
+                path: ['environments', environment.id, 'default'],
+              });
+            }
             if (ids.has(environment.id)) {
               context.addIssue({
                 code: z.ZodIssueCode.custom,
@@ -1154,9 +1177,12 @@ export const agentsEndpointSchema = baseEndpointSchema
               });
             }
             ids.add(environment.id);
-            if (environment.default === true) defaults += 1;
+            if (!pairingOnly) {
+              executableEnvironments += 1;
+              if (environment.default === true) defaults += 1;
+            }
           }
-          if (value.environments.length > 0 && defaults !== 1) {
+          if (executableEnvironments > 0 && defaults !== 1) {
             context.addIssue({
               code: z.ZodIssueCode.custom,
               message: 'Exactly one stateful code environment must be the default',
