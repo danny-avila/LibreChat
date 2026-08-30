@@ -2957,6 +2957,41 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
     });
 
+    it('does not reuse an app connection for a tenant-scoped config override', async () => {
+      const configOverride = {
+        type: 'streamable-http' as const,
+        url: 'https://tenant.example.com/mcp',
+        source: 'config' as const,
+      };
+      const appConnections = { get: jest.fn().mockResolvedValue(mockConnection) };
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(configOverride);
+      (mockRegistryInstance.isAppServerConfig as jest.Mock).mockResolvedValue(false);
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({
+        serverName,
+        user: { id: 'tenant-user' } as IUser,
+        configServers: { [serverName]: configOverride },
+      });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(serverName, 'tenant-user', {
+        [serverName]: configOverride,
+      });
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({ serverConfig: configOverride }),
+        expect.objectContaining({ user: expect.objectContaining({ id: 'tenant-user' }) }),
+      );
+    });
+
     it('should use MCPConnectionFactory.discoverTools when no app connection available', async () => {
       const discoveryConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),

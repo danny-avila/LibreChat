@@ -6,10 +6,11 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
-const { logger, SystemCapabilities } = require('@librechat/data-schemas');
+const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
   isUserSourced,
+  createAuthIdentityContext,
   MCPConnection,
   MCPErrorCodes,
   splitMCPToolKey,
@@ -35,6 +36,8 @@ const {
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
+const { loadMCPServerCatalogs } = require('~/server/services/Tools/mcp');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const {
   cacheMCPServerTools,
   getMCPServerTools,
@@ -193,65 +196,26 @@ const getMCPTools = async (req, res) => {
       return res.status(200).json({ servers: {} });
     }
 
-    const mcpManager = getMCPManager();
     const mcpServers = {};
-
-    const serverToolsMap = new Map();
-    const serversWithoutTools = [];
-    const cacheResults = await Promise.all(
-      configuredServers.map(async (serverName) => {
-        try {
-          return {
-            serverName,
-            tools: await getMCPServerTools(userId, serverName, mcpConfig[serverName]),
-          };
-        } catch (error) {
-          logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
-          return { serverName, tools: null };
-        }
-      }),
-    );
-    for (const { serverName, tools } of cacheResults) {
-      if (tools) {
-        serverToolsMap.set(serverName, tools);
-        continue;
-      }
-
-      let serverTools;
-      let publicationGeneration;
-      let publicationRevision;
-      try {
-        ({
-          tools: serverTools,
-          publicationGeneration,
-          publicationRevision,
-        } = await mcpManager.getServerToolFunctionsSnapshot(
-          userId,
-          serverName,
-          mcpConfig[serverName],
-        ));
-      } catch (error) {
-        logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
-        continue;
-      }
-      if (!serverTools) {
-        serversWithoutTools.push(serverName);
-        continue;
-      }
-      serverToolsMap.set(serverName, serverTools);
-
-      // Empty is an authoritative catalog too; re-cache it after TTL expiry to avoid polling.
-      cacheMCPServerTools({
-        userId,
+    const oboIdentityContext = createAuthIdentityContext({
+      user: req.user,
+      tenantId: getTenantId(),
+    });
+    const { serverTools: serverToolsMap, serversWithoutTools } = await loadMCPServerCatalogs({
+      user: req.user,
+      servers: configuredServers.map((serverName) => ({
         serverName,
-        serverTools,
         serverConfig: mcpConfig[serverName],
-        publicationGeneration,
-        publicationRevision,
-      }).catch((err) =>
-        logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
-      );
-    }
+      })),
+      upstreamTokenProvider: createOpenIDSessionTokenProvider({
+        req,
+        res,
+        user: req.user,
+        identityContext: oboIdentityContext,
+        tokenPreference: 'access_token',
+      }),
+      oboIdentityContext,
+    });
     if (serversWithoutTools.length > 0) {
       logger.debug(
         `[getMCPTools] No tools (${serversWithoutTools.length}): ${serversWithoutTools.join(', ')}`,
