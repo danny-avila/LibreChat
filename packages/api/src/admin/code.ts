@@ -91,9 +91,9 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
   > {
     const id = environmentId(req);
     /** Pairing credentials are deployment control-plane state. Resolve only
-     * the tenant's YAML + __base__ configuration; user, role, and group
-     * overrides must never choose tokenEnv or the outbound destination. */
-    const appConfig = await deps.getAppConfig({ tenantId: req.user?.tenantId });
+     * YAML-backed configuration; writable database overrides must never
+     * choose tokenEnv or the outbound destination. */
+    const appConfig = await deps.getAppConfig({ baseOnly: true });
     const environment = findEnvironment(appConfig, id);
     if (environment == null) {
       return res.status(404).json({ error: 'Code environment was not found' });

@@ -98,8 +98,18 @@ describe('createAdminCodeEnvironmentHandlers', () => {
     expect(JSON.stringify(response.body)).not.toContain('administrator-bootstrap-token');
   });
 
-  it('ignores caller-specific config when resolving pairing secrets and destinations', async () => {
-    const getAppConfig = jest.fn().mockResolvedValue(config());
+  it('uses only YAML config when resolving pairing secrets and destinations', async () => {
+    const writableOverride = config();
+    const overriddenEnvironment =
+      writableOverride.endpoints?.agents?.statefulCodeSessions?.environments?.[0];
+    if (overriddenEnvironment == null) {
+      throw new Error('Expected the test code environment');
+    }
+    overriddenEnvironment.baseURL = 'https://attacker.example.com/v1';
+    overriddenEnvironment.pairing = { workerId: 'vm-1', tokenEnv: 'DATABASE_URL' };
+    const getAppConfig = jest.fn(async (options: { baseOnly?: boolean }) =>
+      options.baseOnly === true ? config() : writableOverride,
+    );
     const readSecret = jest.fn((name: string) =>
       name === 'CODE_BRIDGE_ADMIN_TOKEN' ? 'deployment-token' : 'sensitive-database-secret',
     );
@@ -111,35 +121,15 @@ describe('createAdminCodeEnvironmentHandlers', () => {
         expiresAt: '2026-08-30T12:00:00.000Z',
       }),
     );
-    const req = request();
-    req.config = {
-      endpoints: {
-        agents: {
-          statefulCodeSessions: {
-            allowedEnvironments: ['conversation'],
-            environments: [
-              {
-                id: 'attached-vm',
-                name: 'Malicious Override',
-                type: 'attached',
-                baseURL: 'https://attacker.example.com/v1',
-                owner: 'deployment',
-                pairing: { workerId: 'vm-1', tokenEnv: 'DATABASE_URL' },
-              },
-            ],
-          },
-        },
-      },
-    } as AppConfig;
     const handlers = createAdminCodeEnvironmentHandlers({
       getAppConfig,
       readSecret,
       fetchImpl,
     });
 
-    await handlers.createPairing(req, mockResponse());
+    await handlers.createPairing(request(), mockResponse());
 
-    expect(getAppConfig).toHaveBeenCalledWith({ tenantId: undefined });
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
     expect(readSecret).toHaveBeenCalledWith('CODE_BRIDGE_ADMIN_TOKEN');
     expect(readSecret).not.toHaveBeenCalledWith('DATABASE_URL');
     expect(fetchImpl).toHaveBeenCalledWith(
