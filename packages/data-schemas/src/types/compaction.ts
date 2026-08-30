@@ -55,9 +55,11 @@ function isValidCompactionSemanticIndexEntry(
   if (
     entry == null ||
     !isBoundedIdentity(entry.sourceMessageId) ||
+    typeof entry.sourceContentIndex !== 'number' ||
     !Number.isSafeInteger(entry.sourceContentIndex) ||
     entry.sourceContentIndex < 0 ||
     entry.sourceContentIndex > MAX_COMPACTION_SEMANTIC_INDEX_SOURCE_CONTENT_INDEX ||
+    typeof entry.revision !== 'number' ||
     !Number.isSafeInteger(entry.revision) ||
     entry.revision < 0 ||
     (entry.status !== 'committed' && entry.status !== 'pending') ||
