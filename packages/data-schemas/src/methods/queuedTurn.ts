@@ -86,6 +86,9 @@ export interface AgentQueuedTurnMethods {
   enqueueAgentQueuedTurn: (
     input: EnqueueAgentQueuedTurnInput,
   ) => Promise<{ turn: AgentQueuedTurnRecord; replayed: boolean }>;
+  getAgentQueuedTurnByClientRequestId: (
+    input: AgentQueuedTurnConversationScope & { clientRequestId: string },
+  ) => Promise<AgentQueuedTurnRecord | null>;
   listActiveAgentQueuedTurns: (
     input: AgentQueuedTurnConversationScope & { limit?: number },
   ) => Promise<AgentQueuedTurnActiveRecord[]>;
@@ -514,6 +517,18 @@ export function createAgentQueuedTurnMethods(
     return turns.map(toActiveRecord);
   }
 
+  async function getAgentQueuedTurnByClientRequestId(
+    input: AgentQueuedTurnConversationScope & { clientRequestId: string },
+  ): Promise<AgentQueuedTurnRecord | null> {
+    const turn = await Turn()
+      .findOne({
+        ...conversationScope(input),
+        clientRequestId: requireBoundedString(input.clientRequestId, 128),
+      })
+      .lean<IAgentQueuedTurn>();
+    return turn == null ? null : toRecord(turn);
+  }
+
   async function cancelAgentQueuedTurn(
     input: AgentQueuedTurnOwnerScope & {
       queuedTurnId: string;
@@ -873,6 +888,7 @@ export function createAgentQueuedTurnMethods(
   return {
     ensureAgentQueuedTurnIndexes,
     enqueueAgentQueuedTurn,
+    getAgentQueuedTurnByClientRequestId,
     listActiveAgentQueuedTurns,
     findQueuedTurnsNeedingDelivery,
     markQueuedTurnScheduled,

@@ -1102,7 +1102,9 @@ router.post(
   moderateText,
   AgentQueuedTurnEnqueueController,
 );
-router.get('/chat/queued-turns', configMiddleware, ...steerLimiters, AgentQueuedTurnListController);
+/** Synchronizing durable queue state is read-only and polled while work is
+ * pending. It must not consume the model-submission admission budget. */
+router.get('/chat/queued-turns', configMiddleware, AgentQueuedTurnListController);
 router.delete(
   '/chat/queued-turns/:queuedTurnId',
   configMiddleware,

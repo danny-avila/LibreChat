@@ -25,6 +25,7 @@ import {
   useAgentQueuedTurns,
   useCancelAgentQueuedTurnMutation,
   useEnqueueAgentQueuedTurnMutation,
+  isDefiniteQueuedTurnRejection,
   isDefiniteQueuedTurnsUnsupported,
   supportsGenerationProtocolV2,
 } from '~/data-provider';
@@ -56,6 +57,10 @@ export interface QueuedMessageContext {
 
 /** Server-side cap on a usage touch (mirrors `FILES_USAGE_MAX_IDS`). */
 const QUEUE_USAGE_MAX_FILES = 10;
+/** Bound transport-outcome reconciliation while still guaranteeing several
+ * list reads after the enqueue promise settles. Focus/remount remains a later
+ * reconciliation path for exceptionally slow intermediaries. */
+const QUEUED_TURN_RECONCILIATION_MS = 60_000;
 
 type SteerErrorCode =
   | 'NO_ACTIVE_RUN'
@@ -232,7 +237,11 @@ function reconcileServerQueuedTurns(
     if (item.clientRequestId == null || observedClientRequestIds.has(item.clientRequestId)) {
       return false;
     }
-    return item.server.status === 'sending' || item.server.status === 'uncertain';
+    return (
+      item.server.status === 'sending' ||
+      item.server.status === 'uncertain' ||
+      item.server.status === 'rejected'
+    );
   });
   return [...retained, ...active].sort(compareQueuedMessages);
 }
@@ -305,8 +314,20 @@ export default function useSteering({
   /** v1 gates the during-run UI to the primary composer, like the HITL popover. */
   const enabled = steerable && index === 0;
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
+  const queuedMessages = useRecoilValue(store.queuedMessagesByConvoId(queueKey));
   const setQueuedMessages = useSetRecoilState(store.queuedMessagesByConvoId(queueKey));
-  const { data: serverQueuedTurns } = useAgentQueuedTurns(conversationId, serverQueueEnabled);
+  const reconciliationUntil = queuedMessages.reduce<number | undefined>((latest, item) => {
+    if (item.server?.status !== 'uncertain') {
+      return latest;
+    }
+    const until = item.createdAt + QUEUED_TURN_RECONCILIATION_MS;
+    return latest == null ? until : Math.max(latest, until);
+  }, undefined);
+  const { data: serverQueuedTurns } = useAgentQueuedTurns(
+    conversationId,
+    serverQueueEnabled,
+    reconciliationUntil,
+  );
   const activeGenerationCreatedAt = useRecoilValue(
     store.activeGenerationCreatedAtByConvoId(queueKey),
   );
@@ -772,23 +793,34 @@ export default function useSteering({
               },
               onError: (error) => {
                 updateQueuedMessage(item.id, (current) => {
-                  if (!isDefiniteQueuedTurnsUnsupported(error)) {
+                  if (isDefiniteQueuedTurnsUnsupported(error)) {
+                    const {
+                      server: _server,
+                      parentMessageId: _parentMessageId,
+                      clientRequestId: fallbackClientRequestId,
+                      ...legacy
+                    } = current;
+                    return {
+                      ...legacy,
+                      ...(!generatedClientRequestId && fallbackClientRequestId != null
+                        ? { clientRequestId: fallbackClientRequestId }
+                        : {}),
+                    };
+                  }
+                  if (!isDefiniteQueuedTurnRejection(error)) {
                     return {
                       ...current,
                       server: { ...current.server, status: 'uncertain' },
                     };
                   }
-                  const {
-                    server: _server,
-                    parentMessageId: _parentMessageId,
-                    clientRequestId: fallbackClientRequestId,
-                    ...legacy
-                  } = current;
+                  const code = getSteerErrorCode(error);
                   return {
-                    ...legacy,
-                    ...(!generatedClientRequestId && fallbackClientRequestId != null
-                      ? { clientRequestId: fallbackClientRequestId }
-                      : {}),
+                    ...current,
+                    server: {
+                      ...current.server,
+                      status: 'rejected',
+                      ...(code != null && { errorCode: code }),
+                    },
                   };
                 });
               },
@@ -1006,6 +1038,9 @@ export default function useSteering({
   const discardQueued = useCallback(
     async (item: QueuedMessage): Promise<boolean> => {
       if (item.server != null) {
+        if (item.server.status === 'rejected') {
+          return downgradeServerQueuedTurn(item.id);
+        }
         if (item.server.id == null || !hasRealConvoId) {
           showToast({
             message: localize('com_ui_steer_cancel_failed'),

@@ -91,9 +91,12 @@ function QueuedRow({
   const fileCount = message.files?.length ?? 0;
   const quoteCount = message.quotes?.length ?? 0;
   const isRecovered = message.recoverySteerId != null;
-  const requiresDiscard = isRecovered || message.server != null;
+  const requiresDiscard =
+    isRecovered || (message.server != null && message.server.status !== 'rejected');
   const serverActionable =
-    message.server == null || (message.server.id != null && message.server.status === 'queued');
+    message.server == null ||
+    message.server.status === 'rejected' ||
+    (message.server.id != null && message.server.status === 'queued');
   const actionPendingRef = useRef(false);
   const [actionPending, setActionPending] = useState(false);
   /** A recovered item has a replayable parked source. Edit/remove must first

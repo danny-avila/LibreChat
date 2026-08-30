@@ -25,6 +25,9 @@ const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
 const CLAIM_LEASE_MS = 2 * 60 * 1000;
 const DEFAULT_RECOVERY_INTERVAL_MS = 30_000;
 const DEFAULT_RECOVERY_LIMIT = 100;
+/** PID is commonly identical across container replicas. Keep claim ownership
+ * stable within this process while fencing every other process instance. */
+const PROCESS_CLAIM_OWNER = `agent-queued-turn:${process.pid}:${randomUUID()}`;
 
 interface GenerationState {
   status?: unknown;
@@ -194,7 +197,7 @@ export function createAgentQueuedTurnResolver({
   methods,
   getGenerationJob,
   now = Date.now,
-  claimBy = `agent-queued-turn:${process.pid}`,
+  claimBy = PROCESS_CLAIM_OWNER,
 }: AgentQueuedTurnResolverDeps): NonNullable<AgentTriggerExecutionHostDeps['prepareContinue']> {
   return async (envelope, context) => {
     const queuedTurnId = payloadQueuedTurnId(envelope);
@@ -216,7 +219,7 @@ export function createAgentQueuedTurnResolver({
         `Parent generation state is temporarily unavailable: ${
           error instanceof Error ? error.message : String(error)
         }`,
-        { code: 'PARENT_STATE_UNAVAILABLE', retryable: true },
+        { code: 'PARENT_STATE_UNAVAILABLE', retryable: true, deferWithoutAttempt: true },
       );
     }
     if (
@@ -273,11 +276,39 @@ export function createAgentQueuedTurnResolver({
     }
 
     const claim = claimed.claim;
-    const messages = await methods.getMessages(
-      { user: userId, conversationId: envelope.target.conversationId },
-      MESSAGE_SELECT,
-      { sort: { createdAt: 1, _id: 1 } },
-    );
+    let messages: IMessage[];
+    try {
+      messages = await methods.getMessages(
+        { user: userId, conversationId: envelope.target.conversationId },
+        MESSAGE_SELECT,
+        { sort: { createdAt: 1, _id: 1 } },
+      );
+    } catch (error) {
+      try {
+        await releaseClaim(methods, envelope, claim);
+      } catch (releaseError) {
+        throw executionError(
+          `The queued turn branch read failed and its claim could not be released: ${
+            releaseError instanceof Error ? releaseError.message : String(releaseError)
+          }`,
+          {
+            code: 'QUEUED_TURN_PREPARATION_RELEASE_FAILED',
+            retryable: true,
+            deferWithoutAttempt: true,
+          },
+        );
+      }
+      throw executionError(
+        `The queued turn branch is temporarily unavailable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        {
+          code: 'QUEUED_TURN_PREPARATION_UNAVAILABLE',
+          retryable: true,
+          deferWithoutAttempt: true,
+        },
+      );
+    }
     const parentMessageId = latestAssistantDescendant(messages, claim.parentMessageId);
     if (parentMessageId == null) {
       await deadClaim(
@@ -302,10 +333,7 @@ export function createAgentQueuedTurnResolver({
       ...(claim.quotes != null && { quotes: claim.quotes }),
       ...(claim.manualSkills != null && { manualSkills: claim.manualSkills }),
       releaseOnDefiniteFailure: async (error) => {
-        if (
-          error?.retryable === false ||
-          (error?.status != null && error.status >= 400 && error.status < 500)
-        ) {
+        if (error?.retryable === false) {
           await deadClaim(
             methods,
             envelope,
@@ -381,7 +409,10 @@ export function createAgentQueuedTurnScheduler({
 
   const schedule = async (turn: AgentQueuedTurnRecord): Promise<string> => {
     const receipt = await enqueue(deliveryEnvelope(turn), {
-      orderingKey: `agent-queued-turn:${turn.conversationId}`,
+      /** Queue sequence in Mongo is the sole conversation-ordering authority.
+       * A lane per durable row prevents a later published delivery from
+       * blocking recovery of an earlier record-first outbox row. */
+      orderingKey: `agent-queued-turn-delivery:${turn.queuedTurnId}`,
       requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
     });
     const marked = await runAsSystem(() =>

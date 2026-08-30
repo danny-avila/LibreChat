@@ -402,7 +402,8 @@ export type QueuedMessage = {
    * after an ambiguous POST could submit the same words twice. */
   server?: {
     id?: string;
-    status: 'sending' | 'uncertain' | 'queued' | 'claimed';
+    status: 'sending' | 'uncertain' | 'rejected' | 'queued' | 'claimed';
+    errorCode?: string;
     revision?: number;
   };
   /** Stable identity for server enqueue/retry. Recovered steer rows also use

@@ -95,6 +95,42 @@ function receipt(
   };
 }
 
+function sameStrings(left: readonly string[] | undefined, right: readonly string[] | undefined) {
+  const a = left ?? [];
+  const b = right ?? [];
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function uniqueStrings(values: readonly string[] | undefined): string[] | undefined {
+  return values == null ? undefined : [...new Set(values)];
+}
+
+function matchesReplayIntent(
+  turn: AgentQueuedTurnRecord,
+  input: {
+    parentMessageId: string;
+    clientRequestId: string;
+    files?: readonly TAgentQueuedTurnFileRef[];
+    manualSkills?: readonly string[];
+    expectedPredecessorCreatedAt?: number;
+  },
+  text: string,
+  quotes: readonly string[] | undefined,
+): boolean {
+  return (
+    turn.parentMessageId === input.parentMessageId &&
+    turn.clientRequestId === input.clientRequestId &&
+    turn.text === text &&
+    sameStrings(
+      turn.files?.map((file) => file.file_id),
+      uniqueStrings(input.files?.map((file) => file.file_id)),
+    ) &&
+    sameStrings(turn.quotes, quotes) &&
+    sameStrings(turn.manualSkills, uniqueStrings(input.manualSkills)) &&
+    turn.expectedPredecessorCreatedAt === input.expectedPredecessorCreatedAt
+  );
+}
+
 async function authorizeConversation(
   user: SteerRequestUser,
   conversationId: string,
@@ -219,6 +255,43 @@ export async function handleAgentQueuedTurnEnqueue(
   if (deps.isPrincipalActive != null && !(await deps.isPrincipalActive(user.id!))) {
     return { status: 409, body: { code: 'USER_DELETION_IN_PROGRESS' } };
   }
+  const quotes = getReferencedQuotes(input.quotes) ?? undefined;
+  /** Request identity is the durable receipt address. Resolve it before
+   * mutable conversation/agent/file preconditions so an accepted turn remains
+   * observable even if those resources change before a lost-response replay. */
+  const existing = await deps.methods.getAgentQueuedTurnByClientRequestId({
+    ...scope,
+    conversationId: input.conversationId,
+    clientRequestId: input.clientRequestId,
+  });
+  if (existing != null) {
+    if (!matchesReplayIntent(existing, input, text, quotes)) {
+      return { status: 409, body: { code: 'QUEUED_TURN_IDEMPOTENCY_CONFLICT' } };
+    }
+    if (existing.status !== 'queued' && existing.status !== 'claimed') {
+      return {
+        status: 200,
+        body: { receipt: receipt(existing), capability: CAPABILITY },
+      };
+    }
+    try {
+      await deps.scheduler.schedule(existing);
+    } catch {
+      return { status: 503, body: { code: 'QUEUED_TURN_SCHEDULING_PENDING' } };
+    }
+    const active = await deps.methods.listActiveAgentQueuedTurns({
+      ...scope,
+      conversationId: input.conversationId,
+    });
+    const position = active.findIndex((turn) => turn.queuedTurnId === existing.queuedTurnId);
+    return {
+      status: 202,
+      body: {
+        receipt: receipt(existing, position >= 0 ? position + 1 : undefined),
+        capability: CAPABILITY,
+      },
+    };
+  }
   const authorized = await authorizeConversation(user, input.conversationId, deps);
   if ('body' in authorized) {
     return authorized;
@@ -227,7 +300,6 @@ export async function handleAgentQueuedTurnEnqueue(
   if (resolvedFiles.error != null) {
     return resolvedFiles.error;
   }
-  const quotes = getReferencedQuotes(input.quotes) ?? undefined;
   try {
     const queued = await deps.methods.enqueueAgentQueuedTurn({
       ...scope,
@@ -244,6 +316,15 @@ export async function handleAgentQueuedTurnEnqueue(
         expectedPredecessorCreatedAt: input.expectedPredecessorCreatedAt,
       }),
     });
+    /** A same-body replay is the transport-independent receipt lookup. It can
+     * arrive after the original row already settled, in which case no new
+     * scheduling side effect is valid or necessary. */
+    if (queued.replayed && queued.turn.status !== 'queued' && queued.turn.status !== 'claimed') {
+      return {
+        status: 200,
+        body: { receipt: receipt(queued.turn), capability: CAPABILITY },
+      };
+    }
     try {
       await deps.scheduler.schedule(queued.turn);
     } catch {

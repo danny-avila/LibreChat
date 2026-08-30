@@ -19,7 +19,9 @@ import {
   cancelAgentQueuedTurn,
   enqueueAgentQueuedTurn,
   fetchAgentQueuedTurns,
+  isDefiniteQueuedTurnRejection,
   isDefiniteQueuedTurnsUnsupported,
+  shouldRetryAgentQueuedTurnEnqueue,
 } from '../queuedTurns';
 
 describe('Agent queued-turn data adapter', () => {
@@ -63,8 +65,21 @@ describe('Agent queued-turn data adapter', () => {
     expect(mockCancelAgentQueuedTurn).toHaveBeenCalledWith('queued/two');
   });
 
-  it.each([404, 501])('classifies %s as a definite old-server fallback', (status) => {
-    expect(isDefiniteQueuedTurnsUnsupported({ response: { status } })).toBe(true);
+  it('distinguishes an old route from an application-level 404', () => {
+    expect(isDefiniteQueuedTurnsUnsupported({ response: { status: 404 } })).toBe(true);
+    expect(
+      isDefiniteQueuedTurnsUnsupported({
+        response: { status: 404, data: { code: 'CONVERSATION_NOT_FOUND' } },
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps the explicit priority fallback on the legacy local path', () => {
+    expect(
+      isDefiniteQueuedTurnsUnsupported({
+        response: { status: 501, data: { code: 'QUEUED_TURN_PRIORITY_UNSUPPORTED' } },
+      }),
+    ).toBe(true);
   });
 
   it.each([400, 409, 500, undefined])(
@@ -74,4 +89,36 @@ describe('Agent queued-turn data adapter', () => {
       expect(isDefiniteQueuedTurnsUnsupported(error)).toBe(false);
     },
   );
+
+  it.each([400, 403, 409, 413, 429])(
+    'classifies %s as a definite non-commit rejection',
+    (status) => {
+      expect(isDefiniteQueuedTurnRejection({ response: { status } })).toBe(true);
+    },
+  );
+
+  it('classifies a coded conversation 404 as a definite rejection', () => {
+    expect(
+      isDefiniteQueuedTurnRejection({
+        response: { status: 404, data: { code: 'CONVERSATION_NOT_FOUND' } },
+      }),
+    ).toBe(true);
+  });
+
+  it.each([408, 425, 500, 503, undefined])(
+    'keeps %s outcome-ambiguous for request-id reconciliation',
+    (status) => {
+      const error = status == null ? new Error('network') : { response: { status } };
+      expect(isDefiniteQueuedTurnRejection(error)).toBe(false);
+    },
+  );
+
+  it('bounds same-request replay to ambiguous outcomes', () => {
+    const network = new Error('connection reset');
+    expect(shouldRetryAgentQueuedTurnEnqueue(0, network)).toBe(true);
+    expect(shouldRetryAgentQueuedTurnEnqueue(2, { response: { status: 503 } })).toBe(true);
+    expect(shouldRetryAgentQueuedTurnEnqueue(3, network)).toBe(false);
+    expect(shouldRetryAgentQueuedTurnEnqueue(0, { response: { status: 413 } })).toBe(false);
+    expect(shouldRetryAgentQueuedTurnEnqueue(0, { response: { status: 404 } })).toBe(false);
+  });
 });

@@ -2,11 +2,16 @@ import { Types } from 'mongoose';
 import type {
   AgentQueuedTurnClaim,
   AgentQueuedTurnMethods,
+  AgentQueuedTurnRecord,
   ConversationMethods,
   MessageMethods,
 } from '@librechat/data-schemas';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
-import { AGENT_QUEUED_TURN_SOURCE, createAgentQueuedTurnResolver } from './queuedTurns';
+import {
+  AGENT_QUEUED_TURN_SOURCE,
+  createAgentQueuedTurnResolver,
+  createAgentQueuedTurnScheduler,
+} from './queuedTurns';
 import { AgentTriggerExecutionError } from './triggers/host';
 
 const NOW = Date.parse('2026-08-30T12:00:00Z');
@@ -178,6 +183,141 @@ describe('Agent queued-turn continuation', () => {
         disposition: 'dead',
         failure: { code: 'FORBIDDEN', message: 'forbidden' },
       }),
+    );
+  });
+
+  it('releases a claim when admission defers with PARENT_NOT_READY', async () => {
+    const { methods, spies } = resolverMethods();
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+    const prepared = await resolve(envelope(), { idempotencyKey: 'trigger-1' });
+    if (prepared?.status !== 'ready') {
+      throw new Error('Expected a ready queued turn');
+    }
+    await prepared.releaseOnDefiniteFailure?.(
+      new AgentTriggerExecutionError('parent raced', {
+        mode: 'continue',
+        certainty: 'definite',
+        retryable: true,
+        deferWithoutAttempt: true,
+        status: 409,
+        code: 'PARENT_NOT_READY',
+      }),
+    );
+    expect(spies.releaseAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-1',
+        claimId: 'trigger-1',
+        claimBy: 'worker-1',
+        disposition: 'retry',
+      }),
+    );
+  });
+
+  it('releases an acquired claim when branch preparation is temporarily unavailable', async () => {
+    const { methods, spies } = resolverMethods();
+    spies.getMessages.mockRejectedValueOnce(new Error('read unavailable'));
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).rejects.toMatchObject({
+      code: 'QUEUED_TURN_PREPARATION_UNAVAILABLE',
+      retryable: true,
+      deferWithoutAttempt: true,
+    });
+    expect(spies.releaseAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-1',
+        claimId: 'trigger-1',
+        claimBy: 'worker-1',
+        disposition: 'retry',
+      }),
+    );
+  });
+
+  it('keeps a failed preparation release retryable under the same claim fence', async () => {
+    const { methods, spies } = resolverMethods();
+    spies.getMessages.mockRejectedValueOnce(new Error('read unavailable'));
+    spies.releaseAgentQueuedTurn.mockRejectedValueOnce(new Error('write unavailable'));
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).rejects.toMatchObject({
+      code: 'QUEUED_TURN_PREPARATION_RELEASE_FAILED',
+      retryable: true,
+      deferWithoutAttempt: true,
+    });
+  });
+
+  it('uses a replica-unique default claim owner that remains stable for the process', async () => {
+    const first = resolverMethods();
+    const second = resolverMethods();
+    const firstResolve = createAgentQueuedTurnResolver({
+      methods: first.methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+    });
+    const secondResolve = createAgentQueuedTurnResolver({
+      methods: second.methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+    });
+
+    await firstResolve(envelope(), { idempotencyKey: 'trigger-1' });
+    await secondResolve(envelope(), { idempotencyKey: 'trigger-1' });
+    const firstOwner = first.spies.claimNextAgentQueuedTurn.mock.calls[0][0].claimBy;
+    const secondOwner = second.spies.claimNextAgentQueuedTurn.mock.calls[0][0].claimBy;
+    expect(firstOwner).toMatch(/^agent-queued-turn:\d+:[0-9a-f-]{36}$/);
+    expect(secondOwner).toBe(firstOwner);
+  });
+});
+
+describe('Agent queued-turn delivery scheduling', () => {
+  function queuedTurn(id: string, sequence: number): AgentQueuedTurnRecord {
+    const { claimId: _claimId, claimBy: _claimBy, claimUntil: _claimUntil, ...record } = claim();
+    return {
+      ...record,
+      queuedTurnId: id,
+      sequence,
+      status: 'queued',
+    };
+  }
+
+  it('uses independent delivery lanes so publication order cannot invert queue order', async () => {
+    const enqueue = jest.fn(async () => ({ deliveryKey: 'delivery-key' }));
+    const markQueuedTurnScheduled = jest.fn(async (input) => ({
+      outcome: 'scheduled' as const,
+      turn: queuedTurn(input.queuedTurnId, 1),
+    }));
+    const scheduler = createAgentQueuedTurnScheduler({
+      methods: { markQueuedTurnScheduled } as unknown as AgentQueuedTurnMethods,
+      enqueue,
+    });
+
+    await scheduler.schedule(queuedTurn('queued-turn-2', 2));
+    await scheduler.schedule(queuedTurn('queued-turn-1', 1));
+
+    expect(enqueue).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ orderingKey: 'agent-queued-turn-delivery:queued-turn-2' }),
+    );
+    expect(enqueue).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ orderingKey: 'agent-queued-turn-delivery:queued-turn-1' }),
     );
   });
 });

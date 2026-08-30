@@ -27,6 +27,22 @@ jest.mock('~/data-provider', () => ({
   useCancelAgentQueuedTurnMutation: () => ({
     mutateAsync: mockCancelQueuedTurn,
   }),
+  isDefiniteQueuedTurnRejection: (error: unknown) => {
+    const response = (
+      error as { response?: { status?: unknown; data?: { code?: unknown } } } | undefined
+    )?.response;
+    const unsupported =
+      (response?.status === 404 && response.data?.code == null) ||
+      (response?.status === 501 && response.data?.code === 'QUEUED_TURN_PRIORITY_UNSUPPORTED');
+    return (
+      !unsupported &&
+      typeof response?.status === 'number' &&
+      response.status >= 400 &&
+      response.status < 500 &&
+      response.status !== 408 &&
+      response.status !== 425
+    );
+  },
   isDefiniteQueuedTurnsUnsupported: (error: unknown) => {
     const status = (error as { response?: { status?: unknown } } | undefined)?.response?.status;
     return status === 404 || status === 501;
@@ -333,6 +349,33 @@ describe('useSteering', () => {
           expect.stringMatching(UUID_V4_PATTERN),
         );
       });
+    });
+
+    it('keeps a definitely rejected enqueue non-drainable but explicitly actionable', async () => {
+      mockEnqueueQueuedTurn.mockImplementation((_input, options) => {
+        options.onError({ response: { status: 413, data: { code: 'TEXT_TOO_LARGE' } } });
+      });
+      const { result } = setupServerQueue();
+
+      await act(async () => {
+        result.current.steering.queueFromComposer('definitely rejected');
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(result.current.queue[0]).toMatchObject({
+          text: 'definitely rejected',
+          server: { status: 'rejected', errorCode: 'TEXT_TOO_LARGE' },
+        });
+      });
+
+      await act(async () => {
+        await expect(result.current.steering.discardQueued(result.current.queue[0])).resolves.toBe(
+          true,
+        );
+      });
+      expect(mockCancelQueuedTurn).not.toHaveBeenCalled();
+      expect(result.current.queue[0].server).toBeUndefined();
     });
 
     it('projects the authoritative server snapshot into Recoil', async () => {

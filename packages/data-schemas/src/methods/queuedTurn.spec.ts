@@ -129,6 +129,27 @@ describe('agent queued turn methods', () => {
     expect(await Turn.countDocuments()).toBe(1);
   });
 
+  it('looks up terminal receipts by owner-scoped request identity', async () => {
+    const created = await methods.enqueueAgentQueuedTurn(enqueueInput());
+
+    await expect(
+      methods.getAgentQueuedTurnByClientRequestId({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        clientRequestId: created.turn.clientRequestId,
+      }),
+    ).resolves.toMatchObject({ queuedTurnId: created.turn.queuedTurnId });
+    await expect(
+      methods.getAgentQueuedTurnByClientRequestId({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'another-conversation',
+        clientRequestId: created.turn.clientRequestId,
+      }),
+    ).resolves.toBeNull();
+  });
+
   it('allocates monotonic conversation sequences under concurrent enqueue', async () => {
     const results = await Promise.all(
       Array.from({ length: 8 }, (_, index) =>

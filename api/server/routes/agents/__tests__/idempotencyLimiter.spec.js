@@ -67,6 +67,11 @@ jest.mock('~/server/controllers/agents/steer', () => {
   controller.SteerArmController = (_req, _res, next) => next();
   return controller;
 });
+jest.mock('~/server/controllers/agents/queuedTurns', () => ({
+  AgentQueuedTurnEnqueueController: (_req, res) => res.status(202).json({ queued: true }),
+  AgentQueuedTurnListController: (_req, res) => res.status(200).json({ queuedTurns: [] }),
+  AgentQueuedTurnCancelController: (_req, res) => res.status(200).json({ cancelled: true }),
+}));
 jest.mock('~/models', () => ({}));
 jest.mock('~/server/services/Schedules', () => ({}));
 
@@ -148,6 +153,31 @@ describe('start-generation idempotency before message limiters', () => {
     expect(mockRetryProbeLimiter).not.toHaveBeenCalled();
     expect(mockRetryLimiter).not.toHaveBeenCalled();
     expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it('keeps read-only queued-turn polling outside message admission limiters', async () => {
+    const responses = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        request(app).get('/agents/chat/queued-turns').query({ conversationId: 'conversation-1' }),
+      ),
+    );
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    expect(responses[0].body).toEqual({ queuedTurns: [] });
+    expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['enqueue', () => request(app).post('/agents/chat/queued-turns').send({ text: 'next' })],
+    ['cancel', () => request(app).delete('/agents/chat/queued-turns/queued-turn-1')],
+  ])('keeps queued-turn %s mutations behind message admission limiters', async (_label, send) => {
+    const response = await send();
+
+    expect(response.status).toBe(429);
+    expect(response.body).toEqual({ limited: 'ip' });
+    expect(mockIpLimiter).toHaveBeenCalledTimes(1);
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 });
