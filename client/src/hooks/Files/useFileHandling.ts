@@ -514,18 +514,34 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       return withoutSource;
     })();
 
+    /** Drop duplicates one by one rather than rejecting everything picked alongside them, and hand
+     * the survivors to `validateFiles` so skipped files do not spend `fileLimit` slots. Sizes wait
+     * for the partition below, once processing has settled each file's final bytes. */
+    const selection = partitionUploads({
+      files: filesForValidation,
+      fileList,
+      endpointFileConfig,
+      skipSizeValidation: true,
+    });
+    /** Nothing survived, so the whole selection is rejected and the untouched list reports it
+     * through the usual checks in their usual order. */
+    const acceptedFileList =
+      selection.keptIndices.length > 0
+        ? selection.keptIndices.map((index) => fileList[index])
+        : fileList;
+
     /* Validate files */
     let filesAreValid: boolean;
     try {
       filesAreValid = validateFiles({
         files: filesForValidation,
-        fileList,
+        fileList: acceptedFileList,
         setError,
         fileConfig: currentFileConfig,
         endpointFileConfig,
         toolResource: _toolResource,
         skipSizeValidation: true,
-        skipDuplicateValidation: true,
+        skipDuplicateValidation: selection.keptIndices.length > 0,
       });
     } catch (error) {
       console.error('file validation error', error);
@@ -538,21 +554,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       return false;
     }
 
-    /** Drop duplicates one by one rather than rejecting everything picked alongside them. Sizes
-     * are left to the partition below, once processing has settled each file's final bytes. */
-    const selection = partitionUploads({
-      files: filesForValidation,
-      fileList,
-      endpointFileConfig,
-      skipSizeValidation: true,
-    });
-    if (selection.keptIndices.length === 0) {
-      validateFileDuplicates({ files: filesForValidation, fileList, setError });
-      setFilesLoading(false);
-      return false;
-    }
     reportSkippedUploads(selection.skipped, endpointFileConfig);
-    const acceptedFileList = selection.keptIndices.map((index) => fileList[index]);
 
     /* Process files */
     const processedUploads: ProcessedUpload[] = [];

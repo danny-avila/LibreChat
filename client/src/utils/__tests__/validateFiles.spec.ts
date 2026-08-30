@@ -21,6 +21,13 @@ function makeFile(name: string, type: string, size: number): File {
   return new File([content], name, { type });
 }
 
+/** Stands in for a file of any size without allocating its bytes, which only the size rules read. */
+function makeSizedFile(name: string, type: string, size: number): File {
+  const file = new File(['content'], name, { type });
+  Object.defineProperty(file, 'size', { value: size });
+  return file;
+}
+
 function makeExtendedFile(overrides: Partial<ExtendedFile> = {}): ExtendedFile {
   return {
     file_id: 'ext-1',
@@ -258,9 +265,9 @@ describe('partitionUploads', () => {
     const limit = 20 * megabyte;
     endpointFileConfig = makeEndpointConfig({ fileSizeLimit: limit });
     const fileList = [
-      makeFile('small.pdf', 'application/pdf', 1 * megabyte),
-      makeFile('huge.pdf', 'application/pdf', 21 * megabyte),
-      makeFile('medium.pdf', 'application/pdf', 5 * megabyte),
+      makeSizedFile('small.pdf', 'application/pdf', 1 * megabyte),
+      makeSizedFile('huge.pdf', 'application/pdf', 21 * megabyte),
+      makeSizedFile('medium.pdf', 'application/pdf', 5 * megabyte),
     ];
 
     const { keptIndices, skipped } = partitionUploads({ files, fileList, endpointFileConfig });
@@ -272,8 +279,8 @@ describe('partitionUploads', () => {
   it('skips every file when all of them are over the individual limit', () => {
     endpointFileConfig = makeEndpointConfig({ fileSizeLimit: 1 * megabyte });
     const fileList = [
-      makeFile('one.pdf', 'application/pdf', 2 * megabyte),
-      makeFile('two.pdf', 'application/pdf', 3 * megabyte),
+      makeSizedFile('one.pdf', 'application/pdf', 2 * megabyte),
+      makeSizedFile('two.pdf', 'application/pdf', 3 * megabyte),
     ];
 
     const { keptIndices, skipped } = partitionUploads({ files, fileList, endpointFileConfig });
@@ -295,8 +302,8 @@ describe('partitionUploads', () => {
       ],
     ]);
     const fileList = [
-      makeFile('report.pdf', 'application/pdf', 1024),
-      makeFile('notes.pdf', 'application/pdf', 2048),
+      makeSizedFile('report.pdf', 'application/pdf', 1024),
+      makeSizedFile('notes.pdf', 'application/pdf', 2048),
     ];
 
     const { keptIndices, skipped } = partitionUploads({ files, fileList, endpointFileConfig });
@@ -307,8 +314,8 @@ describe('partitionUploads', () => {
 
   it('skips a file repeated within the same selection and keeps the first copy', () => {
     const fileList = [
-      makeFile('report.pdf', 'application/pdf', 1024),
-      makeFile('report.pdf', 'application/pdf', 1024),
+      makeSizedFile('report.pdf', 'application/pdf', 1024),
+      makeSizedFile('report.pdf', 'application/pdf', 1024),
     ];
 
     const { keptIndices, skipped } = partitionUploads({ files, fileList, endpointFileConfig });
@@ -319,7 +326,7 @@ describe('partitionUploads', () => {
 
   it('leaves size checks alone when they are deferred until after transformation', () => {
     endpointFileConfig = makeEndpointConfig({ fileSizeLimit: 1 * megabyte });
-    const fileList = [makeFile('huge.pdf', 'application/pdf', 21 * megabyte)];
+    const fileList = [makeSizedFile('huge.pdf', 'application/pdf', 21 * megabyte)];
 
     const { keptIndices, skipped } = partitionUploads({
       files,
@@ -334,7 +341,7 @@ describe('partitionUploads', () => {
 
   it('keeps everything when no individual limit is configured', () => {
     endpointFileConfig = makeEndpointConfig({ fileSizeLimit: 0 });
-    const fileList = [makeFile('huge.pdf', 'application/pdf', 500 * megabyte)];
+    const fileList = [makeSizedFile('huge.pdf', 'application/pdf', 500 * megabyte)];
 
     const { keptIndices, skipped } = partitionUploads({ files, fileList, endpointFileConfig });
 
@@ -348,8 +355,8 @@ describe('partitionUploads', () => {
       totalSizeLimit: 7 * megabyte,
     });
     const fileList = [
-      makeFile('one.pdf', 'application/pdf', 4 * megabyte),
-      makeFile('two.pdf', 'application/pdf', 4 * megabyte),
+      makeSizedFile('one.pdf', 'application/pdf', 4 * megabyte),
+      makeSizedFile('two.pdf', 'application/pdf', 4 * megabyte),
     ];
 
     const { keptIndices, skipped } = partitionUploads({ files, fileList, endpointFileConfig });

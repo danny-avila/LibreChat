@@ -483,6 +483,43 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('counts only the files it will upload against the file limit', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileLimit: 2, fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('report.txt', 'text/plain', 1 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+
+        mockValidateFiles.mockClear();
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('report.txt', 'text/plain', 1 * megabyte),
+            makeSizedFile('notes.txt', 'text/plain', 2 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        /** The duplicate is dropped before the count check, so it never spends a slot. */
+        const [{ fileList: counted }] = mockValidateFiles.mock.calls[0];
+        expect(counted.map((file: File) => file.name)).toEqual(['notes.txt']);
+        expect(mockMutate).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('still applies the total size limit to the files left after a skip', async () => {
       jest.useFakeTimers();
       try {
