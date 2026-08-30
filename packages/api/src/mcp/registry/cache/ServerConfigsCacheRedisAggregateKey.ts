@@ -26,13 +26,83 @@ import { BaseRegistryCache } from './BaseRegistryCache';
  */
 const AGGREGATE_KEY = '__all__';
 
+/** Lua CJSON cannot distinguish decoded empty arrays from empty objects. Protect empty arrays
+ * with a collision-free string sentinel before decoding, then restore them after encoding. */
+const PRESERVE_EMPTY_ARRAYS = `
+local function emptyArraySentinel(...)
+  local sentinel = '__librechat_empty_array__'
+  while true do
+    local collision = false
+    for index = 1, select('#', ...) do
+      local json = select(index, ...)
+      if json and string.find(json, sentinel, 1, true) then
+        collision = true
+        break
+      end
+    end
+    if not collision then return sentinel end
+    sentinel = sentinel .. '_'
+  end
+end
+
+local function protectEmptyArrays(json, sentinel)
+  local output = {}
+  local inString = false
+  local escaped = false
+  local index = 1
+  while index <= #json do
+    local character = string.sub(json, index, index)
+    if inString then
+      table.insert(output, character)
+      if escaped then
+        escaped = false
+      elseif string.byte(character) == 92 then
+        escaped = true
+      elseif character == '"' then
+        inString = false
+      end
+      index = index + 1
+    elseif character == '"' then
+      inString = true
+      table.insert(output, character)
+      index = index + 1
+    elseif character == '[' then
+      local closeIndex = index + 1
+      while closeIndex <= #json do
+        local candidate = string.sub(json, closeIndex, closeIndex)
+        if not string.find(' \\t\\r\\n', candidate, 1, true) then break end
+        closeIndex = closeIndex + 1
+      end
+      if string.sub(json, closeIndex, closeIndex) == ']' then
+        table.insert(output, '"' .. sentinel .. '"')
+        index = closeIndex + 1
+      else
+        table.insert(output, character)
+        index = index + 1
+      end
+    else
+      table.insert(output, character)
+      index = index + 1
+    end
+  end
+  return table.concat(output)
+end
+
+local function restoreEmptyArrays(json, sentinel)
+  local restored = string.gsub(json, '"' .. sentinel .. '"', '[]')
+  return restored
+end
+`;
+
 const MUTATE_AGGREGATE_ENTRY = `
+${PRESERVE_EMPTY_ARRAYS}
 local operation = ARGV[1]
 local serverName = ARGV[2]
 local encoded = redis.call('GET', KEYS[1])
+local sentinel = emptyArraySentinel(encoded, ARGV[3])
 local envelope
 if encoded then
-  envelope = cjson.decode(encoded)
+  envelope = cjson.decode(protectEmptyArrays(encoded, sentinel))
 else
   envelope = { value = {} }
 end
@@ -44,11 +114,11 @@ local ttl = redis.call('PTTL', KEYS[1])
 if operation == 'remove' then
   envelope.value[serverName] = nil
 else
-  local config = cjson.decode(ARGV[3])
+  local config = cjson.decode(protectEmptyArrays(ARGV[3], sentinel))
   config.updatedAt = tonumber(ARGV[4])
   envelope.value[serverName] = config
 end
-redis.call('SET', KEYS[1], cjson.encode(envelope))
+redis.call('SET', KEYS[1], restoreEmptyArrays(cjson.encode(envelope), sentinel))
 if ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
 return 1
 `;
@@ -56,18 +126,20 @@ return 1
 /** Keyv stores its serialized value in an envelope with a `value` member. This script
  * updates that envelope atomically and preserves a configured Redis expiration. */
 const PATCH_AGGREGATE_ENTRY = `
+${PRESERVE_EMPTY_ARRAYS}
 local encoded = redis.call('GET', KEYS[1])
 if not encoded then return 0 end
-local envelope = cjson.decode(encoded)
+local sentinel = emptyArraySentinel(encoded, ARGV[2])
+local envelope = cjson.decode(protectEmptyArrays(encoded, sentinel))
 if not envelope.value then return 0 end
 local entry = envelope.value[ARGV[1]]
 if not entry then return 0 end
-local fields = cjson.decode(ARGV[2])
+local fields = cjson.decode(protectEmptyArrays(ARGV[2], sentinel))
 if ARGV[3] ~= '' and tonumber(ARGV[3]) ~= entry.updatedAt then return 0 end
 if fields.resolvedInstructions and entry.resolvedInstructions then return 0 end
 local ttl = redis.call('PTTL', KEYS[1])
 for field, value in pairs(fields) do entry[field] = value end
-redis.call('SET', KEYS[1], cjson.encode(envelope))
+redis.call('SET', KEYS[1], restoreEmptyArrays(cjson.encode(envelope), sentinel))
 if ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
 return 1
 `;

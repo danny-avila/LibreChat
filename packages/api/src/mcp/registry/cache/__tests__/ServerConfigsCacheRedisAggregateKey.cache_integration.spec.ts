@@ -283,6 +283,22 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
         expect(result[updatedName].description).toBe(`updated-${i}`);
       }
     });
+
+    it('preserves empty arrays through every Redis-side mutation path', async () => {
+      const emptyArgsConfig = { ...mockConfig1, args: [] } as ParsedServerConfig;
+
+      await cache.add('empty-arrays', emptyArgsConfig);
+      expect((await cache.get('empty-arrays'))?.args).toEqual([]);
+
+      await cache.patch('empty-arrays', { resolvedInstructions: 'patched' });
+      expect((await cache.get('empty-arrays'))?.args).toEqual([]);
+
+      await cache.update('empty-arrays', { ...mockConfig2, args: [] } as ParsedServerConfig);
+      expect((await cache.get('empty-arrays'))?.args).toEqual([]);
+
+      await cache.upsert('empty-arrays', { ...mockConfig3, args: [] } as ParsedServerConfig);
+      expect((await cache.get('empty-arrays'))?.args).toEqual([]);
+    });
   });
 
   describe('reset operation', () => {
