@@ -12,6 +12,13 @@ import {
 
 const CODE_VALUE = 'librechat-bridge-persisted';
 
+interface PairingResponse {
+  environmentId: string;
+  workerId: string;
+  code: string;
+  expiresAt: string;
+}
+
 test.describe('attached stateful code environment', () => {
   test.skip(!process.env.E2E_CODE_BRIDGE_URL, 'E2E_CODE_BRIDGE_URL is required');
 
@@ -26,6 +33,21 @@ test.describe('attached stateful code environment', () => {
 
     try {
       const token = await getAccessToken(page);
+      if (process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN) {
+        const pairing = await requestJson<PairingResponse>(page, {
+          path: '/api/admin/code-environments/e2e-vm/pairings',
+          token,
+          method: 'POST',
+        });
+        expect(pairing).toMatchObject({
+          environmentId: 'e2e-vm',
+          workerId: 'e2e-vm',
+          code: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/),
+          expiresAt: expect.any(String),
+        });
+        expect(pairing).not.toHaveProperty('token');
+        expect(Number.isFinite(Date.parse(pairing.expiresAt))).toBe(true);
+      }
       const agent = await requestJson<AgentDetail>(page, {
         path: '/api/agents',
         token,

@@ -220,6 +220,57 @@ describe('createEndpointsConfigService', () => {
       });
     });
 
+    it('exposes pairing availability without leaking server enrollment metadata', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              [EModelEndpoint.agents]: {
+                statefulCodeSessions: {
+                  allowedEnvironments: ['conversation'],
+                  environments: [
+                    {
+                      id: 'attached-vm',
+                      name: 'Attached VM',
+                      type: 'attached',
+                      baseURL: 'https://bridge.example.com/v1',
+                      default: true,
+                      owner: 'deployment',
+                      pairing: {
+                        workerId: 'vm-1',
+                        tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          }),
+        ),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+      const result = await getEndpointsConfig(fakeReq());
+
+      expect(result?.[EModelEndpoint.agents]?.statefulCodeSessions).toEqual({
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            owner: 'deployment',
+            pairingAvailable: true,
+          },
+        ],
+      });
+    });
+
     it('merges bedrock availableRegions', async () => {
       const deps = createMockDeps({
         loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({

@@ -76,11 +76,12 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
         ? {
             allowedEnvironments: statefulCodeSessions.allowedEnvironments,
             environments: statefulCodeSessions.environments?.map(
-              ({ id, name, type, default: isDefault }) => ({
+              ({ id, name, type, default: isDefault, pairing }) => ({
                 id,
                 name,
                 type,
                 default: isDefault,
+                pairingAvailable: pairing != null,
               }),
             ),
           }

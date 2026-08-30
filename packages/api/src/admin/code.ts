@@ -1,0 +1,186 @@
+import { EModelEndpoint } from 'librechat-data-provider';
+
+import type { AppConfig } from '@librechat/data-schemas';
+import type { Response } from 'express';
+import type { GetAppConfigOptions } from '~/app/service';
+import type { ServerRequest } from '~/types/http';
+
+import { getAppConfigOptionsFromUser } from '~/app/service';
+
+const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
+
+type AgentsEndpointConfig = NonNullable<AppConfig['endpoints']>[EModelEndpoint.agents];
+type StatefulCodeSessionsConfig = NonNullable<
+  NonNullable<AgentsEndpointConfig>['statefulCodeSessions']
+>;
+type ConfiguredCodeEnvironment = StatefulCodeSessionsConfig['environments'][number];
+
+interface CodePairingResponse {
+  protocolVersion: number;
+  workerId: string;
+  code: string;
+  expiresAt: string;
+}
+
+export interface AdminCodeEnvironmentDeps {
+  getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
+  readSecret?: (name: string) => string | undefined;
+  fetchImpl?: typeof fetch;
+}
+
+function environmentId(req: ServerRequest): string {
+  const params = req.params as { environmentId?: string };
+  return params.environmentId?.trim() ?? '';
+}
+
+function findEnvironment(appConfig: AppConfig, id: string): ConfiguredCodeEnvironment | undefined {
+  return appConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments?.find(
+    (environment) => environment.id === id,
+  );
+}
+
+function pairingConfig(environment: ConfiguredCodeEnvironment):
+  | {
+      workerId: string;
+      tokenEnv: string;
+    }
+  | undefined {
+  if (environment.type !== 'attached' || environment.owner !== 'deployment') {
+    return undefined;
+  }
+  return environment.pairing;
+}
+
+function bridgeUrl(environment: ConfiguredCodeEnvironment, path: string): string {
+  return `${environment.baseURL.replace(/\/+$/, '')}${path}`;
+}
+
+function validPairingResponse(value: unknown, workerId: string): value is CodePairingResponse {
+  if (typeof value !== 'object' || value == null) return false;
+  const response = value as Partial<CodePairingResponse>;
+  return (
+    response.protocolVersion === 1 &&
+    response.workerId === workerId &&
+    typeof response.code === 'string' &&
+    response.code.length >= 16 &&
+    typeof response.expiresAt === 'string' &&
+    Number.isFinite(Date.parse(response.expiresAt))
+  );
+}
+
+export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDeps): {
+  createPairing: (req: ServerRequest, res: Response) => Promise<Response>;
+  revokeWorker: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const readSecret = deps.readSecret ?? ((name: string) => process.env[name]);
+
+  async function resolve(
+    req: ServerRequest,
+    res: Response,
+  ): Promise<
+    | {
+        id: string;
+        environment: ConfiguredCodeEnvironment;
+        pairing: { workerId: string; tokenEnv: string };
+        token: string;
+      }
+    | Response
+  > {
+    const id = environmentId(req);
+    const appConfig =
+      req.config ?? (await deps.getAppConfig(getAppConfigOptionsFromUser(req.user)));
+    const environment = findEnvironment(appConfig, id);
+    if (environment == null) {
+      return res.status(404).json({ error: 'Code environment was not found' });
+    }
+    const pairing = pairingConfig(environment);
+    if (pairing == null) {
+      return res.status(409).json({ error: 'Code environment does not support pairing' });
+    }
+    const token = readSecret(pairing.tokenEnv)?.trim();
+    if (!token) {
+      return res.status(503).json({ error: 'Code environment pairing is not configured' });
+    }
+    return { id, environment, pairing, token };
+  }
+
+  async function createPairing(req: ServerRequest, res: Response): Promise<Response> {
+    const resolved = await resolve(req, res);
+    if ('statusCode' in resolved) return resolved;
+    try {
+      const response = await fetchImpl(bridgeUrl(resolved.environment, '/bridge/pairings'), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resolved.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ workerId: resolved.pairing.workerId }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(CODE_BRIDGE_REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        return res.status(502).json({
+          error: 'Code API rejected the pairing request',
+          upstreamStatus: response.status,
+        });
+      }
+      const payload = (await response.json()) as unknown;
+      if (!validPairingResponse(payload, resolved.pairing.workerId)) {
+        return res.status(502).json({ error: 'Code API returned an invalid pairing response' });
+      }
+      return res.status(200).json({
+        environmentId: resolved.id,
+        workerId: payload.workerId,
+        code: payload.code,
+        expiresAt: payload.expiresAt,
+      });
+    } catch (error) {
+      const timedOut = error instanceof Error && error.name === 'TimeoutError';
+      return res.status(timedOut ? 504 : 502).json({
+        error: timedOut ? 'Code API pairing request timed out' : 'Code API pairing request failed',
+      });
+    }
+  }
+
+  async function revokeWorker(req: ServerRequest, res: Response): Promise<Response> {
+    const resolved = await resolve(req, res);
+    if ('statusCode' in resolved) return resolved;
+    try {
+      const workerId = encodeURIComponent(resolved.pairing.workerId);
+      const response = await fetchImpl(
+        bridgeUrl(resolved.environment, `/bridge/workers/${workerId}/revoke`),
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resolved.token}`,
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+          redirect: 'error',
+          signal: AbortSignal.timeout(CODE_BRIDGE_REQUEST_TIMEOUT_MS),
+        },
+      );
+      if (!response.ok) {
+        return res.status(502).json({
+          error: 'Code API rejected the revocation request',
+          upstreamStatus: response.status,
+        });
+      }
+      return res.status(200).json({
+        environmentId: resolved.id,
+        workerId: resolved.pairing.workerId,
+        revoked: true,
+      });
+    } catch (error) {
+      const timedOut = error instanceof Error && error.name === 'TimeoutError';
+      return res.status(timedOut ? 504 : 502).json({
+        error: timedOut
+          ? 'Code API revocation request timed out'
+          : 'Code API revocation request failed',
+      });
+    }
+  }
+
+  return { createPairing, revokeWorker };
+}
