@@ -2,13 +2,13 @@ import { nanoid } from 'nanoid';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import type { GetAppConfigOptions } from '~/app/service';
-import type { ServerRequest } from '~/types/http';
 import type {
   CodeEnvironmentPrincipalContext,
   CodeEnvironmentRegistration,
   CodeEnvironmentSummary,
 } from './environments';
+import type { GetAppConfigOptions } from '~/app/service';
+import type { ServerRequest } from '~/types/http';
 
 type Registry = {
   register: (params: {
@@ -73,9 +73,10 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (principal == null) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const body = req.body as unknown as Record<string, unknown>;
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
     const controlPlaneId =
-      typeof req.body?.controlPlaneId === 'string' ? req.body.controlPlaneId.trim() : '';
+      typeof body.controlPlaneId === 'string' ? body.controlPlaneId.trim() : '';
     if (!name || !controlPlaneId) {
       return res.status(400).json({
         error: 'name and controlPlaneId are required',

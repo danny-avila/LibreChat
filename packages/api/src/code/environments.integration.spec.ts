@@ -65,6 +65,7 @@ describe('code environment registry', () => {
         name: "Danny's VM",
         type: 'attached',
         baseURL: 'https://code.example.com',
+        owner: 'principal',
       },
     ]);
   });

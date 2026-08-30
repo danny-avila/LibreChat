@@ -1084,9 +1084,9 @@ export const agentsEndpointSchema = baseEndpointSchema
                 type: z.enum(['managed', 'attached']),
                 baseURL: codeEnvironmentBaseURLSchema,
                 default: z.boolean().optional(),
-                /** Ownership is explicit even though the first pairing control
-                 * plane supports deployment-owned workers only. */
-                owner: z.literal('deployment').optional().default('deployment'),
+                /** Distinguishes operator policy from a principal-authorized
+                 * environment merged into request-scoped server config. */
+                owner: z.enum(['deployment', 'principal']).optional().default('deployment'),
                 /** Server-only enrollment metadata. `tokenEnv` names an
                  * environment variable and never contains the token itself. */
                 pairing: z
@@ -1108,6 +1108,13 @@ export const agentsEndpointSchema = baseEndpointSchema
               context.addIssue({
                 code: z.ZodIssueCode.custom,
                 message: 'Only attached code environments may configure pairing',
+                path: ['environments', environment.id, 'pairing'],
+              });
+            }
+            if (environment.pairing != null && environment.owner !== 'deployment') {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Only deployment-owned code environments may configure pairing',
                 path: ['environments', environment.id, 'pairing'],
               });
             }

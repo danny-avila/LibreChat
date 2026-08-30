@@ -1,5 +1,5 @@
-import type { AppConfig } from '@librechat/data-schemas';
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { mergeAccessibleCodeEnvironments } from './config';
 
 describe('mergeAccessibleCodeEnvironments', () => {
@@ -27,12 +27,14 @@ describe('mergeAccessibleCodeEnvironments', () => {
         name: 'Personal VM',
         type: 'attached',
         baseURL: 'https://personal.example',
+        owner: 'principal',
       },
       {
         id: 'deployment-vm',
         name: 'Shadow Attempt',
         type: 'attached',
         baseURL: 'https://shadow.example',
+        owner: 'principal',
       },
     ]);
 
