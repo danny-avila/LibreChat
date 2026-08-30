@@ -225,6 +225,21 @@ describe('UserConnectionManager.backfillResolvedInstructions', () => {
     expect(debug).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['user', { source: 'user' as const, dbId: 'server-1' }],
+    ['plugin', { source: 'plugin' as const }],
+    ['config', { source: 'config' as const }],
+  ])('does not reach the registry for a %s-tier server', async (_label, overrides) => {
+    await backfill({ ...startupDeferredYamlEntry, ...overrides }, connectionWith(INSTRUCTIONS));
+    expect(setResolvedInstructions).not.toHaveBeenCalled();
+  });
+
+  it('still backfills when the stored config carries no source stamp', async () => {
+    const { source: _source, ...unstamped } = startupDeferredYamlEntry;
+    await backfill(unstamped as t.ParsedServerConfig, connectionWith(INSTRUCTIONS));
+    expect(setResolvedInstructions).toHaveBeenCalledWith('deferred_server', INSTRUCTIONS, 'user-1');
+  });
+
   it('skips connections that advertise no instructions', async () => {
     await backfill({ ...startupDeferredYamlEntry }, connectionWith(undefined));
     expect(setResolvedInstructions).not.toHaveBeenCalled();

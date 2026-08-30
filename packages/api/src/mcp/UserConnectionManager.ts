@@ -784,6 +784,13 @@ export abstract class UserConnectionManager {
       if (!config || !isEnabled(config.serverInstructions)) {
         return;
       }
+      /** Only the YAML tier is writable here, and a config-overlay, user, or plugin
+       *  server would otherwise spend a cache round-trip per connection to rediscover
+       *  that. An unset source is left to proceed: it predates per-tier stamping and
+       *  the registry still resolves it by name. */
+      if (isUserSourced(config) || isPluginSourced(config) || config.source === 'config') {
+        return;
+      }
       const instructions = connection.client.getInstructions();
       if (!instructions) {
         return;
