@@ -285,7 +285,7 @@ beforeEach(async () => {
 });
 
 describe('SubagentThreadTaskStore', () => {
-  it('records the host-selected automatic delivery contract only when wakeups are enabled', () => {
+  it('records the automatic delivery contract without hiding routed store operations', async () => {
     const store = new SubagentThreadTaskStore(methods);
     const scope = { userId: 'delivery-user', parentConversationId: randomUUID() };
     const pollOnly = buildSubagentThreadTaskConfig(store, scope);
@@ -298,6 +298,11 @@ describe('SubagentThreadTaskStore', () => {
     expect(pollOnly.completionDelivery).toBeUndefined();
     expect(automatic.store).toBe(automaticAgain.store);
     expect(automatic.completionDelivery).toBe(SUBAGENT_COMPLETION_DELIVERY);
+    const automaticStore = automatic.store as SubagentThreadTaskStore;
+    expect(automaticStore.claimTask).toEqual(expect.any(Function));
+    expect(automaticStore.controlTask).toEqual(expect.any(Function));
+    await expect(automaticStore.hasTasks(automatic.scopeId)).resolves.toBe(false);
+    await expect(automaticStore.listTasks(automatic.scopeId)).resolves.toEqual([]);
   });
 
   it('maps one logical SDK thread to a durable, view-only LibreChat conversation', async () => {

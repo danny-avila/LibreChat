@@ -44,7 +44,7 @@ export function createAgentEventContinueResolver({
 }: AgentEventContinueResolverDeps): ContinueResolver {
   return async (
     envelope: AgentContinueTriggerEnvelope,
-    context: AgentTriggerDispatchContext,
+    _context: AgentTriggerDispatchContext,
   ): Promise<AgentTriggerContinuePreparation | undefined> => {
     const { bindingId, sourceKeyId } = envelope.target;
     if (bindingId == null || sourceKeyId == null) {

@@ -3424,14 +3424,17 @@ export function createSubagentThreadTaskStore(
   return new SubagentThreadTaskStore(methods, options);
 }
 
-const completionWakeupStores = new WeakMap<SubagentThreadTaskStore, SubagentTaskStore>();
+type CompletionWakeupStore = SubagentTaskStore &
+  Pick<SubagentThreadTaskStore, 'claimTask' | 'controlTask' | 'hasTasks' | 'listTasks'>;
 
-function completionWakeupStore(store: SubagentThreadTaskStore): SubagentTaskStore {
+const completionWakeupStores = new WeakMap<SubagentThreadTaskStore, CompletionWakeupStore>();
+
+function completionWakeupStore(store: SubagentThreadTaskStore): CompletionWakeupStore {
   const existing = completionWakeupStores.get(store);
   if (existing != null) {
     return existing;
   }
-  const adapter: SubagentTaskStore = {
+  const adapter: CompletionWakeupStore = {
     supportsThreadContinuation: store.supportsThreadContinuation,
     start: (request) => {
       const hostRequest: HostSubagentTaskStartRequest = {
@@ -3444,6 +3447,11 @@ function completionWakeupStore(store: SubagentThreadTaskStore): SubagentTaskStor
     list: (scopeId) => store.list(scopeId),
     claim: (scopeId, taskId) => store.claim(scopeId, taskId),
     control: (scopeId, taskId, command) => store.control(scopeId, taskId, command),
+    claimTask: (scopeId, taskId, invocationId) => store.claimTask(scopeId, taskId, invocationId),
+    controlTask: (scopeId, taskId, command, invocationId) =>
+      store.controlTask(scopeId, taskId, command, invocationId),
+    hasTasks: (scopeId) => store.hasTasks(scopeId),
+    listTasks: (scopeId) => store.listTasks(scopeId),
   };
   completionWakeupStores.set(store, adapter);
   return adapter;
