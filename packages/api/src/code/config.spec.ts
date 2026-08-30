@@ -22,7 +22,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
           },
         },
       },
-    } as AppConfig;
+    } as unknown as AppConfig;
     const listAccessibleConfigurations = jest.fn().mockResolvedValue([
       {
         id: 'personal-vm',
@@ -66,7 +66,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
           },
         },
       },
-    } as AppConfig;
+    } as unknown as AppConfig;
     const listAccessibleConfigurations = jest.fn().mockResolvedValue([
       {
         id: 'personal-vm',

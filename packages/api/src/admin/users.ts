@@ -47,6 +47,7 @@ export interface AdminUsersDeps {
    */
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
   deleteUserCodeEnvironments: (userId: string | Types.ObjectId) => Promise<number>;
+  invalidateCodeEnvironmentConfigCache: (tenantId?: string) => Promise<void>;
   deleteConfig: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -73,6 +74,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
     purgeAgentTriggerDeliveriesForUser,
     deleteUserById,
     deleteUserCodeEnvironments,
+    invalidateCodeEnvironmentConfigCache,
     deleteConfig,
     deleteAclEntries,
   } = deps;
@@ -224,6 +226,9 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
           logger.error('[adminUsers] cascade cleanup failed for user:', id, r.reason);
         }
       }
+      await invalidateCodeEnvironmentConfigCache(targetUser?.tenantId).catch((error: unknown) => {
+        logger.error('[adminUsers] code environment cache invalidation failed:', id, error);
+      });
 
       return res.status(200).json({ message: result.message || 'User deleted successfully' });
     } catch (error) {

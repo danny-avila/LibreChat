@@ -33,7 +33,7 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
 jest.mock('~/server/middleware', () => ({ requireJwtAuth: mockRequireJwtAuth }));
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
-  clearOverrideCache: jest.fn(),
+  getCodeEnvironmentRegistry: jest.fn(() => mockRegistry),
 }));
 
 function createApp() {

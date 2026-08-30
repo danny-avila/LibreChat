@@ -20,6 +20,7 @@ const {
   searchEntraIdPrincipals,
 } = require('~/server/services/GraphApiService');
 const db = require('~/models');
+const { invalidateCodeEnvironmentConfigCache } = require('~/server/services/Config');
 
 const matchesCurrentTenant = (principal, tenantId) => {
   if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
@@ -156,6 +157,10 @@ const updateResourcePermissions = async (req, res) => {
       revokedPrincipals,
       grantedBy: userId,
     });
+
+    if (resourceType === ResourceType.CODE_ENVIRONMENT) {
+      await invalidateCodeEnvironmentConfigCache(req.user.tenantId);
+    }
 
     const isAgentResource =
       resourceType === ResourceType.AGENT || resourceType === ResourceType.REMOTE_AGENT;

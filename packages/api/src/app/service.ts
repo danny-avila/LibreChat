@@ -59,7 +59,7 @@ export interface AppConfigServiceDeps {
     role?: string | null;
     idOnTheSource?: string | null;
   }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
-  /** Add principal-scoped runtime configuration before the merged config is cached. */
+  /** Add mutable principal-scoped runtime configuration after cached overrides are resolved. */
   augmentConfig?: (context: {
     appConfig: AppConfig;
     principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>;
@@ -221,14 +221,6 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return baseConfig;
     }
 
-    const cacheKey = overrideCacheKey(role, userId, tenantId);
-    if (!refresh) {
-      const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
-      if (cachedMerged) {
-        return cachedMerged;
-      }
-    }
-
     const principals = await buildPrincipals(role, userId, idOnTheSource).catch(
       (error: unknown) => {
         logger.error('[getAppConfig] Error building principals, falling back to base:', error);
@@ -256,6 +248,24 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       );
     }
 
+    const augment = async (appConfig: AppConfig): Promise<AppConfig> => {
+      if (augmentConfig == null) return appConfig;
+      try {
+        return await augmentConfig({ appConfig, principals, options });
+      } catch (error) {
+        logger.error('[getAppConfig] Error augmenting principal config:', error);
+        return appConfig;
+      }
+    };
+
+    const cacheKey = overrideCacheKey(role, userId, tenantId);
+    if (!refresh) {
+      const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
+      if (cachedMerged) {
+        return await augment(cachedMerged);
+      }
+    }
+
     let merged = baseConfig;
     try {
       const configs = await getApplicableConfigs(principals);
@@ -267,17 +277,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return baseConfig;
     }
 
-    if (augmentConfig != null) {
-      try {
-        merged = await augmentConfig({ appConfig: merged, principals, options });
-      } catch (error) {
-        logger.error('[getAppConfig] Error augmenting principal config:', error);
-        return merged;
-      }
-    }
-
     await cache.set(cacheKey, merged, overrideCacheTtl);
-    return merged;
+    return await augment(merged);
   }
 
   /**

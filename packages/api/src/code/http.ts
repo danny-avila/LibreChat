@@ -30,7 +30,6 @@ export interface CodeEnvironmentHttpDeps {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
   registry: Registry;
   createEnvironmentId?: () => string;
-  clearOverrideCache?: (tenantId?: string) => Promise<void>;
 }
 
 function actor(req: ServerRequest): CodeEnvironmentPrincipalContext | null {
@@ -107,9 +106,6 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           controlPlaneId,
           workerId: controlPlane.pairing?.workerId,
         },
-      });
-      await deps.clearOverrideCache?.(req.user?.tenantId).catch((error: unknown) => {
-        logger.warn('[codeEnvironments] config cache invalidation failed:', error);
       });
       return res.status(201).json({ environment });
     } catch (error) {

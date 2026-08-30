@@ -5,6 +5,17 @@ import { AccessRoleIds, PrincipalType, ResourceType } from 'librechat-data-provi
 import { AccessControlService } from '~/acl/accessControlService';
 import { createCodeEnvironmentRegistry } from './environments';
 
+function createSharedCache() {
+  const values = new Map<string, unknown>();
+  return {
+    get: jest.fn(async (key: string) => values.get(key)),
+    set: jest.fn(async (key: string, value: unknown) => {
+      values.set(key, value);
+      return true;
+    }),
+  };
+}
+
 describe('code environment registry', () => {
   let mongoServer: MongoMemoryServer;
 
@@ -155,6 +166,98 @@ describe('code environment registry', () => {
         resourceType: ResourceType.CODE_ENVIRONMENT,
         resourceId: environment.resourceId,
       }),
+    ).resolves.toBe(0);
+  });
+
+  test('invalidates shared configuration caches after registration', async () => {
+    const cache = createSharedCache();
+    const firstWorker = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const secondWorker = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const ownerId = new Types.ObjectId();
+    const actor = { userId: ownerId, role: 'USER', idOnTheSource: null };
+
+    await expect(firstWorker.listAccessibleConfigurations(actor)).resolves.toEqual([]);
+    await secondWorker.register({
+      actor,
+      environment: {
+        id: 'shared-cache-vm',
+        name: 'Shared cache VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+
+    await expect(firstWorker.listAccessibleConfigurations(actor)).resolves.toEqual([
+      expect.objectContaining({ id: 'shared-cache-vm' }),
+    ]);
+  });
+
+  test('invalidates shared configuration caches after ACL revocation', async () => {
+    const cache = createSharedCache();
+    const registry = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const ownerId = new Types.ObjectId();
+    const teammateId = new Types.ObjectId();
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'revoked-vm',
+        name: 'Revoked VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    const access = new AccessControlService(mongoose);
+    await access.grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: teammateId,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment.resourceId,
+      accessRoleId: AccessRoleIds.CODE_ENVIRONMENT_VIEWER,
+      grantedBy: ownerId,
+    });
+    const teammate = { userId: teammateId, role: 'USER', idOnTheSource: null };
+    await expect(registry.listAccessibleConfigurations(teammate)).resolves.toHaveLength(1);
+
+    await mongoose.models.AclEntry.deleteMany({
+      principalType: PrincipalType.USER,
+      principalId: teammateId,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment.resourceId,
+    });
+    await registry.invalidateAccessibleConfigurations();
+
+    await expect(registry.listAccessibleConfigurations(teammate)).resolves.toEqual([]);
+  });
+
+  test('rolls registration back when shared cache invalidation fails', async () => {
+    const registry = createCodeEnvironmentRegistry(mongoose, {
+      configurationCache: {
+        get: jest.fn(),
+        set: jest.fn().mockRejectedValue(new Error('redis unavailable')),
+      },
+    });
+    const ownerId = new Types.ObjectId();
+
+    await expect(
+      registry.register({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environment: {
+          id: 'rolled-back-vm',
+          name: 'Rolled Back VM',
+          type: 'attached',
+          baseURL: 'https://code.example.com',
+          controlPlaneId: 'shared-code-api',
+        },
+      }),
+    ).rejects.toThrow('redis unavailable');
+
+    await expect(
+      mongoose.models.CodeEnvironment.countDocuments({ environmentId: 'rolled-back-vm' }),
+    ).resolves.toBe(0);
+    await expect(
+      mongoose.models.AclEntry.countDocuments({ resourceType: ResourceType.CODE_ENVIRONMENT }),
     ).resolves.toBe(0);
   });
 });

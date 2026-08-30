@@ -464,7 +464,7 @@ describe('createAppConfigService', () => {
       });
     });
 
-    it('caches principal config augmentation with the already-resolved principals', async () => {
+    it('re-runs mutable principal config augmentation without rebuilding cached overrides', async () => {
       const augmentConfig = jest.fn(async ({ appConfig, principals }) => ({
         ...appConfig,
         principalCount: principals.length,
@@ -477,9 +477,9 @@ describe('createAppConfigService', () => {
 
       expect(first).toEqual(expect.objectContaining({ principalCount: 2 }));
       expect(second).toEqual(expect.objectContaining({ principalCount: 2 }));
-      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(1);
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(2);
       expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
-      expect(augmentConfig).toHaveBeenCalledTimes(1);
+      expect(augmentConfig).toHaveBeenCalledTimes(2);
       expect(augmentConfig).toHaveBeenCalledWith(
         expect.objectContaining({
           principals: [
@@ -511,7 +511,7 @@ describe('createAppConfigService', () => {
       await getAppConfig({ role: 'USER', userId: 'uid1', idOnTheSource: null });
       await getAppConfig({ role: 'USER', userId: 'uid1', idOnTheSource: 'source-user-1' });
 
-      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(1);
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(2);
       expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
       expect([...deps._cache._store.keys()]).toEqual(
         expect.arrayContaining(['app_config:_OVERRIDE_:__default__:USER:uid1']),

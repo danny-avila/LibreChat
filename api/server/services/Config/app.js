@@ -6,6 +6,8 @@ const {
   clearMcpConfigCache,
   createCodeEnvironmentRegistry,
   mergeAccessibleCodeEnvironments,
+  cacheConfig,
+  standardCache,
 } = require('@librechat/api');
 const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
@@ -14,7 +16,22 @@ const getLogStores = require('~/cache/getLogStores');
 const paths = require('~/config/paths');
 const db = require('~/models');
 
-const codeEnvironmentRegistry = createCodeEnvironmentRegistry(mongoose);
+let codeEnvironmentRegistry;
+
+function getCodeEnvironmentRegistry() {
+  if (codeEnvironmentRegistry == null) {
+    codeEnvironmentRegistry = createCodeEnvironmentRegistry(mongoose, {
+      configurationCache: cacheConfig.USE_REDIS
+        ? standardCache('CODE_ENVIRONMENT_CONFIG')
+        : undefined,
+    });
+  }
+  return codeEnvironmentRegistry;
+}
+
+async function invalidateCodeEnvironmentConfigCache(tenantId) {
+  await getCodeEnvironmentRegistry().invalidateAccessibleConfigurations(tenantId);
+}
 
 const loadBaseConfig = async () => {
   /** @type {TCustomConfig} */
@@ -45,7 +62,7 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
         idOnTheSource: options.idOnTheSource ?? null,
         principals,
       },
-      registry: codeEnvironmentRegistry,
+      registry: getCodeEnvironmentRegistry(),
     });
   },
 });
@@ -81,4 +98,6 @@ module.exports = {
   clearAppConfigCache,
   clearOverrideCache,
   invalidateConfigCaches,
+  getCodeEnvironmentRegistry,
+  invalidateCodeEnvironmentConfigCache,
 };

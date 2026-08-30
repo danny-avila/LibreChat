@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { Types } from 'mongoose';
-import { createMethods } from '@librechat/data-schemas';
+import { createMethods, getTenantId, logger } from '@librechat/data-schemas';
 import {
   AccessRoleIds,
   PermissionBits,
@@ -44,6 +45,19 @@ export type AccessibleCodeEnvironmentConfiguration = {
 
 const ENVIRONMENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const CONFIGURATION_CACHE_TTL_MS = 5_000;
+const CONFIGURATION_CACHE_REVISION_PREFIX = 'revision';
+const CONFIGURATION_CACHE_USER_PREFIX = 'user';
+
+type CodeEnvironmentConfigurationCache = {
+  get: (key: string) => Promise<unknown>;
+  set: (key: string, value: unknown, ttl?: number) => Promise<unknown>;
+};
+
+type CodeEnvironmentRegistryOptions = {
+  /** Shared cache only. Omit this dependency when Redis is unavailable so ACL reads stay live. */
+  configurationCache?: CodeEnvironmentConfigurationCache;
+};
 
 export class CodeEnvironmentValidationError extends Error {
   constructor(message: string) {
@@ -92,7 +106,10 @@ function toSummary(environment: {
   };
 }
 
-export function createCodeEnvironmentRegistry(mongoose: typeof import('mongoose')): {
+export function createCodeEnvironmentRegistry(
+  mongoose: typeof import('mongoose'),
+  options: CodeEnvironmentRegistryOptions = {},
+): {
   register: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environment: CodeEnvironmentRegistration;
@@ -101,9 +118,24 @@ export function createCodeEnvironmentRegistry(mongoose: typeof import('mongoose'
   listAccessibleConfigurations: (
     actor: CodeEnvironmentPrincipalContext,
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
+  invalidateAccessibleConfigurations: (tenantId?: string) => Promise<void>;
 } {
   const methods = createMethods(mongoose);
   const access = new AccessControlService(mongoose);
+  const configurationCache = options.configurationCache;
+
+  function tenantCacheKey(tenantId?: string): string {
+    return encodeURIComponent(tenantId ?? getTenantId() ?? '__default__');
+  }
+
+  function revisionKey(tenantId?: string): string {
+    return `${CONFIGURATION_CACHE_REVISION_PREFIX}:${tenantCacheKey(tenantId)}`;
+  }
+
+  async function invalidateAccessibleConfigurations(tenantId?: string): Promise<void> {
+    if (configurationCache == null) return;
+    await configurationCache.set(revisionKey(tenantId), randomUUID());
+  }
 
   async function register({
     actor,
@@ -134,9 +166,22 @@ export function createCodeEnvironmentRegistry(mongoose: typeof import('mongoose'
       if (permission == null) {
         throw new Error('Unable to grant code environment ownership');
       }
-      return toSummary(created);
+      const summary = toSummary(created);
+      await invalidateAccessibleConfigurations();
+      return summary;
     } catch (error) {
-      await methods.deleteCodeEnvironmentById(created._id);
+      const cleanup = await Promise.allSettled([
+        access.removeAllPermissions({
+          resourceType: ResourceType.CODE_ENVIRONMENT,
+          resourceId: created._id,
+        }),
+        methods.deleteCodeEnvironmentById(created._id),
+      ]);
+      for (const result of cleanup) {
+        if (result.status === 'rejected') {
+          logger.error('[codeEnvironments] registration rollback failed:', result.reason);
+        }
+      }
       throw error;
     }
   }
@@ -161,16 +206,40 @@ export function createCodeEnvironmentRegistry(mongoose: typeof import('mongoose'
   async function listAccessibleConfigurations(
     actor: CodeEnvironmentPrincipalContext,
   ): Promise<AccessibleCodeEnvironmentConfiguration[]> {
-    const environments = await findAccessible(actor);
-    return environments.map((environment) => ({
-      id: environment.environmentId,
-      name: environment.name,
-      type: environment.type,
-      baseURL: environment.baseURL,
-      controlPlaneId: environment.controlPlaneId,
-      owner: 'principal',
-    }));
+    const load = async (): Promise<AccessibleCodeEnvironmentConfiguration[]> => {
+      const environments = await findAccessible(actor);
+      return environments.map((environment) => ({
+        id: environment.environmentId,
+        name: environment.name,
+        type: environment.type,
+        baseURL: environment.baseURL,
+        controlPlaneId: environment.controlPlaneId,
+        owner: 'principal',
+      }));
+    };
+    if (configurationCache == null) return await load();
+
+    const tenant = tenantCacheKey();
+    const revision = String((await configurationCache.get(revisionKey())) ?? '0');
+    const key = `${CONFIGURATION_CACHE_USER_PREFIX}:${tenant}:${actor.userId.toString()}:${revision}`;
+    const cached = await configurationCache.get(key);
+    if (Array.isArray(cached)) {
+      return cached as AccessibleCodeEnvironmentConfiguration[];
+    }
+
+    const configurations = await load();
+    const currentRevision = String((await configurationCache.get(revisionKey())) ?? '0');
+    if (currentRevision !== revision) {
+      return await listAccessibleConfigurations(actor);
+    }
+    await configurationCache.set(key, configurations, CONFIGURATION_CACHE_TTL_MS);
+    return configurations;
   }
 
-  return { register, listAccessible, listAccessibleConfigurations };
+  return {
+    register,
+    listAccessible,
+    listAccessibleConfigurations,
+    invalidateAccessibleConfigurations,
+  };
 }
