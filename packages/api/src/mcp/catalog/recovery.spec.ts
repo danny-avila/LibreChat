@@ -234,31 +234,35 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     formatServerTools: jest.fn().mockReturnValue({}),
   });
 
-  it('bounds each connection attempt the factory makes', async () => {
+  it('bounds each server discovery end to end rather than per attempt', async () => {
     const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const before = Date.now();
 
     await recoverMCPServerCatalogs(
       { user, servers: [{ serverName: 'slow', serverConfig: serverConfig('slow') }] },
       recoveryDeps(discoverServerTools),
     );
 
-    expect(discoverServerTools).toHaveBeenCalledWith(
-      expect.objectContaining({ serverName: 'slow', connectionTimeout: 1500 }),
-    );
+    const [options] = discoverServerTools.mock.calls[0];
+    expect(options.serverName).toBe('slow');
+    expect(options.connectionTimeout).toBeUndefined();
+    expect(options.deadlineMs).toBeGreaterThanOrEqual(before + 3000);
+    expect(options.deadlineMs).toBeLessThanOrEqual(Date.now() + 3000);
   });
 
   it('keeps a shorter configured initTimeout instead of raising it to the cap', async () => {
     const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
     const impatient = { ...serverConfig('impatient'), initTimeout: 900 } as ParsedServerConfig;
+    const before = Date.now();
 
     await recoverMCPServerCatalogs(
       { user, servers: [{ serverName: 'impatient', serverConfig: impatient }] },
       recoveryDeps(discoverServerTools),
     );
 
-    expect(discoverServerTools).toHaveBeenCalledWith(
-      expect.objectContaining({ connectionTimeout: 900 }),
-    );
+    const [options] = discoverServerTools.mock.calls[0];
+    expect(options.deadlineMs).toBeGreaterThanOrEqual(before + 900);
+    expect(options.deadlineMs).toBeLessThanOrEqual(Date.now() + 900);
   });
 
   it('leaves a server the config tier marked unreachable to that tier’s retry window', async () => {

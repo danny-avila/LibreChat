@@ -350,6 +350,7 @@ export class MCPManager extends UserConnectionManager {
         requestBody: args.requestBody,
         graphTokenResolver: args.graphTokenResolver,
         connectionTimeout: args.connectionTimeout,
+        deadlineMs: args.deadlineMs,
       });
       return finalizeDiscoveryResult(result);
     }
@@ -370,6 +371,7 @@ export class MCPManager extends UserConnectionManager {
       requestBody: args.requestBody,
       graphTokenResolver: args.graphTokenResolver,
       connectionTimeout: args.connectionTimeout,
+      deadlineMs: args.deadlineMs,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,

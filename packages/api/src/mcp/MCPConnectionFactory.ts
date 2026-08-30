@@ -73,6 +73,7 @@ export class MCPConnectionFactory {
   protected oauthEnd?: () => Promise<void>;
   protected returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
+  protected readonly deadlineMs?: number;
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected readonly upstreamTokenProvider?: UpstreamTokenProvider;
@@ -219,7 +220,7 @@ export class MCPConnectionFactory {
       connection.once('oauthRequired', oauthHandler);
 
       try {
-        const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+        const connectTimeout = this.resolveConnectTimeout(30000);
         await withTimeout(
           connection.connect(),
           connectTimeout,
@@ -227,7 +228,7 @@ export class MCPConnectionFactory {
         );
 
         if (await connection.isConnected()) {
-          const snapshot = await connection.fetchOrderedToolsSnapshot();
+          const snapshot = await connection.fetchOrderedToolsSnapshot(this.deadlineMs);
           connection.removeListener('oauthRequired', oauthHandler);
           return {
             tools: snapshot.complete ? snapshot.tools : null,
@@ -242,24 +243,29 @@ export class MCPConnectionFactory {
           `${this.logPrefix} [Discovery] Connection failed, attempting unauthenticated tool listing`,
         );
       }
+
+      /** The authenticated attempt is done with, but `withTimeout` does not cancel the `connect()`
+       *  it gave up on — that socket stays open. Dispose before the fallback opens a second one so
+       *  a single discovery never holds two concurrent connects to the same server. */
+      connection.removeListener('oauthRequired', oauthHandler);
+      await this.disposeQuietly(connection);
+      connection = null;
+      oauthHandler = null;
+    }
+
+    if (this.isPastDeadline()) {
+      logger.debug(
+        `${this.logPrefix} [Discovery] Budget exhausted; skipping unauthenticated tool listing`,
+      );
+      return { tools: null, connection: null, oauthRequired, oauthUrl };
     }
 
     try {
       const tools = await this.attemptUnauthenticatedToolListing();
-      if (connection && oauthHandler) {
-        connection.removeListener('oauthRequired', oauthHandler);
-      }
       if (tools && tools.length > 0) {
         logger.info(
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
         );
-        if (connection) {
-          try {
-            await connection.dispose();
-          } catch {
-            // Ignore cleanup errors
-          }
-        }
         return { tools, connection: null, oauthRequired, oauthUrl };
       }
       MCPConnection.decrementCycleCount(this.serverName);
@@ -268,19 +274,28 @@ export class MCPConnectionFactory {
       logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed`);
     }
 
-    if (connection && oauthHandler) {
-      connection.removeListener('oauthRequired', oauthHandler);
-    }
-
-    if (connection) {
-      try {
-        await connection.dispose();
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
-
     return { tools: null, connection: null, oauthRequired, oauthUrl };
+  }
+
+  /** Clamps a single `connect()` to whatever remains of the caller's overall discovery budget. */
+  private resolveConnectTimeout(fallback: number): number {
+    const configured = this.connectionTimeout ?? this.serverConfig.initTimeout ?? fallback;
+    if (this.deadlineMs == null) {
+      return configured;
+    }
+    return Math.max(1, Math.min(configured, this.deadlineMs - Date.now()));
+  }
+
+  private isPastDeadline(): boolean {
+    return this.deadlineMs != null && Date.now() >= this.deadlineMs;
+  }
+
+  private async disposeQuietly(connection: MCPConnection): Promise<void> {
+    try {
+      await connection.dispose();
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 
   protected async attemptUnauthenticatedToolListing(): Promise<Tool[] | null> {
@@ -305,23 +320,19 @@ export class MCPConnectionFactory {
     });
 
     try {
-      const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 15000;
+      const connectTimeout = this.resolveConnectTimeout(15000);
       await withTimeout(unauthConnection.connect(), connectTimeout, `Unauth connection timeout`);
 
       if (await unauthConnection.isConnected()) {
-        const snapshot = await unauthConnection.fetchOrderedToolsSnapshot();
-        await unauthConnection.dispose();
+        const snapshot = await unauthConnection.fetchOrderedToolsSnapshot(this.deadlineMs);
+        await this.disposeQuietly(unauthConnection);
         return snapshot.complete ? snapshot.tools : null;
       }
     } catch {
       logger.debug(`${this.logPrefix} [Discovery] Unauthenticated connection attempt failed`);
     }
 
-    try {
-      await unauthConnection.dispose();
-    } catch {
-      // Ignore cleanup errors
-    }
+    await this.disposeQuietly(unauthConnection);
 
     return null;
   }
@@ -345,6 +356,7 @@ export class MCPConnectionFactory {
     this.allowedAddresses = basic.allowedAddresses;
     this.ephemeralConnection = basic.ephemeralConnection === true;
     this.connectionTimeout = options?.connectionTimeout;
+    this.deadlineMs = options?.deadlineMs;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
     this.logPrefix = options?.user ? `[MCP][User: ${options.user.id}]` : '[MCP]';

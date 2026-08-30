@@ -2348,8 +2348,12 @@ export class MCPConnection extends EventEmitter {
    * Fetches a bounded tool snapshot while preserving whether every requested page succeeded.
    * Notification refreshes use `complete` to avoid replacing a known-good cache with an empty or
    * partial list after a transient `tools/list` failure.
+   *
+   * @param deadlineMs Absolute epoch-ms cap for a caller working to a fixed budget. Pagination
+   * stops at whichever comes first, this or `TOOLS_LIST_TIMEOUT_MS`, and the partial result is
+   * returned as incomplete so it is never published as an authoritative catalog.
    */
-  public async fetchToolsSnapshot(): Promise<MCPToolsSnapshot> {
+  public async fetchToolsSnapshot(deadlineMs?: number): Promise<MCPToolsSnapshot> {
     const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
     const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
     const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;
@@ -2357,7 +2361,8 @@ export class MCPConnection extends EventEmitter {
      * from a `tools/list` that started later. Every app-level publisher reads its ordering off
      * the snapshot it received, which is the only way to know when the data was actually read. */
     const ordering = await this.reserveToolsPublicationRevision();
-    const deadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
+    const budgetDeadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
+    const deadline = deadlineMs != null ? Math.min(budgetDeadline, deadlineMs) : budgetDeadline;
     const allTools: MCPListToolsResult['tools'] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
@@ -2467,11 +2472,14 @@ export class MCPConnection extends EventEmitter {
    * Returns a complete snapshot that cannot precede a concurrent `list_changed` refresh.
    * If the notification refresh cannot complete, the caller receives an incomplete snapshot
    * instead of publishing a request result that may already be stale.
+   *
+   * @param deadlineMs Absolute epoch-ms cap; see `fetchToolsSnapshot`. It also bounds the wait
+   * for a concurrent refresh, so a caller on a budget is never held by another caller's fetch.
    */
-  public async fetchOrderedToolsSnapshot(): Promise<MCPToolsSnapshot> {
+  public async fetchOrderedToolsSnapshot(deadlineMs?: number): Promise<MCPToolsSnapshot> {
     const startEpoch = this.toolListRefreshEpoch;
     const startGeneration = this.toolListChangeGeneration;
-    const snapshot = await this.fetchToolsSnapshot();
+    const snapshot = await this.fetchToolsSnapshot(deadlineMs);
 
     if (
       startEpoch === this.toolListRefreshEpoch &&
@@ -2484,6 +2492,9 @@ export class MCPConnection extends EventEmitter {
       startEpoch === this.toolListRefreshEpoch &&
       this.handledToolListChangeGeneration < this.toolListChangeGeneration
     ) {
+      if (deadlineMs != null && Date.now() >= deadlineMs) {
+        break;
+      }
       this.startToolListRefresh();
       const refresh = this.toolListRefreshPromise;
       if (!refresh) {

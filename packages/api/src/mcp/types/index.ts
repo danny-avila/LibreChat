@@ -227,6 +227,10 @@ export interface UserConnectionContext {
   requestScopedConnections?: RequestScopedMCPConnectionStore;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Absolute epoch-ms bound on the whole connect-and-list operation. `connectionTimeout` bounds
+   *  only a single `connect()`, so a caller that must return within a fixed budget sets this to
+   *  cap every segment, including `tools/list` pagination and the unauthenticated fallback. */
+  deadlineMs?: number;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -284,6 +288,8 @@ export interface ToolDiscoveryOptions {
   requestBody?: RequestBody;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Absolute epoch-ms bound on the whole discovery operation; see `UserConnectionContext`. */
+  deadlineMs?: number;
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;

@@ -10,18 +10,12 @@ import { getServerCustomUserVars } from '../auth';
  *  `tools/list`, so they burst as readily as passive discovery does. */
 const CATALOG_FANOUT_CONCURRENCY = 3;
 /**
- * Bounds `connection.connect()` only — it is the sole segment of discovery a caller can bound
- * today. It does NOT bound the whole operation: `discoverToolsInternal` spends this value once
- * per connection attempt (authenticated, then unauthenticated), and `fetchToolsSnapshot` then
- * applies its own `TOOLS_LIST_TIMEOUT_MS` (30s) to `tools/list`. A server that connects quickly
- * and stalls while listing therefore still holds its slot for that longer window.
- *
- * Bounding discovery end to end needs a deadline threaded through `MCPConnectionFactory` into
- * both `connect()` and `fetchToolsSnapshot()`; until that exists, this keeps the common
- * unreachable case cheap, because recovery targets a server that is reachable and authorized but
- * whose catalog cache expired, and such a server connects well inside this window.
+ * Bounds one server's discovery end to end — connect, `tools/list` pagination, and the
+ * unauthenticated fallback all draw down this single budget, so a slot is held for at most this
+ * long regardless of where the server stalls. Recovery targets a server that is reachable and
+ * authorized but whose catalog cache expired, and such a server answers well inside this window.
  */
-const RECOVERY_ATTEMPT_TIMEOUT_MS = 1500;
+const RECOVERY_BUDGET_MS = 3000;
 
 export interface MCPServerCatalogRecoveryInput {
   serverName: string;
@@ -73,13 +67,13 @@ interface RecoveryCandidate extends MCPServerCatalogRecoveryInput {
   customUserVars?: Record<string, string>;
 }
 
-/** Bounds one connection attempt, honouring a shorter operator `initTimeout`. */
-function resolveAttemptTimeout(serverConfig: ParsedServerConfig): number {
+/** Bounds one server's discovery, honouring a shorter operator `initTimeout`. */
+function resolveBudget(serverConfig: ParsedServerConfig): number {
   const { initTimeout } = serverConfig;
   if (typeof initTimeout === 'number') {
-    return Math.min(initTimeout, RECOVERY_ATTEMPT_TIMEOUT_MS);
+    return Math.min(initTimeout, RECOVERY_BUDGET_MS);
   }
-  return RECOVERY_ATTEMPT_TIMEOUT_MS;
+  return RECOVERY_BUDGET_MS;
 }
 
 async function discoverCandidate(
@@ -93,7 +87,7 @@ async function discoverCandidate(
       serverName,
       configServers: { [serverName]: serverConfig },
       customUserVars,
-      connectionTimeout: resolveAttemptTimeout(serverConfig),
+      deadlineMs: Date.now() + resolveBudget(serverConfig),
     });
     return [
       serverName,
@@ -112,7 +106,7 @@ async function discoverCandidate(
  * and is disposed, and the tool cache refuses unfenced writes, so the result is served only to
  * the requesting user. Recovery therefore stays stateless and individually cheap rather than
  * scheduling around a result it is not allowed to keep — it skips only what configuration alone
- * proves pointless, and fails fast on everything else.
+ * proves pointless, and bounds everything else by a per-server budget.
  */
 export async function recoverMCPServerCatalogs(
   params: { user: IUser; servers: readonly MCPServerCatalogRecoveryInput[] },
