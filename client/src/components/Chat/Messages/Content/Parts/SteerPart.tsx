@@ -29,6 +29,7 @@ const SteerPart = memo(function SteerPart({
   quotes,
   steerId,
   createdAt,
+  isSubmitting = false,
 }: {
   steer: string;
   files?: TMessage['files'];
@@ -38,6 +39,10 @@ const SteerPart = memo(function SteerPart({
   /** Anchors the part for the message-nav rail (`#steer-<id>` rib target). */
   steerId?: string;
   createdAt?: number;
+  /** The owning response is still generating: the receipt keeps its amber
+   *  steering identity while it is the live thing at the end, then settles
+   *  to timestamp gray (always settled on reload, share, and search). */
+  isSubmitting?: boolean;
 }) {
   const localize = useLocalize();
   /** Read the atom rather than the auth context: AuthContextProvider mirrors the
@@ -151,7 +156,7 @@ const SteerPart = memo(function SteerPart({
           </CollapsibleText>
         </div>
         <div className="mt-1 flex min-h-8 items-center justify-end text-text-secondary">
-          <SteerReceipt state="applied" animateIn={animateIn} />
+          <SteerReceipt state="applied" live={isSubmitting} animateIn={animateIn} />
           <MessageTimestamp value={timestamp} />
         </div>
       </div>

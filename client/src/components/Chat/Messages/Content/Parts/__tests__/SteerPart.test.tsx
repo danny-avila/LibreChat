@@ -260,3 +260,25 @@ describe('SteerPart live receipt draw-in', () => {
     expect(screen.getByTestId('live-ids').textContent).toBe('');
   });
 });
+
+describe('SteerPart receipt settling', () => {
+  const checks = () => screen.getByLabelText('com_ui_steer_applied_info').querySelector('svg');
+
+  it('keeps the amber identity while the owning response is still generating', () => {
+    render(
+      <RecoilRoot initializeState={({ set }) => set(store.user, SEEDED_USER as never)}>
+        <SteerPart steer="steered words" steerId="s1" createdAt={1} isSubmitting />
+      </RecoilRoot>,
+    );
+    expect(checks()).toHaveClass('dark:text-amber-500');
+    expect(checks()).not.toHaveClass('text-text-secondary');
+  });
+
+  it('settles to timestamp gray once the response is done, and on reload/share', () => {
+    // The default (no isSubmitting) is the settled, reload, share, and search
+    // rendering: still a double check, no longer lit.
+    renderPart();
+    expect(checks()).toHaveClass('text-text-secondary');
+    expect(checks()).not.toHaveClass('dark:text-amber-500');
+  });
+});

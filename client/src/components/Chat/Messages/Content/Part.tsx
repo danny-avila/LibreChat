@@ -84,6 +84,7 @@ const Part = memo(function Part({
         quotes={part.quotes}
         steerId={part.steerId}
         createdAt={part.createdAt}
+        isSubmitting={isSubmitting}
       />
     );
   }
