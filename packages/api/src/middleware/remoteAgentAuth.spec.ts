@@ -228,6 +228,7 @@ function makeDeps(appConfig: AppConfig = makeConfig()) {
     getRolesByNames: jest.fn(async (roleNames: string[]) =>
       roleNames.map((roleName) => ({ name: roleName })),
     ),
+    isPrincipalActive: jest.fn().mockResolvedValue(true),
     getAppConfig: jest.fn().mockResolvedValue(appConfig),
     apiKeyMiddleware: jest.fn((_req: unknown, _res: unknown, next: () => void) => next()),
   };
@@ -483,6 +484,24 @@ describe('createRemoteAgentAuth', () => {
       );
       expect(mockNext).toHaveBeenCalledWith();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('rejects an OIDC principal while account deletion is fenced', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp: 9999999999 });
+      const deps = makeDeps();
+      deps.isPrincipalActive.mockResolvedValue(false);
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(asDeps(deps))(req as Request, res, mockNext);
+
+      expect(status).toHaveBeenCalledWith(409);
+      expect(json).toHaveBeenCalledWith({
+        error: 'Account deletion is in progress',
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('restores tenant context from the OIDC user before continuing', async () => {

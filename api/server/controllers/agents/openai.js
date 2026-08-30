@@ -60,6 +60,8 @@ const {
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
   stripActivityLabelParts,
+  enrollAgentExecution,
+  waitForAgentExecutionWrites,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -345,18 +347,40 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     `[OpenAI API] Response ${responseId} started for agent ${agentId}, stream: ${request.stream}`,
   );
 
-  // Set up abort controller
-  const abortController = new AbortController();
-
-  // Handle client disconnect
-  req.on('close', () => {
-    if (!abortController.signal.aborted) {
-      abortController.abort();
+  const conversationId = request.conversation_id ?? nanoid();
+  let execution;
+  let executionError;
+  let responseClosed = res.destroyed === true && res.writableEnded !== true;
+  /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
+  const artifactPromises = [];
+  let artifactWritesCovered = false;
+  const abortOnResponseClose = () => {
+    if (res.writableEnded === true) {
+      return;
+    }
+    responseClosed = true;
+    if (execution && !execution.signal.aborted) {
+      execution.abort();
       logger.debug('[OpenAI API] Client disconnected, aborting');
     }
-  });
-
+  };
+  res.once('close', abortOnResponseClose);
   try {
+    execution = await enrollAgentExecution({
+      runId: responseId,
+      userId: principal.userId,
+      conversationId,
+      agentId,
+      protocol: 'chat.completions',
+      /** Conversation delete-all uses the shared owner-admission fence. Remote
+       * execution must observe it after durable enrollment and before provider work. */
+      isPrincipalActive: db.isSubagentOwnerAdmissible,
+    });
+    if (responseClosed || (res.destroyed === true && res.writableEnded !== true)) {
+      execution.abort();
+    }
+    await execution.beginProviderExecution();
+
     if (request.conversation_id != null) {
       if (typeof request.conversation_id !== 'string') {
         return sendErrorResponse(
@@ -371,7 +395,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       }
     }
 
-    const conversationId = request.conversation_id ?? nanoid();
     const parentMessageId = request.parent_message_id ?? null;
     let mcpParentMessageId;
     if (typeof request.parent_message_id === 'string' && request.parent_message_id.trim() !== '') {
@@ -389,7 +412,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     const allowedProviders = new Set(agentsEConfig?.allowedProviders);
 
     // Create tool loader
-    const loadTools = createToolLoader(abortController.signal);
+    const loadTools = createToolLoader(execution.signal);
 
     // Initialize the agent first to check for disableStreaming
     const endpointOption = {
@@ -683,9 +706,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       : null;
 
     const collectedUsage = [];
-    /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
-    const artifactPromises = [];
-
     const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
     /* Stable for the turn: the primary prime list is fixed once
@@ -706,7 +726,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           requestBody: mcpRequestBody,
           toolNames,
           agent: ctx.agent ?? agent,
-          signal: abortController.signal,
+          signal: execution.signal,
           toolRegistry: ctx.toolRegistry,
           callerCapabilityProjection,
           backgroundToolNames: ctx.backgroundToolNames,
@@ -988,7 +1008,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       runId: responseId,
       summarizationConfig,
       appConfig,
-      signal: abortController.signal,
+      signal: execution.signal,
       customHandlers: handlers,
       requestBody: mcpRequestBody,
       user: { id: userId },
@@ -1012,7 +1032,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         ...(userMCPAuthMap != null && { userMCPAuthMap }),
       },
       recursionLimit: resolveRecursionLimit(agentsEConfig, agent),
-      signal: abortController.signal,
+      signal: execution.signal,
       streamMode: 'values',
       version: 'v2',
     };
@@ -1028,28 +1048,30 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     // Record token usage against balance
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
-    recordCollectedUsage(
-      {
-        spendTokens: db.spendTokens,
-        spendStructuredTokens: db.spendStructuredTokens,
-        pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-        bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
-      },
-      {
-        user: userId,
-        conversationId,
-        collectedUsage,
-        context: 'message',
-        messageId: responseId,
-        balance: balanceConfig,
-        transactions: transactionsConfig,
-        model: primaryConfig.model || agent.model_parameters?.model,
-        endpointTokenConfig: primaryConfig.endpointTokenConfig,
-        resolveEndpointTokenConfig,
-      },
-    ).catch((err) => {
-      logger.error('[OpenAI API] Error recording usage:', getSafeErrorMetadata(err));
-    });
+    execution.track(
+      recordCollectedUsage(
+        {
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
+        {
+          user: userId,
+          conversationId,
+          collectedUsage,
+          context: 'message',
+          messageId: responseId,
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+          model: primaryConfig.model || agent.model_parameters?.model,
+          endpointTokenConfig: primaryConfig.endpointTokenConfig,
+          resolveEndpointTokenConfig,
+        },
+      ).catch((err) => {
+        logger.error('[OpenAI API] Error recording usage:', getSafeErrorMetadata(err));
+      }),
+    );
 
     const usage = buildCompletionUsage(collectedUsage);
 
@@ -1060,26 +1082,30 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       res.end();
       logger.debug(`[OpenAI API] Response ${responseId} completed in ${duration}ms (streaming)`);
 
-      // Wait for artifact processing after response ends (non-blocking)
+      // The HTTP response is complete, while destructive cleanup still waits for artifacts.
       if (artifactPromises.length > 0) {
-        Promise.all(artifactPromises).catch((artifactError) => {
-          logger.warn(
-            '[OpenAI API] Error processing artifacts:',
-            getSafeErrorMetadata(artifactError),
-          );
-        });
+        execution.track(
+          waitForAgentExecutionWrites(artifactPromises).catch((artifactError) => {
+            logger.warn(
+              '[OpenAI API] Error processing artifacts:',
+              getSafeErrorMetadata(artifactError),
+            );
+          }),
+        );
+        artifactWritesCovered = true;
       }
     } else {
       // For non-streaming, wait for artifacts before sending response
       if (artifactPromises.length > 0) {
         try {
-          await Promise.all(artifactPromises);
+          await waitForAgentExecutionWrites(artifactPromises);
         } catch (artifactError) {
           logger.warn(
             '[OpenAI API] Error processing artifacts:',
             getSafeErrorMetadata(artifactError),
           );
         }
+        artifactWritesCovered = true;
       }
 
       const response = buildNonStreamingResponse(
@@ -1095,6 +1121,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       );
     }
   } catch (error) {
+    executionError = error;
     logger.error('[OpenAI API] Error:', getSafeErrorMetadata(error));
     const protectionEnabled = hasModelBoundContentProtection(
       appConfig?.filters,
@@ -1128,6 +1155,23 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
       const errorCode = !protectionEnabled && typeof error?.code === 'string' ? error.code : null;
       sendErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
+    }
+  } finally {
+    res.off('close', abortOnResponseClose);
+    if (execution) {
+      if (!artifactWritesCovered && artifactPromises.length > 0) {
+        execution.track(
+          waitForAgentExecutionWrites(artifactPromises).catch((artifactError) => {
+            logger.warn(
+              '[OpenAI API] Error processing artifacts:',
+              getSafeErrorMetadata(artifactError),
+            );
+          }),
+        );
+      }
+      await execution.settle(executionError).catch((error) => {
+        logger.error('[OpenAI API] Failed to settle execution:', getSafeErrorMetadata(error));
+      });
     }
   }
 };

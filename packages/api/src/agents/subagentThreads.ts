@@ -2400,6 +2400,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     userId: string,
     tenantId: string | undefined,
     deletion: () => Promise<T>,
+    recoverAdditionalOwnerWork?: () => Promise<void>,
   ): Promise<T> {
     const fenceWindowMs = this.ownerDrainTimeoutMs + this.ownerFenceGraceMs;
     const token = randomUUID();
@@ -2492,6 +2493,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         fencedUntil = recoveryUntil;
         fenceLapsed = false;
         await this.cancelAndDrainForOwner(userId, tenantId);
+        /** The fence is shared by host-owned execution classes that do not use the
+         * subagent lease store. Let the caller re-drain those classes after the same
+         * lapse, while the restored fence still prevents fresh admission. */
+        await recoverAdditionalOwnerWork?.();
         if (!fenceHeld()) {
           throw new Error('The subagent admission fence expired while recovering this deletion.');
         }
