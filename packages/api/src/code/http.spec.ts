@@ -19,6 +19,23 @@ function response() {
 }
 
 describe('code environment HTTP handlers', () => {
+  test('returns 400 when registration has no request body', async () => {
+    const register = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(),
+      registry: { register, listAccessible: jest.fn() },
+    });
+    const res = response();
+
+    await handlers.register(
+      { user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' }, body: null } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(register).not.toHaveBeenCalled();
+  });
+
   test('registers against an operator-configured control plane and ignores client URLs', async () => {
     const register = jest.fn().mockResolvedValue({
       resourceId: '68b2f0c498f24c1e78fa0111',

@@ -73,7 +73,10 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (principal == null) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const body = req.body as unknown as Record<string, unknown>;
+    const body =
+      typeof req.body === 'object' && req.body != null
+        ? (req.body as unknown as Record<string, unknown>)
+        : {};
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const controlPlaneId =
       typeof body.controlPlaneId === 'string' ? body.controlPlaneId.trim() : '';
