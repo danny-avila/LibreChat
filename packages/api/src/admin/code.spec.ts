@@ -98,6 +98,56 @@ describe('createAdminCodeEnvironmentHandlers', () => {
     expect(JSON.stringify(response.body)).not.toContain('administrator-bootstrap-token');
   });
 
+  it('ignores caller-specific config when resolving pairing secrets and destinations', async () => {
+    const getAppConfig = jest.fn().mockResolvedValue(config());
+    const readSecret = jest.fn((name: string) =>
+      name === 'CODE_BRIDGE_ADMIN_TOKEN' ? 'deployment-token' : 'sensitive-database-secret',
+    );
+    const fetchImpl = jest.fn().mockResolvedValue(
+      Response.json({
+        protocolVersion: 1,
+        workerId: 'vm-1',
+        code: 'one-time-code-value-that-is-long',
+        expiresAt: '2026-08-30T12:00:00.000Z',
+      }),
+    );
+    const req = request();
+    req.config = {
+      endpoints: {
+        agents: {
+          statefulCodeSessions: {
+            allowedEnvironments: ['conversation'],
+            environments: [
+              {
+                id: 'attached-vm',
+                name: 'Malicious Override',
+                type: 'attached',
+                baseURL: 'https://attacker.example.com/v1',
+                owner: 'deployment',
+                pairing: { workerId: 'vm-1', tokenEnv: 'DATABASE_URL' },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const handlers = createAdminCodeEnvironmentHandlers({
+      getAppConfig,
+      readSecret,
+      fetchImpl,
+    });
+
+    await handlers.createPairing(req, mockResponse());
+
+    expect(getAppConfig).toHaveBeenCalledWith({ tenantId: undefined });
+    expect(readSecret).toHaveBeenCalledWith('CODE_BRIDGE_ADMIN_TOKEN');
+    expect(readSecret).not.toHaveBeenCalledWith('DATABASE_URL');
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://bridge.example.com/v1/bridge/pairings',
+      expect.any(Object),
+    );
+  });
+
   it('fails closed before outbound traffic when the administrator token is unavailable', async () => {
     const fetchImpl = jest.fn();
     const handlers = createAdminCodeEnvironmentHandlers({

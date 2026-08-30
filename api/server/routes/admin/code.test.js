@@ -22,7 +22,10 @@ const mockHandlers = {
 const mockGetAppConfig = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
-  SystemCapabilities: { ACCESS_ADMIN: 'access:admin' },
+  SystemCapabilities: {
+    ACCESS_ADMIN: 'access:admin',
+    MANAGE_CODE_ENVIRONMENTS: 'manage:code_environments',
+  },
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -65,7 +68,7 @@ describe('admin code environment routes', () => {
       .expect(200);
 
     expect(response.body).toEqual({ operation, environmentId: 'attached-vm' });
-    expect(middlewareCalls).toEqual(['jwt', 'access:admin']);
+    expect(middlewareCalls).toEqual(['jwt', 'access:admin', 'manage:code_environments']);
     expect(mockHandlers[handlerName]).toHaveBeenCalledTimes(1);
   });
 });

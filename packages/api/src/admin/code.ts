@@ -5,8 +5,6 @@ import type { Response } from 'express';
 import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
 
-import { getAppConfigOptionsFromUser } from '~/app/service';
-
 const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
 
 type AgentsEndpointConfig = NonNullable<AppConfig['endpoints']>[EModelEndpoint.agents];
@@ -92,8 +90,10 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
     | Response
   > {
     const id = environmentId(req);
-    const appConfig =
-      req.config ?? (await deps.getAppConfig(getAppConfigOptionsFromUser(req.user)));
+    /** Pairing credentials are deployment control-plane state. Resolve only
+     * the tenant's YAML + __base__ configuration; user, role, and group
+     * overrides must never choose tokenEnv or the outbound destination. */
+    const appConfig = await deps.getAppConfig({ tenantId: req.user?.tenantId });
     const environment = findEnvironment(appConfig, id);
     if (environment == null) {
       return res.status(404).json({ error: 'Code environment was not found' });

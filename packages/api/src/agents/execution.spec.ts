@@ -139,6 +139,7 @@ describe('resolveCodeExecutionContext', () => {
       type: 'attached' as const,
       baseURL,
       default: true,
+      owner: 'deployment' as const,
     });
     const first = resolveCodeExecutionContext({
       statefulSessions: true,

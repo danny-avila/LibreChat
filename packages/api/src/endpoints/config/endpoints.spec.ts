@@ -215,6 +215,7 @@ describe('createEndpointsConfigService', () => {
             name: 'Attached VM',
             type: 'attached',
             default: true,
+            pairingAvailable: false,
           },
         ],
       });
@@ -262,9 +263,7 @@ describe('createEndpointsConfigService', () => {
             id: 'attached-vm',
             name: 'Attached VM',
             type: 'attached',
-            baseURL: 'https://bridge.example.com/v1',
             default: true,
-            owner: 'deployment',
             pairingAvailable: true,
           },
         ],

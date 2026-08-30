@@ -7,9 +7,10 @@ const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
+const requireCodeEnvironmentManage = requireCapability(SystemCapabilities.MANAGE_CODE_ENVIRONMENTS);
 const handlers = createAdminCodeEnvironmentHandlers({ getAppConfig });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAdminAccess, requireCodeEnvironmentManage);
 router.post('/:environmentId/pairings', handlers.createPairing);
 router.post('/:environmentId/revoke', handlers.revokeWorker);
 
