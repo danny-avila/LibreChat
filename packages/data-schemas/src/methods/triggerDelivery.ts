@@ -107,7 +107,13 @@ export interface EnqueueAgentTriggerDeliveryInput {
   coalesceUntil?: Date;
   awaitTerminalHandling?: boolean;
   requiredWorkerCapability?: string;
+  producerLeaseUntil?: Date;
 }
+
+export type AgentTriggerProducerLeaseStatus =
+  | { status: 'live'; leaseUntil: Date }
+  | { status: 'expired'; leaseUntil: Date }
+  | { status: 'missing' };
 
 export interface AgentTriggerDeliveryFence {
   id: string;
@@ -247,6 +253,16 @@ export interface AgentTriggerDeliveryMethods {
     onlyIfUnclaimed?: boolean;
     onlyIfDead?: boolean;
   }) => Promise<boolean>;
+  renewAgentTriggerDeliveryProducerLease: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    leaseUntil: Date;
+  }) => Promise<boolean>;
+  getAgentTriggerDeliveryProducerLease: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    now: Date;
+  }) => Promise<AgentTriggerProducerLeaseStatus>;
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
@@ -2009,6 +2025,86 @@ export function createAgentTriggerDeliveryMethods(
     );
   }
 
+  /** Refreshes process-owner liveness without changing delivery claim state.
+   * The max transition makes a lost write receipt safe to replay and prevents
+   * an older heartbeat from shortening a newer lease. */
+  async function renewAgentTriggerDeliveryProducerLease(input: {
+    deliveryKey: string;
+    sourceId: string;
+    leaseUntil: Date;
+  }): Promise<boolean> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      !(input.leaseUntil instanceof Date) ||
+      !Number.isFinite(input.leaseUntil.getTime())
+    ) {
+      throw new TypeError('Invalid agent trigger producer lease renewal');
+    }
+    const renewed = await Delivery().updateOne(
+      {
+        deliveryKey: input.deliveryKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+        status: { $in: ['pending', 'leased', 'capability_pending', 'capability_leased'] },
+        capabilityStatus: { $ne: 'dead' },
+        settledAt: { $exists: false },
+      },
+      [
+        {
+          $set: {
+            producerLeaseUntil: {
+              $cond: [
+                { $gt: ['$producerLeaseUntil', input.leaseUntil] },
+                '$producerLeaseUntil',
+                input.leaseUntil,
+              ],
+            },
+          },
+        },
+      ],
+      { timestamps: false },
+    );
+    return renewed.matchedCount === 1;
+  }
+
+  /** Reads only the private producer lease. Missing is intentionally distinct
+   * for compatibility with rows admitted before this evidence existed. */
+  async function getAgentTriggerDeliveryProducerLease(input: {
+    deliveryKey: string;
+    sourceId: string;
+    now: Date;
+  }): Promise<AgentTriggerProducerLeaseStatus> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      !(input.now instanceof Date) ||
+      !Number.isFinite(input.now.getTime())
+    ) {
+      throw new TypeError('Invalid agent trigger producer lease lookup');
+    }
+    const delivery = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+      })
+      .select('+producerLeaseUntil')
+      .lean<Pick<IAgentTriggerDelivery, 'producerLeaseUntil'>>();
+    if (delivery?.producerLeaseUntil == null) {
+      return { status: 'missing' };
+    }
+    return delivery.producerLeaseUntil.getTime() > input.now.getTime()
+      ? { status: 'live', leaseUntil: delivery.producerLeaseUntil }
+      : { status: 'expired', leaseUntil: delivery.producerLeaseUntil };
+  }
+
   async function settleAgentTriggerHandlingOutcome(
     input: SettleAgentTriggerHandlingOutcomeInput,
   ): Promise<boolean> {
@@ -3379,6 +3475,8 @@ export function createAgentTriggerDeliveryMethods(
     deferAgentTriggerDeliveryAttempt,
     completeAgentTriggerDelivery,
     retireAgentTriggerDelivery,
+    renewAgentTriggerDeliveryProducerLease,
+    getAgentTriggerDeliveryProducerLease,
     settleAgentTriggerHandlingOutcome,
     admitAgentEventActorAction,
     releaseAgentEventActorAction,

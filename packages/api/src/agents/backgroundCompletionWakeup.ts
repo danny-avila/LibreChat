@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isEphemeralAgentId } from 'librechat-data-provider';
 import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 } from '@librechat/data-schemas';
 import type {
+  AgentTriggerProducerLeaseStatus,
   BackgroundToolResultClaim,
   ConversationMethods,
   IMessage,
@@ -12,6 +13,7 @@ import type {
   BackgroundToolWakeupRegistration,
   BackgroundToolWakeupRetireOptions,
 } from './backgroundCompletion';
+import { BACKGROUND_TOOL_PRODUCER_LEASE_MS } from './backgroundCompletion';
 import type {
   AgentTriggerContinuePreparation,
   AgentTriggerExecutionHostDeps,
@@ -42,6 +44,12 @@ export type RetireBackgroundToolCompletion = (
   options?: BackgroundToolWakeupRetireOptions,
 ) => Promise<boolean>;
 
+export type RenewBackgroundToolCompletionProducerLease = (
+  deliveryKey: string,
+  sourceId: string,
+  leaseUntil: Date,
+) => Promise<boolean>;
+
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
   Pick<MessageMethods, 'getMessages'> & {
     claimBackgroundToolResults(params: {
@@ -62,6 +70,11 @@ type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
       kind: 'manual' | 'wakeup';
       claimId: string;
     }): Promise<boolean>;
+    getAgentTriggerDeliveryProducerLease(params: {
+      deliveryKey: string;
+      sourceId: string;
+      now: Date;
+    }): Promise<AgentTriggerProducerLeaseStatus>;
   };
 
 interface GenerationState {
@@ -316,10 +329,30 @@ export function createBackgroundToolCompletionWakeupResolver({
       return { status: 'settled' };
     }
     if (claim.status !== 'acquired') {
-      /** Wall-clock age cannot prove the invocation or a Mongo operation has
-       * stopped: abort-resistant tools intentionally remain nonterminal, and
-       * an in-flight write may succeed after an observer-side timeout. Only
-       * an acquired durable result or producer retirement is terminal truth. */
+      let producerLease: AgentTriggerProducerLeaseStatus;
+      try {
+        producerLease = await methods.getAgentTriggerDeliveryProducerLease({
+          deliveryKey: context.idempotencyKey,
+          sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+          now: new Date(),
+        });
+      } catch (error) {
+        throw executionError(
+          `Background tool producer liveness is temporarily unavailable: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          { code: 'BACKGROUND_TOOL_PRODUCER_STATE_UNAVAILABLE', retryable: true },
+        );
+      }
+      if (producerLease.status === 'expired') {
+        throw executionError('The process-local background tool executor was lost.', {
+          code: 'BACKGROUND_TOOL_PRODUCER_LOST',
+          retryable: false,
+        });
+      }
+      /** A live lease proves the invocation or its durable persistence retry
+       * still has an owner. Missing remains defer-only for compatibility with
+       * completion rows admitted before producer leases existed. */
       throw executionError('The background tool result is not durable yet.', {
         code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
         retryable: true,
@@ -352,6 +385,7 @@ export function createBackgroundToolCompletionWakeupResolver({
 export function createBackgroundToolCompletionWakeupHandler(
   enqueue: EnqueueBackgroundToolCompletion,
   retire: RetireBackgroundToolCompletion,
+  renewProducerLease: RenewBackgroundToolCompletionProducerLease,
 ): (
   registration: BackgroundToolWakeupRegistration,
 ) => Promise<BackgroundToolWakeupAdmission | false> {
@@ -396,8 +430,15 @@ export function createBackgroundToolCompletionWakeupHandler(
         Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
       ),
       requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      producerLeaseUntil: new Date(Date.now() + BACKGROUND_TOOL_PRODUCER_LEASE_MS),
     });
     return {
+      renew: () =>
+        renewProducerLease(
+          admitted.deliveryKey,
+          BACKGROUND_TOOL_COMPLETION_SOURCE,
+          new Date(Date.now() + BACKGROUND_TOOL_PRODUCER_LEASE_MS),
+        ),
       retire: (reason, options) =>
         options == null
           ? retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason)

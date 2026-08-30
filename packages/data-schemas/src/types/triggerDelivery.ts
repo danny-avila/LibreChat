@@ -105,6 +105,8 @@ export interface IAgentTriggerDelivery {
   capabilityLeaseBy?: string;
   capabilityLeaseUntil?: Date;
   capabilityClaimToken?: string;
+  /** Durable liveness evidence for process-owned capability work. */
+  producerLeaseUntil?: Date;
   attempts: number;
   availableAt: Date;
   envelopeBytes?: number;

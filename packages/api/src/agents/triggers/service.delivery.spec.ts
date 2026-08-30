@@ -101,6 +101,7 @@ function deliveryMethods(
     deferAgentTriggerDeliveryAttempt: jest.fn(async () => true),
     completeAgentTriggerDelivery: jest.fn(async () => true),
     retireAgentTriggerDelivery: jest.fn(async () => true),
+    renewAgentTriggerDeliveryProducerLease: jest.fn(async () => true),
     retryAgentTriggerDelivery: jest.fn(async () => true),
     deadLetterAgentTriggerDelivery: jest.fn(async () => true),
     getAgentTriggerDelivery: jest.fn(async () => null),
@@ -217,58 +218,6 @@ describe('durable agent trigger service', () => {
         workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
       }),
     );
-    await service.stop();
-  });
-
-  it('wakes a capable worker from private eligibility instead of the legacy shield', async () => {
-    const claimNext = jest.fn(async () => null);
-    const methods = deliveryMethods({
-      claimNextAgentTriggerDelivery: claimNext,
-      enqueueAgentTriggerDelivery: jest.fn(async (input) => ({
-        delivery: deliveryRecord({
-          deliveryKey: input.deliveryKey,
-          fingerprint: input.fingerprint,
-          orderingKey: input.orderingKey,
-          envelope: input.envelope,
-          availableAt: new Date('9999-12-31T23:59:59.999Z'),
-        }),
-        replayed: false,
-      })),
-    });
-    const service = createAgentTriggerService({
-      methods,
-      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
-    });
-
-    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
-    await new Promise((resolve) => setImmediate(resolve));
-    const claimsBeforeEnqueue = claimNext.mock.calls.length;
-
-    await service.enqueue(envelope(), {
-      availableAt: new Date(0),
-      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      const deadline = Date.now() + 1000;
-      const check = () => {
-        if (claimNext.mock.calls.length > claimsBeforeEnqueue) {
-          resolve();
-          return;
-        }
-        if (Date.now() >= deadline) {
-          reject(
-            new Error(
-              `capable worker did not wake at private eligibility (${claimsBeforeEnqueue} -> ${claimNext.mock.calls.length})`,
-            ),
-          );
-          return;
-        }
-        setTimeout(check, 10);
-      };
-      check();
-    });
-    expect(claimNext.mock.calls.length).toBeGreaterThan(claimsBeforeEnqueue);
     await service.stop();
   });
 

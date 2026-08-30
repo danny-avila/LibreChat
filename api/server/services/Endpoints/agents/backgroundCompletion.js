@@ -2,11 +2,16 @@ const {
   createBackgroundToolCompletionWakeupHandler,
   createBackgroundToolResultHandler,
 } = require('@librechat/api');
-const { enqueueAgentTrigger, retireAgentTrigger } = require('../../Agents/triggers');
+const {
+  enqueueAgentTrigger,
+  renewAgentTriggerProducerLease,
+  retireAgentTrigger,
+} = require('../../Agents/triggers');
 
 const preregisterBackgroundToolCompletion = createBackgroundToolCompletionWakeupHandler(
   enqueueAgentTrigger,
   retireAgentTrigger,
+  renewAgentTriggerProducerLease,
 );
 
 function createBackgroundToolResultPersistence({ req, updateToolCallResult }) {

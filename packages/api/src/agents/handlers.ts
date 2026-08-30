@@ -21,6 +21,7 @@ import type {
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
+import { BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS } from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
@@ -4463,14 +4464,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
               const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
-              /** Content-and-artifact tools require a live poll turn to route
-               * their artifact through `toolEndCallback`. Code tools are the
-               * exception because their completion harvester durably anchors
-               * generated files before the automatic continuation runs. */
-              const completionWakeupEligible =
-                harvestEnabled ||
-                (tool as StructuredToolInterface & { responseFormat?: unknown }).responseFormat !==
-                  Constants.CONTENT_AND_ARTIFACT;
               const backgroundStepId =
                 typeof tc.stepId === 'string' && tc.stepId.trim() !== '' ? tc.stepId : undefined;
               const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);
@@ -4591,7 +4584,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               if (isNew) {
                 if (
                   detachedReservation?.status !== 'reserved' &&
-                  completionWakeupEligible &&
                   backgroundToolCompletion?.preregister != null &&
                   backgroundStepId != null &&
                   backgroundRunId != null &&
@@ -4637,11 +4629,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                  *  the dispatch row may not exist until that turn finalizes, so
                  *  gating `complete()` on the patch would livelock same-turn
                  *  polls on `running`. Failures degrade to poll-only delivery. */
-                const persistBackgroundResult = (params: {
+                const persistBackgroundResult = async (params: {
                   output?: string;
                   artifact?: unknown;
                   status: 'completed' | 'error';
-                }): void => {
+                }): Promise<void> => {
                   /** A provider id alone is not a durable part identity: it may
                    * repeat in later turns of the same response. New automatic
                    * completion delivery therefore fails closed to the legacy
@@ -4665,6 +4657,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       toolName: tc.name,
                       status: params.status,
                       settledAt: new Date(current?.updatedAt ?? Date.now()),
+                      ...(completionPreregistered ? { completionWakeup: true } : {}),
                       ...(current?.resultClaim != null
                         ? {
                             resultClaim: {
@@ -4729,8 +4722,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     ) {
                       return;
                     }
-                    void backgroundToolCompletion
-                      .persist({
+                    try {
+                      const deliveryReady = await backgroundToolCompletion.persist({
                         toolName: tc.name,
                         toolCallId: tc.id,
                         stepId: backgroundStepId,
@@ -4740,114 +4733,110 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         output: params.output ?? localTask?.result,
                         backgroundTask,
                         resolveBackgroundTask,
-                      })
-                      .then(async (deliveryReady) => {
-                        if (!deliveryReady) {
-                          await retireFailedPersistence(
-                            'background tool result was not persisted',
-                            'definite',
-                          );
-                        }
-                      })
-                      .catch(async (persistError) => {
-                        await retireFailedPersistence(
-                          'background tool result persistence failed',
-                          isContentFilterError(persistError) ? 'definite' : 'ambiguous',
-                        );
-                        logger.warn(
-                          `[background] Failed to persist result for task ${task.id}:`,
-                          persistError,
-                        );
                       });
-                    return;
-                  }
-                  void (async () => {
-                    try {
-                      const persisted = await persistBackgroundCodeResult({
-                        toolName: tc.name,
-                        toolCallId: tc.id,
-                        stepId: backgroundStepId,
-                        messageId: backgroundRunId,
-                        conversationId: backgroundConversationId,
-                        /** Disambiguates repeated provider ids (e.g. `call_0`)
-                         *  across agents sharing one response message. */
-                        agentId,
-                        /** Stale-output ordering is decided by DISPATCH order,
-                         *  not harvest wall-clock: a slow old task settling
-                         *  after a newer run wrote the same filename must not
-                         *  overwrite it. */
-                        dispatchedAt: task.createdAt,
-                        codeExecutionContext,
-                        ...(detachedReservation?.status === 'reserved' || !completionPreregistered
-                          ? {}
-                          : { backgroundTask, resolveBackgroundTask }),
-                        output: params.output ?? localTask?.result,
-                        artifact: params.artifact,
-                      });
-                      if (persisted == null) {
-                        /** Harvest never persisted anything (missing anchor
-                         *  identity): hand delivery back to the legacy poll-turn
-                         *  callback, restoring the artifact if a poll already
-                         *  claimed it while the harvest was in flight. */
-                        backgroundTaskRegistry.revokeHarvest(
-                          backgroundUserId,
-                          backgroundConversationId,
-                          task.id,
-                          params.artifact,
-                        );
-                        if (completionPreregistered) {
-                          await retireFailedPersistence(
-                            'background code result had no durable message anchor',
-                            'definite',
-                          );
-                        }
-                        return;
-                      }
-                      if (persisted.deliveryReady === false) {
+                      if (!deliveryReady) {
                         await retireFailedPersistence(
-                          'background code result was not persisted',
+                          'background tool result was not persisted',
                           'definite',
                         );
                       }
-                      backgroundTaskRegistry.finishHarvest(
-                        backgroundUserId,
-                        backgroundConversationId,
-                        task.id,
-                        persisted.attachments,
-                      );
                     } catch (persistError) {
-                      if (completionPreregistered) {
-                        await retireFailedPersistence(
-                          'background code result persistence failed',
-                          isContentFilterError(persistError) ? 'definite' : 'ambiguous',
-                        );
-                      }
-                      if (isContentFilterError(persistError)) {
-                        backgroundTaskRegistry.blockArtifact(
-                          backgroundUserId,
-                          backgroundConversationId,
-                          task.id,
-                          persistError instanceof ContentFilterError
-                            ? modelBoundContentFilterErrorMessage(persistError.body)
-                            : persistError.body.message,
-                        );
-                        logger.warn(
-                          `[background] Generated code output for task ${task.id} was blocked by content policy.`,
-                        );
-                        return;
-                      }
+                      await retireFailedPersistence(
+                        'background tool result persistence failed',
+                        isContentFilterError(persistError) ? 'definite' : 'ambiguous',
+                      );
                       logger.warn(
-                        `[background] Failed to persist code result for task ${task.id}:`,
+                        `[background] Failed to persist result for task ${task.id}:`,
                         persistError,
                       );
+                    }
+                    return;
+                  }
+                  try {
+                    const persisted = await persistBackgroundCodeResult({
+                      toolName: tc.name,
+                      toolCallId: tc.id,
+                      stepId: backgroundStepId,
+                      messageId: backgroundRunId,
+                      conversationId: backgroundConversationId,
+                      /** Disambiguates repeated provider ids (e.g. `call_0`)
+                       *  across agents sharing one response message. */
+                      agentId,
+                      /** Stale-output ordering is decided by DISPATCH order,
+                       *  not harvest wall-clock: a slow old task settling
+                       *  after a newer run wrote the same filename must not
+                       *  overwrite it. */
+                      dispatchedAt: task.createdAt,
+                      codeExecutionContext,
+                      ...(detachedReservation?.status === 'reserved' || !completionPreregistered
+                        ? {}
+                        : { backgroundTask, resolveBackgroundTask }),
+                      output: params.output ?? localTask?.result,
+                      artifact: params.artifact,
+                    });
+                    if (persisted == null) {
+                      /** Harvest never persisted anything (missing anchor
+                       *  identity): hand delivery back to the legacy poll-turn
+                       *  callback, restoring the artifact if a poll already
+                       *  claimed it while the harvest was in flight. */
                       backgroundTaskRegistry.revokeHarvest(
                         backgroundUserId,
                         backgroundConversationId,
                         task.id,
                         params.artifact,
                       );
+                      if (completionPreregistered) {
+                        await retireFailedPersistence(
+                          'background code result had no durable message anchor',
+                          'definite',
+                        );
+                      }
+                      return;
                     }
-                  })();
+                    if (persisted.deliveryReady === false) {
+                      await retireFailedPersistence(
+                        'background code result was not persisted',
+                        'definite',
+                      );
+                    }
+                    backgroundTaskRegistry.finishHarvest(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      persisted.attachments,
+                    );
+                  } catch (persistError) {
+                    if (completionPreregistered) {
+                      await retireFailedPersistence(
+                        'background code result persistence failed',
+                        isContentFilterError(persistError) ? 'definite' : 'ambiguous',
+                      );
+                    }
+                    if (isContentFilterError(persistError)) {
+                      backgroundTaskRegistry.blockArtifact(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        persistError instanceof ContentFilterError
+                          ? modelBoundContentFilterErrorMessage(persistError.body)
+                          : persistError.body.message,
+                      );
+                      logger.warn(
+                        `[background] Generated code output for task ${task.id} was blocked by content policy.`,
+                      );
+                      return;
+                    }
+                    logger.warn(
+                      `[background] Failed to persist code result for task ${task.id}:`,
+                      persistError,
+                    );
+                    backgroundTaskRegistry.revokeHarvest(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      params.artifact,
+                    );
+                  }
                 };
                 let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
                 const backgroundAbortController = new AbortController();
@@ -4916,6 +4905,35 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     );
                   }
                 };
+                let producerHeartbeatInFlight: Promise<void> | undefined;
+                const producerAdmission = completionAdmission;
+                const producerHeartbeat =
+                  producerAdmission == null
+                    ? undefined
+                    : setInterval(() => {
+                        if (producerHeartbeatInFlight != null) {
+                          return;
+                        }
+                        producerHeartbeatInFlight = producerAdmission
+                          .renew()
+                          .then((renewed) => {
+                            if (!renewed) {
+                              logger.warn(
+                                `[background] Completion producer lease was not renewed for task ${task.id}.`,
+                              );
+                            }
+                          })
+                          .catch((heartbeatError) => {
+                            logger.warn(
+                              `[background] Failed to renew completion producer lease for task ${task.id}:`,
+                              heartbeatError,
+                            );
+                          })
+                          .finally(() => {
+                            producerHeartbeatInFlight = undefined;
+                          });
+                      }, BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS);
+                (producerHeartbeat as { unref?: () => void } | undefined)?.unref?.();
                 void (async () => {
                   try {
                     const result = await withBackgroundTaskTimeout(invokePromise, () =>
@@ -4954,7 +4972,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         registryError,
                         { harvestStarted: harvestEnabled },
                       );
-                      persistBackgroundResult({ output: errorOutput, status: 'error' });
+                      await persistBackgroundResult({ output: errorOutput, status: 'error' });
                       await wakeDetachedActor();
                       return;
                     }
@@ -4973,13 +4991,45 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     ) {
                       return;
                     }
+                    if (result.artifact != null && !harvestEnabled && completionAdmission != null) {
+                      /** Eligibility is decided from the actual result, not the
+                       * tool's declared response format. A content-only result
+                       * from a content-and-artifact tool can wake normally; an
+                       * actual artifact still needs the live poll callback. */
+                      try {
+                        const retired = await completionAdmission.retire(
+                          'background tool artifact requires live polling',
+                        );
+                        if (!retired) {
+                          logger.warn(
+                            `[background] Could not retire artifact wakeup for task ${task.id}.`,
+                          );
+                        }
+                      } catch (retireError) {
+                        logger.warn(
+                          `[background] Failed to retire artifact wakeup for task ${task.id}:`,
+                          retireError,
+                        );
+                      } finally {
+                        /** Never publish an eligibility marker for an artifact
+                         * the continuation cannot reconstruct. An ambiguous
+                         * retire receipt therefore fails closed to polling; any
+                         * surviving delivery expires with the producer lease. */
+                        completionPreregistered = false;
+                        backgroundTaskRegistry.markCompletionPersistenceFailed(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                        );
+                      }
+                    }
                     const storedContent = backgroundTaskRegistry.complete(
                       backgroundUserId,
                       backgroundConversationId,
                       task.id,
                       { content, artifact: result.artifact, harvestStarted: harvestEnabled },
                     );
-                    persistBackgroundResult({
+                    await persistBackgroundResult({
                       /** Use the registry's canonical bounded serialization so
                        * structured content cannot leave the durable card on its
                        * synthetic running handle. */
@@ -5028,8 +5078,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  the dispatch card on the handle JSON forever. */
                       { harvestStarted: harvestEnabled },
                     );
-                    persistBackgroundResult({ output: deliveredError, status: 'error' });
+                    await persistBackgroundResult({ output: deliveredError, status: 'error' });
                     await wakeDetachedActor();
+                  } finally {
+                    if (producerHeartbeat != null) {
+                      clearInterval(producerHeartbeat);
+                    }
+                    await producerHeartbeatInFlight;
                   }
                 })();
                 if (

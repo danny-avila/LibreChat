@@ -969,6 +969,7 @@ describe('Message Operations', () => {
             toolName: 'slow_tool',
             status: 'completed',
             settledAt: new Date(),
+            completionWakeup: true,
           },
         },
       });
@@ -1032,6 +1033,56 @@ describe('Message Operations', () => {
       ).resolves.toEqual({ status: 'claimed' });
     });
 
+    it('does not batch a terminal sibling that elected poll-only delivery', async () => {
+      const terminal = (taskId: string, completionWakeup: boolean) => ({
+        type: 'tool_call',
+        tool_call: {
+          id: `call-${taskId}`,
+          name: 'slow_tool',
+          output: taskId,
+          backgroundTask: {
+            version: 1,
+            taskId,
+            toolName: 'slow_tool',
+            status: 'completed',
+            settledAt: new Date(),
+            ...(completionWakeup ? { completionWakeup: true } : {}),
+          },
+        },
+      });
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [terminal('wakeup', true), terminal('poll-only', false)],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'wakeup',
+          kind: 'wakeup',
+          claimId: 'delivery-1',
+        }),
+      ).resolves.toMatchObject({
+        status: 'acquired',
+        results: [expect.objectContaining({ taskId: 'wakeup' })],
+      });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'poll-only',
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toMatchObject({
+        status: 'acquired',
+        results: [expect.objectContaining({ taskId: 'poll-only' })],
+      });
+    });
+
     it('uses nested tool-call agent identity when batching sibling results', async () => {
       const backgroundTask = (taskId: string) => ({
         version: 1,
@@ -1039,6 +1090,7 @@ describe('Message Operations', () => {
         toolName: 'slow_tool',
         status: 'completed',
         settledAt: new Date(),
+        completionWakeup: true,
       });
       await saveMessage(mockCtx, {
         ...mockMessageData,

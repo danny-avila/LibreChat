@@ -89,7 +89,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const retire = jest.fn(async () => true);
     const preregister = jest.fn(async () => {
       events.push('preregister');
-      return { retire };
+      return { renew: jest.fn(async () => true), retire };
     });
     const persist = jest.fn(async () => {
       events.push('persist');
@@ -167,7 +167,10 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [tool] }),
       backgroundToolCompletion: {
-        preregister: jest.fn(async () => ({ retire: jest.fn(async () => true) })),
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          retire: jest.fn(async () => true),
+        })),
         persist,
         claim: jest.fn(async () => ({ status: 'acquired' as const })),
       },
@@ -226,7 +229,10 @@ describe('createToolExecuteHandler — background tool calls', () => {
 
   it('keeps repeated provider ids poll-only when the host step identity is absent', async () => {
     const tool = makeSearchTool({ calls: 0 });
-    const preregister = jest.fn(async () => ({ retire: jest.fn(async () => true) }));
+    const preregister = jest.fn(async () => ({
+      renew: jest.fn(async () => true),
+      retire: jest.fn(async () => true),
+    }));
     const persist = jest.fn(async () => true);
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [tool] }),
@@ -263,7 +269,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [tool] }),
       backgroundToolCompletion: {
-        preregister: jest.fn(async () => ({ retire })),
+        preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
         persist: jest.fn(async () => false),
         claim: jest.fn(async () => ({ status: 'acquired' as const })),
       },
@@ -294,7 +300,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [tool] }),
       backgroundToolCompletion: {
-        preregister: jest.fn(async () => ({ retire })),
+        preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
         persist: jest.fn(async () => {
           throw new Error('write receipt lost');
         }),
@@ -327,8 +333,12 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(task?.completionPersistenceFailed).toBeUndefined();
   });
 
-  it('keeps declared artifact-producing tools on the live poll path', async () => {
-    const preregister = jest.fn(async () => ({ retire: jest.fn(async () => true) }));
+  it('elects live polling only when the settled result actually contains an artifact', async () => {
+    const retire = jest.fn(async () => true);
+    const preregister = jest.fn(async () => ({
+      renew: jest.fn(async () => true),
+      retire,
+    }));
     const persist = jest.fn(async () => true);
     const tool = {
       name: 'artifact_tool',
@@ -364,9 +374,59 @@ describe('createToolExecuteHandler — background tool calls', () => {
     });
     await flushMicrotasks();
 
-    expect(preregister).not.toHaveBeenCalled();
-    expect(JSON.parse(dispatch.content).message).toContain('Call check_background_task');
-    expect(JSON.parse(dispatch.content).message).not.toContain('host will resume you');
+    expect(preregister).toHaveBeenCalledTimes(1);
+    expect(retire).toHaveBeenCalledWith('background tool artifact requires live polling');
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backgroundTask: expect.not.objectContaining({ completionWakeup: true }),
+      }),
+    );
+    expect(JSON.parse(dispatch.content).message).toContain('host will resume you');
+  });
+
+  it('keeps automatic completion for a declared artifact tool that returns content only', async () => {
+    const retire = jest.fn(async () => true);
+    const persist = jest.fn(async () => true);
+    const tool = {
+      name: 'optional_artifact_tool',
+      description: 'may return an artifact',
+      schema: z.object({ q: z.string() }),
+      responseFormat: 'content_and_artifact',
+      invoke: jest.fn(async () => ({ content: 'content-only result' })),
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          retire,
+        })),
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-optional-artifact',
+          name: tool.name,
+          args: { q: 'content', run_in_background: true },
+          stepId: 'step-optional-artifact',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-optional-artifact' },
+    });
+    await flushMicrotasks();
+
+    expect(retire).not.toHaveBeenCalled();
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backgroundTask: expect.objectContaining({ completionWakeup: true }),
+      }),
+    );
   });
 
   it('persists ordinary background failures in the renderer-recognized error shape', async () => {
@@ -382,7 +442,10 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [tool] }),
       backgroundToolCompletion: {
-        preregister: jest.fn(async () => ({ retire: jest.fn(async () => true) })),
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          retire: jest.fn(async () => true),
+        })),
         persist,
         claim: jest.fn(async () => ({ status: 'acquired' as const })),
       },
@@ -434,7 +497,10 @@ describe('createToolExecuteHandler — background tool calls', () => {
       const handler = createToolExecuteHandler({
         loadTools: async () => ({ loadedTools: [tool] }),
         backgroundToolCompletion: {
-          preregister: jest.fn(async () => ({ retire: jest.fn(async () => true) })),
+          preregister: jest.fn(async () => ({
+            renew: jest.fn(async () => true),
+            retire: jest.fn(async () => true),
+          })),
           persist,
           claim: jest.fn(async () => ({ status: 'acquired' as const })),
         },
@@ -485,7 +551,10 @@ describe('createToolExecuteHandler — background tool calls', () => {
       const handler = createToolExecuteHandler({
         loadTools: async () => ({ loadedTools: [tool] }),
         backgroundToolCompletion: {
-          preregister: jest.fn(async () => ({ retire: jest.fn(async () => true) })),
+          preregister: jest.fn(async () => ({
+            renew: jest.fn(async () => true),
+            retire: jest.fn(async () => true),
+          })),
           persist,
           claim: jest.fn(async () => ({ status: 'acquired' as const })),
         },
@@ -1676,7 +1745,10 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
 
   it('keeps step-less code harvests available to the legacy poll path', async () => {
     const state: CodeToolState = { calls: 0 };
-    const preregister = jest.fn(async () => ({ retire: jest.fn(async () => true) }));
+    const preregister = jest.fn(async () => ({
+      renew: jest.fn(async () => true),
+      retire: jest.fn(async () => true),
+    }));
     const persistBackgroundCodeResult = jest.fn(async () => ({ attachments: [] }));
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
@@ -2078,7 +2150,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       toolEndCallback,
       persistBackgroundCodeResult,
       backgroundToolCompletion: {
-        preregister: jest.fn(async () => ({ retire })),
+        preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
         persist: jest.fn(async () => true),
         claim: jest.fn(async () => ({ status: 'acquired' as const })),
       },

@@ -381,6 +381,7 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-langfuseDestinationIds',
   '-metadata.thoughtSignatures',
   '-content.tool_call.backgroundTask.resultClaim',
+  '-content.tool_call.backgroundTask.completionWakeup',
   '-attachments.web_search.knowledgeGraph',
   '-attachments.web_search.peopleAlsoAsk',
   '-attachments.web_search.relatedSearches',
@@ -531,6 +532,7 @@ export interface MessageMethods {
       toolName: string;
       status: 'completed' | 'error';
       settledAt: Date;
+      completionWakeup?: true;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
@@ -947,6 +949,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       toolName: string;
       status: 'completed' | 'error';
       settledAt: Date;
+      completionWakeup?: true;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
@@ -1005,6 +1008,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                                             toolName: backgroundTask.toolName,
                                             status: backgroundTask.status,
                                             settledAt: backgroundTask.settledAt,
+                                            ...(backgroundTask.completionWakeup === true
+                                              ? { completionWakeup: true }
+                                              : {}),
                                           },
                                         },
                                         {
@@ -1278,6 +1284,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         continue;
       }
       const terminal = task?.status === 'completed' || task?.status === 'error';
+      const wakeupEligible = kind !== 'wakeup' || task?.completionWakeup === true;
       const resultClaim = task?.resultClaim as { kind?: unknown; claimId?: unknown } | undefined;
       const replay = resultClaim?.kind === kind && resultClaim.claimId === claimId;
       const sameAgent =
@@ -1287,7 +1294,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       /** A lost-receipt retry replays exactly its original assignment. It must
        * not absorb siblings that completed after the already-admitted input
        * was constructed, or those results would be claimed but never shown. */
-      const claimable = terminal && sameAgent && (replaying ? replay : resultClaim == null);
+      const claimable =
+        terminal && wakeupEligible && sameAgent && (replaying ? replay : resultClaim == null);
       if (candidateId === taskId) {
         if (claimable) {
           requestedState = 'ready';
@@ -1325,6 +1333,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             type: 'tool_call',
             'tool_call.backgroundTask.taskId': taskId,
             'tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
+            ...(kind === 'wakeup' ? { 'tool_call.backgroundTask.completionWakeup': true } : {}),
             ...(replaying
               ? {
                   'tool_call.backgroundTask.resultClaim.kind': kind,

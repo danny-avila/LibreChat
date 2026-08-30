@@ -32,6 +32,7 @@ function envelope(registrationOverrides = {}) {
       return { deliveryKey: 'delivery-key-1' };
     },
     async () => true,
+    async () => true,
   );
   return notify(registration(registrationOverrides)).then(() => {
     const parsed = parseAgentTriggerEnvelope(value);
@@ -82,6 +83,10 @@ function resolverMethods() {
         ],
       })),
       releaseBackgroundToolResultClaims,
+      getAgentTriggerDeliveryProducerLease: jest.fn(async () => ({
+        status: 'live' as const,
+        leaseUntil: new Date(NOW + 30_000),
+      })),
     },
   };
 }
@@ -101,7 +106,8 @@ describe('background tool completion wakeups', () => {
       Parameters<EnqueueBackgroundToolCompletion>
     >(async () => ({ deliveryKey: 'delivery-key-1' }));
     const retire = jest.fn(async () => true);
-    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, retire);
+    const renew = jest.fn(async () => true);
+    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, retire, renew);
 
     const admission = await notify(registration());
     expect(admission).not.toBe(false);
@@ -125,7 +131,16 @@ describe('background tool completion wakeups', () => {
       orderingKey: 'background-tool-completion:conversation-1:task-1',
       availableAt: new Date(NOW + 250),
       requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      producerLeaseUntil: new Date(NOW + 30_000),
     });
+    if (admission !== false) {
+      await expect(admission.renew()).resolves.toBe(true);
+    }
+    expect(renew).toHaveBeenCalledWith(
+      'delivery-key-1',
+      'background-tool-completion',
+      new Date(NOW + 30_000),
+    );
     if (admission !== false) {
       await expect(admission.retire('result unavailable')).resolves.toBe(true);
     }
@@ -163,7 +178,11 @@ describe('background tool completion wakeups', () => {
       ReturnType<EnqueueBackgroundToolCompletion>,
       Parameters<EnqueueBackgroundToolCompletion>
     >(async () => ({ deliveryKey: 'delivery-key' }));
-    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, async () => true);
+    const notify = createBackgroundToolCompletionWakeupHandler(
+      enqueue,
+      async () => true,
+      async () => true,
+    );
 
     await notify(registration({ taskId: 'task-slow' }));
     await notify(registration({ taskId: 'task-fast' }));
@@ -177,7 +196,7 @@ describe('background tool completion wakeups', () => {
   it('reports skipped registration for an ephemeral invoking agent', async () => {
     const enqueue = jest.fn(async () => ({ deliveryKey: 'delivery-key-1' }));
     const retire = jest.fn(async () => true);
-    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, retire);
+    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, retire, async () => true);
 
     await expect(notify(registration({ parentAgentId: 'ephemeral-agent' }))).resolves.toBe(false);
     expect(enqueue).not.toHaveBeenCalled();
@@ -276,6 +295,26 @@ describe('background tool completion wakeups', () => {
 
     await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
       { code: 'BACKGROUND_TOOL_RESULT_NOT_READY', retryable: true },
+    );
+  });
+
+  it('terminally rejects a missing result after its process-local producer is lost', async () => {
+    const { methods } = resolverMethods();
+    methods.claimBackgroundToolResults.mockResolvedValue({ status: 'missing', results: [] });
+    methods.getAgentTriggerDeliveryProducerLease.mockResolvedValue({
+      status: 'expired',
+      leaseUntil: new Date(NOW - 1),
+    });
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(resolve(await envelope(), { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      {
+        code: 'BACKGROUND_TOOL_PRODUCER_LOST',
+        retryable: false,
+      },
     );
   });
 });

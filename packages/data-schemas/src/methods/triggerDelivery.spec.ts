@@ -381,6 +381,50 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toMatchObject({ id: queued.delivery.id });
   });
 
+  it('renews and classifies process-local completion producer liveness idempotently', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const initialLease = new Date(START.getTime() + 30_000);
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-producer-lease',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        producerLeaseUntil: initialLease,
+      }),
+    );
+
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: START,
+      }),
+    ).resolves.toEqual({ status: 'live', leaseUntil: initialLease });
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: new Date(initialLease.getTime() + 1),
+      }),
+    ).resolves.toEqual({ status: 'expired', leaseUntil: initialLease });
+
+    const renewedUntil = new Date(START.getTime() + 60_000);
+    const renewal = {
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      leaseUntil: renewedUntil,
+    };
+    await expect(methods.renewAgentTriggerDeliveryProducerLease(renewal)).resolves.toBe(true);
+    await expect(methods.renewAgentTriggerDeliveryProducerLease(renewal)).resolves.toBe(true);
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: initialLease,
+      }),
+    ).resolves.toEqual({ status: 'live', leaseUntil: renewedUntil });
+  });
+
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({

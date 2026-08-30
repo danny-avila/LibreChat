@@ -107,6 +107,7 @@ export interface AgentTriggerDeliveryPersistence {
   deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
   completeAgentTriggerDelivery: AgentTriggerDeliveryStore['complete'];
   retireAgentTriggerDelivery: AgentTriggerDeliveryMethods['retireAgentTriggerDelivery'];
+  renewAgentTriggerDeliveryProducerLease: AgentTriggerDeliveryMethods['renewAgentTriggerDeliveryProducerLease'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
@@ -162,6 +163,7 @@ export interface AgentTriggerService {
     reason: string,
     options?: { onlyIfUnclaimed?: boolean; onlyIfDead?: boolean },
   ) => Promise<boolean>;
+  renewProducerLease: (deliveryKey: string, sourceId: string, leaseUntil: Date) => Promise<boolean>;
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
   cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
@@ -473,15 +475,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         await drainUser(String(prepared.user));
         throw error;
       }
-      /** Capability-fenced rows expose a legacy-safe shell whose public
-       * `availableAt` may be the far-future shield. This worker understands
-       * the capability, so schedule its claim from the producer's private
-       * eligibility time instead of putting the local engine to sleep behind
-       * the compatibility fence. */
-      const eligibleAt =
-        prepared.requiredWorkerCapability == null
-          ? queued.delivery.availableAt
-          : prepared.availableAt;
+      const eligibleAt = queued.delivery.availableAt;
       if (eligibleAt instanceof Date && eligibleAt.getTime() > Date.now()) {
         deliveryEngine?.noteEligibleAt(eligibleAt);
       } else {
@@ -541,6 +535,14 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         return retired;
       }),
+    renewProducerLease: (deliveryKey, sourceId, leaseUntil) =>
+      runAsSystem(async () =>
+        requireMethods().renewAgentTriggerDeliveryProducerLease({
+          deliveryKey,
+          sourceId,
+          leaseUntil,
+        }),
+      ),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () =>
