@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
+import { logger, type AppConfig } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type {
   CodeEnvironmentPrincipalContext,
@@ -9,6 +9,7 @@ import type {
 } from './environments';
 import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
+import { CodeEnvironmentValidationError } from './environments';
 
 type Registry = {
   register: (params: {
@@ -112,9 +113,14 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         error != null &&
         'code' in error &&
         (error as { code?: number }).code === 11000;
-      return res.status(duplicate ? 409 : 400).json({
-        error: error instanceof Error ? error.message : 'Code environment registration failed',
-      });
+      if (duplicate) {
+        return res.status(409).json({ error: 'Code environment already exists' });
+      }
+      if (error instanceof CodeEnvironmentValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
+      logger.error('[codeEnvironments] registration failed:', error);
+      return res.status(500).json({ error: 'Code environment registration failed' });
     }
   }
 

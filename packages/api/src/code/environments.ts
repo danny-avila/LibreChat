@@ -41,22 +41,31 @@ export type AccessibleCodeEnvironmentConfiguration = {
 const ENVIRONMENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
+export class CodeEnvironmentValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CodeEnvironmentValidationError';
+  }
+}
+
 function normalizeRegistration(input: CodeEnvironmentRegistration): CodeEnvironmentRegistration {
   const id = input.id.trim();
   const name = input.name.trim();
   const baseURL = input.baseURL.trim().replace(/\/+$/, '');
   const workerId = input.workerId?.trim();
   if (!ENVIRONMENT_ID_PATTERN.test(id)) {
-    throw new Error('Code environment id is invalid');
+    throw new CodeEnvironmentValidationError('Code environment id is invalid');
   }
   if (name.length < 1 || name.length > 100) {
-    throw new Error('Code environment name must contain between 1 and 100 characters');
+    throw new CodeEnvironmentValidationError(
+      'Code environment name must contain between 1 and 100 characters',
+    );
   }
   if (!isSecureCodeEnvironmentControlURL(baseURL)) {
-    throw new Error('Code environment control requires secure transport');
+    throw new CodeEnvironmentValidationError('Code environment control requires secure transport');
   }
   if (workerId != null && !WORKER_ID_PATTERN.test(workerId)) {
-    throw new Error('Code environment worker id is invalid');
+    throw new CodeEnvironmentValidationError('Code environment worker id is invalid');
   }
   return { ...input, id, name, baseURL, workerId };
 }

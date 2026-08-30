@@ -46,6 +46,17 @@ describe('AccessRole Model Tests', () => {
       expect(role.permBits).toBe(sampleRole.permBits);
     });
 
+    test('should create a code environment role', async () => {
+      const role = await methods.createRole({
+        accessRoleId: AccessRoleIds.CODE_ENVIRONMENT_OWNER,
+        name: 'Code Environment Owner',
+        resourceType: ResourceType.CODE_ENVIRONMENT,
+        permBits: PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+      });
+
+      expect(role.resourceType).toBe(ResourceType.CODE_ENVIRONMENT);
+    });
+
     test('should find a role by its ID', async () => {
       const createdRole = await methods.createRole(sampleRole);
       const foundRole = await methods.findRoleById(createdRole._id);

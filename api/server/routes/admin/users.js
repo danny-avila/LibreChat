@@ -27,6 +27,7 @@ const handlers = createAdminUsersHandlers({
   cancelAgentTriggerUserPurge,
   purgeAgentTriggerDeliveriesForUser,
   deleteUserById: db.deleteUserById,
+  deleteUserCodeEnvironments: db.deleteUserCodeEnvironments,
   deleteConfig: db.deleteConfig,
   deleteAclEntries: db.deleteAclEntries,
 });
