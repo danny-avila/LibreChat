@@ -1823,6 +1823,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         // graph passes `messages: []`, so without these the model would lose their schemas.
         discoveredToolNames: job.metadata?.discoveredTools,
         activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
+        compactionSemanticIndex: job.metadata?.compactionSemanticIndex,
       });
     if (
       !(await GenerationJobManager.beginProviderExecution(

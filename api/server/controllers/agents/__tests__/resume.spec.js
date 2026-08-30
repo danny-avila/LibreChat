@@ -2647,7 +2647,22 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
 
     it('seeds the thread parent before reconstruction and maps the decision to the SDK', async () => {
-      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const compactionSemanticIndex = {
+        version: 1,
+        entries: [
+          {
+            type: 'activity_phase',
+            sourceMessageId: 'assistant-history',
+            sourceContentIndex: 1,
+            revision: 1,
+            status: 'committed',
+            text: 'Verified the release state',
+          },
+        ],
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { compactionSemanticIndex } }),
+      );
       await post(approveBody());
       await settled;
       await flush();
@@ -2667,6 +2682,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         expect.objectContaining({
           resumeValue: { tc1: { type: 'approve' } },
           userMCPAuthMap: { server1: { token: 't' } },
+          compactionSemanticIndex,
         }),
       );
     });

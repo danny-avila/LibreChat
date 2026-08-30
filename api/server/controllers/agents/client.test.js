@@ -90,6 +90,19 @@ jest.mock('@librechat/api', () => ({
 
 describe('AgentClient - event actor history adapter', () => {
   const fingerprint = { algorithm: 'sha256', version: 1, digest: 'context' };
+  const compactionSemanticIndex = {
+    version: 1,
+    entries: [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-history',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ],
+  };
 
   it('loads no durable history after compatibility selected a warm continuation', async () => {
     const loadHistory = jest.spyOn(BaseClient.prototype, 'loadHistory');
@@ -133,6 +146,7 @@ describe('AgentClient - event actor history adapter', () => {
       discoveredToolNames: ['deferred_tool'],
       summary: { text: 'Earlier compacted context.', tokenCount: 12 },
       contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex,
     });
 
     await expect(
@@ -142,6 +156,7 @@ describe('AgentClient - event actor history adapter', () => {
         discoveredToolNames: ['deferred_tool'],
         summary: { text: 'Earlier compacted context.', tokenCount: 12 },
         contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+        compactionSemanticIndex,
       }),
     ).resolves.toMatchObject({
       fingerprint,
@@ -149,6 +164,7 @@ describe('AgentClient - event actor history adapter', () => {
       discoveredToolNames: ['deferred_tool'],
       summary: { text: 'Earlier compacted context.', tokenCount: 12 },
       contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex,
       checkpointMessageOverlay: {
         source: 'skill',
         messages: [
@@ -171,6 +187,7 @@ describe('AgentClient - event actor history adapter', () => {
       tokenCount: 12,
     });
     expect(client.contextMeta).toEqual({ calibrationRatio: 1.25, encoding: 'o200k_base' });
+    expect(client.compactionSemanticIndex).toEqual(compactionSemanticIndex.entries);
   });
 
   it('falls back when a durable Skill resolves to a different revision', async () => {
@@ -284,12 +301,14 @@ describe('AgentClient - event actor history adapter', () => {
       },
     ];
     client.contextMeta = { calibrationRatio: 1.3, encoding: 'o200k_base' };
+    client.compactionSemanticIndex = compactionSemanticIndex.entries;
     client.getEventActorAgents = jest.fn(() => []);
     client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
 
     await expect(client.getEventActorContext()).resolves.toMatchObject({
       summary: { text: 'Fresh compacted context.', tokenCount: 18 },
       contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+      compactionSemanticIndex,
     });
   });
 
@@ -855,6 +874,16 @@ describe('AgentClient - interrupt discovery persistence', () => {
     client.conversationId = streamId;
     client.responseMessageId = 'response-discovered-pause';
     client.jobCreatedAt = job.createdAt;
+    client.compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-before-pause',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Prepared the change',
+      },
+    ];
 
     await client.handleRunInterrupt(
       {
@@ -875,6 +904,10 @@ describe('AgentClient - interrupt discovery persistence', () => {
     const paused = await GenerationJobManager.getJob(streamId);
     expect(paused?.status).toBe('requires_action');
     expect(paused?.metadata.discoveredTools).toEqual(['save_issue_mcp_linear']);
+    expect(paused?.metadata.compactionSemanticIndex).toEqual({
+      version: 1,
+      entries: client.compactionSemanticIndex,
+    });
   });
 
   it('caps an event-bound pause at the inherited binding deadline', async () => {
@@ -2014,6 +2047,16 @@ describe('AgentClient - startup telemetry', () => {
     client.eventActorDiscoveredToolNames = ['deferred_tool'];
     client.eventActorSummary = { text: 'summary of earlier turns', tokenCount: 40 };
     client.contextMeta = { calibrationRatio: 1.25, encoding: client.getEncoding() };
+    client.compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-history',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ];
     client.recordCollectedUsage = jest.fn().mockResolvedValue();
 
     await client.chatCompletion({ payload: [] });
@@ -2031,10 +2074,11 @@ describe('AgentClient - startup telemetry', () => {
         indexTokenCountMap: {},
         initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
         calibrationRatio: 1.25,
+        compactionSemanticIndex: client.compactionSemanticIndex,
       }),
     );
-    expect(mockCreateRun.mock.calls[0][0]).not.toHaveProperty('compactionSemanticIndex');
     expect(mockFormatAgentMessages.mock.calls[0][4]).toBeUndefined();
+    expect(mockFormatAgentMessages).toHaveBeenCalledTimes(1);
     expect(mockStripActivityLabelParts).toHaveBeenCalledTimes(1);
     expect(processStream).toHaveBeenCalledWith(
       { messages: [currentEvent] },
@@ -6889,12 +6933,29 @@ describe('AgentClient - resumeCompletion content protection', () => {
       },
     });
 
-    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+    const compactionSemanticIndex = {
+      version: 1,
+      entries: [
+        {
+          type: 'activity_phase',
+          sourceMessageId: 'assistant-history',
+          sourceContentIndex: 1,
+          revision: 1,
+          status: 'committed',
+          text: 'Verified the release state',
+        },
+      ],
+    };
+    await AgentClient.prototype.resumeCompletion.call(context, {
+      resumeValue: {},
+      compactionSemanticIndex,
+    });
 
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
     expect(mockCreateRun.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         modelCallbacks: [expect.objectContaining({ name: 'librechat-model-bound-content-filter' })],
+        compactionSemanticIndex: compactionSemanticIndex.entries,
       }),
     );
     expect(resume).toHaveBeenCalledTimes(1);

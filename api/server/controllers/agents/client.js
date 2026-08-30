@@ -129,6 +129,8 @@ const {
   createInitializedAgentContextFingerprint,
   createSkillContentDigest,
   normalizeAgentEventActorDiscoveredTools,
+  createCompactionSemanticIndexProjection,
+  restoreCompactionSemanticIndex,
   MAX_AGENT_CONTEXT_SKILLS,
 } = require('@librechat/api');
 const {
@@ -287,6 +289,9 @@ class AgentClient extends BaseClient {
     this.eventActorSkillPrimeResult = undefined;
     this.eventActorDiscoveredToolNames = undefined;
     this.eventActorSummary = undefined;
+    /** Advisory compaction guidance retained across graph reconstruction.
+     * @type {import('@librechat/agents').CompactionSemanticIndex | undefined} */
+    this.compactionSemanticIndex = undefined;
 
     /** @type {AgentRun} */
     this.run;
@@ -1693,10 +1698,12 @@ class AgentClient extends BaseClient {
     let discoveredToolNames;
     let summary;
     let contextMeta;
+    let compactionSemanticIndex;
     try {
       discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
       summary = normalizeEventActorSummary(state.summary);
       contextMeta = normalizeEventActorContextMeta(state.contextMeta);
+      compactionSemanticIndex = restoreCompactionSemanticIndex(state.compactionSemanticIndex);
     } catch {
       return undefined;
     }
@@ -1724,6 +1731,7 @@ class AgentClient extends BaseClient {
     this.eventActorDiscoveredToolNames = discoveredToolNames;
     this.eventActorSummary = summary;
     this.contextMeta = contextMeta;
+    this.compactionSemanticIndex = compactionSemanticIndex;
     const context = await this.getEventActorContext(storedManifest, discoveredToolNames);
     const skillBodies = new Map(skillPrimeResult?.skills ?? []);
     const rootAgentContext = this.eventActorAgentContextSources?.[0];
@@ -1782,6 +1790,9 @@ class AgentClient extends BaseClient {
     ]);
     const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
     this.eventActorSummary = summary;
+    const compactionSemanticIndex = createCompactionSemanticIndexProjection(
+      this.compactionSemanticIndex,
+    );
     return {
       fingerprint: createInitializedAgentContextFingerprint({
         agents: this.eventActorAgentContextSources ?? agents,
@@ -1795,6 +1806,7 @@ class AgentClient extends BaseClient {
       discoveredToolNames,
       ...(summary == null ? {} : { summary }),
       ...(this.contextMeta == null ? {} : { contextMeta: this.contextMeta }),
+      ...(compactionSemanticIndex == null ? {} : { compactionSemanticIndex }),
     };
   }
 
@@ -1814,6 +1826,7 @@ class AgentClient extends BaseClient {
        * non-checkpointed state from durable history, never from that stale head. */
       this.eventActorSummary = undefined;
       this.contextMeta = undefined;
+      this.compactionSemanticIndex = undefined;
     }
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
@@ -3442,6 +3455,9 @@ class AgentClient extends BaseClient {
       ...(staged.activityPhaseSnapshot == null
         ? {}
         : { activityPhaseSnapshot: staged.activityPhaseSnapshot }),
+      ...(staged.compactionSemanticIndex == null
+        ? {}
+        : { compactionSemanticIndex: staged.compactionSemanticIndex }),
       persistencePending: true,
       ...(eventActorSuspension == null
         ? {}
@@ -3684,6 +3700,9 @@ class AgentClient extends BaseClient {
       interruptType: interrupt.payload.type,
       discoveredTools,
       activityPhaseSnapshot: this.activityPhaseWiring?.snapshot?.(),
+      compactionSemanticIndex: createCompactionSemanticIndexProjection(
+        this.compactionSemanticIndex,
+      ),
     };
     if (this.eventActorInvocationId != null) {
       return;
@@ -3907,9 +3926,14 @@ class AgentClient extends BaseClient {
       );
       if (this.eventActorContinuation !== 'warm') {
         this.eventActorSummary = initialSummary;
+        this.compactionSemanticIndex = compactionSemanticIndex;
       }
       const continuationSummary =
         this.eventActorContinuation === 'warm' ? this.eventActorSummary : initialSummary;
+      const continuationCompactionSemanticIndex =
+        this.eventActorContinuation === 'warm'
+          ? this.compactionSemanticIndex
+          : compactionSemanticIndex;
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -4159,7 +4183,9 @@ class AgentClient extends BaseClient {
           // rebuilt turns use the summary reconstructed from durable history.
           indexTokenCountMap: this.eventActorContinuation === 'warm' ? {} : indexTokenCountMap,
           initialSummary: continuationSummary,
-          ...(deriveCompactionSemanticIndex ? { compactionSemanticIndex } : {}),
+          ...(continuationCompactionSemanticIndex == null
+            ? {}
+            : { compactionSemanticIndex: continuationCompactionSemanticIndex }),
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
@@ -4456,6 +4482,7 @@ class AgentClient extends BaseClient {
    * @param {Array} [params.seedContent] - content aggregated before the pause
    * @param {Array<import('@librechat/agents').RunStep>} [params.runSteps] - run steps emitted before the pause
    * @param {import('@librechat/api').ActivityPhaseSnapshot} [params.activityPhaseSnapshot]
+   * @param {import('@librechat/data-schemas').ICompactionSemanticIndexProjection} [params.compactionSemanticIndex]
    * @param {Array} [params.storedMessages] - persisted user messages restored for the resume
    * @param {AbortController} [params.abortController]
    * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
@@ -4470,6 +4497,7 @@ class AgentClient extends BaseClient {
     userMCPAuthMap,
     discoveredToolNames,
     activityPhaseSnapshot,
+    compactionSemanticIndex,
   }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -4530,6 +4558,7 @@ class AgentClient extends BaseClient {
       }
 
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      this.compactionSemanticIndex = restoreCompactionSemanticIndex(compactionSemanticIndex);
       const agents = collectReachableAgents([
         this.options.agent,
         ...(this.agentConfigs?.size > 0 ? this.agentConfigs.values() : []),
@@ -4661,6 +4690,9 @@ class AgentClient extends BaseClient {
         // batches keep claiming slots and generating group headers.
         activityLabel,
         activityPhase,
+        ...(this.compactionSemanticIndex == null
+          ? {}
+          : { compactionSemanticIndex: this.compactionSemanticIndex }),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so these names restore the schemas to the
         // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.

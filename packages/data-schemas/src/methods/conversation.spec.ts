@@ -4678,6 +4678,19 @@ describe('Conversation Operations', () => {
       const discoveredToolNames = ['deferred_lookup', 'deferred_write'];
       const summary = { text: 'Earlier compacted context.', tokenCount: 12 };
       const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base' };
+      const compactionSemanticIndex = {
+        version: 1 as const,
+        entries: [
+          {
+            type: 'activity_phase' as const,
+            sourceMessageId: 'assistant-history',
+            sourceContentIndex: 1,
+            revision: 1,
+            status: 'committed' as const,
+            text: 'Verified the release state',
+          },
+        ],
+      };
       await Conversation.create({
         conversationId,
         user: 'actor-context-user',
@@ -4723,6 +4736,7 @@ describe('Conversation Operations', () => {
         discoveredToolNames,
         summary,
         contextMeta,
+        compactionSemanticIndex,
       });
 
       expect(committed).toMatchObject({
@@ -4735,6 +4749,7 @@ describe('Conversation Operations', () => {
           discoveredToolNames,
           summary,
           contextMeta,
+          compactionSemanticIndex,
         },
       });
       await expect(
@@ -4746,6 +4761,7 @@ describe('Conversation Operations', () => {
           discoveredToolNames,
           summary,
           contextMeta,
+          compactionSemanticIndex,
         },
       });
 
@@ -4800,6 +4816,21 @@ describe('Conversation Operations', () => {
           contextMeta: { calibrationRatio: 9, encoding: 'o200k_base' },
         }),
       ).rejects.toThrow('Event actor context calibration is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-compaction-index',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          compactionSemanticIndex: {
+            version: 1,
+            entries: [{ ...compactionSemanticIndex.entries[0], sourceContentIndex: -1 }],
+          },
+        }),
+      ).rejects.toThrow('Event actor compaction semantic index is invalid');
     });
 
     it('retains exact legacy settled receipts until delivery-ledger migration', async () => {

@@ -6,6 +6,7 @@ export * from './client';
 export * from './config';
 export * from './checkpointer';
 export * from './compatibility';
+export * from './compaction';
 export * from './contact';
 export * from './context';
 export * from './control';

@@ -4917,6 +4917,9 @@ export class RedisJobStore implements IJobStoreV2 {
       activityPhaseSnapshot: data.activityPhaseSnapshot
         ? JSON.parse(data.activityPhaseSnapshot)
         : undefined,
+      compactionSemanticIndex: data.compactionSemanticIndex
+        ? JSON.parse(data.compactionSemanticIndex)
+        : undefined,
       /** The owning replica's seal capability. `serializeJob` writes every
        *  boolean generically, but this mapper is explicit — omitting it here
        *  drops the flag on every read, so the steer route would compute

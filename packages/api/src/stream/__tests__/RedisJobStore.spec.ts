@@ -352,6 +352,19 @@ describe('RedisJobStore', () => {
       preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
+      compactionSemanticIndex: {
+        version: 1,
+        entries: [
+          {
+            type: 'activity_phase',
+            sourceMessageId: 'assistant-history',
+            sourceContentIndex: 1,
+            revision: 1,
+            status: 'committed',
+            text: 'Verified the release state',
+          },
+        ],
+      },
       preemptCapable: true,
       steerQuotesExecutionId: 'exec-1',
       generationProtocolVersion: 2,
@@ -425,6 +438,15 @@ describe('RedisJobStore', () => {
       preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
+      compactionSemanticIndex: {
+        version: 1,
+        entries: [
+          expect.objectContaining({
+            type: 'activity_phase',
+            text: 'Verified the release state',
+          }),
+        ],
+      },
       resolvedAskUserQuestions: [
         {
           request: { question: 'Deploy where?' },
