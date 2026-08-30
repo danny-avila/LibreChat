@@ -14,12 +14,12 @@ import {
   filterAttachmentsForPart,
   groupSequentialToolCalls,
 } from '~/utils';
-import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import {
   groupActivityPhases,
   lastCursorContentIdx,
   getActivityLabelText,
 } from '~/utils/activityLabels';
+import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { MessageContext, SearchContext } from '~/Providers';
