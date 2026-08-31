@@ -1,8 +1,10 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
+import { buildSummarizationInstruction, buildSummaryCarrierText } from '@librechat/agents';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { TMessage } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
+import { countTokens } from '~/utils/tokenizer';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -35,7 +37,6 @@ import {
   compactConversation,
   selectBranchMessages,
   NothingToCompactError,
-  buildCompactionInstruction,
   DEFAULT_COMPACTION_PROMPT,
   DEFAULT_COMPACTION_UPDATE_PROMPT,
 } from '~/agents/compact/summary';
@@ -148,14 +149,14 @@ describe('selectBranchMessages', () => {
   });
 });
 
-describe('buildCompactionInstruction', () => {
+describe('buildSummarizationInstruction', () => {
   it('sends the base prompt when there is no prior summary', () => {
-    expect(buildCompactionInstruction('base', 'update')).toBe('base');
-    expect(buildCompactionInstruction('base', 'update', '   ')).toBe('base');
+    expect(buildSummarizationInstruction('base', 'update')).toBe('base');
+    expect(buildSummarizationInstruction('base', 'update', '   ')).toBe('base');
   });
 
   it('switches to the update prompt and carries the prior summary', () => {
-    const result = buildCompactionInstruction('base', 'update', 'earlier checkpoint');
+    const result = buildSummarizationInstruction('base', 'update', 'earlier checkpoint');
     expect(result).toContain('update');
     expect(result).toContain('<previous-summary>\nearlier checkpoint\n</previous-summary>');
     expect(result).not.toContain('base');
@@ -237,6 +238,22 @@ describe('compactConversation', () => {
     expect(result.summary.tokenCount).toBeLessThan(60);
     expect(result.messagesCompacted).toBe(6);
     expect(result.passes[0]?.usage).toMatchObject({ input_tokens: 1200, output_tokens: 40 });
+  });
+
+  it('sizes the persisted summary with the automatic summary carrier', async () => {
+    const summaryText = '## Checkpoint\nDid the thing.';
+    const result = await compactConversation({
+      req: makeReq(),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    const bodyTokens = await countTokens(summaryText);
+    const carrierTokens = await countTokens(buildSummaryCarrierText(summaryText));
+    expect(result.summary.tokenCount).toBe(carrierTokens);
+    expect(result.summary.tokenCount).toBeGreaterThan(bodyTokens);
   });
 
   it('still sizes the summary when the provider reports no output tokens', async () => {

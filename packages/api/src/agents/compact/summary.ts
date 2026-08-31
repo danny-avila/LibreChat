@@ -3,6 +3,8 @@ import { Constants, ContentTypes, EModelEndpoint, FileSources } from 'librechat-
 import {
   Providers,
   HumanMessage,
+  buildSummaryCarrierText,
+  buildSummarizationInstruction,
   formatMessage,
   initializeModel,
   formatAgentMessages,
@@ -41,13 +43,6 @@ import { extractLibreChatParams } from '~/utils/llm';
 import { getModelMaxTokens } from '~/utils/tokens';
 import { countTokens } from '~/utils/tokenizer';
 import { createSafeUser } from '~/utils/env';
-
-/**
- * Matches the agents SDK's summary accounting: the persisted summary is
- * re-injected wrapped in a system/human carrier, so its stored token count has
- * to include that wrapper or every later budget read undercounts it.
- */
-const SUMMARY_WRAPPER_OVERHEAD_TOKENS = 33;
 
 /**
  * Resolves the bodies of skills invoked in the branch so the checkpoint can
@@ -904,22 +899,6 @@ export async function resolveCompactionModel({
 }
 
 /**
- * Pairs the configured compaction prompt with any prior summary, so a second
- * compaction consolidates rather than restarting from an empty checkpoint.
- */
-export function buildCompactionInstruction(
-  promptText: string,
-  updatePromptText: string,
-  priorSummaryText?: string,
-): string {
-  const prior = priorSummaryText?.trim() ?? '';
-  if (prior === '') {
-    return promptText;
-  }
-  return `${updatePromptText}\n\n<previous-summary>\n${prior}\n</previous-summary>`;
-}
-
-/**
  * Fraction of the summarizer's context window the transcript may occupy. The
  * rest is headroom for the checkpoint prompt, the summary itself, and the
  * provider's own accounting of a prompt this module can only estimate.
@@ -1577,7 +1556,7 @@ export async function compactConversation({
   const billingDetails = () => ({ passes: [...passes], model, provider, endpointTokenConfig });
 
   for (const chunk of chunks) {
-    const instruction = buildCompactionInstruction(
+    const instruction = buildSummarizationInstruction(
       promptText,
       updatePromptText,
       text || priorSummary?.text,
@@ -1642,8 +1621,7 @@ export async function compactConversation({
    * every later context calculation reserve room for tokens that are not sent.
    * Provider output usage stays exclusively a billing input.
    */
-  const summaryTokens = await countTokens(text);
-  const tokenCount = summaryTokens + SUMMARY_WRAPPER_OVERHEAD_TOKENS;
+  const tokenCount = await countTokens(buildSummaryCarrierText(text));
 
   logger.debug('[compact] Compaction complete', {
     provider,
