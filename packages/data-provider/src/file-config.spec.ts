@@ -1761,6 +1761,66 @@ describe('defaultLLMDeliveryPath config merging', () => {
     expect(endpointConfig.legacyFileUploadUX).toBe(true);
   });
 
+  it('inherits the global fallback when an endpoint supplies only overrides', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: { fallback: 'none' },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'image/*': 'provider' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath).toEqual({
+      fallback: 'none',
+      overrides: { 'image/*': 'provider' },
+    });
+  });
+
+  it('merges override maps with the endpoint winning per key', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: {
+        fallback: 'text',
+        overrides: { 'image/*': 'provider', 'audio/*': 'none' },
+      },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'audio/*': 'text' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath).toEqual({
+      fallback: 'text',
+      overrides: { 'image/*': 'provider', 'audio/*': 'text' },
+    });
+  });
+
+  it('lets an endpoint fallback override the global fallback', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: { fallback: 'none' },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { fallback: 'text' },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath?.fallback).toBe('text');
+  });
+
   it('should merge global defaultLLMDeliveryPath into mergedConfig', () => {
     const merged = mergeFileConfig({
       defaultLLMDeliveryPath: {

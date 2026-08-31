@@ -884,9 +884,36 @@ function mergeWithDefault(
     fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
     totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
     supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultMimeTypes,
-    defaultLLMDeliveryPath:
-      endpointConfig.defaultLLMDeliveryPath ?? defaultConfig.defaultLLMDeliveryPath,
+    defaultLLMDeliveryPath: mergeDeliveryPathConfig(
+      endpointConfig.defaultLLMDeliveryPath,
+      defaultConfig.defaultLLMDeliveryPath,
+    ),
     legacyFileUploadUX: endpointConfig.legacyFileUploadUX ?? defaultConfig.legacyFileUploadUX,
+  };
+}
+
+/**
+ * Deep-merges delivery-path config so an endpoint that supplies only one override
+ * still inherits the default's fallback and shared overrides. Whole-object
+ * replacement would silently drop the inherited routing.
+ */
+function mergeDeliveryPathConfig(
+  endpointValue?: TDefaultLLMDeliveryPathConfig,
+  defaultValue?: TDefaultLLMDeliveryPathConfig,
+): TDefaultLLMDeliveryPathConfig | undefined {
+  if (!endpointValue) {
+    return defaultValue;
+  }
+  if (!defaultValue) {
+    return endpointValue;
+  }
+  const fallback = endpointValue.fallback ?? defaultValue.fallback;
+  const hasOverrides = endpointValue.overrides != null || defaultValue.overrides != null;
+  return {
+    ...(fallback != null ? { fallback } : {}),
+    ...(hasOverrides
+      ? { overrides: { ...defaultValue.overrides, ...endpointValue.overrides } }
+      : {}),
   };
 }
 
@@ -905,8 +932,10 @@ export function getEndpointFileConfig(params: {
   const baseDefaultConfig: EndpointFileConfig = fileConfig.endpoints.default;
   const globalDefaultConfig: EndpointFileConfig = {
     ...baseDefaultConfig,
-    defaultLLMDeliveryPath:
-      mergedFileConfig.defaultLLMDeliveryPath ?? baseDefaultConfig.defaultLLMDeliveryPath,
+    defaultLLMDeliveryPath: mergeDeliveryPathConfig(
+      mergedFileConfig.defaultLLMDeliveryPath,
+      baseDefaultConfig.defaultLLMDeliveryPath,
+    ),
     legacyFileUploadUX: mergedFileConfig.legacyFileUploadUX ?? baseDefaultConfig.legacyFileUploadUX,
   };
   const userDefaultConfig = mergedFileConfig.endpoints.default;
