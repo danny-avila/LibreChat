@@ -40,6 +40,7 @@ const {
   processImageFile,
   resolvesToTextDelivery,
 } = require('~/server/services/Files/process');
+const { filterFile } = require('~/server/services/Files/process');
 const { UninspectableFileError } = require('@librechat/api');
 
 const router = require('~/server/routes/files/images');
@@ -490,6 +491,30 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     });
 
     expect(response.status).toBe(200);
+  });
+
+  it('validates an agent upload against the provider that will process it', async () => {
+    /* The request carries endpoint `agents`, but the agent's own provider governs
+     * routing, so it has to govern acceptance too or the two disagree. */
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+    const app = createAppWithUser(authorId);
+
+    await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(filterFile).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'openai', image: true }),
+    );
   });
 
   it('sends an image the config routes to text through the agent upload path', async () => {

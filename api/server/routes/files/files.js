@@ -39,6 +39,7 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
+const { resolveUploadEndpoint, resolveUploadAgent } = require('~/server/services/Files/agent');
 const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
@@ -740,7 +741,14 @@ router.post('/', async (req, res) => {
 
   try {
     req.file.originalname = sanitizeFilename(req.file.originalname);
-    filterFile({ req });
+    /* Same configuration for validation and routing: an agent upload arrives as
+     * `agents` but is processed under the agent's own provider. */
+    const effectiveEndpoint = await resolveUploadEndpoint({
+      endpoint: metadata.endpoint,
+      agent_id: metadata.agent_id,
+      req,
+    });
+    filterFile({ req, endpoint: effectiveEndpoint });
 
     await assertUploadContentAllowed({
       filters: req.config?.filters,
@@ -773,7 +781,7 @@ router.post('/', async (req, res) => {
         req,
         res,
         metadata,
-        getAgent: db.getAgent,
+        getAgent: ({ id }) => resolveUploadAgent(req, id),
         checkPermission,
       });
       if (denied) {

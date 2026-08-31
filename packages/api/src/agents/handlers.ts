@@ -16,6 +16,7 @@ import type {
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
+import type { CodeEnvFile, CodeSessionContext } from '@librechat/agents';
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type {
   BackgroundToolDeadClaimRecovery,
@@ -87,6 +88,7 @@ import {
 } from './intent';
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
+import { mergeCodeFilesIntoContext } from './codeFilesSession';
 import { createSkillContentDigest } from './compatibility';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
@@ -188,8 +190,10 @@ export interface ToolExecuteOptions {
   toolEndCallback?: ToolEndCallback;
   /** Durable internal-completion adapter, present only for an Event Actor invocation. */
   eventActorDetachedAction?: EventActorDetachedActionLifecycle;
-  /** Called once per batch before tool execution to lazily provision files to tool environments */
-  provisionFiles?: (toolNames: string[], agentId?: string) => Promise<void>;
+  /** Called once per batch before tool execution to lazily provision files to tool
+   *  environments. Resolves to the code-env refs it uploaded, which the caller folds
+   *  into this batch's code-session context. */
+  provisionFiles?: (toolNames: string[], agentId?: string) => Promise<CodeEnvFile[] | void>;
   /**
    * Persists a backgrounded code-execution result onto the dispatch turn once
    * the detached call settles: downloads/persists generated files, patches the
@@ -4483,9 +4487,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             }
             const toolNames = [...new Set(allowedToolCalls.map((tc) => tc.name))];
 
-            if (provisionFiles) {
-              await provisionFiles(toolNames, agentId);
-            }
+            const provisionedCodeFiles = provisionFiles
+              ? await provisionFiles(toolNames, agentId)
+              : undefined;
 
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
               toolNames,
@@ -4499,6 +4503,26 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               sourceConfigurable,
               loadedConfigurable,
             );
+            /* The graph populated each call's code-session context from the sessions that
+             * existed at run start, before this batch provisioned anything, and nothing
+             * downstream refreshes it. buildToolCallConfig reads `_injected_files` from
+             * that context alone, so without this fold a successful upload still reaches
+             * a sandbox that cannot see the file. */
+            if (provisionedCodeFiles && provisionedCodeFiles.length > 0) {
+              for (const tc of allowedToolCalls) {
+                if (!isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+                  continue;
+                }
+                const merged = mergeCodeFilesIntoContext(
+                  tc.codeSessionContext as CodeSessionContext | undefined,
+                  provisionedCodeFiles,
+                );
+                if (merged) {
+                  tc.codeSessionContext = merged;
+                }
+              }
+            }
+
             const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
             const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
             const executionRouteKey =

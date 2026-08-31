@@ -53,6 +53,7 @@ const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
+const { resolveUploadEndpoint } = require('~/server/services/Files/agent');
 const db = require('~/models');
 
 /**
@@ -449,16 +450,6 @@ const processFileURL = async ({
   }
 };
 
-/** Agent uploads carry endpoint=agents; resolve the file config from the agent's
- *  own provider so provider-specific defaultLLMDeliveryPath overrides are honored. */
-const resolveUploadEndpoint = async ({ endpoint, agent_id }) => {
-  if (!agent_id) {
-    return endpoint;
-  }
-  const uploadAgent = await db.getAgent({ id: agent_id });
-  return uploadAgent?.provider || endpoint;
-};
-
 const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig, endpoint }) => {
   const isLegacyFileUploadUX = endpointConfig?.legacyFileUploadUX === true;
   if (isLegacyFileUploadUX) {
@@ -492,7 +483,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint, agent_id } = metadata;
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const configEndpoint = await resolveUploadEndpoint({ endpoint, agent_id });
+  const configEndpoint = await resolveUploadEndpoint({ endpoint, agent_id, req });
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint: configEndpoint });
   const llmDeliveryPath = resolveDefaultUploadLLMDeliveryPath({
     file,
@@ -735,6 +726,7 @@ const resolvesToTextDelivery = async ({ req, metadata }) => {
   const endpoint = await resolveUploadEndpoint({
     endpoint: metadata.endpoint,
     agent_id: metadata.agent_id,
+    req,
   });
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
   return (
@@ -772,7 +764,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     tool_resource === EToolResources.ocr ? EToolResources.context : tool_resource;
 
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const endpoint = await resolveUploadEndpoint({ endpoint: req.body?.endpoint, agent_id });
+  const endpoint = await resolveUploadEndpoint({ endpoint: req.body?.endpoint, agent_id, req });
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
 
   if (agent_id && !tool_resource && !messageAttachment) {
@@ -1483,9 +1475,20 @@ async function saveBase64Image(
  *
  * @throws {Error} If a file exception is caught (invalid file size or type, lack of metadata).
  */
-function filterFile({ req, image, isAvatar }) {
+/**
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {boolean} [params.image]
+ * @param {boolean} [params.isAvatar]
+ * @param {string} [params.endpoint] Effective endpoint for this upload. Agent uploads
+ *   arrive as `agents` but route by the agent's own provider, so validation has to be
+ *   told which configuration governs, or it admits files the provider rejects and
+ *   rejects files the provider allows.
+ */
+function filterFile({ req, image, isAvatar, endpoint: endpointOverride }) {
   const { file } = req;
-  const { endpoint, endpointType, file_id, width, height } = req.body;
+  const { endpoint: requestEndpoint, endpointType, file_id, width, height } = req.body;
+  const endpoint = endpointOverride ?? requestEndpoint;
 
   if (!file_id && !isAvatar) {
     throw new Error('No file_id provided');
