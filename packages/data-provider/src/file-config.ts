@@ -515,6 +515,7 @@ export const defaultLLMDeliveryPathSchema = z.object({
   overrides: z.record(DefaultLLMDeliveryPath).optional(),
 });
 export type TDefaultLLMDeliveryPathConfig = z.infer<typeof defaultLLMDeliveryPathSchema>;
+type TDeliveryPathOverrides = NonNullable<TDefaultLLMDeliveryPathConfig['overrides']>;
 
 export const endpointFileConfigSchema = z.object({
   disabled: z.boolean().optional(),
@@ -931,9 +932,9 @@ function mergeDeliveryPathConfig(
  * upper wildcard covers restores precedence without changing how lookups work.
  */
 function shadowByWildcard(
-  lower?: Record<string, string>,
-  upper?: Record<string, string>,
-): Record<string, string> {
+  lower?: TDeliveryPathOverrides,
+  upper?: TDeliveryPathOverrides,
+): TDeliveryPathOverrides {
   if (!lower) {
     return { ...upper };
   }
@@ -946,7 +947,7 @@ function shadowByWildcard(
   if (upperWildcards.size === 0) {
     return { ...lower, ...upper };
   }
-  const retained: Record<string, string> = {};
+  const retained: TDeliveryPathOverrides = {};
   for (const key in lower) {
     const isShadowed =
       !key.endsWith('/*') &&
