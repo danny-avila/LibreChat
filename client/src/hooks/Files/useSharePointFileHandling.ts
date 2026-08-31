@@ -5,8 +5,8 @@ import type { SharePointFile, SharePointSkipReason } from '~/data-provider/Files
 import type { FileHandlingState } from './useFileHandling';
 import type { ExtendedFile } from '~/common';
 import useFileHandling, { useFileHandlingNoChatContext } from './useFileHandling';
-import { getFileSignature } from '~/utils/files';
 import useSharePointDownload from './useSharePointDownload';
+import { getFileSignature } from '~/utils/files';
 
 /**
  * Folder contents may only fill the attachment slots the current selection leaves free.
