@@ -3035,6 +3035,65 @@ describe('BaseClient', () => {
       expect(TestClient.addDocuments).not.toHaveBeenCalled();
     });
 
+    test('still delivers a provider PDF that lazy provisioning marked embedded', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'provisioned-pdf',
+        filename: 'report.pdf',
+        filepath: '/uploads/report.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        embedded: true,
+        llmDeliveryPath: 'provider',
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addDocuments).toHaveBeenCalled();
+      expect(message.documents).toEqual([{ type: 'file' }]);
+    });
+
+    test('still delivers a provider image that carries a codeEnvRef', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'provisioned-image',
+        filename: 'chart.png',
+        filepath: '/uploads/chart.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+        metadata: { codeEnvRef: { kind: 'user', id: 'u1' } },
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addImageURLs).toHaveBeenCalled();
+      expect(message.image_urls).toEqual(['encoded-image']);
+    });
+
+    test('keeps excluding embedded legacy files that have no delivery path', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'legacy-embedded',
+        filename: 'legacy.pdf',
+        filepath: '/uploads/legacy.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        embedded: true,
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
     test('routes legacy files without llmDeliveryPath normally', async () => {
       const message = {};
       const file = {
