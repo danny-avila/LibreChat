@@ -1804,6 +1804,22 @@ describe('defaultLLMDeliveryPath config merging', () => {
     });
   });
 
+  it('keeps an endpoint fallback ahead of inherited default overrides', () => {
+    const merged = mergeFileConfig({
+      endpoints: {
+        default: { defaultLLMDeliveryPath: { overrides: { 'image/*': 'text' } } },
+        [EModelEndpoint.openAI]: { defaultLLMDeliveryPath: { fallback: 'provider' } },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath?.overrides?.['image/*']).toBeUndefined();
+    expect(endpointConfig.defaultLLMDeliveryPath?.fallback).toBe('provider');
+  });
+
   it('lets an endpoint fallback override the global fallback', () => {
     const merged = mergeFileConfig({
       defaultLLMDeliveryPath: { fallback: 'none' },

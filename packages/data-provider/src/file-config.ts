@@ -907,10 +907,17 @@ function mergeDeliveryPathConfig(
   if (!defaultValue) {
     return endpointValue;
   }
-  const fallback = endpointValue.fallback ?? defaultValue.fallback;
+  /* An endpoint fallback terminates resolution after that endpoint's own overrides,
+   * so inheriting the lower layer's overrides would promote them above it. Only when
+   * the endpoint declares no fallback does resolution continue downward, and then the
+   * merged map reproduces the chain exactly: endpoint overrides, default overrides,
+   * default fallback. */
+  if (endpointValue.fallback != null) {
+    return endpointValue;
+  }
   const hasOverrides = endpointValue.overrides != null || defaultValue.overrides != null;
   return {
-    ...(fallback != null ? { fallback } : {}),
+    ...(defaultValue.fallback != null ? { fallback: defaultValue.fallback } : {}),
     ...(hasOverrides
       ? { overrides: { ...defaultValue.overrides, ...endpointValue.overrides } }
       : {}),
