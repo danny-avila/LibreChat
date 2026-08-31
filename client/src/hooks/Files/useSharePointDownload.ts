@@ -1,6 +1,10 @@
 import { useCallback, useState } from 'react';
 import { useToastContext } from '@librechat/client';
-import type { SharePointFile, SharePointBatchProgress } from '~/data-provider/Files';
+import type {
+  SharePointSkipReason,
+  SharePointBatchProgress,
+  SharePointFile,
+} from '~/data-provider/Files';
 import { useSharePointBatchDownload, expandSharePointFolders } from '~/data-provider/Files';
 import useSharePointToken from './useSharePointToken';
 import useLocalize from '~/hooks/useLocalize';
@@ -10,8 +14,8 @@ interface UseSharePointDownloadProps {
   onError?: (error: Error) => void;
   /** Remaining attachment slots, so folder contents cannot overrun the endpoint's file limit. */
   maxFiles?: number;
-  /** Endpoint per-file size limit, applied to folder contents before they are downloaded. */
-  maxFileSize?: number;
+  /** Applies the uploader's rules to folder contents before they are downloaded. */
+  screenFile?: (file: SharePointFile) => SharePointSkipReason | null;
 }
 
 interface UseSharePointDownloadReturn {
@@ -25,7 +29,7 @@ export default function useSharePointDownload({
   onFilesDownloaded,
   onError,
   maxFiles,
-  maxFileSize,
+  screenFile,
 }: UseSharePointDownloadProps = {}): UseSharePointDownloadReturn {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -81,7 +85,7 @@ export default function useSharePointDownload({
             items: files,
             accessToken,
             maxFiles,
-            maxFileSize,
+            screenFile,
           });
           filesToDownload = expansion.files;
 
@@ -95,11 +99,12 @@ export default function useSharePointDownload({
             });
           }
 
-          if (expansion.oversizedFiles.length > 0) {
+          const skippedBySize = expansion.skippedFiles.filter(
+            (file) => file.reason === 'size',
+          ).length;
+          if (skippedBySize > 0) {
             showToast({
-              message: localize('com_files_sharepoint_folders_oversized', {
-                0: expansion.oversizedFiles.length,
-              }),
+              message: localize('com_files_sharepoint_folders_oversized', { 0: skippedBySize }),
               status: 'warning',
               duration: 5000,
             });
@@ -108,18 +113,21 @@ export default function useSharePointDownload({
           if (filesToDownload.length === 0) {
             throw new Error(
               localize(
-                expansion.truncated
+                expansion.truncatedBy === 'fileLimit'
                   ? 'com_files_sharepoint_folder_no_room'
                   : 'com_files_sharepoint_folders_empty',
               ),
             );
           }
 
-          if (expansion.truncated) {
+          if (expansion.truncatedBy != null) {
             showToast({
-              message: localize('com_files_sharepoint_folder_limit', {
-                0: filesToDownload.length,
-              }),
+              message: localize(
+                expansion.truncatedBy === 'fileLimit'
+                  ? 'com_files_sharepoint_folder_limit'
+                  : 'com_files_sharepoint_folder_too_deep',
+                { 0: filesToDownload.length },
+              ),
               status: 'warning',
               duration: 5000,
             });
@@ -200,7 +208,7 @@ export default function useSharePointDownload({
       refetchToken,
       localize,
       maxFiles,
-      maxFileSize,
+      screenFile,
     ],
   );
 

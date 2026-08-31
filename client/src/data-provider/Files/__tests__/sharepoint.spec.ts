@@ -88,7 +88,7 @@ describe('expandSharePointFolders', () => {
     });
 
     expect(result.files.map((file) => file.id)).toEqual(['a', 'b']);
-    expect(result.truncated).toBe(false);
+    expect(result.truncatedBy).toBeNull();
     expect(result.unreadableFolders).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -169,7 +169,7 @@ describe('expandSharePointFolders', () => {
     });
 
     expect(result.files).toHaveLength(2);
-    expect(result.truncated).toBe(true);
+    expect(result.truncatedBy).toBe('fileLimit');
   });
 
   it('counts directly picked files against maxFiles', async () => {
@@ -182,7 +182,7 @@ describe('expandSharePointFolders', () => {
     });
 
     expect(result.files.map((file) => file.id)).toEqual(['a', 'b']);
-    expect(result.truncated).toBe(true);
+    expect(result.truncatedBy).toBe('fileLimit');
   });
 
   it('reports folders it cannot list without dropping the rest of the selection', async () => {
@@ -243,7 +243,7 @@ describe('expandSharePointFolders', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(100);
-    expect(result.truncated).toBe(true);
+    expect(result.truncatedBy).toBe('requestBudget');
   });
 
   it('stops paging a folder as soon as maxFiles is reached', async () => {
@@ -267,11 +267,11 @@ describe('expandSharePointFolders', () => {
     });
 
     expect(result.files.map((file) => file.id)).toEqual(['p1-a', 'p1-b']);
-    expect(result.truncated).toBe(true);
+    expect(result.truncatedBy).toBe('fileLimit');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('skips folder contents above the size limit before downloading them', async () => {
+  it('leaves out folder contents the caller screens away', async () => {
     mockGraph({
       'folder-1': [driveFile('small', 100), driveFile('huge', 10_000), driveFile('also-small', 50)],
     });
@@ -279,25 +279,54 @@ describe('expandSharePointFolders', () => {
     const result = await expandSharePointFolders({
       items: [pickedFolder('folder-1')],
       accessToken: ACCESS_TOKEN,
-      maxFileSize: 1_000,
+      screenFile: (file) => (file.size >= 1_000 ? 'size' : null),
     });
 
     expect(result.files.map((file) => file.id)).toEqual(['small', 'also-small']);
-    expect(result.oversizedFiles).toEqual(['huge.txt']);
-    expect(result.truncated).toBe(false);
+    expect(result.skippedFiles).toEqual([{ name: 'huge.txt', reason: 'size' }]);
+    expect(result.truncatedBy).toBeNull();
   });
 
-  it('does not spend a slot on an oversized file', async () => {
+  it('does not spend a slot on a screened-out file', async () => {
     mockGraph({ 'folder-1': [driveFile('huge', 10_000), driveFile('small', 10)] });
 
     const result = await expandSharePointFolders({
       items: [pickedFolder('folder-1')],
       accessToken: ACCESS_TOKEN,
       maxFiles: 1,
-      maxFileSize: 1_000,
+      screenFile: (file) => (file.size >= 1_000 ? 'size' : null),
     });
 
     expect(result.files.map((file) => file.id)).toEqual(['small']);
+  });
+
+  it('reports a duplicate of an existing attachment without downloading it', async () => {
+    mockGraph({ 'folder-1': [driveFile('already-here'), driveFile('new-one')] });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      screenFile: (file) => (file.name === 'already-here.txt' ? 'duplicate' : null),
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['new-one']);
+    expect(result.skippedFiles).toEqual([{ name: 'already-here.txt', reason: 'duplicate' }]);
+  });
+
+  it('reports a share-only folder as unreadable without calling Graph', async () => {
+    const { fetchMock } = mockGraph({});
+    const shareOnlyFolder = pickedFolder('shared');
+    shareOnlyFolder.driveId = '';
+    shareOnlyFolder.itemId = '';
+
+    const result = await expandSharePointFolders({
+      items: [shareOnlyFolder],
+      accessToken: ACCESS_TOKEN,
+    });
+
+    expect(result.files).toEqual([]);
+    expect(result.unreadableFolders).toEqual(['shared-folder']);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('returns nothing when there are no attachment slots left', async () => {
@@ -310,7 +339,7 @@ describe('expandSharePointFolders', () => {
     });
 
     expect(result.files).toEqual([]);
-    expect(result.truncated).toBe(true);
+    expect(result.truncatedBy).toBe('fileLimit');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -357,7 +386,7 @@ describe('expandSharePointFolders', () => {
     });
 
     expect(result.files).toEqual([]);
-    expect(result.truncated).toBe(true);
+    expect(result.truncatedBy).toBe('requestBudget');
     expect(fetchMock).toHaveBeenCalledTimes(100);
   });
 });

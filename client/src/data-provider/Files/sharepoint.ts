@@ -39,15 +39,21 @@ export interface SharePointFile {
   sharePointItem: SharePointDriveItem;
 }
 
+/** Why a folder item was left out before it was ever downloaded. */
+export type SharePointSkipReason = 'size' | 'duplicate';
+
+/** What ended the walk early, or null when it ran to completion. */
+export type SharePointTruncation = 'fileLimit' | 'requestBudget';
+
 /** Outcome of walking the selected folders, including what had to be left out. */
 export interface SharePointFolderExpansion {
   files: SharePointFile[];
   /** Folders whose contents could not be listed, by name. */
   unreadableFolders: string[];
-  /** Files skipped before download because they exceed the endpoint's size limit, by name. */
-  oversizedFiles: string[];
-  /** Whether the file limit or the request budget cut the walk short. */
-  truncated: boolean;
+  /** Folder items the caller's screen rejected before download, by name and reason. */
+  skippedFiles: { name: string; reason: SharePointSkipReason }[];
+  /** What cut the walk short, so the caller can say which limit was hit. */
+  truncatedBy: SharePointTruncation | null;
 }
 
 export interface SharePointDownloadProgress {
@@ -120,31 +126,34 @@ async function fetchChildrenPage(url: string, accessToken: string): Promise<Driv
  * Walks the folders in a picker selection breadth-first and returns the files inside
  * them, merged with the files that were selected directly. One page of one folder
  * listing is the unit of work, so `maxFiles` and the request budget are both applied
- * as pages arrive rather than after a folder has been materialized in full. Files
- * already over the endpoint's size limit are skipped before they are downloaded, and
- * folders the user cannot list are reported instead of failing the whole selection.
+ * as pages arrive rather than after a folder has been materialized in full.
+ *
+ * Upload policy stays with the caller: `screenFile` decides which folder items are
+ * worth downloading, so this module never duplicates the uploader's rules. Folders
+ * the user cannot list — including share-only results that carry no drive identifiers
+ * to traverse — are reported instead of failing the whole selection.
  */
 export async function expandSharePointFolders({
   items,
   accessToken,
   maxFiles,
-  maxFileSize,
+  screenFile,
 }: {
   items: SharePointFile[];
   accessToken: string;
   maxFiles?: number;
-  maxFileSize?: number;
+  screenFile?: (file: SharePointFile) => SharePointSkipReason | null;
 }): Promise<SharePointFolderExpansion> {
   const fileLimit = maxFiles == null ? Number.POSITIVE_INFINITY : Math.max(maxFiles, 0);
   const files: SharePointFile[] = [];
   const unreadableFolders: string[] = [];
-  const oversizedFiles: string[] = [];
+  const skippedFiles: { name: string; reason: SharePointSkipReason }[] = [];
   const seenFiles = new Set<string>();
   const visitedFolders = new Set<string>();
   const failedFolders = new Set<string>();
   const pages: FolderPageRequest[] = [];
   let requests = 0;
-  let truncated = false;
+  let truncatedBy: SharePointTruncation | null = null;
 
   /** @returns Whether there is room for more files. */
   const collect = (file: SharePointFile): boolean => {
@@ -153,7 +162,7 @@ export async function expandSharePointFolders({
       return true;
     }
     if (files.length >= fileLimit) {
-      truncated = true;
+      truncatedBy = 'fileLimit';
       return false;
     }
     seenFiles.add(key);
@@ -162,6 +171,12 @@ export async function expandSharePointFolders({
   };
 
   const enqueueFolder = (folder: SharePointFile) => {
+    if (!folder.driveId || !folder.itemId) {
+      /** A share-only picker result has no drive item to traverse; listing it would
+       * request `/drives/undefined/items/undefined/children`. */
+      unreadableFolders.push(folder.name);
+      return;
+    }
     const key = folderKey(folder);
     if (visitedFolders.has(key)) {
       return;
@@ -177,8 +192,9 @@ export async function expandSharePointFolders({
       enqueueFolder(childFile);
       return true;
     }
-    if (maxFileSize != null && childFile.size > maxFileSize) {
-      oversizedFiles.push(childFile.name);
+    const reason = screenFile?.(childFile) ?? null;
+    if (reason != null) {
+      skippedFiles.push({ name: childFile.name, reason });
       return true;
     }
     return collect(childFile);
@@ -192,10 +208,14 @@ export async function expandSharePointFolders({
     }
   }
 
-  while (pages.length > 0 && !truncated) {
+  while (pages.length > 0 && truncatedBy == null) {
     /** Stop before spending a request on a page there is no room to keep. */
-    if (files.length >= fileLimit || requests >= MAX_FOLDER_REQUESTS) {
-      truncated = true;
+    if (files.length >= fileLimit) {
+      truncatedBy = 'fileLimit';
+      break;
+    }
+    if (requests >= MAX_FOLDER_REQUESTS) {
+      truncatedBy = 'requestBudget';
       break;
     }
 
@@ -227,7 +247,7 @@ export async function expandSharePointFolders({
     }
   }
 
-  return { files, unreadableFolders, oversizedFiles, truncated };
+  return { files, unreadableFolders, skippedFiles, truncatedBy };
 }
 
 export const useSharePointFileDownload = (): UseMutationResult<

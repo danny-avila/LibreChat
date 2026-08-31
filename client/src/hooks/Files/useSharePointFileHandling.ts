@@ -1,9 +1,11 @@
-import { useCallback } from 'react';
-import type { EModelEndpoint } from 'librechat-data-provider';
-import type { SharePointFile } from '~/data-provider/Files/sharepoint';
+import { useCallback, useMemo } from 'react';
+import { inferMimeType } from 'librechat-data-provider';
+import type { EModelEndpoint, EndpointFileConfig } from 'librechat-data-provider';
+import type { SharePointFile, SharePointSkipReason } from '~/data-provider/Files/sharepoint';
 import type { FileHandlingState } from './useFileHandling';
 import type { ExtendedFile } from '~/common';
 import useFileHandling, { useFileHandlingNoChatContext } from './useFileHandling';
+import { getFileSignature, getFileSizeLimit } from '~/utils/files';
 import useSharePointDownload from './useSharePointDownload';
 
 /**
@@ -21,6 +23,38 @@ function remainingFileSlots(
   return Math.max(fileLimit - files.size, 0);
 }
 
+/**
+ * Screens folder contents with the same rules `partitionUploads` applies after download,
+ * so a duplicate or oversized file neither consumes an attachment slot nor costs a
+ * download only to be discarded. Uses the shared helpers rather than restating the rules.
+ */
+function createFolderScreen(
+  endpointFileConfig: EndpointFileConfig | undefined,
+  files: Map<string, ExtendedFile>,
+): ((file: SharePointFile) => SharePointSkipReason | null) | undefined {
+  if (!endpointFileConfig) {
+    return undefined;
+  }
+
+  const sizeLimit = getFileSizeLimit(endpointFileConfig);
+  const signatures = new Set(
+    Array.from(files.values()).map((file) =>
+      getFileSignature(file.file?.name ?? file.filename, file.size, file.type),
+    ),
+  );
+
+  return (candidate) => {
+    const type = inferMimeType(candidate.name, '');
+    if (signatures.has(getFileSignature(candidate.name, candidate.size, type))) {
+      return 'duplicate';
+    }
+    if (sizeLimit != null && candidate.size >= sizeLimit) {
+      return 'size';
+    }
+    return null;
+  };
+}
+
 interface UseSharePointFileHandlingProps {
   fileSetter?: any;
   toolResource?: string;
@@ -28,10 +62,8 @@ interface UseSharePointFileHandlingProps {
   additionalMetadata?: Record<string, string | undefined>;
   endpointOverride?: EModelEndpoint | string;
   endpointTypeOverride?: EModelEndpoint | string;
-  /** Endpoint file limit, used to bound how many files a selected folder contributes. */
-  maxFiles?: number;
-  /** Endpoint per-file size limit, used to skip folder contents that would be rejected. */
-  maxFileSize?: number;
+  /** Governs how many folder contents may be attached and which of them are worth downloading. */
+  endpointFileConfig?: EndpointFileConfig;
 }
 
 interface UseSharePointFileHandlingReturn {
@@ -45,10 +77,15 @@ export default function useSharePointFileHandling(
   props?: UseSharePointFileHandlingProps,
 ): UseSharePointFileHandlingReturn {
   const { handleFiles, files } = useFileHandling(props);
+  const screenFile = useMemo(
+    () => createFolderScreen(props?.endpointFileConfig, files),
+    [props?.endpointFileConfig, files],
+  );
+
   const { downloadSharePointFiles, isDownloading, downloadProgress, error } = useSharePointDownload(
     {
-      maxFiles: remainingFileSlots(props?.maxFiles, files),
-      maxFileSize: props?.maxFileSize,
+      maxFiles: remainingFileSlots(props?.endpointFileConfig?.fileLimit, files),
+      screenFile,
       onFilesDownloaded: async (downloadedFiles: File[]) => {
         const fileArray = Array.from(downloadedFiles);
         await handleFiles(fileArray, props?.toolResource);
@@ -84,11 +121,15 @@ export function useSharePointFileHandlingNoChatContext(
   fileState: FileHandlingState,
 ): UseSharePointFileHandlingReturn {
   const { handleFiles, files } = useFileHandlingNoChatContext(props, fileState);
+  const screenFile = useMemo(
+    () => createFolderScreen(props?.endpointFileConfig, files),
+    [props?.endpointFileConfig, files],
+  );
 
   const { downloadSharePointFiles, isDownloading, downloadProgress, error } = useSharePointDownload(
     {
-      maxFiles: remainingFileSlots(props?.maxFiles, files),
-      maxFileSize: props?.maxFileSize,
+      maxFiles: remainingFileSlots(props?.endpointFileConfig?.fileLimit, files),
+      screenFile,
       onFilesDownloaded: async (downloadedFiles: File[]) => {
         const fileArray = Array.from(downloadedFiles);
         await handleFiles(fileArray, props?.toolResource);
