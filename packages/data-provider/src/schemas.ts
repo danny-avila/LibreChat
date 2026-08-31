@@ -126,6 +126,20 @@ export const isMediaSupportedProvider = (provider?: string | null): boolean => {
   return mediaSupportedProviders.has(provider ?? '');
 };
 
+/**
+ * Built-in endpoint and provider identifiers. A name outside this set is a custom
+ * endpoint whose real provider is resolved at request time, so its capabilities
+ * cannot be judged from the name alone.
+ */
+const knownProviderIdentifiers = new Set<string>([
+  ...Object.values(EModelEndpoint),
+  ...Object.values(Providers),
+]);
+
+export const isKnownProviderIdentifier = (provider?: string | null): boolean => {
+  return knownProviderIdentifiers.has(provider ?? '');
+};
+
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
   EModelEndpoint.openAI,
