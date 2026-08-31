@@ -160,6 +160,19 @@ export const addFileToResource = ({
   }
 };
 
+/** Contexts whose files belong to the requesting user, never to the shared agent
+ *  sandbox. Code outputs are recorded with `kind: 'user'` at generation time, so
+ *  re-provisioning them under the agent would expose one user's artifacts to every
+ *  user of a shared agent. */
+const USER_SCOPED_FILE_CONTEXTS = new Set<string>([
+  FileContext.message_attachment,
+  FileContext.execute_code,
+]);
+
+/** Whether a file's tool provisioning is scoped to the agent rather than the user. */
+export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
+  !USER_SCOPED_FILE_CONTEXTS.has(file.context as string);
+
 /** Mirrors the lazy provisioning writer: agent-scoped search files live in
  *  `file_ids`, which is the only shape fileSearch treats as agent-owned. */
 const addAgentScopedSearchFile = ({
@@ -569,7 +582,7 @@ export const primeResources = async ({
           tool_resources,
           requestFileSet,
           processedResourceFiles,
-          agentScoped: agentId != null && file.context !== FileContext.message_attachment,
+          agentScoped: agentId != null && isAgentScopedFile(file),
         });
 
         attachments.push(file);

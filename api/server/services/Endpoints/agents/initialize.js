@@ -25,9 +25,9 @@ const {
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
+  isAgentScopedFile,
 } = require('@librechat/api');
 const {
-  FileContext,
   ResourceType,
   EModelEndpoint,
   EToolResources,
@@ -475,11 +475,9 @@ const initializeClient = async ({
         return;
       }
 
-      /** Current-message chat attachments stay in the user's sandbox / unscoped vector
-       *  index (matching the direct message_file upload path); only agent setup files
-       *  are scoped to the agent. */
-      const entityIdForFile = (file) =>
-        file.context === FileContext.message_attachment ? undefined : agentId;
+      /** Chat attachments and generated code outputs stay in the user's sandbox /
+       *  unscoped vector index; only agent setup files are scoped to the agent. */
+      const entityIdForFile = (file) => (isAgentScopedFile(file) ? agentId : undefined);
 
       /** Surface a just-provisioned file to the tool loaded immediately after: the code
        *  and file_search primers read `tool_resources.<resource>.files`. */
