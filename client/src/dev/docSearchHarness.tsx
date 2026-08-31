@@ -20,6 +20,7 @@ import '../style.css';
 // 검증이 목적이니 렌더 전에 확정해 둔다.
 void i18n.changeLanguage('ko');
 import { LimitNotice, Pagination } from '~/components/DocumentSearch/DocumentSearch';
+import { highlight } from '~/components/DocumentSearch/ResultCard';
 
 const CAP = 100;
 
@@ -70,8 +71,20 @@ function App() {
             </button>
           </div>
 
-          <Case title="초과 안내" note="상한에서 잘렸을 때만 뜬다">
-            <LimitNotice cap={CAP} />
+          <Case title="초과 안내" note="상한에서 잘렸을 때만. 호버해야 문구가 뜬다">
+            <p className="flex items-center gap-1.5 text-sm text-text-primary">
+              &quot;신세계, 양주&quot; 에 대한 검색 결과는 100건입니다.
+              <LimitNotice cap={CAP} />
+            </p>
+          </Case>
+
+          <Case title="검색어 하이라이트" note="쉼표로 구분한 검색어가 모두 칠해져야 한다">
+            <p className="text-sm leading-relaxed text-text-primary">
+              {highlight(
+                '세종텔레콤과 아이즈비전은 알뜰폰 사업에서 협력하기로 하였다. 세종텔레콤의 지분 구조와 아이즈비전의 사업 범위가 쟁점이다.',
+                '세종텔레콤, 아이즈비전',
+              )}
+            </p>
           </Case>
 
           <Case title="10페이지 (100건)" note="상한까지 찬 경우 — 버튼이 가장 많다">
