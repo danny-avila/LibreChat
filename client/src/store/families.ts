@@ -332,6 +332,12 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
   default: [],
 });
 
+/** One-shot reasoning selection for the next full generation in a conversation. */
+const pendingReasoningOverrideByConvoId = atomFamily<TMessage['reasoningOverride'], string>({
+  key: 'pendingReasoningOverrideByConvoId',
+  default: undefined,
+});
+
 /**
  * A steer message submitted mid-run. Server truth: `sending` covers the POST
  * in flight, `pending` means the server queued it (awaiting its injection
@@ -362,6 +368,8 @@ export type PendingSteer = {
   /** Manual skill picks, carried for restoration only (a skill pick
    *  configures a NEW turn's run, so it never rides the steer POST). */
   manualSkills?: string[];
+  /** Full-generation setting carried for restoration only; it cannot alter a live steer. */
+  reasoningOverride?: TMessage['reasoningOverride'];
   /** Asked the run to seal generation at the next safe boundary rather than
    *  wait for a tool step. Labelling only — the server owns the behaviour and
    *  echoes what it actually armed. */
@@ -435,6 +443,8 @@ export type QueuedMessage = {
   /** Manual skill picks consumed from the composer at enqueue time; passed
    *  to `ask` as `overrideManualSkills` on drain. */
   manualSkills?: string[];
+  /** Request-scoped reasoning setting captured when this item was queued. */
+  reasoningOverride?: TMessage['reasoningOverride'];
   /** Front-inserted by "Interrupt & send": stays ahead of chronologically
    *  older items when leftover steers are merged back into the queue. */
   priority?: boolean;
@@ -786,6 +796,7 @@ export default {
   showSkillsPopoverFamily,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
+  pendingReasoningOverrideByConvoId,
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
   runEndByIndex,

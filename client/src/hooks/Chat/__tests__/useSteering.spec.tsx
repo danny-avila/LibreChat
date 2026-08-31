@@ -1,7 +1,13 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
-import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
+import {
+  Constants,
+  ContentTypes,
+  EModelEndpoint,
+  LocalStorageKeys,
+  ReasoningEffort,
+} from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import useSteering from '../useSteering';
@@ -2622,6 +2628,7 @@ describe('useSteering', () => {
           chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
           pendingQuotes: useRecoilValue(store.pendingQuotesByConvoId(CONVO_ID)),
           pendingSkills: useRecoilValue(store.pendingManualSkillsByConvoId(CONVO_ID)),
+          pendingReasoning: useRecoilValue(store.pendingReasoningOverrideByConvoId(CONVO_ID)),
           markApplied: useSetRecoilState(store.appliedSteerIdsByConvoId(CONVO_ID)),
         }),
         { wrapper },
@@ -2633,6 +2640,28 @@ describe('useSteering', () => {
       set(store.pendingQuotesByConvoId(CONVO_ID), ['quoted excerpt']);
       set(store.pendingManualSkillsByConvoId(CONVO_ID), ['skill-1']);
     };
+
+    const stageReasoning = ({ set }: MutableSnapshot) => {
+      set(store.pendingReasoningOverrideByConvoId(CONVO_ID), {
+        key: 'reasoning_effort',
+        value: ReasoningEffort.high,
+      });
+    };
+
+    it('queues rather than steering when reasoning is staged for a new generation', () => {
+      const { result } = setupWithContext({}, stageReasoning);
+
+      act(() => {
+        result.current.steering.steerFromComposer('reason about this');
+      });
+
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(result.current.queue[0]).toMatchObject({
+        text: 'reason about this',
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+      });
+      expect(result.current.pendingReasoning).toBeUndefined();
+    });
 
     it('queueFromComposer consumes staged quotes + skills into the queued item', () => {
       const { result } = setupWithContext({}, stageContext);

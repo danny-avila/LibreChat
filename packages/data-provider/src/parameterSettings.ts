@@ -16,8 +16,8 @@ import {
   BedrockProviders,
   anthropicSettings,
 } from './types';
+import { supportsAdaptiveThinking, supportsPromptCache } from './bedrock';
 import { SettingDefinition, SettingsConfiguration } from './generate';
-import { supportsPromptCache } from './bedrock';
 
 // Base definitions
 const baseDefinitions: Record<string, SettingDefinition> = {
@@ -1260,6 +1260,83 @@ export const agentParamSettings: Record<string, SettingsConfiguration | undefine
   }
   return acc;
 }, {});
+
+const reasoningSettingKeys = [
+  'reasoning_effort',
+  'effort',
+  'thinkingLevel',
+  'thinkingBudget',
+] as const;
+
+export type ReasoningSettingKey = (typeof reasoningSettingKeys)[number];
+
+const findReasoningSetting = (
+  settings: SettingsConfiguration,
+  key: ReasoningSettingKey,
+): SettingDefinition | undefined => settings.find((setting) => setting.key === key);
+
+const isKnownOpenAIReasoningModel = (model: string): boolean =>
+  /(?:^|[/._-])(?:o[134](?:[-.]|$)|gpt[-.]?(?:[5-9]|\d{2,})(?:[-.]|$)|gpt[-.]?oss(?:[-.]|$))/i.test(
+    model,
+  );
+
+const isManualClaudeThinkingModel = (model: string): boolean =>
+  /claude-3[-.]7|claude-(?:sonnet|opus|haiku)-[4-9]|claude-[4-9](?:[-.][0-9]+)?-(?:sonnet|opus|haiku)/i.test(
+    model,
+  );
+
+/**
+ * Selects the request-scoped reasoning control supported by the active model.
+ * Custom and OpenRouter endpoints remain definition-driven because their model
+ * catalogs are deployment-owned and cannot be inferred safely from a name.
+ */
+export function resolveReasoningSetting({
+  endpoint,
+  model,
+  settings,
+}: {
+  endpoint: string;
+  model?: string | null;
+  settings: SettingsConfiguration;
+}): SettingDefinition | undefined {
+  if (!model) {
+    return undefined;
+  }
+
+  if (endpoint === EModelEndpoint.google) {
+    if (getGoogleThinkingBudgetBounds(model) != null) {
+      return findReasoningSetting(settings, 'thinkingBudget');
+    }
+    if (/gemini-(?:[3-9]|\d{2,})|gemma-(?:[4-9]|\d{2,})/i.test(model)) {
+      return findReasoningSetting(settings, 'thinkingLevel');
+    }
+    return undefined;
+  }
+
+  const isAnthropicEndpoint =
+    endpoint === EModelEndpoint.anthropic ||
+    endpoint === `${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`;
+  if (isAnthropicEndpoint) {
+    if (supportsAdaptiveThinking(model)) {
+      return findReasoningSetting(settings, 'effort');
+    }
+    if (isManualClaudeThinkingModel(model)) {
+      return findReasoningSetting(settings, 'thinkingBudget');
+    }
+    return undefined;
+  }
+
+  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
+    return isKnownOpenAIReasoningModel(model)
+      ? findReasoningSetting(settings, 'reasoning_effort')
+      : undefined;
+  }
+
+  return reasoningSettingKeys.reduce<SettingDefinition | undefined>(
+    (resolved, key) => resolved ?? findReasoningSetting(settings, key),
+    undefined,
+  );
+}
 
 /**
  * Resolves model-aware defaults for a settings configuration before rendering.

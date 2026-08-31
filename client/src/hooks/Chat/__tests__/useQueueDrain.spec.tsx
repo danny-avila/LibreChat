@@ -1,6 +1,6 @@
 import React from 'react';
-import { Constants } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { Constants, ReasoningEffort } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import type { DrainAfterAbort, RunEnd, QueuedMessage } from '~/store/families';
@@ -63,6 +63,7 @@ const emptyOverrides = expect.objectContaining({
   overrideFiles: [],
   overrideQuotes: [],
   overrideManualSkills: [],
+  overrideReasoning: null,
   overrideQueuedMessageOrigin: expect.any(Object),
 });
 
@@ -392,13 +393,14 @@ describe('useQueueDrain', () => {
     expect(sent).toEqual(['only-once']);
   });
 
-  it('passes carried quotes + manual skills through as overrides', async () => {
+  it('passes carried quotes, skills, and reasoning through as overrides', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
         {
           ...queuedMessage('q1', 'with context'),
           quotes: ['quoted excerpt'],
           manualSkills: ['skill-1'],
+          reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
         },
       ]);
     });
@@ -414,6 +416,7 @@ describe('useQueueDrain', () => {
         overrideFiles: [],
         overrideQuotes: ['quoted excerpt'],
         overrideManualSkills: ['skill-1'],
+        overrideReasoning: { key: 'reasoning_effort', value: ReasoningEffort.high },
         overrideQueuedMessageOrigin: expect.any(Object),
       }),
     );

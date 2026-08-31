@@ -613,6 +613,7 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       files: [{ file_id: 'file-1' }],
       quotes: ['quoted context'],
       manualSkills: ['research'],
+      reasoningOverride: { key: 'reasoning_effort', value: 'high' },
       admissionSource,
       settleOnAdmission,
     }));
@@ -634,6 +635,7 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       files: [{ file_id: 'file-1' }],
       quotes: ['quoted context'],
       manualSkills: ['research'],
+      reasoningOverride: { key: 'reasoning_effort', value: 'high' },
       agentContinuationAdmission: admissionSource,
     });
     expect(getBaseUrl).toHaveBeenCalledWith({ localOnly: true });

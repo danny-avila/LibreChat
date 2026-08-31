@@ -57,6 +57,7 @@ function claim(): AgentQueuedTurnClaim {
     files: [{ file_id: 'file-1' }],
     quotes: ['quote'],
     manualSkills: ['skill-1'],
+    reasoningOverride: { key: 'reasoning_effort', value: 'high' },
     attempts: 1,
     availableAt: new Date(NOW),
     claimId: 'trigger-1',
@@ -254,6 +255,7 @@ describe('Agent queued-turn continuation', () => {
       files: [{ file_id: 'file-1' }],
       quotes: ['quote'],
       manualSkills: ['skill-1'],
+      reasoningOverride: { key: 'reasoning_effort', value: 'high' },
       admissionSource: {
         source: AGENT_QUEUED_TURN_SOURCE,
         sourceId: 'queued-turn-1',

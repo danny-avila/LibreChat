@@ -1,6 +1,11 @@
 import { renderHook, act } from '@testing-library/react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TConversation, TMessage, TSubmission } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TMessage,
+  TSubmission,
+  TReasoningOverride,
+} from 'librechat-data-provider';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
 
@@ -32,7 +37,10 @@ jest.mock('recoil', () => ({
   useRecoilCallback: (factory: any) =>
     factory({
       snapshot: {
-        getLoadable: () => ({ state: 'hasValue', contents: [] }),
+        getLoadable: (atom: unknown) => ({
+          state: 'hasValue',
+          contents: String(atom).includes('pendingReasoning') ? undefined : [],
+        }),
       },
       set: jest.fn(),
       reset: jest.fn(),
@@ -54,6 +62,7 @@ jest.mock('~/store', () => ({
     showStopButtonByIndex: () => 'showStopButton',
     pendingManualSkillsByConvoId: () => 'pendingManualSkills',
     pendingQuotesByConvoId: () => 'pendingQuotes',
+    pendingReasoningOverrideByConvoId: () => 'pendingReasoning',
     messagesSiblingIdxFamily: () => 'messagesSiblingIdx',
   },
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
@@ -232,6 +241,20 @@ describe('useChatFunctions ask', () => {
     expect(setMessages).toHaveBeenCalled();
     expect(setSubmission).toHaveBeenCalled();
   });
+
+  it('stores an explicit reasoning override on only the submitted user turn', () => {
+    const { result, setSubmission } = renderAsk([]);
+    const override = { key: 'reasoning_effort', value: 'high' } as TReasoningOverride;
+
+    act(() => {
+      result.current.ask({ text: 'Think carefully' }, { overrideReasoning: override });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(override);
+    expect(submission.conversation).not.toHaveProperty('reasoning_effort', 'high');
+    expect(submission.endpointOption).not.toHaveProperty('reasoning_effort', 'high');
+  });
 });
 
 describe('useChatFunctions regenerate', () => {
@@ -293,6 +316,22 @@ describe('useChatFunctions regenerate', () => {
       setMessages.mock.calls.at(-1)?.[0].map((message: TMessage) => message.messageId),
     ).toEqual(['user-1', 'assistant-1_']);
     expect(messages.at(-1)?.messageId).toBe('assistant-1_');
+  });
+
+  it('replays the original user turn reasoning override on regenerate', () => {
+    const parent = {
+      ...userMessage('user-reasoning'),
+      reasoningOverride: { key: 'effort', value: 'max' },
+    } as TMessage;
+    const response = assistantMessage('assistant-reasoning', parent.messageId);
+    const { result, setSubmission } = renderAsk([parent, response]);
+
+    act(() => {
+      result.current.regenerate(response);
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(parent.reasoningOverride);
   });
 });
 

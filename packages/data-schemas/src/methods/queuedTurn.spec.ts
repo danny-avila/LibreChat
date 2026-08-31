@@ -90,6 +90,7 @@ describe('agent queued turn methods', () => {
       ],
       quotes: [' quote ', '', 'second'],
       manualSkills: [' skill-a ', 'skill-a'],
+      reasoningOverride: { key: 'reasoning_effort', value: 'high' },
       expectedPredecessorCreatedAt: 42,
     });
 
@@ -100,6 +101,7 @@ describe('agent queued turn methods', () => {
       files: [{ file_id: 'file-1', filename: 'report.pdf' }],
       quotes: ['quote', 'second'],
       manualSkills: ['skill-a'],
+      reasoningOverride: { key: 'reasoning_effort', value: 'high' },
     });
 
     expect(first.replayed).toBe(false);
@@ -113,11 +115,27 @@ describe('agent queued turn methods', () => {
       files: [{ file_id: 'file-1', filename: 'report.pdf' }],
       quotes: ['quote', 'second'],
       manualSkills: ['skill-a'],
+      reasoningOverride: { key: 'reasoning_effort', value: 'high' },
       expectedPredecessorCreatedAt: 42,
     });
     expect(replay).toMatchObject({
       replayed: true,
-      turn: { queuedTurnId: first.turn.queuedTurnId },
+      turn: {
+        queuedTurnId: first.turn.queuedTurnId,
+        reasoningOverride: { key: 'reasoning_effort', value: 'high' },
+      },
+    });
+    await expect(methods.listActiveAgentQueuedTurns(input)).resolves.toEqual([
+      expect.objectContaining({
+        queuedTurnId: first.turn.queuedTurnId,
+        reasoningOverride: { key: 'reasoning_effort', value: 'high' },
+      }),
+    ]);
+    await expect(
+      methods.claimNextAgentQueuedTurn(claimInput(first.turn.queuedTurnId)),
+    ).resolves.toMatchObject({
+      outcome: 'acquired',
+      claim: { reasoningOverride: { key: 'reasoning_effort', value: 'high' } },
     });
     await expect(
       methods.enqueueAgentQueuedTurn({ ...input, agentId: 'agent-2' }),
@@ -126,6 +144,12 @@ describe('agent queued turn methods', () => {
       methods.enqueueAgentQueuedTurn({
         ...input,
         parentMessageId: 'different-parent',
+      }),
+    ).rejects.toBeInstanceOf(AgentQueuedTurnConflictError);
+    await expect(
+      methods.enqueueAgentQueuedTurn({
+        ...input,
+        reasoningOverride: { key: 'reasoning_effort', value: 'low' },
       }),
     ).rejects.toBeInstanceOf(AgentQueuedTurnConflictError);
     expect(await Turn.countDocuments()).toBe(1);

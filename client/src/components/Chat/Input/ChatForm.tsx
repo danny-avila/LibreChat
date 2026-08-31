@@ -46,6 +46,7 @@ import PendingQuoteChips from './PendingQuoteChips';
 import AttachFileChat from './Files/AttachFileChat';
 import useSteering from '~/hooks/Chat/useSteering';
 import FileFormChat from './Files/FileFormChat';
+import { ComposerReasoning } from './Reasoning';
 import InFlightSteers from './InFlightSteers';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
@@ -244,6 +245,7 @@ const ChatForm = memo(function ChatForm({
         overrideFiles,
         overrideQuotes: context?.quotes ?? [],
         overrideManualSkills: context?.manualSkills ?? [],
+        overrideReasoning: context?.reasoningOverride ?? null,
         overrideClientRequestId: context?.clientRequestId,
         overrideRecoverySteerId: context?.recoverySteerId,
         overrideExpectedPredecessorCreatedAt: context?.expectedPredecessorCreatedAt,
@@ -256,7 +258,7 @@ const ChatForm = memo(function ChatForm({
   const restoreComposerContext = useRecoilCallback(
     ({ set }) =>
       (context?: QueuedMessageContext) => {
-        const { quotes, manualSkills } = context ?? {};
+        const { quotes, manualSkills, reasoningOverride } = context ?? {};
         if (quotes != null && quotes.length > 0) {
           set(store.pendingQuotesByConvoId(conversationId), (prev) => [
             ...new Set([...prev, ...quotes]),
@@ -266,6 +268,9 @@ const ChatForm = memo(function ChatForm({
           set(store.pendingManualSkillsByConvoId(conversationId), (prev) => [
             ...new Set([...prev, ...manualSkills]),
           ]);
+        }
+        if (reasoningOverride != null) {
+          set(store.pendingReasoningOverrideByConvoId(conversationId), reasoningOverride);
         }
       },
     [conversationId],
@@ -349,7 +354,8 @@ const ChatForm = memo(function ChatForm({
     ({ snapshot }) =>
       (convoId: string) =>
         snapshot.getLoadable(store.pendingQuotesByConvoId(convoId)).getValue().length > 0 ||
-        snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId)).getValue().length > 0,
+        snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId)).getValue().length > 0 ||
+        snapshot.getLoadable(store.pendingReasoningOverrideByConvoId(convoId)).getValue() != null,
     [],
   );
 
@@ -728,6 +734,12 @@ const ChatForm = memo(function ChatForm({
                   }
                 />
                 <div className="mx-auto flex" />
+                <ComposerReasoning
+                  index={index}
+                  conversation={conversation}
+                  disabled={disableInputs}
+                  hasAddedConversation={addedConvo != null}
+                />
                 <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
                 {SpeechToText && (
                   <AudioRecorder

@@ -268,6 +268,23 @@ export default function useChatFunctions({
     [],
   );
 
+  const drainPendingReasoning = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (convoId: string): TMessage['reasoningOverride'] => {
+        const atom = store.pendingReasoningOverrideByConvoId(convoId);
+        const loadable = snapshot.getLoadable(atom);
+        const reasoningOverride =
+          loadable.state === 'hasValue'
+            ? (loadable.contents as TMessage['reasoningOverride'])
+            : undefined;
+        if (reasoningOverride != null) {
+          reset(atom);
+        }
+        return reasoningOverride;
+      },
+    [],
+  );
+
   const ask: TAskFunction = (
     {
       text,
@@ -288,6 +305,7 @@ export default function useChatFunctions({
       targetResponseMessageId,
       overrideManualSkills,
       overrideQuotes,
+      overrideReasoning,
       addedConvo,
       overrideClientRequestId,
       overrideRecoverySteerId,
@@ -409,6 +427,10 @@ export default function useChatFunctions({
       } else if (!isRegenerate && !isContinued && !isEdited) {
         quotes = drainPendingQuotes(conversationId ?? Constants.NEW_CONVO);
       }
+    }
+    let reasoningOverride = overrideReasoning ?? undefined;
+    if (overrideReasoning === undefined && !isRegenerate && !isContinued && !isEdited) {
+      reasoningOverride = drainPendingReasoning(conversationId ?? Constants.NEW_CONVO);
     }
     const isEditOrContinue = isEdited || isContinued;
 
@@ -539,6 +561,7 @@ export default function useChatFunctions({
        * also merges these into the model-facing user text at request time.
        */
       quotes: quotes.length > 0 ? quotes : undefined,
+      reasoningOverride,
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
@@ -763,6 +786,8 @@ export default function useChatFunctions({
           /** Carry the original user message's quoted excerpts forward so the
            *  regenerated response is sent the same referenced context. */
           overrideQuotes: parentMessage.quotes,
+          /** Replay the exact request-scoped reasoning selection used by this turn. */
+          overrideReasoning: parentMessage.reasoningOverride ?? null,
         },
       );
     } else {

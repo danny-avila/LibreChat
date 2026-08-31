@@ -332,6 +332,7 @@ export default function useQueueDrain(
         overrideFiles: next.files ?? [],
         overrideQuotes: next.quotes ?? [],
         overrideManualSkills: next.manualSkills ?? [],
+        overrideReasoning: next.reasoningOverride ?? null,
         overrideClientRequestId: next.clientRequestId,
         overrideRecoverySteerId: next.recoverySteerId,
         overrideExpectedPredecessorCreatedAt: expectedPredecessorCreatedAt,
