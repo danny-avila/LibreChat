@@ -2,6 +2,7 @@ import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import { EToolResources } from 'librechat-data-provider';
 import type { AgentToolResources, TFile } from 'librechat-data-provider';
+import type { CodeEnvFile } from '@librechat/agents';
 import type { CodeEnvRefUpdate, CodeExecutionRoute, ProvisionService } from './service';
 import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
@@ -96,7 +97,7 @@ export function createProvisionFilesCallback({
   provisionToVectorDB,
   updateFile,
   updateCodeEnvRef,
-}: ProvisionCallbackDeps): (toolNames: string[], agentId?: string) => Promise<void> {
+}: ProvisionCallbackDeps): (toolNames: string[], agentId?: string) => Promise<CodeEnvFile[]> {
   /* Agents in a handoff or parallel graph are initialized independently over the same
    * request attachments, so each holds its own ProvisionState for the same file. Keyed
    * per file, destination and scope, this makes the upload happen once for the request;
@@ -125,7 +126,10 @@ export function createProvisionFilesCallback({
     return promise;
   }
 
-  return async function provisionFiles(toolNames: string[], agentId?: string): Promise<void> {
+  return async function provisionFiles(
+    toolNames: string[],
+    agentId?: string,
+  ): Promise<CodeEnvFile[]> {
     /* agentId is optional on this callback and a batch for the primary agent may omit
      * it, so fall back the way the tool loaders do. Otherwise the queue is missed and
      * the tool runs without its attachments. */
@@ -139,7 +143,7 @@ export function createProvisionFilesCallback({
       primaryAgentId: resolvePrimaryAgentId?.(),
     });
     if (!ctx?.provisionState) {
-      return;
+      return [];
     }
 
     const { provisionState } = ctx;
@@ -165,7 +169,7 @@ export function createProvisionFilesCallback({
       toolNames.includes(Constants.BASH_PROGRAMMATIC_TOOL_CALLING);
 
     if (!needsCode && !needsSearch) {
-      return;
+      return [];
     }
 
     /** Chat attachments and generated code outputs stay in the user's sandbox /
@@ -222,6 +226,11 @@ export function createProvisionFilesCallback({
      *  outage can retry next turn instead of being silently dropped. */
     const failedCodeFiles: TFile[] = [];
     const failedVectorFiles: TFile[] = [];
+    /* The graph seeded each tool call's code-session context from the sessions that
+     * existed at run start, which predate this upload. Returning the refs lets the
+     * caller fold them into the current batch, since the sandbox receives files only
+     * through that context. */
+    const provisionedCodeFiles: CodeEnvFile[] = [];
     if (needsCode && provisionState.codeEnvFiles.length > 0) {
       const queuedCodeFiles = provisionState.codeEnvFiles;
       const results = await Promise.allSettled(
@@ -256,6 +265,16 @@ export function createProvisionFilesCallback({
           );
           file.metadata = { ...file.metadata, ...referenceSet };
           addProvisionedFile(file, EToolResources.execute_code);
+          const ref = referenceSet.codeEnvRefs?.[codeRouteKey];
+          if (ref?.storage_session_id && ref.file_id) {
+            provisionedCodeFiles.push({
+              id: ref.file_id,
+              resource_id: ref.id,
+              storage_session_id: ref.storage_session_id,
+              name: file.filename,
+              kind: ref.kind,
+            } as CodeEnvFile);
+          }
         }),
       );
       results.forEach((result, index) => {
@@ -327,5 +346,7 @@ export function createProvisionFilesCallback({
         `Failed to provision ${failedVectorFiles.length} file(s) for search; aborting tool execution rather than searching without them`,
       );
     }
+
+    return provisionedCodeFiles;
   };
 }

@@ -20,12 +20,12 @@ const {
 } = require('librechat-data-provider');
 const {
   processAgentFileUpload,
-  processImageFile,
   resolvesToTextDelivery,
+  processImageFile,
   filterFile,
 } = require('~/server/services/Files/process');
+const { resolveUploadEndpoint, resolveUploadAgent } = require('~/server/services/Files/agent');
 const { checkPermission } = require('~/server/services/PermissionService');
-const db = require('~/models');
 
 const router = express.Router();
 
@@ -44,7 +44,15 @@ router.post('/', async (req, res) => {
 
   try {
     req.file.originalname = sanitizeFilename(req.file.originalname);
-    filterFile({ req, image: true });
+    /* Agent uploads arrive as `agents` but route by the agent's own provider, so the
+     * provider's configuration has to govern acceptance too. Resolved once here and
+     * reused by routing, authorization and processing below. */
+    const effectiveEndpoint = await resolveUploadEndpoint({
+      endpoint: metadata.endpoint,
+      agent_id: metadata.agent_id,
+      req,
+    });
+    filterFile({ req, image: true, endpoint: effectiveEndpoint });
 
     await assertUploadContentAllowed({
       filters: req.config?.filters,
@@ -72,7 +80,7 @@ router.post('/', async (req, res) => {
         req,
         res,
         metadata,
-        getAgent: db.getAgent,
+        getAgent: ({ id }) => resolveUploadAgent(req, id),
         checkPermission,
       });
       if (denied) {

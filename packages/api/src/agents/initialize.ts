@@ -1233,10 +1233,15 @@ export async function initializeAgent(
      * by size, MIME type, or a files-disabled setting must not reach the Code API or
      * RAG through provisioning just because it left the delivery set. */
     if (deferredProvisionFiles.length > 0) {
+      /* One request, one total-size allowance. Filtering each set from zero would let a
+       * delivery attachment and a provisioning candidate that each fit alone exceed the
+       * limit together once withDeferredCandidates merges them. */
+      const deliveredBytes = (currentFiles ?? []).reduce((sum, file) => sum + (file.bytes ?? 0), 0);
       deferredProvisionFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
         files: deferredProvisionFiles,
         endpoint: agent.endpoint ?? '',
         endpointType,
+        consumedBytes: deliveredBytes,
       }) as IMongoFile[];
     }
   }

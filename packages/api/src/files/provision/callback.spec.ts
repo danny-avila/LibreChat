@@ -44,11 +44,20 @@ function buildHarness({
   const provisionToCodeEnv =
     codeImpl ??
     jest.fn(async ({ file }: { file: TFile }) => ({
-      referenceSet: { codeEnvRefs: { default: { file_id: 'remote-1' } } },
+      referenceSet: {
+        codeEnvRefs: {
+          default: {
+            kind: 'user',
+            id: 'u1',
+            storage_session_id: 'sess-1',
+            file_id: 'remote-1',
+          },
+        },
+      },
       refUpdate: {
         file_id: file.file_id,
         routeKey: 'default',
-        ref: { kind: 'user', id: 'u1', file_id: 'remote-1' },
+        ref: { kind: 'user', id: 'u1', storage_session_id: 'sess-1', file_id: 'remote-1' },
       },
     }));
   const provisionToVectorDB =
@@ -101,6 +110,40 @@ describe('createProvisionFilesCallback', () => {
       });
       expect(ctx?.provisionState?.codeEnvFiles).toHaveLength(0);
     }
+  });
+
+  it('returns the provisioned refs so the batch can inject them', async () => {
+    const { provisionFiles } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([makeFile()], []) }]],
+    });
+
+    const provisioned = await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+
+    expect(provisioned).toEqual([
+      {
+        id: 'remote-1',
+        resource_id: 'u1',
+        storage_session_id: 'sess-1',
+        name: 'data.csv',
+        kind: 'user',
+      },
+    ]);
+  });
+
+  it('returns the refs to every agent sharing one upload', async () => {
+    const shared = makeFile();
+    const { provisionFiles } = buildHarness({
+      contexts: [
+        ['agent-a', { provisionState: state([{ ...shared }], []) }],
+        ['agent-b', { provisionState: state([{ ...shared }], []) }],
+      ],
+    });
+
+    const first = await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    const second = await provisionFiles([Constants.EXECUTE_CODE], 'agent-b');
+
+    expect(first).toHaveLength(1);
+    expect(second).toEqual(first);
   });
 
   it('persists the shared provisioning result once', async () => {
@@ -216,11 +259,20 @@ describe('createProvisionFilesCallback', () => {
         throw new Error('code api unreachable');
       }
       return {
-        referenceSet: { codeEnvRefs: { default: { file_id: 'remote-1' } } },
+        referenceSet: {
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'u1',
+              storage_session_id: 'sess-1',
+              file_id: 'remote-1',
+            },
+          },
+        },
         refUpdate: {
           file_id: file.file_id,
           routeKey: 'default',
-          ref: { kind: 'user', id: 'u1', file_id: 'remote-1' },
+          ref: { kind: 'user', id: 'u1', storage_session_id: 'sess-1', file_id: 'remote-1' },
         },
       };
     });
@@ -234,7 +286,7 @@ describe('createProvisionFilesCallback', () => {
     );
     expect(agentToolContexts.get('agent-a')?.provisionState?.codeEnvFiles).toHaveLength(1);
 
-    await expect(provisionFiles([Constants.EXECUTE_CODE], 'agent-a')).resolves.toBeUndefined();
+    await expect(provisionFiles([Constants.EXECUTE_CODE], 'agent-a')).resolves.toHaveLength(1);
     expect(codeImpl).toHaveBeenCalledTimes(2);
   });
 
