@@ -5,6 +5,7 @@ export const SYSTEM_LLM_DELIVERY_DEFAULTS: Required<TDefaultLLMDeliveryPathConfi
   overrides: {
     'image/*': 'provider',
     'video/*': 'provider',
+    'audio/*': 'provider',
     'application/pdf': 'provider',
   },
 };
