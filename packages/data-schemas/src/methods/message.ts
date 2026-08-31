@@ -347,13 +347,21 @@ const SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT = SUBAGENT_TRANSCRIPT_PAGE_LIMIT 
  * an execution did not write a private subagent transcript. Project only the
  * visible activity vocabulary and bound it before MongoDB returns the row.
  */
-export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 16;
-const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 2048;
-const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 512;
-const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 1024;
+/**
+ * Per-item bounds mirror `SUBAGENT_ACTIVITY_LIMITS` in `packages/api`
+ * (`src/agents/activity.ts`) at worst-case 4-byte UTF-8, so activity projected
+ * from ordinary message content is clipped no harder than activity projected
+ * from a private transcript. The whole view stays bounded downstream by the
+ * 64KB serialized-activity budget and the 256KB response trim.
+ */
+export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 100;
+const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 8192;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 2048;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 4096;
 const SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT = 128;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT = 512;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT = 8;
+const SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT = 64 * 1024;
 const SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT = 32;
 const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
 
@@ -2290,7 +2298,130 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           null,
         ],
       };
-      const boundedActivityContent = {
+      /** Mixed-typed content metadata must be type-gated before projection, or a
+       *  malformed part could tunnel arbitrarily large values past the byte cap
+       *  through a passthrough field. `$type`-based checks stay DocumentDB-safe. */
+      const boundedNumber = (path: string) => ({
+        $cond: [{ $in: [{ $type: path }, ['int', 'long', 'double', 'decimal']] }, path, null],
+      });
+      const boundedBoolean = (path: string) => ({
+        $cond: [{ $eq: [{ $type: path }, 'bool'] }, path, null],
+      });
+      const boundedEnum = (path: string, allowed: string[]) => ({
+        $cond: [{ $in: [path, allowed] }, path, null],
+      });
+      /** Estimated serialized bytes for one already-clipped activity item; the
+       *  constants cover the non-string JSON envelope per item type. This is a
+       *  BSON-transfer budget: `$strLenBytes` measures exactly what MongoDB
+       *  ships to the API. JSON escaping can expand strings after transfer,
+       *  which the API bounds precisely — `boundActivity` in
+       *  `packages/api/src/agents/activity.ts` re-fits the same array to 64KB
+       *  of `JSON.stringify` output before anything reaches a response. */
+      const activityItemBytes = (item: string) => ({
+        $switch: {
+          branches: [
+            {
+              case: { $eq: [`${item}.type`, 'writing'] },
+              then: { $add: [{ $strLenBytes: `${item}.text` }, 64] },
+            },
+            {
+              case: { $eq: [`${item}.type`, 'activity_label'] },
+              then: {
+                $add: [
+                  { $strLenBytes: `${item}.label` },
+                  {
+                    $reduce: {
+                      input: {
+                        $concatArrays: [
+                          {
+                            $cond: [{ $isArray: `${item}.toolCallIds` }, `${item}.toolCallIds`, []],
+                          },
+                          { $cond: [{ $isArray: `${item}.agentIds` }, `${item}.agentIds`, []] },
+                        ],
+                      },
+                      initialValue: 0,
+                      in: { $add: ['$$value', { $strLenBytes: '$$this' }, 8] },
+                    },
+                  },
+                  512,
+                ],
+              },
+            },
+            {
+              case: { $eq: [`${item}.type`, 'tool'] },
+              then: {
+                $add: [
+                  { $strLenBytes: `${item}.input` },
+                  { $strLenBytes: `${item}.output` },
+                  { $strLenBytes: `${item}.name` },
+                  { $strLenBytes: `${item}.toolCallId` },
+                  192,
+                ],
+              },
+            },
+          ],
+          default: 32,
+        },
+      });
+      /** Newest-first fit into the aggregate budget, so raising per-item limits
+       *  cannot multiply into megabytes per row before the API's own trims run. */
+      const budgetedActivity = (clipped: Record<string, unknown>) => ({
+        $reverseArray: {
+          $let: {
+            vars: {
+              fitted: {
+                $reduce: {
+                  input: { $reverseArray: clipped },
+                  initialValue: { items: [] as never[], bytes: 0, done: false },
+                  in: {
+                    $let: {
+                      vars: { size: activityItemBytes('$$this') },
+                      in: {
+                        $cond: [
+                          {
+                            $or: [
+                              '$$value.done',
+                              {
+                                $gt: [
+                                  { $add: ['$$value.bytes', '$$size'] },
+                                  SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT,
+                                ],
+                              },
+                            ],
+                          },
+                          /* The retained timeline must be a contiguous newest
+                             suffix: once one entry does not fit, older entries
+                             are not allowed to fill the gap around it. */
+                          { items: '$$value.items', bytes: '$$value.bytes', done: true },
+                          {
+                            items: { $concatArrays: ['$$value.items', ['$$this']] },
+                            bytes: { $add: ['$$value.bytes', '$$size'] },
+                            done: false,
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            in: '$$fitted.items',
+          },
+        },
+      });
+      const activityBytesOverBudget = (clipped: Record<string, unknown>) => ({
+        $gt: [
+          {
+            $reduce: {
+              input: clipped,
+              initialValue: 0,
+              in: { $add: ['$$value', activityItemBytes('$$this')] },
+            },
+          },
+          SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT,
+        ],
+      });
+      const clippedActivityContent = {
         $filter: {
           input: {
             $map: {
@@ -2330,14 +2461,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                           '$$part.activity_label',
                           SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
                         ),
-                        labelType: '$$part.activity_label_type',
+                        labelType: boundedEnum('$$part.activity_label_type', ['phase']),
                         toolCallIds: boundedStringArray('$$part.tool_call_ids'),
-                        activityStartIndex: '$$part.activity_start_index',
-                        activityEndIndex: '$$part.activity_end_index',
-                        activityCount: '$$part.activity_count',
+                        activityStartIndex: boundedNumber('$$part.activity_start_index'),
+                        activityEndIndex: boundedNumber('$$part.activity_end_index'),
+                        activityCount: boundedNumber('$$part.activity_count'),
                         agentIds: boundedStringArray('$$part.agent_ids'),
-                        status: '$$part.status',
-                        pending: '$$part.pending',
+                        status: boundedEnum('$$part.status', ['ok', 'partial', 'failed']),
+                        pending: boundedBoolean('$$part.pending'),
                         labelTruncated: {
                           $or: [
                             stringProjectionTruncated(
@@ -2396,9 +2527,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                           '$$part.tool_call.output',
                           SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT,
                         ),
-                        progress: '$$part.tool_call.progress',
-                        runStepStatus: '$$part.tool_call.runStepStatus',
-                        inputValidationError: '$$part.tool_call.inputValidationError',
+                        progress: boundedNumber('$$part.tool_call.progress'),
+                        runStepStatus: boundedEnum('$$part.tool_call.runStepStatus', [
+                          'running',
+                          'completed',
+                          'failed',
+                          'cancelled',
+                        ]),
+                        inputValidationError: boundedBoolean(
+                          '$$part.tool_call.inputValidationError',
+                        ),
                         inputTruncated: stringProjectionTruncated(
                           '$$part.tool_call.args',
                           SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT,
@@ -2419,6 +2557,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           cond: { $ne: ['$$activity', null] },
         },
       };
+      const boundedActivityContent = budgetedActivity(clippedActivityContent);
       type ActivitySourceProjection = WithNullSentinels<
         Pick<
           SubagentThreadViewMessageRecord,
@@ -2450,11 +2589,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         },
         subagentActivity: boundedActivityContent,
         subagentActivityProjectionTruncated: {
-          $gt: [
+          $or: [
             {
-              $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+              $gt: [
+                {
+                  $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+                },
+                SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+              ],
             },
-            SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+            activityBytesOverBudget(clippedActivityContent),
           ],
         },
         subagentTask: boundedSubagentTask,

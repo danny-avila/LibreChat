@@ -1,6 +1,7 @@
 import {
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
   getTenantId,
   SYSTEM_TENANT_ID,
 } from '@librechat/data-schemas';
@@ -180,6 +181,7 @@ describe('durable agent trigger service', () => {
       expect.objectContaining({
         workerCapabilities: [
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
         ],
       }),
@@ -215,7 +217,10 @@ describe('durable agent trigger service', () => {
 
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
-        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+        workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+        ],
       }),
     );
     await service.stop();
@@ -378,6 +383,56 @@ describe('durable agent trigger service', () => {
     });
 
     expect(expireLegacyAgentEventActorReceipts).toHaveBeenCalledWith(expect.any(Date), 17);
+    await service.stop();
+  });
+
+  it('reclaims lanes even when another maintenance step rejects', async () => {
+    /** A single broken cleanup (e.g. an engine-specific query rejection) used
+     * to fail the whole Promise.all and skip the sequenced lane reclamation on
+     * every pass; each step must fail alone. */
+    const expireLegacyAgentEventActorReceipts = jest
+      .fn()
+      .mockRejectedValue(new Error('Projections cannot have a mix of inclusion and exclusion'));
+    const reclaimInactiveAgentTriggerLanes = jest.fn(async () => 1);
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({
+        expireLegacyAgentEventActorReceipts,
+        reclaimInactiveAgentTriggerLanes,
+      }),
+      purgeRecoveryIntervalMs: 60_000,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    expect(expireLegacyAgentEventActorReceipts).toHaveBeenCalledTimes(1);
+    expect(reclaimInactiveAgentTriggerLanes).toHaveBeenCalledTimes(1);
+    await service.stop();
+  });
+
+  it('holds lane reclamation while batch-receipt recovery fails', async () => {
+    /** Reclamation consumes the lane-cleanup markers; against a half-recovered
+     * batch it clears a request no later successful recovery can re-arm, so a
+     * failed batch pass must gate it — unlike the independent steps above. */
+    const recoverAgentTriggerBatchReceipts = jest
+      .fn()
+      .mockRejectedValue(new Error('transient settle failure'));
+    const reclaimInactiveAgentTriggerLanes = jest.fn(async () => 1);
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({
+        recoverAgentTriggerBatchReceipts,
+        reclaimInactiveAgentTriggerLanes,
+      }),
+      purgeRecoveryIntervalMs: 60_000,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(1);
+    expect(reclaimInactiveAgentTriggerLanes).not.toHaveBeenCalled();
     await service.stop();
   });
 

@@ -16,6 +16,9 @@ const QUEUE_USAGE_RENEW_INTERVAL_MS = 30 * 60 * 1000;
 const collectQueuedFileIds = (items: QueuedMessage[]): string[] => {
   const fileIds: string[] = [];
   for (const item of items) {
+    if (item.server != null) {
+      continue;
+    }
     for (const file of item.files ?? []) {
       if (typeof file.file_id === 'string' && file.file_id.length > 0) {
         fileIds.push(file.file_id);
@@ -86,6 +89,7 @@ export default function useQueueDrain(
    *  during the first turn stay keyed here until that run ends. Renewing only
    *  the active id would skip them for the whole of that run. */
   const newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
+  const hasServerOwnedQueue = [...ownQueue, ...newConvoQueue].some((item) => item.server != null);
 
   /* Deduped because the two subscriptions are the same atom before migration.
    * Keyed by id list so the effect re-runs when the held set changes, not
@@ -146,7 +150,9 @@ export default function useQueueDrain(
         }
         set(store.pendingRunEndByConvoId(end.conversationId), {
           ...end,
-          ...((end.interruptArmed === true || interruptArmed) && { interruptArmed: true }),
+          ...((end.interruptArmed === true || interruptArmed) && {
+            interruptArmed: true,
+          }),
         });
         set(store.runEndByIndex(index), null);
         return true;
@@ -188,7 +194,9 @@ export default function useQueueDrain(
           }
           set(store.pendingRunEndByConvoId(end.conversationId), {
             ...end,
-            ...((end.interruptArmed === true || interruptArmed) && { interruptArmed: true }),
+            ...((end.interruptArmed === true || interruptArmed) && {
+              interruptArmed: true,
+            }),
           });
           set(store.runEndByIndex(index), null);
           return null;
@@ -205,19 +213,8 @@ export default function useQueueDrain(
         if (end == null) {
           return null;
         }
-        // Consume the signal first — a hard double-fire guard even if the
-        // effect re-runs before Recoil propagates.
-        if (fromParked && activeConversationId) {
-          set(store.pendingRunEndByConvoId(activeConversationId), null);
-        } else {
-          set(store.runEndByIndex(index), null);
-        }
-
         const indexArmed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
         const matchingIndexArm = matchesInterruptArm(indexArmed, end);
-        if (matchingIndexArm) {
-          set(store.drainAfterAbortByIndex(index), false);
-        }
         const interruptArmed = matchingIndexArm || end.interruptArmed === true;
 
         const conversationId = end.conversationId;
@@ -241,6 +238,30 @@ export default function useQueueDrain(
           : ownQueue;
 
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
+        /** A server-owned Agent row means the backend owns the next fresh-turn
+         * admission. Do not let a legacy/recovered local row race or overtake
+         * it. Keep this terminal boundary available until the authoritative
+         * queue snapshot proves whether a server-started successor now owns it. */
+        const serverOwnsBoundary = merged.some((item) => item.server != null);
+        if (serverOwnsBoundary) {
+          /** Keep the one-shot terminal signal until the authoritative snapshot
+           * removes the server row. If it was admitted, its own later terminal
+           * signal orders the remaining local queue; if it was cancelled/dead,
+           * this signal still lets the legacy successor make progress. */
+          return null;
+        }
+
+        // Consume only after server authority has yielded the boundary — a
+        // hard double-fire guard even if the effect re-runs before propagation.
+        if (fromParked && activeConversationId) {
+          set(store.pendingRunEndByConvoId(activeConversationId), null);
+        } else {
+          set(store.runEndByIndex(index), null);
+        }
+        if (matchingIndexArm) {
+          set(store.drainAfterAbortByIndex(index), false);
+        }
+
         const next = shouldDrain ? (merged[0] ?? null) : null;
         const remainder = next ? merged.slice(1) : merged;
 
@@ -340,6 +361,7 @@ export default function useQueueDrain(
     drainNext,
     restoreQueued,
     markFilesUsage,
+    hasServerOwnedQueue,
     ask,
   ]);
 }

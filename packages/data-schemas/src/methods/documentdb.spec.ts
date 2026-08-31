@@ -176,6 +176,42 @@ function findForbiddenTokens(sourceFile: ts.SourceFile): string[] {
   return offenses;
 }
 
+/** Reports `.select('...')` string arguments that mix a bare inclusion token
+ * with a `+` token where the bare tokens are ONLY `_id`. `_id` alone does not
+ * make a Mongoose projection inclusive and a `+` token only un-hides its
+ * field, so this exact shape compiles to `{ _id: 1 }` plus a `: 0` exclusion
+ * for every OTHER `select: false` sibling — a mixed projection MongoDB
+ * tolerates via the `_id` exception but Amazon DocumentDB rejects:
+ * `Projections cannot have a mix of inclusion and exclusion`. Every related
+ * shape stays legal and is deliberately not flagged (verified empirically): a
+ * bare non-`_id` token makes the projection inclusive, turning `+` tokens
+ * into plain `field: 1` inclusions; pure-`+` strings compile to
+ * all-exclusion; object-form selects are sent verbatim. */
+function findMixedSelectStrings(sourceFile: ts.SourceFile): string[] {
+  const offenses: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'select' &&
+      node.arguments.length === 1
+    ) {
+      const argument = unwrapExpression(node.arguments[0]);
+      if (ts.isStringLiteralLike(argument)) {
+        const tokens = argument.text.split(/\s+/).filter((token) => token.length > 0);
+        const bare = tokens.filter((token) => !token.startsWith('+') && !token.startsWith('-'));
+        const hasUnhide = tokens.some((token) => token.startsWith('+'));
+        if (hasUnhide && bare.length > 0 && bare.every((token) => token === '_id')) {
+          offenses.push(offenseAt(sourceFile, node, `select('${argument.text}')`));
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return offenses;
+}
+
 describe('Amazon DocumentDB compatibility', () => {
   /** Each file is read and parsed once; both detectors walk the same tree. */
   const parsedSources = SCAN_ROOTS.flatMap((root) => collectSourceFiles(root)).map((file) =>
@@ -192,6 +228,10 @@ describe('Amazon DocumentDB compatibility', () => {
 
   it('uses no aggregation constructs the engine rejects', () => {
     expect(parsedSources.flatMap(findForbiddenTokens)).toEqual([]);
+  });
+
+  it('mixes no bare and un-hide tokens in select strings', () => {
+    expect(parsedSources.flatMap(findMixedSelectStrings)).toEqual([]);
   });
 
   /** A guard that cannot fail protects nothing, so every shape the detectors
@@ -230,6 +270,23 @@ describe('Amazon DocumentDB compatibility', () => {
       ['unrelated array variable', `const stages = [{ $match: {} }];\nModel.aggregate(stages);`],
     ])('accepts a supported shape: %s', (_shape, source) => {
       expect(findPipelineUpdates(parse('fixture.ts', source))).toEqual([]);
+    });
+
+    it.each([
+      ['_id with an un-hide token', `Model.find({}).select('_id +hiddenField');`],
+      ['regardless of token order', `Model.find({}).select('+hiddenField _id');`],
+    ])('flags a mixed select string: %s', (_shape, source) => {
+      expect(findMixedSelectStrings(parse('fixture.ts', source))).not.toEqual([]);
+    });
+
+    it.each([
+      ['pure un-hide tokens', `Model.find({}).select('+hiddenA +hiddenB');`],
+      ['pure inclusion string', `Model.find({}).select('_id title user');`],
+      ['bare non-_id token makes it inclusive', `Model.find({}).select('title +hiddenField');`],
+      ['object-form inclusion', `Model.find({}).select({ _id: 1, hiddenField: 1 });`],
+      ['bare with minus exclusion', `Model.find({}).select('-internal');`],
+    ])('accepts a supported select: %s', (_shape, source) => {
+      expect(findMixedSelectStrings(parse('fixture.ts', source))).toEqual([]);
     });
 
     it('flags forbidden operators in code but not in prose', () => {

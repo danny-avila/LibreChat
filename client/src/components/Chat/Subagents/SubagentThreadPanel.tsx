@@ -190,24 +190,33 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     selectedEventActor?.actorId ??
     eventSummary?.actorId ??
     foregroundTitle;
-  const { data, isLoading, isError, isReadinessPending, refetch } = useSubagentThreadQuery(
-    selection.parentConversationId,
-    threadId,
-    taskId,
-    eventTaskRunning ? { refetchInterval: ACTIVE_THREAD_REFRESH_MS } : undefined,
-  );
+  const { data, isLoading, isError, isPreviousData, isReadinessPending, refetch } =
+    useSubagentThreadQuery(selection.parentConversationId, threadId, taskId, {
+      /** A new delivery re-keys this query to its task. Keeping the previous
+       *  thread view mounted while the fresh one loads stops the whole panel
+       *  from flashing back to a loading dot on every incoming event. */
+      keepPreviousData: true,
+      ...(eventTaskRunning ? { refetchInterval: ACTIVE_THREAD_REFRESH_MS } : {}),
+    });
+  /** Retention crosses every key change, including actor switches. A retained
+   *  view is only meaningful while it describes the SAME child thread; within
+   *  that thread its turn/history rows stay valid across task re-keys, while
+   *  task-scoped fields (selected activity, status, control receipts) must not
+   *  be attributed to the newly selected task. */
+  const threadView = data?.threadId === threadId ? data : undefined;
+  const taskView = isPreviousData ? undefined : threadView;
   const latestHistoryGeneration = JSON.stringify([
-    data?.nextCursor ?? null,
-    ...(data?.turns?.map((turn) => turn.taskId) ?? []),
+    threadView?.nextCursor ?? null,
+    ...(threadView?.turns?.map((turn) => turn.taskId) ?? []),
   ]);
   const latestHistoryGenerationRef = useRef(latestHistoryGeneration);
   latestHistoryGenerationRef.current = latestHistoryGeneration;
   const durableTerminal =
-    subagentThreadHasTaskEvidence(data, taskId) &&
-    (data?.status === 'completed' ||
-      data?.status === 'failed' ||
-      data?.status === 'interrupted' ||
-      data?.status === 'cancelled');
+    subagentThreadHasTaskEvidence(taskView, taskId) &&
+    (taskView?.status === 'completed' ||
+      taskView?.status === 'failed' ||
+      taskView?.status === 'interrupted' ||
+      taskView?.status === 'cancelled');
   const priorTerminalRef = useRef(false);
   useSubagentActivityStream(selection, !durableTerminal || eventTaskRunning);
 
@@ -290,6 +299,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const activeThreadRef = useRef(threadId);
   const selectionThreadRef = useRef(threadId);
   const selectionGenerationRef = useRef(0);
+  /** Locally retained turn buffers reset in a passive effect; until it has run
+   *  for the current thread they still hold the previous thread's turns and
+   *  must not render. Stamped inside that reset effect. */
+  const retainedTurnsGenerationRef = useRef(0);
   const turnDetailRequestsRef = useRef(new Set<string>());
   const historyRequestRef = useRef<string | null>(null);
   const historyHasLoadedRef = useRef(false);
@@ -320,6 +333,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setMovingWindowTurns([]);
     setRebaseTurns([]);
     setPostRebaseTurns([]);
+    retainedTurnsGenerationRef.current = selectionGenerationRef.current;
     postRebaseTurnsRef.current = [];
     setHistoryRebaseActive(false);
     historyRebaseActiveRef.current = false;
@@ -334,19 +348,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
 
   useEffect(() => {
     if (
-      data?.threadId === threadId &&
-      (data.historyUnavailable === true ||
-        (data.historyTruncated === true && data.nextCursor == null))
+      threadView != null &&
+      (threadView.historyUnavailable === true ||
+        (threadView.historyTruncated === true && threadView.nextCursor == null))
     ) {
       setHistoryBoundaryUnavailable(true);
     }
-  }, [
-    data?.historyTruncated,
-    data?.historyUnavailable,
-    data?.nextCursor,
-    data?.threadId,
-    threadId,
-  ]);
+  }, [threadView]);
 
   const loadTurnDetails = useCallback(
     async (detailTaskId: string) => {
@@ -410,7 +418,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       historyCursor !== undefined &&
       historyCursorGeneration !== requestedGeneration;
     const recoveringRebase = startsRebase || historyRebaseActive;
-    const cursor = historyCursor === undefined || startsRebase ? data?.nextCursor : historyCursor;
+    const cursor =
+      historyCursor === undefined || startsRebase ? threadView?.nextCursor : historyCursor;
     const requestKey = `${requestedSelectionGeneration}\u0000${requestedThreadId}\u0000${cursor ?? ''}\u0000${requestedGeneration}`;
     if (cursor == null || historyState === 'loading' || historyRequestRef.current != null) {
       return;
@@ -501,7 +510,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       if (historyRequestRef.current === requestKey) historyRequestRef.current = null;
     }
   }, [
-    data?.nextCursor,
+    threadView?.nextCursor,
     historyCursor,
     historyCursorGeneration,
     historyRebaseActive,
@@ -566,7 +575,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
 
   useEffect(() => {
     if (transientControl == null) return;
-    const durableReceipt = data?.controlReceipts?.find(
+    const durableReceipt = taskView?.controlReceipts?.find(
       (receipt) => receipt.invocationId === transientControl.invocationId,
     );
     if (durableReceipt == null) return;
@@ -583,13 +592,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     }
     if (closesTaskControls(durableReceipt)) setControlsClosed(true);
     setControlState(null);
-  }, [data?.controlReceipts, retryControl, setControlState, transientControl]);
+  }, [retryControl, setControlState, taskView?.controlReceipts, transientControl]);
 
   useEffect(() => {
-    if (data?.controlReceipts?.some(closesTaskControls)) {
+    if (taskView?.controlReceipts?.some(closesTaskControls)) {
       setControlsClosed(true);
     }
-  }, [data?.controlReceipts]);
+  }, [taskView?.controlReceipts]);
 
   const submitControl = useCallback(
     (action: SubagentControlAction, controlId?: string, retry?: SubagentControlRequest) => {
@@ -707,14 +716,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   );
   const activity = useMemo(() => {
     if (selection.durable == null) return liveActivity;
-    if (data == null) {
+    if (taskView == null) {
       const activityWithoutData =
         progress == null ? { ...liveActivity, status: 'dispatched' as const } : liveActivity;
       return transientControl == null
         ? activityWithoutData
         : { ...activityWithoutData, controls: [transientControl] };
     }
-    const durable = adaptDurableThreadActivity(data, selection.durable.taskId);
+    const durable = adaptDurableThreadActivity(taskView, selection.durable.taskId);
     const useLiveItems =
       (durable.status === 'running' || durable.status === 'dispatched') &&
       liveActivity.items.length > 0;
@@ -734,11 +743,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       return merged;
     }
     return { ...merged, controls: [...(merged.controls ?? []), transientControl] };
-  }, [data, liveActivity, progress, selection.durable, transientControl]);
+  }, [liveActivity, progress, selection.durable, taskView, transientControl]);
   const panelTitle = selection.event == null ? activity.title : selectedEventActorName;
   const latestConversationTurns = useMemo(
-    () => (data == null ? [] : adaptDurableThreadConversation(data)),
-    [data],
+    () => (threadView == null ? [] : adaptDurableThreadConversation(threadView)),
+    [threadView],
   );
   const previousLatestTurnsRef = useRef({
     threadId,
@@ -746,7 +755,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     turns: latestConversationTurns,
   });
   useEffect(() => {
-    if (data == null) return;
+    if (threadView == null) return;
     const previous = previousLatestTurnsRef.current;
     if (previous.threadId === threadId) {
       const latestTaskIds = new Set(latestConversationTurns.map((turn) => turn.taskId));
@@ -766,15 +775,18 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       generation: latestHistoryGeneration,
       turns: latestConversationTurns,
     };
-  }, [data, historyRebaseActive, latestConversationTurns, latestHistoryGeneration, threadId]);
+  }, [historyRebaseActive, latestConversationTurns, latestHistoryGeneration, threadId, threadView]);
+  const retainedTurnsValid = retainedTurnsGenerationRef.current === selectionGenerationRef.current;
   const conversationTurns = useMemo(() => {
-    const durableTurns = mergeChildConversationTurns(
-      olderTurns,
-      movingWindowTurns,
-      rebaseTurns,
-      postRebaseTurns,
-      latestConversationTurns,
-    );
+    const durableTurns = retainedTurnsValid
+      ? mergeChildConversationTurns(
+          olderTurns,
+          movingWindowTurns,
+          rebaseTurns,
+          postRebaseTurns,
+          latestConversationTurns,
+        )
+      : mergeChildConversationTurns(latestConversationTurns);
     if (durableTurns.length > 0) {
       const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
       if (selectedTurnIndex >= 0) {
@@ -824,6 +836,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     olderTurns,
     postRebaseTurns,
     rebaseTurns,
+    retainedTurnsValid,
     selection,
     taskId,
     turnDetailOverrides,
@@ -836,19 +849,24 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const historyCursorUsesLatest =
     !historyRebaseActive &&
     (historyCursor === undefined || historyCursorGeneration !== latestHistoryGeneration);
-  const effectiveHistoryCursor = historyCursorUsesLatest ? data?.nextCursor : historyCursor;
+  const effectiveHistoryCursor = historyCursorUsesLatest ? threadView?.nextCursor : historyCursor;
   const showUnavailableHistoryBoundary =
     historyBoundaryUnavailable ||
-    data?.historyUnavailable === true ||
-    (historyCursorUsesLatest && data?.historyTruncated === true && data.nextCursor == null);
+    threadView?.historyUnavailable === true ||
+    (historyCursorUsesLatest &&
+      threadView?.historyTruncated === true &&
+      threadView.nextCursor == null);
   /** During a rolling deployment an older API replica can omit `turns`. Keep
    * that response readable through the same deep activity renderer; every
    * current host otherwise enters the conversation-native rendering seam. */
   const hasConversationProjection =
-    selection.durable == null || data == null || Array.isArray(data.turns);
+    selection.durable == null || threadView == null || Array.isArray(threadView.turns);
   const taskInaccessible = controlInaccessible || transientControl?.reason === 'task_inaccessible';
   const controlAvailable =
-    selection.durable != null && data?.status === 'running' && !taskInaccessible && !controlsClosed;
+    selection.durable != null &&
+    taskView?.status === 'running' &&
+    !taskInaccessible &&
+    !controlsClosed;
   const controlPending =
     controlTask.isLoading || transientControl?.status === 'submitted' || retryControl != null;
   const showControlFooter =
@@ -856,11 +874,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const canContinueAsChat =
     selection.host === 'conversation' &&
     selection.durable != null &&
-    data?.subagentKind === 'agent' &&
-    data.agentId != null &&
-    data.status === 'completed' &&
-    subagentThreadHasTaskEvidence(data, taskId) &&
-    data.messages.some((message) => message.messageId === `${taskId}:assistant`);
+    taskView?.subagentKind === 'agent' &&
+    taskView.agentId != null &&
+    taskView.status === 'completed' &&
+    subagentThreadHasTaskEvidence(taskView, taskId) &&
+    taskView.messages.some((message) => message.messageId === `${taskId}:assistant`);
 
   const continueAsChat = useCallback(() => {
     if (!canContinueAsChat || selection.durable == null) return;
@@ -998,7 +1016,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         )}
         <SubagentConversation
           turns={conversationTurns}
-          agentId={data?.agentId}
+          agentId={threadView?.agentId}
           conversationId={threadId || selection.parentConversationId}
           stateByTask={conversationStateByTask}
           controllableTaskId={

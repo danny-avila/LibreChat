@@ -1767,6 +1767,59 @@ describe('Conversation Operations', () => {
   });
 
   describe('deleteConvos', () => {
+    it('retires queued-turn work before each conversation deletion wave', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        tenantId: 'tenant-1',
+        endpoint: EModelEndpoint.agents,
+      });
+      const transitions: string[] = [];
+      const deleteAgentQueuedTurns = jest.fn(async () => {
+        transitions.push('queue-retired');
+      });
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        deleteAgentQueuedTurns,
+      });
+
+      await scopedMethods.deleteConvos(
+        'user123',
+        { conversationId },
+        {
+          beforeDelete: async () => {
+            transitions.push('generation-drained');
+          },
+        },
+      );
+
+      expect(deleteAgentQueuedTurns).toHaveBeenCalledWith('user123', [
+        { conversationId, tenantId: 'tenant-1' },
+      ]);
+      expect(transitions).toEqual(['queue-retired', 'generation-drained']);
+    });
+
+    it('fails closed before deleting a conversation when queued-turn retirement fails', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+      });
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        deleteAgentQueuedTurns: async () => Promise.reject(new Error('retirement unavailable')),
+      });
+
+      await expect(scopedMethods.deleteConvos('user123', { conversationId })).rejects.toThrow(
+        'retirement unavailable',
+      );
+      expect(await Conversation.findOne({ conversationId })).not.toBeNull();
+    });
+
     it('should delete conversations and associated messages', async () => {
       await Conversation.create({
         conversationId: mockConversationData.conversationId,
@@ -5571,6 +5624,48 @@ describe('Conversation Operations', () => {
       ).resolves.toMatchObject({
         agentEventActorReconciliations: [expect.objectContaining({ invocationId: 'recent' })],
       });
+    });
+
+    it('sends a pure inclusion projection for the candidate read', async () => {
+      /** The string form `'_id +field'` compiles to `{ _id: 1 }` plus a `: 0`
+       * exclusion for every other `select: false` sibling — a mixed projection
+       * MongoDB tolerates but Amazon DocumentDB rejects, which failed this
+       * sweep on every maintenance pass. The candidate read must stay a pure
+       * inclusion AND still return the hidden reconciliations field. */
+      const conversationId = uuidv4();
+      const now = new Date();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-projection-user',
+        endpoint: EModelEndpoint.agents,
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'projection-probe',
+            status: 'settled',
+            resolution: 'action_compensated',
+            checkpoint: {
+              threadId: conversationId,
+              checkpointNs: 'event-actor/projection-probe',
+            },
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(now.getTime() - 91 * 24 * 60 * 60_000),
+          },
+        ],
+      });
+      const projections: Array<Record<string, number> | undefined> = [];
+      const originalFind = Conversation.collection.find.bind(Conversation.collection);
+      const findSpy = jest
+        .spyOn(Conversation.collection, 'find')
+        .mockImplementation((filter, options) => {
+          projections.push(options?.projection);
+          return originalFind(filter, options);
+        });
+      try {
+        await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(1);
+      } finally {
+        findSpy.mockRestore();
+      }
+      expect(projections[0]).toEqual({ _id: 1, agentEventActorReconciliations: 1 });
     });
 
     it('retains an expired legacy receipt while its delivery handling is nonterminal', async () => {

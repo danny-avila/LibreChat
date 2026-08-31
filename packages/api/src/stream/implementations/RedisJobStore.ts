@@ -2755,6 +2755,18 @@ export class RedisJobStore implements IJobStoreV2 {
     return (await this.redis.exists(KEYS.idempotency(key))) === 1;
   }
 
+  async getIdempotencyClaim(key: string): Promise<IdempotencyClaimValue | null> {
+    const value = await this.redis.get(KEYS.idempotency(key));
+    if (value == null) {
+      return null;
+    }
+    try {
+      return JSON.parse(value) as IdempotencyClaimValue;
+    } catch {
+      throw new Error('Invalid generation idempotency claim');
+    }
+  }
+
   async takeoverIdempotencyKey(
     key: string,
     expected: IdempotencyClaimValue,
