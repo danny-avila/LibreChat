@@ -69,6 +69,25 @@ describe('Composer', () => {
     expect(screen.getByLabelText('Send it')).toBeDisabled();
   });
 
+  /** Continuing a settled thread needs no text, so its send button is live on
+   *  an empty field — but a stray Enter must not navigate the reader away. */
+  it('never submits an empty field on Enter, even where the button would', () => {
+    const onSubmit = jest.fn();
+    render(<Harness onSubmit={onSubmit} />);
+
+    const field = screen.getByLabelText('Message input');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: '   ' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    expect(screen.getByLabelText('Send it')).toBeEnabled();
+    fireEvent.click(screen.getByLabelText('Send it'));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
   it('sends from the button and keeps the caller actions alongside it', () => {
     const onSubmit = jest.fn();
     render(<Harness onSubmit={onSubmit} />);

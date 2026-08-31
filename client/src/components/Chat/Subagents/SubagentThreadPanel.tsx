@@ -763,16 +763,24 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const panelTitle = selection.event == null ? activity.title : selectedEventActorName;
   const actorOptions = useMemo<OptionWithIcon[]>(() => {
     if (selection.event == null) return [];
-    return eventSiblings.map((child) => {
-      const agent = child.agentId == null ? undefined : agentsMap?.[child.agentId];
-      const name = agent?.name || child.actorId || child.title;
-      return {
-        value: child.threadId,
-        label: agent?.name != null && child.actorId != null ? `${name} · ${child.actorId}` : name,
-        icon: renderAgentAvatar(agent, { size: 'icon', showBorder: false }),
-      };
-    });
-  }, [agentsMap, eventSiblings, selection.event]);
+    return (
+      eventSiblings
+        /** An actor with no task has nothing to open, and this list has no
+         *  disabled state — leave it out rather than offering a dead row. The
+         *  selected thread stays listed whatever the index currently says. */
+        .filter((child) => child.latestTaskId != null || child.threadId === threadId)
+        .map((child) => {
+          const agent = child.agentId == null ? undefined : agentsMap?.[child.agentId];
+          const name = agent?.name || child.actorId || child.title;
+          return {
+            value: child.threadId,
+            label:
+              agent?.name != null && child.actorId != null ? `${name} · ${child.actorId}` : name,
+            icon: renderAgentAvatar(agent, { size: 'icon', showBorder: false }),
+          };
+        })
+    );
+  }, [agentsMap, eventSiblings, selection.event, threadId]);
   const selectedActorLabel =
     actorOptions.find((option) => option.value === threadId)?.label ?? panelTitle;
   const selectedActorAgentId = selectedEventActor?.agentId ?? threadView?.agentId;
@@ -1163,7 +1171,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           />
         ) : (
           <>
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-tertiary">
+            {/* The `MessageRow` author-glyph slot, one size up: no plate
+                behind it, so an agent avatar reads as the avatar it is. */}
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full">
               {selectedActorIcon}
             </div>
             <h2 className="min-w-0 flex-1 truncate text-sm font-semibold" title={panelTitle}>

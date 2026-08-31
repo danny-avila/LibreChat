@@ -28,8 +28,6 @@ export interface ComposerProps {
   maxRows?: number;
   /** Secondary controls, laid out inline-start of the send button. */
   actions?: ReactNode;
-  /** Held above the field — an alert, a receipt, a staged-context strip. */
-  header?: ReactNode;
   className?: string;
 }
 
@@ -58,17 +56,21 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
       minRows = 1,
       maxRows = 6,
       actions,
-      header,
       className,
     }: ComposerProps,
     ref: Ref<HTMLTextAreaElement>,
   ) {
     /** `isComposing` guards the IME: committing a candidate fires Enter, and
-     *  submitting there would send a half-typed word in every CJK locale. */
+     *  submitting there would send a half-typed word in every CJK locale.
+     *
+     *  An empty field never submits, even where the surface would accept it —
+     *  a caller whose action needs no text (continuing a settled thread) still
+     *  wants that to be a deliberate press of the button, not a stray Enter
+     *  that navigates the reader somewhere. */
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
       event.preventDefault();
-      if (!canSubmit) return;
+      if (!canSubmit || value.trim() === '') return;
       onSubmit();
     };
 
@@ -81,7 +83,6 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
           className,
         )}
       >
-        {header}
         <TextareaAutosize
           ref={ref}
           value={value}
@@ -111,7 +112,7 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
                 data-testid="composer-send-button"
                 className="size-theme-control rounded-theme-control-round bg-text-primary p-theme-compact text-text-primary outline-offset-4 transition-all duration-theme-normal disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10"
               >
-                <SendIcon size={20} />
+                <SendIcon size={24} />
               </button>
             }
           />

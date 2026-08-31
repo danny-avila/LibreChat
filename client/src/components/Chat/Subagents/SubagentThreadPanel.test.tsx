@@ -277,7 +277,7 @@ jest.mock('@librechat/client', () => ({
         onKeyDown={(event) => {
           if (event.key !== 'Enter' || event.shiftKey) return;
           event.preventDefault();
-          if (canSubmit) onSubmit();
+          if (canSubmit && value.trim() !== '') onSubmit();
         }}
       />
       {actions}
