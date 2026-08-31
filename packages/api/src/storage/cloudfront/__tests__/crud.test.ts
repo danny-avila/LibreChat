@@ -92,6 +92,28 @@ describe('CloudFront CRUD', () => {
       expect(mockGetSignedUrl).not.toHaveBeenCalled();
     });
 
+    it('percent-encodes non-ASCII characters in the key', async () => {
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({ userId: 'user1', fileName: 'Ársreikningur.pdf' });
+      expect(url).toBe('https://d123.cloudfront.net/i/images/user1/%C3%81rsreikningur.pdf');
+    });
+
+    it('percent-encodes a literal % so it cannot be read back as an escape', async () => {
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({ userId: 'user1', fileName: 'report%20final.pdf' });
+      expect(url).toBe('https://d123.cloudfront.net/i/images/user1/report%2520final.pdf');
+    });
+
+    it('leaves path separators literal', async () => {
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({
+        userId: 'user1',
+        fileName: 'doc.pdf',
+        basePath: 'documents',
+      });
+      expect(url).toBe('https://d123.cloudfront.net/documents/user1/doc.pdf');
+    });
+
     it('uses custom basePath when provided', async () => {
       const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
       const url = await getCloudFrontURL({

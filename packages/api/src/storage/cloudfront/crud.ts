@@ -84,7 +84,15 @@ function buildCloudFrontUrl(s3Key: string): string {
   }
   const cleanDomain = config.domain.replace(/\/+$/, '');
   const cleanKey = s3Key.replace(/^\/+/, '');
-  return `${cleanDomain}/${cleanKey}`;
+  /**
+   * Percent-encode each path segment (the separators stay literal). Without this a CloudFront
+   * URL carries the raw key while an SDK-generated S3 URL carries an encoded one, so the two
+   * forms of `file.filepath` disagree about what a `%` means: a key containing the literal text
+   * `%20` would be indistinguishable from a key containing a space. Encoding here keeps both
+   * producers consistent, which is what lets `extractKeyFromS3Url` decode unconditionally.
+   */
+  const encodedKey = cleanKey.split('/').map(encodeURIComponent).join('/');
+  return `${cleanDomain}/${encodedKey}`;
 }
 
 function signUrl(url: string | URL): string {
