@@ -170,6 +170,10 @@ export type MCPAuthorityMethods = MCPAuthorityDatabaseMethods;
 
 export interface MCPAuthorityMethodHooks {
   afterPrincipalSnapshot?: () => void | Promise<void>;
+  /** Overrides the cooldown that throttles snapshot-namespace preflight
+   * retries after a failure. Tests use it to exercise both sides of the
+   * boundary without waiting. */
+  snapshotNamespaceRetryCooldownMs?: number;
 }
 
 export class MCPAuthorityProofError extends Error {
@@ -1003,6 +1007,12 @@ function asMCPError(error: unknown): MCPAuthorityProofError {
  * concurrent creator won the race. */
 const NAMESPACE_EXISTS_CODE = 48;
 
+/** After a failed namespace preflight, hold the failure this long before
+ * attempting the DDL again. Without it a persistent failure (an authorization
+ * error, say) turns every authority request into another serial collection
+ * preflight — a DDL retry storm precisely while the database is unhealthy. */
+const SNAPSHOT_NAMESPACE_RETRY_COOLDOWN_MS = 30_000;
+
 function isNamespaceExistsError(error: unknown): boolean {
   const candidate = error as { code?: number; codeName?: string; message?: string };
   return (
@@ -1030,6 +1040,9 @@ export function createMCPAuthorityMethods(
   hooks: MCPAuthorityMethodHooks = {},
 ): MCPAuthorityDatabaseMethods {
   let snapshotNamespacesReady: Promise<void> | undefined;
+  let snapshotNamespacesFailure: { error: unknown; at: number } | undefined;
+  const namespaceRetryCooldownMs =
+    hooks.snapshotNamespaceRetryCooldownMs ?? SNAPSHOT_NAMESPACE_RETRY_COOLDOWN_MS;
 
   /** Amazon DocumentDB rejects any statement inside a transaction that touches
    * a collection which does not exist, and `asMCPError` converts that server
@@ -1040,6 +1053,14 @@ export function createMCPAuthorityMethods(
    * per collection per process and nothing on MongoDB, which tolerates the
    * in-transaction read either way. */
   async function ensureSnapshotNamespaces(): Promise<void> {
+    /** Inside the cooldown, replay the recorded failure without touching the
+     * database: retries stay possible, but bounded. */
+    if (snapshotNamespacesFailure != null) {
+      if (Date.now() - snapshotNamespacesFailure.at < namespaceRetryCooldownMs) {
+        throw snapshotNamespacesFailure.error;
+      }
+      snapshotNamespacesFailure = undefined;
+    }
     snapshotNamespacesReady ??= (async () => {
       for (const modelName of AUTHORITY_SNAPSHOT_MODELS) {
         const model = mongoose.models[modelName];
@@ -1063,10 +1084,13 @@ export function createMCPAuthorityMethods(
     })();
     try {
       await snapshotNamespacesReady;
+      snapshotNamespacesFailure = undefined;
     } catch (error) {
-      /** Clear the memo so the next request retries rather than inheriting a
-       * failure that may have already cleared. */
+      /** Clear the memo so a later request retries rather than inheriting a
+       * failure that may have already cleared, and record it so requests
+       * arriving during the cooldown fail fast instead of re-running the DDL. */
       snapshotNamespacesReady = undefined;
+      snapshotNamespacesFailure = { error, at: Date.now() };
       throw error;
     }
   }

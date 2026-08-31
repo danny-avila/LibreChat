@@ -278,7 +278,11 @@ describe('MCP authority proofs', () => {
     /** A swallowed transient failure would settle the once-per-process memo,
      * skip creation for every later request, and strand authority proofs on
      * `proof_unavailable` long after the condition cleared. */
-    const retryMethods = createMCPAuthorityMethods(mongoose);
+    /** Zero cooldown: this test covers the retry-after-transient-failure side
+     * of the boundary; the storm-suppression side is covered below. */
+    const retryMethods = createMCPAuthorityMethods(mongoose, {
+      snapshotNamespaceRetryCooldownMs: 0,
+    });
     const target = () => ({
       serverName: SERVER_NAME,
       source: 'database' as const,
@@ -317,6 +321,54 @@ describe('MCP authority proofs', () => {
     await expect(resolveWith()).resolves.toEqual(
       expect.objectContaining({ servers: expect.any(Array) }),
     );
+  });
+
+  test('throttles namespace preflight retries while a failure persists', async () => {
+    /** A persistent failure must not turn every authority request into another
+     * serial DDL preflight — that is a retry storm precisely while the database
+     * is unhealthy. */
+    const throttledMethods = createMCPAuthorityMethods(mongoose, {
+      snapshotNamespaceRetryCooldownMs: 60_000,
+    });
+    const resolveOnce = () =>
+      inTenant(() =>
+        throttledMethods.resolveMCPAuthorityProof({
+          userId: userId.toHexString(),
+          tenantId: TENANT_ID,
+          boot,
+          targets: [
+            {
+              serverName: SERVER_NAME,
+              source: 'database' as const,
+              databaseId: serverId.toHexString(),
+              sourceRevision: serverSourceRevision,
+              expectedCredentialRevision: credentialSourceRevision,
+              expectedOAuthGrantGeneration: 'oauth-generation-1',
+              resolvedConfig: {
+                type: 'sse' as const,
+                url: `https://${SERVER_NAME}.example/mcp`,
+                customUserVars: { API_KEY: { title: 'API key', description: 'Credential' } },
+              },
+              requiresOAuth: true,
+            },
+          ],
+        }),
+      );
+
+    const createSpy = jest
+      .spyOn(models.PluginAuth, 'createCollection')
+      .mockRejectedValue(Object.assign(new Error('not authorized'), { code: 13 }));
+    try {
+      await expect(resolveOnce()).rejects.toBeInstanceOf(MCPAuthorityProofError);
+      const afterFirst = createSpy.mock.calls.length;
+      await expect(resolveOnce()).rejects.toBeInstanceOf(MCPAuthorityProofError);
+      await expect(resolveOnce()).rejects.toBeInstanceOf(MCPAuthorityProofError);
+      /** The two requests inside the cooldown replayed the recorded failure
+       * without issuing another creation. */
+      expect(createSpy.mock.calls.length).toBe(afterFirst);
+    } finally {
+      createSpy.mockRestore();
+    }
   });
 
   test('creates one immutable shared snapshot and current per-server revisions', async () => {
