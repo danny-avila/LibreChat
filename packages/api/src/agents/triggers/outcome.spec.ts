@@ -1632,6 +1632,25 @@ describe('agent event terminal outcomes', () => {
     );
   });
 
+  it('rejects a printed handoff tool name as a failed terminal response', async () => {
+    const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
+    const handler = createAgentEventTerminalHandler({ settleAgentTriggerHandlingOutcome });
+
+    await handler(
+      'conversation-1',
+      job(),
+      [],
+      [{ type: 'text', text: 'Tool: lc_transfer_to_agent_mateo,' }],
+    );
+
+    expect(settleAgentTriggerHandlingOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        error: 'Agent response contained an unexecuted handoff tool name',
+      }),
+    );
+  });
+
   it('seals a persisted legacy turn from a non-resume terminal owner', async () => {
     const settleAgentTriggerHandlingOutcome = jest.fn().mockResolvedValue(true);
     const completeAgentEventActorLegacyTurn = jest.fn().mockResolvedValue(true);
