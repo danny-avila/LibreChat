@@ -1,6 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
-import type { AgentToolResources, TFile, AgentBaseResource } from 'librechat-data-provider';
+import type {
+  AgentToolResources,
+  AgentBaseResource,
+  CodeEnvRef,
+  TFile,
+} from 'librechat-data-provider';
 import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { ServerRequest } from '~/types';
@@ -225,6 +230,150 @@ const categorizeFileForToolResources = ({
  * @param params.agentId - Agent ID used for access control filtering
  * @returns Promise resolving to processed attachments and updated tool resources
  */
+/** Code env pointers are deployment-local; a ref for a configured (stateful) route
+ *  cannot be probed against the default Code API, so only default-route refs take
+ *  part in the liveness check and only they may be cleared as stale. */
+const codeEnvRouteKey = (ref: CodeEnvRef): string =>
+  ref.executionRouteKey ?? ref.executionProfile ?? 'default';
+
+/**
+ * Lazy provisioning: instead of provisioning files now, compute which files need
+ * provisioning. Actual provisioning happens at tool invocation time via the
+ * ON_TOOL_EXECUTE handler. Runs for persistent agent context files too, so a turn
+ * that carries no new attachment still queues them.
+ */
+const computeProvisionState = async ({
+  req,
+  attachments,
+  resourcePrincipal,
+  enabledToolResources,
+  tool_resources,
+  processedResourceFiles,
+  warnings,
+  checkSessionsAlive,
+  loadCodeApiKey,
+}: {
+  req?: ServerRequest;
+  attachments: Array<TFile>;
+  resourcePrincipal?: Pick<IUser, 'id' | 'role'>;
+  enabledToolResources?: Set<EToolResources>;
+  tool_resources: AgentToolResources;
+  processedResourceFiles: Set<string>;
+  warnings: string[];
+  checkSessionsAlive?: TCheckSessionsAlive;
+  loadCodeApiKey?: TLoadCodeApiKey;
+}): Promise<ProvisionState | undefined> => {
+  if (!enabledToolResources || enabledToolResources.size === 0 || attachments.length === 0) {
+    return undefined;
+  }
+
+  const needsCodeEnv = enabledToolResources.has(EToolResources.execute_code);
+  const needsVectorDB = enabledToolResources.has(EToolResources.file_search);
+  if (!needsCodeEnv && !needsVectorDB) {
+    return undefined;
+  }
+
+  const jwtCodeAuth = isCodeApiJwtAuthEnabled();
+  let codeApiKey: string | undefined;
+  if (needsCodeEnv && loadCodeApiKey && resourcePrincipal?.id) {
+    try {
+      codeApiKey = await loadCodeApiKey(resourcePrincipal.id);
+    } catch (error) {
+      logger.error('[primeResources] Failed to load CODE_API_KEY', error);
+      if (!jwtCodeAuth) {
+        warnings.push('Code execution file provisioning unavailable');
+      }
+    }
+  }
+  /** JWT-mode deployments mint bearer tokens per request, so a legacy
+   *  LIBRECHAT_CODE_API_KEY is not required for code-env provisioning. */
+  const codeAuthAvailable = codeApiKey != null || jwtCodeAuth;
+
+  /** Batch staleness check: identify which code env files are still alive.
+   *  Requires credentials the callback can actually send: a legacy key, or a
+   *  req to mint JWT bearer auth from. Without either, skip the check so an
+   *  unauthorized 401 cannot mark live sandbox files as expired. */
+  let aliveFileIds: Set<string> | undefined;
+  if (needsCodeEnv && codeAuthAvailable && checkSessionsAlive && (codeApiKey != null || req)) {
+    const filesWithIdentifiers = attachments.filter(
+      (f) =>
+        f?.metadata?.codeEnvRef &&
+        codeEnvRouteKey(f.metadata.codeEnvRef) === 'default' &&
+        f.file_id,
+    );
+    if (filesWithIdentifiers.length > 0) {
+      aliveFileIds = await checkSessionsAlive({
+        files: filesWithIdentifiers as TFile[],
+        req,
+        apiKey: codeApiKey,
+      });
+    }
+  }
+
+  const codeEnvFiles: TFile[] = [];
+  const vectorDBFiles: TFile[] = [];
+
+  for (const file of attachments) {
+    if (!file?.file_id) {
+      continue;
+    }
+
+    if (needsCodeEnv && codeAuthAvailable) {
+      const legacyRef = file.metadata?.codeEnvRef;
+      const isDefaultRoute = legacyRef != null && codeEnvRouteKey(legacyRef) === 'default';
+      const isStale = isDefaultRoute && aliveFileIds != null && !aliveFileIds.has(file.file_id);
+
+      /** Staleness must be repaired even for files that pre-categorization already
+       *  added to execute_code resources, so the check runs before the processed
+       *  guard. Clear both the legacy ref and its route entry, else getCodeEnvRefs
+       *  keeps resolving the dead session over the re-provisioned one. */
+      if (isStale) {
+        logger.info(
+          `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
+        );
+        const staleRouteKey = codeEnvRouteKey(legacyRef);
+        const remainingRefs = Object.fromEntries(
+          Object.entries(file.metadata?.codeEnvRefs ?? {}).filter(
+            ([routeKey]) => routeKey !== staleRouteKey,
+          ),
+        );
+        file.metadata = {
+          ...file.metadata,
+          codeEnvRef: undefined,
+          codeEnvRefs: Object.keys(remainingRefs).length > 0 ? remainingRefs : undefined,
+        };
+        codeEnvFiles.push(file);
+      } else if (!processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)) {
+        if (legacyRef == null) {
+          codeEnvFiles.push(file);
+        } else {
+          addFileToResource({
+            file,
+            resourceType: EToolResources.execute_code,
+            tool_resources,
+            processedResourceFiles,
+          });
+        }
+      }
+    }
+
+    const isImage = file.type?.startsWith('image') ?? false;
+    if (
+      needsVectorDB &&
+      !isImage &&
+      file.embedded !== true &&
+      !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
+    ) {
+      vectorDBFiles.push(file);
+    }
+  }
+
+  if (codeEnvFiles.length === 0 && vectorDBFiles.length === 0) {
+    return undefined;
+  }
+  return { codeEnvFiles, vectorDBFiles, aliveFileIds: aliveFileIds ?? new Set() };
+};
+
 export const primeResources = async ({
   req,
   principal,
@@ -272,6 +421,7 @@ export const primeResources = async ({
      * Files are added from OCR results and attachment promises, with duplicates prevented
      */
     const attachments: Array<TFile> = [];
+    const warnings: string[] = [];
     /**
      * Set of file IDs already added to the attachments array
      * Used to prevent duplicate files from being added multiple times
@@ -395,13 +545,27 @@ export const primeResources = async ({
     }
 
     if (!_attachments) {
+      /** Persistent agent context files are already collected above; queue them for
+       *  provisioning here too, so a turn with no new attachment still primes them. */
+      const contextProvisionState = await computeProvisionState({
+        req,
+        attachments,
+        resourcePrincipal,
+        enabledToolResources,
+        tool_resources,
+        processedResourceFiles,
+        warnings,
+        checkSessionsAlive,
+        loadCodeApiKey,
+      });
       return {
         attachments: attachments.length > 0 ? attachments : undefined,
         requestAttachments: undefined,
         agentContextAttachments:
           agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
         tool_resources,
-        warnings: [],
+        provisionState: contextProvisionState,
+        warnings,
       };
     }
 
@@ -438,125 +602,17 @@ export const primeResources = async ({
       }
     }
 
-    /**
-     * Lazy provisioning: instead of provisioning files now, compute which files
-     * need provisioning and return that state. Actual provisioning happens at
-     * tool invocation time via the ON_TOOL_EXECUTE handler.
-     */
-    const warnings: string[] = [];
-    let provisionState: ProvisionState | undefined;
-
-    if (enabledToolResources && enabledToolResources.size > 0 && attachments.length > 0) {
-      const needsCodeEnv = enabledToolResources.has(EToolResources.execute_code);
-      const needsVectorDB = enabledToolResources.has(EToolResources.file_search);
-
-      if (needsCodeEnv || needsVectorDB) {
-        const jwtCodeAuth = isCodeApiJwtAuthEnabled();
-        let codeApiKey: string | undefined;
-        if (needsCodeEnv && loadCodeApiKey && resourcePrincipal?.id) {
-          try {
-            codeApiKey = await loadCodeApiKey(resourcePrincipal.id);
-          } catch (error) {
-            logger.error('[primeResources] Failed to load CODE_API_KEY', error);
-            if (!jwtCodeAuth) {
-              warnings.push('Code execution file provisioning unavailable');
-            }
-          }
-        }
-        /** JWT-mode deployments mint bearer tokens per request, so a legacy
-         *  LIBRECHAT_CODE_API_KEY is not required for code-env provisioning. */
-        const codeAuthAvailable = codeApiKey != null || jwtCodeAuth;
-
-        /** Batch staleness check: identify which code env files are still alive.
-         *  Requires credentials the callback can actually send: a legacy key, or a
-         *  req to mint JWT bearer auth from. Without either, skip the check so an
-         *  unauthorized 401 cannot mark live sandbox files as expired. */
-        let aliveFileIds: Set<string> | undefined;
-        if (
-          needsCodeEnv &&
-          codeAuthAvailable &&
-          checkSessionsAlive &&
-          (codeApiKey != null || req != null)
-        ) {
-          const filesWithIdentifiers = attachments.filter(
-            (f) => f?.metadata?.codeEnvRef && f.file_id,
-          );
-          if (filesWithIdentifiers.length > 0) {
-            aliveFileIds = await checkSessionsAlive({
-              files: filesWithIdentifiers as TFile[],
-              req,
-              apiKey: codeApiKey,
-            });
-          }
-        }
-
-        // Compute which files need provisioning (don't actually provision yet)
-        const codeEnvFiles: TFile[] = [];
-        const vectorDBFiles: TFile[] = [];
-
-        for (const file of attachments) {
-          if (!file?.file_id) {
-            continue;
-          }
-
-          if (needsCodeEnv && codeAuthAvailable) {
-            const legacyRef = file.metadata?.codeEnvRef;
-            const isStale =
-              legacyRef != null && aliveFileIds != null && !aliveFileIds.has(file.file_id);
-
-            /** Staleness must be repaired even for files that pre-categorization already
-             *  added to execute_code resources, so the check runs before the processed
-             *  guard. Clear both the legacy ref and its route entry, else getCodeEnvRefs
-             *  keeps resolving the dead session over the re-provisioned one. */
-            if (isStale) {
-              logger.info(
-                `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
-              );
-              const staleRouteKey =
-                legacyRef.executionRouteKey ?? legacyRef.executionProfile ?? 'default';
-              const remainingRefs = Object.fromEntries(
-                Object.entries(file.metadata?.codeEnvRefs ?? {}).filter(
-                  ([routeKey]) => routeKey !== staleRouteKey,
-                ),
-              );
-              file.metadata = {
-                ...file.metadata,
-                codeEnvRef: undefined,
-                codeEnvRefs: Object.keys(remainingRefs).length > 0 ? remainingRefs : undefined,
-              };
-              codeEnvFiles.push(file);
-            } else if (
-              !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
-            ) {
-              if (legacyRef == null) {
-                codeEnvFiles.push(file);
-              } else {
-                addFileToResource({
-                  file,
-                  resourceType: EToolResources.execute_code,
-                  tool_resources,
-                  processedResourceFiles,
-                });
-              }
-            }
-          }
-
-          const isImage = file.type?.startsWith('image') ?? false;
-          if (
-            needsVectorDB &&
-            !isImage &&
-            file.embedded !== true &&
-            !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
-          ) {
-            vectorDBFiles.push(file);
-          }
-        }
-
-        if (codeEnvFiles.length > 0 || vectorDBFiles.length > 0) {
-          provisionState = { codeEnvFiles, vectorDBFiles, aliveFileIds: aliveFileIds ?? new Set() };
-        }
-      }
-    }
+    const provisionState = await computeProvisionState({
+      req,
+      attachments,
+      resourcePrincipal,
+      enabledToolResources,
+      tool_resources,
+      processedResourceFiles,
+      warnings,
+      checkSessionsAlive,
+      loadCodeApiKey,
+    });
 
     return {
       attachments: attachments.length > 0 ? attachments : [],
