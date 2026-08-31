@@ -216,11 +216,11 @@ function reconcileServerQueuedTurns(
     }
     const optimistic = previousByClientRequestId.get(receipt.clientRequestId);
     const boundaryPending = receipt.status === 'admitted';
-    let status: NonNullable<QueuedMessage['server']>['status'] = receipt.status;
+    let status: NonNullable<QueuedMessage['server']>['status'] = 'rejected';
     if (boundaryPending) {
       status = 'uncertain';
-    } else if (receipt.status === 'dead') {
-      status = 'rejected';
+    } else if (receipt.status === 'queued' || receipt.status === 'claimed') {
+      status = receipt.status;
     }
     return [
       {
