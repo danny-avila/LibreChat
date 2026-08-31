@@ -113,12 +113,17 @@ export default function useSharePointDownload({
             });
           }
 
+          const emptyResultMessage = {
+            fileLimit: 'com_files_sharepoint_folder_no_room',
+            sizeLimit: 'com_files_sharepoint_folder_no_room',
+            requestBudget: 'com_files_sharepoint_folder_too_deep_empty',
+          } as const;
           if (filesToDownload.length === 0) {
             throw new Error(
               localize(
-                expansion.truncatedBy === 'fileLimit'
-                  ? 'com_files_sharepoint_folder_no_room'
-                  : 'com_files_sharepoint_folders_empty',
+                expansion.truncatedBy == null
+                  ? 'com_files_sharepoint_folders_empty'
+                  : emptyResultMessage[expansion.truncatedBy],
               ),
             );
           }

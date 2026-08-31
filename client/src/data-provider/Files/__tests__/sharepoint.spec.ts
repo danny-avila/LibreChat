@@ -407,6 +407,22 @@ describe('expandSharePointFolders', () => {
     expect(seen).toEqual(['same-name.txt', 'same-name.txt']);
   });
 
+  it('keeps share-only files distinct when they carry no drive coordinates', async () => {
+    const shareOnly = (id: string) => {
+      const file = pickedFile(id);
+      file.driveId = '';
+      file.itemId = '';
+      return file;
+    };
+
+    const result = await expandSharePointFolders({
+      items: [shareOnly('share-a'), shareOnly('share-b'), shareOnly('share-c')],
+      accessToken: ACCESS_TOKEN,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['share-a', 'share-b', 'share-c']);
+  });
+
   it('reports a share-only folder as unreadable without calling Graph', async () => {
     const { fetchMock } = mockGraph({});
     const shareOnlyFolder = pickedFolder('shared');

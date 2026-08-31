@@ -96,8 +96,16 @@ interface FolderPageRequest {
   folder: SharePointFile;
 }
 
-function folderKey(folder: SharePointFile): string {
-  return `${folder.driveId}:${folder.itemId}`;
+/**
+ * Identity for dedup. Drive coordinates are canonical, but a share-only picker result
+ * carries neither, and keying those on `undefined:undefined` would collapse every one
+ * of them into a single entry and drop all but the first.
+ */
+function itemKey(item: SharePointFile): string {
+  if (item.driveId && item.itemId) {
+    return `${item.driveId}:${item.itemId}`;
+  }
+  return `share:${item.id || `${item.name}:${item.size}`}`;
 }
 
 function childrenUrl(driveId: string, itemId: string): string {
@@ -165,7 +173,7 @@ export async function expandSharePointFolders({
 
   /** @returns Whether there is room for more files. */
   const collect = (file: SharePointFile): boolean => {
-    const key = folderKey(file);
+    const key = itemKey(file);
     if (seenFiles.has(key)) {
       return true;
     }
@@ -198,7 +206,7 @@ export async function expandSharePointFolders({
       unreadableFolders.push(folder.name);
       return;
     }
-    const key = folderKey(folder);
+    const key = itemKey(folder);
     if (visitedFolders.has(key)) {
       return;
     }
@@ -236,7 +244,7 @@ export async function expandSharePointFolders({
     }
 
     const { url, folder } = pages.shift() as FolderPageRequest;
-    if (failedFolders.has(folderKey(folder))) {
+    if (failedFolders.has(itemKey(folder))) {
       continue;
     }
     requests++;
@@ -246,7 +254,7 @@ export async function expandSharePointFolders({
       page = await fetchChildrenPage(url, accessToken);
     } catch (error) {
       console.error(`Failed to list SharePoint folder ${folder.name}:`, error);
-      failedFolders.add(folderKey(folder));
+      failedFolders.add(itemKey(folder));
       unreadableFolders.push(folder.name);
       continue;
     }

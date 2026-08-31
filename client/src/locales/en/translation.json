@@ -422,6 +422,7 @@
   "com_files_sharepoint_folder_limit": "Selected folders hold more files than this chat accepts. Attaching the first {{0}}.",
   "com_files_sharepoint_folder_no_room": "No attachment slots left for the selected folder(s). Remove some files first.",
   "com_files_sharepoint_folder_too_deep": "The selected folder(s) have more subfolders than can be read at once. Attached the first {{0}} file(s).",
+  "com_files_sharepoint_folder_too_deep_empty": "Stopped reading the selected folder(s) before any files were found. They are nested too deeply to browse in one go.",
   "com_files_sharepoint_folder_too_large": "The selected folder(s) exceed the total size this chat accepts. Attached the first {{0}} file(s).",
   "com_files_sharepoint_folders_duplicate": "Skipped {{0}} file(s) already attached to this chat.",
   "com_files_sharepoint_folders_empty": "The selected folder(s) contain no files.",
