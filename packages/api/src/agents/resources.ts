@@ -346,11 +346,25 @@ const computeProvisionState = async ({
     return undefined;
   }
 
+  /** Batch staleness check: identify which code env files are still alive. Only files
+   *  that already carry a default-route ref can be probed, so that set is computed
+   *  first: a turn whose attachments are all freshly uploaded has nothing to probe and
+   *  must not pay for a credential lookup that cannot change the outcome. */
+  const filesWithIdentifiers =
+    needsCodeEnv && checkSessionsAlive
+      ? attachments.filter(
+          (f) =>
+            f?.metadata?.codeEnvRef &&
+            codeEnvRouteKey(f.metadata.codeEnvRef) === 'default' &&
+            f.file_id,
+        )
+      : [];
+
   /** Code API auth is optional: deployments may use a legacy key, JWT bearer minting,
    *  or no auth at all, and the upload path handles each. Credentials therefore gate
    *  only the liveness probe, never whether files are queued for provisioning. */
   let codeApiKey: string | undefined;
-  if (needsCodeEnv && loadCodeApiKey && resourcePrincipal?.id) {
+  if (filesWithIdentifiers.length > 0 && loadCodeApiKey && resourcePrincipal?.id) {
     try {
       codeApiKey = await loadCodeApiKey(resourcePrincipal.id);
     } catch (error) {
@@ -358,25 +372,16 @@ const computeProvisionState = async ({
     }
   }
 
-  /** Batch staleness check: identify which code env files are still alive.
-   *  Requires credentials the callback can actually send: a legacy key, or a
-   *  req to mint JWT bearer auth from. Without either, skip the check so an
-   *  unauthorized 401 cannot mark live sandbox files as expired. */
+  /** Requires credentials the callback can actually send: a legacy key, or a req to
+   *  mint JWT bearer auth from. Without either, skip the check so an unauthorized 401
+   *  cannot mark live sandbox files as expired. */
   let aliveFileIds: Set<string> | undefined;
-  if (needsCodeEnv && checkSessionsAlive && (codeApiKey != null || req)) {
-    const filesWithIdentifiers = attachments.filter(
-      (f) =>
-        f?.metadata?.codeEnvRef &&
-        codeEnvRouteKey(f.metadata.codeEnvRef) === 'default' &&
-        f.file_id,
-    );
-    if (filesWithIdentifiers.length > 0) {
-      aliveFileIds = await checkSessionsAlive({
-        files: filesWithIdentifiers as TFile[],
-        req,
-        apiKey: codeApiKey,
-      });
-    }
+  if (filesWithIdentifiers.length > 0 && checkSessionsAlive && (codeApiKey != null || req)) {
+    aliveFileIds = await checkSessionsAlive({
+      files: filesWithIdentifiers as TFile[],
+      req,
+      apiKey: codeApiKey,
+    });
   }
 
   const codeEnvFiles: TFile[] = [];

@@ -6,6 +6,27 @@ const { provisionToCodeEnv, provisionToVectorDB } = require('~/server/services/F
 const db = require('~/models');
 
 /**
+ * Selects the tool context for a provisioning batch and reports which agent id it
+ * belongs to. The batch id is preferred, then the primary agent, then the sole context
+ * when only one exists, mirroring how the tool loaders resolve theirs.
+ *
+ * @returns {{ ctx?: object, resolvedAgentId?: string }}
+ */
+function resolveProvisionContext({ agentId, agentToolContexts, primaryAgentId }) {
+  if (agentId != null && agentToolContexts.has(agentId)) {
+    return { ctx: agentToolContexts.get(agentId), resolvedAgentId: agentId };
+  }
+  if (primaryAgentId != null && agentToolContexts.has(primaryAgentId)) {
+    return { ctx: agentToolContexts.get(primaryAgentId), resolvedAgentId: primaryAgentId };
+  }
+  if (agentToolContexts.size === 1) {
+    const [key, ctx] = agentToolContexts.entries().next().value;
+    return { ctx, resolvedAgentId: key };
+  }
+  return {};
+}
+
+/**
  * Builds the ON_TOOL_EXECUTE provisioning callback. Shared by the chat path and the
  * OpenAI-compatible controllers so every surface provisions queued attachments before
  * the tool that needs them loads.
@@ -22,11 +43,15 @@ function createProvisionFilesCallback({ req, agentToolContexts, resolvePrimaryAg
     /* agentId is optional on this callback and a batch for the primary agent may omit
      * it, so fall back the way the tool loaders do. Otherwise the queue is missed and
      * the tool runs without its attachments. */
-    const primaryAgentId = resolvePrimaryAgentId?.();
-    const ctx =
-      (agentId != null ? agentToolContexts.get(agentId) : undefined) ??
-      (primaryAgentId != null ? agentToolContexts.get(primaryAgentId) : undefined) ??
-      (agentToolContexts.size === 1 ? agentToolContexts.values().next().value : undefined);
+    /* Resolve the context and the id together. Scoping agent files by the raw argument
+     * while reading state from a fallback context would upload them as user-scoped,
+     * then reconstruct them as agent-scoped on the next turn, and the entity id used to
+     * query those vectors would no longer match the one they were stored under. */
+    const { ctx, resolvedAgentId } = resolveProvisionContext({
+      agentId,
+      agentToolContexts,
+      primaryAgentId: resolvePrimaryAgentId?.(),
+    });
     if (!ctx?.provisionState) {
       return;
     }
@@ -59,7 +84,7 @@ function createProvisionFilesCallback({ req, agentToolContexts, resolvePrimaryAg
 
     /** Chat attachments and generated code outputs stay in the user's sandbox /
      *  unscoped vector index; only agent setup files are scoped to the agent. */
-    const entityIdForFile = (file) => (isAgentScopedFile(file) ? agentId : undefined);
+    const entityIdForFile = (file) => (isAgentScopedFile(file) ? resolvedAgentId : undefined);
 
     /** Surface a just-provisioned file to the tool loaded immediately after: the code
      *  and file_search primers read `tool_resources.<resource>.files`. */

@@ -73,6 +73,13 @@ import {
   isContentTraversalLimitError,
 } from '../protection/adapters/nested';
 import {
+  optionalChainWithEmptyCheck,
+  extractLibreChatParams,
+  getSafeErrorMetadata,
+  getModelMaxTokens,
+  getThreadData,
+} from '~/utils';
+import {
   normalizeServerName,
   requiresEphemeralUserConnection,
   splitMCPToolKey,
@@ -83,12 +90,6 @@ import {
   resolveCodeExecutionContext,
   type CodeExecutionContext,
 } from './execution';
-import {
-  optionalChainWithEmptyCheck,
-  extractLibreChatParams,
-  getModelMaxTokens,
-  getThreadData,
-} from '~/utils';
 import {
   registerCodeExecutionTools,
   registerFileAuthoringTools,
@@ -1022,6 +1023,7 @@ export async function initializeAgent(
   const toolFileIds: string[] = [];
   /** Earlier-turn attachments still awaiting provisioning; provisioning input only. */
   let deferredProvisionFiles: IMongoFile[] = [];
+  let deferredProvisionFileIds: string[] = [];
 
   /** Build the set of tool resources the agent has enabled */
   const toolResourceSet = new Set<EToolResources>();
@@ -1123,8 +1125,12 @@ export async function initializeAgent(
         : ([] as IMongoFile[]),
     ]);
 
-    /* Kept out of the delivery set: these are provisioning candidates only. */
-    deferredProvisionFiles = deferredFiles;
+    /* Ids only: these are hydrated with the request's own files below so the same
+     * content policy applies before their bytes can reach the Code API or RAG. They
+     * are kept out of the delivery set, not out of inspection. */
+    deferredProvisionFileIds = deferredFiles
+      .map((file) => file.file_id)
+      .filter((fileId): fileId is string => typeof fileId === 'string');
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     const snapshotFileIds = new Set(requestFileIds);
@@ -1145,7 +1151,7 @@ export async function initializeAgent(
    * keep this exact snapshot authoritative for inspection, priming, and the
    * later usage update to avoid a post-inspection re-read.
    */
-  const snapshotFileIds = [...requestFileIds, ...toolFileIds];
+  const snapshotFileIds = [...requestFileIds, ...toolFileIds, ...deferredProvisionFileIds];
   let requestUsageFiles: IMongoFile[] = [];
   let toolUsageFiles: IMongoFile[] = [];
   if (requestFileOwnerScope && snapshotFileIds.length > 0) {
@@ -1172,6 +1178,9 @@ export async function initializeAgent(
     toolUsageFiles = toolFileIds
       .map((fileId) => hydratedFilesById.get(fileId))
       .filter((file): file is IMongoFile => file != null);
+    deferredProvisionFiles = deferredProvisionFileIds
+      .map((fileId) => hydratedFilesById.get(fileId))
+      .filter((file): file is IMongoFile => file != null);
   }
   if (requestFiles.length > 0 || toolFileIds.length > 0) {
     currentFiles = requestUsageFiles.concat(toolUsageFiles);
@@ -1194,6 +1203,26 @@ export async function initializeAgent(
     filters: appConfig?.filters,
     files: currentFiles,
   });
+
+  /* Provisioning candidates are inspected under the same policy before their bytes can
+   * be sent to the Code API or RAG. A violator is dropped rather than failing the turn:
+   * these were not attached by this request, and before deferred hydration existed they
+   * were simply absent, so refusing the conversation over a historical record would be
+   * a harsher outcome than the one this change replaced. */
+  if (deferredProvisionFiles.length > 0) {
+    deferredProvisionFiles = deferredProvisionFiles.filter((file) => {
+      try {
+        assertModelBoundContent({ filters: appConfig?.filters, files: [file] });
+        return true;
+      } catch (error) {
+        logger.warn(
+          `[initializeAgent] Skipping provisioning for "${file.filename}" (${file.file_id}): content policy`,
+          getSafeErrorMetadata(error),
+        );
+        return false;
+      }
+    });
+  }
 
   /**
    * Usage accounting is the first file mutation. It runs only after every
