@@ -46,6 +46,12 @@ jest.mock('@librechat/client', () => {
       ),
     ),
     TooltipAnchor: (props) => props.render,
+    /* Mirrors the real primitive closely enough for these assertions: it applies
+     * `label` as the accessible name, which is how the trigger is queried. */
+    IconButton: R.forwardRef((props, ref) => {
+      const { label, size: _size, shape: _shape, variant: _variant, children, ...rest } = props;
+      return R.createElement('button', { ref, 'aria-label': label, ...rest }, children);
+    }),
     DropdownPopup: (props) =>
       R.createElement(
         'div',
