@@ -20,11 +20,14 @@ const {
 } = require('librechat-data-provider');
 const {
   processAgentFileUpload,
-  resolvesToTextDelivery,
   processImageFile,
   filterFile,
 } = require('~/server/services/Files/process');
-const { resolveUploadEndpoint, resolveUploadAgent } = require('~/server/services/Files/agent');
+const {
+  resolveEffectiveToolResource,
+  resolveUploadEndpoint,
+  resolveUploadAgent,
+} = require('~/server/services/Files/routing');
 const { checkPermission } = require('~/server/services/PermissionService');
 
 const router = express.Router();
@@ -54,11 +57,17 @@ router.post('/', async (req, res) => {
     });
     filterFile({ req, image: true, endpoint: effectiveEndpoint });
 
+    /* A unified upload the config routes to text is processed as a context resource, so
+     * the preflight has to judge that destination. Told only the request's empty tool
+     * resource, it cannot see the extraction step and fail-closes on a derived field it
+     * would in fact be able to inspect. */
+    const effectiveToolResource = await resolveEffectiveToolResource({ req, metadata });
+
     await assertUploadContentAllowed({
       filters: req.config?.filters,
       file: req.file,
       endpoint: metadata.endpoint,
-      toolResource: metadata.tool_resource,
+      toolResource: effectiveToolResource,
       fileConfig: mergeFileConfig(req.config?.fileConfig),
       ocrConfigured: req.config?.ocr != null,
       ragConfigured: !!process.env.RAG_API_URL,
@@ -72,8 +81,7 @@ router.post('/', async (req, res) => {
      * path, which extracts and stores the text. The image pipeline would persist the
      * routing without any text, leaving the file out of provider delivery and out of
      * the text context both. */
-    const takesAgentUploadPath =
-      metadata.tool_resource != null || (await resolvesToTextDelivery({ req, metadata }));
+    const takesAgentUploadPath = effectiveToolResource != null;
 
     if (!isAssistantsEndpoint(metadata.endpoint) && takesAgentUploadPath) {
       const denied = await verifyAgentUploadPermission({
