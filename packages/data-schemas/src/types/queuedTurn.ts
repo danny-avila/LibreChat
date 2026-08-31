@@ -77,6 +77,8 @@ export interface IAgentQueuedTurn {
   /** Durable proof that ordinary admission may have crossed the HTTP boundary. */
   admissionStartedAt?: Date;
   admissionId?: string;
+  /** Effective predecessor durably fenced before provider admission begins. */
+  admissionEffectivePredecessorCreatedAt?: number;
   /** Version 2 requires accepted and deduplicated execution responses to prove
    * the exact post-invocation source receipt. */
   admissionProtocolVersion?: 2;

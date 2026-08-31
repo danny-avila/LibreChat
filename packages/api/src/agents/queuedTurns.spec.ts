@@ -469,6 +469,9 @@ describe('Agent queued-turn continuation', () => {
       expectedPredecessorCreatedAt: NOW + 250,
       admissionSource: { effectivePredecessorCreatedAt: NOW + 250 },
     });
+    expect(spies.beginAgentQueuedTurnAdmission).toHaveBeenCalledWith(
+      expect.objectContaining({ effectivePredecessorCreatedAt: NOW + 250 }),
+    );
     if (prepared?.status !== 'ready') {
       throw new Error('Expected a ready queued turn');
     }

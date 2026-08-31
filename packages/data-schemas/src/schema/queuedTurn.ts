@@ -85,6 +85,7 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     claimUntil: { type: Date },
     admissionStartedAt: { type: Date },
     admissionId: { type: String, maxlength: 128 },
+    admissionEffectivePredecessorCreatedAt: { type: Number, min: 0 },
     admissionProtocolVersion: { type: Number, enum: [2] },
     reconciliationAvailableAt: { type: Date },
     reconciliationClaimId: { type: String, maxlength: 128 },

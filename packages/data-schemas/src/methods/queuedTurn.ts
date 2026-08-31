@@ -228,6 +228,7 @@ export interface AgentQueuedTurnMethods {
     input: AgentQueuedTurnClaimFence & {
       admissionId: string;
       startedAt: Date;
+      effectivePredecessorCreatedAt?: number;
       admissionProtocolVersion?: 2;
     },
   ) => Promise<BeginAgentQueuedTurnAdmissionResult>;
@@ -557,6 +558,9 @@ function toRecord(turn: IAgentQueuedTurn): AgentQueuedTurnRecord {
     ...(turn.claimUntil != null && { claimUntil: turn.claimUntil }),
     ...(turn.admissionId != null && { admissionId: turn.admissionId }),
     ...(turn.admissionStartedAt != null && { admissionStartedAt: turn.admissionStartedAt }),
+    ...(turn.admissionEffectivePredecessorCreatedAt != null && {
+      admissionEffectivePredecessorCreatedAt: turn.admissionEffectivePredecessorCreatedAt,
+    }),
     ...(turn.admissionProtocolVersion != null && {
       admissionProtocolVersion: turn.admissionProtocolVersion,
     }),
@@ -1568,10 +1572,12 @@ export function createAgentQueuedTurnMethods(
     input: AgentQueuedTurnClaimFence & {
       admissionId: string;
       startedAt: Date;
+      effectivePredecessorCreatedAt?: number;
       admissionProtocolVersion?: 2;
     },
   ): Promise<BeginAgentQueuedTurnAdmissionResult> {
     const admissionId = requireBoundedString(input.admissionId, 128);
+    const effectivePredecessorCreatedAt = normalizePredecessor(input.effectivePredecessorCreatedAt);
     if (!Number.isFinite(input.startedAt.getTime())) {
       throw new TypeError('Agent queued turn admission start is invalid');
     }
@@ -1646,6 +1652,9 @@ export function createAgentQueuedTurnMethods(
               $set: {
                 admissionId,
                 admissionStartedAt: input.startedAt,
+                ...(effectivePredecessorCreatedAt != null && {
+                  admissionEffectivePredecessorCreatedAt: effectivePredecessorCreatedAt,
+                }),
                 ...(input.admissionProtocolVersion != null && {
                   admissionProtocolVersion: input.admissionProtocolVersion,
                 }),
@@ -1680,7 +1689,8 @@ export function createAgentQueuedTurnMethods(
           current.deliveryState === 'published' &&
           current.laneId === writer.laneId &&
           current.admissionId === admissionId &&
-          current.admissionStartedAt != null
+          current.admissionStartedAt != null &&
+          current.admissionEffectivePredecessorCreatedAt === effectivePredecessorCreatedAt
         ) {
           return { outcome: 'already_started', turn: toRecord(current) };
         }
@@ -1717,6 +1727,9 @@ export function createAgentQueuedTurnMethods(
           deliveryState: 'published',
           admissionId,
           admissionStartedAt: { $exists: true },
+          ...(effectivePredecessorCreatedAt != null
+            ? { admissionEffectivePredecessorCreatedAt: effectivePredecessorCreatedAt }
+            : { admissionEffectivePredecessorCreatedAt: { $exists: false } }),
           $or: [
             {
               status: 'claimed',
@@ -1750,6 +1763,7 @@ export function createAgentQueuedTurnMethods(
             claimUntil: 1,
             admissionId: 1,
             admissionStartedAt: 1,
+            admissionEffectivePredecessorCreatedAt: 1,
             admissionProtocolVersion: 1,
             reconciliationAvailableAt: 1,
             reconciliationClaimId: 1,
@@ -1828,6 +1842,19 @@ export function createAgentQueuedTurnMethods(
       if (generationCreatedAt == null) {
         throw new TypeError('Agent queued turn admission evidence is invalid');
       }
+      const admission = await Turn()
+        .findOne({
+          ...scope,
+          _id: input.queuedTurnId,
+          deliveryKey,
+          admissionId: deliveryKey,
+          admissionStartedAt: { $exists: true },
+        })
+        .select({ admissionEffectivePredecessorCreatedAt: 1 })
+        .lean<IAgentQueuedTurn>();
+      const effectivePredecessorCreatedAt = normalizePredecessor(
+        admission?.admissionEffectivePredecessorCreatedAt,
+      );
       const reconciled = await Turn()
         .findOneAndUpdate(
           {
@@ -1861,6 +1888,9 @@ export function createAgentQueuedTurnMethods(
                 admissionMode: 'ordinary',
                 ...(generationId != null && { generationId }),
                 generationCreatedAt,
+                ...(effectivePredecessorCreatedAt != null && {
+                  effectivePredecessorCreatedAt,
+                }),
               },
             },
             $unset: {
@@ -1870,6 +1900,7 @@ export function createAgentQueuedTurnMethods(
               claimUntil: 1,
               admissionId: 1,
               admissionStartedAt: 1,
+              admissionEffectivePredecessorCreatedAt: 1,
               admissionProtocolVersion: 1,
               reconciliationAvailableAt: 1,
               reconciliationClaimId: 1,

@@ -618,6 +618,7 @@ function createAgentQueuedTurnResolver({
       claimBy: claim.claimBy,
       admissionId: context.idempotencyKey,
       startedAt: new Date(now()),
+      ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
       admissionProtocolVersion: 2,
     });
     if (admission.outcome === 'conflict') {

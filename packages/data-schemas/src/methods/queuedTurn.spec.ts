@@ -632,6 +632,7 @@ describe('agent queued turn methods', () => {
         ...claimInput(admitted.turn.queuedTurnId),
         admissionId: 'admission-1',
         startedAt: START,
+        effectivePredecessorCreatedAt: 83,
       }),
     ).resolves.toMatchObject({ outcome: 'started' });
     await expect(methods.markAgentQueuedTurnAdmitted(admissionInput)).resolves.toMatchObject({
@@ -875,10 +876,16 @@ describe('agent queued turn methods', () => {
     await methods.claimNextAgentQueuedTurn(
       claimInput(queued.turn.queuedTurnId, { claimId: 'delivery-reconciled-admission' }),
     );
-    await methods.beginAgentQueuedTurnAdmission({
-      ...claimInput(queued.turn.queuedTurnId, { claimId: 'delivery-reconciled-admission' }),
-      admissionId: 'delivery-reconciled-admission',
-      startedAt: START,
+    await expect(
+      methods.beginAgentQueuedTurnAdmission({
+        ...claimInput(queued.turn.queuedTurnId, { claimId: 'delivery-reconciled-admission' }),
+        admissionId: 'delivery-reconciled-admission',
+        startedAt: START,
+        effectivePredecessorCreatedAt: 41,
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'started',
+      turn: { admissionEffectivePredecessorCreatedAt: 41 },
     });
 
     await expect(
@@ -903,6 +910,7 @@ describe('agent queued turn methods', () => {
           admissionId: 'delivery-reconciled-admission',
           generationId: 'generation-reconciled',
           generationCreatedAt: 42,
+          effectivePredecessorCreatedAt: 41,
         },
       },
     });
