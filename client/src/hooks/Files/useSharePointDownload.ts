@@ -1,12 +1,15 @@
 import { useCallback, useState } from 'react';
 import { useToastContext } from '@librechat/client';
 import type { SharePointFile, SharePointBatchProgress } from '~/data-provider/Files';
-import { useSharePointBatchDownload } from '~/data-provider/Files';
+import { useSharePointBatchDownload, expandSharePointFolders } from '~/data-provider/Files';
 import useSharePointToken from './useSharePointToken';
+import useLocalize from '~/hooks/useLocalize';
 
 interface UseSharePointDownloadProps {
   onFilesDownloaded?: (files: File[]) => void | Promise<void>;
   onError?: (error: Error) => void;
+  /** Upper bound on files pulled out of selected folders; the endpoint's file limit. */
+  maxFiles?: number;
 }
 
 interface UseSharePointDownloadReturn {
@@ -19,7 +22,9 @@ interface UseSharePointDownloadReturn {
 export default function useSharePointDownload({
   onFilesDownloaded,
   onError,
+  maxFiles,
 }: UseSharePointDownloadProps = {}): UseSharePointDownloadReturn {
+  const localize = useLocalize();
   const { showToast } = useToastContext();
   const [downloadProgress, setDownloadProgress] = useState<SharePointBatchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,19 +62,57 @@ export default function useSharePointDownload({
           }
         }
 
+        let filesToDownload = files;
+        if (files.some((file) => file.isFolder === true)) {
+          showToast({
+            message: localize('com_files_sharepoint_expanding_folders'),
+            status: 'info',
+            duration: 2000,
+          });
+
+          const expansion = await expandSharePointFolders({ items: files, accessToken, maxFiles });
+          filesToDownload = expansion.files;
+
+          if (expansion.unreadableFolders.length > 0) {
+            showToast({
+              message: localize('com_files_sharepoint_folders_unreadable', {
+                0: expansion.unreadableFolders.join(', '),
+              }),
+              status: 'warning',
+              duration: 5000,
+            });
+          }
+
+          if (expansion.truncated) {
+            showToast({
+              message: localize('com_files_sharepoint_folder_limit', {
+                0: filesToDownload.length,
+              }),
+              status: 'warning',
+              duration: 5000,
+            });
+          }
+
+          if (filesToDownload.length === 0) {
+            throw new Error(localize('com_files_sharepoint_folders_empty'));
+          }
+
+          setDownloadProgress({ completed: 0, total: filesToDownload.length, failed: [] });
+        }
+
         showToast({
-          message: `Downloading ${files.length} file(s) from SharePoint...`,
+          message: `Downloading ${filesToDownload.length} file(s) from SharePoint...`,
           status: 'info',
           duration: 3000,
         });
 
         const downloadedFiles = await batchDownloadMutation.mutateAsync({
-          files,
+          files: filesToDownload,
           accessToken,
           onProgress: (progress) => {
             setDownloadProgress(progress);
 
-            if (files.length > 5 && progress.completed % 3 === 0) {
+            if (filesToDownload.length > 5 && progress.completed % 3 === 0) {
               showToast({
                 message: `Downloaded ${progress.completed}/${progress.total} files...`,
                 status: 'info',
@@ -80,10 +123,10 @@ export default function useSharePointDownload({
         });
 
         if (downloadedFiles.length > 0) {
-          const failedCount = files.length - downloadedFiles.length;
+          const failedCount = filesToDownload.length - downloadedFiles.length;
           const successMessage =
             failedCount > 0
-              ? `Downloaded ${downloadedFiles.length}/${files.length} files from SharePoint (${failedCount} failed)`
+              ? `Downloaded ${downloadedFiles.length}/${filesToDownload.length} files from SharePoint (${failedCount} failed)`
               : `Successfully downloaded ${downloadedFiles.length} file(s) from SharePoint`;
 
           showToast({
@@ -117,7 +160,16 @@ export default function useSharePointDownload({
         throw error;
       }
     },
-    [token, showToast, batchDownloadMutation, onFilesDownloaded, onError, refetchToken],
+    [
+      token,
+      showToast,
+      batchDownloadMutation,
+      onFilesDownloaded,
+      onError,
+      refetchToken,
+      localize,
+      maxFiles,
+    ],
   );
 
   return {

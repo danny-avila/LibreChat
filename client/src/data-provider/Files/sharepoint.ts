@@ -1,6 +1,28 @@
 import { useMutation } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 
+const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
+/** Page size for folder listings; Graph caps `$top` for driveItem children at 200. */
+const FOLDER_PAGE_SIZE = 200;
+/** Upper bound on folder listings per expansion, so a deep tree cannot fan out unbounded. */
+const MAX_FOLDER_REQUESTS = 100;
+
+/** The subset of a Graph driveItem the picker and download path rely on. */
+export interface SharePointDriveItem {
+  id: string;
+  name: string;
+  size?: number;
+  webUrl?: string;
+  folder?: { childCount?: number };
+  parentReference?: { driveId?: string };
+  '@microsoft.graph.downloadUrl'?: string;
+}
+
+interface DriveChildrenPage {
+  value?: SharePointDriveItem[];
+  '@odata.nextLink'?: string;
+}
+
 export interface SharePointFile {
   id: string;
   name: string;
@@ -9,7 +31,18 @@ export interface SharePointFile {
   downloadUrl: string;
   driveId: string;
   itemId: string;
-  sharePointItem: any;
+  /** Set when the picker returned a folder rather than a file. */
+  isFolder?: boolean;
+  sharePointItem: SharePointDriveItem;
+}
+
+/** Outcome of walking the selected folders, including what had to be left out. */
+export interface SharePointFolderExpansion {
+  files: SharePointFile[];
+  /** Folders whose contents could not be listed, by name. */
+  unreadableFolders: string[];
+  /** Whether the file limit or the folder-request budget cut the walk short. */
+  truncated: boolean;
 }
 
 export interface SharePointDownloadProgress {
@@ -25,6 +58,145 @@ export interface SharePointBatchProgress {
   total: number;
   currentFile?: string;
   failed: string[];
+}
+
+/**
+ * Converts a Graph driveItem into the descriptor the download path expects.
+ * @param item - The driveItem returned by the picker or a folder listing.
+ * @param driveId - Drive the item was listed from, used when the item omits its parent reference.
+ */
+function toSharePointFile(item: SharePointDriveItem, driveId: string): SharePointFile {
+  return {
+    id: item.id,
+    name: item.name,
+    size: item.size ?? 0,
+    webUrl: item.webUrl ?? '',
+    downloadUrl: item['@microsoft.graph.downloadUrl'] ?? '',
+    driveId: item.parentReference?.driveId ?? driveId,
+    itemId: item.id,
+    isFolder: item.folder != null,
+    sharePointItem: item,
+  };
+}
+
+/**
+ * Lists every child of a folder, following Graph's pagination to the end.
+ * @throws {Error} If any page of the listing is rejected.
+ */
+async function listFolderChildren(
+  driveId: string,
+  itemId: string,
+  accessToken: string,
+): Promise<SharePointDriveItem[]> {
+  const children: SharePointDriveItem[] = [];
+  let nextUrl: string | undefined = `${GRAPH_API_BASE}/drives/${encodeURIComponent(
+    driveId,
+  )}/items/${encodeURIComponent(itemId)}/children?$top=${FOLDER_PAGE_SIZE}`;
+
+  while (nextUrl) {
+    const response = await fetch(nextUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+
+    const page: DriveChildrenPage = await response.json();
+    if (page.value) {
+      children.push(...page.value);
+    }
+    nextUrl = page['@odata.nextLink'];
+  }
+
+  return children;
+}
+
+/**
+ * Walks the folders in a picker selection breadth-first and returns the files inside
+ * them, merged with the files that were selected directly. Stops at `maxFiles` and at
+ * a fixed folder-request budget so a large SharePoint tree cannot stall the upload.
+ * Folders the user cannot list are reported rather than failing the whole selection.
+ */
+export async function expandSharePointFolders({
+  items,
+  accessToken,
+  maxFiles,
+}: {
+  items: SharePointFile[];
+  accessToken: string;
+  maxFiles?: number;
+}): Promise<SharePointFolderExpansion> {
+  const fileLimit = maxFiles != null && maxFiles > 0 ? maxFiles : Number.POSITIVE_INFINITY;
+  const files: SharePointFile[] = [];
+  const unreadableFolders: string[] = [];
+  const seenFiles = new Set<string>();
+  const visitedFolders = new Set<string>();
+  const queue: SharePointFile[] = [];
+  let requests = 0;
+  let truncated = false;
+
+  /** @returns Whether there is room for more files. */
+  const collect = (file: SharePointFile): boolean => {
+    const key = `${file.driveId}:${file.itemId}`;
+    if (seenFiles.has(key)) {
+      return true;
+    }
+    if (files.length >= fileLimit) {
+      truncated = true;
+      return false;
+    }
+    seenFiles.add(key);
+    files.push(file);
+    return true;
+  };
+
+  const enqueue = (folder: SharePointFile) => {
+    const key = `${folder.driveId}:${folder.itemId}`;
+    if (visitedFolders.has(key)) {
+      return;
+    }
+    visitedFolders.add(key);
+    queue.push(folder);
+  };
+
+  for (const item of items) {
+    if (item.isFolder === true) {
+      enqueue(item);
+    } else if (!collect(item)) {
+      break;
+    }
+  }
+
+  while (queue.length > 0 && !truncated) {
+    if (requests >= MAX_FOLDER_REQUESTS) {
+      truncated = true;
+      break;
+    }
+
+    const folder = queue.shift() as SharePointFile;
+    requests++;
+
+    let children: SharePointDriveItem[];
+    try {
+      children = await listFolderChildren(folder.driveId, folder.itemId, accessToken);
+    } catch (error) {
+      console.error(`Failed to list SharePoint folder ${folder.name}:`, error);
+      unreadableFolders.push(folder.name);
+      continue;
+    }
+
+    for (const child of children) {
+      const childFile = toSharePointFile(child, folder.driveId);
+      if (childFile.isFolder === true) {
+        enqueue(childFile);
+      } else if (!collect(childFile)) {
+        break;
+      }
+    }
+  }
+
+  return { files, unreadableFolders, truncated };
 }
 
 export const useSharePointFileDownload = (): UseMutationResult<

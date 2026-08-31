@@ -55,6 +55,7 @@ function FileContext({
         endpointOverride,
         endpointTypeOverride: endpointType,
         fileSetter: setFiles,
+        maxFiles: endpointFileConfig?.fileLimit,
       },
       fileHandlingState,
     );

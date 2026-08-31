@@ -141,6 +141,7 @@ export default function useSharePointPicker({
                       item.parentReference?.driveId ||
                       item.driveItem?.parentReference?.driveId,
                     itemId: item.id || item.driveItem?.id,
+                    isFolder: (item.folder ?? item.driveItem?.folder) != null,
                     sharePointItem: item,
                   }));
 
@@ -150,8 +151,15 @@ export default function useSharePointPicker({
                     onFilesSelected(selectedFiles);
                   }
 
+                  const folderCount = selectedFiles.filter((file) => file.isFolder).length;
+                  const fileCount = selectedFiles.length - folderCount;
                   showToast({
-                    message: `Selected ${selectedFiles.length} file(s) from SharePoint`,
+                    message: folderCount
+                      ? localize('com_files_sharepoint_selected_with_folders', {
+                          0: fileCount,
+                          1: folderCount,
+                        })
+                      : localize('com_files_sharepoint_selected', { 0: fileCount }),
                     status: 'success',
                   });
                 }
@@ -192,7 +200,7 @@ export default function useSharePointPicker({
         console.error('Error processing port message:', error);
       }
     },
-    [token, onFilesSelected, showToast, onClose],
+    [token, onFilesSelected, showToast, onClose, localize],
   );
 
   // Initialization message handler - establishes MessagePort communication
@@ -273,7 +281,8 @@ export default function useSharePointPicker({
           enabled: false, // Host app handles authentication
         },
         typesAndSources: {
-          mode: 'files',
+          /** `all` rather than `files` so an entire folder can be picked at once. */
+          mode: 'all',
           pivots: {
             oneDrive: true,
             recent: true,
@@ -285,7 +294,18 @@ export default function useSharePointPicker({
         },
         selection: {
           mode: 'multiple',
+          /** Keeps picks made in one folder or pivot when the user navigates to another. */
+          enablePersistence: true,
           maximumCount: maxSelectionCount,
+        },
+        tray: {
+          /** Lets the user review and edit the running selection before confirming. */
+          prompt: 'selection-editor',
+        },
+        list: {
+          /** Compact rows and pinned headers keep large search results navigable. */
+          layout: { type: 'compact-details' },
+          scrolling: { enableStickyHeaders: true },
         },
         title: localize('com_files_sharepoint_picker_title'),
         commands: {

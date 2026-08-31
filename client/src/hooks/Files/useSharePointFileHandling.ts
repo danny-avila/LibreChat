@@ -12,6 +12,8 @@ interface UseSharePointFileHandlingProps {
   additionalMetadata?: Record<string, string | undefined>;
   endpointOverride?: EModelEndpoint | string;
   endpointTypeOverride?: EModelEndpoint | string;
+  /** Endpoint file limit, used to bound how many files a selected folder contributes. */
+  maxFiles?: number;
 }
 
 interface UseSharePointFileHandlingReturn {
@@ -27,6 +29,7 @@ export default function useSharePointFileHandling(
   const { handleFiles } = useFileHandling(props);
   const { downloadSharePointFiles, isDownloading, downloadProgress, error } = useSharePointDownload(
     {
+      maxFiles: props?.maxFiles,
       onFilesDownloaded: async (downloadedFiles: File[]) => {
         const fileArray = Array.from(downloadedFiles);
         await handleFiles(fileArray, props?.toolResource);
@@ -65,6 +68,7 @@ export function useSharePointFileHandlingNoChatContext(
 
   const { downloadSharePointFiles, isDownloading, downloadProgress, error } = useSharePointDownload(
     {
+      maxFiles: props?.maxFiles,
       onFilesDownloaded: async (downloadedFiles: File[]) => {
         const fileArray = Array.from(downloadedFiles);
         await handleFiles(fileArray, props?.toolResource);
