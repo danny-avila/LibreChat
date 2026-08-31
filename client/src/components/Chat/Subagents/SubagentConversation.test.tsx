@@ -120,10 +120,13 @@ describe('SubagentConversation', () => {
     expect(container.querySelectorAll('.agent-turn')).toHaveLength(2);
     expect(container.querySelector('[data-subagent-conversation]')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_prompt')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_activity_details_truncated')).toBeInTheDocument();
+    expect(
+      screen.queryByText('com_ui_subagent_activity_details_truncated'),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText('com_ui_subagent_activity_details_unavailable'),
     ).not.toBeInTheDocument();
+    expect(screen.getByTestId('stream-elapsed')).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', {

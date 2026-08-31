@@ -7,13 +7,10 @@ import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
-import {
-  hasTruncatedActivityDetails,
-  SubagentActivityContent,
-  SubagentStatus,
-} from './SubagentActivity';
+import { SubagentActivityContent, SubagentStatus } from './SubagentActivity';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { isAbnormalTerminalStatus } from './status';
 import { useAgentsMapContext } from '~/Providers';
@@ -191,10 +188,9 @@ function ChildMessage({
   const agentsMap = useAgentsMapContext();
   const agent = agentId == null ? undefined : agentsMap?.[agentId];
   const label = agent?.name ?? turn.activity.title;
-  const wholeActivityTruncated = turn.activity.activityTruncated === true;
-  const detailsLimited = wholeActivityTruncated || hasTruncatedActivityDetails(turn.activity);
+  const detailsLimited = turn.activity.activityTruncated === true;
   let limitedNotice: ReactNode;
-  if (wholeActivityTruncated && onLoadDetails != null && detailState !== 'unavailable') {
+  if (detailsLimited && onLoadDetails != null && detailState !== 'unavailable') {
     limitedNotice = (
       <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
         {detailState === 'error'
@@ -202,15 +198,16 @@ function ChildMessage({
           : localize('com_ui_subagent_show_full_activity')}
       </Button>
     );
-  } else if (wholeActivityTruncated) {
-    limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
   } else {
-    /** Only item-level fields were shortened for display; the run's full
-     *  activity is otherwise present, so avoid the alarming "unavailable"
-     *  framing there. */
-    limitedNotice = (
-      <span className="italic">{localize('com_ui_subagent_activity_details_truncated')}</span>
-    );
+    limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
+  }
+  let footer: ReactNode = null;
+  if (isAbnormalTerminalStatus(turn.activity.status)) {
+    footer = <SubagentStatus activity={turn.activity} />;
+  } else if (turn.activity.status === 'running' || turn.activity.status === 'dispatched') {
+    const triggeredAt = turn.trigger.createdAt ?? turn.trigger.externalEvent?.occurredAt;
+    const startedAt = triggeredAt == null ? NaN : Date.parse(triggeredAt);
+    footer = <ElapsedTimer start={Number.isFinite(startedAt) ? startedAt : undefined} />;
   }
   const iconData = {
     endpoint: EModelEndpoint.agents,
@@ -230,11 +227,7 @@ function ChildMessage({
         )
       }
       label={label}
-      footer={
-        isAbnormalTerminalStatus(turn.activity.status) ? (
-          <SubagentStatus activity={turn.activity} />
-        ) : null
-      }
+      footer={footer}
       ariaLabel={label}
       headerPrefix=""
       isCreatedByUser={false}
@@ -245,7 +238,6 @@ function ChildMessage({
         activityId={`${turn.taskId}:assistant`}
         state={state}
         showPrompt={false}
-        showDetailTruncationNotice={false}
         conversationId={conversationId}
         onCancelControl={onCancelControl}
       />
