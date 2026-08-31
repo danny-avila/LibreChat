@@ -511,10 +511,12 @@ const executeResponse = async (envelope, { req, res }) => {
   // Request-backed tool adapters still observe the validated envelope payload;
   // shared initialization receives the transport-free runtime below.
   req.body = request;
+  req.turnStartedAt = envelope.receivedAt;
   const agentRuntime = createAgentExecutionContext({
     user: req.user,
     appConfig,
     requestBody: request,
+    turnStartedAt: envelope.receivedAt,
     conversationCreatedAt: req.conversationCreatedAt,
     resolvedConversation: req.resolvedConversation,
     hasResolvedConversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation'),
