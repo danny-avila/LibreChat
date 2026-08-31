@@ -55,6 +55,9 @@ export interface CanonicalFileInspectionFile {
   readonly preview?: string;
   readonly type?: string;
   readonly source?: string;
+  /** Unified uploads persist their extracted text alongside the backing storage
+   *  source, so delivery path carries the provenance `source: 'text'` used to. */
+  readonly llmDeliveryPath?: string | null;
   readonly content?: string | null;
   readonly extractedText?: string | null;
   readonly text?: string | null;
@@ -959,7 +962,8 @@ export function getCanonicalFileInspectionCoverage(
   const isAudio = transcriptApplicable === true;
   const isTextual = mimeType.startsWith('text/') || TEXTUAL_APPLICATION_MIME_TYPES.has(mimeType);
   const hasExtractedTextProvenance =
-    typeof file.source === 'string' && file.source.toLowerCase() === 'text';
+    (typeof file.source === 'string' && file.source.toLowerCase() === 'text') ||
+    file.llmDeliveryPath === 'text';
   const text = getNonBlankInspectionText(file.text);
   const content = typeof file.content === 'string' ? file.content : undefined;
   const extractedText = getNonBlankInspectionText(file.extractedText);

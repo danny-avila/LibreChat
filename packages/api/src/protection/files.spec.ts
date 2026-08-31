@@ -9,6 +9,7 @@ import {
   getBlockedOpaqueFileField,
   getBlockedUninspectableFileField,
   getBlockedUninspectableSkillFileField,
+  getCanonicalFileInspectionCoverage,
   getUploadExtractedTextPlan,
   hasActiveFileFieldPolicy,
   hasActiveFilePolicy,
@@ -178,6 +179,38 @@ describe('file content inspection policy', () => {
         sttSupported: true,
       }),
     ).toBe(false);
+  });
+
+  it('treats a text-delivery audio file as carrying its own transcript', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'local',
+      llmDeliveryPath: 'text',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBe('spoken words');
+    expect(coverage.textProvidesTranscript).toBe(true);
+  });
+
+  it('still requires provenance before treating audio text as a transcript', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'local',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBeUndefined();
+  });
+
+  it('keeps recognizing the legacy text source as provenance', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'text',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBe('spoken words');
   });
 
   it('rejects applicable audio when no downstream transcript inspection is available', () => {
