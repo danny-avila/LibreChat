@@ -1,5 +1,9 @@
 import type { ThemeDefinition } from '../types';
-import applyTheme, { applyResolvedTheme, clearAppliedTheme } from './applyTheme';
+import applyTheme, {
+  applyResolvedTheme,
+  clearAppliedTheme,
+  themeOwnedProperties,
+} from './applyTheme';
 import { defaultTheme } from '../themes/default';
 import { resolveTheme } from '../registry';
 
@@ -128,6 +132,37 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--theme-control-radius')).toBe('0.25rem');
     expect(root.style.getPropertyValue('--theme-surface-radius')).toBe('0.5rem');
     expect(root.style.getPropertyValue('--theme-motion-fast')).toBe('80ms');
+  });
+
+  /** The sweep under an in-flight label is painted in CSS, so it is only
+   *  themeable if its stops are theme-owned properties. A dark theme is the
+   *  case that matters: `style.css` declares a `.dark` base outright, which a
+   *  theme can only outrank by having these applied to the document element. */
+  it('lets a dark theme restate the in-flight label sweep', () => {
+    const root = document.documentElement;
+
+    applyResolvedTheme(
+      resolveTheme(
+        {
+          version: 1,
+          name: 'shimmer-reference',
+          modes: {
+            dark: { colors: { 'rgb-shimmer-base': '12 200 180', 'rgb-shimmer-dip': '4 60 55' } },
+          },
+        },
+        'dark',
+      ),
+      root,
+    );
+
+    expect(root.style.getPropertyValue('--shimmer-base')).toBe('12 200 180');
+    expect(root.style.getPropertyValue('--shimmer-dip')).toBe('4 60 55');
+    expect(themeOwnedProperties).toEqual(
+      expect.arrayContaining(['--shimmer-base', '--shimmer-dip']),
+    );
+
+    clearAppliedTheme(root);
+    expect(root.style.getPropertyValue('--shimmer-base')).toBe('');
   });
 
   it('clears only properties owned by the theme module', () => {
