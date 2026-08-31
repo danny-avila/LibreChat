@@ -461,7 +461,7 @@ const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
 
 export type SettledQueuedTurnReceipt = {
   clientRequestId: string;
-  status: 'admitted' | 'admitted_pending_boundary' | 'cancelled' | 'dead';
+  status: 'admitted' | 'admitted_pending_boundary' | 'indeterminate' | 'cancelled' | 'dead';
   effectivePredecessorCreatedAt?: number;
   rootPredecessor?: true;
   boundaryConsumed?: boolean;

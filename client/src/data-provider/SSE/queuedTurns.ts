@@ -104,8 +104,11 @@ export function useAgentQueuedTurns(
     queryFn: () => fetchAgentQueuedTurns(conversationId, knownIds),
     enabled: enabled && conversationId.length > 0,
     staleTime: 1_000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    /** A stopped indeterminate row can receive exact proof at any time. Its
+     * cache may still be inside `staleTime`, so mount/focus must bypass the
+     * ordinary freshness gate rather than waiting for another user cycle. */
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
     refetchInterval: (receipts) =>
       shouldPollAgentQueuedTurns(receipts, reconcileUntil) ? 2_000 : false,
     retry: false,

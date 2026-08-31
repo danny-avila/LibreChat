@@ -178,6 +178,76 @@ function queuedTurnCreatedAt(receipt: AgentQueuedTurnReceipt): number {
   return Number.isFinite(createdAt) ? createdAt : 0;
 }
 
+type QueuedTurnReceiptSource = 'snapshot' | 'enqueue' | 'direct';
+
+function isAdmissionIndeterminateReceipt(receipt: AgentQueuedTurnReceipt): boolean {
+  return (
+    receipt.failure?.code === 'ADMISSION_INDETERMINATE' &&
+    (receipt.status === 'claimed' || receipt.status === 'dead')
+  );
+}
+
+function settledEvidenceForReceipt(
+  receipt: AgentQueuedTurnReceipt,
+): SettledQueuedTurnReceipt | undefined {
+  if (
+    receipt.status === 'admitted' &&
+    (receipt.effectivePredecessorCreatedAt != null || receipt.rootPredecessor === true)
+  ) {
+    return {
+      clientRequestId: receipt.clientRequestId,
+      status: 'admitted',
+      ...(receipt.effectivePredecessorCreatedAt != null && {
+        effectivePredecessorCreatedAt: receipt.effectivePredecessorCreatedAt,
+      }),
+      ...(receipt.rootPredecessor === true && { rootPredecessor: true }),
+    };
+  }
+  if (receipt.status === 'admitted') {
+    return {
+      clientRequestId: receipt.clientRequestId,
+      status: 'admitted_pending_boundary',
+    };
+  }
+  if (isAdmissionIndeterminateReceipt(receipt)) {
+    return { clientRequestId: receipt.clientRequestId, status: 'indeterminate' };
+  }
+  if (receipt.status === 'cancelled') {
+    return { clientRequestId: receipt.clientRequestId, status: 'cancelled' };
+  }
+  if (receipt.status === 'dead') {
+    return { clientRequestId: receipt.clientRequestId, status: 'dead' };
+  }
+  return undefined;
+}
+
+/** Client receipt knowledge is a monotonic evidence lattice. Enqueue is the
+ * only source that can carry a pre-scheduling snapshot, so it never weakens
+ * evidence already observed by GET/direct settlement. Indeterminate evidence
+ * can advance only through a later authoritative terminal observation. */
+function mergeSettledQueuedTurnEvidence(
+  existing: SettledQueuedTurnReceipt | undefined,
+  receipt: AgentQueuedTurnReceipt,
+  source: QueuedTurnReceiptSource,
+): SettledQueuedTurnReceipt | undefined {
+  const incoming = settledEvidenceForReceipt(receipt);
+  if (existing == null) {
+    return incoming;
+  }
+  if (existing.status === 'admitted_pending_boundary' && incoming?.status === 'admitted') {
+    return incoming;
+  }
+  if (
+    existing.status === 'indeterminate' &&
+    source !== 'enqueue' &&
+    incoming != null &&
+    incoming.status !== 'indeterminate'
+  ) {
+    return incoming;
+  }
+  return existing;
+}
+
 function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef[] | undefined {
   const refs = (files ?? []).flatMap((file): TAgentQueuedTurnFileRef[] => {
     if (typeof file.file_id !== 'string' || file.file_id.length === 0) {
@@ -212,21 +282,26 @@ function reconcileServerQueuedTurns(
   const observedClientRequestIds = new Set(receipts.map((receipt) => receipt.clientRequestId));
   const projected = receipts.flatMap((receipt): QueuedMessage[] => {
     const settled = settledByRequestId.get(receipt.clientRequestId);
+    const admissionIndeterminate = isAdmissionIndeterminateReceipt(receipt);
     if (settled?.status === 'admitted' || settled?.status === 'cancelled') {
       return [];
     }
     const optimistic = previousByClientRequestId.get(receipt.clientRequestId);
     if (
-      (settled?.status === 'dead' || settled?.status === 'admitted_pending_boundary') &&
+      (settled?.status === 'dead' ||
+        settled?.status === 'admitted_pending_boundary' ||
+        (settled?.status === 'indeterminate' && !admissionIndeterminate)) &&
       receipt.status !== 'dead' &&
       receipt.status !== 'admitted'
     ) {
       return optimistic == null ? [] : [optimistic];
     }
     const boundaryPending = receipt.status === 'admitted';
-    const admissionIndeterminate =
-      receipt.failure?.code === 'ADMISSION_INDETERMINATE' &&
-      (receipt.status === 'claimed' || receipt.status === 'dead');
+    /** Reordered requests may complete after a newer authoritative GET. The
+     * row revision is durable evidence; never regress its projection. */
+    if (optimistic?.server?.revision != null && optimistic.server.revision > receipt.revision) {
+      return [optimistic];
+    }
     let status: NonNullable<QueuedMessage['server']>['status'] = 'rejected';
     if (admissionIndeterminate) {
       status = 'indeterminate';
@@ -408,10 +483,7 @@ export default function useSteering({
 
   const applyQueuedTurnReceipts = useRecoilCallback(
     ({ snapshot, set }) =>
-      (
-        receipts: AgentQueuedTurnReceipt[],
-        source: 'snapshot' | 'enqueue' | 'direct' = 'snapshot',
-      ) => {
+      (receipts: AgentQueuedTurnReceipt[], source: QueuedTurnReceiptSource = 'snapshot') => {
         const previousSettled = snapshot
           .getLoadable(store.settledQueuedTurnReceiptsByConvoId(queueKey))
           .getValue();
@@ -427,42 +499,7 @@ export default function useSteering({
         );
         for (const receipt of receipts) {
           const existing = settledByRequestId.get(receipt.clientRequestId);
-          if (
-            existing != null &&
-            !(
-              existing.status === 'admitted_pending_boundary' &&
-              receipt.status === 'admitted' &&
-              (receipt.effectivePredecessorCreatedAt != null || receipt.rootPredecessor === true)
-            )
-          ) {
-            continue;
-          }
-          let settled: SettledQueuedTurnReceipt | undefined;
-          if (
-            receipt.status === 'admitted' &&
-            (receipt.effectivePredecessorCreatedAt != null || receipt.rootPredecessor === true)
-          ) {
-            settled = {
-              clientRequestId: receipt.clientRequestId,
-              status: 'admitted',
-              ...(receipt.effectivePredecessorCreatedAt != null && {
-                effectivePredecessorCreatedAt: receipt.effectivePredecessorCreatedAt,
-              }),
-              ...(receipt.rootPredecessor === true && { rootPredecessor: true }),
-            };
-          } else if (receipt.status === 'admitted') {
-            settled = {
-              clientRequestId: receipt.clientRequestId,
-              status: 'admitted_pending_boundary',
-            };
-          } else if (receipt.status === 'cancelled') {
-            settled = { clientRequestId: receipt.clientRequestId, status: 'cancelled' };
-          } else if (
-            receipt.status === 'dead' &&
-            receipt.failure?.code !== 'ADMISSION_INDETERMINATE'
-          ) {
-            settled = { clientRequestId: receipt.clientRequestId, status: 'dead' };
-          }
+          const settled = mergeSettledQueuedTurnEvidence(existing, receipt, source);
           if (settled == null) {
             continue;
           }

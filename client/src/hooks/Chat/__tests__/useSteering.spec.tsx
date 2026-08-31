@@ -651,6 +651,64 @@ describe('useSteering', () => {
       expect(rendered.result.current.settledReceipts).toEqual([]);
     });
 
+    it('does not let a stale queued POST replace indeterminate GET evidence', async () => {
+      let releaseQueuedPost = () => undefined;
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        releaseQueuedPost = () =>
+          options.onSuccess({
+            ...input,
+            queuedTurnId: 'server-indeterminate-race',
+            status: 'queued',
+            revision: 1,
+            createdAt: new Date(100).toISOString(),
+            updatedAt: new Date(100).toISOString(),
+          });
+      });
+      const rendered = setupServerQueue();
+
+      await act(async () => {
+        rendered.result.current.steering.queueFromComposer('unknown before POST returns');
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(mockEnqueueQueuedTurn).toHaveBeenCalledTimes(1));
+      const input = mockEnqueueQueuedTurn.mock.calls[0][0];
+      mockServerQueuedTurns = [
+        {
+          ...input,
+          queuedTurnId: 'server-indeterminate-race',
+          status: 'claimed',
+          revision: 2,
+          failure: { code: 'ADMISSION_INDETERMINATE' },
+          createdAt: new Date(100).toISOString(),
+          updatedAt: new Date(200).toISOString(),
+        },
+      ];
+      rendered.rerender();
+
+      await waitFor(() =>
+        expect(rendered.result.current.queue[0].server).toMatchObject({
+          id: 'server-indeterminate-race',
+          status: 'indeterminate',
+          revision: 2,
+        }),
+      );
+      expect(rendered.result.current.settledReceipts).toEqual([
+        { clientRequestId: input.clientRequestId, status: 'indeterminate' },
+      ]);
+
+      await act(async () => {
+        releaseQueuedPost();
+        await Promise.resolve();
+      });
+      expect(rendered.result.current.queue[0].server).toMatchObject({
+        id: 'server-indeterminate-race',
+        status: 'indeterminate',
+        revision: 2,
+      });
+      expect(rendered.result.current.pendingEnqueueIds).toEqual([]);
+      expect(rendered.result.current.settledReceipts).toEqual([]);
+    });
+
     it('anchors enqueue to the selected branch tail instead of a later hidden sibling', async () => {
       mockMessages = [
         {
@@ -798,10 +856,10 @@ describe('useSteering', () => {
           updatedAt: new Date(200).toISOString(),
         },
       ];
-      const { result } = setupServerQueue();
+      const rendered = setupServerQueue();
 
-      await waitFor(() => expect(result.current.queue).toHaveLength(1));
-      expect(result.current.queue[0]).toMatchObject({
+      await waitFor(() => expect(rendered.result.current.queue).toHaveLength(1));
+      expect(rendered.result.current.queue[0]).toMatchObject({
         id: 'client-snapshot-1',
         text: 'restored after reload',
         server: { id: 'server-snapshot-1', status: 'queued', revision: 3 },
@@ -986,10 +1044,10 @@ describe('useSteering', () => {
         },
       ];
       mockCancelQueuedTurn.mockResolvedValueOnce({ status: 'cancelled' });
-      const { result } = setupServerQueue();
+      const rendered = setupServerQueue();
 
-      await waitFor(() => expect(result.current.queue).toHaveLength(1));
-      expect(result.current.queue[0]).toMatchObject({
+      await waitFor(() => expect(rendered.result.current.queue).toHaveLength(1));
+      expect(rendered.result.current.queue[0]).toMatchObject({
         text: 'recover this failed turn',
         server: {
           id: 'server-dead-1',
@@ -1000,15 +1058,15 @@ describe('useSteering', () => {
       });
 
       await act(async () => {
-        await expect(result.current.steering.discardQueued(result.current.queue[0])).resolves.toBe(
-          true,
-        );
+        await expect(
+          rendered.result.current.steering.discardQueued(rendered.result.current.queue[0]),
+        ).resolves.toBe(true);
       });
       expect(mockCancelQueuedTurn).toHaveBeenCalledWith({
         conversationId: CONVO_ID,
         queuedTurnId: 'server-dead-1',
       });
-      expect(result.current.queue[0].server).toBeUndefined();
+      expect(rendered.result.current.queue[0].server).toBeUndefined();
     });
 
     it('projects an indeterminate claim as non-progressing reconciliation work', async () => {
@@ -1029,10 +1087,10 @@ describe('useSteering', () => {
           updatedAt: new Date(300).toISOString(),
         },
       ];
-      const { result } = setupServerQueue();
+      const rendered = setupServerQueue();
 
-      await waitFor(() => expect(result.current.queue).toHaveLength(1));
-      expect(result.current.queue[0]).toMatchObject({
+      await waitFor(() => expect(rendered.result.current.queue).toHaveLength(1));
+      expect(rendered.result.current.queue[0]).toMatchObject({
         text: 'external result is unknown',
         server: {
           id: 'server-indeterminate-1',
@@ -1041,7 +1099,24 @@ describe('useSteering', () => {
           errorMessage: 'Awaiting exact source evidence',
         },
       });
-      expect(result.current.settledReceipts).toEqual([]);
+      expect(rendered.result.current.settledReceipts).toEqual([]);
+
+      mockServerQueuedTurns = [
+        {
+          ...mockServerQueuedTurns[0],
+          status: 'queued',
+          revision: 3,
+          failure: undefined,
+        },
+      ];
+      rendered.rerender();
+
+      await waitFor(() =>
+        expect(rendered.result.current.queue[0].server).toMatchObject({
+          status: 'indeterminate',
+          revision: 4,
+        }),
+      );
     });
 
     it('cancels the durable copy before downgrading a row to local control', async () => {

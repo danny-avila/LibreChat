@@ -1,6 +1,13 @@
 const mockListAgentQueuedTurns = jest.fn();
 const mockEnqueueAgentQueuedTurn = jest.fn();
 const mockCancelAgentQueuedTurn = jest.fn();
+const mockUseQuery = jest.fn((options: unknown) => options);
+
+jest.mock('@tanstack/react-query', () => ({
+  useQuery: (options: unknown) => mockUseQuery(options),
+  useMutation: jest.fn(),
+  useQueryClient: jest.fn(),
+}));
 
 jest.mock('librechat-data-provider', () => ({
   QueryKeys: { agentQueuedTurns: 'agentQueuedTurns' },
@@ -22,6 +29,7 @@ import {
   isDefiniteQueuedTurnRejection,
   isDefiniteQueuedTurnsUnsupported,
   shouldPollAgentQueuedTurns,
+  useAgentQueuedTurns,
 } from '../queuedTurns';
 
 describe('Agent queued-turn data adapter', () => {
@@ -129,5 +137,16 @@ describe('Agent queued-turn data adapter', () => {
     ).toBe(false);
     expect(shouldPollAgentQueuedTurns([{ status: 'claimed' }])).toBe(true);
     expect(shouldPollAgentQueuedTurns([{ status: 'queued' }])).toBe(true);
+  });
+
+  it('refreshes stopped reconciliation work on every mount and focus', () => {
+    useAgentQueuedTurns('conversation/one', true);
+
+    expect(mockUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: 'always',
+      }),
+    );
   });
 });
