@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useState } from 'react';
 import type {
   ForwardRefExoticComponent,
   KeyboardEvent,
@@ -28,6 +28,13 @@ export interface ComposerProps {
   maxRows?: number;
   /** Secondary controls, laid out inline-start of the send button. */
   actions?: ReactNode;
+  /**
+   * The reader's "Press Enter to send" preference. When false, Enter inserts a
+   * newline and ⌘/Ctrl+Enter submits — the same bargain the main chat composer
+   * strikes, so a reader who turned the preference off cannot steer a run or
+   * leave for a continued chat by reaching for a line break.
+   */
+  submitOnEnter?: boolean;
   className?: string;
 }
 
@@ -56,19 +63,38 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
       minRows = 1,
       maxRows = 6,
       actions,
+      submitOnEnter = true,
       className,
     }: ComposerProps,
     ref: Ref<HTMLTextAreaElement>,
   ) {
-    /** `isComposing` guards the IME: committing a candidate fires Enter, and
-     *  submitting there would send a half-typed word in every CJK locale.
+    const [isComposing, setIsComposing] = useState(false);
+
+    /**
+     * Four separate reasons not to submit on an Enter:
      *
-     *  An empty field never submits, even where the surface would accept it —
-     *  a caller whose action needs no text (continuing a settled thread) still
-     *  wants that to be a deliberate press of the button, not a stray Enter
-     *  that navigates the reader somewhere. */
+     * - An IME candidate is being committed. `isComposing` alone is not enough:
+     *   Safari reports it as false on the very Enter that commits, so the
+     *   tracked composition state and the legacy `Process`/229 signals stand in
+     *   for it, as the main chat composer's own guard does.
+     * - Shift is held, which is the newline everywhere.
+     * - Enter-to-send is off and no modifier is held, so this Enter is a
+     *   newline and must reach the field untouched.
+     * - The field is empty. A caller whose action needs no text (continuing a
+     *   settled thread) still wants that to be a deliberate press of the
+     *   button, not a stray Enter that navigates the reader somewhere.
+     */
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+      if (
+        isComposing ||
+        event.nativeEvent.isComposing ||
+        event.key === 'Process' ||
+        event.keyCode === 229
+      ) {
+        return;
+      }
+      if (event.key !== 'Enter' || event.shiftKey) return;
+      if (!submitOnEnter && !(event.metaKey || event.ctrlKey)) return;
       event.preventDefault();
       if (!canSubmit || value.trim() === '') return;
       onSubmit();
@@ -88,6 +114,8 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => setIsComposing(true)}
+          onCompositionEnd={() => setIsComposing(false)}
           placeholder={placeholder}
           aria-label={ariaLabel}
           maxLength={maxLength}

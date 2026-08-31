@@ -257,6 +257,7 @@ jest.mock('@librechat/client', () => ({
     placeholder,
     disabled,
     actions,
+    submitOnEnter = true,
   }: {
     value: string;
     onChange: (value: string) => void;
@@ -267,6 +268,7 @@ jest.mock('@librechat/client', () => ({
     placeholder?: string;
     disabled?: boolean;
     actions?: React.ReactNode;
+    submitOnEnter?: boolean;
   }) => (
     <div>
       <textarea
@@ -277,6 +279,7 @@ jest.mock('@librechat/client', () => ({
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key !== 'Enter' || event.shiftKey) return;
+          if (!submitOnEnter && !(event.metaKey || event.ctrlKey)) return;
           event.preventDefault();
           if (canSubmit && value.trim() !== '') onSubmit();
         }}
@@ -525,6 +528,37 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getAllByTestId('conversation-turn')).toHaveLength(2);
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
     expect(screen.getByText(/A newer request/)).toBeInTheDocument();
+  });
+
+  /** The panel composer obeys the same "Press Enter to send" preference the
+   *  main chat form does: with it off, reaching for a line break must not steer
+   *  a live run. */
+  it('leaves a bare Enter alone when the reader turned Enter-to-send off', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(activeSubagentPanel, selection);
+          set(store.enterToSend, false);
+        }}
+      >
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    const composer = screen.getByLabelText('com_ui_message_input');
+    fireEvent.change(composer, { target: { value: 'Check the primary source.' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    expect(mockControlMutate).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(composer, { key: 'Enter', metaKey: true });
+    expect(mockControlMutate).toHaveBeenCalledTimes(1);
+    expect(mockControlMutate.mock.calls[0][0].command.action).toBe('steer');
   });
 
   it('submits one command invocation, blocks duplicate clicks, and shows its receipt', async () => {

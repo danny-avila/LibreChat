@@ -105,6 +105,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
+  const enterToSend = useRecoilValue(store.enterToSend);
   const resetSelection = useResetRecoilState(activeSubagentPanel);
   const setSelection = useSetRecoilState(activeSubagentPanel);
   const agentsMap = useAgentsMapContext();
@@ -1167,6 +1168,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             ariaLabel={localize('com_ui_subagent_actor')}
             items={actorOptions}
             SelectIcon={selectedActorIcon}
+            /** In the panel, not in a portal: on mobile this `aside` is a modal
+                whose focus trap only knows its own descendants, so a portaled
+                search field would let Tab escape to the page behind it. */
+            portal={false}
             containerClassName="min-w-0 flex-1 px-0"
             className="h-9 w-full border-transparent bg-transparent font-semibold hover:bg-surface-hover"
             showCarat
@@ -1242,6 +1247,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               }
               ariaLabel={localize('com_ui_message_input')}
               placeholder={composerPlaceholder}
+              submitOnEnter={enterToSend}
               maxLength={4 * 1024}
               actions={
                 composerMode === 'control' ? (
