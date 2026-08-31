@@ -101,6 +101,7 @@ export function useAgentQueuedTurns(
   clientRequestIds: string[] = [],
   reconcileUntil?: number,
 ) {
+  const queryClient = useQueryClient();
   const knownIds = [...new Set(clientRequestIds)].sort();
   const knownIdsSignature = knownIds.join('\u0000');
   const previousRequest = useRef({ conversationId, knownIdsSignature });
@@ -132,11 +133,25 @@ export function useAgentQueuedTurns(
       return;
     }
 
-    /** The stable query key prevents old snapshots from becoming current
-     * again. Cancel/refetch also prevents an older in-flight projection from
-     * winning when receipt identities are added or retired. */
-    void refetch({ cancelRefetch: true });
-  }, [conversationId, enabled, knownIdsSignature, refetch]);
+    let superseded = false;
+    const refreshProjection = async () => {
+      /** React Query cannot replace an initial fetch that has no cached data
+       * through `refetch` alone. Cancel it explicitly so the next request
+       * captures the current reconciliation identities. */
+      await queryClient.cancelQueries({
+        queryKey: agentQueuedTurnsQueryKey(conversationId),
+        exact: true,
+      });
+      if (!superseded) {
+        await refetch({ cancelRefetch: true });
+      }
+    };
+    void refreshProjection();
+
+    return () => {
+      superseded = true;
+    };
+  }, [conversationId, enabled, knownIdsSignature, queryClient, refetch]);
 
   return query;
 }

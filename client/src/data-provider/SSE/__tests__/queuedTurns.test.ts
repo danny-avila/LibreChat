@@ -1,15 +1,17 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 const mockListAgentQueuedTurns = jest.fn();
 const mockEnqueueAgentQueuedTurn = jest.fn();
 const mockCancelAgentQueuedTurn = jest.fn();
 const mockRefetch = jest.fn();
+const mockCancelQueries = jest.fn().mockResolvedValue(undefined);
+const mockQueryClient = { cancelQueries: mockCancelQueries };
 const mockUseQuery = jest.fn((options: unknown) => ({ options, refetch: mockRefetch }));
 
 jest.mock('@tanstack/react-query', () => ({
   useQuery: (options: unknown) => mockUseQuery(options),
   useMutation: jest.fn(),
-  useQueryClient: jest.fn(),
+  useQueryClient: () => mockQueryClient,
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -169,14 +171,46 @@ describe('Agent queued-turn data adapter', () => {
     rendered.rerender({ ids: [] });
 
     await waitFor(() =>
+      expect(mockCancelQueries).toHaveBeenCalledWith({
+        queryKey: ['agentQueuedTurns', 'conversation/one'],
+        exact: true,
+      }),
+    );
+    await waitFor(() =>
       expect(mockRefetch).toHaveBeenCalledWith({
         cancelRefetch: true,
       }),
+    );
+    expect(mockCancelQueries.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRefetch.mock.invocationCallOrder[0],
     );
     expect(mockUseQuery).toHaveBeenLastCalledWith(
       expect.objectContaining({
         queryKey: ['agentQueuedTurns', 'conversation/one'],
       }),
     );
+  });
+
+  it('lets only the newest identity projection refetch after cancellation', async () => {
+    let releaseFirstCancellation: (() => void) | undefined;
+    mockCancelQueries
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseFirstCancellation = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    const rendered = renderHook(
+      ({ ids }: { ids: string[] }) => useAgentQueuedTurns('conversation/one', true, ids),
+      { initialProps: { ids: ['request-one'] } },
+    );
+
+    rendered.rerender({ ids: ['request-two'] });
+    rendered.rerender({ ids: ['request-three'] });
+
+    await waitFor(() => expect(mockRefetch).toHaveBeenCalledTimes(1));
+    await act(async () => releaseFirstCancellation?.());
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
 });
