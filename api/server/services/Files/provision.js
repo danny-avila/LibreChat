@@ -29,6 +29,24 @@ async function buildCodeApiHeaders({ apiKey, req }) {
   };
 }
 
+/** Image uploads are converted to appConfig.imageOutputType while the record keeps
+ *  the original filename; rename so sandbox decoders match the stored bytes. */
+function provisionFilename(file) {
+  if (!file.type?.startsWith('image/')) {
+    return file.filename;
+  }
+  const subtype = file.type.slice('image/'.length);
+  if (!['webp', 'png', 'jpeg', 'gif'].includes(subtype)) {
+    return file.filename;
+  }
+  const accepted = subtype === 'jpeg' ? ['.jpg', '.jpeg'] : [`.${subtype}`];
+  const currentExt = path.extname(file.filename).toLowerCase();
+  if (accepted.includes(currentExt)) {
+    return file.filename;
+  }
+  return `${path.basename(file.filename, path.extname(file.filename))}${accepted[0]}`;
+}
+
 /** Env var holding the code-execution API key (symmetric with LIBRECHAT_CODE_BASEURL). */
 const CODE_API_KEY_FIELD = 'LIBRECHAT_CODE_API_KEY';
 
@@ -79,7 +97,7 @@ async function provisionToCodeEnv({ req, file, entity_id }) {
   const uploaded = await uploadCodeEnvFile({
     req,
     stream,
-    filename: file.filename,
+    filename: provisionFilename(file),
     kind,
     id,
   });
