@@ -242,35 +242,46 @@ describe('페이지네이션', () => {
 
 describe('100건 초과 안내', () => {
   const NOTICE = 'com_document_search_limit_notice:100';
+  const notice = () => screen.queryByRole('note', { name: NOTICE });
 
   it('truncated 면 띄운다', () => {
     setResults(100, { truncated: true, total_hit_count: 198 });
     renderPage();
-    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+    expect(notice()).toBeInTheDocument();
   });
 
-  it('total_hit_count 가 상한을 넘으면 띄운다', () => {
-    setResults(100, { truncated: false, total_hit_count: 198 });
+  it('배너가 아니라 건수 옆 표식으로 붙는다', () => {
+    setResults(100, { truncated: true, total_hit_count: 198 });
     renderPage();
-    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+    // 결과 문구와 같은 줄에 있어야 한다 (별도 블록으로 튀어나오면 안 됨).
+    const heading = screen.getByText(/com_document_search_result_heading/);
+    expect(heading).toContainElement(notice());
+  });
+
+  it('total_hit_count 만 상한을 넘으면 띄우지 않는다', () => {
+    // 서버측 필터·ACL 이전 근사값이라 98건을 전부 보여준 경우에도 100 을
+    // 넘길 수 있다. 이걸로 판정하면 다 보여주고도 "더 있다" 고 거짓말한다.
+    setResults(98, { truncated: false, total_hit_count: 198 });
+    renderPage();
+    expect(notice()).not.toBeInTheDocument();
   });
 
   it('상한 이내면 띄우지 않는다', () => {
     setResults(30, { truncated: false, total_hit_count: 30 });
     renderPage();
-    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+    expect(notice()).not.toBeInTheDocument();
   });
 
   it('구버전 API 라 필드가 없으면 띄우지 않는다', () => {
     setResults(30);
     renderPage();
-    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+    expect(notice()).not.toBeInTheDocument();
   });
 
   it('결과가 0건이면 띄우지 않는다', () => {
     setResults(0, { truncated: true, total_hit_count: 198 });
     renderPage();
-    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+    expect(notice()).not.toBeInTheDocument();
   });
 });
 

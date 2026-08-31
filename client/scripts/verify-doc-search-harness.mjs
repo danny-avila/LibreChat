@@ -29,14 +29,53 @@ page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
 await page.goto(URL, { waitUntil: 'networkidle' });
 await page.waitForSelector('nav', { timeout: 15000 });
 
-// ── 1. i18n 이 실제 문구로 풀렸는지 (raw key 노출은 치명적) ──────────
-const noticeText = (await page.locator('.bg-amber-50').first().innerText()).trim();
+// ── 1. 초과 안내는 배너가 아니라 호버 표식 ───────────────────────────
+const noticeMark = page.getByRole('note');
+const noticeText = (await noticeMark.getAttribute('aria-label')) ?? '';
 check(
   'notice: i18n 해소',
   !noticeText.includes('com_document_search') && noticeText.length > 10,
   JSON.stringify(noticeText),
 );
 check('notice: 상한 100 표기', noticeText.includes('100'), noticeText);
+check(
+  'notice: 평상시엔 문구가 안 보인다',
+  !(await page.getByText(noticeText, { exact: true }).count()),
+);
+
+const markBox = await noticeMark.boundingBox();
+check('notice: 표식이 작다 (배너 아님)', markBox.width < 40 && markBox.height < 40,
+  `${Math.round(markBox.width)}x${Math.round(markBox.height)}px`);
+
+// Ariakit 툴팁은 표시까지 지연이 있다 (실측 ~700ms).
+await noticeMark.hover();
+let tooltipShown = false;
+try {
+  await page.locator('[role="tooltip"]').first().waitFor({ state: 'visible', timeout: 5000 });
+  tooltipShown = true;
+} catch {
+  tooltipShown = false;
+}
+check('notice: 호버하면 툴팁이 뜬다', tooltipShown);
+check(
+  'notice: 툴팁 내용이 안내 문구다',
+  tooltipShown && (await page.locator('[role="tooltip"]').first().innerText()).includes('100건'),
+);
+
+await page.screenshot({ path: `${OUT}/tooltip.png`, fullPage: true });
+
+// 툴팁을 걷어내야 이후 스크린샷·클릭에 안 걸린다.
+await page.mouse.move(0, 0);
+await page.locator('[role="tooltip"]').first().waitFor({ state: 'detached' }).catch(() => {});
+
+// ── 1b. 다중 검색어 하이라이트 ───────────────────────────────────────
+const marks = await page.locator('mark').allInnerTexts();
+const uniqueMarks = [...new Set(marks)];
+check(
+  '하이라이트: 쉼표로 구분한 검색어를 모두 칠한다',
+  uniqueMarks.includes('세종텔레콤') && uniqueMarks.includes('아이즈비전'),
+  uniqueMarks.join(','),
+);
 
 // 케이스는 10/3/2/1 페이지 4개인데, 1페이지짜리는 네비게이션을 통째로
 // 감춰야 하므로 nav 는 3개여야 한다.
@@ -107,21 +146,12 @@ await page.screenshot({ path: `${OUT}/page3.png`, fullPage: true });
 await page.getByRole('button', { name: '다크 모드' }).click();
 await page.waitForTimeout(300);
 
-const darkBg = await page
-  .locator('.bg-amber-50')
+const darkMark = await page
+  .locator('mark')
   .first()
   .evaluate((el) => getComputedStyle(el).backgroundColor);
-const darkFg = await page
-  .locator('.bg-amber-50')
-  .first()
-  .evaluate((el) => getComputedStyle(el).color);
-// 라이트의 amber-50 은 거의 흰색(254,252,232). 다크에서 어두워져야 한다.
-const rgb = darkBg.match(/\d+/g).map(Number);
-check(
-  '다크: 배너 배경이 어두워짐',
-  rgb[0] + rgb[1] + rgb[2] < 300,
-  `${darkBg} / text ${darkFg}`,
-);
+check('다크: 하이라이트가 남아 있다', /\d/.test(darkMark), darkMark);
+check('다크: 초과 표식이 남아 있다', (await page.getByRole('note').count()) > 0);
 
 await page.screenshot({ path: `${OUT}/dark.png`, fullPage: true });
 

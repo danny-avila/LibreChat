@@ -22,7 +22,9 @@ interface ResultCardProps {
 const CHUNKS_PER_PAGE = 8;
 const imanageLinksCache = new Map<string, { fileUrl: string | null; folderUrl: string | null }>();
 
-async function fetchImanageLinks(docId: string): Promise<{ fileUrl: string | null; folderUrl: string | null } | null> {
+async function fetchImanageLinks(
+  docId: string,
+): Promise<{ fileUrl: string | null; folderUrl: string | null } | null> {
   if (imanageLinksCache.has(docId)) {
     return imanageLinksCache.get(docId) ?? null;
   }
@@ -37,13 +39,43 @@ async function fetchImanageLinks(docId: string): Promise<{ fileUrl: string | nul
   return links;
 }
 
-/** case-insensitive token highlighter */
+/**
+ * 검색어를 하이라이트할 단어들로 쪼갠다.
+ *
+ * 구분자를 공백만으로 잡으면 `세종텔레콤, 아이즈비전` 이 `["세종텔레콤,",
+ * "아이즈비전"]` 이 되어, 쉼표가 붙은 앞 단어는 본문과 영영 매칭되지 않는다.
+ * 맨 뒤 단어만 칠해지는 것처럼 보이던 원인이다. 검색 팁이 쉼표 표기를
+ * 안내하고 있으므로 흔한 입력이다.
+ */
 function queryTokens(query: string): string[] {
-  return query
-    .replace(/[+"()]/g, ' ')
-    .split(/\s+/)
-    .map((t) => t.trim().replace(/^[|-]+|[~*]+$/g, ''))
-    .filter((t) => t.length >= 1);
+  const seen = new Set<string>();
+  return (
+    query
+      // 인용부호·그룹 기호는 구분자 역할만 한다.
+      .replace(/["()]/g, ' ')
+      // `"구문"~5` 의 근접 지정자. 남겨두면 본문의 숫자를 전부 칠한다.
+      .replace(/~\d+/g, ' ')
+      .split(/[\s,;|]+/)
+      // `-단어` 는 제외 조건이라 애초에 본문에 없어야 정상이다.
+      .filter((t) => !t.startsWith('-'))
+      .map((t) =>
+        t
+          .replace(/^\++/, '')
+          .replace(/[*~]+$/, '')
+          .trim(),
+      )
+      .filter((t) => {
+        const key = t.toLowerCase();
+        if (t.length < 1 || seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      // 긴 단어를 먼저 두어야 `삼성|삼성전자` 에서 짧은 쪽이 먼저 먹고
+      // 나머지가 안 칠해지는 일이 없다.
+      .sort((a, b) => b.length - a.length)
+  );
 }
 
 function highlight(text: string, query: string): React.ReactNode {
@@ -414,5 +446,5 @@ const ResultCard: React.FC<ResultCardProps> = ({
   );
 };
 
-export { highlight, buildSnippet };
+export { highlight, buildSnippet, queryTokens };
 export default ResultCard;

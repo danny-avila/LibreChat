@@ -3,7 +3,7 @@ import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
-import { FileSearch, FolderPlus, RotateCcw, X } from 'lucide-react';
+import { FileSearch, FolderPlus, Info, RotateCcw, X } from 'lucide-react';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useLocalize } from '~/hooks';
 import { useChatContext } from '~/Providers';
@@ -161,11 +161,10 @@ const DocumentSearch: React.FC = () => {
     }
   }, []);
 
-  // 상한에서 잘렸을 때만 안내한다. total_hit_count 는 서버측 필터·ACL 이전
-  // 근사값이라 그것만 보면 실제로는 다 보여준 경우에도 안내가 뜬다.
-  const showLimitNotice =
-    hasResults &&
-    (search.data?.truncated === true || (search.data?.total_hit_count ?? 0) > DEFAULT_TOP_K);
+  // 판정은 truncated 만 본다. total_hit_count 는 서버측 확장자 백스톱·스니펫
+  // 필터·ACL 을 거치기 전 근사값이라, 98건을 전부 보여준 경우에도 100 을 넘겨
+  // "더 있다" 고 잘못 안내한다. truncated 는 슬라이싱 직전에 잰 정확한 값이다.
+  const showLimitNotice = hasResults && search.data?.truncated === true;
 
   const resultHeading = useMemo(() => {
     if (!hasQuery) return null;
@@ -271,8 +270,11 @@ const DocumentSearch: React.FC = () => {
 
             {/* Result heading */}
             {hasQuery && (
-              <div className="mt-8 flex items-baseline justify-between border-b border-border-light pb-3">
-                <p className="text-sm text-text-primary">{resultHeading}</p>
+              <div className="mt-8 flex items-baseline justify-between gap-3 border-b border-border-light pb-3">
+                <p className="flex items-center gap-1.5 text-sm text-text-primary">
+                  {resultHeading}
+                  {showLimitNotice && <LimitNotice cap={DEFAULT_TOP_K} />}
+                </p>
                 {hasResults && (
                   <button
                     type="button"
@@ -313,8 +315,6 @@ const DocumentSearch: React.FC = () => {
                   message={localize('com_document_search_empty')}
                 />
               )}
-
-              {showLimitNotice && <LimitNotice cap={DEFAULT_TOP_K} />}
 
               {hasResults && (
                 <>
@@ -377,14 +377,31 @@ const DocumentSearch: React.FC = () => {
   );
 };
 
-/** 상한에서 잘렸을 때 뜨는 안내. 표시 건수가 아니라 "조회 범위"를 말한다 —
- * ACL 로 표시 건수가 더 줄어도 문구가 거짓이 되지 않아야 한다. */
+/**
+ * 상한에서 잘렸을 때 건수 옆에 붙는 표식. 배너로 띄우면 결과보다 눈에 띄어
+ * 거슬리므로 호버로만 설명을 보여준다.
+ *
+ * 문구는 표시 건수가 아니라 "조회 범위"를 말한다 — ACL 이 절단 이후에 돌아
+ * 표시 건수가 더 줄어도 거짓이 되지 않아야 한다.
+ */
 export const LimitNotice: React.FC<{ cap: number }> = ({ cap }) => {
   const localize = useLocalize();
+  const message = localize('com_document_search_limit_notice', { 0: String(cap) });
   return (
-    <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-      {localize('com_document_search_limit_notice', { 0: String(cap) })}
-    </div>
+    <TooltipAnchor
+      description={message}
+      side="bottom"
+      render={
+        <span
+          role="note"
+          tabIndex={0}
+          aria-label={message}
+          className="inline-flex shrink-0 items-center text-text-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+      }
+    />
   );
 };
 
