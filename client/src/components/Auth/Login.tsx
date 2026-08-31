@@ -3,11 +3,12 @@ import { OpenIDIcon, useToastContext } from '@librechat/client';
 import { ErrorTypes, registerPage } from 'librechat-data-provider';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
+import type { TranslationKeys } from '~/hooks';
 import { getLoginError, persistRedirectToSession } from '~/utils';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useLocalize, type TranslationKeys } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
 
 interface LoginLocationState {
