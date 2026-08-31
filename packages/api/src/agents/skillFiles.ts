@@ -755,12 +755,15 @@ export async function primeInvokedSkills(
     if (!inspectStoredSkillFileContent && deps.getSessionInfo && deps.checkIfActive) {
       const allResolved = fileListResults.flatMap((r) =>
         r.files.map((f) => ({
+          skill: r.skill,
           skillName: r.skill.name,
           file: f,
           ref: getCodeEnvRefForProfile(f, executionRouteKey),
         })),
       );
-      const resolvedWithRef = allResolved.filter((x) => x.ref !== undefined);
+      const resolvedWithRef = allResolved.filter(
+        (x) => x.ref !== undefined && x.ref.version === x.skill.version,
+      );
 
       // Only use cache when ALL files have refs (no partial persistence)
       if (resolvedWithRef.length > 0 && resolvedWithRef.length === allResolved.length) {
