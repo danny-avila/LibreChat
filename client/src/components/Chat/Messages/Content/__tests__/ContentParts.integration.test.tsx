@@ -619,6 +619,29 @@ describe('ContentParts — synthesized activity folds', () => {
     );
   });
 
+  it('refuses to fold a span holding an unresolved approval', () => {
+    const awaiting = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 't2',
+        name: `getTinyImage${MCP_DELIMITER}Everything`,
+        args: '{}',
+        output: '',
+        approval: { state: 'pending' },
+      },
+    } as unknown as TMessageContentParts;
+
+    renderContentParts({
+      ...baseProps,
+      content: [makeMcpToolCall('t1'), makeChildLabel(FIRST), awaiting, makeChildLabel(TICKER)],
+    });
+
+    /** No card: the run is blocked on the reader, and the request must not sit
+     *  behind a disclosure they have to discover. */
+    expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
+    expect(screen.getByRole('button', { name: FIRST })).toBeInTheDocument();
+  });
+
   it('leaves an unlabeled run rendering exactly as before', () => {
     renderContentParts({
       ...baseProps,

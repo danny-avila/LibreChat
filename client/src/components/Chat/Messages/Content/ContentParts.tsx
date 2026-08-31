@@ -777,14 +777,31 @@ const ContentPartsBody = memo(function ContentPartsBody({
               !synthesized &&
               previousPhases != null &&
               segmentIndices.some((index) => previousPhases.folded.has(index));
+            const hasPendingApproval = segment.content.some(
+              (part) => part != null && hasPendingApprovalInPart(part),
+            );
+            /** A fold summarizes work that is DONE. An unresolved approval is
+             *  the run asking the reader for something and blocking until it
+             *  gets it — never put that behind a disclosure they have to find.
+             *  A server marker cannot hit this (it is emitted after the batch
+             *  resolves), but a subagent nested in an already-labeled group
+             *  can raise one long after its parent's label filled. The span
+             *  renders exactly as it would without the feature until it
+             *  clears, then folds. */
+            if (synthesized && hasPendingApproval) {
+              return renderSegment(
+                segment.content,
+                absoluteIndexAt(segment.startIndex),
+                segmentIndices,
+                `phase-awaiting-${phaseKeyIndex}`,
+              );
+            }
             return (
               <ActivityPhaseGroup
                 key={`activity-${synthesized ? 'fold' : 'phase'}-${messageId}-${phaseKeyIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
-                hasPendingApproval={segment.content.some(
-                  (part) => part != null && hasPendingApprovalInPart(part),
-                )}
+                hasPendingApproval={hasPendingApproval}
                 initialExpansionState={expansionState.get(cardId)}
                 onExpansionChange={(state) => handleGroupExpansionChange(cardId, state)}
                 animateEntrance={
