@@ -217,15 +217,18 @@ function EventSubagentRows({
                   </span>
                 ) : null}
               </span>
-              <span
-                className="flex h-5 w-5 shrink-0 items-center justify-center"
-                title={localize(subagentStatusLabelKey(child.status))}
-              >
+              {/* Fixed-width slot: the dot gives at-a-glance color, the text
+                  keeps a non-color cue, and neither can shift the row as
+                  statuses change length. */}
+              <span className="flex w-24 shrink-0 items-center justify-end gap-1.5 text-xs text-text-secondary">
                 <span
-                  className={cn('h-2 w-2 rounded-full', subagentStatusDotClass(child.status))}
+                  className={cn(
+                    'h-2 w-2 shrink-0 rounded-full border border-border-heavy/40',
+                    subagentStatusDotClass(child.status),
+                  )}
                   aria-hidden="true"
                 />
-                <span className="sr-only">{localize(subagentStatusLabelKey(child.status))}</span>
+                <span className="truncate">{localize(subagentStatusLabelKey(child.status))}</span>
               </span>
             </button>
           );

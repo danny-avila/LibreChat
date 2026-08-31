@@ -801,6 +801,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
        *  it will settle — a new event must not appear at the top and then
        *  jump to the bottom) or an older selection displaced from the bounded
        *  window (keep it ahead of the retained newer continuation). */
+      const indexedChild = byThreadId.get(threadId);
+      const selectedTaskCreatedAt = indexedChild?.tasks.find(
+        (task) => task.taskId === taskId,
+      )?.createdAt;
       const synthesizedTurn = {
         taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
         trigger: {
@@ -809,11 +813,19 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               ? ('parent_continuation' as const)
               : ('external_event' as const),
           summary: selection.prompt ?? activity.prompt ?? '',
+          ...(selectedTaskCreatedAt == null ? {} : { createdAt: selectedTaskCreatedAt }),
         },
         activity,
       };
-      const selectedIsNewestTask = byThreadId.get(threadId)?.latestTaskId === taskId;
-      const retained = selectedIsNewestTask
+      /** Order by trigger time when both sides carry one; the separately
+       *  polled discovery index is only the fallback authority, since it can
+       *  briefly lag or lead the thread view. */
+      const lastDurableCreatedAt = durableTurns[durableTurns.length - 1]?.trigger.createdAt;
+      const appendSynthesized =
+        selectedTaskCreatedAt != null && lastDurableCreatedAt != null
+          ? selectedTaskCreatedAt >= lastDurableCreatedAt
+          : indexedChild?.latestTaskId === taskId;
+      const retained = appendSynthesized
         ? [...durableTurns, synthesizedTurn]
         : [synthesizedTurn, ...durableTurns];
       return retained.map((turn) => {

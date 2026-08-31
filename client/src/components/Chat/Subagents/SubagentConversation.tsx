@@ -205,7 +205,8 @@ function ChildMessage({
   if (isAbnormalTerminalStatus(turn.activity.status)) {
     footer = <SubagentStatus activity={turn.activity} />;
   } else if (turn.activity.status === 'running' || turn.activity.status === 'dispatched') {
-    const startedAt = turn.trigger.createdAt == null ? NaN : Date.parse(turn.trigger.createdAt);
+    const triggeredAt = turn.trigger.createdAt ?? turn.trigger.externalEvent?.occurredAt;
+    const startedAt = triggeredAt == null ? NaN : Date.parse(triggeredAt);
     footer = <ElapsedTimer start={Number.isFinite(startedAt) ? startedAt : undefined} />;
   }
   const iconData = {
