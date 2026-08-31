@@ -80,6 +80,11 @@ const DRIVER_OPS = [
   'countDocuments',
   'distinct',
   'bulkWrite',
+  'createIndex',
+  'createIndexes',
+  'dropIndex',
+  'dropIndexes',
+  'listIndexes',
 ] as const;
 
 /** Duplicate-key violations are server errors but not engine incompatibilities:
@@ -139,7 +144,7 @@ function instrumentDriver(): void {
           throw error;
         });
       }
-      if (op === 'find' || op === 'aggregate') {
+      if (op === 'find' || op === 'aggregate' || op === 'listIndexes') {
         return wrapCursor(result as object, label);
       }
       return result;
@@ -286,9 +291,10 @@ function synthesizeObjectFromBody(fn: (...args: unknown[]) => unknown): Record<s
 
 const models = createModels(mongoose);
 Object.assign(mongoose.models, models);
-const methods = createMethods(mongoose, {
-  removeAllPermissions: async () => undefined,
-});
+/** No dependency overrides: `createMethods` supplies a real
+ * `removeAllPermissions` that delegates to `deleteAclEntries`, so the driven
+ * deletion cascades exercise their ACL database operations. */
+const methods = createMethods(mongoose);
 type SweepFn = (...args: unknown[]) => unknown;
 /** Every AllMethods member is a function; the per-entry conversion is the
  * variadic-unknown view the sweep needs to invoke them generically. */
@@ -314,7 +320,14 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
       if (process.env.DOCUMENTDB_TLS_ALLOW_INVALID_HOSTNAMES === 'true') {
         options.tlsAllowInvalidHostnames = true;
       }
-      await mongoose.connect(DOCUMENTDB_URI, options);
+      /** A run-scoped database: the sweep writes into real model collections
+       * and drops its database afterwards, and the sibling live suites share
+       * the URI — dropping THEIR database mid-run would make their results
+       * nondeterministic. */
+      await mongoose.connect(DOCUMENTDB_URI, {
+        ...options,
+        dbName: `librechat_sweep_${runId}`,
+      });
     }
     instrumentDriver();
   }, 120_000);
@@ -369,12 +382,17 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
               verdict.outcome = 'timeout';
               break;
             }
-            await Promise.race([
-              Promise.resolve(fn(...callArgs)),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('sweep-timeout')), remaining),
-              ),
-            ]);
+            let raceTimer: NodeJS.Timeout | undefined;
+            try {
+              await Promise.race([
+                Promise.resolve(fn(...callArgs)),
+                new Promise((_, reject) => {
+                  raceTimer = setTimeout(() => reject(new Error('sweep-timeout')), remaining);
+                }),
+              ]);
+            } finally {
+              clearTimeout(raceTimer);
+            }
             verdict.detail = undefined;
             break;
           } catch (error) {
