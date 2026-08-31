@@ -561,7 +561,19 @@ const initializeClient = async ({
       }
 
       if (pendingUpdates.length > 0) {
-        await Promise.allSettled(pendingUpdates.map((update) => db.updateFile(update)));
+        /* A rejected update leaves the DB record unprovisioned while the queue is
+         * cleared, so the next turn re-provisions the same file; surface it. */
+        const updateResults = await Promise.allSettled(
+          pendingUpdates.map((update) => db.updateFile(update)),
+        );
+        for (const result of updateResults) {
+          if (result.status === 'rejected') {
+            logger.error(
+              '[provisionFiles] Failed to persist provisioning result; file will re-provision next turn',
+              result.reason,
+            );
+          }
+        }
       }
     },
   };

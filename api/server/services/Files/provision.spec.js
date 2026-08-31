@@ -94,6 +94,24 @@ describe('checkSessionsAlive', () => {
     expect(alive.has('f1')).toBe(true);
   });
 
+  it('preserves refs when the liveness probe itself fails', async () => {
+    getCodeApiAuthHeaders.mockResolvedValue({});
+    __codeAxios.mockRejectedValue(new Error('ETIMEDOUT'));
+
+    const alive = await checkSessionsAlive({ files: [staleFile('f3')], apiKey: 'k' });
+
+    expect(alive.has('f3')).toBe(true);
+  });
+
+  it('marks a file expired when the probe succeeds without it', async () => {
+    getCodeApiAuthHeaders.mockResolvedValue({});
+    __codeAxios.mockResolvedValue({ data: [{ fileId: 'someone-else' }] });
+
+    const alive = await checkSessionsAlive({ files: [staleFile('f4')], apiKey: 'k' });
+
+    expect(alive.has('f4')).toBe(false);
+  });
+
   it('sends the legacy X-API-Key alongside bearer minting when configured', async () => {
     getCodeApiAuthHeaders.mockResolvedValue({});
     __codeAxios.mockResolvedValue({ data: [] });
