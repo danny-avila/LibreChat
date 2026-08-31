@@ -155,6 +155,7 @@ function parseQueuedTurnAdmissionSource(raw: unknown): AgentContinuationAdmissio
   const claimBy = 'claimBy' in raw ? raw.claimBy : undefined;
   const effectivePredecessorCreatedAt =
     'effectivePredecessorCreatedAt' in raw ? raw.effectivePredecessorCreatedAt : undefined;
+  const lineagePredecessorId = 'lineagePredecessorId' in raw ? raw.lineagePredecessorId : undefined;
   if (
     typeof sourceId !== 'string' ||
     sourceId.length === 0 ||
@@ -168,7 +169,11 @@ function parseQueuedTurnAdmissionSource(raw: unknown): AgentContinuationAdmissio
     (effectivePredecessorCreatedAt != null &&
       (typeof effectivePredecessorCreatedAt !== 'number' ||
         !Number.isSafeInteger(effectivePredecessorCreatedAt) ||
-        effectivePredecessorCreatedAt < 0))
+        effectivePredecessorCreatedAt < 0)) ||
+    (lineagePredecessorId != null &&
+      (typeof lineagePredecessorId !== 'string' ||
+        lineagePredecessorId.length === 0 ||
+        lineagePredecessorId.length > 128))
   ) {
     throw new TypeError('Agent queued turn admission source is invalid');
   }
@@ -180,6 +185,7 @@ function parseQueuedTurnAdmissionSource(raw: unknown): AgentContinuationAdmissio
     ...(typeof effectivePredecessorCreatedAt === 'number' && {
       effectivePredecessorCreatedAt,
     }),
+    ...(typeof lineagePredecessorId === 'string' && { lineagePredecessorId }),
   };
 }
 
@@ -211,6 +217,9 @@ async function settleAgentQueuedTurnExecutionAdmission(
     generationCreatedAt: input.generationCreatedAt,
     ...(source.effectivePredecessorCreatedAt != null && {
       effectivePredecessorCreatedAt: source.effectivePredecessorCreatedAt,
+    }),
+    ...(source.lineagePredecessorId != null && {
+      lineagePredecessorId: source.lineagePredecessorId,
     }),
     settledAt: new Date(),
   });
@@ -245,6 +254,9 @@ async function verifyAgentQueuedTurnExecutionAdmission(
     generationCreatedAt: input.generationCreatedAt,
     ...(source.effectivePredecessorCreatedAt != null && {
       effectivePredecessorCreatedAt: source.effectivePredecessorCreatedAt,
+    }),
+    ...(source.lineagePredecessorId != null && {
+      lineagePredecessorId: source.lineagePredecessorId,
     }),
   });
   if (!confirmed) {
@@ -620,6 +632,7 @@ function createAgentQueuedTurnResolver({
       return { status: 'settled' };
     }
     const effectivePredecessorCreatedAt = admission.turn.admissionEffectivePredecessorCreatedAt;
+    const lineagePredecessorId = admission.turn.admissionLineagePredecessorId;
 
     return {
       status: 'ready',
@@ -637,6 +650,7 @@ function createAgentQueuedTurnResolver({
         claimId: claim.claimId,
         claimBy: claim.claimBy,
         ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
+        ...(lineagePredecessorId != null && { lineagePredecessorId }),
       },
       releaseOnDefiniteFailure: async (error) => {
         if (
@@ -671,6 +685,7 @@ function createAgentQueuedTurnResolver({
             generationCreatedAt: result.generationCreatedAt,
           }),
           ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
+          ...(lineagePredecessorId != null && { lineagePredecessorId }),
           settledAt: new Date(now()),
         });
         if (settled.outcome === 'conflict') {

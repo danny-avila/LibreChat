@@ -431,6 +431,45 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({ outcome: 'acquired' });
   });
 
+  it('keeps one durable admission owner after the lane-writer lease is stolen', async () => {
+    const normal = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'durable-owner-normal' }),
+    );
+    await expect(
+      methods.claimNextAgentQueuedTurn(
+        claimInput(normal.turn.queuedTurnId, {
+          claimId: 'durable-owner',
+          leaseUntil: new Date(START.getTime() + 1),
+        }),
+      ),
+    ).resolves.toMatchObject({ outcome: 'acquired' });
+    const priority = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'durable-owner-priority', priority: true }),
+    );
+
+    await Sequence.updateOne(
+      { user, tenantId: 'tenant-1', conversationId: 'conversation-1' },
+      {
+        $set: {
+          writerId: 'stolen-writer',
+          writerUntil: new Date(START.getTime() + 60_000),
+        },
+      },
+    );
+    const otherReplica = createAgentQueuedTurnMethods(mongoose);
+    await expect(
+      otherReplica.claimNextAgentQueuedTurn(
+        claimInput(priority.turn.queuedTurnId, {
+          claimId: 'priority-after-stolen-writer',
+          claimBy: 'worker-2',
+          now: new Date(START.getTime() + 2),
+          leaseUntil: LATER,
+        }),
+      ),
+    ).resolves.toEqual({ outcome: 'blocked', claim: null });
+    await expect(Turn.countDocuments({ admissionSlot: true })).resolves.toBe(1);
+  });
+
   it('reclaims an expired exact lease but never replays a different claim identity', async () => {
     const queued = await methods.enqueueAgentQueuedTurn(enqueueInput());
     const first = await methods.claimNextAgentQueuedTurn(
@@ -706,6 +745,7 @@ describe('agent queued turn methods', () => {
       generationId: 'generation-1',
       generationCreatedAt: 84,
       effectivePredecessorCreatedAt: 83,
+      lineagePredecessorId: 'root',
       settledAt: START,
     };
     await expect(
@@ -866,6 +906,27 @@ describe('agent queued turn methods', () => {
       admissionId: 'delivery-ambiguous-admission',
       startedAt: START,
     });
+    await Turn.updateOne(
+      { _id: queued.turn.queuedTurnId },
+      { $unset: { admissionLineagePredecessorId: 1 } },
+    );
+    const incompleteEvidence = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'ambiguous-admission-evidence' }),
+    );
+    await Turn.updateOne(
+      { _id: incompleteEvidence.turn.queuedTurnId },
+      {
+        $set: {
+          status: 'admitted',
+          terminalReceipt: {
+            outcome: 'admitted',
+            settledAt: START,
+            lineagePredecessorId: 'root',
+          },
+        },
+        $unset: { activeSlot: 1 },
+      },
+    );
 
     await expect(
       methods.claimNextAgentQueuedTurn(
@@ -916,6 +977,22 @@ describe('agent queued turn methods', () => {
         terminalReceipt: { failure: { code: 'ADMISSION_INDETERMINATE' } },
       },
     });
+    const priority = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'priority-behind-indeterminate', priority: true }),
+    );
+    await expect(
+      methods.claimNextAgentQueuedTurn(
+        claimInput(priority.turn.queuedTurnId, {
+          claimId: 'priority-behind-indeterminate',
+          claimBy: 'worker-2',
+          now: LATER,
+          leaseUntil: new Date(LATER.getTime() + 60_000),
+        }),
+      ),
+    ).resolves.toEqual({ outcome: 'blocked', claim: null });
+    await expect(Turn.findOne({ _id: queued.turn.queuedTurnId }).lean()).resolves.toMatchObject({
+      admissionSlot: true,
+    });
     await expect(
       methods.cancelAgentQueuedTurn({
         user,
@@ -939,6 +1016,62 @@ describe('agent queued turn methods', () => {
         targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-1' }],
       }),
     ).rejects.toThrow('admission must settle');
+  });
+
+  it('reconciles a root admission through explicit lineage without a timestamp boundary', async () => {
+    const queued = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'root-lineage-reconciliation' }),
+    );
+    const deliveryKey = 'root-lineage-delivery';
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey,
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: queued.turn.queuedTurnId,
+      deliveryKey,
+      scheduledAt: START,
+    });
+    const queuedClaim = claimInput(queued.turn.queuedTurnId, { claimId: deliveryKey });
+    await methods.claimNextAgentQueuedTurn(queuedClaim);
+    await expect(
+      methods.beginAgentQueuedTurnAdmission({
+        ...queuedClaim,
+        admissionId: deliveryKey,
+        startedAt: START,
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'started',
+      turn: { admissionLineagePredecessorId: 'root' },
+    });
+    await expect(
+      methods.deadLetterAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey,
+        settledAt: LATER,
+        failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'admission result unavailable' },
+        admissionEvidence: { generationId: 'root-generation', generationCreatedAt: 42 },
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'admission_reconciled',
+      turn: {
+        status: 'admitted',
+        terminalReceipt: {
+          generationId: 'root-generation',
+          generationCreatedAt: 42,
+          lineagePredecessorId: 'root',
+        },
+      },
+    });
   });
 
   it('reconstructs a pre-upgrade chained boundary during exact-evidence reconciliation', async () => {
@@ -982,6 +1115,7 @@ describe('agent queued turn methods', () => {
       generationId: 'generation-predecessor',
       generationCreatedAt: 41,
       effectivePredecessorCreatedAt: 40,
+      lineagePredecessorId: 'root',
       settledAt: START,
     });
     await methods.reserveAgentQueuedTurnDelivery({
@@ -1226,6 +1360,7 @@ describe('agent queued turn methods', () => {
         admissionMode: 'ordinary',
         generationId: 'generation-late-proof',
         generationCreatedAt: 44,
+        lineagePredecessorId: 'root',
         settledAt: new Date(claimNow.getTime() + 1),
       }),
     ).resolves.toMatchObject({ outcome: 'admitted', turn: { status: 'admitted' } });
@@ -1268,6 +1403,7 @@ describe('agent queued turn methods', () => {
       admissionMode: 'ordinary',
       generationCreatedAt: 11,
       effectivePredecessorCreatedAt: 10,
+      lineagePredecessorId: 'root',
       settledAt: START,
     });
 
@@ -1279,7 +1415,10 @@ describe('agent queued turn methods', () => {
         sequence: sameRoot.turn.sequence,
         expectedPredecessorCreatedAt: 10,
       }),
-    ).resolves.toBe(11);
+    ).resolves.toEqual({
+      effectivePredecessorCreatedAt: 11,
+      lineagePredecessorId: first.turn.queuedTurnId,
+    });
     await expect(
       methods.getEffectiveAgentQueuedTurnPredecessor({
         user,
@@ -1288,7 +1427,10 @@ describe('agent queued turn methods', () => {
         sequence: laterRoot.turn.sequence,
         expectedPredecessorCreatedAt: 20,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({
+      effectivePredecessorCreatedAt: 20,
+      lineagePredecessorId: 'root',
+    });
 
     await methods.reserveAgentQueuedTurnDelivery({
       user,
@@ -1320,6 +1462,7 @@ describe('agent queued turn methods', () => {
       admissionMode: 'ordinary',
       generationCreatedAt: 12,
       effectivePredecessorCreatedAt: 11,
+      lineagePredecessorId: first.turn.queuedTurnId,
       settledAt: START,
     });
     await expect(
@@ -1331,6 +1474,143 @@ describe('agent queued turn methods', () => {
       }),
     ).resolves.toMatchObject({
       terminalReceipt: { effectivePredecessorCreatedAt: 11 },
+    });
+  });
+
+  it('uses queued-turn identity when consecutive generations share a timestamp', async () => {
+    const first = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'same-timestamp-first', expectedPredecessorCreatedAt: 10 }),
+    );
+    const second = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'same-timestamp-second', expectedPredecessorCreatedAt: 10 }),
+    );
+    const firstDelivery = 'same-timestamp-first-delivery';
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.turn.queuedTurnId,
+      deliveryKey: firstDelivery,
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.turn.queuedTurnId,
+      deliveryKey: firstDelivery,
+      scheduledAt: START,
+    });
+    const firstClaim = claimInput(first.turn.queuedTurnId, { claimId: firstDelivery });
+    await methods.claimNextAgentQueuedTurn(firstClaim);
+    await methods.beginAgentQueuedTurnAdmission({
+      ...firstClaim,
+      admissionId: firstDelivery,
+      startedAt: START,
+    });
+    await methods.markAgentQueuedTurnAdmitted({
+      ...firstClaim,
+      admissionId: firstDelivery,
+      admissionMode: 'ordinary',
+      generationCreatedAt: 10,
+      effectivePredecessorCreatedAt: 10,
+      lineagePredecessorId: 'root',
+      settledAt: START,
+    });
+
+    const secondDelivery = 'same-timestamp-second-delivery';
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: second.turn.queuedTurnId,
+      deliveryKey: secondDelivery,
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: second.turn.queuedTurnId,
+      deliveryKey: secondDelivery,
+      scheduledAt: LATER,
+    });
+    const secondClaim = claimInput(second.turn.queuedTurnId, {
+      claimId: secondDelivery,
+      now: LATER,
+      leaseUntil: new Date(LATER.getTime() + 60_000),
+    });
+    await methods.claimNextAgentQueuedTurn(secondClaim);
+    await expect(
+      methods.beginAgentQueuedTurnAdmission({
+        ...secondClaim,
+        admissionId: secondDelivery,
+        startedAt: LATER,
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'started',
+      turn: {
+        admissionEffectivePredecessorCreatedAt: 10,
+        admissionLineagePredecessorId: first.turn.queuedTurnId,
+      },
+    });
+  });
+
+  it('fails closed when an admitted predecessor lacks generation evidence', async () => {
+    const incomplete = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'incomplete-predecessor', expectedPredecessorCreatedAt: 10 }),
+    );
+    const target = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({
+        clientRequestId: 'after-incomplete-predecessor',
+        expectedPredecessorCreatedAt: 10,
+      }),
+    );
+    await Turn.updateOne(
+      { _id: incomplete.turn.queuedTurnId },
+      {
+        $set: {
+          status: 'admitted',
+          terminalReceipt: {
+            outcome: 'admitted',
+            settledAt: START,
+            effectivePredecessorCreatedAt: 10,
+            lineagePredecessorId: 'root',
+          },
+        },
+        $unset: { activeSlot: 1 },
+      },
+    );
+    const deliveryKey = 'after-incomplete-delivery';
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: target.turn.queuedTurnId,
+      deliveryKey,
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: target.turn.queuedTurnId,
+      deliveryKey,
+      scheduledAt: START,
+    });
+    const targetClaim = claimInput(target.turn.queuedTurnId, { claimId: deliveryKey });
+    await methods.claimNextAgentQueuedTurn(targetClaim);
+    await expect(
+      methods.beginAgentQueuedTurnAdmission({
+        ...targetClaim,
+        admissionId: deliveryKey,
+        startedAt: START,
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'order_unavailable',
+      turn: {
+        status: 'dead',
+        terminalReceipt: {
+          failure: { code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE' },
+        },
+      },
     });
   });
 
@@ -1378,12 +1658,18 @@ describe('agent queued turn methods', () => {
       admissionMode: 'ordinary',
       generationCreatedAt: 11,
       effectivePredecessorCreatedAt: 10,
+      lineagePredecessorId: 'root',
       settledAt: START,
     });
 
     await Turn.updateOne(
       { _id: priority.turn.queuedTurnId },
-      { $unset: { 'terminalReceipt.effectivePredecessorCreatedAt': 1 } },
+      {
+        $unset: {
+          'terminalReceipt.effectivePredecessorCreatedAt': 1,
+          'terminalReceipt.lineagePredecessorId': 1,
+        },
+      },
     );
     await expect(
       methods.getEffectiveAgentQueuedTurnPredecessor({
@@ -1394,10 +1680,18 @@ describe('agent queued turn methods', () => {
         expectedPredecessorCreatedAt: 10,
         allowLegacyPredecessorInference: true,
       }),
-    ).resolves.toBe(11);
+    ).resolves.toEqual({
+      effectivePredecessorCreatedAt: 11,
+      lineagePredecessorId: priority.turn.queuedTurnId,
+    });
     await Turn.updateOne(
       { _id: priority.turn.queuedTurnId },
-      { $set: { 'terminalReceipt.effectivePredecessorCreatedAt': 10 } },
+      {
+        $set: {
+          'terminalReceipt.effectivePredecessorCreatedAt': 10,
+          'terminalReceipt.lineagePredecessorId': 'root',
+        },
+      },
     );
 
     const normalDelivery = 'admission-priority-normal';
@@ -1431,6 +1725,7 @@ describe('agent queued turn methods', () => {
       admissionMode: 'ordinary',
       generationCreatedAt: 12,
       effectivePredecessorCreatedAt: 11,
+      lineagePredecessorId: priority.turn.queuedTurnId,
       settledAt: LATER,
     });
     await Turn.updateOne(
@@ -1451,7 +1746,12 @@ describe('agent queued turn methods', () => {
 
     await Turn.updateMany(
       { _id: { $in: [priority.turn.queuedTurnId, normal.turn.queuedTurnId] } },
-      { $unset: { 'terminalReceipt.effectivePredecessorCreatedAt': 1 } },
+      {
+        $unset: {
+          'terminalReceipt.effectivePredecessorCreatedAt': 1,
+          'terminalReceipt.lineagePredecessorId': 1,
+        },
+      },
     );
     const ambiguous = await methods.enqueueAgentQueuedTurn(
       enqueueInput({ clientRequestId: 'priority-ambiguous', expectedPredecessorCreatedAt: 10 }),
@@ -1598,6 +1898,7 @@ describe('agent queued turn methods', () => {
             settledAt: LATER,
             generationCreatedAt: 11,
             effectivePredecessorCreatedAt: 10,
+            lineagePredecessorId: target.turn.queuedTurnId,
           },
         },
         $unset: { activeSlot: 1 },
@@ -1917,6 +2218,7 @@ describe('agent queued turn methods', () => {
       admissionId: 'delivery-admission-during-delete',
       admissionMode: 'ordinary',
       generationCreatedAt: 42,
+      lineagePredecessorId: 'root',
       settledAt: LATER,
     });
     await expect(

@@ -51,6 +51,7 @@ function claim(): AgentQueuedTurnClaim {
     clientRequestId: 'client-1',
     fingerprint: 'fingerprint-1',
     sequence: 1,
+    admissionSlot: true,
     status: 'claimed',
     priority: false,
     text: 'queued words',
@@ -107,7 +108,7 @@ function resolverMethods() {
     getEffectiveAgentQueuedTurnPredecessor: jest.fn(
       async (
         ..._args: Parameters<AgentQueuedTurnMethods['getEffectiveAgentQueuedTurnPredecessor']>
-      ): Promise<number | null | undefined> => undefined,
+      ) => null,
     ),
     markAgentQueuedTurnAdmitted: jest.fn(async () => ({
       outcome: 'admitted' as const,

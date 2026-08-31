@@ -35,6 +35,7 @@ const terminalReceiptSchema = new Schema(
     generationId: { type: String, maxlength: 256 },
     generationCreatedAt: { type: Number, min: 0 },
     effectivePredecessorCreatedAt: { type: Number, min: 0 },
+    lineagePredecessorId: { type: String, maxlength: 128 },
     failure: { type: failureSchema },
   },
   { _id: false },
@@ -58,6 +59,7 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     sequence: { type: Number, min: 1 },
     reservationWriterId: { type: String, maxlength: 128 },
     activeSlot: { type: Number, min: 0, max: 99 },
+    admissionSlot: { type: Boolean },
     status: {
       type: String,
       enum: ['reserving', 'queued', 'claimed', 'admitted', 'cancelled', 'dead'],
@@ -86,6 +88,7 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     admissionStartedAt: { type: Date },
     admissionId: { type: String, maxlength: 128 },
     admissionEffectivePredecessorCreatedAt: { type: Number, min: 0 },
+    admissionLineagePredecessorId: { type: String, maxlength: 128 },
     admissionProtocolVersion: { type: Number, enum: [2] },
     reconciliationAvailableAt: { type: Date },
     reconciliationClaimId: { type: String, maxlength: 128 },
@@ -115,6 +118,14 @@ queuedTurnSchema.index(
     name: 'agent_queued_turn_active_capacity',
     unique: true,
     partialFilterExpression: { activeSlot: { $exists: true } },
+  },
+);
+queuedTurnSchema.index(
+  { tenantId: 1, user: 1, conversationId: 1, laneId: 1, admissionSlot: 1 },
+  {
+    name: 'agent_queued_turn_admission_slot',
+    unique: true,
+    partialFilterExpression: { admissionSlot: true },
   },
 );
 queuedTurnSchema.index(

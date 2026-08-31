@@ -24,6 +24,7 @@ const LANE_WRITER_LEASE_MS = 30_000;
 const LANE_WRITER_RETRY_MS = 5;
 const LANE_WRITER_RETRIES = LANE_WRITER_LEASE_MS / LANE_WRITER_RETRY_MS;
 const RETIRED_LANE_RETENTION_MS = 24 * 60 * 60_000;
+const ROOT_LINEAGE_PREDECESSOR_ID = 'root';
 
 interface DuplicateKeyError {
   code?: number;
@@ -152,6 +153,11 @@ export interface AgentQueuedTurnAdmissionEvidence {
   generationCreatedAt: number;
 }
 
+export interface AgentQueuedTurnPredecessor {
+  lineagePredecessorId: string;
+  effectivePredecessorCreatedAt?: number;
+}
+
 export interface ClaimAgentQueuedTurnReconciliationInput {
   claimId: string;
   claimBy: string;
@@ -241,6 +247,7 @@ export interface AgentQueuedTurnMethods {
       generationId?: string;
       generationCreatedAt?: number;
       effectivePredecessorCreatedAt?: number;
+      lineagePredecessorId?: string;
       settledAt: Date;
     },
   ) => Promise<AdmitAgentQueuedTurnResult>;
@@ -251,6 +258,7 @@ export interface AgentQueuedTurnMethods {
       generationId: string;
       generationCreatedAt: number;
       effectivePredecessorCreatedAt?: number;
+      lineagePredecessorId?: string;
     },
   ) => Promise<boolean>;
   deadLetterAgentQueuedTurn: (
@@ -269,9 +277,8 @@ export interface AgentQueuedTurnMethods {
       sequence: number;
       expectedPredecessorCreatedAt?: number;
       allowLegacyPredecessorInference?: boolean;
-      targetGenerationCreatedAt?: number;
     },
-  ) => Promise<number | null | undefined>;
+  ) => Promise<AgentQueuedTurnPredecessor | null>;
   drainAgentQueuedTurns: (
     input: AgentQueuedTurnOwnerScope & {
       conversationId?: string;
@@ -543,6 +550,7 @@ function toRecord(turn: IAgentQueuedTurn): AgentQueuedTurnRecord {
     ...(turn.laneId != null && { laneId: turn.laneId }),
     sequence: turn.sequence,
     ...(turn.activeSlot != null && { activeSlot: turn.activeSlot }),
+    ...(turn.admissionSlot === true && { admissionSlot: true }),
     status: turn.status,
     priority: turn.priority,
     text: turn.text,
@@ -564,6 +572,9 @@ function toRecord(turn: IAgentQueuedTurn): AgentQueuedTurnRecord {
     ...(turn.admissionStartedAt != null && { admissionStartedAt: turn.admissionStartedAt }),
     ...(turn.admissionEffectivePredecessorCreatedAt != null && {
       admissionEffectivePredecessorCreatedAt: turn.admissionEffectivePredecessorCreatedAt,
+    }),
+    ...(turn.admissionLineagePredecessorId != null && {
+      admissionLineagePredecessorId: turn.admissionLineagePredecessorId,
     }),
     ...(turn.admissionProtocolVersion != null && {
       admissionProtocolVersion: turn.admissionProtocolVersion,
@@ -625,6 +636,7 @@ function requireClaim(turn: IAgentQueuedTurn | null): AgentQueuedTurnClaim | nul
   if (
     turn == null ||
     turn.status !== 'claimed' ||
+    turn.admissionSlot !== true ||
     turn.claimId == null ||
     turn.claimBy == null ||
     turn.claimUntil == null
@@ -1013,39 +1025,47 @@ export function createAgentQueuedTurnMethods(
       turn._id == null ||
       turn.sequence == null ||
       turn.status !== 'admitted' ||
-      turn.terminalReceipt?.outcome !== 'admitted' ||
-      turn.terminalReceipt.effectivePredecessorCreatedAt != null
+      turn.terminalReceipt?.outcome !== 'admitted'
     ) {
       return turn;
     }
     const rootPredecessorCreatedAt = normalizePredecessor(turn.expectedPredecessorCreatedAt);
-    if (rootPredecessorCreatedAt == null) {
+    if (
+      turn.terminalReceipt.lineagePredecessorId != null &&
+      (rootPredecessorCreatedAt == null ||
+        turn.terminalReceipt.effectivePredecessorCreatedAt != null)
+    ) {
       return turn;
     }
-    const resolvedPredecessorCreatedAt = await getEffectiveAgentQueuedTurnPredecessor({
+    const resolvedPredecessor = await getEffectiveAgentQueuedTurnPredecessor({
       user: turn.user,
       ...(turn.tenantId != null && { tenantId: turn.tenantId }),
       conversationId: turn.conversationId,
       sequence: turn.sequence,
-      expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
-      ...(turn.terminalReceipt.generationCreatedAt != null && {
-        targetGenerationCreatedAt: turn.terminalReceipt.generationCreatedAt,
+      ...(rootPredecessorCreatedAt != null && {
+        expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
       }),
     });
-    if (resolvedPredecessorCreatedAt === null) {
+    if (resolvedPredecessor === null) {
       return turn;
     }
-    const effectivePredecessorCreatedAt = resolvedPredecessorCreatedAt ?? rootPredecessorCreatedAt;
+    const effectivePredecessorCreatedAt = resolvedPredecessor.effectivePredecessorCreatedAt;
     await Turn().updateOne(
       {
         _id: turn._id,
         status: 'admitted',
         'terminalReceipt.outcome': 'admitted',
-        'terminalReceipt.effectivePredecessorCreatedAt': { $exists: false },
+        $or: [
+          { 'terminalReceipt.effectivePredecessorCreatedAt': { $exists: false } },
+          { 'terminalReceipt.lineagePredecessorId': { $exists: false } },
+        ],
       },
       {
         $set: {
-          'terminalReceipt.effectivePredecessorCreatedAt': effectivePredecessorCreatedAt,
+          ...(effectivePredecessorCreatedAt != null && {
+            'terminalReceipt.effectivePredecessorCreatedAt': effectivePredecessorCreatedAt,
+          }),
+          'terminalReceipt.lineagePredecessorId': resolvedPredecessor.lineagePredecessorId,
         },
       },
     );
@@ -1053,7 +1073,8 @@ export function createAgentQueuedTurnMethods(
       ...turn,
       terminalReceipt: {
         ...turn.terminalReceipt,
-        effectivePredecessorCreatedAt,
+        ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
+        lineagePredecessorId: resolvedPredecessor.lineagePredecessorId,
       },
     };
   }
@@ -1144,7 +1165,13 @@ export function createAgentQueuedTurnMethods(
             status: 'cancelled',
             terminalReceipt: { outcome: 'cancelled', settledAt },
           },
-          $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+          $unset: {
+            activeSlot: 1,
+            admissionSlot: 1,
+            claimId: 1,
+            claimBy: 1,
+            claimUntil: 1,
+          },
         },
         { new: true },
       )
@@ -1463,130 +1490,159 @@ export function createAgentQueuedTurnMethods(
       throw new TypeError('Agent queued turn lease must end after claim time');
     }
     const scope = conversationScope(input);
-    return serializeLocalLane(input, async () => {
-      let writer: AgentQueuedTurnLaneWriter;
-      try {
-        writer = await acquireLaneWriter(input, false);
-      } catch (error) {
-        if (
-          error instanceof AgentQueuedTurnLaneRetiredError ||
-          error instanceof AgentQueuedTurnLaneMissingError
-        ) {
-          return { outcome: 'missing', claim: null };
-        }
-        throw error;
-      }
-      try {
-        const laneScope = { ...scope, laneId: writer.laneId };
-        const serializedReplay = await Turn()
-          .findOne({
-            ...laneScope,
-            _id: input.queuedTurnId,
-            status: 'claimed',
-            claimId,
-            claimBy,
-            claimUntil: { $gt: input.now },
-          })
-          .lean<IAgentQueuedTurn>();
-        const serializedClaim = requireClaim(serializedReplay);
-        if (serializedClaim != null) {
-          return { outcome: 'replayed', claim: serializedClaim };
-        }
-
-        const expected = await Turn()
-          .findOne({ ...laneScope, _id: input.queuedTurnId })
-          .lean<IAgentQueuedTurn>();
-        if (expected == null || (expected.status !== 'queued' && expected.status !== 'claimed')) {
-          return { outcome: 'missing', claim: null };
-        }
-
-        const unfinishedReservation = await Turn().exists({
-          ...laneScope,
-          status: 'reserving',
-        });
-        if (unfinishedReservation != null) {
-          return { outcome: 'blocked', claim: null };
-        }
-
-        const competingClaim = await Turn().exists({
-          ...laneScope,
-          _id: { $ne: input.queuedTurnId },
-          status: 'claimed',
-        });
-        if (competingClaim != null) {
-          return { outcome: 'blocked', claim: null };
-        }
-
-        const head =
-          expected.status === 'claimed'
-            ? expected
-            : await Turn()
-                .findOne({ ...laneScope, status: { $in: ['queued', 'dead'] } })
-                .sort({ priority: -1, sequence: 1 })
-                .lean<IAgentQueuedTurn>();
-        if (head == null) {
-          return { outcome: 'blocked', claim: null };
-        }
-        if (
-          head._id?.toString() !== input.queuedTurnId ||
-          head.availableAt.getTime() > input.now.getTime() ||
-          (head.status === 'claimed' &&
-            head.claimUntil != null &&
-            head.claimUntil.getTime() > input.now.getTime())
-        ) {
-          return { outcome: 'blocked', claim: null };
-        }
-
-        const turn = await Turn()
+    const expected = await Turn()
+      .findOne({ ...scope, _id: input.queuedTurnId })
+      .lean<IAgentQueuedTurn>();
+    if (
+      expected == null ||
+      expected.laneId == null ||
+      (expected.status !== 'queued' && expected.status !== 'claimed')
+    ) {
+      return { outcome: 'missing', claim: null };
+    }
+    const laneScope = { ...scope, laneId: expected.laneId };
+    const laneExists = await Sequence().exists({
+      _id: laneKey(input),
+      ...scope,
+      laneId: expected.laneId,
+      retiredAt: { $exists: false },
+    });
+    if (laneExists == null) {
+      return { outcome: 'missing', claim: null };
+    }
+    const competingReservation = await Turn().exists({
+      ...laneScope,
+      _id: { $ne: input.queuedTurnId },
+      $or: [
+        { admissionSlot: true },
+        // Pre-slot replicas and rows still expose their admission owner through
+        // the claimed status. Keep that legacy shell inside the same boundary.
+        { status: 'claimed' },
+        {
+          status: 'dead',
+          'terminalReceipt.outcome': 'dead',
+          'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+        },
+      ],
+    });
+    if (competingReservation != null) {
+      return { outcome: 'blocked', claim: null };
+    }
+    if (
+      expected.status === 'claimed' &&
+      expected.claimId === claimId &&
+      expected.claimBy === claimBy &&
+      expected.claimUntil != null &&
+      expected.claimUntil.getTime() > input.now.getTime()
+    ) {
+      if (expected.admissionSlot !== true) {
+        const migrated = await Turn()
           .findOneAndUpdate(
             {
               ...laneScope,
               _id: input.queuedTurnId,
-              availableAt: { $lte: input.now },
-              $or: [
-                { status: 'queued' },
-                {
-                  status: 'claimed',
-                  claimUntil: { $lte: input.now },
-                  admissionStartedAt: { $exists: false },
-                },
-              ],
+              status: 'claimed',
+              claimId,
+              claimBy,
+              admissionSlot: { $exists: false },
             },
-            {
-              $set: {
-                status: 'claimed',
-                claimId,
-                claimBy,
-                claimUntil: input.leaseUntil,
-              },
-              $inc: { attempts: 1 },
-              $unset: { terminalReceipt: 1 },
-            },
-            { new: true, sort: { priority: -1, sequence: 1 } },
+            { $set: { admissionSlot: true } },
+            { new: true },
           )
-          .lean<IAgentQueuedTurn>();
-        const acquired = requireClaim(turn);
-        if (acquired != null) {
-          return { outcome: 'acquired', claim: acquired };
-        }
-        const racedReplay = await Turn()
-          .findOne({
-            ...laneScope,
-            _id: input.queuedTurnId,
+          .lean<IAgentQueuedTurn>()
+          .catch((error: unknown) => {
+            if ((error as DuplicateKeyError).code === DUPLICATE_KEY) {
+              return null;
+            }
+            throw error;
+          });
+        const migratedClaim = requireClaim(migrated);
+        return migratedClaim == null
+          ? { outcome: 'blocked', claim: null }
+          : { outcome: 'replayed', claim: migratedClaim };
+      }
+      const replayedClaim = requireClaim(expected);
+      if (replayedClaim != null) {
+        return { outcome: 'replayed', claim: replayedClaim };
+      }
+    }
+
+    const unfinishedReservation = await Turn().exists({ ...laneScope, status: 'reserving' });
+    if (unfinishedReservation != null) {
+      return { outcome: 'blocked', claim: null };
+    }
+    const head =
+      expected.status === 'claimed'
+        ? expected
+        : await Turn()
+            .findOne({ ...laneScope, status: { $in: ['queued', 'dead'] } })
+            .sort({ priority: -1, sequence: 1 })
+            .lean<IAgentQueuedTurn>();
+    if (
+      head == null ||
+      head._id?.toString() !== input.queuedTurnId ||
+      head.availableAt.getTime() > input.now.getTime() ||
+      (head.status === 'claimed' &&
+        head.claimUntil != null &&
+        head.claimUntil.getTime() > input.now.getTime())
+    ) {
+      return { outcome: 'blocked', claim: null };
+    }
+
+    const turn = await Turn()
+      .findOneAndUpdate(
+        {
+          ...laneScope,
+          _id: input.queuedTurnId,
+          availableAt: { $lte: input.now },
+          $or: [
+            { status: 'queued', admissionSlot: { $exists: false } },
+            {
+              status: 'claimed',
+              claimUntil: { $lte: input.now },
+              admissionStartedAt: { $exists: false },
+            },
+          ],
+        },
+        {
+          $set: {
             status: 'claimed',
+            admissionSlot: true,
             claimId,
             claimBy,
-            claimUntil: { $gt: input.now },
-          })
-          .lean<IAgentQueuedTurn>();
-        const racedClaim = requireClaim(racedReplay);
-        return racedClaim == null
-          ? { outcome: 'blocked', claim: null }
-          : { outcome: 'replayed', claim: racedClaim };
-      } finally {
-        await releaseLaneWriter(input, writer.writerId);
-      }
-    });
+            claimUntil: input.leaseUntil,
+          },
+          $inc: { attempts: 1 },
+          $unset: { terminalReceipt: 1 },
+        },
+        { new: true, sort: { priority: -1, sequence: 1 } },
+      )
+      .lean<IAgentQueuedTurn>()
+      .catch((error: unknown) => {
+        if ((error as DuplicateKeyError).code === DUPLICATE_KEY) {
+          return null;
+        }
+        throw error;
+      });
+    const acquired = requireClaim(turn);
+    if (acquired != null) {
+      return { outcome: 'acquired', claim: acquired };
+    }
+    const racedReplay = await Turn()
+      .findOne({
+        ...laneScope,
+        _id: input.queuedTurnId,
+        status: 'claimed',
+        admissionSlot: true,
+        claimId,
+        claimBy,
+        claimUntil: { $gt: input.now },
+      })
+      .lean<IAgentQueuedTurn>();
+    const racedClaim = requireClaim(racedReplay);
+    return racedClaim == null
+      ? { outcome: 'blocked', claim: null }
+      : { outcome: 'replayed', claim: racedClaim };
   }
 
   async function releaseAgentQueuedTurn(
@@ -1615,8 +1671,12 @@ export function createAgentQueuedTurnMethods(
               claimId: 1,
               claimBy: 1,
               claimUntil: 1,
+              admissionSlot: 1,
               admissionId: 1,
               admissionStartedAt: 1,
+              admissionEffectivePredecessorCreatedAt: 1,
+              admissionLineagePredecessorId: 1,
+              admissionProtocolVersion: 1,
               terminalReceipt: 1,
             },
           }
@@ -1634,11 +1694,15 @@ export function createAgentQueuedTurnMethods(
             },
             $unset: {
               activeSlot: 1,
+              admissionSlot: 1,
               claimId: 1,
               claimBy: 1,
               claimUntil: 1,
               admissionId: 1,
               admissionStartedAt: 1,
+              admissionEffectivePredecessorCreatedAt: 1,
+              admissionLineagePredecessorId: 1,
+              admissionProtocolVersion: 1,
             },
           };
     const turn = await Turn()
@@ -1693,7 +1757,13 @@ export function createAgentQueuedTurnMethods(
                 },
               },
             },
-            $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+            $unset: {
+              activeSlot: 1,
+              admissionSlot: 1,
+              claimId: 1,
+              claimBy: 1,
+              claimUntil: 1,
+            },
           },
           { new: true },
         )
@@ -1731,6 +1801,7 @@ export function createAgentQueuedTurnMethods(
           current?.status === 'claimed' &&
           current.claimId === input.claimId &&
           current.claimBy === input.claimBy &&
+          current.admissionSlot === true &&
           current.deliveryKey === admissionId &&
           current.deliveryState === 'published' &&
           current.laneId === writer.laneId &&
@@ -1755,6 +1826,7 @@ export function createAgentQueuedTurnMethods(
           current?.status !== 'claimed' ||
           current.claimId !== input.claimId ||
           current.claimBy !== input.claimBy ||
+          current.admissionSlot !== true ||
           current.deliveryKey !== admissionId ||
           current.deliveryState !== 'published' ||
           current.laneId !== writer.laneId ||
@@ -1768,7 +1840,7 @@ export function createAgentQueuedTurnMethods(
         }
 
         const rootPredecessorCreatedAt = normalizePredecessor(current.expectedPredecessorCreatedAt);
-        const resolvedPredecessorCreatedAt = await getEffectiveAgentQueuedTurnPredecessor({
+        const resolvedPredecessor = await getEffectiveAgentQueuedTurnPredecessor({
           user: current.user,
           ...(current.tenantId != null && { tenantId: current.tenantId }),
           conversationId: current.conversationId,
@@ -1778,7 +1850,7 @@ export function createAgentQueuedTurnMethods(
           }),
           allowLegacyPredecessorInference: true,
         });
-        if (resolvedPredecessorCreatedAt === null) {
+        if (resolvedPredecessor === null) {
           const dead = await Turn()
             .findOneAndUpdate(
               {
@@ -1787,6 +1859,7 @@ export function createAgentQueuedTurnMethods(
                 status: 'claimed',
                 claimId: requireBoundedString(input.claimId, 128),
                 claimBy: requireBoundedString(input.claimBy, 256),
+                admissionSlot: true,
                 deliveryKey: admissionId,
                 deliveryState: 'published',
                 laneId: writer.laneId,
@@ -1805,7 +1878,13 @@ export function createAgentQueuedTurnMethods(
                     },
                   },
                 },
-                $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+                $unset: {
+                  activeSlot: 1,
+                  admissionSlot: 1,
+                  claimId: 1,
+                  claimBy: 1,
+                  claimUntil: 1,
+                },
               },
               { new: true },
             )
@@ -1821,8 +1900,7 @@ export function createAgentQueuedTurnMethods(
             turn: conflicted == null ? null : toRecord(conflicted),
           };
         }
-        const effectivePredecessorCreatedAt =
-          resolvedPredecessorCreatedAt ?? rootPredecessorCreatedAt;
+        const effectivePredecessorCreatedAt = resolvedPredecessor.effectivePredecessorCreatedAt;
         const turn = await Turn()
           .findOneAndUpdate(
             {
@@ -1831,6 +1909,7 @@ export function createAgentQueuedTurnMethods(
               status: 'claimed',
               claimId: requireBoundedString(input.claimId, 128),
               claimBy: requireBoundedString(input.claimBy, 256),
+              admissionSlot: true,
               deliveryKey: admissionId,
               deliveryState: 'published',
               laneId: writer.laneId,
@@ -1843,6 +1922,7 @@ export function createAgentQueuedTurnMethods(
                 ...(effectivePredecessorCreatedAt != null && {
                   admissionEffectivePredecessorCreatedAt: effectivePredecessorCreatedAt,
                 }),
+                admissionLineagePredecessorId: resolvedPredecessor.lineagePredecessorId,
                 ...(input.admissionProtocolVersion != null && {
                   admissionProtocolVersion: input.admissionProtocolVersion,
                 }),
@@ -1861,12 +1941,14 @@ export function createAgentQueuedTurnMethods(
           raced?.status === 'claimed' &&
           raced.claimId === input.claimId &&
           raced.claimBy === input.claimBy &&
+          raced.admissionSlot === true &&
           raced.deliveryKey === admissionId &&
           raced.deliveryState === 'published' &&
           raced.laneId === writer.laneId &&
           raced.admissionId === admissionId &&
           raced.admissionStartedAt != null &&
-          raced.admissionEffectivePredecessorCreatedAt === effectivePredecessorCreatedAt
+          raced.admissionEffectivePredecessorCreatedAt === effectivePredecessorCreatedAt &&
+          raced.admissionLineagePredecessorId === resolvedPredecessor.lineagePredecessorId
         ) {
           return { outcome: 'already_started', turn: toRecord(raced) };
         }
@@ -1887,6 +1969,7 @@ export function createAgentQueuedTurnMethods(
       generationId?: string;
       generationCreatedAt?: number;
       effectivePredecessorCreatedAt?: number;
+      lineagePredecessorId?: string;
       settledAt: Date;
     },
   ): Promise<AdmitAgentQueuedTurnResult> {
@@ -1894,6 +1977,7 @@ export function createAgentQueuedTurnMethods(
     const generationId = normalizeOptionalString(input.generationId, 256);
     const generationCreatedAt = normalizePredecessor(input.generationCreatedAt);
     const effectivePredecessorCreatedAt = normalizePredecessor(input.effectivePredecessorCreatedAt);
+    const lineagePredecessorId = normalizeOptionalString(input.lineagePredecessorId, 128);
     const turn = await Turn()
       .findOneAndUpdate(
         {
@@ -1903,9 +1987,13 @@ export function createAgentQueuedTurnMethods(
           deliveryState: 'published',
           admissionId,
           admissionStartedAt: { $exists: true },
+          admissionSlot: true,
           ...(effectivePredecessorCreatedAt != null
             ? { admissionEffectivePredecessorCreatedAt: effectivePredecessorCreatedAt }
             : { admissionEffectivePredecessorCreatedAt: { $exists: false } }),
+          ...(lineagePredecessorId != null
+            ? { admissionLineagePredecessorId: lineagePredecessorId }
+            : { admissionLineagePredecessorId: { $exists: false } }),
           $or: [
             {
               status: 'claimed',
@@ -1930,16 +2018,19 @@ export function createAgentQueuedTurnMethods(
               ...(generationId != null && { generationId }),
               ...(generationCreatedAt != null && { generationCreatedAt }),
               ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
+              ...(lineagePredecessorId != null && { lineagePredecessorId }),
             },
           },
           $unset: {
             activeSlot: 1,
+            admissionSlot: 1,
             claimId: 1,
             claimBy: 1,
             claimUntil: 1,
             admissionId: 1,
             admissionStartedAt: 1,
             admissionEffectivePredecessorCreatedAt: 1,
+            admissionLineagePredecessorId: 1,
             admissionProtocolVersion: 1,
             reconciliationAvailableAt: 1,
             reconciliationClaimId: 1,
@@ -1976,10 +2067,12 @@ export function createAgentQueuedTurnMethods(
       generationId: string;
       generationCreatedAt: number;
       effectivePredecessorCreatedAt?: number;
+      lineagePredecessorId?: string;
     },
   ): Promise<boolean> {
     const generationCreatedAt = normalizePredecessor(input.generationCreatedAt);
     const effectivePredecessorCreatedAt = normalizePredecessor(input.effectivePredecessorCreatedAt);
+    const lineagePredecessorId = normalizeOptionalString(input.lineagePredecessorId, 128);
     if (generationCreatedAt == null) {
       throw new TypeError('Agent queued turn admission generation is invalid');
     }
@@ -1994,6 +2087,9 @@ export function createAgentQueuedTurnMethods(
         'terminalReceipt.generationCreatedAt': generationCreatedAt,
         ...(effectivePredecessorCreatedAt != null && {
           'terminalReceipt.effectivePredecessorCreatedAt': effectivePredecessorCreatedAt,
+        }),
+        ...(lineagePredecessorId != null && {
+          'terminalReceipt.lineagePredecessorId': lineagePredecessorId,
         }),
       })) != null
     );
@@ -2030,16 +2126,21 @@ export function createAgentQueuedTurnMethods(
           sequence: 1,
           expectedPredecessorCreatedAt: 1,
           admissionEffectivePredecessorCreatedAt: 1,
+          admissionLineagePredecessorId: 1,
         })
         .lean<IAgentQueuedTurn>();
       let effectivePredecessorCreatedAt = normalizePredecessor(
         admission?.admissionEffectivePredecessorCreatedAt,
       );
-      if (effectivePredecessorCreatedAt == null && admission?.sequence != null) {
+      let lineagePredecessorId = normalizeOptionalString(
+        admission?.admissionLineagePredecessorId,
+        128,
+      );
+      if (admission?.sequence != null) {
         const rootPredecessorCreatedAt = normalizePredecessor(
           admission.expectedPredecessorCreatedAt,
         );
-        const resolvedPredecessorCreatedAt = await getEffectiveAgentQueuedTurnPredecessor({
+        const resolvedPredecessor = await getEffectiveAgentQueuedTurnPredecessor({
           user: input.user,
           ...(input.tenantId != null && { tenantId: input.tenantId }),
           conversationId: input.conversationId,
@@ -2048,15 +2149,23 @@ export function createAgentQueuedTurnMethods(
             expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
           }),
           allowLegacyPredecessorInference: true,
-          targetGenerationCreatedAt: generationCreatedAt,
         });
-        effectivePredecessorCreatedAt =
-          resolvedPredecessorCreatedAt === null
-            ? undefined
-            : (resolvedPredecessorCreatedAt ?? rootPredecessorCreatedAt);
+        const lineageConflict =
+          resolvedPredecessor === null ||
+          (lineagePredecessorId != null &&
+            lineagePredecessorId !== resolvedPredecessor.lineagePredecessorId) ||
+          (effectivePredecessorCreatedAt != null &&
+            effectivePredecessorCreatedAt !== resolvedPredecessor.effectivePredecessorCreatedAt);
+        if (lineageConflict) {
+          effectivePredecessorCreatedAt = undefined;
+          lineagePredecessorId = undefined;
+        } else {
+          effectivePredecessorCreatedAt = resolvedPredecessor.effectivePredecessorCreatedAt;
+          lineagePredecessorId = resolvedPredecessor.lineagePredecessorId;
+        }
       }
       const reconciled =
-        effectivePredecessorCreatedAt == null
+        lineagePredecessorId == null
           ? null
           : await Turn()
               .findOneAndUpdate(
@@ -2094,16 +2203,19 @@ export function createAgentQueuedTurnMethods(
                       ...(effectivePredecessorCreatedAt != null && {
                         effectivePredecessorCreatedAt,
                       }),
+                      lineagePredecessorId,
                     },
                   },
                   $unset: {
                     activeSlot: 1,
+                    admissionSlot: 1,
                     claimId: 1,
                     claimBy: 1,
                     claimUntil: 1,
                     admissionId: 1,
                     admissionStartedAt: 1,
                     admissionEffectivePredecessorCreatedAt: 1,
+                    admissionLineagePredecessorId: 1,
                     admissionProtocolVersion: 1,
                     reconciliationAvailableAt: 1,
                     reconciliationClaimId: 1,
@@ -2139,7 +2251,13 @@ export function createAgentQueuedTurnMethods(
               },
             },
           },
-          $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+          $unset: {
+            activeSlot: 1,
+            admissionSlot: 1,
+            claimId: 1,
+            claimBy: 1,
+            claimUntil: 1,
+          },
         },
         { new: true },
       )
@@ -2209,70 +2327,71 @@ export function createAgentQueuedTurnMethods(
       sequence: number;
       expectedPredecessorCreatedAt?: number;
       allowLegacyPredecessorInference?: boolean;
-      targetGenerationCreatedAt?: number;
     },
-  ): Promise<number | null | undefined> {
+  ): Promise<AgentQueuedTurnPredecessor | null> {
     if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0) {
       throw new TypeError('Agent queued turn sequence must be a positive integer');
     }
     const rootEpoch = normalizePredecessor(input.expectedPredecessorCreatedAt);
-    const targetGenerationCreatedAt = normalizePredecessor(input.targetGenerationCreatedAt);
-    if (rootEpoch == null) {
-      return undefined;
-    }
     const predecessors = await Turn()
       .find({
         ...conversationScope(input),
         sequence: { $ne: input.sequence },
-        expectedPredecessorCreatedAt: rootEpoch,
+        ...(rootEpoch == null
+          ? { expectedPredecessorCreatedAt: { $exists: false } }
+          : { expectedPredecessorCreatedAt: rootEpoch }),
         status: 'admitted',
         'terminalReceipt.outcome': 'admitted',
-        'terminalReceipt.generationCreatedAt': { $exists: true },
       })
       .select({ sequence: 1, terminalReceipt: 1 })
       .lean<IAgentQueuedTurn[]>();
-    /** Stored v2 edges define admission order without comparing clocks or
-     * enqueue sequence. A single legacy gap is inferable only while the
-     * caller still owns the lane head; every other incomplete/branched graph
-     * returns null so callers preserve explicit fail-closed evidence. */
-    const edges = new Map<number, number>();
-    const legacyOutputs: number[] = [];
+    /** Queued-turn identities define lineage; timestamps are payload evidence,
+     * never graph nodes. One legacy row may be inserted at the proven tail
+     * while the caller owns admission. Missing output evidence, branches, and
+     * disconnected rows remain fail-closed. */
+    const edges = new Map<string, { queuedTurnId: string; generationCreatedAt: number }>();
+    const legacyRows: { queuedTurnId: string; generationCreatedAt: number }[] = [];
     for (const turn of predecessors) {
+      const queuedTurnId = turn._id?.toString();
       const generationCreatedAt = normalizePredecessor(turn.terminalReceipt?.generationCreatedAt);
-      if (generationCreatedAt == null) {
-        continue;
-      }
-      const effectivePredecessorCreatedAt = normalizePredecessor(
-        turn.terminalReceipt?.effectivePredecessorCreatedAt,
-      );
-      if (effectivePredecessorCreatedAt == null) {
-        legacyOutputs.push(generationCreatedAt);
-        continue;
-      }
-      if (edges.has(effectivePredecessorCreatedAt)) {
+      if (queuedTurnId == null || generationCreatedAt == null) {
         return null;
       }
-      edges.set(effectivePredecessorCreatedAt, generationCreatedAt);
+      const lineagePredecessorId = normalizeOptionalString(
+        turn.terminalReceipt?.lineagePredecessorId,
+        128,
+      );
+      if (lineagePredecessorId == null) {
+        legacyRows.push({ queuedTurnId, generationCreatedAt });
+        continue;
+      }
+      if (edges.has(lineagePredecessorId)) {
+        return null;
+      }
+      edges.set(lineagePredecessorId, { queuedTurnId, generationCreatedAt });
     }
     if (
-      legacyOutputs.length > 0 &&
-      (input.allowLegacyPredecessorInference !== true || legacyOutputs.length > 1)
+      legacyRows.length > 0 &&
+      (input.allowLegacyPredecessorInference !== true || legacyRows.length > 1)
     ) {
       return null;
     }
+    let lineagePredecessorId = ROOT_LINEAGE_PREDECESSOR_ID;
     let effectivePredecessorCreatedAt = rootEpoch;
     let traversed = 0;
-    const visited = new Set<number>();
+    const visited = new Set<string>();
     const advanceExactEdges = () => {
-      while (edges.has(effectivePredecessorCreatedAt)) {
-        if (effectivePredecessorCreatedAt === targetGenerationCreatedAt) {
+      while (edges.has(lineagePredecessorId)) {
+        const edge = edges.get(lineagePredecessorId) as {
+          queuedTurnId: string;
+          generationCreatedAt: number;
+        };
+        if (visited.has(edge.queuedTurnId)) {
           return false;
         }
-        if (visited.has(effectivePredecessorCreatedAt)) {
-          return false;
-        }
-        visited.add(effectivePredecessorCreatedAt);
-        effectivePredecessorCreatedAt = edges.get(effectivePredecessorCreatedAt) as number;
+        visited.add(edge.queuedTurnId);
+        lineagePredecessorId = edge.queuedTurnId;
+        effectivePredecessorCreatedAt = edge.generationCreatedAt;
         traversed += 1;
       }
       return true;
@@ -2280,16 +2399,14 @@ export function createAgentQueuedTurnMethods(
     if (!advanceExactEdges()) {
       return null;
     }
-    if (legacyOutputs.length === 1) {
-      const legacyOutput = legacyOutputs[0];
-      if (
-        legacyOutput === effectivePredecessorCreatedAt ||
-        visited.has(legacyOutput) ||
-        legacyOutput === targetGenerationCreatedAt
-      ) {
+    if (legacyRows.length === 1) {
+      const legacy = legacyRows[0];
+      if (visited.has(legacy.queuedTurnId)) {
         return null;
       }
-      effectivePredecessorCreatedAt = legacyOutput;
+      visited.add(legacy.queuedTurnId);
+      lineagePredecessorId = legacy.queuedTurnId;
+      effectivePredecessorCreatedAt = legacy.generationCreatedAt;
       traversed += 1;
       if (!advanceExactEdges()) {
         return null;
@@ -2298,7 +2415,10 @@ export function createAgentQueuedTurnMethods(
     if (traversed !== predecessors.length) {
       return null;
     }
-    return traversed > 0 ? effectivePredecessorCreatedAt : undefined;
+    return {
+      lineagePredecessorId,
+      ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
+    };
   }
 
   async function drainAgentQueuedTurns(
@@ -2329,7 +2449,13 @@ export function createAgentQueuedTurnMethods(
             },
           },
         },
-        $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+        $unset: {
+          activeSlot: 1,
+          admissionSlot: 1,
+          claimId: 1,
+          claimBy: 1,
+          claimUntil: 1,
+        },
       },
     );
     await Turn().updateMany(
@@ -2457,6 +2583,7 @@ export function createAgentQueuedTurnMethods(
         },
         $unset: {
           activeSlot: 1,
+          admissionSlot: 1,
           reservationWriterId: 1,
           claimId: 1,
           claimBy: 1,
