@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import {
   FileSources,
+  FileContext,
   EModelEndpoint,
   EToolResources,
   AgentCapabilities,
@@ -2097,6 +2098,68 @@ describe('primeResources', () => {
 
       expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('context-file');
       expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toContain('context-file');
+    });
+
+    it('rebuilds an embedded agent context file as an agent-scoped file_id', async () => {
+      const embeddedContextFile: TFile = {
+        user: 'user1',
+        file_id: 'embedded-context',
+        filename: 'handbook.pdf',
+        filepath: '/uploads/handbook.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: true,
+        usage: 0,
+        context: FileContext.agents,
+      };
+      mockGetFiles.mockResolvedValue([embeddedContextFile]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: { [EToolResources.context]: { file_ids: ['embedded-context'] } },
+        attachments: undefined,
+        requestFileSet,
+        agentId: 'agent1',
+      });
+
+      const searchResource = result.tool_resources?.[EToolResources.file_search];
+      expect(searchResource?.file_ids).toContain('embedded-context');
+      expect(searchResource?.files?.map((f) => f.file_id) ?? []).not.toContain('embedded-context');
+    });
+
+    it('rebuilds an embedded user attachment under files, not agent file_ids', async () => {
+      const embeddedAttachment: TFile = {
+        user: 'user1',
+        file_id: 'embedded-attachment',
+        filename: 'notes.pdf',
+        filepath: '/uploads/notes.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: true,
+        usage: 0,
+        context: FileContext.message_attachment,
+      };
+      mockGetFiles.mockResolvedValue([embeddedAttachment]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: { [EToolResources.context]: { file_ids: ['embedded-attachment'] } },
+        attachments: undefined,
+        requestFileSet,
+        agentId: 'agent1',
+      });
+
+      const searchResource = result.tool_resources?.[EToolResources.file_search];
+      expect(searchResource?.files?.map((f) => f.file_id)).toContain('embedded-attachment');
+      expect(searchResource?.file_ids ?? []).not.toContain('embedded-attachment');
     });
   });
 });
