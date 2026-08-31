@@ -731,6 +731,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       // Create tracker for streaming or aggregator for non-streaming
       const tracker = isStreaming ? createOpenAIStreamTracker() : null;
       const aggregator = isStreaming ? null : createOpenAIContentAggregator();
+
+      // Seeded by on_run_step, keyed by tool id: delta-streaming providers claim
+      // these, Google/Vertex leave them to be flushed when the run ends.
+      const pendingToolCalls = new Map();
+
       // Set up response for streaming
       if (isStreaming) {
         res.setHeader('Content-Type', 'text/event-stream');
@@ -883,6 +888,45 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         }
       };
 
+      // Tool call arguments cross the wire as a JSON string; some providers hand
+      // them over already parsed. Normalize to the string OpenAI clients expect.
+      const stringifyArgs = (raw) => {
+        if (raw == null) {
+          return '';
+        }
+        return typeof raw === 'string' ? raw : JSON.stringify(raw);
+      };
+
+      // Flush tool calls that on_run_step seeded but no delta ever claimed —
+      // providers like Google/Vertex report the whole call at once with no
+      // streamed arguments. Without this they'd never reach the tracker/aggregator
+      // and the response would finish as 'stop' with no tool_calls.
+      const flushPendingToolCalls = () => {
+        if (pendingToolCalls.size === 0) {
+          return;
+        }
+        const targetMap = isStreaming ? tracker.toolCalls : aggregator.toolCalls;
+        for (const seed of pendingToolCalls.values()) {
+          let toolIndex = targetMap.size;
+          while (targetMap.has(toolIndex)) {
+            toolIndex++;
+          }
+          const toolCall = {
+            id: seed.id,
+            type: 'function',
+            function: { name: seed.name, arguments: seed.args },
+          };
+          targetMap.set(toolIndex, toolCall);
+          if (isStreaming) {
+            writeSSE(
+              res,
+              createChunk(context, { tool_calls: [{ index: toolIndex, ...toolCall }] }),
+            );
+          }
+        }
+        pendingToolCalls.clear();
+      };
+
       // Event handlers for OpenAI-compatible streaming
       const handlers = {
         // Text content streaming
@@ -910,75 +954,102 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           }
         }),
 
-        // Tool call initiation - streams id and name (from on_run_step)
+        // Seeds id/name (and, for providers that stream no deltas, the full
+        // arguments) but doesn't emit yet: on_run_step's own index counts
+        // preceding text/reasoning steps, not the tool call's index, so emitting
+        // from here desynced the id chunk from the argument chunks (#13987). The
+        // delta carries the authoritative index and claims these; whatever is left
+        // unclaimed (Google/Vertex, no deltas) is flushed when the run ends.
         on_run_step: createHandler((data) => {
           const stepDetails = data?.stepDetails;
-          if (stepDetails?.type === 'tool_calls' && stepDetails.tool_calls) {
-            for (const tc of stepDetails.tool_calls) {
-              const toolIndex = data.index ?? 0;
-              const toolId = tc.id ?? '';
-              const toolName = tc.name ?? '';
-              const toolCall = {
-                id: toolId,
-                type: 'function',
-                function: { name: toolName, arguments: '' },
-              };
-
-              // Track tool call in tracker or aggregator
-              if (isStreaming) {
-                if (!tracker.toolCalls.has(toolIndex)) {
-                  tracker.toolCalls.set(toolIndex, toolCall);
-                }
-                // Stream initial tool call chunk (like OpenAI does)
-                writeSSE(
-                  res,
-                  createChunk(context, {
-                    tool_calls: [{ index: toolIndex, ...toolCall }],
-                  }),
-                );
-              } else {
-                if (!aggregator.toolCalls.has(toolIndex)) {
-                  aggregator.toolCalls.set(toolIndex, toolCall);
-                }
-              }
+          if (stepDetails?.type !== 'tool_calls' || !stepDetails.tool_calls) {
+            return;
+          }
+          for (const tc of stepDetails.tool_calls) {
+            const id = tc.id ?? '';
+            const name = tc.name ?? tc.function?.name ?? '';
+            // Complete arguments only reach on_run_step when no deltas follow; the
+            // delta path seeds an empty object as a placeholder, so ignore that.
+            const rawArgs = tc.args ?? tc.function?.arguments;
+            const hasArgs =
+              typeof rawArgs === 'string'
+                ? rawArgs !== ''
+                : rawArgs != null && Object.keys(rawArgs).length > 0;
+            const args = hasArgs ? stringifyArgs(rawArgs) : '';
+            const key = id || `__idx_${pendingToolCalls.size}`;
+            if (!pendingToolCalls.has(key)) {
+              pendingToolCalls.set(key, { id, name, args });
             }
           }
         }),
 
-        // Tool call argument streaming (from on_run_step_delta)
+        // Arguments stream here, keyed by the tool call's own index. The first
+        // delta also carries id/name, which is what seeds a tool call that
+        // on_run_step didn't (id-less providers), so nothing is dropped.
         on_run_step_delta: createHandler((data) => {
           const delta = data?.delta;
-          if (delta?.type === 'tool_calls' && delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const args = tc.args ?? '';
-              if (!args) {
-                continue;
+          if (delta?.type !== 'tool_calls' || !delta.tool_calls) {
+            return;
+          }
+          for (const tc of delta.tool_calls) {
+            // A delta owns the tool call — drop the on_run_step seed for it.
+            if (tc.id) {
+              pendingToolCalls.delete(tc.id);
+            }
+            const toolIndex = tc.index ?? 0;
+            const args = stringifyArgs(tc.args);
+            const targetMap = isStreaming ? tracker.toolCalls : aggregator.toolCalls;
+
+            let tracked = targetMap.get(toolIndex);
+            const isNew = !tracked;
+            if (!tracked) {
+              tracked = {
+                id: tc.id ?? '',
+                type: 'function',
+                function: { name: tc.name ?? '', arguments: '' },
+              };
+              targetMap.set(toolIndex, tracked);
+            } else {
+              if (tc.id && !tracked.id) {
+                tracked.id = tc.id;
               }
-
-              const toolIndex = tc.index ?? 0;
-
-              // Update tool call arguments
-              const targetMap = isStreaming ? tracker.toolCalls : aggregator.toolCalls;
-              const tracked = targetMap.get(toolIndex);
-              if (tracked) {
-                tracked.function.arguments += args;
-              }
-
-              // Stream argument delta (only for streaming)
-              if (isStreaming) {
-                writeSSE(
-                  res,
-                  createChunk(context, {
-                    tool_calls: [
-                      {
-                        index: toolIndex,
-                        function: { arguments: args },
-                      },
-                    ],
-                  }),
-                );
+              // Some gateways repeat the name on every delta; set it once so it
+              // isn't concatenated into `get_timeget_timeget_time`.
+              if (tc.name && !tracked.function.name) {
+                tracked.function.name = tc.name;
               }
             }
+            if (args) {
+              tracked.function.arguments += args;
+            }
+
+            if (!isStreaming) {
+              continue;
+            }
+
+            // id/name go out only on the delta that first introduces the call;
+            // later deltas carry arguments alone.
+            const toolCallDelta = { index: toolIndex };
+            const fn = {};
+            if (isNew) {
+              if (tracked.id) {
+                toolCallDelta.id = tracked.id;
+                toolCallDelta.type = 'function';
+              }
+              if (tracked.function.name) {
+                fn.name = tracked.function.name;
+              }
+            }
+            if (args) {
+              fn.arguments = args;
+            }
+            if (Object.keys(fn).length > 0) {
+              toolCallDelta.function = fn;
+            }
+            if (toolCallDelta.id == null && toolCallDelta.function == null) {
+              continue;
+            }
+            writeSSE(res, createChunk(context, { tool_calls: [toolCallDelta] }));
           }
         }),
 
@@ -1098,6 +1169,9 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           },
         },
       });
+
+      // Emit any tool calls a delta never claimed (Google/Vertex report them whole).
+      flushPendingToolCalls();
 
       // Record token usage against balance
       const balanceConfig = getBalanceConfig(appConfig);
