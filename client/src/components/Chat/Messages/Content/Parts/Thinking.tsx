@@ -42,6 +42,7 @@ export const ThinkingButton = memo(
     contentId,
     showCopyButton = true,
     animateLabel = false,
+    shimmerLabel = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -50,6 +51,10 @@ export const ThinkingButton = memo(
     contentId: string;
     showCopyButton?: boolean;
     animateLabel?: boolean;
+    /** Reasoning is still being generated: carry the same shimmer a running
+     *  tool call's label carries, so "thinking" reads as in-flight rather
+     *  than as a settled disclosure. Off for finished thoughts. */
+    shimmerLabel?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -93,15 +98,27 @@ export const ThinkingButton = memo(
               aria-hidden="true"
             />
           </span>
+          {/* The entrance and the shimmer both drive `animation-name`, so they
+              cannot share an element — and the nesting order is not a free
+              choice either. The clipped element paints the glyphs itself, so a
+              descendant's opacity cannot fade them: entrance outside and
+              shimmer inside fades correctly, while the reverse leaves the label
+              fully lit right through its own fade.
+
+              `key` remounts the row so the entrance replays, and that restarts
+              the sweep with it. Reasoning labels revise on a 3s default against
+              a 4s sweep, so the restart is frequent; it reads as intentional
+              only while the entrance is there to cover it. With no entrance to
+              play, the row keeps its identity and the sweep runs unbroken. */}
           <span
-            key={label}
+            key={animateLabel ? label : undefined}
             className={cn(
               'min-w-0 truncate text-left',
               animateLabel &&
                 'duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none',
             )}
           >
-            {label}
+            {shimmerLabel ? <span className="shimmer max-w-full truncate">{label}</span> : label}
           </span>
         </button>
         {content && showCopyButton && (

@@ -249,3 +249,43 @@ tunnel and none were documented before:
 - `directConnection=true` — replica-set discovery returns internal cluster
   hostnames that are unreachable through a tunnel
 - `tlsAllowInvalidHostnames` — the tunnel endpoint never matches the certificate
+
+## Method sweep (2026-08-31)
+
+`sweep.documentdb.spec.ts` drives every exported data-schemas method (509 at
+the time of writing; constructor-valued exports are excluded) against a real engine, auto-synthesizing arguments,
+repairing them from validation errors, and counting the driver queries each
+method actually issues — a method that issues none is reported un-adjudicated
+instead of silently green. Run once against in-memory MongoDB
+(`SWEEP_BASELINE=true`) and once against DocumentDB, then diff the JSON
+matrices (`SWEEP_REPORT_PATH`).
+
+Corrected-harness baseline (replica-set MongoDB, real ACL cascades, index DDL
+and transaction-lifecycle instrumentation, per-invocation async attribution,
+seeded authority-transaction case, constructor exports excluded, a fresh
+method bundle per case): **370 of 509 methods issue at least one query; zero
+rejections on MongoDB**. The remaining 139 issue none (validation
+rejected the synthesized arguments, or a guard short-circuited); they are
+listed in the matrix and shrink by adding `ARG_OVERRIDES` entries. The report's `rows` payload is normalized for
+cross-engine diffing (`diff <(jq .rows a.json) <(jq .rows b.json)`); run
+metadata lives outside it.
+
+**Authoritative live run (2026-08-31, hardened harness, DocumentDB 5.0.0):
+370 of 509 methods drove at least one query; zero engine rejections; the
+matrix is byte-identical to the MongoDB baseline** — every row's outcome and
+query count matches, so there is no engine divergence anywhere the sweep can
+reach. This run adjudicated index DDL, transaction commits and aborts, ACL
+cascades, and the authority snapshot's own transaction, none of which the
+first (pre-hardening) run could see.
+
+The same run turned the compatibility suite's `MCP authority snapshot` probe
+green for the first time on any real cluster. It had failed since July with
+`proof_unavailable`: `loadAuthoritativeSnapshot` reads nine collections inside
+its transaction, DocumentDB rejects in-transaction statements against
+namespaces that do not exist, and `asMCPError` converted that server rejection
+into a reason naming nothing about the cause. The method now materializes
+those namespaces before opening the transaction.
+
+This sweep exists because every incompatibility found so far was invisible
+until someone thought to look for its class; here the engine adjudicates
+whatever each method emits, known class or not.

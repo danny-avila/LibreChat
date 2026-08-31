@@ -89,6 +89,13 @@ export default function useQueueDrain(
    *  during the first turn stay keyed here until that run ends. Renewing only
    *  the active id would skip them for the whole of that run. */
   const newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
+  /** Receipt settlement can consume the parked terminal boundary without
+   * changing whether another server-owned row remains. Subscribe here so the
+   * drain effect observes that durable transition instead of reading it only
+   * through a callback snapshot whose other dependencies stayed unchanged. */
+  const settledQueuedTurnReceipts = useRecoilValue(
+    store.settledQueuedTurnReceiptsByConvoId(activeConversationId ?? Constants.NEW_CONVO),
+  );
   const hasServerOwnedQueue = [...ownQueue, ...newConvoQueue].some((item) => item.server != null);
 
   /* Deduped because the two subscriptions are the same atom before migration.
@@ -238,6 +245,57 @@ export default function useQueueDrain(
           : ownQueue;
 
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
+        const settledReceipts = snapshot
+          .getLoadable(store.settledQueuedTurnReceiptsByConvoId(conversationId))
+          .getValue();
+        const pendingEnqueueIds = snapshot
+          .getLoadable(store.pendingQueuedTurnEnqueueIdsByConvoId(conversationId))
+          .getValue();
+        const consumedReceiptIndex = settledReceipts.findIndex(
+          (receipt) =>
+            receipt.status === 'admitted' &&
+            receipt.boundaryConsumed !== true &&
+            end.generationCreatedAt != null &&
+            receipt.effectivePredecessorCreatedAt === end.generationCreatedAt,
+        );
+        const consumedByServerAdmission = consumedReceiptIndex >= 0;
+        const consumeEnd = () => {
+          if (fromParked && activeConversationId) {
+            set(store.pendingRunEndByConvoId(activeConversationId), null);
+          } else {
+            set(store.runEndByIndex(index), null);
+          }
+          if (matchingIndexArm) {
+            set(store.drainAfterAbortByIndex(index), false);
+          }
+        };
+        if (consumedByServerAdmission) {
+          /** Admission consumed this terminal boundary on the server. A late
+           * client terminal observation cannot authorize a second successor. */
+          if (shouldMigrate && newConvoQueue.length > 0) {
+            set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), []);
+            set(store.queuedMessagesByConvoId(conversationId), merged);
+          }
+          set(store.settledQueuedTurnReceiptsByConvoId(conversationId), (previous) => {
+            let consumed = false;
+            return previous.flatMap((receipt) => {
+              if (
+                !consumed &&
+                receipt.status === 'admitted' &&
+                receipt.boundaryConsumed !== true &&
+                receipt.effectivePredecessorCreatedAt === end.generationCreatedAt
+              ) {
+                consumed = true;
+                return pendingEnqueueIds.includes(receipt.clientRequestId)
+                  ? [{ ...receipt, boundaryConsumed: true }]
+                  : [];
+              }
+              return [receipt];
+            });
+          });
+          consumeEnd();
+          return null;
+        }
         /** A server-owned Agent row means the backend owns the next fresh-turn
          * admission. Do not let a legacy/recovered local row race or overtake
          * it. Keep this terminal boundary available until the authoritative
@@ -253,14 +311,7 @@ export default function useQueueDrain(
 
         // Consume only after server authority has yielded the boundary — a
         // hard double-fire guard even if the effect re-runs before propagation.
-        if (fromParked && activeConversationId) {
-          set(store.pendingRunEndByConvoId(activeConversationId), null);
-        } else {
-          set(store.runEndByIndex(index), null);
-        }
-        if (matchingIndexArm) {
-          set(store.drainAfterAbortByIndex(index), false);
-        }
+        consumeEnd();
 
         const next = shouldDrain ? (merged[0] ?? null) : null;
         const remainder = next ? merged.slice(1) : merged;
@@ -363,6 +414,7 @@ export default function useQueueDrain(
     restoreQueued,
     markFilesUsage,
     hasServerOwnedQueue,
+    settledQueuedTurnReceipts,
     ask,
   ]);
 }

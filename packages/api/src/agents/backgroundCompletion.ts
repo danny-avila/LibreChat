@@ -1,5 +1,8 @@
 /** Deadline after which an invocation owner requests cancellation. */
 export const BACKGROUND_TASK_TIMEOUT_MS: number = 30 * 60 * 1000;
+/** Gives a cooperative tool a short window to settle after cancellation before
+ * its automatic completion delivery is retired. */
+export const BACKGROUND_TASK_ABORT_GRACE_MS: number = 60 * 1000;
 /** Three missed heartbeats prove the process-local executor has been lost. */
 export const BACKGROUND_TOOL_PRODUCER_LEASE_MS: number = 30_000;
 export const BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS: number = 10_000;

@@ -104,6 +104,34 @@ describe('agent queued turn schemas', () => {
     expect(agentQueuedTurnReceiptSchema.parse(receipt)).toEqual(receipt);
   });
 
+  it('parses the effective boundary consumed by an admitted turn', () => {
+    const receipt = {
+      ...request,
+      queuedTurnId: 'turn-1',
+      status: 'admitted',
+      effectivePredecessorCreatedAt: 84,
+      revision: 2,
+      createdAt: '2026-08-30T12:00:00.000Z',
+      updatedAt: '2026-08-30T12:01:00.000Z',
+    };
+
+    expect(agentQueuedTurnReceiptSchema.parse(receipt)).toEqual(receipt);
+  });
+
+  it('parses an explicit root admission without a synthetic timestamp', () => {
+    const receipt = {
+      ...request,
+      queuedTurnId: 'turn-root',
+      status: 'admitted',
+      rootPredecessor: true,
+      revision: 2,
+      createdAt: '2026-08-30T12:00:00.000Z',
+      updatedAt: '2026-08-30T12:01:00.000Z',
+    };
+
+    expect(agentQueuedTurnReceiptSchema.parse(receipt)).toEqual(receipt);
+  });
+
   it('requires durability only when the capability is supported', () => {
     expect(agentQueuedTurnCapabilitySchema.parse({ supported: false })).toEqual({
       supported: false,

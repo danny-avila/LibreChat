@@ -796,23 +796,38 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           return override == null ? selected : { ...selected, activity: override };
         });
       }
-      // The API keeps the exact selected activity even when its bounded
-      // chronological turn is the first item removed from the response.
-      // Preserve that selection ahead of the retained newer continuation.
-      const retained = [
-        {
-          taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
-          trigger: {
-            kind:
-              selection.event == null
-                ? ('parent_continuation' as const)
-                : ('external_event' as const),
-            summary: selection.prompt ?? activity.prompt ?? '',
-          },
-          activity,
+      /** A turn absent from the durable window is either the thread's newest
+       *  delivery whose fetch has not landed yet (place it at the END, where
+       *  it will settle — a new event must not appear at the top and then
+       *  jump to the bottom) or an older selection displaced from the bounded
+       *  window (keep it ahead of the retained newer continuation). */
+      const indexedChild = byThreadId.get(threadId);
+      const selectedTaskCreatedAt = indexedChild?.tasks.find(
+        (task) => task.taskId === taskId,
+      )?.createdAt;
+      const synthesizedTurn = {
+        taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+        trigger: {
+          kind:
+            selection.event == null
+              ? ('parent_continuation' as const)
+              : ('external_event' as const),
+          summary: selection.prompt ?? activity.prompt ?? '',
+          ...(selectedTaskCreatedAt == null ? {} : { createdAt: selectedTaskCreatedAt }),
         },
-        ...durableTurns,
-      ];
+        activity,
+      };
+      /** Order by trigger time when both sides carry one; the separately
+       *  polled discovery index is only the fallback authority, since it can
+       *  briefly lag or lead the thread view. */
+      const lastDurableCreatedAt = durableTurns[durableTurns.length - 1]?.trigger.createdAt;
+      const appendSynthesized =
+        selectedTaskCreatedAt != null && lastDurableCreatedAt != null
+          ? selectedTaskCreatedAt >= lastDurableCreatedAt
+          : indexedChild?.latestTaskId === taskId;
+      const retained = appendSynthesized
+        ? [...durableTurns, synthesizedTurn]
+        : [synthesizedTurn, ...durableTurns];
       return retained.map((turn) => {
         const override = turnDetailOverrides.get(turn.taskId);
         return override == null ? turn : { ...turn, activity: override };
@@ -831,12 +846,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     ];
   }, [
     activity,
+    byThreadId,
     latestConversationTurns,
     movingWindowTurns,
     olderTurns,
     postRebaseTurns,
     rebaseTurns,
     retainedTurnsValid,
+    threadId,
     selection,
     taskId,
     turnDetailOverrides,

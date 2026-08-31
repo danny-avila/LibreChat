@@ -274,12 +274,30 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-surface-hover'] !== undefined
       ? { 'rgb-surface-composer-hover': customColors['rgb-surface-hover'] }
       : {};
+  /**
+   * Themes written before the shimmer stops existed cannot name them, and
+   * filling the omission from the bundled base would pin their in-flight labels
+   * to LibreChat's own sweep — a theme that restates its text as white would
+   * light every label in the stock near-black. A theme that wants the bundled
+   * sweep alongside custom text still gets it by naming the stop, the way
+   * `rgb-surface-composer-hover` opts out of its own fallback above.
+   */
+  const shimmerBaseFallback =
+    customColors?.['rgb-shimmer-base'] === undefined &&
+    customColors?.['rgb-text-primary'] !== undefined
+      ? { 'rgb-shimmer-base': customColors['rgb-text-primary'] }
+      : {};
 
   return {
     version: THEME_VERSION,
     name: theme.name,
     mode,
-    colors: { ...baseColors, ...customColors, ...composerHoverFallback } as Required<IThemeRGB>,
+    colors: {
+      ...baseColors,
+      ...customColors,
+      ...composerHoverFallback,
+      ...shimmerBaseFallback,
+    } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     brands: { ...defaultBrands, ...theme.brands },
   };

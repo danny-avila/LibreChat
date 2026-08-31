@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
+import { BACKGROUND_TASK_ABORT_GRACE_MS, BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
 import { backgroundTaskRegistry, CHECK_BACKGROUND_TASK_NAME } from './background';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { createToolExecuteHandler } from './handlers';
@@ -540,7 +541,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     }
   });
 
-  it('keeps an abort-resistant invocation running without a false timeout receipt', async () => {
+  it('retires the automatic wakeup after an abort-resistant invocation exceeds its grace period', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate'] });
     try {
       const tool = {
@@ -550,12 +551,14 @@ describe('createToolExecuteHandler — background tool calls', () => {
         invoke: jest.fn(() => new Promise(() => undefined)),
       } as unknown as StructuredToolInterface;
       const persist = jest.fn(async () => true);
+      const renew = jest.fn(async () => true);
+      const retire = jest.fn(async () => true);
       const handler = createToolExecuteHandler({
         loadTools: async () => ({ loadedTools: [tool] }),
         backgroundToolCompletion: {
           preregister: jest.fn(async () => ({
-            renew: jest.fn(async () => true),
-            retire: jest.fn(async () => true),
+            renew,
+            retire,
           })),
           persist,
           claim: jest.fn(async () => ({ status: 'acquired' as const })),
@@ -576,12 +579,23 @@ describe('createToolExecuteHandler — background tool calls', () => {
         metadata: { thread_id: 'exec_convo', run_id: 'response-timeout-resistant' },
       });
 
-      jest.advanceTimersByTime(31 * 60 * 1000);
+      jest.advanceTimersByTime(BACKGROUND_TASK_TIMEOUT_MS + BACKGROUND_TASK_ABORT_GRACE_MS);
+      await flushMicrotasks();
       await flushMicrotasks();
 
       const taskId = JSON.parse(dispatch.content).background_task_id as string;
       expect(backgroundTaskRegistry.get('exec_user', 'exec_convo', taskId)?.status).toBe('running');
       expect(persist).not.toHaveBeenCalled();
+      expect(renew).toHaveBeenCalled();
+      expect(retire).toHaveBeenCalledWith(
+        'background task did not settle after its abort grace period',
+        { onlyIfUnclaimed: true },
+      );
+
+      const renewalsBefore = renew.mock.calls.length;
+      jest.advanceTimersByTime(3 * 60 * 1000);
+      await flushMicrotasks();
+      expect(renew).toHaveBeenCalledTimes(renewalsBefore);
     } finally {
       jest.useRealTimers();
     }

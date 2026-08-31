@@ -1,6 +1,18 @@
+import { act, renderHook, waitFor } from '@testing-library/react';
+
 const mockListAgentQueuedTurns = jest.fn();
 const mockEnqueueAgentQueuedTurn = jest.fn();
 const mockCancelAgentQueuedTurn = jest.fn();
+const mockRefetch = jest.fn();
+const mockCancelQueries = jest.fn().mockResolvedValue(undefined);
+const mockQueryClient = { cancelQueries: mockCancelQueries };
+const mockUseQuery = jest.fn((options: unknown) => ({ options, refetch: mockRefetch }));
+
+jest.mock('@tanstack/react-query', () => ({
+  useQuery: (options: unknown) => mockUseQuery(options),
+  useMutation: jest.fn(),
+  useQueryClient: () => mockQueryClient,
+}));
 
 jest.mock('librechat-data-provider', () => ({
   QueryKeys: { agentQueuedTurns: 'agentQueuedTurns' },
@@ -21,6 +33,8 @@ import {
   fetchAgentQueuedTurns,
   isDefiniteQueuedTurnRejection,
   isDefiniteQueuedTurnsUnsupported,
+  shouldPollAgentQueuedTurns,
+  useAgentQueuedTurns,
 } from '../queuedTurns';
 
 describe('Agent queued-turn data adapter', () => {
@@ -116,4 +130,87 @@ describe('Agent queued-turn data adapter', () => {
       expect(isDefiniteQueuedTurnRejection(error)).toBe(false);
     },
   );
+
+  it('stops background polling for a fail-closed indeterminate claim', () => {
+    expect(
+      shouldPollAgentQueuedTurns([
+        {
+          status: 'claimed',
+          failure: { code: 'ADMISSION_INDETERMINATE' },
+        },
+      ]),
+    ).toBe(false);
+    expect(shouldPollAgentQueuedTurns([{ status: 'claimed' }])).toBe(true);
+    expect(shouldPollAgentQueuedTurns([{ status: 'queued' }])).toBe(true);
+  });
+
+  it('refreshes stopped reconciliation work on every mount and focus', () => {
+    renderHook(() => useAgentQueuedTurns('conversation/one', true));
+
+    expect(mockUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: 'always',
+      }),
+    );
+  });
+
+  it('keeps one cache authority and refetches when known receipt ids change', async () => {
+    const rendered = renderHook(
+      ({ ids }: { ids: string[] }) => useAgentQueuedTurns('conversation/one', true, ids),
+      { initialProps: { ids: ['request-one'] } },
+    );
+
+    expect(mockUseQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        queryKey: ['agentQueuedTurns', 'conversation/one'],
+      }),
+    );
+    expect(mockRefetch).not.toHaveBeenCalled();
+
+    rendered.rerender({ ids: [] });
+
+    await waitFor(() =>
+      expect(mockCancelQueries).toHaveBeenCalledWith({
+        queryKey: ['agentQueuedTurns', 'conversation/one'],
+        exact: true,
+      }),
+    );
+    await waitFor(() =>
+      expect(mockRefetch).toHaveBeenCalledWith({
+        cancelRefetch: true,
+      }),
+    );
+    expect(mockCancelQueries.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRefetch.mock.invocationCallOrder[0],
+    );
+    expect(mockUseQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        queryKey: ['agentQueuedTurns', 'conversation/one'],
+      }),
+    );
+  });
+
+  it('lets only the newest identity projection refetch after cancellation', async () => {
+    let releaseFirstCancellation: (() => void) | undefined;
+    mockCancelQueries
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseFirstCancellation = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    const rendered = renderHook(
+      ({ ids }: { ids: string[] }) => useAgentQueuedTurns('conversation/one', true, ids),
+      { initialProps: { ids: ['request-one'] } },
+    );
+
+    rendered.rerender({ ids: ['request-two'] });
+    rendered.rerender({ ids: ['request-three'] });
+
+    await waitFor(() => expect(mockRefetch).toHaveBeenCalledTimes(1));
+    await act(async () => releaseFirstCancellation?.());
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
 });
