@@ -113,6 +113,7 @@ function resolverMethods() {
       outcome: 'admitted' as const,
       turn: { ...turn, status: 'admitted' as const },
     })),
+    hasAgentQueuedTurnAdmissionReceipt: jest.fn(async () => true),
   };
   return {
     methods: methods as unknown as AgentQueuedTurnMethods &
@@ -325,6 +326,46 @@ describe('Agent queued-turn continuation', () => {
         generationId: 'conversation-1',
         generationCreatedAt: NOW + 1,
       }),
+    );
+  });
+
+  it('requires the exact durable source receipt before deduplicated success', async () => {
+    const { methods, spies } = resolverMethods();
+    const lifecycle = createAgentQueuedTurnLifecycle({
+      methods,
+      getGenerationJob: async () => null,
+      getGenerationAdmissionEvidence: async () => null,
+      enqueue: async () => ({ deliveryKey: 'queued-delivery-1' }),
+    });
+    const source = {
+      source: AGENT_QUEUED_TURN_SOURCE,
+      sourceId: 'queued-turn-1',
+      claimId: 'trigger-1',
+      claimBy: 'worker-1',
+    };
+    const admission = {
+      userId: USER_ID,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      clientRequestId: 'trigger-1',
+      generationId: 'conversation-1',
+      generationCreatedAt: NOW + 1,
+    };
+
+    await expect(lifecycle.verifyExecutionAdmission(source, admission)).resolves.toBe(true);
+    expect(spies.hasAgentQueuedTurnAdmissionReceipt).toHaveBeenCalledWith({
+      user: new Types.ObjectId(USER_ID),
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: 'queued-turn-1',
+      admissionId: 'trigger-1',
+      generationId: 'conversation-1',
+      generationCreatedAt: NOW + 1,
+    });
+
+    spies.hasAgentQueuedTurnAdmissionReceipt.mockResolvedValueOnce(false);
+    await expect(lifecycle.verifyExecutionAdmission(source, admission)).rejects.toThrow(
+      'not yet confirmed',
     );
   });
 
@@ -797,7 +838,7 @@ describe('Agent queued-turn delivery scheduling', () => {
     );
   });
 
-  it('settles source-fenced non-admission without transient job-store evidence', async () => {
+  it('rotates source-fenced ambiguity without trusting transient job-store evidence', async () => {
     const turn = {
       ...queuedTurn('queued-turn-source-fenced', 1),
       status: 'dead' as const,
@@ -815,7 +856,7 @@ describe('Agent queued-turn delivery scheduling', () => {
         },
       },
     };
-    const settleAgentQueuedTurnAdmissionWithoutEvidence = jest.fn(async () => true);
+    const deferAgentQueuedTurnAdmissionReconciliation = jest.fn(async () => true);
     const getGenerationAdmissionEvidence = jest.fn(async () => ({
       generationId: 'stale-generation',
       generationCreatedAt: NOW,
@@ -830,7 +871,59 @@ describe('Agent queued-turn delivery scheduling', () => {
             reconciliationClaimBy: input.claimBy,
           },
         ]),
-        settleAgentQueuedTurnAdmissionWithoutEvidence,
+        deferAgentQueuedTurnAdmissionReconciliation,
+      } as unknown as AgentQueuedTurnMethods,
+      enqueue: jest.fn(),
+      getGenerationAdmissionEvidence,
+    });
+
+    await expect(scheduler.recover()).resolves.toBe(0);
+    expect(getGenerationAdmissionEvidence).not.toHaveBeenCalled();
+    expect(deferAgentQueuedTurnAdmissionReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-source-fenced',
+        deliveryKey: 'delivery-source-fenced',
+      }),
+    );
+  });
+
+  it('quarantines an expired provider-admission owner before any replay', async () => {
+    const turn = {
+      ...queuedTurn('queued-turn-owner-lost', 1),
+      status: 'claimed' as const,
+      claimId: 'delivery-owner-lost',
+      claimBy: 'worker-gone',
+      claimUntil: new Date(NOW - 1),
+      deliveryKey: 'delivery-owner-lost',
+      deliveryState: 'published' as const,
+      admissionId: 'delivery-owner-lost',
+      admissionStartedAt: new Date(NOW - 1_000),
+      admissionProtocolVersion: 2 as const,
+    };
+    const deadLetterAgentQueuedTurn = jest.fn(async () => ({
+      outcome: 'admission_indeterminate' as const,
+      turn: {
+        ...turn,
+        status: 'dead' as const,
+        terminalReceipt: {
+          outcome: 'dead' as const,
+          settledAt: new Date(NOW),
+          failure: { code: 'ADMISSION_INDETERMINATE', message: 'owner disappeared' },
+        },
+      },
+    }));
+    const getGenerationAdmissionEvidence = jest.fn(async () => null);
+    const scheduler = createAgentQueuedTurnScheduler({
+      methods: {
+        findQueuedTurnsNeedingDelivery: jest.fn(async () => []),
+        claimQueuedTurnsForAdmissionReconciliation: jest.fn(async (input) => [
+          {
+            ...turn,
+            reconciliationClaimId: input.claimId,
+            reconciliationClaimBy: input.claimBy,
+          },
+        ]),
+        deadLetterAgentQueuedTurn,
       } as unknown as AgentQueuedTurnMethods,
       enqueue: jest.fn(),
       getGenerationAdmissionEvidence,
@@ -838,10 +931,11 @@ describe('Agent queued-turn delivery scheduling', () => {
 
     await expect(scheduler.recover()).resolves.toBe(1);
     expect(getGenerationAdmissionEvidence).not.toHaveBeenCalled();
-    expect(settleAgentQueuedTurnAdmissionWithoutEvidence).toHaveBeenCalledWith(
+    expect(deadLetterAgentQueuedTurn).toHaveBeenCalledWith(
       expect.objectContaining({
-        queuedTurnId: 'queued-turn-source-fenced',
-        deliveryKey: 'delivery-source-fenced',
+        queuedTurnId: 'queued-turn-owner-lost',
+        deliveryKey: 'delivery-owner-lost',
+        failure: expect.objectContaining({ code: 'ADMISSION_INDETERMINATE' }),
       }),
     );
   });

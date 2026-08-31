@@ -103,6 +103,10 @@ export interface AgentQueuedTurnLifecycle {
     rawSource: unknown,
     input: AgentQueuedTurnExecutionAdmission,
   ) => Promise<boolean>;
+  verifyExecutionAdmission: (
+    rawSource: unknown,
+    input: AgentQueuedTurnExecutionAdmission,
+  ) => Promise<boolean>;
   initialize: () => Promise<void>;
   stop: () => Promise<void>;
   schedule: (turn: AgentQueuedTurnRecord) => Promise<string>;
@@ -165,8 +169,9 @@ function parseQueuedTurnAdmissionSource(raw: unknown): AgentContinuationAdmissio
   return { source: AGENT_QUEUED_TURN_SOURCE, sourceId, claimId, claimBy };
 }
 
-/** Commits the source-owned admission receipt after execution enrollment wins
- * its start fence but before the provider implementation can be invoked. */
+/** Commits the source-owned admission receipt only after the controller has
+ * invoked the provider implementation. A process death before that boundary
+ * leaves the source nonterminal for fail-closed reconciliation. */
 async function settleAgentQueuedTurnExecutionAdmission(
   rawSource: unknown,
   input: AgentQueuedTurnExecutionAdmission,
@@ -194,6 +199,36 @@ async function settleAgentQueuedTurnExecutionAdmission(
   });
   if (settled.outcome === 'conflict') {
     throw new Error('The queued turn execution admission could not be committed');
+  }
+  return true;
+}
+
+/** Deduplicated HTTP success is valid only when the original controller
+ * already crossed the provider-invocation boundary and committed its exact
+ * source receipt. Never manufacture that receipt from transient job state. */
+async function verifyAgentQueuedTurnExecutionAdmission(
+  rawSource: unknown,
+  input: AgentQueuedTurnExecutionAdmission,
+  methods: Pick<AgentQueuedTurnMethods, 'hasAgentQueuedTurnAdmissionReceipt'>,
+): Promise<boolean> {
+  const source = parseQueuedTurnAdmissionSource(rawSource);
+  if (source == null) {
+    return false;
+  }
+  if (!Types.ObjectId.isValid(input.userId)) {
+    throw new TypeError('Agent queued turn admission principal is invalid');
+  }
+  const confirmed = await methods.hasAgentQueuedTurnAdmissionReceipt({
+    user: new Types.ObjectId(input.userId),
+    ...(input.tenantId != null && { tenantId: input.tenantId }),
+    conversationId: input.conversationId,
+    queuedTurnId: source.sourceId,
+    admissionId: input.clientRequestId,
+    generationId: input.generationId,
+    generationCreatedAt: input.generationCreatedAt,
+  });
+  if (!confirmed) {
+    throw new Error('The queued turn execution admission is not yet confirmed');
   }
   return true;
 }
@@ -759,22 +794,33 @@ function createAgentQueuedTurnScheduler({
             }),
           );
         try {
-          if (turn.admissionProtocolVersion === 2) {
-            const settled = await runAsSystem(() =>
-              methods.settleAgentQueuedTurnAdmissionWithoutEvidence({
+          if (turn.status === 'claimed') {
+            const result = await runAsSystem(() =>
+              methods.deadLetterAgentQueuedTurn({
                 user: turn.user,
                 ...(turn.tenantId != null && { tenantId: turn.tenantId }),
                 conversationId: turn.conversationId,
                 queuedTurnId: turn.queuedTurnId,
                 deliveryKey,
-                claimId: reconciliationClaimId,
-                claimBy: PROCESS_CLAIM_OWNER,
                 settledAt: new Date(),
+                failure: {
+                  code: 'ADMISSION_INDETERMINATE',
+                  message: 'The queued turn provider admission owner disappeared',
+                },
               }),
             );
-            if (settled) {
+            if (result.outcome === 'admission_indeterminate') {
               repaired += 1;
             }
+            continue;
+          }
+          if (turn.admissionProtocolVersion === 2) {
+            /** The provider may have been invoked before its Mongo receipt
+             * became durable. Transient job evidence cannot decide that
+             * boundary, so retain explicit indeterminate evidence and rotate
+             * the work with bounded backoff until an exact late receipt or
+             * operator reconciliation arrives. */
+            await defer();
             continue;
           }
           const admissionEvidence = await getGenerationAdmissionEvidence(
@@ -946,6 +992,8 @@ export function createAgentQueuedTurnLifecycle({
     }),
     recordExecutionAdmission: (rawSource, input) =>
       settleAgentQueuedTurnExecutionAdmission(rawSource, input, methods),
+    verifyExecutionAdmission: (rawSource, input) =>
+      verifyAgentQueuedTurnExecutionAdmission(rawSource, input, methods),
     initialize: scheduler.initialize,
     stop: scheduler.stop,
     schedule: scheduler.schedule,

@@ -89,4 +89,5 @@ module.exports = {
   scheduleAgentQueuedTurn: queuedTurnLifecycle.schedule,
   cancelAgentQueuedTurn: queuedTurnLifecycle.cancel,
   settleAgentQueuedTurnExecutionAdmission: queuedTurnLifecycle.recordExecutionAdmission,
+  verifyAgentQueuedTurnExecutionAdmission: queuedTurnLifecycle.verifyExecutionAdmission,
 };

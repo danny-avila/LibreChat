@@ -184,15 +184,6 @@ export interface AgentQueuedTurnMethods {
       availableAt: Date;
     },
   ) => Promise<boolean>;
-  settleAgentQueuedTurnAdmissionWithoutEvidence: (
-    input: AgentQueuedTurnConversationScope & {
-      queuedTurnId: string;
-      deliveryKey: string;
-      claimId: string;
-      claimBy: string;
-      settledAt: Date;
-    },
-  ) => Promise<boolean>;
   reserveAgentQueuedTurnDelivery: (
     input: AgentQueuedTurnConversationScope & {
       queuedTurnId: string;
@@ -249,6 +240,14 @@ export interface AgentQueuedTurnMethods {
       settledAt: Date;
     },
   ) => Promise<AdmitAgentQueuedTurnResult>;
+  hasAgentQueuedTurnAdmissionReceipt: (
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      admissionId: string;
+      generationId: string;
+      generationCreatedAt: number;
+    },
+  ) => Promise<boolean>;
   deadLetterAgentQueuedTurn: (
     input: AgentQueuedTurnConversationScope & {
       queuedTurnId: string;
@@ -1074,7 +1073,7 @@ export function createAgentQueuedTurnMethods(
         {
           ...scope,
           _id: input.queuedTurnId,
-          status: { $in: ['queued', 'dead'] },
+          status: { $in: ['queued', 'claimed', 'dead'] },
           admissionStartedAt: { $exists: false },
         },
         {
@@ -1209,13 +1208,20 @@ export function createAgentQueuedTurnMethods(
       throw new TypeError('Agent queued turn reconciliation lease is invalid');
     }
     const eligible: FilterQuery<IAgentQueuedTurnDocument> = {
-      status: 'dead',
       admissionId: { $exists: true },
       admissionStartedAt: { $exists: true },
       deliveryKey: { $exists: true },
-      'terminalReceipt.outcome': 'dead',
-      'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
       $and: [
+        {
+          $or: [
+            {
+              status: 'dead',
+              'terminalReceipt.outcome': 'dead',
+              'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+            },
+            { status: 'claimed', claimUntil: { $lte: input.now } },
+          ],
+        },
         {
           $or: [
             { reconciliationAvailableAt: { $lte: input.now } },
@@ -1287,58 +1293,6 @@ export function createAgentQueuedTurnMethods(
       {
         $set: { reconciliationAvailableAt: input.availableAt },
         $unset: {
-          reconciliationClaimId: 1,
-          reconciliationClaimBy: 1,
-          reconciliationClaimUntil: 1,
-        },
-      },
-    );
-    return result.modifiedCount === 1;
-  }
-
-  async function settleAgentQueuedTurnAdmissionWithoutEvidence(
-    input: AgentQueuedTurnConversationScope & {
-      queuedTurnId: string;
-      deliveryKey: string;
-      claimId: string;
-      claimBy: string;
-      settledAt: Date;
-    },
-  ): Promise<boolean> {
-    if (!Number.isFinite(input.settledAt.getTime())) {
-      throw new TypeError('Agent queued turn reconciliation settlement is invalid');
-    }
-    const result = await Turn().updateOne(
-      {
-        ...conversationScope(input),
-        _id: input.queuedTurnId,
-        deliveryKey: requireBoundedString(input.deliveryKey, 128),
-        status: 'dead',
-        admissionProtocolVersion: 2,
-        'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
-        reconciliationClaimId: requireBoundedString(input.claimId, 128),
-        reconciliationClaimBy: requireBoundedString(input.claimBy, 256),
-      },
-      {
-        $set: {
-          terminalReceipt: {
-            outcome: 'dead',
-            settledAt: input.settledAt,
-            failure: {
-              code: 'ADMISSION_NOT_CONFIRMED',
-              message: 'The queued turn did not cross source-owned generation admission',
-            },
-          },
-        },
-        $unset: {
-          activeSlot: 1,
-          claimId: 1,
-          claimBy: 1,
-          claimUntil: 1,
-          admissionId: 1,
-          admissionStartedAt: 1,
-          admissionProtocolVersion: 1,
-          reconciliationAvailableAt: 1,
           reconciliationClaimId: 1,
           reconciliationClaimBy: 1,
           reconciliationClaimUntil: 1,
@@ -1496,7 +1450,14 @@ export function createAgentQueuedTurnMethods(
           ...scope,
           _id: input.queuedTurnId,
           availableAt: { $lte: input.now },
-          $or: [{ status: 'queued' }, { status: 'claimed', claimUntil: { $lte: input.now } }],
+          $or: [
+            { status: 'queued' },
+            {
+              status: 'claimed',
+              claimUntil: { $lte: input.now },
+              admissionStartedAt: { $exists: false },
+            },
+          ],
         },
         {
           $set: {
@@ -1811,6 +1772,31 @@ export function createAgentQueuedTurnMethods(
       outcome: 'conflict',
       turn: current == null ? null : toRecord(current),
     };
+  }
+
+  async function hasAgentQueuedTurnAdmissionReceipt(
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      admissionId: string;
+      generationId: string;
+      generationCreatedAt: number;
+    },
+  ): Promise<boolean> {
+    const generationCreatedAt = normalizePredecessor(input.generationCreatedAt);
+    if (generationCreatedAt == null) {
+      throw new TypeError('Agent queued turn admission generation is invalid');
+    }
+    return (
+      (await Turn().exists({
+        ...conversationScope(input),
+        _id: input.queuedTurnId,
+        status: 'admitted',
+        'terminalReceipt.outcome': 'admitted',
+        'terminalReceipt.admissionId': requireBoundedString(input.admissionId, 128),
+        'terminalReceipt.generationId': requireBoundedString(input.generationId, 256),
+        'terminalReceipt.generationCreatedAt': generationCreatedAt,
+      })) != null
+    );
   }
 
   async function deadLetterAgentQueuedTurn(
@@ -2310,7 +2296,6 @@ export function createAgentQueuedTurnMethods(
     findQueuedTurnsNeedingDelivery,
     claimQueuedTurnsForAdmissionReconciliation,
     deferAgentQueuedTurnAdmissionReconciliation,
-    settleAgentQueuedTurnAdmissionWithoutEvidence,
     reserveAgentQueuedTurnDelivery,
     markQueuedTurnScheduled,
     cancelAgentQueuedTurn,
@@ -2318,6 +2303,7 @@ export function createAgentQueuedTurnMethods(
     beginAgentQueuedTurnAdmission,
     releaseAgentQueuedTurn,
     markAgentQueuedTurnAdmitted,
+    hasAgentQueuedTurnAdmissionReceipt,
     deadLetterAgentQueuedTurn,
     getEffectiveAgentQueuedTurnPredecessor,
     drainAgentQueuedTurns,

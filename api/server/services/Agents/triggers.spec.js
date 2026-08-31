@@ -8,6 +8,7 @@ const mockQueuedTurnLifecycle = {
   prepareContinue: jest.fn(),
   settleBeforeDeadLetter: jest.fn(),
   recordExecutionAdmission: jest.fn(),
+  verifyExecutionAdmission: jest.fn(),
   initialize: jest.fn(),
   stop: jest.fn(),
   schedule: jest.fn(),

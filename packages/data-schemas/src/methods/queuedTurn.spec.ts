@@ -483,7 +483,7 @@ describe('agent queued turn methods', () => {
     });
   });
 
-  it('cancels queued work idempotently but does not cancel a claimed turn', async () => {
+  it('cancels claimed work until its admission fence starts', async () => {
     const cancellable = await methods.enqueueAgentQueuedTurn(enqueueInput());
     const cancelled = await methods.cancelAgentQueuedTurn({
       user,
@@ -518,6 +518,39 @@ describe('agent queued turn methods', () => {
         tenantId: 'tenant-1',
         conversationId: 'conversation-1',
         queuedTurnId: claimed.turn.queuedTurnId,
+      }),
+    ).resolves.toMatchObject({ outcome: 'cancelled', turn: { status: 'cancelled' } });
+
+    const admitting = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'admitting', text: 'admitting' }),
+    );
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: admitting.turn.queuedTurnId,
+      deliveryKey: 'admission-cancel',
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: admitting.turn.queuedTurnId,
+      deliveryKey: 'admission-cancel',
+      scheduledAt: START,
+    });
+    await methods.claimNextAgentQueuedTurn(claimInput(admitting.turn.queuedTurnId));
+    await methods.beginAgentQueuedTurnAdmission({
+      ...claimInput(admitting.turn.queuedTurnId),
+      admissionId: 'admission-cancel',
+      startedAt: START,
+    });
+    await expect(
+      methods.cancelAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: admitting.turn.queuedTurnId,
       }),
     ).resolves.toMatchObject({ outcome: 'not_cancellable' });
   });
@@ -608,6 +641,28 @@ describe('agent queued turn methods', () => {
         terminalReceipt: { admissionId: 'admission-1' },
       },
     });
+    await expect(
+      methods.hasAgentQueuedTurnAdmissionReceipt({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: admitted.turn.queuedTurnId,
+        admissionId: 'admission-1',
+        generationId: 'generation-1',
+        generationCreatedAt: 84,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.hasAgentQueuedTurnAdmissionReceipt({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: admitted.turn.queuedTurnId,
+        admissionId: 'admission-1',
+        generationId: 'generation-1',
+        generationCreatedAt: 85,
+      }),
+    ).resolves.toBe(false);
     await expect(methods.markAgentQueuedTurnAdmitted(admissionInput)).resolves.toMatchObject({
       outcome: 'already_admitted',
     });
@@ -709,6 +764,32 @@ describe('agent queued turn methods', () => {
       admissionId: 'delivery-ambiguous-admission',
       startedAt: START,
     });
+
+    await expect(
+      methods.claimNextAgentQueuedTurn(
+        claimInput(queued.turn.queuedTurnId, {
+          claimId: 'replacement-delivery',
+          claimBy: 'replacement-worker',
+          now: LATER,
+          leaseUntil: new Date(LATER.getTime() + 60_000),
+        }),
+      ),
+    ).resolves.toEqual({ outcome: 'blocked', claim: null });
+    await expect(
+      methods.claimQueuedTurnsForAdmissionReconciliation({
+        claimId: 'reconciliation-owner',
+        claimBy: 'reconciliation-worker',
+        now: LATER,
+        leaseUntil: new Date(LATER.getTime() + 60_000),
+        limit: 1,
+      }),
+    ).resolves.toMatchObject([
+      {
+        queuedTurnId: queued.turn.queuedTurnId,
+        status: 'claimed',
+        reconciliationClaimId: 'reconciliation-owner',
+      },
+    ]);
 
     await expect(
       methods.deadLetterAgentQueuedTurn({
@@ -894,7 +975,7 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({ outcome: 'acquired' });
   });
 
-  it('leases reconciliation work fairly and terminalizes confirmed non-admission', async () => {
+  it('leases reconciliation fairly while preserving a late exact receipt', async () => {
     const quarantine = async (conversationId: string, clientRequestId: string) => {
       const queued = await methods.enqueueAgentQueuedTurn(
         enqueueInput({ conversationId, clientRequestId }),
@@ -967,7 +1048,7 @@ describe('agent queued turn methods', () => {
     });
     expect(secondBatch).toMatchObject([{ queuedTurnId: second.queued.turn.queuedTurnId }]);
     await expect(
-      methods.settleAgentQueuedTurnAdmissionWithoutEvidence({
+      methods.deferAgentQueuedTurnAdmissionReconciliation({
         user,
         tenantId: 'tenant-1',
         conversationId: 'conversation-2',
@@ -975,7 +1056,7 @@ describe('agent queued turn methods', () => {
         deliveryKey: second.deliveryKey,
         claimId: 'reconciliation-fair-claim-2',
         claimBy: 'reconciler-1',
-        settledAt: claimNow,
+        availableAt: new Date(claimNow.getTime() + 60_000),
       }),
     ).resolves.toBe(true);
     await expect(
@@ -987,7 +1068,7 @@ describe('agent queued turn methods', () => {
         generationCreatedAt: 44,
         settledAt: new Date(claimNow.getTime() + 1),
       }),
-    ).resolves.toMatchObject({ outcome: 'conflict', turn: { status: 'dead' } });
+    ).resolves.toMatchObject({ outcome: 'admitted', turn: { status: 'admitted' } });
   });
 
   it('scopes effective predecessor epochs to one captured queue root', async () => {
