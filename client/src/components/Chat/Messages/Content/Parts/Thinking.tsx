@@ -42,6 +42,7 @@ export const ThinkingButton = memo(
     contentId,
     showCopyButton = true,
     animateLabel = false,
+    shimmerLabel = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -50,6 +51,10 @@ export const ThinkingButton = memo(
     contentId: string;
     showCopyButton?: boolean;
     animateLabel?: boolean;
+    /** Reasoning is still being generated: carry the same shimmer a running
+     *  tool call's label carries, so "thinking" reads as in-flight rather
+     *  than as a settled disclosure. Off for finished thoughts. */
+    shimmerLabel?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -93,6 +98,11 @@ export const ThinkingButton = memo(
               aria-hidden="true"
             />
           </span>
+          {/* The entrance animation and the shimmer both drive
+              `animation-name`, so they cannot share an element. The entrance
+              stays on the outer span (a transform above a descendant leaves
+              its `background-clip: text` intact, not the other way round) and
+              the shimmer paints the glyphs on the inner one. */}
           <span
             key={label}
             className={cn(
@@ -101,7 +111,7 @@ export const ThinkingButton = memo(
                 'duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none',
             )}
           >
-            {label}
+            {shimmerLabel ? <span className="shimmer max-w-full truncate">{label}</span> : label}
           </span>
         </button>
         {content && showCopyButton && (
