@@ -903,6 +903,10 @@ export interface IJobStore {
    * where every request remains subject to the limiter. */
   hasIdempotencyKey?(key: string): Promise<boolean>;
 
+  /** Read-only claim receipt used by durable source reconcilers. Optional
+   * stores fall back to inspecting the current generation only. */
+  getIdempotencyClaim?(key: string): Promise<IdempotencyClaimValue | null>;
+
   deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
   hasJob(streamId: string): Promise<boolean>;
   getRunningJobs(): Promise<SerializableJobData[]>;

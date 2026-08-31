@@ -1,6 +1,7 @@
 import {
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
   getTenantId,
   SYSTEM_TENANT_ID,
 } from '@librechat/data-schemas';
@@ -180,6 +181,7 @@ describe('durable agent trigger service', () => {
       expect.objectContaining({
         workerCapabilities: [
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
         ],
       }),
@@ -215,7 +217,10 @@ describe('durable agent trigger service', () => {
 
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
-        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+        workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+        ],
       }),
     );
     await service.stop();

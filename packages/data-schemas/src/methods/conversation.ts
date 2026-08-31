@@ -466,17 +466,25 @@ export interface ConversationMethods {
   archiveAllConvos(user: string): Promise<{ archivedCount: number }>;
 }
 
+export interface ConversationMethodDeps
+  extends Pick<MessageMethods, 'getMessages' | 'deleteMessages'> {
+  deleteAgentQueuedTurns?: (
+    user: string,
+    conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
+  ) => Promise<void>;
+}
+
 export function createConversationMethods(
   mongoose: typeof import('mongoose'),
-  messageMethods?: Pick<MessageMethods, 'getMessages' | 'deleteMessages'>,
+  deps?: ConversationMethodDeps,
 ): ConversationMethods {
   let legacyReceiptExpiryCursor: Types.ObjectId | undefined;
 
   function getMessageMethods() {
-    if (!messageMethods) {
+    if (!deps) {
       throw new Error('Message methods not injected into conversation methods');
     }
-    return messageMethods;
+    return deps;
   }
 
   function getVisibleConversationRetentionFilter(): FilterQuery<IConversation> {
@@ -2865,7 +2873,10 @@ export function createConversationMethods(
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const { deleteMessages, getMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
-      type DeletionConversation = Pick<IConversation, 'conversationId' | 'chatProjectId' | 'tags'>;
+      type DeletionConversation = Pick<
+        IConversation,
+        'conversationId' | 'tenantId' | 'chatProjectId' | 'tags'
+      >;
       const retryCascadeOperation = async <T>(operation: () => PromiseLike<T> | T): Promise<T> => {
         let lastError: unknown;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -2881,7 +2892,7 @@ export function createConversationMethods(
         throw lastError;
       };
       let conversations = await Conversation.find(userFilter)
-        .select('conversationId chatProjectId tags')
+        .select('conversationId tenantId chatProjectId tags')
         .lean<DeletionConversation[]>();
       const recoveryConversationIds: string[] = [];
       if (!conversations.length && typeof filter.conversationId === 'string') {
@@ -2895,7 +2906,7 @@ export function createConversationMethods(
               user,
               'subagentThread.rootConversationId': filter.conversationId,
             })
-              .select('conversationId chatProjectId tags')
+              .select('conversationId tenantId chatProjectId tags')
               .lean<DeletionConversation[]>(),
           ),
           getMessages({ user, conversationId: filter.conversationId }, '_id', { limit: 1 }),
@@ -2970,6 +2981,13 @@ export function createConversationMethods(
           break;
         }
         const waveIds = wave.map((conversation) => conversation.conversationId);
+        await deps?.deleteAgentQueuedTurns?.(
+          user,
+          wave.map((conversation) => ({
+            conversationId: conversation.conversationId,
+            ...(conversation.tenantId != null && { tenantId: conversation.tenantId }),
+          })),
+        );
         await options?.beforeDelete?.(waveIds);
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
         acknowledged &&= result.acknowledged;
@@ -2984,7 +3002,7 @@ export function createConversationMethods(
             user,
             'subagentThread.parentConversationId': { $in: waveIds },
           })
-            .select('conversationId chatProjectId tags')
+            .select('conversationId tenantId chatProjectId tags')
             .lean<DeletionConversation[]>(),
         );
       }
@@ -2993,6 +3011,16 @@ export function createConversationMethods(
         ...recoveryConversationIds,
         ...deletedConversations.map((conversation) => conversation.conversationId),
       ];
+
+      if (recoveryConversationIds.length > 0) {
+        await deps?.deleteAgentQueuedTurns?.(
+          user,
+          recoveryConversationIds.map((conversationId) => ({
+            conversationId,
+            allTenants: true,
+          })),
+        );
+      }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
 
