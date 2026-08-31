@@ -134,6 +134,7 @@ const Reasoning = memo((props: ReasoningProps) => {
             animateLabel={
               smoothStreaming && effectiveIsSubmitting && Boolean(reasoningLabel?.trim())
             }
+            shimmerLabel={effectiveIsSubmitting && isLast}
           />
         </div>
         <div

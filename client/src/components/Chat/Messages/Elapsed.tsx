@@ -43,6 +43,10 @@ export const shouldShowElapsed = ({
  * re-render on its account. The compact reading is hidden from assistive
  * technology in favor of a spoken equivalent; neither is an `aria-live` region,
  * so the tick never announces.
+ *
+ * The reading carries the same shimmer a running tool call's label carries. It
+ * only ever renders mid-generation (see `shouldShowElapsed`), so there is no
+ * settled state for the animation to misrepresent.
  */
 const Elapsed = memo(function Elapsed({ index }: { index: number }) {
   const submissionStart = useRecoilValue(store.submissionStartFamily(index));
@@ -73,7 +77,7 @@ export const ElapsedTimer = memo(function ElapsedTimer({ start: startAt }: { sta
    *  the alignment holds in RTL. */
   return (
     <span className="flex items-center ps-1.5 text-text-secondary">
-      <span aria-hidden="true" className="tabular-nums" data-testid="stream-elapsed">
+      <span aria-hidden="true" className="shimmer tabular-nums" data-testid="stream-elapsed">
         {localize(labels.key, labels.values)}
       </span>
       <span className="sr-only">{localize(labels.announcedKey, labels.announcedValues)}</span>
