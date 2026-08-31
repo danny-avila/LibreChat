@@ -899,7 +899,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       const retentionExpiry = await getAgentFileRetentionExpiry({
         req,
         messageAttachment,
-        tool_resource,
+        tool_resource: effectiveToolResource,
       });
 
       const fileInfo = {
@@ -1149,7 +1149,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const retentionExpiry = await getAgentFileRetentionExpiry({
     req,
     messageAttachment,
-    tool_resource,
+    tool_resource: effectiveToolResource,
   });
   const fileInfo = {
     ...removeNullishValues({
