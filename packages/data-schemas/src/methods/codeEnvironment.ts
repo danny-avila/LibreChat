@@ -89,7 +89,7 @@ type CreateCodeEnvironmentInput = Pick<
 > &
   Pick<
     Partial<CodeEnvironmentDocument>,
-    'workerId' | 'controlPlaneId' | 'revocationTokenEnv' | 'workerPrincipal'
+    'workerId' | 'revocationTokenEnv' | 'workerPrincipal'
   >;
 
 export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')): {

@@ -14,7 +14,6 @@ export type CodeEnvironment = {
   revocationAttempts?: number;
   revocationLastError?: string;
   workerId?: string;
-  controlPlaneId?: string;
   revocationTokenEnv?: string;
   workerPrincipal?: {
     type: 'deployment' | 'tenant' | 'user' | 'role' | 'group';

@@ -390,6 +390,7 @@ describe('code environment registry', () => {
           name: id,
           type: 'attached',
           baseURL: `https://${id}.example.com/v1`,
+          controlPlaneId: 'shared-code-api',
           workerId: id,
           revocationTokenEnv: 'CODE_ADMIN_TOKEN',
           workerPrincipal: { type: 'user', id: ownerId.toString() },

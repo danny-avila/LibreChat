@@ -69,9 +69,6 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
     workerId: {
       type: String,
     },
-    controlPlaneId: {
-      type: String,
-    },
     revocationTokenEnv: {
       type: String,
     },

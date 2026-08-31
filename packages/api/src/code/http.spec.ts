@@ -226,6 +226,7 @@ describe('code environment HTTP handlers', () => {
       createEnvironmentId: () => 'code-generated',
       readSecret: () => 'administrator-token',
       principalAuthEnabled: () => true,
+      principalAuthReady: jest.fn().mockResolvedValue(undefined),
       fetchImpl,
     });
     const res = response();
@@ -290,13 +291,13 @@ describe('code environment HTTP handlers', () => {
     } as AppConfig;
     const effectiveConfig = {
       endpoints: { [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [] } } },
-    } as AppConfig;
+    } as unknown as AppConfig;
     const getAppConfig = jest.fn(async (options) =>
       options.baseOnly === true ? baseConfig : effectiveConfig,
     );
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig,
-      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      registry: { register: jest.fn(), listAccessible: jest.fn(), remove: jest.fn() },
       readSecret: jest.fn(() => 'administrator-token'),
       principalAuthEnabled: jest.fn(() => true),
       principalAuthReady: jest.fn(),
@@ -330,7 +331,7 @@ describe('code environment HTTP handlers', () => {
         if (options.baseOnly === true) return {} as AppConfig;
         throw new Error('authorization unavailable');
       }),
-      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      registry: { register: jest.fn(), listAccessible: jest.fn(), remove: jest.fn() },
       principalAuthEnabled: jest.fn(() => true),
       principalAuthReady: jest.fn(),
       fetchImpl,
@@ -405,6 +406,7 @@ describe('code environment HTTP handlers', () => {
       registry: {
         register: jest.fn().mockResolvedValue({ id: 'code-generated' }),
         listAccessible: jest.fn(),
+        remove: jest.fn(),
       },
       createEnvironmentId: () => 'code-generated',
       readSecret,
@@ -436,7 +438,7 @@ describe('code environment HTTP handlers', () => {
     const fetchImpl = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn(),
-      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      registry: { register: jest.fn(), listAccessible: jest.fn(), remove: jest.fn() },
       principalAuthEnabled: jest.fn(() => true),
       principalAuthReady: jest.fn(() => {
         throw new Error('invalid signing key');
@@ -515,7 +517,6 @@ describe('code environment HTTP handlers', () => {
         baseURL: 'https://code.librechat.example',
         controlPlaneId: 'shared-code-api',
         workerId: 'deployment-worker',
-        controlPlaneId: 'shared-code-api',
         workerPrincipal: { type: 'deployment', id: 'shared-code-api' },
       },
     });
