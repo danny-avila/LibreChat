@@ -172,10 +172,32 @@ const AttachFileMenu = ({
   );
 
   /** Unified mode: single click triggers file upload with no tool_resource */
-  const handleUnifiedUpload = () => {
+  const handleUnifiedUpload = useCallback(() => {
     toolResourceRef.current = undefined;
     handleUploadClick();
-  };
+  }, [handleUploadClick]);
+
+  /** Unified mode removed the destination chooser, not the source chooser. SharePoint has
+   *  no trigger of its own, so without this the picker becomes unreachable whenever the
+   *  composer is in unified mode. Destination stays implicit on both sources. */
+  const unifiedSourceItems = useMemo<MenuItemProps[]>(
+    () => [
+      {
+        label: localize('com_files_upload_local_machine'),
+        onClick: handleUnifiedUpload,
+        icon: <FileImageIcon className="icon-md" />,
+      },
+      {
+        label: localize('com_files_upload_sharepoint'),
+        onClick: () => {
+          toolResourceRef.current = undefined;
+          setIsSharePointDialogOpen(true);
+        },
+        icon: <SharePointIcon className="icon-md" />,
+      },
+    ],
+    [localize, handleUnifiedUpload, setIsSharePointDialogOpen],
+  );
 
   const dropdownItems = useMemo(() => {
     const setToolResource = (value: EToolResources | undefined) => {
@@ -347,26 +369,41 @@ const AttachFileMenu = ({
             handleFileChange(e, toolResourceRef.current);
           }}
         >
-          <TooltipAnchor
-            render={
-              <IconButton
-                type="button"
-                size="theme"
-                shape="theme"
-                disabled={isUploadDisabled}
-                id="attach-file-button"
-                label={localize('com_sidepanel_attach_files')}
-                onClick={handleUnifiedUpload}
-                aria-keyshortcuts={uploadFileAriaKey}
-                className="p-1 hover:bg-surface-composer-hover"
-              >
-                <AttachmentIcon />
-              </IconButton>
-            }
-            id="attach-file-button"
-            description={uploadFileTooltip}
-            disabled={isUploadDisabled}
-          />
+          {sharePointEnabled === true ? (
+            <DropdownPopup
+              menuId="attach-file-menu"
+              className="overflow-visible"
+              isOpen={isPopoverActive}
+              setIsOpen={setIsPopoverActive}
+              modal={false}
+              portal={true}
+              unmountOnHide={true}
+              trigger={menuTrigger}
+              items={unifiedSourceItems}
+              iconClassName="mr-0"
+            />
+          ) : (
+            <TooltipAnchor
+              render={
+                <IconButton
+                  type="button"
+                  size="theme"
+                  shape="theme"
+                  disabled={isUploadDisabled}
+                  id="attach-file-button"
+                  label={localize('com_sidepanel_attach_files')}
+                  onClick={handleUnifiedUpload}
+                  aria-keyshortcuts={uploadFileAriaKey}
+                  className="p-1 hover:bg-surface-composer-hover"
+                >
+                  <AttachmentIcon />
+                </IconButton>
+              }
+              id="attach-file-button"
+              description={uploadFileTooltip}
+              disabled={isUploadDisabled}
+            />
+          )}
         </FileUpload>
         <SharePointPickerDialog
           isOpen={isSharePointDialogOpen}

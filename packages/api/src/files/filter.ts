@@ -41,6 +41,23 @@ export function filterFilesByEndpointConfig(
 }
 
 /** Request-free endpoint file-policy adapter used by Agent execution hosts. */
+/**
+ * Whether this endpoint still presents the explicit upload-destination chooser. In that
+ * mode the destination is the user's choice and the upload path acts on it immediately,
+ * so nothing may be provisioned to a service they did not select.
+ */
+export function isLegacyFileUploadUX(
+  appConfig: AppConfig | undefined,
+  params: { endpoint?: string | null; endpointType?: string | null },
+): boolean {
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig: mergeFileConfig(appConfig?.fileConfig),
+    endpoint: params.endpoint,
+    endpointType: params.endpointType,
+  });
+  return endpointFileConfig?.legacyFileUploadUX === true;
+}
+
 export function filterFilesByEndpointRuntimeConfig(
   appConfig: AppConfig | undefined,
   params: {

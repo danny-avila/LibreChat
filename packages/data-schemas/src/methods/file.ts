@@ -51,7 +51,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   getDeferredProvisionFiles: (
     fileIds: string[],
     ownerScope: FileOwnerScope,
-    resources?: { code?: boolean; search?: boolean },
+    resources?: { code?: boolean; search?: boolean; codeRouteKey?: string },
   ) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
     filename: string;
@@ -307,7 +307,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function getDeferredProvisionFiles(
     fileIds: string[],
     ownerScope: FileOwnerScope,
-    resources: { code?: boolean; search?: boolean } = { code: true, search: true },
+    resources: { code?: boolean; search?: boolean; codeRouteKey?: string } = {
+      code: true,
+      search: true,
+    },
   ): Promise<IMongoFile[]> {
     if (!fileIds || fileIds.length === 0) {
       return [];
@@ -315,10 +318,29 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
 
     const missingConditions: FilterQuery<IMongoFile>[] = [];
     if (resources.code) {
-      missingConditions.push({
-        'metadata.codeEnvRef': { $exists: false },
-        'metadata.codeEnvRefs': { $exists: false },
-      });
+      /* A reference for another deployment does not make the file usable here, and with
+       * resendFiles off nothing downstream re-reads the record to notice, so eligibility
+       * is judged against the route this turn will actually execute on. The legacy
+       * pointer counts only when it resolves to that same route, mirroring how
+       * mergeCodeEnvRef keys it: executionRouteKey, then executionProfile, then default. */
+      const routeKey = resources.codeRouteKey ?? 'default';
+      const usableForRoute: FilterQuery<IMongoFile>[] = [
+        { [`metadata.codeEnvRefs.${routeKey}`]: { $exists: true } },
+        { 'metadata.codeEnvRef.executionRouteKey': routeKey },
+        {
+          'metadata.codeEnvRef': { $exists: true },
+          'metadata.codeEnvRef.executionRouteKey': { $exists: false },
+          'metadata.codeEnvRef.executionProfile': routeKey,
+        },
+      ];
+      if (routeKey === 'default') {
+        usableForRoute.push({
+          'metadata.codeEnvRef': { $exists: true },
+          'metadata.codeEnvRef.executionRouteKey': { $exists: false },
+          'metadata.codeEnvRef.executionProfile': { $in: [null, 'default'] },
+        });
+      }
+      missingConditions.push({ $nor: usableForRoute });
     }
     if (resources.search) {
       missingConditions.push({ embedded: { $ne: true } });
