@@ -249,3 +249,24 @@ tunnel and none were documented before:
 - `directConnection=true` — replica-set discovery returns internal cluster
   hostnames that are unreachable through a tunnel
 - `tlsAllowInvalidHostnames` — the tunnel endpoint never matches the certificate
+
+## Method sweep (2026-08-31)
+
+`sweep.documentdb.spec.ts` drives every exported data-schemas method (510 at
+the time of writing) against a real engine, auto-synthesizing arguments,
+repairing them from validation errors, and counting the driver queries each
+method actually issues — a method that issues none is reported un-adjudicated
+instead of silently green. Run once against in-memory MongoDB
+(`SWEEP_BASELINE=true`) and once against DocumentDB, then diff the JSON
+matrices (`SWEEP_REPORT_PATH`).
+
+First full run, post-#15375/#15390, live DocumentDB 5.0.0: **363 of 510
+methods issued at least one query; zero engine rejections; zero divergences
+from the MongoDB baseline** — identical outcome distributions on both engines.
+The remaining 147 methods issued no queries (validation rejected the
+synthesized arguments, or a guard short-circuited); they are listed in the
+matrix and shrink by adding `ARG_OVERRIDES` entries.
+
+This sweep exists because every incompatibility found so far was invisible
+until someone thought to look for its class; here the engine adjudicates
+whatever each method emits, known class or not.

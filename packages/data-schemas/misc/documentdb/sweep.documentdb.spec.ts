@@ -1,0 +1,414 @@
+import mongoose from 'mongoose';
+import { randomUUID } from 'crypto';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import fs from 'fs';
+import type { Collection } from 'mongodb';
+import type { ConnectOptions } from 'mongoose';
+import { createMethods } from '~/methods';
+import { createModels } from '~/models';
+
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
+
+/**
+ * Method sweep: drives EVERY exported data-schemas method against a real
+ * engine and records, per method, how many driver queries it issued and
+ * whether the engine rejected any of them.
+ *
+ * This exists because hand-picked probe lists inherit the auditor's blind
+ * spots: every DocumentDB incompatibility found so far (pipeline updates,
+ * `$$REMOVE`, `$facet`, the transaction probe, the Mongoose-compiled mixed
+ * projection) was invisible until someone thought to look for its class. The
+ * sweep flips that: the engine itself adjudicates every query each method
+ * emits. Query shapes are parsed before they are matched, so even an empty
+ * database adjudicates most entry paths.
+ *
+ * The sweep is honest about its limits instead of quietly green:
+ * - `not-driven` — the method issued zero driver queries (input validation
+ *   rejected the synthesized arguments, or a guard early-returned). NOT
+ *   adjudicated; add an override in `ARG_OVERRIDES` to drive it.
+ * - `queries: N` — how many driver calls the engine actually saw. Deep branches
+ *   behind state the sweep did not seed remain uncovered; the number makes the
+ *   partiality visible.
+ *
+ * Runs in two modes with identical mechanics, so matrices diff cleanly:
+ *   SWEEP_BASELINE=true            → in-memory real MongoDB (free; CI-able)
+ *   DOCUMENTDB_URI=...             → live Amazon DocumentDB (see
+ *                                    audit.documentdb.spec.ts for the
+ *                                    connection recipe; every parameter is
+ *                                    load-bearing through a tunnel)
+ * SWEEP_REPORT_PATH writes the matrix as JSON for machine diffing.
+ * DOCUMENTDB_STRICT=true fails the suite on any engine rejection.
+ */
+const DOCUMENTDB_URI = process.env.DOCUMENTDB_URI ?? '';
+const BASELINE = process.env.SWEEP_BASELINE === 'true';
+const STRICT = process.env.DOCUMENTDB_STRICT === 'true';
+const REPORT_PATH = process.env.SWEEP_REPORT_PATH ?? '';
+const describeSweep = DOCUMENTDB_URI || BASELINE ? describe : describe.skip;
+
+const METHOD_TIMEOUT_MS = 20_000;
+const runId = randomUUID().slice(0, 8);
+
+interface MethodVerdict {
+  queries: number;
+  engineError?: string;
+  outcome: 'ok' | 'engine-rejected' | 'not-driven' | 'no-queries' | 'threw' | 'timeout';
+  detail?: string;
+}
+
+const verdicts: Record<string, MethodVerdict> = {};
+let currentLabel: string | null = null;
+
+const DRIVER_OPS = [
+  'find',
+  'findOne',
+  'findOneAndUpdate',
+  'findOneAndDelete',
+  'findOneAndReplace',
+  'updateOne',
+  'updateMany',
+  'replaceOne',
+  'insertOne',
+  'insertMany',
+  'deleteOne',
+  'deleteMany',
+  'aggregate',
+  'countDocuments',
+  'distinct',
+  'bulkWrite',
+] as const;
+
+/** Duplicate-key violations are server errors but not engine incompatibilities:
+ * they prove the write REACHED the engine and hit a constraint. */
+const BENIGN_SERVER_CODES = new Set([11000, 11001]);
+
+function recordEngineError(label: string | null, error: unknown): void {
+  if (label == null) return;
+  const err = error as { name?: string; message?: string; code?: number };
+  if (err?.name !== 'MongoServerError' && err?.name !== 'MongoBulkWriteError') return;
+  if (err.code != null && BENIGN_SERVER_CODES.has(err.code)) return;
+  if (/E11000/.test(String(err.message))) return;
+  const verdict = (verdicts[label] ??= { queries: 0, outcome: 'ok' });
+  if (verdict.engineError == null) {
+    verdict.engineError = String(err.message).replace(/\s+/g, ' ').slice(0, 160);
+  }
+}
+
+/** Cursor-returning ops surface parse errors on consumption, not on the call,
+ * so the cursor's promise-returning members are wrapped with the label that
+ * was current when the cursor was created. */
+function wrapCursor<T extends object>(cursor: T, label: string | null): T {
+  return new Proxy(cursor, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      return function wrapped(this: unknown, ...args: unknown[]) {
+        const result = value.apply(target, args);
+        if (result instanceof Promise) {
+          return result.catch((error: unknown) => {
+            recordEngineError(label, error);
+            throw error;
+          });
+        }
+        return result;
+      };
+    },
+  });
+}
+
+function instrumentDriver(): void {
+  const sample = mongoose.connection.db?.collection(`sweep_probe_${runId}`);
+  if (sample == null) throw new Error('no database handle to instrument');
+  const proto = Object.getPrototypeOf(sample) as Collection & Record<string, unknown>;
+  for (const op of DRIVER_OPS) {
+    const original = proto[op] as (...args: unknown[]) => unknown;
+    if (typeof original !== 'function' || (original as { __swept?: boolean }).__swept) continue;
+    const wrapped = function (this: Collection, ...args: unknown[]) {
+      const label = currentLabel;
+      if (label != null) {
+        (verdicts[label] ??= { queries: 0, outcome: 'ok' }).queries += 1;
+      }
+      const result = original.apply(this, args);
+      if (result instanceof Promise) {
+        return result.catch((error: unknown) => {
+          recordEngineError(label, error);
+          throw error;
+        });
+      }
+      if (op === 'find' || op === 'aggregate') {
+        return wrapCursor(result as object, label);
+      }
+      return result;
+    };
+    (wrapped as { __swept?: boolean }).__swept = true;
+    (proto as Record<string, unknown>)[op] = wrapped;
+  }
+}
+
+const objectId = () => new mongoose.Types.ObjectId();
+const OBJECT_ID_PARAMS =
+  /^(user|author|owner|principalId|targetId|granteeId|grantedById|revokedBy|agentId)$/;
+const DATE_PARAMS = /(At|Until|Before|After|Date|Cutoff)$|^(now|date|fenceStartedAt)$/;
+const NUMBER_PARAMS =
+  /^(limit|count|page|pageSize|size|amount|n|attempt|sequence|version|epoch|tokenCount|priority|expiredMessageRetentionDays)$|(Limit|Count|Ms|Bytes|Days)$/;
+const BOOLEAN_PARAMS = /^(is|has|should|include|mark|force|replay|dry)/;
+const ARRAY_PARAMS =
+  /(Ids|Keys|ids|keys|Names)$|^(tags|conversations|files|messages|targets|principals|entries|updates|operations|roles|values)$/;
+
+function valueFor(name: string): unknown {
+  if (name === 'mongoose') return mongoose;
+  if (name === 'kind') return 'manual';
+  if (/pipeline/i.test(name)) return [{ $match: { _id: objectId() } }];
+  if (OBJECT_ID_PARAMS.test(name)) return objectId();
+  if (ARRAY_PARAMS.test(name)) return [`sweep-${name}-${runId}`];
+  if (/Until$/.test(name)) return new Date(Date.now() + 60_000);
+  if (DATE_PARAMS.test(name)) return new Date();
+  if (NUMBER_PARAMS.test(name) || /limit/i.test(name)) return 2;
+  if (BOOLEAN_PARAMS.test(name)) return false;
+  if (/tenantId/i.test(name)) return undefined;
+  if (name === 'conversationId' || name === 'threadId') return randomUUID();
+  if (name === 'email') return `sweep-${runId}@sweep.test`;
+  return `sweep-${name}-${runId}`;
+}
+
+/** Walks the argument tree replacing every exact occurrence of a value. */
+function replaceValue(node: unknown, target: string, replacement: unknown): unknown {
+  if (typeof node === 'string') return node === target ? replacement : node;
+  if (Array.isArray(node)) return node.map((item) => replaceValue(item, target, replacement));
+  if (node != null && typeof node === 'object' && !(node instanceof Date)) {
+    if (node instanceof mongoose.Types.ObjectId) return node;
+    return Object.fromEntries(
+      Object.entries(node).map(([key, value]) => [key, replaceValue(value, target, replacement)]),
+    );
+  }
+  return node;
+}
+
+/** Repairs synthesized arguments from a validation error's own message, so the
+ * retry reaches the database instead of being reported `not-driven`. Returns
+ * the repaired arguments, or null when the error is not machine-repairable. */
+function adaptArgs(args: unknown[], error: unknown): unknown[] | null {
+  const message = String((error as { message?: string })?.message ?? '');
+  let match = /Cast to (?:\[)?ObjectId(?:\])? failed for value "+?\[?'?"?([^"'\]]+)/.exec(message);
+  if (match != null) {
+    return args.map((arg) => replaceValue(arg, match![1], objectId())) as unknown[];
+  }
+  match = /Cast to (?:\[)?Number(?:\])? failed for value "([^"]+)"/.exec(message);
+  if (match != null) {
+    return args.map((arg) => replaceValue(arg, match![1], 2)) as unknown[];
+  }
+  match = /Cast to (?:\[)?date(?:\])? failed for value "([^"]+)"/i.exec(message);
+  if (match != null) {
+    return args.map((arg) => replaceValue(arg, match![1], new Date())) as unknown[];
+  }
+  match = /Cast to (?:Embedded|\[Embedded\]|Map|Mixed) failed for value "([^"]+)"/.exec(message);
+  if (match != null) {
+    return args.map((arg) => replaceValue(arg, match![1], {})) as unknown[];
+  }
+  if (/must be an object/.test(message)) {
+    const repaired = args.map((arg) => {
+      if (Array.isArray(arg)) return arg.map((item) => (typeof item === 'string' ? {} : item));
+      if (typeof arg === 'string') return {};
+      return arg;
+    });
+    return JSON.stringify(repaired) === JSON.stringify(args) ? null : repaired;
+  }
+  const requiredPaths = [
+    ...message.matchAll(/Path `([A-Za-z_$][A-Za-z0-9_$.]*)` is required/g),
+  ].map((m) => m[1]);
+  if (requiredPaths.length > 0) {
+    const objectIndex = args.findIndex((arg) => arg != null && typeof arg === 'object');
+    const target = (objectIndex >= 0 ? { ...(args[objectIndex] as object) } : {}) as Record<
+      string,
+      unknown
+    >;
+    for (const path of requiredPaths) {
+      target[path.split('.')[0]] = valueFor(path.split('.')[0]);
+    }
+    const repaired = [...args];
+    if (objectIndex >= 0) repaired[objectIndex] = target;
+    else repaired.push(target);
+    return repaired;
+  }
+  return null;
+}
+
+/** Per-method arguments where name-pattern synthesis cannot produce a shape
+ * that reaches the database (validation rejects it, or a guard early-returns).
+ * Grow this list whenever the matrix reports `not-driven`. */
+const ARG_OVERRIDES: Record<string, () => unknown[]> = {
+  /** Positional (searchParameter, id): a synthesized string for the first
+   * parameter lands inside a `$match` and malforms it on both engines. */
+  getAgentWithVersionCount: () => [{ id: `agent-sweep-${runId}` }],
+};
+
+/** Parses the function source just enough to synthesize a plausible call:
+ * either one destructured options object or a positional list. */
+function synthesizeArgs(fn: (...args: unknown[]) => unknown): unknown[] {
+  const source = fn.toString();
+  const header = source.slice(0, source.indexOf(')') + 1);
+  const paramList = header.slice(header.indexOf('(') + 1, -1).trim();
+  if (paramList.length === 0) return [];
+  if (paramList.startsWith('{')) {
+    const keys = [...paramList.matchAll(/([A-Za-z_$][A-Za-z0-9_$]*)\s*[,:=}]/g)].map((m) => m[1]);
+    return [Object.fromEntries(keys.map((key) => [key, valueFor(key)]))];
+  }
+  const names = paramList
+    .split(',')
+    .map((part) => part.trim().split(/[=:\s]/)[0])
+    .filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name));
+  return names.map((name) =>
+    name === 'input' || name === 'params' || name === 'options' || name === 'data'
+      ? synthesizeObjectFromBody(fn)
+      : valueFor(name),
+  );
+}
+
+/** For `function (input) { ... input.userId ... }` shapes: harvest the
+ * property names the body reads off the single object parameter. */
+function synthesizeObjectFromBody(fn: (...args: unknown[]) => unknown): Record<string, unknown> {
+  const source = fn.toString();
+  const parameter = source
+    .slice(source.indexOf('(') + 1, source.indexOf(')'))
+    .split(',')[0]
+    ?.trim()
+    .split(/[=:\s]/)[0];
+  if (parameter == null || parameter.length === 0) return {};
+  const reads = [
+    ...source.matchAll(new RegExp(`${parameter}\\.([A-Za-z_$][A-Za-z0-9_$]*)`, 'g')),
+  ].map((m) => m[1]);
+  return Object.fromEntries([...new Set(reads)].map((key) => [key, valueFor(key)]));
+}
+
+const models = createModels(mongoose);
+Object.assign(mongoose.models, models);
+const methods = createMethods(mongoose, {
+  removeAllPermissions: async () => undefined,
+});
+type SweepFn = (...args: unknown[]) => unknown;
+/** Every AllMethods member is a function; the per-entry conversion is the
+ * variadic-unknown view the sweep needs to invoke them generically. */
+const methodMap: Record<string, SweepFn> = Object.fromEntries(
+  Object.entries(methods).flatMap(([name, member]) =>
+    typeof member === 'function' ? [[name, member as SweepFn]] : [],
+  ),
+);
+const methodNames = Object.keys(methodMap).sort();
+
+let memoryServer: MongoMemoryServer | undefined;
+
+describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'DocumentDB'})`, () => {
+  beforeAll(async () => {
+    if (BASELINE) {
+      memoryServer = await MongoMemoryServer.create();
+      await mongoose.connect(memoryServer.getUri(), { dbName: `librechat_sweep_${runId}` });
+    } else {
+      const options: ConnectOptions = { autoIndex: false, autoCreate: false };
+      if (process.env.DOCUMENTDB_TLS_CA_FILE) {
+        options.tlsCAFile = process.env.DOCUMENTDB_TLS_CA_FILE;
+      }
+      if (process.env.DOCUMENTDB_TLS_ALLOW_INVALID_HOSTNAMES === 'true') {
+        options.tlsAllowInvalidHostnames = true;
+      }
+      await mongoose.connect(DOCUMENTDB_URI, options);
+    }
+    instrumentDriver();
+  }, 120_000);
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.db?.dropDatabase().catch(() => undefined);
+      await mongoose.disconnect();
+    }
+    await memoryServer?.stop();
+
+    const rows = methodNames.map((name) => {
+      const verdict = verdicts[name] ?? { queries: 0, outcome: 'no-queries' as const };
+      return { name, ...verdict };
+    });
+    const rejected = rows.filter((row) => row.outcome === 'engine-rejected');
+    const notDriven = rows.filter(
+      (row) => row.outcome === 'not-driven' || row.outcome === 'no-queries',
+    );
+    const width = Math.max(...rows.map((row) => row.name.length));
+    console.log(
+      `\nMethod sweep matrix (run ${runId}, ${BASELINE ? 'baseline' : 'documentdb'}):\n` +
+        rows
+          .map(
+            (row) =>
+              `  ${row.name.padEnd(width)}  q=${String(row.queries).padStart(3)}  ${row.outcome}` +
+              (row.engineError ? `  ${row.engineError}` : '') +
+              (row.detail ? `  (${row.detail})` : ''),
+          )
+          .join('\n') +
+        `\n  TOTAL ${rows.length} | rejected ${rejected.length} | not-driven ${notDriven.length}\n`,
+    );
+    if (REPORT_PATH) {
+      fs.writeFileSync(REPORT_PATH, JSON.stringify({ runId, baseline: BASELINE, rows }, null, 2));
+    }
+  }, 120_000);
+
+  it.each(methodNames)(
+    '%s',
+    async (name) => {
+      const fn = methodMap[name];
+      const args = ARG_OVERRIDES[name]?.() ?? synthesizeArgs(fn);
+      currentLabel = name;
+      const verdict = (verdicts[name] ??= { queries: 0, outcome: 'ok' });
+      let callArgs = args;
+      const deadline = Date.now() + METHOD_TIMEOUT_MS - 5_000;
+      try {
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          try {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) {
+              verdict.outcome = 'timeout';
+              break;
+            }
+            await Promise.race([
+              Promise.resolve(fn(...callArgs)),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('sweep-timeout')), remaining),
+              ),
+            ]);
+            verdict.detail = undefined;
+            break;
+          } catch (error) {
+            const err = error as { name?: string; message?: string };
+            if (err?.message === 'sweep-timeout') {
+              verdict.outcome = 'timeout';
+              break;
+            }
+            verdict.detail = `${err?.name ?? 'Error'}: ${String(err?.message).slice(0, 80)}`;
+            const repaired = verdict.engineError == null ? adaptArgs(callArgs, error) : null;
+            if (repaired == null) {
+              break;
+            }
+            callArgs = repaired;
+          }
+        }
+      } finally {
+        currentLabel = null;
+      }
+      if (verdict.engineError != null) {
+        verdict.outcome = 'engine-rejected';
+      } else if (verdict.queries === 0 && verdict.outcome !== 'timeout') {
+        /** `not-driven` = validation threw before any query (repairable with an
+         * override); `no-queries` = returned cleanly without touching the
+         * database (a pure helper, or a guard the synthesized state
+         * short-circuited). Both are un-adjudicated; they differ in remedy. */
+        verdict.outcome = verdict.detail != null ? 'not-driven' : 'no-queries';
+      } else if (verdict.detail != null && verdict.outcome === 'ok') {
+        verdict.outcome = 'threw';
+      }
+      if (STRICT) {
+        expect(verdict.outcome).not.toBe('engine-rejected');
+      }
+    },
+    METHOD_TIMEOUT_MS,
+  );
+});
