@@ -260,12 +260,18 @@ instead of silently green. Run once against in-memory MongoDB
 (`SWEEP_BASELINE=true`) and once against DocumentDB, then diff the JSON
 matrices (`SWEEP_REPORT_PATH`).
 
-First full run, post-#15375/#15390, live DocumentDB 5.0.0: **363 of 510
-methods issued at least one query; zero engine rejections; zero divergences
-from the MongoDB baseline** — identical outcome distributions on both engines.
-The remaining 147 methods issued no queries (validation rejected the
-synthesized arguments, or a guard short-circuited); they are listed in the
-matrix and shrink by adding `ARG_OVERRIDES` entries.
+Corrected-harness baseline (real ACL cascades, index DDL and
+transaction-lifecycle instrumentation, per-invocation async attribution):
+**368 of 510 methods issue at least one query; zero rejections on MongoDB**.
+The remaining 142 issue none (validation rejected the synthesized arguments,
+or a guard short-circuited); they are listed in the matrix and shrink by
+adding `ARG_OVERRIDES` entries.
+
+The first live DocumentDB 5.0.0 run (2026-08-31, pre-correction harness:
+363 driven) found **zero engine rejections and zero divergences from its
+matching MongoDB baseline**. The corrected harness adjudicates strictly more —
+index DDL, transaction commits, ACL cascades — so the next live run is the
+authoritative matrix for those surfaces.
 
 This sweep exists because every incompatibility found so far was invisible
 until someone thought to look for its class; here the engine adjudicates

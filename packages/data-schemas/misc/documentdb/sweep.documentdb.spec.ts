@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import fs from 'fs';
@@ -61,7 +62,11 @@ interface MethodVerdict {
 }
 
 const verdicts: Record<string, MethodVerdict> = {};
-let currentLabel: string | null = null;
+/** Attribution rides the method's own async context: a straggler that
+ * outlives its timeout keeps issuing queries under ITS label instead of
+ * corrupting whichever row the sweep has moved on to. */
+const sweepContext = new AsyncLocalStorage<string>();
+const activeLabel = (): string | null => sweepContext.getStore() ?? null;
 
 const DRIVER_OPS = [
   'find',
@@ -133,7 +138,7 @@ function instrumentDriver(): void {
     const original = proto[op] as (...args: unknown[]) => unknown;
     if (typeof original !== 'function' || (original as { __swept?: boolean }).__swept) continue;
     const wrapped = function (this: Collection, ...args: unknown[]) {
-      const label = currentLabel;
+      const label = activeLabel();
       if (label != null) {
         (verdicts[label] ??= { queries: 0, outcome: 'ok' }).queries += 1;
       }
@@ -151,6 +156,39 @@ function instrumentDriver(): void {
     };
     (wrapped as { __swept?: boolean }).__swept = true;
     (proto as Record<string, unknown>)[op] = wrapped;
+  }
+}
+
+/** Transaction-lifecycle rejections surface from the session, not from a
+ * collection operation, and several methods convert them into domain errors —
+ * without this, a real `commitTransaction` engine rejection classifies as a
+ * mere `threw` and STRICT passes. */
+async function instrumentSessions(): Promise<void> {
+  const session = await mongoose.startSession();
+  try {
+    const proto = Object.getPrototypeOf(session) as Record<string, unknown>;
+    for (const op of ['commitTransaction', 'abortTransaction', 'withTransaction']) {
+      const original = proto[op] as (...args: unknown[]) => unknown;
+      if (typeof original !== 'function' || (original as { __swept?: boolean }).__swept) continue;
+      const wrapped = function (this: unknown, ...args: unknown[]) {
+        const label = activeLabel();
+        if (label != null) {
+          (verdicts[label] ??= { queries: 0, outcome: 'ok' }).queries += 1;
+        }
+        const result = original.apply(this, args);
+        if (result instanceof Promise) {
+          return result.catch((error: unknown) => {
+            recordEngineError(label, error);
+            throw error;
+          });
+        }
+        return result;
+      };
+      (wrapped as { __swept?: boolean }).__swept = true;
+      proto[op] = wrapped;
+    }
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -330,6 +368,7 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
       });
     }
     instrumentDriver();
+    await instrumentSessions();
   }, 120_000);
 
   afterAll(async () => {
@@ -339,6 +378,13 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
     }
     await memoryServer?.stop();
 
+    /** A straggler may have recorded its engine error after its row was
+     * classified; the report must reflect it. */
+    for (const verdict of Object.values(verdicts)) {
+      if (verdict.engineError != null) {
+        verdict.outcome = 'engine-rejected';
+      }
+    }
     const rows = methodNames.map((name) => {
       const verdict = verdicts[name] ?? { queries: 0, outcome: 'no-queries' as const };
       return { name, ...verdict };
@@ -370,11 +416,10 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
     async (name) => {
       const fn = methodMap[name];
       const args = ARG_OVERRIDES[name]?.() ?? synthesizeArgs(fn);
-      currentLabel = name;
       const verdict = (verdicts[name] ??= { queries: 0, outcome: 'ok' });
       let callArgs = args;
       const deadline = Date.now() + METHOD_TIMEOUT_MS - 5_000;
-      try {
+      await sweepContext.run(name, async () => {
         for (let attempt = 0; attempt < 6; attempt += 1) {
           try {
             const remaining = deadline - Date.now();
@@ -409,9 +454,7 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
             callArgs = repaired;
           }
         }
-      } finally {
-        currentLabel = null;
-      }
+      });
       if (verdict.engineError != null) {
         verdict.outcome = 'engine-rejected';
       } else if (verdict.queries === 0 && verdict.outcome !== 'timeout') {
