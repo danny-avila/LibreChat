@@ -67,6 +67,7 @@ function renderUseResumeOnLoad({
   messages = [],
   getMessages: getMessagesOverride,
   submission = null,
+  isSubmitting = false,
   conversationId = CONVERSATION_ID,
   messagesLoaded = true,
   onSubmission,
@@ -81,6 +82,7 @@ function renderUseResumeOnLoad({
   messages?: TMessage[];
   getMessages?: () => TMessage[] | undefined;
   submission?: TSubmission | null;
+  isSubmitting?: boolean;
   conversationId?: string;
   messagesLoaded?: boolean;
   onSubmission?: (submission: TSubmission | null) => void;
@@ -100,6 +102,7 @@ function renderUseResumeOnLoad({
   const initializeState = (snapshot: MutableSnapshot) => {
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
     snapshot.set(store.submissionByIndex(0), submission);
+    snapshot.set(store.isSubmittingFamily(0), isSubmitting);
     if (submissionStart != null) {
       snapshot.set(store.submissionStartFamily(0), submissionStart);
     }
@@ -642,6 +645,70 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+    });
+
+    it('attaches to a continuation when the finished run left its submission installed', async () => {
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      /**
+       * The FINAL path never clears the submission atom, so a pane that just
+       * finished a run still holds it. When a background tool dispatch (or any
+       * server-side continuation) then starts the next generation, that stale
+       * bookkeeping is the only thing standing between the announcement and the
+       * attachment — and it is not an attachment: nothing is streaming.
+       */
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: false,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseStreamStatus.mockClear();
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+      const attached = observedSubmissions[observedSubmissions.length - 1] as
+        | (TSubmission & { resumeStreamId?: string })
+        | null;
+      expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
+    });
+
+    it('leaves a streaming attachment alone when its own run is announced', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: true,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseStreamStatus.mockClear();
+      /** This pane's own run is what the list is reporting. */
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseStreamStatus).not.toHaveBeenCalledWith(CONVERSATION_ID, true);
     });
 
     it('does not re-arm for a conversation that is not the one being viewed', async () => {

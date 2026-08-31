@@ -250,6 +250,7 @@ export default function useResumeOnLoad(
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(runIndex));
   const currentConversation = useRecoilValue(store.conversationByIndex(runIndex));
   const endpoint = currentConversation?.endpoint;
   const endpointType = currentConversation?.endpointType;
@@ -425,6 +426,16 @@ export default function useResumeOnLoad(
     !!currentSubmission && (hasExplicitSubmissionMatch || hasHydratedMessageMatch);
   const hasStaleSubmissionForDifferentConvo =
     !!currentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
+  /**
+   * A submission only stands in for an attachment while something is actually
+   * streaming. The FINAL path never clears the atom, so a pane that just
+   * finished a run keeps holding the submission it completed — bookkeeping, not
+   * a live stream. `isSubmitting` stays true across reconnect backoff, so this
+   * still reads as attached while recovery is in flight, and `ask` raises it
+   * before installing a submission, so a fresh send has no window where it
+   * looks finished.
+   */
+  const hasLiveSubmissionForThisConvo = hasActiveSubmissionForThisConvo && isSubmitting;
 
   /**
    * A run this pane did not start — another tab, another device, a scheduled
@@ -745,7 +756,7 @@ export default function useResumeOnLoad(
       !resumableEnabled ||
       !hasActiveJobForThisConvo ||
       !conversationId ||
-      hasActiveSubmissionForThisConvo
+      hasLiveSubmissionForThisConvo
     ) {
       if (!hasActiveJobForThisConvo) {
         answeredActiveJobRef.current = null;
@@ -765,6 +776,17 @@ export default function useResumeOnLoad(
     answeredActiveJobRef.current = { conversationId, at: now };
 
     console.log('[ResumeOnLoad] Active job announced without an attachment', { conversationId });
+    /**
+     * A finished submission still installed here is the one thing standing
+     * between this announcement and the attachment: it is what the check below
+     * reads as "already attached", and what disables the status query. The run
+     * it describes is over, so release it — a server-side continuation such as
+     * a background tool dispatch finishing is a different generation, and the
+     * resume path is what owns building the submission for it.
+     */
+    if (hasActiveSubmissionForThisConvo) {
+      setSubmission(null);
+    }
     queryClient.invalidateQueries({ queryKey: streamStatusQueryKey(conversationId) });
     queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, conversationId] });
     processedConvoRef.current = null;
@@ -774,7 +796,9 @@ export default function useResumeOnLoad(
     resumableEnabled,
     hasActiveJobForThisConvo,
     hasActiveSubmissionForThisConvo,
+    hasLiveSubmissionForThisConvo,
     activeJobsUpdatedAt,
+    setSubmission,
     queryClient,
   ]);
 }
