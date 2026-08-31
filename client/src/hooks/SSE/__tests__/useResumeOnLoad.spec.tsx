@@ -68,6 +68,7 @@ function renderUseResumeOnLoad({
   getMessages: getMessagesOverride,
   submission = null,
   isSubmitting = false,
+  attachedGenerationCreatedAt = null,
   conversationId = CONVERSATION_ID,
   messagesLoaded = true,
   onSubmission,
@@ -83,6 +84,7 @@ function renderUseResumeOnLoad({
   getMessages?: () => TMessage[] | undefined;
   submission?: TSubmission | null;
   isSubmitting?: boolean;
+  attachedGenerationCreatedAt?: number | null;
   conversationId?: string;
   messagesLoaded?: boolean;
   onSubmission?: (submission: TSubmission | null) => void;
@@ -103,6 +105,10 @@ function renderUseResumeOnLoad({
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
     snapshot.set(store.submissionByIndex(0), submission);
     snapshot.set(store.isSubmittingFamily(0), isSubmitting);
+    snapshot.set(
+      store.activeGenerationCreatedAtByConvoId(conversationId),
+      attachedGenerationCreatedAt,
+    );
     if (submissionStart != null) {
       snapshot.set(store.submissionStartFamily(0), submissionStart);
     }
@@ -684,6 +690,41 @@ describe('useResumeOnLoad', () => {
         | (TSubmission & { resumeStreamId?: string })
         | null;
       expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
+    });
+
+    it('leaves a resumed attachment alone before its stream has opened', async () => {
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      /**
+       * A resume installs its submission and only reads as submitting once the
+       * stream opens, so between those two points a submission exists with
+       * `isSubmitting` still false. An announcement landing there must not
+       * mistake it for the leftovers of a finished run and tear down the
+       * attachment this hook just built. The epoch is stamped first for exactly
+       * this reason.
+       */
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: false,
+        attachedGenerationCreatedAt: 4242,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedSubmissions[observedSubmissions.length - 1]).not.toBeNull();
     });
 
     it('leaves a streaming attachment alone when its own run is announced', async () => {

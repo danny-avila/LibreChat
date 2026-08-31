@@ -251,6 +251,9 @@ export default function useResumeOnLoad(
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(runIndex));
+  const attachedGenerationCreatedAt = useRecoilValue(
+    store.activeGenerationCreatedAtByConvoId(conversationId ?? ''),
+  );
   const currentConversation = useRecoilValue(store.conversationByIndex(runIndex));
   const endpoint = currentConversation?.endpoint;
   const endpointType = currentConversation?.endpointType;
@@ -427,15 +430,22 @@ export default function useResumeOnLoad(
   const hasStaleSubmissionForDifferentConvo =
     !!currentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
   /**
-   * A submission only stands in for an attachment while something is actually
-   * streaming. The FINAL path never clears the atom, so a pane that just
-   * finished a run keeps holding the submission it completed — bookkeeping, not
-   * a live stream. `isSubmitting` stays true across reconnect backoff, so this
-   * still reads as attached while recovery is in flight, and `ask` raises it
-   * before installing a submission, so a fresh send has no window where it
-   * looks finished.
+   * A submission only stands in for an attachment while one is actually live.
+   * The FINAL path never clears the atom, so a pane that just finished a run
+   * keeps holding the submission it completed — bookkeeping, not a stream.
+   *
+   * Two signals, because neither covers the whole lifetime on its own.
+   * `isSubmitting` is raised by `ask` before a submission is installed and held
+   * across reconnect backoff, so sends and recovery both read as attached. It
+   * is not raised for a resumed attachment until that stream opens, though, and
+   * this effect installs the submission well before then — so an announcement
+   * landing in that window would tear down the attachment it had just built.
+   * The generation epoch closes it: this hook stamps it immediately before
+   * installing a resume submission, `subscribeToStream` stamps it for every
+   * other attachment, and terminal teardown is what clears it.
    */
-  const hasLiveSubmissionForThisConvo = hasActiveSubmissionForThisConvo && isSubmitting;
+  const hasLiveSubmissionForThisConvo =
+    hasActiveSubmissionForThisConvo && (isSubmitting || attachedGenerationCreatedAt != null);
 
   /**
    * A run this pane did not start — another tab, another device, a scheduled
@@ -797,6 +807,7 @@ export default function useResumeOnLoad(
     hasActiveJobForThisConvo,
     hasActiveSubmissionForThisConvo,
     hasLiveSubmissionForThisConvo,
+    attachedGenerationCreatedAt,
     activeJobsUpdatedAt,
     setSubmission,
     queryClient,
