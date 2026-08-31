@@ -3,7 +3,7 @@ import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-dat
 import type { AgentToolResources, TFile, AgentBaseResource } from 'librechat-data-provider';
 import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
-import type { Request as ServerRequest } from 'express';
+import type { ServerRequest } from '~/types';
 
 import { isCodeApiJwtAuthEnabled } from '~/auth/codeapi';
 import { TOOL_RESOURCE_KEYS } from './orphans';
@@ -37,7 +37,7 @@ export type TFileUpdate = {
  * @returns The codeEnvRef and a deferred DB update object
  */
 export type TProvisionToCodeEnv = (params: {
-  req: ServerRequest & { user?: IUser };
+  req: ServerRequest;
   file: TFile;
   entity_id?: string;
 }) => Promise<{ codeEnvRef: Record<string, unknown>; fileUpdate: TFileUpdate }>;
@@ -47,7 +47,7 @@ export type TProvisionToCodeEnv = (params: {
  * @returns Object with embedded status and a deferred DB update object
  */
 export type TProvisionToVectorDB = (params: {
-  req: ServerRequest & { user?: IUser };
+  req: ServerRequest;
   file: TFile;
   entity_id?: string;
   existingStream?: unknown;
@@ -60,7 +60,7 @@ export type TProvisionToVectorDB = (params: {
  */
 export type TCheckSessionsAlive = (params: {
   files: TFile[];
-  req?: ServerRequest & { user?: IUser };
+  req?: ServerRequest;
   apiKey?: string;
   staleSafeWindowMs?: number;
 }) => Promise<Set<string>>;
@@ -239,7 +239,7 @@ export const primeResources = async ({
   checkSessionsAlive,
   loadCodeApiKey,
 }: {
-  req?: ServerRequest & { user?: IUser };
+  req?: ServerRequest;
   principal?: Pick<IUser, 'id' | 'role'>;
   appConfig?: AppConfig;
   requestFileSet: Set<string>;
@@ -467,9 +467,17 @@ export const primeResources = async ({
          *  LIBRECHAT_CODE_API_KEY is not required for code-env provisioning. */
         const codeAuthAvailable = codeApiKey != null || jwtCodeAuth;
 
-        // Batch staleness check: identify which code env files are still alive
+        /** Batch staleness check: identify which code env files are still alive.
+         *  Requires credentials the callback can actually send: a legacy key, or a
+         *  req to mint JWT bearer auth from. Without either, skip the check so an
+         *  unauthorized 401 cannot mark live sandbox files as expired. */
         let aliveFileIds: Set<string> | undefined;
-        if (needsCodeEnv && codeAuthAvailable && checkSessionsAlive) {
+        if (
+          needsCodeEnv &&
+          codeAuthAvailable &&
+          checkSessionsAlive &&
+          (codeApiKey != null || req != null)
+        ) {
           const filesWithIdentifiers = attachments.filter(
             (f) => f?.metadata?.codeEnvRef && f.file_id,
           );
