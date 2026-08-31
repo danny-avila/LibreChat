@@ -461,16 +461,23 @@ const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
 
 export type SettledQueuedTurnReceipt = {
   clientRequestId: string;
-  status: 'admitted' | 'cancelled';
+  status: 'admitted' | 'admitted_pending_boundary' | 'cancelled' | 'dead';
   effectivePredecessorCreatedAt?: number;
   boundaryConsumed?: boolean;
 };
 
 /** Monotonic client knowledge of terminal server queue receipts. Admission
- * records preserve boundary multiplicity by request identity and remain as
- * tombstones after consumption so delayed POST responses cannot regress UI. */
+ * records preserve boundary multiplicity by request identity. Other terminal
+ * records exist only while their original enqueue callback is outstanding. */
 const settledQueuedTurnReceiptsByConvoId = atomFamily<SettledQueuedTurnReceipt[], string>({
   key: 'settledQueuedTurnReceiptsByConvoId',
+  default: [],
+});
+
+/** Enqueue callbacks that can still race newer GET/cancellation evidence.
+ * Entries retire as soon as that one callback settles. */
+const pendingQueuedTurnEnqueueIdsByConvoId = atomFamily<string[], string>({
+  key: 'pendingQueuedTurnEnqueueIdsByConvoId',
   default: [],
 });
 
@@ -804,6 +811,7 @@ export default {
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
   settledQueuedTurnReceiptsByConvoId,
+  pendingQueuedTurnEnqueueIdsByConvoId,
   runEndByIndex,
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,

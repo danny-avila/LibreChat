@@ -241,6 +241,9 @@ export default function useQueueDrain(
         const settledReceipts = snapshot
           .getLoadable(store.settledQueuedTurnReceiptsByConvoId(conversationId))
           .getValue();
+        const pendingEnqueueIds = snapshot
+          .getLoadable(store.pendingQueuedTurnEnqueueIdsByConvoId(conversationId))
+          .getValue();
         const consumedReceiptIndex = settledReceipts.findIndex(
           (receipt) =>
             receipt.status === 'admitted' &&
@@ -268,7 +271,7 @@ export default function useQueueDrain(
           }
           set(store.settledQueuedTurnReceiptsByConvoId(conversationId), (previous) => {
             let consumed = false;
-            return previous.map((receipt) => {
+            return previous.flatMap((receipt) => {
               if (
                 !consumed &&
                 receipt.status === 'admitted' &&
@@ -276,9 +279,11 @@ export default function useQueueDrain(
                 receipt.effectivePredecessorCreatedAt === end.generationCreatedAt
               ) {
                 consumed = true;
-                return { ...receipt, boundaryConsumed: true };
+                return pendingEnqueueIds.includes(receipt.clientRequestId)
+                  ? [{ ...receipt, boundaryConsumed: true }]
+                  : [];
               }
-              return receipt;
+              return [receipt];
             });
           });
           consumeEnd();

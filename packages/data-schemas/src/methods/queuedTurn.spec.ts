@@ -1244,6 +1244,119 @@ describe('agent queued turn methods', () => {
     });
   });
 
+  it('derives the predecessor from admission order when priority overtakes sequence', async () => {
+    const normal = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'priority-normal', expectedPredecessorCreatedAt: 10 }),
+    );
+    const priority = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({
+        clientRequestId: 'priority-overtake',
+        expectedPredecessorCreatedAt: 10,
+        priority: true,
+      }),
+    );
+    const priorityDelivery = 'admission-priority-overtake';
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: priority.turn.queuedTurnId,
+      deliveryKey: priorityDelivery,
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: priority.turn.queuedTurnId,
+      deliveryKey: priorityDelivery,
+      scheduledAt: START,
+    });
+    const priorityClaim = claimInput(priority.turn.queuedTurnId, {
+      claimId: priorityDelivery,
+    });
+    await expect(methods.claimNextAgentQueuedTurn(priorityClaim)).resolves.toMatchObject({
+      outcome: 'acquired',
+    });
+    await methods.beginAgentQueuedTurnAdmission({
+      ...priorityClaim,
+      admissionId: priorityDelivery,
+      startedAt: START,
+      effectivePredecessorCreatedAt: 10,
+    });
+    await methods.markAgentQueuedTurnAdmitted({
+      ...priorityClaim,
+      admissionId: priorityDelivery,
+      admissionMode: 'ordinary',
+      generationCreatedAt: 11,
+      effectivePredecessorCreatedAt: 10,
+      settledAt: START,
+    });
+
+    await Turn.updateOne(
+      { _id: priority.turn.queuedTurnId },
+      { $unset: { 'terminalReceipt.effectivePredecessorCreatedAt': 1 } },
+    );
+    await expect(
+      methods.getEffectiveAgentQueuedTurnPredecessor({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        sequence: normal.turn.sequence,
+        expectedPredecessorCreatedAt: 10,
+      }),
+    ).resolves.toBe(11);
+
+    const normalDelivery = 'admission-priority-normal';
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: normal.turn.queuedTurnId,
+      deliveryKey: normalDelivery,
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: normal.turn.queuedTurnId,
+      deliveryKey: normalDelivery,
+      scheduledAt: START,
+    });
+    const normalClaim = claimInput(normal.turn.queuedTurnId, { claimId: normalDelivery });
+    await expect(methods.claimNextAgentQueuedTurn(normalClaim)).resolves.toMatchObject({
+      outcome: 'acquired',
+    });
+    await methods.beginAgentQueuedTurnAdmission({
+      ...normalClaim,
+      admissionId: normalDelivery,
+      startedAt: LATER,
+      effectivePredecessorCreatedAt: 11,
+    });
+    await methods.markAgentQueuedTurnAdmitted({
+      ...normalClaim,
+      admissionId: normalDelivery,
+      admissionMode: 'ordinary',
+      generationCreatedAt: 12,
+      effectivePredecessorCreatedAt: 11,
+      settledAt: LATER,
+    });
+    await Turn.updateOne(
+      { _id: normal.turn.queuedTurnId },
+      { $unset: { 'terminalReceipt.effectivePredecessorCreatedAt': 1 } },
+    );
+
+    await expect(
+      methods.getAgentQueuedTurnByClientRequestId({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        clientRequestId: 'priority-normal',
+      }),
+    ).resolves.toMatchObject({
+      terminalReceipt: { effectivePredecessorCreatedAt: 11 },
+    });
+  });
+
   it('projects the newest failures when more than 100 dead receipts await dismissal', async () => {
     const deadIds: string[] = [];
     for (let index = 0; index < 101; index++) {

@@ -266,6 +266,7 @@ export interface AgentQueuedTurnMethods {
     input: AgentQueuedTurnConversationScope & {
       sequence: number;
       expectedPredecessorCreatedAt?: number;
+      admittedBefore?: Date;
     },
   ) => Promise<number | undefined>;
   drainAgentQueuedTurns: (
@@ -1025,6 +1026,7 @@ export function createAgentQueuedTurnMethods(
         conversationId: turn.conversationId,
         sequence: turn.sequence,
         expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
+        admittedBefore: turn.terminalReceipt.settledAt,
       })) ?? rootPredecessorCreatedAt;
     await Turn().updateOne(
       {
@@ -2074,6 +2076,7 @@ export function createAgentQueuedTurnMethods(
     input: AgentQueuedTurnConversationScope & {
       sequence: number;
       expectedPredecessorCreatedAt?: number;
+      admittedBefore?: Date;
     },
   ): Promise<number | undefined> {
     if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0) {
@@ -2083,19 +2086,53 @@ export function createAgentQueuedTurnMethods(
     if (rootEpoch == null) {
       return undefined;
     }
-    const predecessor = await Turn()
-      .findOne({
+    if (input.admittedBefore != null && !Number.isFinite(input.admittedBefore.getTime())) {
+      throw new TypeError('Agent queued turn admission cutoff is invalid');
+    }
+    const predecessors = await Turn()
+      .find({
         ...conversationScope(input),
-        sequence: { $lt: input.sequence },
+        sequence: { $ne: input.sequence },
         expectedPredecessorCreatedAt: rootEpoch,
         status: 'admitted',
         'terminalReceipt.outcome': 'admitted',
         'terminalReceipt.generationCreatedAt': { $exists: true },
+        ...(input.admittedBefore != null && {
+          'terminalReceipt.settledAt': { $lte: input.admittedBefore },
+        }),
       })
-      .sort({ sequence: -1 })
-      .select('terminalReceipt.generationCreatedAt')
-      .lean<IAgentQueuedTurn>();
-    return predecessor?.terminalReceipt?.generationCreatedAt;
+      .sort({ 'terminalReceipt.settledAt': 1, sequence: 1 })
+      .select({ sequence: 1, terminalReceipt: 1 })
+      .lean<IAgentQueuedTurn[]>();
+    let effectivePredecessorCreatedAt = rootEpoch;
+    let advanced = false;
+    const remaining = [...predecessors];
+    while (remaining.length > 0) {
+      /** Exact v2 lineage is authoritative and is independent of enqueue
+       * sequence (priority may overtake FIFO). Settled order is used only to
+       * bridge legacy admitted receipts that predate the stored edge. */
+      let nextIndex = remaining.findIndex(
+        (turn) =>
+          normalizePredecessor(turn.terminalReceipt?.effectivePredecessorCreatedAt) ===
+          effectivePredecessorCreatedAt,
+      );
+      if (nextIndex < 0) {
+        nextIndex = remaining.findIndex(
+          (turn) => turn.terminalReceipt?.effectivePredecessorCreatedAt == null,
+        );
+      }
+      if (nextIndex < 0) {
+        break;
+      }
+      const [next] = remaining.splice(nextIndex, 1);
+      const generationCreatedAt = normalizePredecessor(next.terminalReceipt?.generationCreatedAt);
+      if (generationCreatedAt == null) {
+        continue;
+      }
+      effectivePredecessorCreatedAt = generationCreatedAt;
+      advanced = true;
+    }
+    return advanced ? effectivePredecessorCreatedAt : undefined;
   }
 
   async function drainAgentQueuedTurns(

@@ -201,7 +201,7 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
 function reconcileServerQueuedTurns(
   previous: QueuedMessage[],
   receipts: AgentQueuedTurnReceipt[],
-  settledClientRequestIds: ReadonlySet<string>,
+  settledByRequestId: ReadonlyMap<string, SettledQueuedTurnReceipt>,
   authoritativeSnapshot = true,
 ): QueuedMessage[] {
   const previousByClientRequestId = new Map(
@@ -211,10 +211,18 @@ function reconcileServerQueuedTurns(
   );
   const observedClientRequestIds = new Set(receipts.map((receipt) => receipt.clientRequestId));
   const projected = receipts.flatMap((receipt): QueuedMessage[] => {
-    if (settledClientRequestIds.has(receipt.clientRequestId)) {
+    const settled = settledByRequestId.get(receipt.clientRequestId);
+    if (settled?.status === 'admitted' || settled?.status === 'cancelled') {
       return [];
     }
     const optimistic = previousByClientRequestId.get(receipt.clientRequestId);
+    if (
+      (settled?.status === 'dead' || settled?.status === 'admitted_pending_boundary') &&
+      receipt.status !== 'dead' &&
+      receipt.status !== 'admitted'
+    ) {
+      return optimistic == null ? [] : [optimistic];
+    }
     const boundaryPending = receipt.status === 'admitted';
     let status: NonNullable<QueuedMessage['server']>['status'] = 'rejected';
     if (boundaryPending) {
@@ -254,11 +262,16 @@ function reconcileServerQueuedTurns(
     ];
   });
   const retained = previous.filter((item) => {
-    if (item.clientRequestId != null && settledClientRequestIds.has(item.clientRequestId)) {
-      return false;
-    }
     if (item.server == null) {
       return true;
+    }
+    const settled =
+      item.clientRequestId == null ? undefined : settledByRequestId.get(item.clientRequestId);
+    if (settled?.status === 'admitted' || settled?.status === 'cancelled') {
+      return false;
+    }
+    if (settled?.status === 'dead' || settled?.status === 'admitted_pending_boundary') {
+      return item.clientRequestId == null || !observedClientRequestIds.has(item.clientRequestId);
     }
     if (item.clientRequestId == null || observedClientRequestIds.has(item.clientRequestId)) {
       return false;
@@ -389,15 +402,33 @@ export default function useSteering({
 
   const applyQueuedTurnReceipts = useRecoilCallback(
     ({ snapshot, set }) =>
-      (receipts: AgentQueuedTurnReceipt[], authoritativeSnapshot: boolean = true) => {
+      (
+        receipts: AgentQueuedTurnReceipt[],
+        source: 'snapshot' | 'enqueue' | 'direct' = 'snapshot',
+      ) => {
         const previousSettled = snapshot
           .getLoadable(store.settledQueuedTurnReceiptsByConvoId(queueKey))
           .getValue();
+        const previousPending = snapshot
+          .getLoadable(store.pendingQueuedTurnEnqueueIdsByConvoId(queueKey))
+          .getValue();
+        const completedRequestIds = new Set(
+          source === 'enqueue' ? receipts.map((receipt) => receipt.clientRequestId) : [],
+        );
+        const nextPending = previousPending.filter((id) => !completedRequestIds.has(id));
         const settledByRequestId = new Map(
           previousSettled.map((receipt) => [receipt.clientRequestId, receipt]),
         );
         for (const receipt of receipts) {
-          if (settledByRequestId.has(receipt.clientRequestId)) {
+          const existing = settledByRequestId.get(receipt.clientRequestId);
+          if (
+            existing != null &&
+            !(
+              existing.status === 'admitted_pending_boundary' &&
+              receipt.status === 'admitted' &&
+              receipt.effectivePredecessorCreatedAt != null
+            )
+          ) {
             continue;
           }
           let settled: SettledQueuedTurnReceipt | undefined;
@@ -407,27 +438,75 @@ export default function useSteering({
               status: 'admitted',
               effectivePredecessorCreatedAt: receipt.effectivePredecessorCreatedAt,
             };
+          } else if (receipt.status === 'admitted') {
+            settled = {
+              clientRequestId: receipt.clientRequestId,
+              status: 'admitted_pending_boundary',
+            };
           } else if (receipt.status === 'cancelled') {
             settled = { clientRequestId: receipt.clientRequestId, status: 'cancelled' };
+          } else if (
+            receipt.status === 'dead' &&
+            receipt.failure?.code !== 'ADMISSION_INDETERMINATE'
+          ) {
+            settled = { clientRequestId: receipt.clientRequestId, status: 'dead' };
           }
           if (settled == null) {
             continue;
           }
           settledByRequestId.set(receipt.clientRequestId, settled);
         }
-        const nextSettled = [...settledByRequestId.values()];
-        const settledClientRequestIds = new Set(settledByRequestId.keys());
-        if (nextSettled.length !== previousSettled.length) {
+        const terminalForReconciliation = new Map(settledByRequestId);
+        const pendingRequestIds = new Set(nextPending);
+        const nextSettled = [...settledByRequestId.values()].filter(
+          (receipt) =>
+            (receipt.status === 'admitted' && receipt.boundaryConsumed !== true) ||
+            pendingRequestIds.has(receipt.clientRequestId),
+        );
+        if (source === 'enqueue') {
+          set(store.pendingQueuedTurnEnqueueIdsByConvoId(queueKey), nextPending);
+        }
+        if (
+          nextSettled.length !== previousSettled.length ||
+          nextSettled.some((receipt, index) => receipt !== previousSettled[index])
+        ) {
           set(store.settledQueuedTurnReceiptsByConvoId(queueKey), nextSettled);
         }
-        set(store.queuedMessagesByConvoId(queueKey), (previous) =>
-          reconcileServerQueuedTurns(
-            previous,
-            receipts,
-            settledClientRequestIds,
-            authoritativeSnapshot,
-          ),
+        if (source !== 'direct') {
+          set(store.queuedMessagesByConvoId(queueKey), (previous) =>
+            reconcileServerQueuedTurns(
+              previous,
+              receipts,
+              terminalForReconciliation,
+              source === 'snapshot',
+            ),
+          );
+        }
+      },
+    [queueKey],
+  );
+
+  const finishQueuedTurnEnqueue = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (clientRequestId: string): boolean => {
+        const settledReceipts = snapshot
+          .getLoadable(store.settledQueuedTurnReceiptsByConvoId(queueKey))
+          .getValue();
+        const settled = settledReceipts.find(
+          (receipt) => receipt.clientRequestId === clientRequestId,
         );
+        set(store.pendingQueuedTurnEnqueueIdsByConvoId(queueKey), (previous) =>
+          previous.filter((id) => id !== clientRequestId),
+        );
+        if (
+          settled != null &&
+          (settled.status !== 'admitted' || settled.boundaryConsumed === true)
+        ) {
+          set(store.settledQueuedTurnReceiptsByConvoId(queueKey), (previous) =>
+            previous.filter((receipt) => receipt.clientRequestId !== clientRequestId),
+          );
+        }
+        return settled != null;
       },
     [queueKey],
   );
@@ -865,6 +944,9 @@ export default function useSteering({
         if (!serverOwned || clientRequestId == null) {
           return;
         }
+        set(store.pendingQueuedTurnEnqueueIdsByConvoId(queueKey), (previous) =>
+          previous.includes(clientRequestId) ? previous : [...previous, clientRequestId],
+        );
         const serverFiles = toQueuedTurnFileRefs(item.files);
         /** Commit the optimistic Recoil row before mutation callbacks can
          * reconcile it. This also makes synchronous test/adaptor completions
@@ -889,9 +971,12 @@ export default function useSteering({
             },
             {
               onSuccess: (receipt) => {
-                applyQueuedTurnReceipts([receipt], false);
+                applyQueuedTurnReceipts([receipt], 'enqueue');
               },
               onError: (error) => {
+                if (finishQueuedTurnEnqueue(clientRequestId)) {
+                  return;
+                }
                 updateQueuedMessage(item.id, (current) => {
                   if (isDefiniteQueuedTurnsUnsupported(error)) {
                     const {
@@ -941,6 +1026,7 @@ export default function useSteering({
       activeGenerationCreatedAt,
       enqueueAgentQueuedTurn,
       applyQueuedTurnReceipts,
+      finishQueuedTurnEnqueue,
       updateQueuedMessage,
     ],
   );
@@ -1165,6 +1251,7 @@ export default function useSteering({
             });
             return false;
           }
+          applyQueuedTurnReceipts([receipt], 'direct');
           return downgradeServerQueuedTurn(item.id);
         } catch {
           showToast({
@@ -1209,6 +1296,7 @@ export default function useSteering({
     [
       cancelSteer,
       cancelAgentQueuedTurn,
+      applyQueuedTurnReceipts,
       conversationId,
       downgradeQueuedRecovery,
       downgradeServerQueuedTurn,

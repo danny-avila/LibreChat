@@ -182,9 +182,7 @@ describe('useQueueDrain', () => {
 
     await waitFor(() => expect(setters.runEnd).toBeNull());
     expect(ask).not.toHaveBeenCalled();
-    expect(setters.settledReceipts).toEqual([
-      expect.objectContaining({ clientRequestId: 'admission-1', boundaryConsumed: true }),
-    ]);
+    expect(setters.settledReceipts).toEqual([]);
   });
 
   it('consumes one admission when separate receipts share the same predecessor epoch', async () => {
@@ -212,7 +210,6 @@ describe('useQueueDrain', () => {
 
     await waitFor(() =>
       expect(setters.settledReceipts).toEqual([
-        expect.objectContaining({ clientRequestId: 'admission-1', boundaryConsumed: true }),
         {
           clientRequestId: 'admission-2',
           status: 'admitted',
@@ -226,12 +223,7 @@ describe('useQueueDrain', () => {
       setters.setRunEnd!(runEnd({ generationCreatedAt: 41, endedAt: Date.now() + 1 }));
     });
 
-    await waitFor(() =>
-      expect(setters.settledReceipts).toEqual([
-        expect.objectContaining({ clientRequestId: 'admission-1', boundaryConsumed: true }),
-        expect.objectContaining({ clientRequestId: 'admission-2', boundaryConsumed: true }),
-      ]),
-    );
+    await waitFor(() => expect(setters.settledReceipts).toEqual([]));
     expect(ask).not.toHaveBeenCalled();
   });
 

@@ -262,6 +262,7 @@ describe('useSteering', () => {
           }),
           queue: useQueue(CONVO_ID),
           settledReceipts: useRecoilValue(store.settledQueuedTurnReceiptsByConvoId(CONVO_ID)),
+          pendingEnqueueIds: useRecoilValue(store.pendingQueuedTurnEnqueueIdsByConvoId(CONVO_ID)),
         }),
         { wrapper },
       );
@@ -418,6 +419,62 @@ describe('useSteering', () => {
       ]);
     });
 
+    it('does not let a stale queued POST erase incomplete admission evidence', async () => {
+      let releaseQueuedPost = () => undefined;
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        releaseQueuedPost = () =>
+          options.onSuccess({
+            ...input,
+            queuedTurnId: 'legacy-admitted-race',
+            status: 'queued',
+            revision: 1,
+            createdAt: new Date(100).toISOString(),
+            updatedAt: new Date(100).toISOString(),
+          });
+      });
+      const rendered = setupServerQueue();
+
+      await act(async () => {
+        rendered.result.current.steering.queueFromComposer('hold incomplete admission');
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(mockEnqueueQueuedTurn).toHaveBeenCalledTimes(1));
+      const input = mockEnqueueQueuedTurn.mock.calls[0][0];
+      mockServerQueuedTurns = [
+        {
+          ...input,
+          queuedTurnId: 'legacy-admitted-race',
+          status: 'admitted',
+          revision: 2,
+          createdAt: new Date(100).toISOString(),
+          updatedAt: new Date(200).toISOString(),
+        },
+      ];
+      rendered.rerender();
+
+      await waitFor(() =>
+        expect(rendered.result.current.queue[0].server).toMatchObject({
+          id: 'legacy-admitted-race',
+          status: 'uncertain',
+        }),
+      );
+      expect(rendered.result.current.settledReceipts).toEqual([
+        { clientRequestId: input.clientRequestId, status: 'admitted_pending_boundary' },
+      ]);
+
+      await act(async () => {
+        releaseQueuedPost();
+        await Promise.resolve();
+      });
+      expect(rendered.result.current.queue).toHaveLength(1);
+      expect(rendered.result.current.queue[0].server).toMatchObject({
+        id: 'legacy-admitted-race',
+        status: 'uncertain',
+      });
+      expect(rendered.result.current.pendingEnqueueIds).toEqual([]);
+      expect(rendered.result.current.settledReceipts).toEqual([]);
+    });
+
     it('does not let a stale queued POST response resurrect a terminal receipt', async () => {
       let releaseQueuedPost = () => undefined;
       mockEnqueueQueuedTurn.mockImplementation((input, options) => {
@@ -466,6 +523,132 @@ describe('useSteering', () => {
           effectivePredecessorCreatedAt: 41,
         },
       ]);
+    });
+
+    it('does not let a stale queued POST response resurrect a cancelled row', async () => {
+      let releaseQueuedPost = () => undefined;
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        releaseQueuedPost = () =>
+          options.onSuccess({
+            ...input,
+            queuedTurnId: 'server-cancel-race',
+            status: 'queued',
+            revision: 1,
+            createdAt: new Date(100).toISOString(),
+            updatedAt: new Date(100).toISOString(),
+          });
+      });
+      const rendered = setupServerQueue();
+
+      await act(async () => {
+        rendered.result.current.steering.queueFromComposer('cancel before POST returns');
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(mockEnqueueQueuedTurn).toHaveBeenCalledTimes(1));
+      const input = mockEnqueueQueuedTurn.mock.calls[0][0];
+      mockServerQueuedTurns = [
+        {
+          ...input,
+          queuedTurnId: 'server-cancel-race',
+          status: 'queued',
+          revision: 2,
+          createdAt: new Date(100).toISOString(),
+          updatedAt: new Date(200).toISOString(),
+        },
+      ];
+      rendered.rerender();
+      await waitFor(() =>
+        expect(rendered.result.current.queue[0].server?.id).toBe('server-cancel-race'),
+      );
+      mockCancelQueuedTurn.mockResolvedValueOnce({
+        ...input,
+        queuedTurnId: 'server-cancel-race',
+        status: 'cancelled',
+        revision: 3,
+        createdAt: new Date(100).toISOString(),
+        updatedAt: new Date(300).toISOString(),
+      });
+
+      await act(async () => {
+        await rendered.result.current.steering.discardQueued(rendered.result.current.queue[0]);
+      });
+      expect(rendered.result.current.queue[0].server).toBeUndefined();
+      expect(rendered.result.current.settledReceipts).toEqual([
+        { clientRequestId: input.clientRequestId, status: 'cancelled' },
+      ]);
+
+      await act(async () => {
+        releaseQueuedPost();
+        await Promise.resolve();
+      });
+      expect(rendered.result.current.queue).toEqual([
+        expect.objectContaining({
+          text: 'cancel before POST returns',
+          clientRequestId: input.clientRequestId,
+        }),
+      ]);
+      expect(rendered.result.current.queue[0].server).toBeUndefined();
+      expect(rendered.result.current.pendingEnqueueIds).toEqual([]);
+      expect(rendered.result.current.settledReceipts).toEqual([]);
+    });
+
+    it('does not let a stale queued POST response replace a definitive dead snapshot', async () => {
+      let releaseQueuedPost = () => undefined;
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        releaseQueuedPost = () =>
+          options.onSuccess({
+            ...input,
+            queuedTurnId: 'server-dead-race',
+            status: 'queued',
+            revision: 1,
+            createdAt: new Date(100).toISOString(),
+            updatedAt: new Date(100).toISOString(),
+          });
+      });
+      const rendered = setupServerQueue();
+
+      await act(async () => {
+        rendered.result.current.steering.queueFromComposer('fail before POST returns');
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(mockEnqueueQueuedTurn).toHaveBeenCalledTimes(1));
+      const input = mockEnqueueQueuedTurn.mock.calls[0][0];
+      mockServerQueuedTurns = [
+        {
+          ...input,
+          queuedTurnId: 'server-dead-race',
+          status: 'dead',
+          revision: 2,
+          failure: { code: 'PREDECESSOR_ABORTED', message: 'The predecessor aborted' },
+          createdAt: new Date(100).toISOString(),
+          updatedAt: new Date(200).toISOString(),
+        },
+      ];
+      rendered.rerender();
+
+      await waitFor(() =>
+        expect(rendered.result.current.queue[0].server).toMatchObject({
+          id: 'server-dead-race',
+          status: 'rejected',
+          errorCode: 'PREDECESSOR_ABORTED',
+        }),
+      );
+      expect(rendered.result.current.settledReceipts).toEqual([
+        { clientRequestId: input.clientRequestId, status: 'dead' },
+      ]);
+
+      await act(async () => {
+        releaseQueuedPost();
+        await Promise.resolve();
+      });
+      expect(rendered.result.current.queue).toHaveLength(1);
+      expect(rendered.result.current.queue[0].server).toMatchObject({
+        id: 'server-dead-race',
+        status: 'rejected',
+        errorCode: 'PREDECESSOR_ABORTED',
+      });
+      expect(rendered.result.current.pendingEnqueueIds).toEqual([]);
+      expect(rendered.result.current.settledReceipts).toEqual([]);
     });
 
     it('anchors enqueue to the selected branch tail instead of a later hidden sibling', async () => {
