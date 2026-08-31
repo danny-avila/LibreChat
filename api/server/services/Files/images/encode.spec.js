@@ -22,10 +22,10 @@ jest.mock('~/server/services/Files/strategies', () => ({
 }));
 
 const axios = require('axios');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, ImageDetail, VisionModes } = require('librechat-data-provider');
 const { encodeAndFormat } = require('./encode');
 
-const makeReq = () => ({ body: {}, config: {} });
+const makeReq = (body = {}) => ({ body, config: {} });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -107,5 +107,55 @@ describe('encodeAndFormat - request memory guard', () => {
     expect(mockRunGuardedEncode).not.toHaveBeenCalled();
     expect(result.image_urls).toHaveLength(1);
     expect(result.image_urls[0].image_url.url).toBe(`data:image/png;base64,${localBase64}`);
+  });
+});
+
+describe('encodeAndFormat - image detail resolution', () => {
+  const imageFile = {
+    source: FileSources.local,
+    height: 10,
+    width: 10,
+    type: 'image/png',
+    file_id: 'f-detail',
+    filepath: 'local/detail.png',
+    filename: 'detail.png',
+    bytes: 128,
+  };
+
+  beforeEach(() => {
+    mockPrepareImagePayload.mockResolvedValue([
+      { source: FileSources.local, type: 'image/png' },
+      Buffer.from('detail-image').toString('base64'),
+    ]);
+  });
+
+  const encodeWith = (params, body) =>
+    encodeAndFormat(makeReq(body), [imageFile], params, VisionModes.agents);
+
+  it('uses the detail passed in params when the request body has none', async () => {
+    const result = await encodeWith({ endpoint: 'openai', imageDetail: ImageDetail.high });
+
+    expect(result.image_urls[0].image_url.detail).toBe(ImageDetail.high);
+  });
+
+  it('prefers the detail passed in params over the request body', async () => {
+    const result = await encodeWith(
+      { endpoint: 'openai', imageDetail: ImageDetail.low },
+      { imageDetail: ImageDetail.high },
+    );
+
+    expect(result.image_urls[0].image_url.detail).toBe(ImageDetail.low);
+  });
+
+  it('falls back to the request body when params carry no detail', async () => {
+    const result = await encodeWith({ endpoint: 'openai' }, { imageDetail: ImageDetail.high });
+
+    expect(result.image_urls[0].image_url.detail).toBe(ImageDetail.high);
+  });
+
+  it('defaults to auto when neither source provides a detail', async () => {
+    const result = await encodeWith({ endpoint: 'openai' });
+
+    expect(result.image_urls[0].image_url.detail).toBe(ImageDetail.auto);
   });
 });

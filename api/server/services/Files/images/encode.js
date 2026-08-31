@@ -94,11 +94,12 @@ const blobStorageSources = new Set([
  * @param {object} params - Object containing provider/endpoint information
  * @param {Providers | EModelEndpoint | string} [params.provider] - The provider for the image
  * @param {string} [params.endpoint] - Optional: The endpoint for the image
+ * @param {ImageDetail} [params.imageDetail] - Optional: Detail level, for routes that resolve it outside of the request body.
  * @param {string} [mode] - Optional: The endpoint mode for the image.
  * @returns {Promise<{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
 async function encodeAndFormat(req, files, params, mode) {
-  const { provider, endpoint } = params;
+  const { provider, endpoint, imageDetail } = params;
   const effectiveEndpoint = endpoint ?? provider;
   const promises = [];
   /** @type {Record<FileSources, Pick<ReturnType<typeof getStrategyFunctions>, 'prepareImagePayload' | 'getDownloadStream'>>} */
@@ -159,7 +160,7 @@ async function encodeAndFormat(req, files, params, mode) {
     promises.push(preparePayload(req, file));
   }
 
-  const detail = req.body.imageDetail ?? ImageDetail.auto;
+  const detail = imageDetail ?? req.body.imageDetail ?? ImageDetail.auto;
 
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);
