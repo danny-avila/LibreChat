@@ -1675,6 +1675,7 @@ class AgentClient extends BaseClient {
       {
         provider: this.options.agent.provider,
         endpoint: this.options.endpoint,
+        imageDetail: this.options.imageDetail,
       },
       VisionModes.agents,
     );
