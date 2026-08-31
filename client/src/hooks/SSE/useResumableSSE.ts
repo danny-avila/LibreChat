@@ -150,6 +150,13 @@ export default function useResumableSSE(
       const _timingStart = Date.now();
       let _timingFirstToken: number | null = null;
       let _bklRid: string | null = null;
+      /**
+       * `sources_replace` 가 도착했는지. 스트리밍 중 띄우는 프리페치는 서버가
+       * 스트리밍 *전에* 캐시해둔 검색 청크만 받아오므로 DocRead virtual source
+       * 가 없다. 그 응답이 늦게 도착하면 이미 들어온 완전한 배열을 짧은 것으로
+       * 덮어써 뒤쪽 인용 번호가 깨진다.
+       */
+      let _sourcesReplaced = false;
 
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
@@ -394,6 +401,7 @@ export default function useResumableSSE(
 
               const pendingKey = `_pending_${currentStreamId}`;
               win.__bklSources[pendingKey] = data.sources;
+              _sourcesReplaced = true;
               console.log('[ResumableSSE] Cached sources_replace for rid:', data.request_id);
               return;
             }
@@ -418,6 +426,14 @@ export default function useResumableSSE(
                 fetch(`http://localhost:8000/v1/sources/${_bklRid}`)
                   .then((r) => r.json())
                   .then((srcData) => {
+                    // 그 사이 sources_replace 가 완전한 배열을 넣었다면 건드리지
+                    // 않는다 — 이 응답에는 DocRead virtual source 가 없다.
+                    if (_sourcesReplaced) {
+                      console.log(
+                        '[ResumableSSE] Prefetch discarded — sources_replace already landed',
+                      );
+                      return;
+                    }
                     win.__bklSources[pendingKey] = srcData.sources ?? srcData;
                     console.log('[ResumableSSE] Sources prefetched', _bklRid, srcData);
                   })

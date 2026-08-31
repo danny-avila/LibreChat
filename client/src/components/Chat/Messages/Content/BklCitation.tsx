@@ -207,6 +207,41 @@ async function fetchSourcesForMessage(
   return null;
 }
 
+/**
+ * 캐시에 배열은 있는데 요청한 번호 자리만 비어 있는 상태 — 낡은 캐시다.
+ *
+ * 서버는 스트리밍 *전에* 검색 청크만으로 출처를 한 번 캐시한다. 그 시점에
+ * 프론트가 조회하면 DocRead virtual source 가 빠진 짧은 배열을 받아
+ * localStorage 에까지 저장한다. 이후 서버가 전문 읽기 결과를 뒤에 덧붙여도
+ * 클라이언트 캐시는 낡은 채로 남아 `[56]` 같은 뒤쪽 번호가 영영 안 풀린다.
+ * 새로고침하면 localStorage 의 낡은 배열이 다시 살아나 더 끈질기다.
+ *
+ * 길이가 0 인 배열은 "서버가 출처 없음이라고 답했다" 는 확정 상태라 제외한다
+ * (ACL 로 전부 걸러진 경우) — 재조회해봐야 같은 답이다.
+ */
+function isIndexMissingFromCache(messageId: string, n: number): boolean {
+  const sources = loadSourcesFromStorage(messageId);
+  return Array.isArray(sources) && sources.length > 0 && !sources[n - 1];
+}
+
+/** 낡은 캐시 재조회는 (messageId, n) 당 한 번만 — 실제로 없는 번호를 계속 두드리지 않는다. */
+const _staleRefreshed = new Set<string>();
+
+/**
+ * 낡은 캐시로 판정되면 강제 재조회를 시작한다. 시작했으면 true.
+ *
+ * 평소 경로(`fetchSourcesForMessage`)는 캐시가 있으면 그대로 돌려주므로,
+ * 이 경우엔 `forceRefresh` 없이는 영원히 같은 배열을 받는다.
+ */
+function refreshStaleCache(messageId: string, n: number): boolean {
+  if (!isIndexMissingFromCache(messageId, n)) return false;
+  const key = `${messageId}#${n}`;
+  if (_staleRefreshed.has(key)) return false;
+  _staleRefreshed.add(key);
+  void fetchSourcesForMessage(messageId, { forceRefresh: true }).catch(() => {});
+  return true;
+}
+
 function getSourceLabel(messageId: string, n: number): string | null {
   const sources = loadSourcesFromStorage(messageId);
   if (!Array.isArray(sources) || !sources[n - 1]) return null;
@@ -263,7 +298,9 @@ export default function BklCitation({ n }: BklCitationProps) {
 
     if (check()) return;
 
-    if (!_fetchInflight.has(messageId)) {
+    // 낡은 캐시면 강제 재조회가 필요하다 — 평소 경로는 캐시를 그대로 돌려준다.
+    // 아래 폴링이 갱신된 배열을 집어간다.
+    if (!refreshStaleCache(messageId, n) && !_fetchInflight.has(messageId)) {
       _fetchInflight.add(messageId);
       fetchSourcesForMessage(messageId).catch(() => {});
     }
@@ -290,7 +327,10 @@ export default function BklCitation({ n }: BklCitationProps) {
 
       if (!source) {
         setLoading(true);
-        const sources = await fetchSourcesForMessage(messageId);
+        // 캐시에 배열은 있는데 이 번호만 비었다면 낡은 캐시다 — 그냥 조회하면
+        // 같은 배열을 돌려받으므로 강제로 다시 받아야 한다.
+        const stale = Array.isArray(cachedSources) && cachedSources.length > 0;
+        const sources = await fetchSourcesForMessage(messageId, { forceRefresh: stale });
         setLoading(false);
         source = sources?.[n - 1] ?? source ?? null;
         if (!label) {
