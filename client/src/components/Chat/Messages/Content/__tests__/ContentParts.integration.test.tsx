@@ -673,6 +673,45 @@ describe('ContentParts — synthesized activity folds', () => {
     expect(screen.getByRole('button', { name: FIRST })).toBeInTheDocument();
   });
 
+  it('never mounts a fold expanded while the run is live', () => {
+    /** The entrance mounts a card OPEN and folds it shut. This component
+     *  remounts mid-run — `messageId` is in the key and changes when the
+     *  placeholder hydrates to the server id — so an entrance here would flash
+     *  the whole fold back open partway through the run. */
+    renderContentParts({ ...baseProps, isSubmitting: true, content: labeledRun() });
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: FIRST })).toBeNull();
+  });
+
+  it('keeps the toggle when the summary spans more content than the fold did', () => {
+    /** The server extends a phase back across short intermediate text; the
+     *  client treats that text as a boundary so a bare final answer can never
+     *  hide. The two spans therefore start in different places, and the shared
+     *  card identity has to survive that. */
+    const preface = makeTextPart('Checking now.');
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={[preface, ...labeledRun()]} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          content={[preface, ...labeledRun(), makePhasePart(0, 5, 'Reviewed the release paths')]}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Reviewed the release paths' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
   it('leaves an unlabeled run rendering exactly as before', () => {
     renderContentParts({
       ...baseProps,

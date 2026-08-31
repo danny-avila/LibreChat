@@ -1,4 +1,4 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TActivityLabelEvent, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import {
   applyActivityLabelPart,
@@ -715,5 +715,84 @@ describe('groupActivityPhases — synthesized folds', () => {
     );
     expect(synthesized).toHaveLength(1);
     expect(synthesized?.[0]).toMatchObject({ startIndex: 3 });
+  });
+});
+
+describe('groupActivityPhases — what a fold may not swallow', () => {
+  const toolPart = (id: string, name = 'web_search'): TMessageContentParts =>
+    ({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id, name, args: '{}', output: 'ok' },
+    }) as unknown as TMessageContentParts;
+
+  const childLabel = (label: string): TMessageContentParts =>
+    labelPart({ activity_label: label, pending: false }) as unknown as TMessageContentParts;
+
+  const foldOf = (segments: ReturnType<typeof groupActivityPhases>) => {
+    const fold = segments?.find((segment) => segment.type === 'phase');
+    return fold?.type === 'phase' ? fold : undefined;
+  };
+
+  it('breaks the fold on a visible non-activity part', () => {
+    const error = { type: ContentTypes.ERROR, error: 'boom' } as unknown as TMessageContentParts;
+    const segments = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config'),
+      error,
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+    ]);
+
+    /** One activity either side of the error, so neither side reaches the
+     *  threshold — the error cannot end up behind a tool disclosure. */
+    expect(segments).toBeUndefined();
+  });
+
+  it('keeps a handoff inside the fold, matching the server', () => {
+    const handoff = {
+      type: ContentTypes.AGENT_UPDATE,
+      agent_update: { agentId: 'agent_2' },
+    } as unknown as TMessageContentParts;
+    const segments = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config'),
+      handoff,
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+    ]);
+
+    expect(foldOf(segments)?.contentIndices).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('does not count orphan labels that head no group', () => {
+    expect(
+      groupActivityPhases([childLabel('Read the config'), childLabel('Checked the callers')]),
+    ).toBeUndefined();
+  });
+
+  it('does not count a label whose only call is a handoff', () => {
+    const transfer = toolPart('t2', `${Constants.LC_TRANSFER_TO_}agent_2`);
+    expect(
+      groupActivityPhases([
+        toolPart('t1'),
+        childLabel('Read the config'),
+        transfer,
+        childLabel('Handed off'),
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('resets the claim at a blank reservation, as the grouping does', () => {
+    /** The blank label closes the first batch's claim, so the filled label
+     *  after it claims nothing and heads no group. */
+    expect(
+      groupActivityPhases([
+        toolPart('t1'),
+        childLabel('Read the config'),
+        toolPart('t2'),
+        labelPart() as unknown as TMessageContentParts,
+        childLabel('Checked the callers'),
+      ]),
+    ).toBeUndefined();
   });
 });

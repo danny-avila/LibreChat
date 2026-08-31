@@ -727,6 +727,20 @@ const ContentPartsBody = memo(function ContentPartsBody({
         />
       );
     };
+    /** Card identity for the shared toggle map. Ordinal, NOT span-anchored: a
+     *  synthesized fold and the server phase that replaces it need the same
+     *  entry, and the server may extend its start across short unphased text
+     *  the client treats as a boundary — which would move a span-anchored id
+     *  and drop the reader's open card on the swap. Phase cards only ever
+     *  append in content order, so the ordinal holds still. */
+    const phaseOrdinals = new Map<number, number>();
+    let phaseOrdinal = 0;
+    phaseSegments.forEach((segment, index) => {
+      if (segment.type === 'phase') {
+        phaseOrdinal += 1;
+        phaseOrdinals.set(index, phaseOrdinal);
+      }
+    });
     const hasParallelContent = content?.some((part) => part?.groupId != null) === true;
     return (
       <ApprovalProvider>
@@ -736,7 +750,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
             <Sources messageId={messageId} conversationId={conversationId || undefined} />
           )}
           {renderPendingSkills()}
-          {phaseSegments.map((segment) => {
+          {phaseSegments.map((segment, segmentIndex) => {
             if (segment.type !== 'phase') {
               return renderSegment(
                 segment.content,
@@ -757,11 +771,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
             const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
             /** Toggle memory is shared with the tool groups so the reader's
              *  choice survives the swap from ticker to generated summary,
-             *  which unmounts the synthesized card and mounts the real one.
-             *  Anchored to the span rather than to either header, so both
-             *  cards address the same entry — and to the part's stable key,
-             *  so the entry survives the re-index at compaction. */
-            const cardId = `phase:${segmentKeyIndex(segment)}`;
+             *  which unmounts the synthesized card and mounts the real one. */
+            const cardId = `phase:${phaseOrdinals.get(segmentIndex) ?? 0}`;
             /** While a run streams, the cursor sits INSIDE a synthesized span.
              *  A collapsed card would swallow it, so the card carries it below
              *  the header and the nested body stands down. */
@@ -805,14 +816,21 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 initialExpansionState={expansionState.get(cardId)}
                 onExpansionChange={(state) => handleGroupExpansionChange(cardId, state)}
                 animateEntrance={
-                  synthesized
-                    ? effectiveIsSubmitting
-                    : !replacesFold &&
-                      previousPhases != null &&
-                      !previousPhases.indices.has(phaseKeyIndex) &&
-                      (!hasPhaseRekey ||
-                        (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >
-                          (previousPhases.labels.get(labelText) ?? 0))
+                  /** Never for a synthesized card. The entrance mounts a card
+                   *  OPEN and folds it shut, and this component remounts
+                   *  mid-run — the key carries `messageId`, which changes when
+                   *  the placeholder hydrates to the server id, and a reconnect
+                   *  mounts straight onto existing labeled content. Either
+                   *  would flash the whole fold back open. Fold GROWTH is
+                   *  already unanimated, so formation matching it is the
+                   *  consistent behavior, not a downgrade. */
+                  !synthesized &&
+                  !replacesFold &&
+                  previousPhases != null &&
+                  !previousPhases.indices.has(phaseKeyIndex) &&
+                  (!hasPhaseRekey ||
+                    (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >
+                      (previousPhases.labels.get(labelText) ?? 0))
                 }
                 showCursor={
                   synthesized

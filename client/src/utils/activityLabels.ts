@@ -1,4 +1,4 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TActivityLabelEvent, TMessageContentParts } from 'librechat-data-provider';
 
 type ActivityLabelPart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
@@ -162,35 +162,70 @@ function textValue(part: TMessageContentParts | undefined): string {
 }
 
 /**
+ * What an activity block may contain — the membership `groupSequentialToolCalls`
+ * uses, plus `AGENT_UPDATE`, which the server deliberately keeps inside a phase
+ * (a transfer card cannot join a tool group, so the parent card is where it
+ * belongs). Everything absent here — an error, an image, a summary — is content
+ * in its own right and ends the fold rather than disappearing into it.
+ */
+const ACTIVITY_BLOCK_TYPES = new Set<string>([
+  ContentTypes.TOOL_CALL,
+  ContentTypes.THINK,
+  ContentTypes.ACTIVITY_LABEL,
+  ContentTypes.AGENT_UPDATE,
+]);
+
+/**
  * True at a hard UI boundary — where a fold has to stop.
  *
- * Steers and existing phase markers are the server's own boundaries. Prose is
- * the client's: `groupSequentialToolCalls` absorbs only `commentary` text into
- * an activity block, so anything else the model says is an answer the reader
- * came for and must never end up behind a disclosure. Long commentary ends a
- * fold too, matching the server's `SUBSTANTIAL_TEXT_CHARS` rule, so a card
- * cannot swallow an essay.
+ * Prose is the strictest case. `groupSequentialToolCalls` absorbs only
+ * `commentary` text into an activity block, so anything else the model says is
+ * an answer the reader came for and must never end up behind a disclosure —
+ * including a two-word reply on a provider that never stamps `phase`, which
+ * the server's own 200-character rule would let through. Long commentary ends
+ * a fold too, matching `SUBSTANTIAL_TEXT_CHARS`, so a card cannot swallow an
+ * essay. Steers and existing phase markers end one because the server says so.
  */
 function isFoldBoundaryPart(part: TMessageContentParts | undefined): boolean {
   if (part == null) {
     return false;
   }
-  if (part.type === ContentTypes.STEER) {
-    return true;
-  }
   if (isPhaseActivityLabel(getActivityLabelPart(part))) {
     return true;
   }
-  if (part.type !== ContentTypes.TEXT) {
+  if (part.type === ContentTypes.TEXT) {
+    const text = textValue(part).trim();
+    if (text.length === 0) {
+      return false;
+    }
+    return (
+      (part as { phase?: string }).phase !== 'commentary' || text.length > SUBSTANTIAL_TEXT_CHARS
+    );
+  }
+  return !ACTIVITY_BLOCK_TYPES.has(part.type);
+}
+
+/**
+ * True when the part is one an activity label can CLAIM. Mirrors
+ * `isGroupableToolCall` plus the block's reasoning and commentary members: a
+ * handoff call is never groupable, so a label covering only handoffs claims
+ * nothing and renders standalone rather than heading a group.
+ */
+function claimsActivity(part: TMessageContentParts | undefined): boolean {
+  if (part == null) {
     return false;
   }
-  const text = textValue(part).trim();
-  if (text.length === 0) {
+  if (part.type === ContentTypes.THINK) {
+    return true;
+  }
+  if (part.type === ContentTypes.TEXT) {
+    return (part as { phase?: string }).phase === 'commentary';
+  }
+  if (part.type !== ContentTypes.TOOL_CALL) {
     return false;
   }
-  return (
-    (part as { phase?: string }).phase !== 'commentary' || text.length > SUBSTANTIAL_TEXT_CHARS
-  );
+  const name = (part[ContentTypes.TOOL_CALL] as { name?: string } | undefined)?.name;
+  return typeof name !== 'string' || !name.startsWith(Constants.LC_TRANSFER_TO_);
 }
 
 type FoldRun = {
@@ -220,10 +255,24 @@ function buildSynthesizedPhaseLabel(run: FoldRun): SynthesizedPhaseHeader | unde
   let count = 0;
   let failed = 0;
   let degraded = 0;
+  /** Parts available to the next label. Any label — blank reservation included
+   *  — closes the claim, exactly as `claimStart` does in
+   *  `groupSequentialToolCalls`, so a label can only ever claim its own batch. */
+  let claimable = 0;
   for (let position = 0; position < run.content.length; position += 1) {
-    const child = getBatchActivityLabelPart(run.content[position]);
+    const part = run.content[position];
+    if (part?.type !== ContentTypes.ACTIVITY_LABEL) {
+      claimable += claimsActivity(part) ? 1 : 0;
+      continue;
+    }
+    const claimed = claimable;
+    claimable = 0;
+    const child = getBatchActivityLabelPart(part);
     const childText = getActivityLabelText(child);
-    if (child == null || childText.length === 0) {
+    /** An orphan label heads no group — it renders as a standalone line. Two of
+     *  them are not two activities, and folding them would hide the first
+     *  behind a card whose body is just the pair of lines. */
+    if (child == null || childText.length === 0 || claimed === 0) {
       continue;
     }
     count += 1;
