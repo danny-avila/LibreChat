@@ -7,13 +7,6 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => {
-  const retainMessageFiles = (existingFiles, requestedFileIds) => {
-    if (!Array.isArray(existingFiles) || !Array.isArray(requestedFileIds)) {
-      return null;
-    }
-    const retained = existingFiles.filter((file) => requestedFileIds.includes(file.file_id));
-    return retained.length === requestedFileIds.length ? retained : null;
-  };
   const inspectContent = jest.fn(() => null);
   const extractChatContent = jest.fn(() => []);
   const extractStoredMessageContent = jest.fn(() => []);
@@ -74,7 +67,6 @@ jest.mock('@librechat/api', () => {
         error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
     ),
     resolveCanonicalFileReferences,
-    retainMessageFiles,
     assertStoredMessageBranchAllowed: jest.fn(async (input) => {
       let storedMessage = input.message;
       let resolvedFiles = [];
@@ -714,14 +706,15 @@ describe('message route conversation ownership filters', () => {
     });
   });
 
-  it('persists only existing files retained by a direct message edit', async () => {
+  it('uses explicit client removals without deriving them from concurrently changed files', async () => {
     const firstFile = { file_id: 'file-1', filename: 'Presentation.pdf' };
     const secondFile = { file_id: 'file-2', filename: 'Notes.txt' };
+    const concurrentFile = { file_id: 'file-3', filename: 'Concurrent.txt' };
     getMessages.mockResolvedValue([
       {
         conversationId: 'convo-1',
         isCreatedByUser: true,
-        files: [firstFile, secondFile],
+        files: [firstFile, secondFile, concurrentFile],
       },
     ]);
     updateMessage.mockResolvedValue({ messageId: 'message-1' });
@@ -731,40 +724,70 @@ describe('message route conversation ownership filters', () => {
       .send({
         text: 'Updated prompt',
         model: 'test-model',
-        fileIds: ['file-2'],
+        removedFileIds: ['file-1'],
       });
 
     expect(response.status).toBe(200);
+    expect(getMessages).toHaveBeenCalledWith(
+      { messageId: 'message-1', user: authenticatedUserId },
+      'conversationId content tokenCount quotes isCreatedByUser userSubmittedPaths',
+    );
     expect(updateMessage).toHaveBeenCalledWith(authenticatedUserId, {
       messageId: 'message-1',
       text: 'Updated prompt',
       tokenCount: 10,
-      files: [secondFile],
+      removedFileIds: ['file-1'],
       userSubmittedPaths: ['/text'],
     });
   });
 
-  it('rejects files that were not attached to the edited message', async () => {
-    getMessages.mockResolvedValue([
-      {
-        conversationId: 'convo-1',
-        isCreatedByUser: true,
-        files: [{ file_id: 'file-1', filename: 'Presentation.pdf' }],
-      },
-    ]);
+  it.each([null, 'file-1', [''], ['file-1', 'file-1'], [1]])(
+    'rejects invalid removedFileIds: %p',
+    async (removedFileIds) => {
+      getMessages.mockResolvedValue([
+        {
+          conversationId: 'convo-1',
+          isCreatedByUser: true,
+        },
+      ]);
 
-    const response = await request(app)
-      .put('/api/messages/convo-1/message-1')
-      .send({
+      const response = await request(app)
+        .put('/api/messages/convo-1/message-1')
+        .send({ text: 'Updated prompt', model: 'test-model', removedFileIds });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Invalid removedFileIds' });
+      expect(updateMessage).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ removedFileIds: [] }, { removedFileIds: ['already-removed'] }])(
+    'preserves a valid idempotent removedFileIds value: $removedFileIds',
+    async ({ removedFileIds }) => {
+      getMessages.mockResolvedValue([
+        {
+          conversationId: 'convo-1',
+          isCreatedByUser: true,
+        },
+      ]);
+      updateMessage.mockResolvedValue({ messageId: 'message-1' });
+
+      const response = await request(app).put('/api/messages/convo-1/message-1').send({
         text: 'Updated prompt',
         model: 'test-model',
-        fileIds: ['foreign-file'],
+        removedFileIds,
       });
 
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({ error: 'Invalid fileIds' });
-    expect(updateMessage).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(200);
+      expect(updateMessage).toHaveBeenCalledWith(authenticatedUserId, {
+        messageId: 'message-1',
+        text: 'Updated prompt',
+        tokenCount: 10,
+        removedFileIds,
+        userSubmittedPaths: ['/text'],
+      });
+    },
+  );
 
   it('filters the finalized indexed edit without rescanning persisted siblings', async () => {
     const finding = {

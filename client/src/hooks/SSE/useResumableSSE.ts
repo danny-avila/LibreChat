@@ -798,6 +798,7 @@ export default function useResumableSSE(
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+  const setLiveAppliedSteerIds = useSetRecoilState(store.liveAppliedSteerIds);
 
   const sseRef = useRef<SSE | null>(null);
   /** Removes the foreground re-attach listener owned by the newest
@@ -865,7 +866,7 @@ export default function useResumableSSE(
         steerId: string,
         clientSteerId?: string,
         appliedPartQuotes?: string[],
-      ) => {
+      ): string[] => {
         const settledIds = clientSteerId ? [steerId, clientSteerId] : [steerId];
         /** A part applied by a pre-quotes server carries no quotes while the
          *  chip being settled may hold the only copy of the user's excerpts
@@ -885,6 +886,15 @@ export default function useResumableSSE(
             );
           }
         }
+        /** Ids seen by the durable set for the first time — the caller stamps
+         *  these as live-applied only when it actually commits the inline
+         *  part, so an abandoned placement (navigation away, placeholder never
+         *  found) or a replayed event cannot arm a draw-in with no part
+         *  mounting to consume it. */
+        const alreadyApplied = snapshot
+          .getLoadable(store.appliedSteerIdsByConvoId(conversationId))
+          .getValue();
+        const firstApplication = settledIds.filter((id) => !alreadyApplied.includes(id));
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
           appendAppliedSteerIds(prev, settledIds),
         );
@@ -914,6 +924,7 @@ export default function useResumableSSE(
               )
             : prev,
         );
+        return firstApplication;
       },
     [],
   );
@@ -1417,7 +1428,11 @@ export default function useResumableSSE(
        * actions for the inject-before-render race (the assistant placeholder
        * can land a few frames after the created event under load).
        */
-      const applySteerToMessages = (event: TSteerAppliedEvent, attempt = 0) => {
+      const applySteerToMessages = (
+        event: TSteerAppliedEvent,
+        attempt = 0,
+        liveSteerIds: string[] = [],
+      ) => {
         if (!isCurrentSubscription()) {
           return;
         }
@@ -1427,15 +1442,21 @@ export default function useResumableSSE(
          *  the inline part can wait for React to mount the target, but leaving
          *  the chip pending during that wait lets an intervening error/final
          *  convert already-applied words into a duplicate queued message. */
-        if (attempt === 0) {
-          resolveSteerChip(chipConvoId, event.steerId, event.clientSteerId, event.part?.quotes);
-        }
+        const firstApplicationIds =
+          attempt === 0
+            ? (resolveSteerChip(
+                chipConvoId,
+                event.steerId,
+                event.clientSteerId,
+                event.part?.quotes,
+              ) ?? [])
+            : liveSteerIds;
         const retryNextFrame = () => {
           if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
             const frameId = requestAnimationFrame(() => {
               steerRetryFramesRef.current.delete(frameId);
               if (isCurrentSubscription()) {
-                applySteerToMessages(event, attempt + 1);
+                applySteerToMessages(event, attempt + 1, firstApplicationIds);
               }
             });
             steerRetryFramesRef.current.add(frameId);
@@ -1452,6 +1473,19 @@ export default function useResumableSSE(
         }
         const updated = applySteerPart(messages[index], event);
         if (updated !== messages[index]) {
+          /** Stamped only when the inline part is actually committed, in the
+           *  same batch, so its first render sees the flag and plays the
+           *  one-shot draw-in (`SteerPart` consumes the id on mount). A
+           *  replayed event is referentially stable here and an abandoned
+           *  placement never reaches this branch, so neither can strand a
+           *  stale id that would animate a historical part on a later visit.
+           *  Only the id the part RENDERS with (`part.steerId`) is stamped:
+           *  the part consumes exactly that id, so a client alias would sit
+           *  in the set forever as dead weight. */
+          const renderedSteerId = event.part?.steerId ?? event.steerId;
+          if (firstApplicationIds.includes(renderedSteerId)) {
+            setLiveAppliedSteerIds((prev) => appendAppliedSteerIds(prev, [renderedSteerId]));
+          }
           const nextMessages = [...messages];
           nextMessages[index] = updated;
           setMessages(nextMessages);
@@ -1667,6 +1701,28 @@ export default function useResumableSSE(
         sse.close();
       };
 
+      let foregroundStatusCheckInFlight = false;
+      const reattachOnForeground = () => {
+        logger.log('ResumableSSE', 'Re-attaching stream on foreground');
+        /** Any backoff still pending targets this same attachment, so returning
+         *  to the app supersedes it rather than waiting the delay out; its
+         *  callback finds a superseded subscription and does nothing. */
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
+        closeStream();
+        subscribeToStream(
+          currentStreamId,
+          currentSubmission,
+          true,
+          generationCreatedAt,
+          generationProtocolVersion,
+          lifecycleSignal,
+        );
+      };
+
       /**
        * A suspended page can lose its stream without the transport ever
        * reporting it. When a mobile browser freezes the tab, an intermediary
@@ -1676,15 +1732,16 @@ export default function useResumableSSE(
        * else re-reads the conversation while the pane stays mounted, which is
        * why the response the run finished writing only appears after a reload.
        *
-       * Re-attaching on the way back costs one request and only when this
-       * subscription's transport is already gone with no terminal event and no
-       * recovery of its own in flight. A live job replays what was missed; a
-       * finished one 404s into the durable refetch.
+       * Some mobile WebViews leave the XHR marked OPEN even after the suspended
+       * request stopped delivering events. In that case the durable run status
+       * is the only authority that distinguishes a healthy live attachment from
+       * a terminal one holding stale partial content. A terminal status forces
+       * the same resume path as a closed transport; it returns the synthesized
+       * terminal frame or 404 that reconciles persisted messages.
        */
       const handleForegroundReattach = () => {
         if (
           document.visibilityState !== 'visible' ||
-          sse.readyState !== SSE.CLOSED ||
           finalReceived ||
           subscriptionRetired ||
           replacementHandoffRef.current ||
@@ -1693,23 +1750,52 @@ export default function useResumableSSE(
         ) {
           return;
         }
-        logger.log('ResumableSSE', 'Stream was closed while hidden - re-attaching on foreground');
-        /** Any backoff still pending targets this same attachment, so returning
-         *  to the app supersedes it rather than waiting the delay out; its
-         *  callback finds a superseded subscription and does nothing. */
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = null;
+
+        if (sse.readyState === SSE.CLOSED) {
+          reattachOnForeground();
+          return;
         }
-        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
-        subscribeToStream(
-          currentStreamId,
-          submissionRef.current,
-          true,
-          generationCreatedAt,
-          generationProtocolVersion,
-          lifecycleSignal,
-        );
+
+        if (foregroundStatusCheckInFlight) {
+          return;
+        }
+        foregroundStatusCheckInFlight = true;
+        const foregroundConvoId = currentSubmission.conversation?.conversationId ?? currentStreamId;
+        void fetchStreamStatus(foregroundConvoId)
+          .then((status) => {
+            if (
+              status.active !== false ||
+              (status.createdAt != null &&
+                generationCreatedAt != null &&
+                status.createdAt !== generationCreatedAt) ||
+              !isCurrentSubscription() ||
+              finalReceived ||
+              subscriptionRetired ||
+              replacementHandoffRef.current ||
+              document.visibilityState !== 'visible'
+            ) {
+              return;
+            }
+            logger.log(
+              'ResumableSSE',
+              'Apparently open stream is terminal - reconciling on foreground',
+              { conversationId: foregroundConvoId, generationCreatedAt },
+            );
+            reattachOnForeground();
+          })
+          .catch((error) => {
+            if (!isCurrentSubscription()) {
+              return;
+            }
+            logger.warn('ResumableSSE', 'Could not verify stream on foreground', {
+              conversationId: foregroundConvoId,
+              generationCreatedAt,
+              error,
+            });
+          })
+          .finally(() => {
+            foregroundStatusCheckInFlight = false;
+          });
       };
       stopForegroundReattachRef.current?.();
       document.addEventListener('visibilitychange', handleForegroundReattach);
@@ -3547,6 +3633,7 @@ export default function useResumableSSE(
       setRunEnd,
       clearDrainAfterAbort,
       resolveSteerChip,
+      setLiveAppliedSteerIds,
       updateSteerChips,
       seedSteerChips,
       settleAppliedSteerParts,

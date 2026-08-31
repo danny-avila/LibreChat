@@ -10,7 +10,6 @@ import {
 } from 'librechat-data-provider';
 import type { CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { Types } from 'mongoose';
-import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
 import {
   extractFileContent,
@@ -22,8 +21,10 @@ import {
 } from '~/protection';
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
+import { getCodeExecutionRouteKey, type CodeExecutionContext } from './execution';
 import { createConcurrencyLimiter, getSafeErrorMetadata } from '~/utils';
 import { assertSkillFileContentAllowed } from '~/skills/protection';
+import { createSkillContentDigest } from './compatibility';
 import { extractInvokedSkillsFromPayload } from './run';
 import { SKILL_FILE_PREFIX } from './skills';
 
@@ -88,7 +89,10 @@ export interface PrimeSkillFilesParams {
     },
   ) => Promise<string | null>;
   /** Trusted Code API route selected for the executing agent. */
-  codeExecutionContext?: Pick<CodeExecutionContext, 'baseUrl' | 'executionProfile'>;
+  codeExecutionContext?: Pick<
+    CodeExecutionContext,
+    'baseUrl' | 'executionProfile' | 'executionRouteKey'
+  >;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload. Implementations
@@ -343,7 +347,10 @@ export async function primeSkillFiles(
    * resource-scoped (`<tenant>:skill:<id>:v:<version>`), so sharing the
    * result across requests is sound. Per-process best-effort; the awaited
    * codeEnvRef persist covers cross-turn and cross-node dedupe. */
-  const flightKey = `${params.codeExecutionContext?.executionProfile ?? 'default'}:${params.skill._id}:v:${params.skill.version}`;
+  const executionRouteKey = params.codeExecutionContext
+    ? getCodeExecutionRouteKey(params.codeExecutionContext)
+    : 'default';
+  const flightKey = `${executionRouteKey}:${params.skill._id}:v:${params.skill.version}`;
   const inflight = inflightPrimes.get(flightKey);
   if (inflight) {
     return inflight;
@@ -370,6 +377,9 @@ async function executePrimeSkillFiles(
     codeExecutionContext,
   } = params;
   const executionProfile = codeExecutionContext?.executionProfile ?? 'default';
+  const executionRouteKey = codeExecutionContext
+    ? getCodeExecutionRouteKey(codeExecutionContext)
+    : executionProfile;
   const inspectStoredMetadata = shouldInspectStoredSkillFileMetadata(req);
   const inspectBundledFileContent = shouldInspectStoredSkillFileContent(req);
   const inspectedBuffers = new Map<SkillFileRecord, Buffer>();
@@ -421,12 +431,12 @@ async function executePrimeSkillFiles(
    * upload on the next prime. */
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
     const allHaveRefs = skillFiles.every(
-      (sf) => getCodeEnvRefForProfile(sf, executionProfile) !== undefined,
+      (sf) => getCodeEnvRefForProfile(sf, executionRouteKey) !== undefined,
     );
     if (allHaveRefs) {
       const refsBySession = new Map<string, CodeEnvRef>();
       for (const sf of skillFiles) {
-        const ref = getCodeEnvRefForProfile(sf, executionProfile);
+        const ref = getCodeEnvRefForProfile(sf, executionRouteKey);
         if (ref && !refsBySession.has(ref.storage_session_id)) {
           refsBySession.set(ref.storage_session_id, ref);
         }
@@ -444,7 +454,7 @@ async function executePrimeSkillFiles(
         if (allActive) {
           const files: PrimeSkillFilesResult['files'] = [];
           for (const sf of skillFiles) {
-            const ref = getCodeEnvRefForProfile(sf, executionProfile);
+            const ref = getCodeEnvRefForProfile(sf, executionRouteKey);
             if (!ref) continue;
             /* Cache-hit refs already carry resource identity (kind / id /
              * version) — pull them through so the artifact emitted by
@@ -573,6 +583,7 @@ async function executePrimeSkillFiles(
             file_id: f.fileId,
             version: skill.version,
             executionProfile,
+            ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
           };
           return {
             skillId: skill._id,
@@ -604,7 +615,9 @@ async function executePrimeSkillFiles(
 export interface PrimeInvokedSkillsDeps {
   req: ServerRequest;
   /** Raw message payload (before formatAgentMessages). Used to extract invoked skill names. */
-  payload: Array<Partial<{ role: string; content: unknown }>>;
+  payload?: Array<Partial<{ role: string; content: unknown }>>;
+  /** Explicit durable names used by a validated event-actor preflight. */
+  skillNames?: readonly string[];
   accessibleSkillIds: Types.ObjectId[];
   /** `execute_code` capability flag for the run. When false, the batch-upload
    *  path is skipped entirely — skill bodies still reconstruct for history
@@ -635,6 +648,13 @@ export interface PrimeInvokedSkillsResult {
   /** Pre-resolved skill bodies keyed by skill name. Passed to formatAgentMessages
    *  so it can reconstruct HumanMessages at the right position in the message sequence. */
   skills?: Map<string, string>;
+  /** Exact records resolved under the current request's ACL. */
+  skillManifest?: Array<{
+    id: string;
+    name: string;
+    version: number;
+    contentDigest: string;
+  }>;
 }
 
 export interface PrimeInvokedSkillsForProfilesDeps
@@ -653,11 +673,14 @@ export interface PrimeInvokedSkillsForProfilesDeps
 export async function primeInvokedSkills(
   deps: PrimeInvokedSkillsDeps,
 ): Promise<PrimeInvokedSkillsResult> {
-  if (!deps.payload?.length || !deps.accessibleSkillIds?.length) {
+  if ((!deps.payload?.length && !deps.skillNames?.length) || !deps.accessibleSkillIds?.length) {
     return {};
   }
 
-  const invokedSkills = extractInvokedSkillsFromPayload(deps.payload);
+  const invokedSkills = new Set(deps.skillNames ?? []);
+  for (const name of extractInvokedSkillsFromPayload(deps.payload ?? [])) {
+    invokedSkills.add(name);
+  }
   if (invokedSkills.size === 0) {
     return {};
   }
@@ -689,6 +712,12 @@ export async function primeInvokedSkills(
       logger.warn('[primeInvokedSkills] Skill resolution failed:', getSafeErrorMetadata(r.reason));
     }
   }
+  const skillManifest = resolvedSkills.map((skill) => ({
+    id: skill._id.toString(),
+    name: skill.name,
+    version: skill.version,
+    contentDigest: createSkillContentDigest(skill.body),
+  }));
 
   // Phase 2: Single batch upload for ALL skills' files (shared session)
   let sessions: ToolSessionMap | undefined;
@@ -718,12 +747,15 @@ export async function primeInvokedSkills(
     // ALL distinct sessions for freshness. If all are active, return cached
     // references with zero re-uploads. If any expired, re-upload everything.
     const executionProfile = deps.codeExecutionContext?.executionProfile ?? 'default';
+    const executionRouteKey = deps.codeExecutionContext
+      ? getCodeExecutionRouteKey(deps.codeExecutionContext)
+      : executionProfile;
     if (!inspectStoredSkillFileContent && deps.getSessionInfo && deps.checkIfActive) {
       const allResolved = fileListResults.flatMap((r) =>
         r.files.map((f) => ({
           skillName: r.skill.name,
           file: f,
-          ref: getCodeEnvRefForProfile(f, executionProfile),
+          ref: getCodeEnvRefForProfile(f, executionRouteKey),
         })),
       );
       const resolvedWithRef = allResolved.filter((x) => x.ref !== undefined);
@@ -784,7 +816,11 @@ export async function primeInvokedSkills(
               files: cachedFiles,
               lastUpdated: Date.now(),
             } satisfies CodeSessionContext);
-            return { initialSessions: sessions, skills: skills.size > 0 ? skills : undefined };
+            return {
+              initialSessions: sessions,
+              skills: skills.size > 0 ? skills : undefined,
+              skillManifest,
+            };
           }
         }
       }
@@ -867,6 +903,7 @@ export async function primeInvokedSkills(
   return {
     initialSessions: sessions,
     skills: skills.size > 0 ? skills : undefined,
+    skillManifest,
   };
 }
 
@@ -893,9 +930,30 @@ export async function primeInvokedSkillsForProfiles(
 
   let initialSessions: ToolSessionMap | undefined;
   const skills = new Map<string, string>();
+  const skillManifestByName = new Map<
+    string,
+    NonNullable<PrimeInvokedSkillsResult['skillManifest']>[number]
+  >();
   for (const { profile, result } of profileResults) {
+    const resultManifestByName = new Map(
+      (result.skillManifest ?? []).map((skill) => [skill.name, skill]),
+    );
     for (const [name, body] of result.skills ?? []) {
+      const identity = resultManifestByName.get(name);
+      if (identity == null) {
+        throw new Error(`Skill "${name}" resolved without a semantic identity`);
+      }
+      const existingIdentity = skillManifestByName.get(name);
+      const existingBody = skills.get(name);
+      if (
+        (existingIdentity != null &&
+          JSON.stringify(existingIdentity) !== JSON.stringify(identity)) ||
+        (existingBody != null && existingBody !== body)
+      ) {
+        throw new Error(`Skill "${name}" changed while execution profiles were initialized`);
+      }
       skills.set(name, body);
+      skillManifestByName.set(name, identity);
     }
     const skillFiles = result.initialSessions?.get(Constants.EXECUTE_CODE)?.files;
     if (!skillFiles?.length) {
@@ -913,5 +971,9 @@ export async function primeInvokedSkillsForProfiles(
   return {
     initialSessions,
     skills: skills.size > 0 ? skills : undefined,
+    skillManifest:
+      skillManifestByName.size > 0
+        ? [...skillManifestByName.values()].sort((left, right) => left.id.localeCompare(right.id))
+        : undefined,
   };
 }

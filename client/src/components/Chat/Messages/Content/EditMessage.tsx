@@ -25,6 +25,13 @@ const EditMessage = ({
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const [saveError, setSaveError] = useState(false);
   const [files, setFiles] = useState(() => message.files ?? []);
+  const [initialFileIds] = useState(() => [
+    ...new Set(
+      (message.files ?? []).flatMap((file) =>
+        typeof file.file_id === 'string' && file.file_id.length > 0 ? [file.file_id] : [],
+      ),
+    ),
+  ]);
   const { conversation } = useMessagesConversation();
   const { getMessages, setMessages } = useMessagesOperations();
 
@@ -55,11 +62,16 @@ const EditMessage = ({
     },
   });
 
-  const fileIds = useMemo(
-    () => files.flatMap((file) => (file.file_id ? [file.file_id] : [])),
-    [files],
-  );
-  const filesChanged = files.length !== (message.files?.length ?? 0);
+  const removedFileIds = useMemo(() => {
+    const retainedFileIds = new Set(
+      files.flatMap((file) =>
+        typeof file.file_id === 'string' && file.file_id.length > 0 ? [file.file_id] : [],
+      ),
+    );
+    return initialFileIds.filter((fileId) => !retainedFileIds.has(fileId));
+  }, [files, initialFileIds]);
+  const removedFileIdSet = useMemo(() => new Set(removedFileIds), [removedFileIds]);
+  const filesChanged = removedFileIds.length > 0;
   const hasChanges = isDirty || filesChanged;
   const hasContent = watch('text').trim().length > 0 || files.length > 0;
   const removeFile = useCallback(
@@ -153,7 +165,7 @@ const EditMessage = ({
         model: conversation?.model ?? 'gpt-3.5-turbo',
         text: data.text,
         messageId,
-        ...(filesChanged && { fileIds }),
+        ...(filesChanged && { removedFileIds }),
       });
 
       /** Read the thread after the request, not before it. An earlier turn stays
@@ -172,7 +184,9 @@ const EditMessage = ({
       if (!isInMessages) {
         message.text = data.text;
         if (filesChanged) {
-          message.files = files;
+          message.files = (message.files ?? files).filter(
+            (file) => !removedFileIdSet.has(file.file_id ?? ''),
+          );
         }
       } else {
         setMessages(
@@ -181,7 +195,11 @@ const EditMessage = ({
               ? {
                   ...msg,
                   text: data.text,
-                  ...(filesChanged && { files }),
+                  ...(filesChanged && {
+                    files: (msg.files ?? files).filter(
+                      (file) => !removedFileIdSet.has(file.file_id ?? ''),
+                    ),
+                  }),
                 }
               : msg,
           ),

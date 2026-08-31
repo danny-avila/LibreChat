@@ -2,6 +2,8 @@ const archiveAllHandler = jest.fn();
 const generationJobManager = {
   getJob: jest.fn().mockResolvedValue(null),
   abortJob: jest.fn().mockResolvedValue({ success: true }),
+  getCleanupBlockingJobIdsForUser: jest.fn().mockResolvedValue([]),
+  getCleanupBlockingJobIdsForConversations: jest.fn().mockResolvedValue([]),
 };
 const subagentActivityHandlerInputs = [];
 const moderatedTexts = [];

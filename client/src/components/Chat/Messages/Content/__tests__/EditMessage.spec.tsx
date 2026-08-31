@@ -292,7 +292,19 @@ describe('EditMessage', () => {
         },
       ],
     } as TMessage;
+    const concurrentFile = {
+      file_id: 'file-3',
+      filename: 'Concurrent.txt',
+      filepath: '/files/file-3',
+      type: 'text/plain',
+    };
     mockGetMessages.mockReturnValue([attachedMessage]);
+    mockMutateAsync.mockImplementation(async () => {
+      mockGetMessages.mockReturnValue([
+        { ...attachedMessage, files: [...(attachedMessage.files ?? []), concurrentFile] },
+      ]);
+      return {};
+    });
 
     renderEditor({ editedMessage: attachedMessage });
 
@@ -302,7 +314,7 @@ describe('EditMessage', () => {
     await waitFor(() =>
       expect(mockMutateAsync).toHaveBeenCalledWith({
         conversationId: attachedMessage.conversationId,
-        fileIds: ['file-2'],
+        removedFileIds: ['file-1'],
         model: 'test-model',
         text: attachedMessage.text,
         messageId: attachedMessage.messageId,
@@ -311,7 +323,10 @@ describe('EditMessage', () => {
     expect(mockSetMessages).toHaveBeenCalledWith([
       expect.objectContaining({
         messageId: attachedMessage.messageId,
-        files: [expect.objectContaining({ file_id: 'file-2' })],
+        files: [
+          expect.objectContaining({ file_id: 'file-2' }),
+          expect.objectContaining({ file_id: 'file-3' }),
+        ],
       }),
     ]);
   });

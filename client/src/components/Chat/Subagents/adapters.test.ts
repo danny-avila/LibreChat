@@ -438,24 +438,40 @@ describe('child activity adapters', () => {
     );
   });
 
-  it('redacts detached live reasoning while retaining its activity marker', () => {
+  it('keeps live reasoning text like the main chat view', () => {
     const activity = adaptLivePersistedActivity({
       title: 'researcher',
       progress: null,
       persistedContent: [
-        { type: ContentTypes.THINK, think: 'private live reasoning' },
+        { type: ContentTypes.THINK, think: 'visible live reasoning' },
         { type: ContentTypes.TEXT, text: 'Visible answer.' },
       ] as TMessageContentParts[],
       initialProgress: 0,
       isSubmitting: true,
-      reasoningVisibility: 'marker',
+    });
+
+    expect(activity.items).toEqual([
+      { type: 'reasoning', text: 'visible live reasoning' },
+      { type: 'writing', text: 'Visible answer.' },
+    ]);
+  });
+
+  it('normalizes a pre-retention redaction marker back to a textless reasoning item', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: null,
+      persistedContent: [
+        { type: ContentTypes.THINK, think: '…' },
+        { type: ContentTypes.TEXT, text: 'Visible answer.' },
+      ] as TMessageContentParts[],
+      initialProgress: 0,
+      isSubmitting: true,
     });
 
     expect(activity.items).toEqual([
       { type: 'reasoning' },
       { type: 'writing', text: 'Visible answer.' },
     ]);
-    expect(JSON.stringify(activity)).not.toContain('private live reasoning');
   });
 
   it('keeps an empty-output approval pending', () => {

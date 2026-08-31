@@ -1,5 +1,6 @@
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import type {
   AgentContinueTriggerEnvelope,
   AgentFireTriggerEnvelope,
@@ -9,6 +10,11 @@ import type {
 } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
 import type { AgentRunPrincipal } from '../envelope';
+import {
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+  parseAgentEventActorDetachedCompletion,
+} from './detachedAction';
 import { dispatchAgentTrigger } from './dispatch';
 
 const DEFAULT_FIRE_TIMEOUT_MS = 30_000;
@@ -32,14 +38,33 @@ type FireStatus = 'started' | 'resumed' | 'replaced' | 'settled';
 
 export type AgentTriggerFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+export interface AgentContinuationAdmissionSource {
+  source: string;
+  sourceId: string;
+  claimId: string;
+  claimBy: string;
+}
+
 export type AgentTriggerContinuePreparation =
   | {
       status: 'ready';
       input: string;
       parentMessageId: string;
+      expectedPredecessorCreatedAt?: number;
+      /** Complete user-turn context for internal continuations that must start
+       * a fresh ordinary Agent turn rather than inject into an existing run. */
+      files?: Partial<TFile>[];
+      quotes?: string[];
+      manualSkills?: string[];
+      /** Trusted source identity committed by execution enrollment before the
+       * provider-start fence opens. */
+      admissionSource?: AgentContinuationAdmissionSource;
       /** Compensates a durable pre-admission claim only when the host knows
        * that no generation was admitted. Ambiguous outcomes retain the claim. */
-      releaseOnDefiniteFailure?: () => MaybePromise<void>;
+      releaseOnDefiniteFailure?: (error?: AgentTriggerExecutionError) => MaybePromise<void>;
+      /** Commits the source handoff after generation admission. Failure is
+       * outcome-ambiguous: the same delivery retries with the same request id. */
+      settleOnAdmission?: (result: AgentTriggerContinueResult) => MaybePromise<void>;
     }
   | { status: 'settled' };
 
@@ -119,7 +144,7 @@ export type AgentTriggerExecutionResult =
 
 export interface AgentTriggerExecutionHostDeps {
   /** Trusted root URL for this LibreChat server. */
-  getBaseUrl: () => string;
+  getBaseUrl: (options?: { localOnly?: boolean }) => string;
   /** Mint a short-lived token for the envelope's already-authenticated principal. */
   mintToken: (principal: AgentRunPrincipal, envelope: AgentTriggerEnvelope) => MaybePromise<string>;
   /** Optional user-timezone resolver for dynamic date variables in a new run. */
@@ -141,7 +166,7 @@ export interface AgentTriggerExecutionHostDeps {
 export interface AgentTriggerExecutionHost {
   dispatch: (
     envelope: unknown,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; attempt?: number; maxAttempts?: number },
   ) => Promise<AgentTriggerExecutionResult>;
 }
 
@@ -297,7 +322,11 @@ async function readResponseBody(response: Response): Promise<BoundedResponseBody
       const remaining = MAX_RESPONSE_BODY_BYTES - size;
       if (chunk.value.byteLength > remaining) {
         if (remaining > 0) {
-          parts.push(decoder.decode(chunk.value.subarray(0, remaining), { stream: true }));
+          parts.push(
+            decoder.decode(chunk.value.subarray(0, remaining), {
+              stream: true,
+            }),
+          );
         }
         parts.push(decoder.decode());
         await reader.cancel().catch(() => undefined);
@@ -534,6 +563,13 @@ async function startRun(
   timeoutMs: number,
 ): Promise<AgentTriggerContinueResult | AgentTriggerFireResult> {
   const mode = envelope.mode;
+  const detachedCompletion =
+    mode === 'continue' &&
+    envelope.event.type === EVENT_ACTOR_DETACHED_COMPLETION_TYPE &&
+    envelope.event.source.type === 'internal' &&
+    envelope.event.source.id === EVENT_ACTOR_DETACHED_COMPLETION_SOURCE
+      ? parseAgentEventActorDetachedCompletion(envelope.event.payload)
+      : undefined;
   const scope = abortScope(context.signal, timeoutMs);
   let preparation: AgentTriggerContinuePreparation | undefined;
   try {
@@ -574,7 +610,17 @@ async function startRun(
         scope,
         context.signal,
       ),
-      setupValue(() => deps.getBaseUrl(), mode, scope, context.signal),
+      setupValue(
+        () =>
+          deps.getBaseUrl(
+            detachedCompletion == null && readyPreparation?.admissionSource == null
+              ? undefined
+              : { localOnly: true },
+          ),
+        mode,
+        scope,
+        context.signal,
+      ),
     ]).catch((error: unknown) => {
       scope.abort();
       throw error;
@@ -608,13 +654,28 @@ async function startRun(
           endpoint: EModelEndpoint.agents,
           agent_id: envelope.target.agentId,
           parentMessageId,
+          ...(readyPreparation?.expectedPredecessorCreatedAt != null && {
+            expectedPredecessorCreatedAt: readyPreparation.expectedPredecessorCreatedAt,
+          }),
           ...(envelope.mode === 'continue' && {
             conversationId: envelope.target.conversationId,
+          }),
+          ...(readyPreparation?.files != null && {
+            files: readyPreparation.files,
+          }),
+          ...(readyPreparation?.quotes != null && {
+            quotes: readyPreparation.quotes,
+          }),
+          ...(readyPreparation?.manualSkills != null && {
+            manualSkills: readyPreparation.manualSkills,
           }),
           isContinued: false,
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
           generationProtocolVersion: 2,
+          ...(readyPreparation?.admissionSource != null && {
+            agentContinuationAdmission: readyPreparation.admissionSource,
+          }),
           ...(envelope.mode === 'continue' &&
             envelope.target.bindingId != null && {
               agentEventDelivery: {
@@ -632,6 +693,7 @@ async function startRun(
                 ...(envelope.expectedAction != null && {
                   expectedAction: envelope.expectedAction,
                 }),
+                ...(detachedCompletion == null ? {} : { internalCompletion: detachedCompletion }),
               },
             }),
           ...(envelope.mode === 'fire' && {
@@ -652,7 +714,9 @@ async function startRun(
           ...(run?.conversationId != null && {
             newConversationId: run.conversationId,
           }),
-          ...(run?.chatProjectId != null && { chatProjectId: run.chatProjectId }),
+          ...(run?.chatProjectId != null && {
+            chatProjectId: run.chatProjectId,
+          }),
           ...(run?.files != null && { files: run.files }),
           ...(typeof timezone === 'string' && timezone.trim().length > 0
             ? { timezone: timezone.trim() }
@@ -754,6 +818,28 @@ async function startRun(
         status: response.status,
       });
     }
+    if (
+      mode === 'continue' &&
+      result.mode === 'continue' &&
+      readyPreparation?.settleOnAdmission != null
+    ) {
+      try {
+        await readyPreparation.settleOnAdmission(result);
+      } catch (error) {
+        throw executionError(
+          `Agent trigger continue admitted its generation but could not settle its prepared source: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          {
+            mode,
+            certainty: 'ambiguous',
+            retryable: true,
+            code: 'PREPARATION_SETTLEMENT_FAILED',
+            status: response.status,
+          },
+        );
+      }
+    }
     return result;
   } catch (error) {
     if (
@@ -763,7 +849,7 @@ async function startRun(
       canReleasePreparedResult(error)
     ) {
       try {
-        await preparation.releaseOnDefiniteFailure();
+        await preparation.releaseOnDefiniteFailure(error);
       } catch (releaseError) {
         throw executionError(
           `Agent trigger ${mode} could not release its rejected preparation: ${
@@ -774,6 +860,7 @@ async function startRun(
             certainty: 'definite',
             retryable: true,
             code: 'PREPARATION_RELEASE_FAILED',
+            deferWithoutAttempt: true,
           },
         );
       }

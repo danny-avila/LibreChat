@@ -41,6 +41,7 @@ const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const STATEFUL_CODE_MARKER = 'E2E_STATEFUL_CODE:';
 /** Two prose paragraphs, so a spec can select the message's *closing* block. */
 const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
 const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
@@ -88,6 +89,7 @@ const RESUME_ICON_REPLY_CHUNKS = 240;
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
+const STATEFUL_CODE_VALUE = 'librechat-bridge-persisted';
 const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
@@ -1629,6 +1631,60 @@ function backgroundCollectResponses(messages, toolNames) {
   };
 }
 
+/** Fresh host-owned run started when the detached result becomes durable. */
+function backgroundCompletionResponses(text) {
+  if (!text.includes('background tool task has finished') || !text.includes('durable result')) {
+    return null;
+  }
+  const status = text.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+  const echo = text.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
+  return {
+    responses: [''],
+    resolveInvocation: async (_messages, options, runManager) => {
+      const agentId = getAgentIdFromInvocationOptions(options, runManager) ?? 'missing';
+      return {
+        response: `E2E background notified status=${status} echo=${echo} agent=${agentId}`,
+      };
+    },
+  };
+}
+
+function statefulCodeResponses(operation, toolNames) {
+  if (!toolNames.has(BASH_TOOL_NAME)) {
+    return {
+      responses: [`E2E stateful code unavailable: ${BASH_TOOL_NAME} was not advertised.`],
+    };
+  }
+
+  const commands = {
+    write: `printf ${STATEFUL_CODE_VALUE} > /mnt/data/librechat-bridge-state.txt && cat /mnt/data/librechat-bridge-state.txt`,
+    read: 'cat /mnt/data/librechat-bridge-state.txt',
+  };
+  const command = commands[operation];
+  if (!command) {
+    return { responses: [`E2E stateful code failed: unsupported operation ${operation}`] };
+  }
+
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: `call_e2e_stateful_code_${operation}`,
+        name: BASH_TOOL_NAME,
+        args: { command },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const toolText = findLastToolMessageText(streamMessages, STATEFUL_CODE_VALUE);
+      if (!toolText) {
+        return null;
+      }
+      return { responses: [`E2E stateful code ${operation} observed ${STATEFUL_CODE_VALUE}`] };
+    },
+  };
+}
+
 function parseHandoffScript(text) {
   const encodedScript = getMarkerValue(text, HANDOFF_MARKER);
   if (!encodedScript) {
@@ -2216,6 +2272,11 @@ function buildHandoffResponses(graph, parsed) {
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const backgroundCompletion = backgroundCompletionResponses(text);
+  if (backgroundCompletion) {
+    return backgroundCompletion;
+  }
+
   const subagentActivity = subagentActivityResponses(text);
   if (subagentActivity) {
     return subagentActivity;
@@ -2249,6 +2310,11 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const reply = replyResponses(text);
   if (reply) {
     return reply;
+  }
+
+  const statefulCodeOperation = getMarkerValue(text, STATEFUL_CODE_MARKER);
+  if (statefulCodeOperation) {
+    return statefulCodeResponses(statefulCodeOperation, toolNames);
   }
 
   const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);

@@ -1138,10 +1138,12 @@ describe('setupOpenId', () => {
 
       // First call: cache miss → OBO exchange → cache set
       await validate(tokenset);
+      /** The entry expires 30s (OPENID_EXPIRY_BUFFER_SECONDS) before the credential it holds, so a
+       *  token served from cache cannot expire in transit and 401 downstream. */
       expect(mockSet).toHaveBeenCalledWith(
         '1234:overage',
         { access_token: 'exchanged_graph_token' },
-        3600000,
+        3570000,
       );
       expect(openidClient.genericGrantRequest).toHaveBeenCalledTimes(1);
 

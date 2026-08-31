@@ -36,9 +36,13 @@ import { createModels } from '~/models';
  * suite only runs when DOCUMENTDB_URI is set and skips otherwise.
  *
  * Run (from packages/data-schemas, against a DEDICATED database):
- *   DOCUMENTDB_URI="mongodb://user:pass@127.0.0.1:27017/librechat_compat?tls=true&retryWrites=false" \
+ *   DOCUMENTDB_URI="mongodb://user:pass@127.0.0.1:27017/librechat_compat\
+ *     ?tls=true&retryWrites=false&authSource=admin&authMechanism=SCRAM-SHA-1&directConnection=true" \
  *   DOCUMENTDB_TLS_CA_FILE="global-bundle.pem" \
  *     npx jest --config misc/documentdb/jest.documentdb.config.mjs
+ *
+ * `authSource`/`authMechanism`/`directConnection` are load-bearing against a
+ * real cluster (see audit.documentdb.spec.ts for why each is required).
  *
  * Through an SSH tunnel, additionally set
  *   DOCUMENTDB_TLS_ALLOW_INVALID_HOSTNAMES=true

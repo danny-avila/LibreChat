@@ -1,7 +1,12 @@
 import type { Agents, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
+import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import type { EventEmitter } from 'events';
+import type {
+  AgentEventDetachedTerminalEvidence,
+  AgentEventSuspensionProjection,
+  AgentTriggerExpectedAction,
+} from '../agents/triggers/types';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
-import type { AgentTriggerExpectedAction } from '../agents/triggers/types';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { MCPRuntimeRequestBody } from '../mcp/types';
 import type { ServerSentEvent } from './events';
@@ -44,10 +49,20 @@ export interface GenerationJobMetadata {
   isTemporary?: boolean;
   /** Exact durable delivery whose accepted continuation created this generation. */
   agentEventDeliveryKey?: string;
+  /** Original actor invocation when the current mailbox delivery is an internal completion. */
+  agentEventInvocationKey?: string;
+  /** Original actor invocation generation retained across completion HITL resumes. */
+  agentEventInvocationGenerationCreatedAt?: number;
+  /** This generation must resume on a durable detached-action producer. */
+  agentEventDetachedActionProducerRequired?: boolean;
+  /** Durable retry payload captured before detached terminal evidence reaches Mongo. */
+  agentEventDetachedTerminalEvidence?: AgentEventDetachedTerminalEvidence;
   /** Trusted actor binding copied from the authenticated delivery envelope. */
   agentEventBindingId?: string;
   /** Optional action evidence contract declared by the authenticated event source. */
   agentEventExpectedAction?: AgentTriggerExpectedAction;
+  /** Versioned pointer to the canonical signed suspension stored on the Conversation. */
+  agentEventSuspension?: AgentEventSuspensionProjection;
   /** Exact durable legacy-turn fence carried across a HITL pause/resume. */
   agentEventLegacyTurnToken?: string;
   /** Trusted scheduled-occurrence identity. These fields are accepted only from a
@@ -72,6 +87,8 @@ export interface GenerationJobMetadata {
   discoveredTools?: string[];
   /** Bounded collector state for continuing a phase across HITL resume. */
   activityPhaseSnapshot?: ActivityPhaseSnapshot;
+  /** Exact bounded compaction guidance captured atomically with a HITL pause. */
+  compactionSemanticIndex?: ICompactionSemanticIndexProjection;
   /** See `SerializableJobData.preemptCapable`. */
   preemptCapable?: boolean;
   /** See `SerializableJobData.steerQuotesCapable`. */
@@ -80,6 +97,8 @@ export interface GenerationJobMetadata {
   steerQuotesExecutionId?: string;
   /** Exact provider segment whose completion gates destructive user cleanup. */
   providerExecutionId?: string;
+  /** Exact provider owner that crossed its start fence. */
+  providerExecutionStartedId?: string;
   /** False only while that exact provider segment can still mutate user data. */
   providerDrained?: boolean;
   /** Terminal close has atomically stopped new steer acceptance, even if the

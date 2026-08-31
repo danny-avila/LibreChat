@@ -24,7 +24,6 @@ const {
   assertStoredMessageBranchAllowed,
   mergeUserSubmittedPaths,
   mergeUserSubmittedMessageFieldPaths,
-  retainMessageFiles,
   isContentFilterError,
 } = require('@librechat/api');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
@@ -537,7 +536,7 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
     const message = (
       await db.getMessages(
         { messageId, user: req.user.id },
-        'conversationId content files tokenCount quotes isCreatedByUser userSubmittedPaths',
+        'conversationId content tokenCount quotes isCreatedByUser userSubmittedPaths',
       )
     )?.[0];
     if (!message || message.conversationId !== conversationId) {
@@ -546,19 +545,20 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
     if (await rejectSubagentThreadWrite(req, res, message.conversationId)) {
       return;
     }
-    const { text, index, model, fileIds } = req.body;
+    const { text, index, model, removedFileIds } = req.body;
 
     if (index !== undefined && (typeof index !== 'number' || index < 0)) {
       return res.status(400).json({ error: 'Invalid index' });
     }
 
     if (index === undefined) {
-      let retainedFiles;
-      if (fileIds !== undefined) {
-        retainedFiles = retainMessageFiles(message.files, fileIds);
-        if (retainedFiles == null) {
-          return res.status(400).json({ error: 'Invalid fileIds' });
-        }
+      if (
+        removedFileIds !== undefined &&
+        (!Array.isArray(removedFileIds) ||
+          removedFileIds.some((fileId) => typeof fileId !== 'string' || fileId.length === 0) ||
+          new Set(removedFileIds).size !== removedFileIds.length)
+      ) {
+        return res.status(400).json({ error: 'Invalid removedFileIds' });
       }
 
       assertStoredMessageMutationAllowed(req.config?.filters, { text });
@@ -581,7 +581,7 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
         messageId,
         text,
         tokenCount,
-        ...(retainedFiles !== undefined && { files: retainedFiles }),
+        ...(removedFileIds !== undefined && { removedFileIds }),
         userSubmittedPaths: mergeUserSubmittedPaths(message.userSubmittedPaths, '/text'),
       });
       return res.status(200).json(result);

@@ -1,5 +1,9 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
-const { logger } = require('@librechat/data-schemas');
+const {
+  logger,
+  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
+  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
+} = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
@@ -32,6 +36,7 @@ const {
   createSubagentUsageSink,
   anyAgentReplaysReasoningContent,
   GenerationJobManager,
+  PENDING_ACTION_EXPIRED_CODE,
   getTransactionsConfig,
   resolveRecursionLimit,
   buildPendingAction,
@@ -42,22 +47,29 @@ const {
   pickResumeContext,
   getApprovalTtlMs,
   getAgentCheckpointer,
+  hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
+  buildToolApprovalHooks,
+  agentRunUsesCheckpointer,
+  canAgentGraphPause,
+  getPluginHookSource,
   captureAgentCheckpointGeneration,
   isContentFilterError,
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
-  agentRequestsAskUserQuestion,
+  isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
   createSteerDrainHook,
   createSteerPreemptBoundaryHook,
+  createSteerTerminalContinuationHook,
   createSteerPreemptPoll,
   isSteeringSupported,
   isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
   buildSteerMedia,
   collectSteerStampTargets,
   stampSteerPartMedia,
@@ -92,6 +104,7 @@ const {
   applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
+  buildAgentEventActorSkillMessages,
   collectFreshSkillPrimeNames,
   isSkillPrimeMessage,
   collectFileIds,
@@ -115,6 +128,12 @@ const {
   collectReachableAgents,
   getDynamicToolContexts,
   getSafeErrorMetadata,
+  createInitializedAgentContextFingerprint,
+  createSkillContentDigest,
+  normalizeAgentEventActorDiscoveredTools,
+  createCompactionSemanticIndexProjection,
+  restoreCompactionSemanticIndexSnapshot,
+  MAX_AGENT_CONTEXT_SKILLS,
 } = require('@librechat/api');
 const {
   Run,
@@ -154,20 +173,66 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
-function getInterruptTtlMs(checkpointerCfg, req) {
-  const configuredTtlMs = getApprovalTtlMs(checkpointerCfg);
-  const retention = req?._agentEventBindingRetention;
-  if (retention?.expiredAt == null) {
-    return configuredTtlMs;
+const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+
+function normalizeEventActorSummary(summary) {
+  if (summary == null) {
+    return undefined;
   }
-  const bindingDeadline = new Date(retention.expiredAt).getTime();
-  if (!Number.isFinite(bindingDeadline)) {
-    return configuredTtlMs;
+  if (
+    typeof summary.text !== 'string' ||
+    summary.text.length === 0 ||
+    summary.text.length > MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH ||
+    !Number.isFinite(summary.tokenCount) ||
+    summary.tokenCount < 0
+  ) {
+    throw new RangeError('Event actor summary state is invalid');
   }
-  return Math.min(configuredTtlMs, Math.max(0, bindingDeadline - Date.now()));
+  return { text: summary.text, tokenCount: summary.tokenCount };
 }
 
-const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+function normalizeEventActorContextMeta(contextMeta) {
+  if (contextMeta == null) {
+    return undefined;
+  }
+  const { calibrationRatio, encoding } = contextMeta;
+  if (
+    !Number.isFinite(calibrationRatio) ||
+    calibrationRatio < 0.5 ||
+    calibrationRatio > 5 ||
+    (encoding != null &&
+      (typeof encoding !== 'string' ||
+        encoding.length === 0 ||
+        encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH))
+  ) {
+    throw new RangeError('Event actor context calibration is invalid');
+  }
+  return { calibrationRatio, ...(encoding == null ? {} : { encoding }) };
+}
+
+function getLatestEventActorSummary(contentParts) {
+  if (!Array.isArray(contentParts)) {
+    return undefined;
+  }
+  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
+    const part = contentParts[index];
+    if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+      continue;
+    }
+    const text = part.content
+      .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+      .join('')
+      .trim();
+    if (text.length === 0) {
+      continue;
+    }
+    return normalizeEventActorSummary({
+      text,
+      tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
+    });
+  }
+  return undefined;
+}
 
 function getUserFacingRequestError(baseMessage, error, appConfig) {
   const protectionEnabled = hasModelBoundContentProtection(
@@ -223,6 +288,12 @@ class AgentClient extends BaseClient {
     this.eventActorCheckpointId = undefined;
     this.eventActorInvocationId = undefined;
     this.eventActorContinuation = undefined;
+    this.eventActorSkillPrimeResult = undefined;
+    this.eventActorDiscoveredToolNames = undefined;
+    this.eventActorSummary = undefined;
+    /** Advisory compaction guidance retained and evolved across graph reconstruction.
+     * @type {import('@librechat/agents').CompactionSemanticIndexSnapshot | undefined} */
+    this.compactionSemanticIndexSnapshot = undefined;
 
     /** @type {AgentRun} */
     this.run;
@@ -300,6 +371,56 @@ class AgentClient extends BaseClient {
       usageEmitSink?.filter((event) => event?.usage_type === 'subagent').length ?? 0;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
+    if (
+      this.options.req?._isAgentTrigger === true &&
+      this.options.req?._agentEventBindingParentConversationId != null
+    ) {
+      /** Preserve initialization-time semantic inputs before buildMessages
+       * decorates live agent instructions with request memory/MCP context. */
+      this.eventActorAgentContextSources = this.getEventActorAgents().map((agent) => ({
+        id: agent.id,
+        version: agent.version,
+        provider: agent.provider,
+        model: agent.model ?? agent.model_parameters?.model,
+        instructions: agent.instructions,
+        additional_instructions: agent.additional_instructions,
+        model_parameters: JSON.parse(JSON.stringify(agent.model_parameters ?? {})),
+        toolDefinitions: JSON.parse(JSON.stringify(agent.toolDefinitions ?? [])),
+        toolRegistryDefinitions: JSON.parse(
+          JSON.stringify(
+            [...(agent.toolRegistry?.values() ?? [])].sort((left, right) =>
+              left.name.localeCompare(right.name),
+            ),
+          ),
+        ),
+        tool_options: JSON.parse(JSON.stringify(agent.tool_options ?? {})),
+        execution: JSON.parse(
+          JSON.stringify({
+            endpoint: agent.endpoint,
+            configId: agent.configId,
+            tool_kwargs: agent.tool_kwargs,
+            edges: agent.edges,
+            end_after_tools: agent.end_after_tools,
+            hide_sequential_outputs: agent.hide_sequential_outputs,
+            stateful_code_sessions: agent.stateful_code_sessions,
+            stateful_code_environment: agent.stateful_code_environment,
+            execution_route_key:
+              agent.codeExecutionContext?.executionRouteKey ??
+              agent.codeExecutionContext?.executionProfile,
+            artifacts: agent.artifacts,
+            recursion_limit: agent.recursion_limit,
+            subagents: agent.subagents,
+            memory_scope: agent.memory_scope,
+            skills_enabled: agent.skills_enabled,
+            skills: agent.skills,
+            backgroundToolNames: agent.backgroundToolNames,
+            intentToolNames: agent.intentToolNames,
+          }),
+        ),
+        manualSkillPrimes: agent.manualSkillPrimes,
+        alwaysApplySkillPrimes: agent.alwaysApplySkillPrimes,
+      }));
+    }
     /** @type {string} */
     this.model = this.options.agent.model_parameters.model;
     /** The key for the usage object's input tokens
@@ -441,9 +562,9 @@ class AgentClient extends BaseClient {
 
   /**
    * The `steering` fragment for `createRun`: the run-scoped PostToolBatch
-   * drain hook — plus, when the SDK can seal mid-stream, the PreemptBoundary
-   * twin and the preempt poll built from the SAME drain closures, so both
-   * boundaries inject byte-identical shapes. `undefined` when there is no
+   * drain hook — plus the capability-gated PreemptBoundary and terminal Stop
+   * twins built from the SAME drain closures, so every boundary injects
+   * byte-identical shapes. `undefined` when there is no
    * resumable job surface or the installed SDK cannot inject hook messages
    * (draining would drop them).
    *
@@ -475,6 +596,9 @@ class AgentClient extends BaseClient {
       ...(isSteerPreemptSupported() && {
         preemptHook: createSteerPreemptBoundaryHook(drainOptions),
         preemption: createSteerPreemptPoll(streamId),
+      }),
+      ...(isSteerTerminalContinuationSupported() && {
+        terminalHook: createSteerTerminalContinuationHook(drainOptions),
       }),
     };
   }
@@ -1558,7 +1682,162 @@ class AgentClient extends BaseClient {
     return files;
   }
 
+  getEventActorAgents() {
+    return collectReachableAgents([this.options.agent, ...(this.agentConfigs?.values() ?? [])]);
+  }
+
+  /**
+   * Resolves the committed Skill manifest and request-cached memory before the
+   * actor chooses warm versus rebuilt continuation. No message history is read.
+   *
+   * @param {import('@librechat/data-schemas').IAgentEventActorState | null} state
+   */
+  async prepareEventActorContext(state) {
+    if (state?.contextFingerprint == null) {
+      return undefined;
+    }
+    if (isMemoryAgentEnabled(this.options.req.config?.memory)) {
+      return undefined;
+    }
+    const storedManifest = Array.isArray(state.skillManifest) ? state.skillManifest : [];
+    if (storedManifest.length > MAX_AGENT_CONTEXT_SKILLS) {
+      return undefined;
+    }
+    let discoveredToolNames;
+    let summary;
+    let contextMeta;
+    let compactionSemanticIndex;
+    try {
+      discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
+      summary = normalizeEventActorSummary(state.summary);
+      contextMeta = normalizeEventActorContextMeta(state.contextMeta);
+      compactionSemanticIndex = restoreCompactionSemanticIndexSnapshot(
+        state.compactionSemanticIndex,
+      );
+    } catch {
+      return undefined;
+    }
+
+    let skillPrimeResult = {};
+    if (storedManifest.length > 0) {
+      if (typeof this.options.primeInvokedSkills !== 'function') {
+        return undefined;
+      }
+      skillPrimeResult = await this.options.primeInvokedSkills(
+        [],
+        storedManifest.map((skill) => skill.name),
+      );
+      const resolvedManifest = [...(skillPrimeResult?.skillManifest ?? [])].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      );
+      const expectedManifest = [...storedManifest].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      );
+      if (JSON.stringify(resolvedManifest) !== JSON.stringify(expectedManifest)) {
+        return undefined;
+      }
+    }
+    this.eventActorSkillPrimeResult = skillPrimeResult;
+    this.eventActorDiscoveredToolNames = discoveredToolNames;
+    this.eventActorSummary = summary;
+    this.contextMeta = contextMeta;
+    this.compactionSemanticIndexSnapshot = compactionSemanticIndex;
+    const context = await this.getEventActorContext(storedManifest, discoveredToolNames);
+    const skillBodies = new Map(skillPrimeResult?.skills ?? []);
+    const rootAgentContext = this.eventActorAgentContextSources?.[0];
+    for (const skill of [
+      ...(rootAgentContext?.manualSkillPrimes ?? []),
+      ...(rootAgentContext?.alwaysApplySkillPrimes ?? []),
+    ]) {
+      if (typeof skill.name === 'string' && typeof skill.body === 'string') {
+        skillBodies.set(skill.name, skill.body);
+      }
+    }
+    return {
+      ...context,
+      checkpointMessageOverlay: {
+        source: 'skill',
+        messages: buildAgentEventActorSkillMessages(skillBodies),
+      },
+    };
+  }
+
+  /**
+   * @param {Array<{id: string, name: string, version: number}>} [baseManifest]
+   */
+  async getEventActorContext(baseManifest = [], baseDiscoveredToolNames) {
+    const manifest = new Map(baseManifest.map((skill) => [skill.id, skill]));
+    for (const skill of this.eventActorAgentContextSources?.[0]?.manualSkillPrimes ?? []) {
+      if (!Number.isInteger(skill.version) || skill.version < 1 || typeof skill.body !== 'string') {
+        throw new Error('Manual Skill is missing semantic identity');
+      }
+      manifest.set(skill._id.toString(), {
+        id: skill._id.toString(),
+        name: skill.name,
+        version: skill.version,
+        contentDigest: createSkillContentDigest(skill.body),
+      });
+    }
+    for (const skill of this.eventActorSkillPrimeResult?.skillManifest ?? []) {
+      manifest.set(skill.id, skill);
+    }
+    for (const skill of this.options.invokedSkillIdentities?.values?.() ?? []) {
+      manifest.set(skill.id, skill);
+    }
+    if (manifest.size > MAX_AGENT_CONTEXT_SKILLS) {
+      throw new RangeError(`Event actor exceeds ${MAX_AGENT_CONTEXT_SKILLS} durable Skills`);
+    }
+    const skillManifest = [...manifest.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    );
+    const agents = this.getEventActorAgents();
+    const memory = await this.getEventActorMemorySnapshots(agents);
+    const agentsConfig = this.options.req.config?.endpoints?.[EModelEndpoint.agents];
+    const discoveredToolNames = normalizeAgentEventActorDiscoveredTools([
+      ...(baseDiscoveredToolNames ??
+        (this.eventActorContinuation === 'warm' ? (this.eventActorDiscoveredToolNames ?? []) : [])),
+      ...(this.run == null ? [] : getRunDiscoveredTools(this.run)),
+    ]);
+    const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
+    this.eventActorSummary = summary;
+    const compactionSemanticIndex = createCompactionSemanticIndexProjection(
+      this.compactionSemanticIndexSnapshot,
+    );
+    return {
+      fingerprint: createInitializedAgentContextFingerprint({
+        agents: this.eventActorAgentContextSources ?? agents,
+        invokedSkills: skillManifest,
+        approvalPolicy: agentsConfig?.toolApproval,
+        memory,
+        discoveredToolNames,
+        checkpointerType: agentsConfig?.checkpointer?.type,
+      }),
+      skillManifest,
+      discoveredToolNames,
+      ...(summary == null ? {} : { summary }),
+      ...(this.contextMeta == null ? {} : { contextMeta: this.contextMeta }),
+      ...(compactionSemanticIndex == null ? {} : { compactionSemanticIndex }),
+    };
+  }
+
+  async loadHistory(conversationId, parentMessageId = null) {
+    if (this.eventActorContinuation === 'warm') {
+      logger.debug('[AgentClient] Skipping durable history for compatible event actor', {
+        conversationId,
+      });
+      return [];
+    }
+    return super.loadHistory(conversationId, parentMessageId);
+  }
+
   async buildMessages(messages, parentMessageId, _buildOptions, opts) {
+    if (this.eventActorContinuation === 'cold') {
+      /** Compatibility was rejected after warm state preparation. Rebuild all
+       * non-checkpointed state from durable history, never from that stale head. */
+      this.eventActorSummary = undefined;
+      this.contextMeta = undefined;
+      this.compactionSemanticIndexSnapshot = undefined;
+    }
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -1623,7 +1902,7 @@ class AgentClient extends BaseClient {
      * original promise later still propagates either error.
      */
     const earlySharedContextPromise = Promise.all([
-      this.useMemory(),
+      this.getSharedMemoryContext(),
       resolveConfigServers(this.options.req),
     ]);
     void earlySharedContextPromise.catch(() => {});
@@ -2493,6 +2772,55 @@ class AgentClient extends BaseClient {
     return { withKeys, withoutKeys };
   }
 
+  /** Reuses the exact memory authorization/load promise for planning and prompt construction. */
+  getSharedMemoryContext() {
+    this.memoryContextPromise ??= this.useMemory();
+    return this.memoryContextPromise;
+  }
+
+  /**
+   * Returns the model-bound memory snapshots needed for event-actor compatibility.
+   * The request-scoped memory cache makes this the same read used by buildMessages.
+   *
+   * @param {Array<import('@librechat/api').InitializedAgent>} agents
+   * @returns {Promise<Array<{scope: string, withKeys?: string, withoutKeys?: string}>>}
+   */
+  async getEventActorMemorySnapshots(agents) {
+    const primary = await this.getSharedMemoryContext();
+    if (!primary) {
+      return [];
+    }
+    const userId = this.options.req.user.id + '';
+    const primaryScope = getMemoryAgentId(this.options.agent);
+    const scopes = new Map([[primaryScope ?? '', primary]]);
+    await Promise.all(
+      agents.map(async (agent) => {
+        if (agent !== this.options.agent && !agentHasInlineMemoryTools(agent)) {
+          return;
+        }
+        const agentId = getMemoryAgentId(agent);
+        const scope = agentId ?? '';
+        if (scopes.has(scope)) {
+          return;
+        }
+        const snapshot = await getRequestMemories({
+          req: this.options.req,
+          userId,
+          agentId,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        scopes.set(scope, snapshot);
+      }),
+    );
+    return [...scopes]
+      .map(([scope, snapshot]) => ({
+        scope: scope || 'shared',
+        ...(snapshot.withKeys ? { withKeys: snapshot.withKeys } : {}),
+        ...(snapshot.withoutKeys ? { withoutKeys: snapshot.withoutKeys } : {}),
+      }))
+      .sort((left, right) => left.scope.localeCompare(right.scope));
+  }
+
   /**
    * Filters out image URLs from message content
    * @param {BaseMessage} message - The message to filter
@@ -3105,12 +3433,138 @@ class AgentClient extends BaseClient {
     activityPhase?.complete?.();
   }
 
+  /** Returns the exact staged approval envelope the SDK signs into a suspension. */
+  readEventActorSuspension() {
+    const staged = this.stagedApproval;
+    if (staged == null || this.eventActorInvocationId == null) {
+      return undefined;
+    }
+    return {
+      actionId: staged.pendingAction.actionId,
+      jobCreatedAt: this.jobCreatedAt,
+      interrupt: {
+        id: staged.interruptId,
+        payload: { ...staged.pendingAction, type: staged.interruptType },
+      },
+    };
+  }
+
+  /** Projects an already-staged pause into the shared job store. Event Actors
+   * call this only after their signed Conversation suspension is durable. */
+  async publishStagedApproval(eventActorSuspension) {
+    const staged = this.stagedApproval;
+    if (staged == null) {
+      return false;
+    }
+    if (this.pendingApproval?.actionId === staged.pendingAction.actionId) {
+      return true;
+    }
+    const pauseProjection = {
+      expectedCreatedAt: this.jobCreatedAt,
+      ...(staged.discoveredTools.length > 0 ? { discoveredTools: staged.discoveredTools } : {}),
+      ...(staged.activityPhaseSnapshot == null
+        ? {}
+        : { activityPhaseSnapshot: staged.activityPhaseSnapshot }),
+      ...(staged.compactionSemanticIndex == null
+        ? {}
+        : { compactionSemanticIndex: staged.compactionSemanticIndex }),
+      persistencePending: true,
+      ...(eventActorSuspension == null
+        ? {}
+        : {
+            agentEventSuspension: {
+              version: eventActorSuspension.version,
+              suspensionId: eventActorSuspension.suspensionId,
+              attempt: eventActorSuspension.attempt,
+            },
+          }),
+    };
+    let paused;
+    try {
+      paused = await GenerationJobManager.approvals.pause(
+        staged.streamId,
+        staged.pendingAction,
+        pauseProjection,
+      );
+    } catch (error) {
+      /** Redis may commit running -> requires_action and lose only its reply.
+       * The Conversation suspension is already canonical at this point, so
+       * confirm this exact generation/action/projection before declaring the
+       * publication failed and driving terminal compensation. */
+      const currentJob = await GenerationJobManager.getJob(staged.streamId).catch(() => null);
+      const projected = currentJob?.metadata?.agentEventSuspension;
+      const expectedProjection = pauseProjection.agentEventSuspension;
+      if (
+        currentJob?.createdAt === this.jobCreatedAt &&
+        currentJob.status === 'requires_action' &&
+        currentJob.metadata?.pendingAction?.actionId === staged.pendingAction.actionId &&
+        expectedProjection != null &&
+        projected?.version === expectedProjection.version &&
+        projected.suspensionId === expectedProjection.suspensionId &&
+        projected.attempt === expectedProjection.attempt
+      ) {
+        paused = true;
+      } else {
+        throw error;
+      }
+    }
+    if (!paused) {
+      logger.debug(
+        `[AgentClient] Interrupt fired but job ${staged.streamId} was not running; not pausing`,
+      );
+      return false;
+    }
+    this.pendingApproval = staged.pendingAction;
+    return true;
+  }
+
+  /** Exposes a durable pause after its controller-owned history barrier clears. */
+  async exposePendingApproval() {
+    const staged = this.stagedApproval;
+    if (
+      staged == null ||
+      this.pendingApproval?.actionId !== staged.pendingAction.actionId ||
+      this.exposedApprovalActionId === staged.pendingAction.actionId
+    ) {
+      return false;
+    }
+    if (!this.pendingRequestReleased) {
+      try {
+        if (this.options.req?._scheduleConcurrencyExempt !== true) {
+          await decrementPendingRequest(this.options.req?.user?.id);
+        }
+        this.pendingRequestReleased = true;
+      } catch (err) {
+        logger.error(
+          `[AgentClient] Failed to release request slot on pause ${staged.streamId}`,
+          getSafeErrorMetadata(err),
+        );
+      }
+    }
+    // Steers accepted before the pause remain in the shared store throughout
+    // review. The resumed run rehydrates them; exposing the action never moves
+    // their only copy into this replica's ephemeral client state.
+    await GenerationJobManager.emitChunk(
+      staged.streamId,
+      {
+        event: ApprovalEvents.ON_PENDING_ACTION,
+        data: toClientPendingAction(staged.pendingAction),
+      },
+      { expectedCreatedAt: this.jobCreatedAt },
+    );
+    this.exposedApprovalActionId = staged.pendingAction.actionId;
+    logger.debug(
+      `[AgentClient] Paused ${staged.streamId} for ${staged.interruptType} (action ${staged.pendingAction.actionId})`,
+    );
+    return true;
+  }
+
   /**
    * Surface any human-in-the-loop interrupt the SDK captured during the most
    * recent `processStream` / `resume`. When the run paused for tool approval (or
-   * an ask-user question), mark the job `requires_action`, persist the pending
-   * review record, and emit it to live clients — then set `this.pendingApproval`
-   * so the controller leaves the turn unfinalized for the resume route to continue.
+   * an ask-user question), stage its exact envelope. Ordinary turns immediately
+   * publish and expose it; Event Actors let the SDK persist signed suspension
+   * evidence first, then publish under the same history barrier.
    *
    * No-op when the run completed without an interrupt, or when the job was aborted
    * between the interrupt firing and this mark (a late interrupt must not pause a
@@ -3130,6 +3584,43 @@ class AgentClient extends BaseClient {
 
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+    if (this.options.req?._isScheduledFire === true) {
+      if (!GenerationJobManager.isRedis) {
+        const error = new Error(
+          'The agent paused, but its shared action state is unavailable. Please retry the run.',
+        );
+        error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
+        throw error;
+      }
+      let hasDurableInterrupt = false;
+      try {
+        hasDurableInterrupt = await hasDurableAgentInterruptCheckpoint(
+          this.conversationId,
+          checkpointerCfg,
+          {
+            checkpointNamespace: this.checkpointNamespace,
+            checkpointId: interrupt.checkpointId,
+            checkpointNs: interrupt.checkpointNs,
+            interruptId: interrupt.interruptId,
+          },
+        );
+      } catch (checkpointError) {
+        logger.error(
+          `[AgentClient] Failed to verify scheduled HITL checkpoint for ${this.conversationId} (${this.checkpointNamespace || 'legacy namespace'})`,
+          checkpointError,
+        );
+      }
+      if (!hasDurableInterrupt) {
+        logger.error(
+          `[AgentClient] Refusing unresumable scheduled HITL pause for ${this.conversationId} (${this.checkpointNamespace || 'legacy namespace'})`,
+        );
+        const error = new Error(
+          'The agent paused, but its durable continuation checkpoint is unavailable. Please retry the run.',
+        );
+        error.code = 'HITL_CHECKPOINT_UNAVAILABLE';
+        throw error;
+      }
+    }
     // Persist the generation params (temperature, max tokens, custom endpoint params, …)
     // so an ephemeral-agent resume continues with the SAME settings the run paused on.
     // The resume payload omits them and they aren't part of the fingerprint, so without
@@ -3174,7 +3665,8 @@ class AgentClient extends BaseClient {
       // thread_id was bound to conversationId at run config (config.configurable);
       // fall back to it when the SDK doesn't echo threadId on the interrupt.
       threadId: interrupt.threadId ?? this.conversationId,
-      ttlMs: getInterruptTtlMs(checkpointerCfg, this.options.req),
+      ttlMs: getApprovalTtlMs(checkpointerCfg),
+      expiresAt: this.options.req?._agentEventBindingRetention?.expiredAt,
       // Pin the graph-determining request fields so resume can't rebuild this paused
       // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
       // undefined so the id guard can't tell two configs apart).
@@ -3211,59 +3703,23 @@ class AgentClient extends BaseClient {
       );
     }
 
-    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction, {
-      expectedCreatedAt: this.jobCreatedAt,
-      ...(discoveredTools.length > 0 ? { discoveredTools } : {}),
-      ...(this.activityPhaseWiring?.snapshot != null && {
-        activityPhaseSnapshot: this.activityPhaseWiring.snapshot(),
-      }),
-      persistencePending: true,
-    });
-    if (!paused) {
-      logger.debug(
-        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
-      );
+    this.stagedApproval = {
+      streamId,
+      pendingAction,
+      interruptId: interrupt.interruptId,
+      interruptType: interrupt.payload.type,
+      discoveredTools,
+      activityPhaseSnapshot: this.activityPhaseWiring?.snapshot?.(),
+      compactionSemanticIndex: createCompactionSemanticIndexProjection(
+        this.compactionSemanticIndexSnapshot,
+      ),
+    };
+    if (this.eventActorInvocationId != null) {
       return;
     }
-
-    this.pendingApproval = pendingAction;
-    // Release the concurrency slot this request held the MOMENT the turn is durably
-    // paused — before the approval card is emitted — so the user's `/resume` can
-    // re-acquire one immediately. Otherwise a fast Approve races the HTTP-driver
-    // teardown (request.js pause branch / resume.js finally) that would otherwise
-    // release it, and `/resume` 429s under LIMIT_CONCURRENT_MESSAGES. Idempotent via
-    // the flag; if it fails here, the teardown still releases (it checks the flag).
-    if (!this.pendingRequestReleased) {
-      try {
-        if (this.options.req?._scheduleConcurrencyExempt !== true) {
-          await decrementPendingRequest(this.options.req?.user?.id);
-        }
-        this.pendingRequestReleased = true;
-      } catch (err) {
-        logger.error(
-          `[AgentClient] Failed to release request slot on pause ${streamId}`,
-          getSafeErrorMetadata(err),
-        );
-      }
+    if (await this.publishStagedApproval()) {
+      await this.exposePendingApproval();
     }
-    await GenerationJobManager.emitChunk(
-      streamId,
-      {
-        event: ApprovalEvents.ON_PENDING_ACTION,
-        data: toClientPendingAction(pendingAction),
-      },
-      { expectedCreatedAt: this.jobCreatedAt },
-    );
-    // Steers queued before this pause stay IN the store for the whole approval
-    // window: `resumeState.pendingSteers` re-seeds the client's chips on
-    // reload, and the resumed run drains them at its first tool boundary.
-    // Draining here would leave the only copy in ephemeral client state — a
-    // reload during the pause would silently lose the user's message. New
-    // steers are rejected while paused (enqueue is status-guarded), and the
-    // requires_action TTL extension keeps the queue key alive.
-    logger.debug(
-      `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
-    );
   }
 
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
@@ -3281,6 +3737,57 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
+      /** Scheduled approvals are unattended by definition. Their pending action,
+       * replay context, and resolution fence must be shared across workers; their
+       * LangGraph continuation must also use a durable shared checkpointer. Redis
+       * provides the first half, while handleRunInterrupt verifies the exact durable
+       * checkpoint before exposing the pause. Refuse unsupported topologies before
+       * spending on provider work. */
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+        ? buildToolApprovalHooks({
+            userId: this.options.req?.user?.id,
+            conversationId: this.conversationId,
+            tenantId: this.options.req?.user?.tenantId,
+            appConfig,
+          })
+        : undefined;
+      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
+      const runCanPause = canAgentGraphPause({
+        policy: agentsEConfig?.toolApproval,
+        agents: topLevelAgents,
+        hostGeneratedToolNames:
+          this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
+        resolvedProgrammaticHooks: resolvedToolApprovalHooks,
+        pluginHookSource: getPluginHookSource(),
+        askUserQuestionAdminDisabled,
+      });
+      const runUsesCheckpointer = agentRunUsesCheckpointer({
+        policy: agentsEConfig?.toolApproval,
+        agents: topLevelAgents,
+        askUserQuestionAdminDisabled,
+      });
+      if (this.options.req?._isScheduledFire === true && runCanPause) {
+        if (!GenerationJobManager.isRedis) {
+          const error = new Error(
+            'Scheduled agent runs that can pause require a shared generation store. ' +
+              'Enable Redis streams with USE_REDIS_STREAMS=true.',
+          );
+          error.code = 'SCHEDULED_HITL_REQUIRES_SHARED_STORE';
+          throw error;
+        }
+        if (!(await getAgentCheckpointer(agentsEConfig?.checkpointer))) {
+          const error = new Error(
+            'Scheduled agent runs that can pause require a durable shared checkpointer. ' +
+              'Use the default MongoDB checkpointer.',
+          );
+          error.code = 'SCHEDULED_HITL_REQUIRES_DURABLE_CHECKPOINT';
+          throw error;
+        }
+      }
+
       /** Fire-and-forget: boot each selected stateful environment in
        *  parallel with generation so the first execute_code/bash call lands
        *  on a warm VM. No-op unless a reachable agent resolved
@@ -3290,9 +3797,6 @@ class AgentClient extends BaseClient {
         conversationId: this.conversationId,
         agents: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
       });
-
-      /** @type {AppConfig['endpoints']['agents']} */
-      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
         runName: 'AgentRun',
@@ -3335,9 +3839,17 @@ class AgentClient extends BaseClient {
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
-      const skillPrimeResult = this.options.primeInvokedSkills
-        ? await this.options.primeInvokedSkills(payload)
-        : undefined;
+      if (this.eventActorContinuation === 'cold') {
+        this.eventActorSkillPrimeResult = undefined;
+        this.eventActorDiscoveredToolNames = undefined;
+      }
+      let skillPrimeResult = this.eventActorSkillPrimeResult;
+      if (skillPrimeResult == null) {
+        skillPrimeResult = this.options.primeInvokedSkills
+          ? await this.options.primeInvokedSkills(payload)
+          : undefined;
+      }
+      this.eventActorSkillPrimeResult = skillPrimeResult;
 
       /** Seed each reachable agent's trusted code-session partition. */
       const initialSessions = buildInitialToolSessions({
@@ -3372,28 +3884,61 @@ class AgentClient extends BaseClient {
         alwaysApplySkillPrimes,
       });
       const useLegacyContent = this.options.agent?.useLegacyContent === true;
-      const formatOptions =
-        needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent
-          ? {
-              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
-              ...(freshSkillPrimeNames.size > 0
-                ? { skipSkillBodyNames: freshSkillPrimeNames }
-                : {}),
-              ...(useLegacyContent ? { legacyContent: true } : {}),
-            }
-          : undefined;
+      const reachableAgents = collectReachableAgents([
+        this.options.agent,
+        ...(this.agentConfigs?.values() ?? []),
+      ]);
+      const messageFormatOptions = {
+        ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
+        ...(freshSkillPrimeNames.size > 0 ? { skipSkillBodyNames: freshSkillPrimeNames } : {}),
+        ...(useLegacyContent ? { legacyContent: true } : {}),
+      };
+      const semanticIntentToolNames = new Set();
+      const semanticIntentBlockedToolNames = new Set();
+      for (const agent of reachableAgents) {
+        for (const toolName of agent.semanticIntentToolNames ?? []) {
+          semanticIntentToolNames.add(toolName);
+        }
+        for (const toolName of agent.semanticIntentBlockedToolNames ?? []) {
+          semanticIntentBlockedToolNames.add(toolName);
+        }
+      }
+      for (const toolName of semanticIntentBlockedToolNames) {
+        semanticIntentToolNames.delete(toolName);
+      }
+      const hasMessageFormatOptions =
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent;
+      const formatOptions = {
+        ...messageFormatOptions,
+        compactionSemanticIndex: {
+          ...(this.eventActorContinuation === 'warm' && this.compactionSemanticIndexSnapshot != null
+            ? { baseSnapshot: this.compactionSemanticIndexSnapshot }
+            : {}),
+          intentToolNames: semanticIntentToolNames,
+        },
+      };
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
+        compactionSemanticIndexSnapshot,
       } = formatAgentMessages(
-        stripActivityLabelParts(payload),
+        payload,
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
         formatOptions,
       );
+      if (this.eventActorContinuation !== 'warm') {
+        this.eventActorSummary = initialSummary;
+      }
+      this.compactionSemanticIndexSnapshot =
+        compactionSemanticIndexSnapshot ??
+        (this.eventActorContinuation === 'warm' ? this.compactionSemanticIndexSnapshot : undefined);
+      const continuationSummary =
+        this.eventActorContinuation === 'warm' ? this.eventActorSummary : initialSummary;
+      const continuationCompactionSemanticIndex = this.compactionSemanticIndexSnapshot?.entries;
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -3444,10 +3989,7 @@ class AgentClient extends BaseClient {
       assertModelBoundContent({
         filters: appConfig?.filters,
         legacyPii: appConfig?.messageFilter?.pii,
-        agents: collectReachableAgents([
-          this.options.agent,
-          ...(this.agentConfigs?.values() ?? []),
-        ]),
+        agents: reachableAgents,
         skills: [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])],
         memories: this.modelBoundMemoryContexts,
         files: this.modelBoundFileContexts,
@@ -3477,7 +4019,7 @@ class AgentClient extends BaseClient {
               undefined,
               toolSet,
               skillPrimeResult?.skills,
-              formatOptions,
+              hasMessageFormatOptions ? messageFormatOptions : undefined,
             ).messages
           : initialMessages;
 
@@ -3555,16 +4097,14 @@ class AgentClient extends BaseClient {
         // HITL is off or the generation has no remnants. Deliberately unconditional
         // per HITL turn: any cheaper Redis flag can go stale across replicas/restarts,
         // while these are two indexed, usually-empty deleteMany operations.
-        // The gate mirrors createRun's checkpointer condition: the approval policy
-        // OR an ask_user_question-capable agent (which attaches a checkpointer
-        // WITHOUT the approval policy).
+        // Mirror createRun's checkpointer attachment gate. This is deliberately
+        // broader than pause admission: retries must prune remnants even when a
+        // policy or request hook changed from pausing to non-pausing.
         //
         // Start the prune alongside graph construction. The all-settled barrier
         // below still guarantees it completes before the graph is exposed or run.
         const shouldPruneCheckpoint =
-          streamId &&
-          this.eventActorInvocationId == null &&
-          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion));
+          streamId && this.eventActorInvocationId == null && runUsesCheckpointer;
         let checkpointPrunePromise = Promise.resolve();
         if (shouldPruneCheckpoint && this.checkpointNamespace !== '') {
           checkpointPrunePromise = deleteAgentCheckpoint(
@@ -3621,12 +4161,15 @@ class AgentClient extends BaseClient {
           // carries no messages, so history cannot identify the conversation.
           conversationId: this.conversationId,
           messages,
+          discoveredToolNames:
+            this.eventActorContinuation === 'warm' ? this.eventActorDiscoveredToolNames : undefined,
           modelCallbacks: [modelBoundCallback],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
           // leave this off so an approval-gated tool can't pause where there's no resume path.
           hitlCapable: true,
+          resolvedToolApprovalHooks,
           toolInputValidationErrors: this.toolInputValidationErrors,
           // Mid-run steering: drain queued user messages at each tool-batch
           // boundary and inject them into graph state. The offset wrapper
@@ -3640,11 +4183,14 @@ class AgentClient extends BaseClient {
           // plus the one new event), so those indices address different
           // messages and the pruner would never recount them. Hand it an empty
           // map so every count is derived from the messages actually in state.
-          // `initialSummary` deliberately stays: it rides the system tail, and
-          // the pre-boundary turns it summarizes were excluded from the very
-          // history the committed checkpoint was built from.
+          // The active summary lives in AgentContext rather than checkpointed
+          // graph messages, so warm turns restore the actor-head copy while
+          // rebuilt turns use the summary reconstructed from durable history.
           indexTokenCountMap: this.eventActorContinuation === 'warm' ? {} : indexTokenCountMap,
-          initialSummary,
+          initialSummary: continuationSummary,
+          ...(continuationCompactionSemanticIndex == null
+            ? {}
+            : { compactionSemanticIndex: continuationCompactionSemanticIndex }),
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
@@ -3789,9 +4335,22 @@ class AgentClient extends BaseClient {
         this.contentParts.unshift(...manualParts);
       }
 
+      /** Summaries are run state, even when sequential-output reshaping hides
+       * their display block from the persisted response content. */
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
+      if (
+        err?.code === 'SCHEDULED_HITL_REQUIRES_SHARED_STORE' ||
+        err?.code === 'SCHEDULED_HITL_REQUIRES_DURABLE_CHECKPOINT' ||
+        err?.code === 'HITL_CHECKPOINT_UNAVAILABLE' ||
+        err?.code === PENDING_ACTION_EXPIRED_CODE
+      ) {
+        logger.warn(`[api/server/controllers/agents/client.js #sendCompletion] ${err.message}`);
+        throw err;
+      }
       if (isContentFilterError(err)) {
         logger.warn(
           '[api/server/controllers/agents/client.js #sendCompletion] Blocked by content policy',
@@ -3830,6 +4389,10 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      /** An aborted/erroring run can still have completed compaction before
+       * the failure; retain that model-visible state for actor reconciliation. */
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       /** Capture calibration state from the run for persistence on the response message.
        *  Runs in finally so values are captured even on abort. */
       const ratio = this.run?.getCalibrationRatio() ?? 0;
@@ -3924,6 +4487,7 @@ class AgentClient extends BaseClient {
    * @param {Array} [params.seedContent] - content aggregated before the pause
    * @param {Array<import('@librechat/agents').RunStep>} [params.runSteps] - run steps emitted before the pause
    * @param {import('@librechat/api').ActivityPhaseSnapshot} [params.activityPhaseSnapshot]
+   * @param {import('@librechat/data-schemas').ICompactionSemanticIndexProjection} [params.compactionSemanticIndex]
    * @param {Array} [params.storedMessages] - persisted user messages restored for the resume
    * @param {AbortController} [params.abortController]
    * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
@@ -3938,6 +4502,7 @@ class AgentClient extends BaseClient {
     userMCPAuthMap,
     discoveredToolNames,
     activityPhaseSnapshot,
+    compactionSemanticIndex,
   }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -3953,6 +4518,14 @@ class AgentClient extends BaseClient {
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+        ? buildToolApprovalHooks({
+            userId: this.options.req?.user?.id,
+            conversationId: this.conversationId,
+            tenantId: this.options.req?.user?.tenantId,
+            appConfig,
+          })
+        : undefined;
 
       BaseClient.prototype.setModelBoundStoredMessages.call(
         this,
@@ -3990,6 +4563,8 @@ class AgentClient extends BaseClient {
       }
 
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      this.compactionSemanticIndexSnapshot =
+        restoreCompactionSemanticIndexSnapshot(compactionSemanticIndex);
       const agents = collectReachableAgents([
         this.options.agent,
         ...(this.agentConfigs?.size > 0 ? this.agentConfigs.values() : []),
@@ -4109,6 +4684,7 @@ class AgentClient extends BaseClient {
         // The resumed run can pause AGAIN (another tool, a follow-up question), and this
         // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
         hitlCapable: true,
+        resolvedToolApprovalHooks,
         // Plugin SessionStart hooks match on the lifecycle source; a rebuilt run is a
         // resume, not a fresh startup.
         sessionStartSource: 'resume',
@@ -4120,6 +4696,9 @@ class AgentClient extends BaseClient {
         // batches keep claiming slots and generating group headers.
         activityLabel,
         activityPhase,
+        ...(this.compactionSemanticIndexSnapshot == null
+          ? {}
+          : { compactionSemanticIndex: this.compactionSemanticIndexSnapshot.entries }),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so these names restore the schemas to the
         // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
@@ -4209,6 +4788,8 @@ class AgentClient extends BaseClient {
       // before resume finalize/re-pause persistence reads `this.contentParts`, so a
       // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
       // is meant to hide.
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       const contentBeforeReshape = [...this.contentParts];
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
@@ -4247,6 +4828,8 @@ class AgentClient extends BaseClient {
         });
       }
     } finally {
+      this.eventActorSummary =
+        getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
       const ratio = this.run?.getCalibrationRatio() ?? 0;
       if (ratio > 0 && ratio !== 1) {
         this.contextMeta = {

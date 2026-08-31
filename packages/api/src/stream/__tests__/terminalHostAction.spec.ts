@@ -1,3 +1,8 @@
+import type { AgentEventActorDetachedAction } from '@librechat/data-schemas';
+import {
+  createAgentEventActorDetachedActionLifecycle,
+  createAgentEventDetachedResumeHandler,
+} from '~/agents/triggers/detachedAction';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
@@ -20,6 +25,186 @@ describe('GenerationJobManager terminal host actions', () => {
 
   afterEach(async () => {
     await manager.destroy();
+  });
+
+  it('verifies detached terminal outbox persistence against the exact generation', async () => {
+    const streamId = 'conversation-detached-outbox';
+    const job = await manager.createJob(streamId, 'user-1', streamId);
+    const evidence = {
+      version: 1 as const,
+      deliveryKey: 'trigger-outbox',
+      generationCreatedAt: job.createdAt,
+      taskId: 'task-outbox',
+      idempotencyKey: 'a'.repeat(64),
+      status: 'succeeded' as const,
+      result: 'accepted',
+      observedAt: job.createdAt + 1,
+    };
+
+    await expect(
+      manager.persistAgentEventDetachedTerminalEvidence(streamId, job.createdAt, evidence),
+    ).resolves.toBe(true);
+    await expect(store.getJob(streamId)).resolves.toMatchObject({
+      agentEventDetachedTerminalEvidence: evidence,
+    });
+
+    const replacement = await store.createJob(streamId, 'user-1', streamId);
+    expect(replacement.createdAt).not.toBe(job.createdAt);
+    await expect(
+      manager.persistAgentEventDetachedTerminalEvidence(streamId, job.createdAt, evidence),
+    ).resolves.toBe(false);
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty(
+      'agentEventDetachedTerminalEvidence',
+    );
+  });
+
+  it('runs detached launch, completion, and continuation through the in-memory adapter', async () => {
+    const streamId = 'conversation-memory-detached-action';
+    const invocationId = 'trigger-memory-detached-action';
+    const enqueueContinuation = jest.fn().mockResolvedValue(undefined);
+    let action: AgentEventActorDetachedAction = {
+      version: 1 as const,
+      invocationId,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move',
+      toolCallId: 'call-memory-detached-action',
+      turnId: 'response-memory:0',
+      taskId: `event_actor_${'a'.repeat(64)}`,
+      idempotencyKey: 'a'.repeat(64),
+      launchAttempt: 1,
+      status: 'reserved',
+      reservedAt: new Date(),
+      observedAt: new Date(),
+      recoveryAfter: new Date(Date.now() + 60_000),
+    };
+    const resumeDetachedAction = createAgentEventDetachedResumeHandler({
+      getAgentTriggerDelivery: jest.fn().mockResolvedValue({
+        user: 'user-1',
+        envelope: {
+          mode: 'continue',
+          principal: { userId: 'user-1' },
+          target: {
+            agentId: 'agent-1',
+            bindingId: 'binding-1',
+            conversationId: streamId,
+            parentMessageId: 'message-1',
+            sourceKeyId: 'source-key-1',
+          },
+          expectedAction: { toolName: 'submit_move' },
+        },
+      }),
+      enqueueAgentTrigger: enqueueContinuation,
+      requestId: () => 'memory-detached-continuation',
+    });
+    manager.setTerminalHostActionHandler(async (_streamId, job) => {
+      if (action.status !== 'succeeded') {
+        throw new Error('detached action is still running');
+      }
+      await resumeDetachedAction({
+        streamId,
+        job,
+        handlingGenerationCreatedAt: job.createdAt,
+        suspension: {} as never,
+        action,
+      });
+    });
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: {
+        agentEventDeliveryKey: invocationId,
+        agentEventBindingId: 'binding-1',
+        agentEventExpectedAction: { toolName: 'submit_move' },
+      },
+    });
+    const lifecycle = createAgentEventActorDetachedActionLifecycle(
+      {
+        user: 'user-1',
+        bindingId: 'binding-1',
+        conversationId: streamId,
+        generationCreatedAt: job.createdAt,
+        turnCreatedAt: job.createdAt,
+        invocationId,
+        expectedAction: { toolName: 'submit_move' },
+      },
+      {
+        storeMode: () => manager.detachedAgentEventActionStoreMode,
+        reserveAgentEventActorDetachedAction: jest.fn(async () => ({
+          status: 'reserved' as const,
+          action,
+        })),
+        markAgentEventActorDetachedActionRunning: jest.fn(async () => {
+          action = { ...action, status: 'running', observedAt: new Date() };
+          return { status: 'applied' as const, action };
+        }),
+        settleAgentEventActorDetachedAction: jest.fn(async (input) => {
+          action = {
+            ...action,
+            status: 'succeeded',
+            result: input.result,
+            observedAt: input.observedAt,
+          };
+          return { status: 'applied' as const, action };
+        }),
+        persistTerminalEvidence: async (evidence) => {
+          const persisted = await manager.persistAgentEventDetachedTerminalEvidence(
+            streamId,
+            job.createdAt,
+            evidence,
+          );
+          if (!persisted) {
+            throw new Error('failed to stage detached terminal evidence');
+          }
+        },
+        onTerminal: async () => {
+          await manager.retryTerminalHostAction(streamId, job.createdAt);
+        },
+      },
+    );
+
+    expect(manager.detachedAgentEventActionStoreMode).toBe('process_local');
+    await expect(
+      lifecycle.reserve({
+        toolName: 'submit_move',
+        toolCallId: action.toolCallId,
+        turnId: action.turnId,
+        arguments: {},
+      }),
+    ).resolves.toMatchObject({ status: 'reserved', taskId: action.taskId });
+    await expect(
+      lifecycle.markRunning({ taskId: action.taskId, idempotencyKey: action.idempotencyKey }),
+    ).resolves.toBe(true);
+    expect(lifecycle.readSuspension()).toMatchObject({
+      kind: 'internal_completion',
+      actionId: action.taskId,
+    });
+
+    await expect(manager.completeJob(streamId, undefined, job.createdAt)).resolves.toBe(true);
+    expect(enqueueContinuation).not.toHaveBeenCalled();
+    await expect(store.getJob(streamId)).resolves.toMatchObject({
+      terminalHostActionPending: true,
+    });
+
+    await expect(
+      lifecycle.settle({
+        taskId: action.taskId,
+        idempotencyKey: action.idempotencyKey,
+        status: 'succeeded',
+        result: 'move accepted',
+      }),
+    ).resolves.toBe(true);
+    await lifecycle.wake({ taskId: action.taskId, idempotencyKey: action.idempotencyKey });
+
+    expect(enqueueContinuation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'continue',
+        deliveryId: `detached_completion:${action.taskId}`,
+        event: expect.objectContaining({
+          type: 'librechat.event_actor.detached_completion',
+          payload: expect.objectContaining({ invocationId, taskId: action.taskId }),
+        }),
+      }),
+      { requiredWorkerCapability: 'event_actor_detached_action_v1' },
+    );
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
   });
 
   it('runs and acknowledges a generation-fenced host action before terminal cleanup', async () => {
@@ -87,6 +272,29 @@ describe('GenerationJobManager terminal host actions', () => {
     await expect(store.getJob('conversation-1')).resolves.not.toHaveProperty(
       'terminalHostActionPending',
     );
+  });
+
+  it('retries an exact pending terminal host action when late evidence arrives', async () => {
+    const handler = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('detached action is still running'))
+      .mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'conversation-late-terminal-evidence';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'trigger-late-evidence' },
+    });
+
+    await expect(manager.completeJob(streamId, undefined, job.createdAt)).resolves.toBe(true);
+    await expect(store.getJob(streamId)).resolves.toMatchObject({
+      terminalHostActionPending: true,
+    });
+
+    await expect(manager.retryTerminalHostAction(streamId, job.createdAt + 1)).resolves.toBe(false);
+    expect(handler).toHaveBeenCalledTimes(1);
+    await expect(manager.retryTerminalHostAction(streamId, job.createdAt)).resolves.toBe(true);
+    expect(handler).toHaveBeenCalledTimes(2);
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
   });
 
   it('waits for the provider evidence fence and retains a failed tool close', async () => {
@@ -338,6 +546,47 @@ describe('GenerationJobManager terminal host actions', () => {
     await expect(store.getJob('conversation-2')).resolves.not.toHaveProperty(
       'terminalHostActionPending',
     );
+  });
+
+  it('recovers detached completion jobs from the capability-isolated terminal lane', async () => {
+    const streamId = 'conversation-detached-terminal-lane';
+    const invocationKey = 'trigger-original-invocation';
+    const completionDeliveryKey = 'trigger-internal-completion';
+    const invocationGenerationCreatedAt = 42;
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: {
+        agentEventDeliveryKey: completionDeliveryKey,
+        agentEventInvocationKey: invocationKey,
+        agentEventInvocationGenerationCreatedAt: invocationGenerationCreatedAt,
+      },
+    });
+    await store.transitionStatus(streamId, {
+      from: 'running',
+      to: 'complete',
+      expectCreatedAt: job.createdAt,
+      patch: { completedAt: Date.now(), terminalHostActionPending: true },
+    });
+    const terminalJob = (await store.getJob(streamId))!;
+    jest.spyOn(store, 'getTerminalHostActionJobs').mockResolvedValue([]);
+    Object.assign(store, {
+      getDetachedAgentEventTerminalHostActionJobs: jest.fn().mockResolvedValue([terminalJob]),
+    });
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+
+    await (manager as unknown as { cleanup: () => Promise<void> }).cleanup();
+
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({
+        agentEventDeliveryKey: completionDeliveryKey,
+        agentEventInvocationKey: invocationKey,
+        agentEventInvocationGenerationCreatedAt: invocationGenerationCreatedAt,
+      }),
+      expect.any(Array),
+      expect.any(Array),
+    );
+    await expect(store.getJob(streamId)).resolves.not.toHaveProperty('terminalHostActionPending');
   });
 
   it('retains completed run-step evidence through repeated host-action failures', async () => {

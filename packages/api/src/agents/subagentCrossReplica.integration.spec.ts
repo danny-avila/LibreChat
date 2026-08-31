@@ -279,11 +279,11 @@ describeWithRedis('subagent cross-replica orchestration', () => {
     );
     ownerStore.configureActivityStream(await createActivityStream());
     requesterStore.configureActivityStream(await createActivityStream());
-    const config = buildSubagentThreadTaskConfig(ownerStore, {
-      userId,
-      tenantId,
-      parentConversationId,
-    });
+    const config = buildSubagentThreadTaskConfig(
+      ownerStore,
+      { userId, tenantId, parentConversationId },
+      { completionWakeups: true },
+    );
 
     const releases: Array<() => void> = [];
     const entered: Promise<void>[] = [];
@@ -313,7 +313,7 @@ describeWithRedis('subagent cross-replica orchestration', () => {
         );
       };
     };
-    const first = ownerStore.start(
+    const first = config.store.start(
       taskRequest(
         config.scopeId,
         'first child task',
@@ -321,7 +321,7 @@ describeWithRedis('subagent cross-replica orchestration', () => {
         childRun('First durable result.'),
       ),
     );
-    const second = ownerStore.start(
+    const second = config.store.start(
       taskRequest(
         config.scopeId,
         'second child task',

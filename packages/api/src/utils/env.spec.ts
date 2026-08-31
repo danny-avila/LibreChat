@@ -3,11 +3,11 @@ import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import {
-  resolveNestedObject,
-  encodeHeaderValue,
-  resolveHeaders,
   createSafeUser,
+  resolveHeaders,
+  resolveNestedObject,
   processMCPEnv,
+  encodeHeaderValue,
 } from './env';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
@@ -470,6 +470,27 @@ describe('resolveHeaders', () => {
     expect(result['X-User-EmailVerified']).toBe('true');
     expect(result['X-User-TwoFactorEnabled']).toBe('false');
     expect(result['X-User-TermsAccepted']).toBe('true');
+  });
+
+  it('should not expose tenant or issuer fields through safe user placeholders', () => {
+    const user = createTestUser({
+      tenantId: 'tenant-secret',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    const safeUser = createSafeUser(user);
+    const headers = {
+      'X-Tenant': '{{LIBRECHAT_USER_TENANTID}}',
+      'X-Issuer': '{{LIBRECHAT_USER_OPENIDISSUER}}',
+    };
+
+    expect(safeUser).not.toHaveProperty('tenantId');
+    expect(safeUser).not.toHaveProperty('openidIssuer');
+    expect(resolveHeaders({ headers, user: safeUser })['X-Tenant']).toBe(
+      '{{LIBRECHAT_USER_TENANTID}}',
+    );
+    expect(resolveHeaders({ headers, user: safeUser })['X-Issuer']).toBe(
+      '{{LIBRECHAT_USER_OPENIDISSUER}}',
+    );
   });
 
   it('should handle multiple placeholders in one value', () => {
@@ -2431,7 +2452,7 @@ describe('processMCPEnv OpenID re-authentication signalling', () => {
     }
   });
 
-  it('should raise re-auth from resolveHeaders when the token set is expired', () => {
+  it('should raise re-auth from resolveHeaders when the ID token is expired', () => {
     expect(() =>
       resolveHeaders({
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}' },
@@ -2439,8 +2460,55 @@ describe('processMCPEnv OpenID re-authentication signalling', () => {
         stripUnresolved: true,
       }),
     ).toThrow(
-      'OpenID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ID_TOKEN}}',
+      'OpenID ID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ID_TOKEN}}',
     );
+  });
+
+  /** The OpenID JWT strategy leaves `access_token` unset when it cannot identify the request bearer as one */
+  function accessTokenlessOpenIDUser(idTokenExp: number): { user: IUser; idToken: string } {
+    const idToken = `header.${Buffer.from(
+      JSON.stringify({ sub: 'oidc-sub-456', exp: idTokenExp }),
+    ).toString('base64')}.signature`;
+    const user = {
+      ...createTestUser({ id: 'user-123', provider: 'openid' }),
+      openidId: 'oidc-sub-456',
+      federatedTokens: { id_token: idToken, refresh_token: 'stored-refresh-token' },
+    } as IUser;
+    return { user, idToken };
+  }
+
+  it('should resolve an ID token placeholder while no access token is stored', () => {
+    const { user, idToken } = accessTokenlessOpenIDUser(validSeconds);
+
+    const resolved = resolveHeaders({
+      headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}' },
+      user,
+      stripUnresolved: true,
+    });
+
+    expect(resolved.Authorization).toBe(`Bearer ${idToken}`);
+  });
+
+  it('should keep identity metadata literal while no access token is stored', () => {
+    const { user } = accessTokenlessOpenIDUser(validSeconds);
+
+    const resolved = resolveHeaders({
+      headers: { 'X-User-Id': '{{LIBRECHAT_OPENID_USER_ID}}' },
+      user,
+    });
+
+    expect(resolved['X-User-Id']).toBe('{{LIBRECHAT_OPENID_USER_ID}}');
+  });
+
+  it('should still raise re-auth for an access token placeholder while no access token is stored', () => {
+    const { user } = accessTokenlessOpenIDUser(validSeconds);
+
+    expect(() =>
+      resolveHeaders({
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        user,
+      }),
+    ).toThrow('re-authentication is required to resolve {{LIBRECHAT_OPENID_ACCESS_TOKEN}}');
   });
 
   it('should leave identity metadata placeholders literal for an OpenID user with no stored tokens', () => {

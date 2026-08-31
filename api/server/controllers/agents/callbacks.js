@@ -611,10 +611,14 @@ function getDefaultHandlers({
           });
         }
         aggregateContent({ event, data });
-        if (validationDetails != null) {
-          const runStep = stepMap?.get(data?.result?.id);
-          const toolCall = contentParts?.[runStep?.index]?.tool_call;
-          if (toolCall != null) {
+        const stepId = data?.result?.id;
+        const runStep = stepMap?.get(stepId);
+        const toolCall = contentParts?.[runStep?.index]?.tool_call;
+        if (toolCall != null) {
+          if (typeof stepId === 'string') {
+            toolCall.stepId = stepId;
+          }
+          if (validationDetails != null) {
             toolCall.inputValidationError = true;
           }
         }
@@ -1043,6 +1047,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
           session_id: sessionId,
           codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
           executionProfile: metadata.codeExecutionContext?.executionProfile,
+          executionRouteKey: metadata.codeExecutionContext?.executionRouteKey,
           preparedBuffer,
           downloadFallback,
         });
@@ -1387,6 +1392,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           session_id: sessionId,
           codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
           executionProfile: metadata.codeExecutionContext?.executionProfile,
+          executionRouteKey: metadata.codeExecutionContext?.executionRouteKey,
           preparedBuffer,
           downloadFallback,
         });

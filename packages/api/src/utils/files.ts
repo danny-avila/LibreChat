@@ -13,35 +13,6 @@ const ASCII_FILENAME_SAFE_PATTERN = /^[a-zA-Z0-9._-]$/;
 const UNSAFE_UNICODE_FILENAME_PATTERN = /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._-]/gu;
 const FILENAME_SEGMENT_MAX_BYTES = 255;
 
-export function retainMessageFiles<T extends { file_id?: unknown }>(
-  existingFiles: readonly T[] | null | undefined,
-  requestedFileIds: unknown,
-): T[] | null {
-  if (!Array.isArray(requestedFileIds)) {
-    return null;
-  }
-
-  const fileIds = requestedFileIds.filter(
-    (fileId): fileId is string => typeof fileId === 'string' && fileId.length > 0,
-  );
-  if (fileIds.length !== requestedFileIds.length || new Set(fileIds).size !== fileIds.length) {
-    return null;
-  }
-
-  const files = Array.isArray(existingFiles) ? existingFiles : [];
-  const existingFileIds = new Set(
-    files.flatMap((file) => (typeof file.file_id === 'string' ? [file.file_id] : [])),
-  );
-  if (fileIds.some((fileId) => !existingFileIds.has(fileId))) {
-    return null;
-  }
-
-  const retainedFileIds = new Set(fileIds);
-  return files.filter(
-    (file) => typeof file.file_id !== 'string' || retainedFileIds.has(file.file_id),
-  );
-}
-
 function sanitizeFilenameSegment(segment: string): string {
   const asciiSanitized = Array.from(segment.normalize('NFC'), (char) => {
     if (char.charCodeAt(0) > 0x7f) {

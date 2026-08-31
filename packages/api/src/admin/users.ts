@@ -46,6 +46,8 @@ export interface AdminUsersDeps {
    * A future iteration should consolidate the full cascade into a shared service function.
    */
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
+  deleteUserCodeEnvironments: (userId: string | Types.ObjectId) => Promise<number>;
+  invalidateCodeEnvironmentConfigCache: (tenantId?: string) => Promise<void>;
   deleteConfig: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -71,6 +73,8 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
     cancelAgentTriggerUserPurge,
     purgeAgentTriggerDeliveriesForUser,
     deleteUserById,
+    deleteUserCodeEnvironments,
+    invalidateCodeEnvironmentConfigCache,
     deleteConfig,
     deleteAclEntries,
   } = deps;
@@ -214,6 +218,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
       const objectId = new Types.ObjectId(id);
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.USER, id),
+        deleteUserCodeEnvironments(objectId),
         deleteAclEntries({ principalType: PrincipalType.USER, principalId: objectId }),
       ]);
       for (const r of cleanupResults) {
@@ -221,6 +226,9 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
           logger.error('[adminUsers] cascade cleanup failed for user:', id, r.reason);
         }
       }
+      await invalidateCodeEnvironmentConfigCache(targetUser?.tenantId).catch((error: unknown) => {
+        logger.error('[adminUsers] code environment cache invalidation failed:', id, error);
+      });
 
       return res.status(200).json({ message: result.message || 'User deleted successfully' });
     } catch (error) {

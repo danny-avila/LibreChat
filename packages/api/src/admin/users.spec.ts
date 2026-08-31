@@ -62,6 +62,8 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     deleteUserById: jest
       .fn()
       .mockResolvedValue({ deletedCount: 1, message: 'User was deleted successfully.' }),
+    deleteUserCodeEnvironments: jest.fn().mockResolvedValue(0),
+    invalidateCodeEnvironmentConfigCache: jest.fn().mockResolvedValue(undefined),
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -435,7 +437,7 @@ describe('createAdminUsersHandlers', () => {
       expect(deps.countUsers).not.toHaveBeenCalled();
     });
 
-    it('cascades cleanup of Config and AclEntries', async () => {
+    it('cascades cleanup of Config, code environments, and AclEntries', async () => {
       const result: UserDeleteResult = {
         deletedCount: 1,
         message: 'User was deleted successfully.',
@@ -448,6 +450,8 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.USER, validUserId);
+      expect(deps.deleteUserCodeEnvironments).toHaveBeenCalledWith(expect.any(Types.ObjectId));
+      expect(deps.invalidateCodeEnvironmentConfigCache).toHaveBeenCalledWith(undefined);
       expect(deps.deleteAclEntries).toHaveBeenCalledWith({
         principalType: PrincipalType.USER,
         principalId: expect.any(Types.ObjectId),
@@ -482,6 +486,7 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(404);
       expect(deps.deleteConfig).not.toHaveBeenCalled();
+      expect(deps.deleteUserCodeEnvironments).not.toHaveBeenCalled();
       expect(deps.deleteAclEntries).not.toHaveBeenCalled();
       expect(deps.purgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
       expect(deps.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(

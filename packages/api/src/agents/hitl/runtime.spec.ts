@@ -88,6 +88,19 @@ describe('buildHITLRunWiring host-hook composition', () => {
     );
   });
 
+  test('reuses request-scoped hooks resolved by admission without invoking factories twice', () => {
+    const hook = async () => ({ decision: 'ask' as const });
+    const factory = jest.fn(() => hook);
+    registerToolApprovalHook(factory);
+    const resolved = [{ hook }];
+    factory.mockClear();
+
+    const wiring = buildHITLRunWiring({ enabled: true }, {}, [], resolved);
+
+    expect(factory).not.toHaveBeenCalled();
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(2);
+  });
+
   test('matches lazy aliases without changing host-hook ordering', async () => {
     const hook = jest.fn(async () => ({ decision: 'deny' as const }));
     registerToolApprovalHook(() => hook, {

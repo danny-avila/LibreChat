@@ -1,7 +1,7 @@
 import { HookRegistry, createToolPolicyHook } from '@librechat/agents';
 import type { TToolApprovalPolicy } from 'librechat-data-provider';
+import type { ResolvedToolApprovalHook, ToolApprovalHookContext } from './hooks';
 import type { MCPToolAlias } from '~/tools/classification';
-import type { ToolApprovalHookContext } from './hooks';
 import { isHITLEnabled, mapToolApprovalPolicy } from './policy';
 import { buildToolApprovalHooks } from './hooks';
 
@@ -40,13 +40,14 @@ export function buildHITLRunWiring(
   policy: TToolApprovalPolicy | undefined,
   context: ToolApprovalHookContext = {},
   mcpToolAliases: readonly MCPToolAlias[] = [],
+  resolvedProgrammaticHooks?: readonly ResolvedToolApprovalHook[],
 ): HITLRunWiring | undefined {
   if (!isHITLEnabled(policy)) {
     return undefined;
   }
 
   const registry = new HookRegistry();
-  let activePolicy = policy;
+  let activePolicy: TToolApprovalPolicy | undefined = policy;
   const aliases = [...mcpToolAliases];
   const registeredAliases = new Set(
     aliases.map(({ name, aliasName }) => `${name}\u0000${aliasName}`),
@@ -60,7 +61,7 @@ export function buildHITLRunWiring(
   });
 
   // Host-registered programmatic hooks — context-aware, layered after the static-policy hook.
-  const programmaticHooks = buildToolApprovalHooks(context);
+  const programmaticHooks = resolvedProgrammaticHooks ?? buildToolApprovalHooks(context);
   for (const { hook, matcher } of programmaticHooks) {
     if (matcher == null) {
       registry.register('PreToolUse', { hooks: [hook] });

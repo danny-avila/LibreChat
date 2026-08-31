@@ -140,7 +140,6 @@ describe('durable trigger delivery integration', () => {
     service = createAgentTriggerService({
       methods: createMethods(mongoose) as ReturnType<typeof createMethods> &
         AgentTriggerDeliveryPersistence,
-      coalescingEnabled: () => true,
       fetch: fetcher,
       mintToken: () => 'trigger-token',
       deliveryOptions: { concurrency: 4, tickMs: 5, retryBaseMs: 5 },

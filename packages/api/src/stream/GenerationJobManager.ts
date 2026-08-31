@@ -30,6 +30,7 @@ import type {
   IdempotencyClaimValue,
   PreemptMessage,
   SteerQueueItem,
+  DetachedAgentEventActionStoreMode,
 } from './interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { RecoveredSteerPayload } from './SteerRecovery';
@@ -904,6 +905,19 @@ class GenerationJobManagerClass {
     return this._isRedis;
   }
 
+  /**
+   * Store-selected detached Event Actor execution guarantee. In-memory stores
+   * support the same lifecycle within one process; Redis additionally makes it
+   * recoverable across restarts and replica handoffs.
+   */
+  get detachedAgentEventActionStoreMode(): DetachedAgentEventActionStoreMode | undefined {
+    return this.jobStore.detachedAgentEventActionStoreMode;
+  }
+
+  get supportsDetachedAgentEventActions(): boolean {
+    return this.detachedAgentEventActionStoreMode != null;
+  }
+
   /** Installs the application-owned approval-expiry hook without coupling the
    * stream package to any particular trigger/scheduler implementation. */
   setApprovalExpiredHandler(handler?: ApprovalExpiredHandler): void {
@@ -913,6 +927,26 @@ class GenerationJobManagerClass {
   /** Installs a durable, generation-fenced terminal lifecycle adapter. */
   setTerminalHostActionHandler(handler?: TerminalHostActionHandler): void {
     this.terminalHostActionHandler = handler;
+  }
+
+  /**
+   * Event-driven retry for a durable terminal host action whose external
+   * evidence arrived after the generation itself became terminal. The exact
+   * generation fence prevents a delayed callback from touching a replacement;
+   * the periodic recovery sweep remains the restart/replica fallback.
+   */
+  async retryTerminalHostAction(streamId: string, expectedCreatedAt: number): Promise<boolean> {
+    const job = await this.jobStore.getJob(streamId);
+    if (
+      job?.createdAt !== expectedCreatedAt ||
+      job.status === 'running' ||
+      job.status === 'requires_action' ||
+      job.providerDrained === false ||
+      job.terminalHostActionPending !== true
+    ) {
+      return false;
+    }
+    return this.runTerminalHostActionHandler(streamId, job);
   }
 
   private get storeLabel(): GenerationJobStore {
@@ -2605,6 +2639,14 @@ class GenerationJobManagerClass {
         agent_id: jobData.agent_id,
         // Surface whether the turn was temporary so a resume keeps it non-persisted.
         isTemporary: jobData.isTemporary,
+        agentEventDeliveryKey: jobData.agentEventDeliveryKey,
+        agentEventInvocationKey: jobData.agentEventInvocationKey,
+        agentEventInvocationGenerationCreatedAt: jobData.agentEventInvocationGenerationCreatedAt,
+        agentEventDetachedActionProducerRequired: jobData.agentEventDetachedActionProducerRequired,
+        agentEventDetachedTerminalEvidence: jobData.agentEventDetachedTerminalEvidence,
+        agentEventBindingId: jobData.agentEventBindingId,
+        agentEventExpectedAction: jobData.agentEventExpectedAction,
+        agentEventSuspension: jobData.agentEventSuspension,
         scheduleId: jobData.scheduleId,
         scheduledFor: jobData.scheduledFor,
         scheduleConfigRevision: jobData.scheduleConfigRevision,
@@ -2616,6 +2658,7 @@ class GenerationJobManagerClass {
         // replay them into createRun (the rebuilt graph passes `messages: []`).
         discoveredTools: jobData.discoveredTools,
         activityPhaseSnapshot: jobData.activityPhaseSnapshot,
+        compactionSemanticIndex: jobData.compactionSemanticIndex,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
@@ -2623,6 +2666,7 @@ class GenerationJobManagerClass {
         // legacy resume's execution rewrite invalidates a stale assertion.
         steerQuotesExecutionId: jobData.steerQuotesExecutionId,
         providerExecutionId: jobData.providerExecutionId,
+        providerExecutionStartedId: jobData.providerExecutionStartedId,
         providerDrained: jobData.providerDrained,
         steersClosed: jobData.steersClosed,
         idempotencyClientRequestId: jobData.idempotencyClientRequestId,
@@ -2878,6 +2922,115 @@ class GenerationJobManagerClass {
       await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, legacy, primary);
     }
     return { claimed: false, existing: primary, source: 'primary' };
+  }
+
+  /** Checks the mixed-version admission key without creating or repairing a
+   * claim. This is deliberately weaker than `claimGeneration`: callers may
+   * use it only to exempt a confirmed retry from request rate limiting; the
+   * controller must still perform the authoritative claim transition. */
+  async hasGenerationClaim(userId: string, clientRequestId: string): Promise<boolean> {
+    if (!CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)) {
+      return false;
+    }
+    return (
+      (await this.jobStore.hasIdempotencyKey?.(
+        this.legacyGenerationClaimKey(userId, clientRequestId),
+      )) === true
+    );
+  }
+
+  /** Returns immutable proof that one exact request crossed generation
+   * admission, even after the generation job itself has completed or been
+   * replaced. Built-in stores retain this started receipt for the bounded
+   * idempotency horizon; legacy custom stores fall back to the live job. */
+  async getGenerationAdmissionEvidence(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    conversationId: string = streamId,
+  ): Promise<{ generationId: string; generationCreatedAt: number } | null> {
+    if (!CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)) {
+      return null;
+    }
+    const getClaim = this.jobStore.getIdempotencyClaim;
+    if (getClaim != null) {
+      const claim = await getClaim.call(
+        this.jobStore,
+        this.generationClaimKey(userId, clientRequestId, streamId),
+      );
+      if (claim == null) {
+        return null;
+      }
+      const normalized = normalizeTokenClaim(claim, 'admission evidence');
+      assertClaimMatchesRequest(normalized, streamId, conversationId);
+      if (normalized.startedAt == null) {
+        return null;
+      }
+      return {
+        generationId: normalized.streamId,
+        generationCreatedAt: normalized.startedAt,
+      };
+    }
+
+    const job = await this.jobStore.getJob(streamId);
+    if (
+      job == null ||
+      job.userId !== userId ||
+      (job.conversationId ?? streamId) !== conversationId ||
+      job.idempotencyClientRequestId !== clientRequestId
+    ) {
+      return null;
+    }
+    return { generationId: streamId, generationCreatedAt: job.createdAt };
+  }
+
+  /** Atomically prevents an unpublished automatic continuation from starting
+   * after its delivery has been retired for manual recovery. If recovery wins
+   * the unstarted idempotency claim (directly or through the existing takeover
+   * CAS), it converts that exact token into a started tombstone. A concurrent
+   * `createJob` still holding the predecessor token then fails its atomic
+   * create, while later duplicate POSTs take the settled/refetch path.
+   *
+   * `started` means job creation won the claim race; the caller must inspect
+   * the generation itself before releasing any result ownership. */
+  async fenceGenerationClaimForRecovery(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    conversationId: string,
+  ): Promise<'fenced' | 'started' | 'unavailable'> {
+    const observed = await this.claimGeneration(userId, clientRequestId, streamId, conversationId);
+    if (observed.existing == null) {
+      return 'unavailable';
+    }
+    if (observed.existing.startedAt != null) {
+      return 'started';
+    }
+
+    let owned = observed;
+    if (!observed.claimed) {
+      owned = await this.takeoverGeneration(userId, clientRequestId, streamId, observed.existing);
+      if (owned.existing?.startedAt != null) {
+        return 'started';
+      }
+      if (!owned.claimed || owned.existing == null) {
+        return 'unavailable';
+      }
+    }
+
+    const claim = normalizeTokenClaim(owned.existing, 'background completion recovery fence');
+    if (claim.startedAt != null) {
+      return 'started';
+    }
+    await this.tombstoneObservedGenerationClaim(
+      userId,
+      clientRequestId,
+      streamId,
+      claim,
+      Date.now(),
+      claim.generationProtocolVersion === 2 ? 2 : 1,
+    );
+    return 'fenced';
   }
 
   private generationClaimKey(userId: string, clientRequestId: string, streamId: string): string {
@@ -6694,6 +6847,34 @@ class GenerationJobManagerClass {
     await this.jobStore.updateJob(streamId, updates, generationId);
   }
 
+  /** Stages exact detached terminal evidence in the generation-owned job outbox
+   * and verifies the epoch-fenced write before the external result leaves memory. */
+  async persistAgentEventDetachedTerminalEvidence(
+    streamId: string,
+    expectedCreatedAt: number,
+    evidence: NonNullable<t.GenerationJobMetadata['agentEventDetachedTerminalEvidence']>,
+  ): Promise<boolean> {
+    await this.jobStore.updateJob(
+      streamId,
+      { agentEventDetachedTerminalEvidence: evidence },
+      expectedCreatedAt,
+    );
+    const persisted = await this.jobStore.getJob(streamId);
+    const actual = persisted?.agentEventDetachedTerminalEvidence;
+    return (
+      persisted?.createdAt === expectedCreatedAt &&
+      actual?.version === evidence.version &&
+      actual.deliveryKey === evidence.deliveryKey &&
+      actual.generationCreatedAt === evidence.generationCreatedAt &&
+      actual.taskId === evidence.taskId &&
+      actual.idempotencyKey === evidence.idempotencyKey &&
+      actual.status === evidence.status &&
+      actual.result === evidence.result &&
+      actual.error === evidence.error &&
+      actual.observedAt === evidence.observedAt
+    );
+  }
+
   /** Records that one exact provider segment has completed every trailing write.
    * The opaque segment id prevents a paused controller from acknowledging a
    * later HITL resume that reuses the same generation epoch. */
@@ -7555,6 +7736,22 @@ class GenerationJobManagerClass {
         logger.error('[GenerationJobManager] Failed to enumerate pending host actions', err);
       }
     }
+    // Detached completion generations live in a versioned recovery lane. An
+    // older replica knows only the ordinary terminal-host-action index and
+    // therefore cannot deserialize away the original invocation identity or
+    // acknowledge the completion against the wrong mailbox delivery.
+    if (this.jobStore.getDetachedAgentEventTerminalHostActionJobs) {
+      try {
+        for (const job of await this.jobStore.getDetachedAgentEventTerminalHostActionJobs()) {
+          candidates.set(job.streamId, job);
+        }
+      } catch (err) {
+        logger.error(
+          '[GenerationJobManager] Failed to enumerate detached Event Actor host actions',
+          err,
+        );
+      }
+    }
     const streamIds = new Set([...this.runtimeState.keys(), ...candidates.keys()]);
     for (const streamId of streamIds) {
       let job: SerializableJobData | null;
@@ -7870,6 +8067,26 @@ class GenerationJobManagerClass {
    * including a terminal generation whose controller is finishing trailing writes. */
   async getCleanupBlockingJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
     return this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+  }
+
+  /** Resolves every cleanup-blocking run attached to any target conversation.
+   * Remote API runs use response IDs as stream identities, so conversation
+   * deletion cannot assume one stream per conversation. */
+  async getCleanupBlockingJobIdsForConversations(
+    userId: string,
+    conversationIds: readonly string[],
+    tenantId?: string,
+  ): Promise<string[]> {
+    if (conversationIds.length === 0) {
+      return [];
+    }
+    const targets = new Set(conversationIds);
+    const streamIds = await this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+    const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
+    return streamIds.filter((_, index) => {
+      const job = jobs[index];
+      return job != null && job.userId === userId && targets.has(job.conversationId ?? '');
+    });
   }
 
   private async finalizeOwnedJobsForShutdown(): Promise<void> {

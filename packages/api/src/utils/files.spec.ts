@@ -2,7 +2,6 @@ import {
   sanitizeFilename,
   sanitizeArtifactPath,
   flattenArtifactPath,
-  retainMessageFiles,
   resolveUploadErrorMessage,
 } from './files';
 
@@ -26,27 +25,6 @@ function expectedHexSuffix(input: string): string {
 function utf8ByteLength(input: string): number {
   return Buffer.byteLength(input, 'utf8');
 }
-
-describe('retainMessageFiles', () => {
-  const firstFile = { file_id: 'file-1', filename: 'Presentation.pdf' };
-  const secondFile = { file_id: 'file-2', filename: 'Notes.txt' };
-
-  test('returns existing canonical files selected by id', () => {
-    expect(retainMessageFiles([firstFile, secondFile], ['file-2'])).toEqual([secondFile]);
-  });
-
-  test('allows all identified files to be removed while retaining legacy id-less entries', () => {
-    const legacyFile = { filename: 'Legacy.txt' };
-    expect(retainMessageFiles([firstFile, legacyFile], [])).toEqual([legacyFile]);
-  });
-
-  test.each([null, 'file-1', [''], ['file-1', 'file-1'], ['foreign-file']])(
-    'rejects invalid requested ids: %p',
-    (requestedFileIds) => {
-      expect(retainMessageFiles([firstFile, secondFile], requestedFileIds)).toBeNull();
-    },
-  );
-});
 
 describe('sanitizeFilename', () => {
   test('removes directory components (1/2)', () => {

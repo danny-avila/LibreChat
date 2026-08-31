@@ -9,6 +9,8 @@ import type {
   SteerArmResult,
   SteerEnqueueReceiptResult,
   SteerEnqueueVersionedResult,
+  TerminalSteerAdmissionPolicy,
+  TerminalSteerAdmissionResult,
   SteerQueueItem,
   SteerReceipt,
   SteerReceiptInput,
@@ -23,6 +25,7 @@ import type {
 } from '~/stream/interfaces/IJobStore';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
+  JobStatusTransitionDeadlineError,
   JobPredecessorMismatchError,
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -140,6 +143,8 @@ interface ContentState {
  * - No chunk persistence needed - same instance handles generation and reconnects
  */
 export class InMemoryJobStore implements IJobStoreV2 {
+  readonly detachedAgentEventActionStoreMode = 'process_local' as const;
+
   private jobs = new Map<string, SerializableJobData>();
   private contentState = new Map<string, ContentState>();
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -736,6 +741,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       return false;
     }
     job.providerDrained = false;
+    job.providerExecutionStartedId = providerExecutionId;
     return true;
   }
 
@@ -769,6 +775,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     if (args.expectCreatedAt != null && job.createdAt !== args.expectCreatedAt) {
       return false;
+    }
+    if (args.notAfterMs != null && Date.now() >= args.notAfterMs) {
+      throw new JobStatusTransitionDeadlineError(args.notAfterMs);
     }
     if (['complete', 'error', 'aborted'].includes(args.to)) {
       if (!this.isParkedRecoveryCompatible(streamId, job)) {
@@ -883,6 +892,30 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     this.idempotencyClaims.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
     return { claimed: true, existing: value };
+  }
+
+  async hasIdempotencyKey(key: string): Promise<boolean> {
+    const existing = this.idempotencyClaims.get(key);
+    if (existing == null) {
+      return false;
+    }
+    if (existing.expiresAt > Date.now()) {
+      return true;
+    }
+    this.idempotencyClaims.delete(key);
+    return false;
+  }
+
+  async getIdempotencyClaim(key: string): Promise<IdempotencyClaimValue | null> {
+    const existing = this.idempotencyClaims.get(key);
+    if (existing == null) {
+      return null;
+    }
+    if (existing.expiresAt <= Date.now()) {
+      this.idempotencyClaims.delete(key);
+      return null;
+    }
+    return { ...existing.value };
   }
 
   async takeoverIdempotencyKey(
@@ -1880,6 +1913,39 @@ export class InMemoryJobStore implements IJobStoreV2 {
       this.settleSteerReceipts(streamId, restored, 'queued');
     }
     return true;
+  }
+
+  async admitTerminalSteers(
+    streamId: string,
+    policy: TerminalSteerAdmissionPolicy,
+    expectedCreatedAt?: number,
+  ): Promise<TerminalSteerAdmissionResult> {
+    const job = this.jobs.get(streamId);
+    if (
+      job?.status !== 'running' ||
+      this.closedSteerQueues.has(streamId) ||
+      (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)
+    ) {
+      return { outcome: 'unavailable' };
+    }
+    const queue = this.steerQueues.get(streamId);
+    if (!policy.allowClaim || job.generationProtocolVersion !== 2) {
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    if (queue == null || queue.length === 0) {
+      if (policy.keepOpenWhenEmpty) {
+        return { outcome: 'open' };
+      }
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    const items = await this.drainSteers(streamId, expectedCreatedAt);
+    if (items.length === 0) {
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    return { outcome: 'claimed', items };
   }
 
   async closeAndDrainSteers(
