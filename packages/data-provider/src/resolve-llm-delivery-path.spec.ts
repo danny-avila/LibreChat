@@ -126,6 +126,27 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     );
   });
 
+  it('routes media to text for document-capable providers without media encoders', () => {
+    expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'openAI')).toBe(
+      'text',
+    );
+    expect(resolveDefaultLLMDeliveryPath('video/mp4', undefined, undefined, 'anthropic')).toBe(
+      'text',
+    );
+    expect(resolveDefaultLLMDeliveryPath('application/pdf', undefined, undefined, 'openAI')).toBe(
+      'provider',
+    );
+  });
+
+  it('keeps provider delivery for endpoints with real media encoders', () => {
+    expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'google')).toBe(
+      'provider',
+    );
+    expect(resolveDefaultLLMDeliveryPath('video/mp4', undefined, undefined, 'openrouter')).toBe(
+      'provider',
+    );
+  });
+
   it('keeps images on the provider path regardless of document support', () => {
     expect(resolveDefaultLLMDeliveryPath('image/png', undefined, undefined, 'azureOpenAI')).toBe(
       'provider',

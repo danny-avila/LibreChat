@@ -111,6 +111,21 @@ export const isDocumentSupportedProvider = (provider?: string | null): boolean =
   return documentSupportedProviders.has(provider ?? '');
 };
 
+/**
+ * Endpoints whose encoders actually build native audio/video payloads. Narrower than
+ * `documentSupportedProviders`: a provider can accept PDFs and still emit nothing for
+ * media, in which case the upload has to fall back to text/STT.
+ */
+export const mediaSupportedProviders = new Set<string>([
+  EModelEndpoint.google,
+  Providers.VERTEXAI,
+  Providers.OPENROUTER,
+]);
+
+export const isMediaSupportedProvider = (provider?: string | null): boolean => {
+  return mediaSupportedProviders.has(provider ?? '');
+};
+
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
   EModelEndpoint.openAI,
