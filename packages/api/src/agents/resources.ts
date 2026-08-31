@@ -480,7 +480,7 @@ export const primeResources = async ({
   loadCodeApiKey,
   provisionCandidates,
   legacyFileUploadUX,
-  filterByEndpointPolicy,
+  screenPersistentFiles,
 }: {
   req?: ServerRequest;
   principal?: Pick<IUser, 'id' | 'role'>;
@@ -503,11 +503,11 @@ export const primeResources = async ({
   provisionCandidates?: Array<TFile>;
   /** True when this endpoint still shows the explicit upload-destination chooser. */
   legacyFileUploadUX?: boolean;
-  /** Applies the current endpoint's file policy. Persistent agent files are read here
-   *  rather than by the caller, so the caller has no chance to filter them itself and
-   *  a provider or policy change since they were attached would otherwise let their
-   *  bytes reach the Code API or RAG. */
-  filterByEndpointPolicy?: (files: Array<TFile>) => Array<TFile>;
+  /** Applies the caller's endpoint and content policies. Persistent agent files are read
+   *  here rather than by the caller, so the caller has no chance to screen them itself
+   *  and a configuration or policy change since they were attached would otherwise let
+   *  their bytes reach the model, the Code API or RAG. */
+  screenPersistentFiles?: (files: Array<TFile>) => Array<TFile>;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   requestAttachments: Array<TFile | undefined> | undefined;
@@ -617,8 +617,8 @@ export const primeResources = async ({
         });
       }
 
-      if (filterByEndpointPolicy) {
-        persistedResourceFiles = filterByEndpointPolicy(persistedResourceFiles);
+      if (screenPersistentFiles) {
+        persistedResourceFiles = screenPersistentFiles(persistedResourceFiles);
       }
     }
 

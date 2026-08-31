@@ -97,7 +97,7 @@ describe('primeResources', () => {
     });
   });
 
-  describe('when the endpoint policy rejects a persistent context file', () => {
+  describe('when policy screening rejects a persistent context file', () => {
     it('keeps it out of provisioning and out of attachments', async () => {
       /* These files are read inside primeResources, so the caller never sees them to
        * filter. A provider or policy change since they were attached must still stop
@@ -128,7 +128,7 @@ describe('primeResources', () => {
         tool_resources: { [EToolResources.context]: { file_ids: ['stale-context-file'] } },
         agentId: 'agent_test',
         enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
-        filterByEndpointPolicy: () => [],
+        screenPersistentFiles: () => [],
       });
 
       expect(result.provisionState).toBeUndefined();
@@ -162,7 +162,7 @@ describe('primeResources', () => {
         tool_resources: { [EToolResources.context]: { file_ids: ['live-context-file'] } },
         agentId: 'agent_test',
         enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
-        filterByEndpointPolicy: (files) => files,
+        screenPersistentFiles: (files) => files,
       });
 
       expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toEqual([
