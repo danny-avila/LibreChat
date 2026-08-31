@@ -224,8 +224,13 @@ function reconcileServerQueuedTurns(
       return optimistic == null ? [] : [optimistic];
     }
     const boundaryPending = receipt.status === 'admitted';
+    const admissionIndeterminate =
+      receipt.failure?.code === 'ADMISSION_INDETERMINATE' &&
+      (receipt.status === 'claimed' || receipt.status === 'dead');
     let status: NonNullable<QueuedMessage['server']>['status'] = 'rejected';
-    if (boundaryPending) {
+    if (admissionIndeterminate) {
+      status = 'indeterminate';
+    } else if (boundaryPending) {
       status = 'uncertain';
     } else if (receipt.status === 'queued' || receipt.status === 'claimed') {
       status = receipt.status;
@@ -282,6 +287,7 @@ function reconcileServerQueuedTurns(
     return (
       item.server.status === 'sending' ||
       item.server.status === 'uncertain' ||
+      item.server.status === 'indeterminate' ||
       item.server.status === 'rejected'
     );
   });

@@ -21,6 +21,7 @@ import {
   fetchAgentQueuedTurns,
   isDefiniteQueuedTurnRejection,
   isDefiniteQueuedTurnsUnsupported,
+  shouldPollAgentQueuedTurns,
 } from '../queuedTurns';
 
 describe('Agent queued-turn data adapter', () => {
@@ -116,4 +117,17 @@ describe('Agent queued-turn data adapter', () => {
       expect(isDefiniteQueuedTurnRejection(error)).toBe(false);
     },
   );
+
+  it('stops background polling for a fail-closed indeterminate claim', () => {
+    expect(
+      shouldPollAgentQueuedTurns([
+        {
+          status: 'claimed',
+          failure: { code: 'ADMISSION_INDETERMINATE' },
+        },
+      ]),
+    ).toBe(false);
+    expect(shouldPollAgentQueuedTurns([{ status: 'claimed' }])).toBe(true);
+    expect(shouldPollAgentQueuedTurns([{ status: 'queued' }])).toBe(true);
+  });
 });

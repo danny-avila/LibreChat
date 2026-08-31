@@ -89,6 +89,13 @@ export default function useQueueDrain(
    *  during the first turn stay keyed here until that run ends. Renewing only
    *  the active id would skip them for the whole of that run. */
   const newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
+  /** Receipt settlement can consume the parked terminal boundary without
+   * changing whether another server-owned row remains. Subscribe here so the
+   * drain effect observes that durable transition instead of reading it only
+   * through a callback snapshot whose other dependencies stayed unchanged. */
+  const settledQueuedTurnReceipts = useRecoilValue(
+    store.settledQueuedTurnReceiptsByConvoId(activeConversationId ?? Constants.NEW_CONVO),
+  );
   const hasServerOwnedQueue = [...ownQueue, ...newConvoQueue].some((item) => item.server != null);
 
   /* Deduped because the two subscriptions are the same atom before migration.
@@ -406,6 +413,7 @@ export default function useQueueDrain(
     restoreQueued,
     markFilesUsage,
     hasServerOwnedQueue,
+    settledQueuedTurnReceipts,
     ask,
   ]);
 }

@@ -72,6 +72,26 @@ export async function cancelAgentQueuedTurn(input: {
   return response.receipt;
 }
 
+/** Indeterminate admission deliberately retains its durable claim until exact
+ * source evidence arrives. It can still be refreshed on mount/focus, but a
+ * two-second loop cannot resolve it and disguises permanent quarantine as
+ * ordinary progress. */
+export function shouldPollAgentQueuedTurns(
+  receipts: unknown,
+  reconcileUntil?: number,
+  observedAt = Date.now(),
+): boolean {
+  return (
+    (reconcileUntil != null && observedAt < reconcileUntil) ||
+    (Array.isArray(receipts) &&
+      receipts.some(
+        (item: AgentQueuedTurnReceipt) =>
+          item.status === 'queued' ||
+          (item.status === 'claimed' && item.failure?.code !== 'ADMISSION_INDETERMINATE'),
+      ))
+  );
+}
+
 export function useAgentQueuedTurns(
   conversationId: string,
   enabled: boolean,
@@ -86,13 +106,8 @@ export function useAgentQueuedTurns(
     staleTime: 1_000,
     refetchOnMount: true,
     refetchOnWindowFocus: true,
-    refetchInterval: (receipts) => {
-      return (reconcileUntil != null && Date.now() < reconcileUntil) ||
-        (Array.isArray(receipts) &&
-          receipts.some((item) => item.status === 'queued' || item.status === 'claimed'))
-        ? 2_000
-        : false;
-    },
+    refetchInterval: (receipts) =>
+      shouldPollAgentQueuedTurns(receipts, reconcileUntil) ? 2_000 : false,
     retry: false,
   });
 }

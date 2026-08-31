@@ -31,6 +31,7 @@ function setup(
     setIsSubmitting?: (value: boolean) => void;
     setQueue?: (value: QueuedMessage[]) => void;
     setNewConvoQueue?: (value: QueuedMessage[]) => void;
+    setSettledReceipts?: (value: SettledQueuedTurnReceipt[]) => void;
     setInterruptFlag?: (value: DrainAfterAbort | false) => void;
     queue?: QueuedMessage[];
     newConvoQueue?: QueuedMessage[];
@@ -44,6 +45,9 @@ function setup(
     setters.setQueue = useSetRecoilState(store.queuedMessagesByConvoId(CONVO_ID));
     setters.setNewConvoQueue = useSetRecoilState(
       store.queuedMessagesByConvoId(Constants.NEW_CONVO),
+    );
+    setters.setSettledReceipts = useSetRecoilState(
+      store.settledQueuedTurnReceiptsByConvoId(CONVO_ID),
     );
     setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
     setters.queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
@@ -160,6 +164,42 @@ describe('useQueueDrain', () => {
     });
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith({ text: 'legacy successor' }, emptyOverrides);
+  });
+
+  it('reacts to a settled admission while another server row still owns the queue', async () => {
+    const admittedServer: QueuedMessage = {
+      ...queuedMessage('q-server-1', 'admitted server-owned turn'),
+      server: { id: 'server-queue-1', status: 'claimed', revision: 1 },
+    };
+    const remainingServer: QueuedMessage = {
+      ...queuedMessage('q-server-2', 'later server-owned turn'),
+      server: { id: 'server-queue-2', status: 'queued', revision: 2 },
+    };
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [admittedServer, remainingServer]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 41 }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(setters.runEnd).not.toBeNull();
+
+    act(() => {
+      setters.setQueue!([remainingServer]);
+      setters.setSettledReceipts!([
+        {
+          clientRequestId: 'admitted-request-1',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+        },
+      ]);
+    });
+
+    await waitFor(() => expect(setters.runEnd).toBeNull());
+    expect(ask).not.toHaveBeenCalled();
+    expect(setters.settledReceipts).toEqual([]);
+    expect(setters.queue).toEqual([remainingServer]);
   });
 
   it('discards a predecessor boundary already consumed by server admission', async () => {

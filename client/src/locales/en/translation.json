@@ -1791,6 +1791,7 @@
   "com_ui_queued_messages": "Queued messages",
   "com_ui_queued_quote_count": "{{0}} quoted excerpts included with this message",
   "com_ui_queued_turn_failed": "Queued message failed",
+  "com_ui_queued_turn_reconciliation_required": "Awaiting reconciliation",
   "com_ui_quote_selections": "{{0}} selections",
   "com_ui_quotes_queued": "Quotes added for your next message",
   "com_ui_ran_n_agents": "Ran {{0}} agents",

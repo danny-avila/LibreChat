@@ -1011,6 +1011,39 @@ describe('useSteering', () => {
       expect(result.current.queue[0].server).toBeUndefined();
     });
 
+    it('projects an indeterminate claim as non-progressing reconciliation work', async () => {
+      mockServerQueuedTurns = [
+        {
+          queuedTurnId: 'server-indeterminate-1',
+          clientRequestId: 'client-indeterminate-1',
+          conversationId: CONVO_ID,
+          parentMessageId: 'visible-assistant-tail',
+          text: 'external result is unknown',
+          status: 'claimed',
+          revision: 4,
+          failure: {
+            code: 'ADMISSION_INDETERMINATE',
+            message: 'Awaiting exact source evidence',
+          },
+          createdAt: new Date(250).toISOString(),
+          updatedAt: new Date(300).toISOString(),
+        },
+      ];
+      const { result } = setupServerQueue();
+
+      await waitFor(() => expect(result.current.queue).toHaveLength(1));
+      expect(result.current.queue[0]).toMatchObject({
+        text: 'external result is unknown',
+        server: {
+          id: 'server-indeterminate-1',
+          status: 'indeterminate',
+          errorCode: 'ADMISSION_INDETERMINATE',
+          errorMessage: 'Awaiting exact source evidence',
+        },
+      });
+      expect(result.current.settledReceipts).toEqual([]);
+    });
+
     it('cancels the durable copy before downgrading a row to local control', async () => {
       mockServerQueuedTurns = [
         {

@@ -402,7 +402,7 @@ export type QueuedMessage = {
    * after an ambiguous POST could submit the same words twice. */
   server?: {
     id?: string;
-    status: 'sending' | 'uncertain' | 'rejected' | 'queued' | 'claimed';
+    status: 'sending' | 'uncertain' | 'indeterminate' | 'rejected' | 'queued' | 'claimed';
     errorCode?: string;
     errorMessage?: string;
     /** Observation time for a transport-ambiguous enqueue. The logical item
