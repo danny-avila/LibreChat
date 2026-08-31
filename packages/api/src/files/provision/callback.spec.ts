@@ -1,0 +1,204 @@
+import { Constants } from '@librechat/agents';
+import { EToolResources, FileContext } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
+import type { ProvisionState } from '~/agents/resources';
+import type { ProvisionToolContext } from './callback';
+import type { ServerRequest } from '~/types';
+import { createProvisionFilesCallback } from './callback';
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { error: jest.fn(), warn: jest.fn(), debug: jest.fn(), info: jest.fn() },
+}));
+
+const req = { user: { id: 'user-1' } } as ServerRequest;
+
+function makeFile(overrides: Partial<TFile> = {}): TFile {
+  return {
+    file_id: 'file-1',
+    filename: 'data.csv',
+    filepath: '/uploads/data.csv',
+    type: 'text/csv',
+    user: 'user-1',
+    object: 'file',
+    bytes: 10,
+    embedded: false,
+    usage: 0,
+    context: FileContext.message_attachment,
+    ...overrides,
+  } as TFile;
+}
+
+function state(codeEnvFiles: TFile[], vectorDBFiles: TFile[]): ProvisionState {
+  return { codeEnvFiles, vectorDBFiles, aliveFileIds: new Set<string>() };
+}
+
+function buildHarness({
+  contexts,
+  codeImpl,
+  vectorImpl,
+}: {
+  contexts: Array<[string, ProvisionToolContext]>;
+  codeImpl?: jest.Mock;
+  vectorImpl?: jest.Mock;
+}) {
+  const provisionToCodeEnv =
+    codeImpl ??
+    jest.fn(async ({ file }: { file: TFile }) => ({
+      referenceSet: { codeEnvRefs: { default: { file_id: 'remote-1' } } },
+      fileUpdate: { file_id: file.file_id, metadata: { codeEnvRefs: {} } },
+    }));
+  const provisionToVectorDB =
+    vectorImpl ??
+    jest.fn(async ({ file }: { file: TFile }) => ({
+      embedded: true,
+      fileUpdate: { file_id: file.file_id, embedded: true },
+    }));
+  const updateFile = jest.fn(async () => ({}));
+  const agentToolContexts = new Map<string, ProvisionToolContext>(contexts);
+
+  return {
+    provisionToCodeEnv,
+    provisionToVectorDB,
+    updateFile,
+    agentToolContexts,
+    provisionFiles: createProvisionFilesCallback({
+      req,
+      agentToolContexts,
+      provisionToCodeEnv: provisionToCodeEnv as never,
+      provisionToVectorDB: provisionToVectorDB as never,
+      updateFile,
+    }),
+  };
+}
+
+describe('createProvisionFilesCallback', () => {
+  it('provisions once for the request when two agents queue the same file', async () => {
+    const shared = makeFile();
+    const contexts: Array<[string, ProvisionToolContext]> = [
+      ['agent-a', { provisionState: state([{ ...shared }], []) }],
+      ['agent-b', { provisionState: state([{ ...shared }], []) }],
+    ];
+    const { provisionFiles, provisionToCodeEnv, agentToolContexts } = buildHarness({ contexts });
+
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-b');
+
+    expect(provisionToCodeEnv).toHaveBeenCalledTimes(1);
+    for (const agentId of ['agent-a', 'agent-b']) {
+      const ctx = agentToolContexts.get(agentId);
+      const files = (ctx?.tool_resources as Record<string, { files?: TFile[] }>)[
+        EToolResources.execute_code
+      ]?.files;
+      expect(files?.[0]?.metadata).toMatchObject({
+        codeEnvRefs: { default: { file_id: 'remote-1' } },
+      });
+      expect(ctx?.provisionState?.codeEnvFiles).toHaveLength(0);
+    }
+  });
+
+  it('persists the shared provisioning result once', async () => {
+    const shared = makeFile();
+    const { provisionFiles, updateFile } = buildHarness({
+      contexts: [
+        ['agent-a', { provisionState: state([{ ...shared }], []) }],
+        ['agent-b', { provisionState: state([{ ...shared }], []) }],
+      ],
+    });
+
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-b');
+
+    expect(updateFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('uploads separately when the agents resolve different code deployments', async () => {
+    const shared = makeFile();
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [
+        ['agent-a', { provisionState: state([{ ...shared }], []) }],
+        [
+          'agent-b',
+          {
+            provisionState: state([{ ...shared }], []),
+            codeExecutionContext: { executionProfile: 'stateful', executionRouteKey: 'stateful:x' },
+          },
+        ],
+      ],
+    });
+
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-b');
+
+    expect(provisionToCodeEnv).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares embedding work across agents queueing the same search file', async () => {
+    const shared = makeFile();
+    const { provisionFiles, provisionToVectorDB, updateFile } = buildHarness({
+      contexts: [
+        ['agent-a', { provisionState: state([], [{ ...shared }]) }],
+        ['agent-b', { provisionState: state([], [{ ...shared }]) }],
+      ],
+    });
+
+    await Promise.all([
+      provisionFiles(['file_search'], 'agent-a'),
+      provisionFiles(['file_search'], 'agent-b'),
+    ]);
+
+    expect(provisionToVectorDB).toHaveBeenCalledTimes(1);
+    expect(updateFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed upload on a later tool call instead of replaying the rejection', async () => {
+    let attempts = 0;
+    const codeImpl = jest.fn(async ({ file }: { file: TFile }) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error('code api unreachable');
+      }
+      return {
+        referenceSet: { codeEnvRefs: { default: { file_id: 'remote-1' } } },
+        fileUpdate: { file_id: file.file_id, metadata: {} },
+      };
+    });
+    const { provisionFiles, agentToolContexts } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([makeFile()], []) }]],
+      codeImpl,
+    });
+
+    await expect(provisionFiles([Constants.EXECUTE_CODE], 'agent-a')).rejects.toThrow(
+      /Failed to provision/,
+    );
+    expect(agentToolContexts.get('agent-a')?.provisionState?.codeEnvFiles).toHaveLength(1);
+
+    await expect(provisionFiles([Constants.EXECUTE_CODE], 'agent-a')).resolves.toBeUndefined();
+    expect(codeImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('aborts the turn when search provisioning fails', async () => {
+    const vectorImpl = jest.fn(async () => {
+      throw new Error('rag unreachable');
+    });
+    const { provisionFiles, agentToolContexts } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([], [makeFile()]) }]],
+      vectorImpl,
+    });
+
+    await expect(provisionFiles(['file_search'], 'agent-a')).rejects.toThrow(
+      /aborting tool execution rather than searching without them/,
+    );
+    expect(agentToolContexts.get('agent-a')?.provisionState?.vectorDBFiles).toHaveLength(1);
+  });
+
+  it('ignores tool batches that need neither code nor search', async () => {
+    const { provisionFiles, provisionToCodeEnv, provisionToVectorDB } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([makeFile()], [makeFile()]) }]],
+    });
+
+    await provisionFiles(['web_search'], 'agent-a');
+
+    expect(provisionToCodeEnv).not.toHaveBeenCalled();
+    expect(provisionToVectorDB).not.toHaveBeenCalled();
+  });
+});
