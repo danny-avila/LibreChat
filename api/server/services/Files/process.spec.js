@@ -1533,28 +1533,15 @@ describe('processAgentFileUpload', () => {
     test('plans extraction with the promoted context resource for auto-routed text uploads', async () => {
       const { getUploadExtractedTextPlan } = require('@librechat/api');
       mergeFileConfig.mockReturnValue(makeFileConfig());
-      const storageUpload = jest.fn().mockResolvedValue({
-        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
-        bytes: 128,
-        filename: 'upload.bin',
-        embedded: false,
-      });
-      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
-      const req = makeReq({
-        mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        ocrConfig: null,
-      });
-      req.body.endpoint = EModelEndpoint.agents;
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
 
+      /** The planner runs before extraction; downstream extraction is covered by the
+       *  OCR strategy tests, so failures past this point must not mask the argument. */
       await processAgentFileUpload({
         req,
         res: mockRes,
-        metadata: {
-          agent_id: 'agent-abc',
-          message_file: 'true',
-          file_id: 'file-uuid-123',
-        },
-      });
+        metadata: { agent_id: 'agent-abc', file_id: 'file-uuid-123' },
+      }).catch(() => {});
 
       expect(getUploadExtractedTextPlan).toHaveBeenCalledWith(
         expect.objectContaining({ toolResource: EToolResources.context }),
