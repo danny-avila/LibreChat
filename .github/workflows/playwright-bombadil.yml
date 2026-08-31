@@ -40,6 +40,8 @@ jobs:
       E2E_CHROMIUM_CHANNEL: chrome
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4

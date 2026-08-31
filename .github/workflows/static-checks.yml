@@ -36,6 +36,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           # Full history is load-bearing: changed-file steps diff against the
           # PR base and the ESLint regression gate reads the base ref's
           # config via git show — a shallow checkout breaks both.
@@ -760,6 +761,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           # fetch-depth: 0 is load-bearing — the gate reads the base ref's
           # config via `git show`, which a shallow checkout cannot resolve.
           fetch-depth: 0
