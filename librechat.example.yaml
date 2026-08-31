@@ -832,6 +832,19 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # TrustedRouter Example
+    - name: 'TrustedRouter'
+      # For `apiKey` and `baseURL`, you can use environment variables that you define.
+      # recommended environment variables:
+      apiKey: '${TRUSTEDROUTER_API_KEY}'
+      baseURL: 'https://api.trustedrouter.com/v1'
+      models:
+        default: ['trustedrouter/auto']
+        fetch: true
+      titleConvo: true
+      titleModel: 'trustedrouter/auto'
+      modelDisplayLabel: 'TrustedRouter'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
