@@ -76,6 +76,35 @@ export function createProvisionFilesCallback({
   provisionToVectorDB,
   updateFile,
 }: ProvisionCallbackDeps): (toolNames: string[], agentId?: string) => Promise<void> {
+  /* Agents in a handoff or parallel graph are initialized independently over the same
+   * request attachments, so each holds its own ProvisionState for the same file. Keyed
+   * per file, destination and scope, this makes the upload happen once for the request;
+   * every agent still applies the result to its own tool resources below. */
+  const inFlight = new Map<string, Promise<unknown>>();
+
+  function shareProvisioning<T>(
+    key: string | undefined,
+    start: () => Promise<T>,
+  ): { promise: Promise<T>; owner: boolean } {
+    if (key == null) {
+      return { promise: start(), owner: true };
+    }
+    const existing = inFlight.get(key) as Promise<T> | undefined;
+    if (existing) {
+      return { promise: existing, owner: false };
+    }
+    const promise = start();
+    inFlight.set(key, promise);
+    /* Forget failures so a later tool call in the same request retries the upload
+     * instead of replaying the rejection. */
+    promise.catch(() => {
+      if (inFlight.get(key) === promise) {
+        inFlight.delete(key);
+      }
+    });
+    return { promise, owner: true };
+  }
+
   return async function provisionFiles(toolNames: string[], agentId?: string): Promise<void> {
     /* agentId is optional on this callback and a batch for the primary agent may omit
      * it, so fall back the way the tool loaders do. Otherwise the queue is missed and
@@ -123,6 +152,15 @@ export function createProvisionFilesCallback({
      *  unscoped vector index; only agent setup files are scoped to the agent. */
     const entityIdForFile = (file: TFile) =>
       isAgentScopedFile(file) ? resolvedAgentId : undefined;
+
+    /** Two agents may resolve different code deployments, where the same file genuinely
+     *  needs uploading to each, so the destination is part of the sharing key. */
+    const codeRouteKey =
+      ctx.codeExecutionContext?.executionRouteKey ??
+      ctx.codeExecutionContext?.executionProfile ??
+      'default';
+    const shareKey = (resource: string, file: TFile) =>
+      file.file_id ? `${resource}:${file.file_id}:${entityIdForFile(file) ?? ''}` : undefined;
 
     /** Surface a just-provisioned file to the tool loaded immediately after: the code
      *  and file_search primers read `tool_resources.<resource>.files`. */
@@ -173,16 +211,21 @@ export function createProvisionFilesCallback({
       const queuedCodeFiles = provisionState.codeEnvFiles;
       const results = await Promise.allSettled(
         queuedCodeFiles.map(async (file) => {
-          const { referenceSet, fileUpdate } = await provisionToCodeEnv({
-            req,
-            file,
-            entity_id: entityIdForFile(file),
-            route: ctx.codeExecutionContext,
-          });
+          const { promise, owner } = shareProvisioning(shareKey(`code:${codeRouteKey}`, file), () =>
+            provisionToCodeEnv({
+              req,
+              file,
+              entity_id: entityIdForFile(file),
+              route: ctx.codeExecutionContext,
+            }),
+          );
+          const { referenceSet, fileUpdate } = await promise;
           file.metadata = { ...file.metadata, ...referenceSet };
           addProvisionedFile(file, EToolResources.execute_code);
-          codeUpdateIds.add(fileUpdate.file_id);
-          pendingUpdates.push(fileUpdate);
+          if (owner) {
+            codeUpdateIds.add(fileUpdate.file_id);
+            pendingUpdates.push(fileUpdate);
+          }
         }),
       );
       results.forEach((result, index) => {
@@ -198,11 +241,14 @@ export function createProvisionFilesCallback({
       const queuedVectorFiles = provisionState.vectorDBFiles;
       const results = await Promise.allSettled(
         queuedVectorFiles.map(async (file) => {
-          const result = await provisionToVectorDB({
-            req,
-            file,
-            entity_id: entityIdForFile(file),
-          });
+          const { promise, owner } = shareProvisioning(shareKey('search', file), () =>
+            provisionToVectorDB({
+              req,
+              file,
+              entity_id: entityIdForFile(file),
+            }),
+          );
+          const result = await promise;
           if (result.embedded) {
             file.embedded = true;
             addProvisionedFile(
@@ -210,7 +256,7 @@ export function createProvisionFilesCallback({
               EToolResources.file_search,
               entityIdForFile(file) !== undefined,
             );
-            if (result.fileUpdate) {
+            if (owner && result.fileUpdate) {
               pendingUpdates.push(result.fileUpdate);
             }
           }
