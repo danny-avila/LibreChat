@@ -101,6 +101,26 @@ describe('BaseClient', () => {
     });
   });
 
+  test('persists only the host-authored external event display projection on the user turn', () => {
+    const projection = {
+      version: 1,
+      eventType: 'chess.turn.ready',
+      sourceType: 'speed-chess',
+      occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+      expectedActionToolName: 'submit_move',
+    };
+    TestClient.options.req = { _agentEventTriggerProjection: projection };
+
+    expect(
+      TestClient.createUserMessage({
+        messageId: 'event:user',
+        parentMessageId: 'parent',
+        conversationId: 'event-thread',
+        text: 'Private event payload',
+      }),
+    ).toEqual(expect.objectContaining({ subagentTriggerProjection: projection }));
+  });
+
   test('returns the input messages without instructions when addInstructions() is called with empty instructions', () => {
     const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
     const instructions = '';
@@ -1758,6 +1778,7 @@ describe('BaseClient', () => {
         anotherExistingField: 'anotherValue',
         temperature: 0.7,
         modelLabel: 'GPT-3.5',
+        pinned: true,
         subagentThread: {
           rootConversationId: 'root-conversation',
           parentConversationId: 'parent-conversation',
@@ -1802,6 +1823,9 @@ describe('BaseClient', () => {
       // Only check that someExistingField is in unsetFields
       expect(saveOptions.unsetFields).toHaveProperty('someExistingField', 1);
       expect(saveOptions.unsetFields).not.toHaveProperty('subagentThread');
+      // Sidebar metadata is never part of endpointOptions, so sweeping it would
+      // unpin a chat every time it received a message.
+      expect(saveOptions.unsetFields).not.toHaveProperty('pinned');
 
       // Mock saveConvo to return the expected fields
       saveConvo.mockImplementation((req, fields) => {

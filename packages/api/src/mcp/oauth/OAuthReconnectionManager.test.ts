@@ -255,7 +255,9 @@ describe('OAuthReconnectionManager', () => {
       // Verify failure handling
       expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
-      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1', {
+        reason: 'lifecycle',
+      });
     });
 
     it('should not reconnect servers with expired tokens and no refresh token', async () => {
@@ -394,7 +396,9 @@ describe('OAuthReconnectionManager', () => {
       expect(mockConnection.disconnect).toHaveBeenCalled();
       expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
-      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1', {
+        reason: 'lifecycle',
+      });
     });
 
     it('should handle MCPManager not available gracefully', async () => {
@@ -661,7 +665,9 @@ describe('OAuthReconnectionManager', () => {
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to reconnect'));
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
       expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
-      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1', {
+        reason: 'lifecycle',
+      });
     });
   });
 

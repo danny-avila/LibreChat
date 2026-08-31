@@ -54,6 +54,7 @@ const EVENT_TRAITS = {
   SubagentStart: { toolMatcher: false, decisions: 'tool', exitTwo: 'deny' },
   SubagentStop: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
   Stop: { toolMatcher: false, decisions: 'stop', exitTwo: 'block' },
+  StopFinalize: { toolMatcher: false, decisions: 'stop', exitTwo: 'block' },
   StopFailure: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
   PreCompact: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
   PostCompact: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },

@@ -9,6 +9,13 @@ import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent
  */
 export interface TestRunHookContext {
   messages?: BaseMessage[];
+  /**
+   * Identifies the conversation this run belongs to. A resumed run rebuilds
+   * `createRun` with no messages because state is rehydrated from the
+   * checkpoint, so message history alone cannot tell a resume apart from a
+   * fresh attempt; this is the stable identity across both.
+   */
+  conversationId?: string;
   agents: ReadonlyArray<{ tools?: ReadonlyArray<{ name: string }> }>;
   modelCallbacks?: readonly ModelBoundChatModelCallback[];
 }

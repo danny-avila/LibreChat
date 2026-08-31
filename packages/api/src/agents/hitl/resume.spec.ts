@@ -10,6 +10,7 @@ import {
   mapToolApprovalResolutions,
   mapAskUserAnswer,
   mapAskUserAnswers,
+  getBoundedAskUserAnswerValues,
   serializeAskUserAnswerVariants,
   resolveAskUserQuestionResume,
   findUndecidedToolCalls,
@@ -102,6 +103,23 @@ describe('serializeAskUserAnswerVariants', () => {
         three: '3',
         four: '4',
         five: '5',
+      }),
+    ).toEqual([]);
+    expect(
+      serializeAskUserAnswerVariants({
+        one: 'x'.repeat(16_001),
+        two: 'safe',
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('getBoundedAskUserAnswerValues', () => {
+  it('excludes oversized batches before content middleware can inspect them', () => {
+    expect(
+      getBoundedAskUserAnswerValues({
+        one: 'x'.repeat(16_001),
+        two: 'safe',
       }),
     ).toEqual([]);
   });

@@ -978,11 +978,13 @@ describe('Code Process', () => {
     describe('fallback behavior', () => {
       it('preserves the stateful route in generated downloads and fallbacks', async () => {
         mockAxios.mockRejectedValue(new Error('Network error'));
+        const executionRouteKey = `stateful:${'a'.repeat(32)}`;
 
         const { file: result } = await processCodeOutput({
           ...baseParams,
           codeApiBaseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
+          executionRouteKey,
         });
 
         expect(mockAxios).toHaveBeenCalledWith(
@@ -992,6 +994,9 @@ describe('Code Process', () => {
           }),
         );
         expect(result.filepath).toContain('execution_profile=stateful');
+        expect(result.filepath).toContain(
+          `execution_route_key=${encodeURIComponent(executionRouteKey)}`,
+        );
       });
 
       it('should fallback to download URL when saveBuffer is not available', async () => {
@@ -1091,14 +1096,19 @@ describe('Code Process', () => {
 
       it('persists the originating profile on a stateful artifact ref', async () => {
         mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+        const executionRouteKey = `stateful:${'a'.repeat(32)}`;
 
         const { file: result } = await processCodeOutput({
           ...baseParams,
           codeApiBaseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
+          executionRouteKey,
         });
 
-        expect(result.metadata.codeEnvRef.executionProfile).toBe('stateful');
+        expect(result.metadata.codeEnvRef).toEqual(
+          expect.objectContaining({ executionProfile: 'stateful', executionRouteKey }),
+        );
+        expect(result.metadata.codeEnvRefs[executionRouteKey]).toEqual(result.metadata.codeEnvRef);
       });
 
       /* Phase C lock-in: outputs are ALWAYS user-scoped, never skill-scoped.

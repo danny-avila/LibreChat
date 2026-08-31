@@ -15,6 +15,7 @@ import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
   ContextPruningConfig,
+  CompactionSemanticIndex,
   OpenAIClientOptions,
   StandardGraphConfig,
   StreamPreemption,
@@ -46,7 +47,10 @@ import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
+import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
+import type { TerminalSteerHook } from '~/agents/steering/runtime';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
+import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
@@ -57,6 +61,16 @@ import {
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
 import {
+  createSubagentWakeupHandleHook,
+  agentUsesSubagentCompletionWakeups,
+  usesSubagentCompletionWakeups,
+} from '~/agents/subagentDelivery';
+import {
+  isSteeringSupported,
+  isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
+} from '~/agents/steering/runtime';
+import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
   exemptAskUserQuestionFromApproval,
@@ -65,19 +79,14 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
-import {
-  createSubagentWakeupHandleHook,
-  usesSubagentCompletionWakeups,
-} from '~/agents/subagentDelivery';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
-import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
+import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getProviderConfig } from '~/endpoints/config/providers';
-import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getPluginHookSource } from '~/agents/hooks/source';
@@ -395,6 +404,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   backgroundToolNames?: string[];
   /** Names of tools with the host-injected `intent` param (stripped from self-spawn inputs). */
   intentToolNames?: string[];
+  /** Marker-verified tool names whose intent labels are safe compaction guidance. */
+  semanticIntentToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -413,6 +424,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   statefulCodeEnvironment?: Agent['stateful_code_environment'];
   /** Trusted partition for transient code session ids and file references. */
   codeSessionKey?: string;
+  /** Trusted Code API route selected during initialization. */
+  codeExecutionContext?: CodeExecutionContext;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -456,8 +469,10 @@ type LazySubagentAgent = Pick<
   | 'codeEnvAvailable'
   | 'statefulCodeSessions'
   | 'statefulCodeEnvironment'
+  | 'codeExecutionContext'
   | 'codeSessionKey'
   | 'includeReasoningHistory'
+  | 'mcpToolAliases'
 > & {
   configId: string;
   subagentAgentConfigs?: RunAgent[];
@@ -476,8 +491,10 @@ type SubagentTreeNode = Pick<
   | 'codeEnvAvailable'
   | 'statefulCodeSessions'
   | 'statefulCodeEnvironment'
+  | 'codeExecutionContext'
   | 'codeSessionKey'
   | 'includeReasoningHistory'
+  | 'mcpToolAliases'
 > & {
   subagentAgentConfigs?: SubagentTreeNode[];
   lazySubagentConfigs?: SubagentTreeNode[];
@@ -666,7 +683,11 @@ function resolveSummarizationProvider(
      * that the main agent relied on. `proxy` is forwarded so outbound proxy
      * dispatchers (`PROXY` env var) apply to cross-endpoint summarization.
      */
-    const { llmConfig, configOptions } = getOpenAIConfig(
+    const {
+      llmConfig,
+      configOptions,
+      provider: detectedProvider,
+    } = getOpenAIConfig(
       apiKey,
       {
         reverseProxyUrl: baseURL,
@@ -694,8 +715,16 @@ function resolveSummarizationProvider(
      */
     delete clientOverrides.model;
     delete clientOverrides.modelName;
+    /**
+     * `getOpenAIConfig` detects OpenRouter from the resolved `baseURL`, which
+     * `getProviderConfig` cannot do for an endpoint whose config name isn't
+     * `openrouter` — it reports `openAI` for those. Prefer the detected
+     * provider so a cross-endpoint summarizer builds the same client the main
+     * agent flow builds for that endpoint (`initializeAgent` applies the same
+     * precedence).
+     */
     return {
-      provider: overrideProvider,
+      provider: detectedProvider ?? overrideProvider,
       clientOverrides,
     };
   } catch (error) {
@@ -753,10 +782,17 @@ function shapeSummarizationConfig(
    * adding e.g. `configuration.defaultQuery` keeps the resolved `baseURL`
    * and `defaultHeaders` rather than replacing the whole object.
    */
-  const parameters =
+  const mergedParameters =
     clientOverrides != null
       ? mergeParameters(clientOverrides, config?.parameters)
       : config?.parameters;
+  /**
+   * A scalar `reasoning_effort` — the only reasoning shape the yaml schema
+   * accepts — is inert as a client option and leaves the summarizer running at
+   * whatever effort the main agent resolved. Translate it the way the main
+   * flow's `getOpenAIConfig` would for the summarization target.
+   */
+  const parameters = resolveReasoningParams({ provider, model, parameters: mergedParameters });
 
   return {
     enabled: config?.enabled !== false && isNonEmptyString(provider) && isNonEmptyString(model),
@@ -883,6 +919,7 @@ function createLazySubagentConfig(
   ancestors: Set<string>,
   depth: number,
   prebuiltGraphInputs?: ReadonlyMap<string, AgentInputs>,
+  onResolvedAgent?: (agent: RunAgent) => void,
 ): SubagentConfig {
   return {
     type: child.id,
@@ -901,6 +938,7 @@ function createLazySubagentConfig(
       if (context.signal.aborted) {
         throw context.signal.reason ?? new Error('Subagent resolution was aborted.');
       }
+      onResolvedAgent?.(resolvedChild);
       const childInputs = buildIsolatedAgentInputs(resolvedChild, toInput);
       const resolutionState: SubagentBuildState = {
         configCount: 1,
@@ -915,6 +953,8 @@ function createLazySubagentConfig(
         ancestors,
         depth,
         prebuiltGraphInputs,
+        false,
+        onResolvedAgent,
       );
       if (grandchildConfigs.length > 0) {
         childInputs.subagentConfigs = grandchildConfigs;
@@ -957,6 +997,44 @@ function enqueueSubagentChildren(
       }
     }
   }
+}
+
+/**
+ * Collect MCP key-spelling aliases from every eagerly known agent in the run.
+ * Lazy descriptors are revisited when they resolve, because initializing MCP
+ * tools solely to discover aliases would defeat lazy loading.
+ */
+export function collectRunMCPToolAliases(
+  agents: Array<RunAgent | SubagentTreeNode | null | undefined>,
+): MCPToolAlias[] {
+  const aliases: MCPToolAlias[] = [];
+  const seenAliases = new Set<string>();
+  const visited = new Set<string>();
+  const pending: Array<RunAgent | SubagentTreeNode | null | undefined> = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null) {
+      continue;
+    }
+    for (const alias of agent.mcpToolAliases ?? []) {
+      const key = `${alias.name}\u0000${alias.aliasName}`;
+      if (!seenAliases.has(key)) {
+        seenAliases.add(key);
+        aliases.push(alias);
+      }
+    }
+    if (visited.has(agent.id)) {
+      // The same saved agent can appear as both a lazy descriptor and a
+      // pre-initialized graph member. Keep traversing each representation so
+      // its unique children stay reachable, but avoid descending forever.
+      enqueueSubagentChildren(agent, pending, visited);
+      continue;
+    }
+    visited.add(agent.id);
+    enqueueSubagentChildren(agent, pending, visited);
+  }
+  return aliases;
 }
 
 /**
@@ -1028,7 +1106,7 @@ export function agentRequestsAskUserQuestion(agent: {
  * it to the model, attaching checkpointers, and pausing runs — for a run-pausing
  * tool the filter must be an actual kill switch.
  */
-function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
+export function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
   const included = appConfig?.includedTools;
   if (included != null && included.length > 0) {
     return !included.includes(ASK_USER_QUESTION_TOOL_NAME);
@@ -1114,6 +1192,7 @@ function buildSubagentConfigs(
   depth = 0,
   prebuiltGraphInputs?: ReadonlyMap<string, AgentInputs>,
   detachedTasksEnabled = false,
+  onResolvedAgent?: (agent: RunAgent) => void,
 ): SubagentConfigEntry[] {
   if (!agent.subagents?.enabled) {
     return [];
@@ -1207,6 +1286,8 @@ function buildSubagentConfigs(
       nextAncestors,
       childDepth,
       prebuiltGraphInputs,
+      detachedTasksEnabled,
+      onResolvedAgent,
     );
     if (grandchildConfigs.length > 0) {
       childInputs.subagentConfigs = grandchildConfigs;
@@ -1240,6 +1321,7 @@ function buildSubagentConfigs(
         nextAncestors,
         childDepth,
         prebuiltGraphInputs,
+        onResolvedAgent,
       ),
     );
   }
@@ -1301,6 +1383,7 @@ function buildSubagentConfigs(
 export async function createRun({
   runId,
   signal,
+  conversationId,
   agents,
   messages,
   discoveredToolNames,
@@ -1313,6 +1396,7 @@ export async function createRun({
   indexTokenCountMap,
   initialSessions,
   summarizationConfig,
+  compactionSemanticIndex,
   initialSummary,
   modelCallbacks,
   calibrationRatio,
@@ -1322,7 +1406,9 @@ export async function createRun({
   steering,
   activityLabel,
   activityPhase,
+  eventActorCheckpointing = false,
   hitlCapable = false,
+  resolvedToolApprovalHooks,
   toolInputValidationErrors,
   sessionStartSource,
   streaming = true,
@@ -1331,6 +1417,9 @@ export async function createRun({
   agents: RunAgent[];
   signal: AbortSignal;
   runId?: string;
+  /** Conversation-stable identity, used by the e2e run hook to tell a resumed
+   *  run apart from a fresh attempt (a resume carries no messages). */
+  conversationId?: string;
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
@@ -1354,6 +1443,8 @@ export async function createRun({
    */
   discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
+  /** Bounded, source-addressed navigation guidance derived with provider messages. */
+  compactionSemanticIndex?: CompactionSemanticIndex;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
   /** Model-level guards inherited by root, summary, fallback, and subagent clients. */
@@ -1393,6 +1484,11 @@ export async function createRun({
      */
     preemptHook?: HookCallback<'PreemptBoundary'>;
     /**
+     * Atomically claims queued steers at the SDK's terminal Stop boundary or
+     * seals admission so later messages become ordinary follow-up turns.
+     */
+    terminalHook?: TerminalSteerHook;
+    /**
      * Level-triggered O(1) poll over the job's armed preempt requests
      * (`createSteerPreemptPoll`). Threaded into `RunConfig.preemption`, which
      * also makes the SDK reserve recursion-limit headroom for its seals.
@@ -1407,6 +1503,8 @@ export async function createRun({
   activityLabel?: { hook: HookCallback<'PostToolBatch'> };
   /** Run-wide parent phase collector; registered after child batch labels. */
   activityPhase?: { hook: HookCallback<'PostToolBatch'> };
+  /** Persist clean terminal checkpoints for an isolated bound-event invocation. */
+  eventActorCheckpointing?: boolean;
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1416,6 +1514,11 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /**
+   * Request-scoped approval hooks already resolved by the scheduled-run admission guard.
+   * Reuse them here so a context-aware factory is evaluated exactly once for the run.
+   */
+  resolvedToolApprovalHooks?: readonly ResolvedToolApprovalHook[];
   /** Plugin-hook SessionStart lifecycle source: 'startup' (default) or 'resume' on HITL-rebuild paths. */
   sessionStartSource?: string;
   /** Request-scoped tool input failures consumed by the completion handler. */
@@ -1648,6 +1751,7 @@ export async function createRun({
         !isSubagent && discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled: summarization.enabled,
       summarizationConfig: summarization.config,
+      ...(!isSubagent && compactionSemanticIndex != null ? { compactionSemanticIndex } : {}),
       initialSummary: isSubagent ? undefined : initialSummary,
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
@@ -1668,6 +1772,9 @@ export async function createRun({
 
   const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
 
+  // Assigned after the run-wide HITL registry is built. Lazy descriptors
+  // capture this indirection now and report their aliases when they resolve.
+  let registerResolvedMCPToolAliases: (agent: RunAgent) => void = () => undefined;
   const agentInputs: AgentInputs[] = [];
   const subagentBuildState: SubagentBuildState = {
     configCount: 0,
@@ -1706,6 +1813,7 @@ export async function createRun({
       0,
       prebuiltGraphInputs,
       subagentTasks != null,
+      (resolvedAgent) => registerResolvedMCPToolAliases(resolvedAgent),
     );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
@@ -1716,7 +1824,7 @@ export async function createRun({
       agentInput.toolDefinitions = registerBackgroundTaskTool({
         toolRegistry: agentInput.toolRegistry,
         toolDefinitions: agentInput.toolDefinitions,
-        subagentCompletionWakeups: usesSubagentCompletionWakeups(subagentTasks),
+        subagentCompletionWakeups: agentUsesSubagentCompletionWakeups(subagentTasks, agent.id),
       }).toolDefinitions;
     }
     agentInputs.push(agentInput);
@@ -1774,9 +1882,18 @@ export async function createRun({
   // would pause with no approval surface or resume endpoint, and the route would emit a
   // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
   // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
-  /** Both-direction key-spelling aliases collected at tool classification —
-   *  identical in instance and event-driven loading modes. */
-  const mcpToolAliases = agents.flatMap((agent) => agent.mcpToolAliases ?? []);
+  /** Both-direction key-spelling aliases collected from every eagerly known
+   *  agent, including explicit and graph subagents. Lazy subagents report
+   *  theirs through `registerResolvedMCPToolAliases` below. */
+  const mcpToolAliases = collectRunMCPToolAliases(agents);
+  const mcpToolAliasKeys = new Set(
+    mcpToolAliases.map(({ name, aliasName }) => `${name}\u0000${aliasName}`),
+  );
+  const effectiveToolApprovalPolicy = () =>
+    exemptAskUserQuestionFromApproval(
+      healToolApprovalPolicy(toolApprovalPolicy, mcpToolAliases),
+      ASK_USER_QUESTION_TOOL_NAME,
+    );
   const hitl = hitlCapable
     ? buildHITLRunWiring(
         // The ask tool is exempt from the approval prompt (unless explicitly
@@ -1786,10 +1903,7 @@ export async function createRun({
         // admin globs written for pre-strip upstream names keep applying (a
         // non-matching deny would fail OPEN), and rules written against
         // current catalog names reach legacy-named instances.
-        exemptAskUserQuestionFromApproval(
-          healToolApprovalPolicy(toolApprovalPolicy, mcpToolAliases),
-          ASK_USER_QUESTION_TOOL_NAME,
-        ),
+        effectiveToolApprovalPolicy(),
         {
           userId: user?.id,
           conversationId: requestBody?.conversationId,
@@ -1797,8 +1911,26 @@ export async function createRun({
           appConfig,
         },
         mcpToolAliases,
+        resolvedToolApprovalHooks,
       )
     : undefined;
+  registerResolvedMCPToolAliases = (resolvedAgent) => {
+    const discoveredAliases = collectRunMCPToolAliases([resolvedAgent]).filter(
+      ({ name, aliasName }) => {
+        const key = `${name}\u0000${aliasName}`;
+        if (mcpToolAliasKeys.has(key)) {
+          return false;
+        }
+        mcpToolAliasKeys.add(key);
+        return true;
+      },
+    );
+    if (discoveredAliases.length === 0) {
+      return;
+    }
+    mcpToolAliases.push(...discoveredAliases);
+    hitl?.addMCPToolAliases(discoveredAliases, effectiveToolApprovalPolicy());
+  };
   /**
    * The `ask_user_question` tool pauses via LangGraph `interrupt()` from inside its own
    * body, which needs only a durable checkpointer — NOT the tool-approval policy
@@ -1811,7 +1943,7 @@ export async function createRun({
    */
   const asksUserQuestions =
     hitlCapable && !askToolAdminDisabled && agents.some(agentRequestsAskUserQuestion);
-  if (hitl || asksUserQuestions) {
+  if (hitl || asksUserQuestions || eventActorCheckpointing) {
     const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
     graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };
   }
@@ -1829,7 +1961,11 @@ export async function createRun({
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolUse', {
       pattern: String(Constants.SUBAGENT),
-      hooks: [createSubagentWakeupHandleHook()],
+      hooks: [
+        createSubagentWakeupHandleHook((agentId) =>
+          agentUsesSubagentCompletionWakeups(subagentTasks, agentId),
+        ),
+      ],
       internal: true,
     });
   }
@@ -1852,6 +1988,12 @@ export async function createRun({
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
     if (steering.preemptHook != null && isSteerPreemptSupported()) {
       hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
+    }
+    if (steering.terminalHook != null && isSteerTerminalContinuationSupported()) {
+      const stopFinalizeRegistry = hooks as unknown as {
+        register: (event: 'StopFinalize', matcher: { hooks: TerminalSteerHook[] }) => () => void;
+      };
+      stopFinalizeRegistry.register('StopFinalize', { hooks: [steering.terminalHook] });
     }
   }
   /**
@@ -1991,6 +2133,11 @@ export async function createRun({
   const run = await Run.create(runConfig);
 
   applyCustomHandoffPromptKeyCompatibility(run, runConfig.graphConfig);
-  applyTestRunHook(run, { messages, agents, modelCallbacks });
+  applyTestRunHook(run, {
+    messages,
+    agents,
+    modelCallbacks,
+    conversationId: conversationId ?? requestBody?.conversationId ?? undefined,
+  });
   return run;
 }

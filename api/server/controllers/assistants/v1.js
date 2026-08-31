@@ -44,6 +44,7 @@ const createAssistant = async (req, res) => {
 
     const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
       req,
+      res,
       tools,
     });
     const healedTools = await healMcpToolNames({
@@ -95,7 +96,7 @@ const createAssistant = async (req, res) => {
 
     const assistant = await openai.beta.assistants.create(assistantData);
 
-    const createData = { user: req.user.id };
+    const createData = { user: req.user.id, endpoint };
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
@@ -172,6 +173,7 @@ const patchAssistant = async (req, res) => {
 
     const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
       req,
+      res,
       tools: updateData.tools,
     });
     const healedTools = await healMcpToolNames({
@@ -366,6 +368,7 @@ const uploadAssistantAvatar = async (req, res) => {
     }
 
     const { assistant_id } = req.params;
+    const endpoint = req.body?.endpoint ?? req.query?.endpoint;
     if (!assistant_id) {
       return res.status(400).json({ message: 'Assistant ID is required' });
     }
@@ -422,6 +425,7 @@ const uploadAssistantAvatar = async (req, res) => {
             source: appConfig.fileStrategy,
           },
           user: req.user.id,
+          endpoint,
         },
       ),
     );

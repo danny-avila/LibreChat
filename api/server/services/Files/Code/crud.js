@@ -1,7 +1,7 @@
 const FormData = require('form-data');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
-const { getCodeEnvRefs } = require('librechat-data-provider');
+const { EModelEndpoint, getCodeEnvRefs } = require('librechat-data-provider');
 const {
   logAxiosError,
   appendCodeEnvFile,
@@ -12,6 +12,7 @@ const {
   buildCodeEnvDownloadQuery,
   getCodeApiAuthHeaders,
   getCodeExecutionBaseUrl,
+  createCodeExecutionRouteKey,
   CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
 
@@ -82,8 +83,40 @@ async function deleteCodeEnvFile(req, file) {
 
   const missingOrUnsupportedStatuses = new Set([404, 405]);
   const authHeaders = await getCodeApiAuthHeaders(req);
-  for (const [executionProfile, ref] of refs) {
-    const baseURL = getCodeExecutionBaseUrl(executionProfile);
+  for (const [executionRouteKey, ref] of refs) {
+    const executionProfile = ref.executionProfile ?? 'default';
+    const environments =
+      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const configuredEnvironment = environments?.find(
+      (environment) =>
+        createCodeExecutionRouteKey(executionProfile, environment) === executionRouteKey,
+    );
+    if (
+      executionProfile === 'stateful' &&
+      executionRouteKey !== executionProfile &&
+      !configuredEnvironment
+    ) {
+      logger.warn(
+        `[deleteCodeEnvFile] Skipping remote cleanup for unmapped historical route ${executionRouteKey}`,
+      );
+      continue;
+    }
+    let baseURL;
+    try {
+      baseURL = getCodeExecutionBaseUrl(executionProfile, configuredEnvironment);
+    } catch (error) {
+      if (
+        executionProfile === 'stateful' &&
+        executionRouteKey === executionProfile &&
+        !configuredEnvironment
+      ) {
+        logger.warn(
+          '[deleteCodeEnvFile] Skipping remote cleanup for retired legacy stateful route',
+        );
+        continue;
+      }
+      throw error;
+    }
     const query = buildCodeEnvDownloadQuery({
       kind: ref.kind,
       id: ref.id,

@@ -6,7 +6,7 @@ import {
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
-import type { FilterQuery, Model, PipelineStage, Types } from 'mongoose';
+import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry } from '~/types';
 import { filterExistingSkillIds } from './skill';
@@ -203,6 +203,20 @@ function resolveDocumentPath(source: Record<string, unknown>, path: string): unk
   return current;
 }
 
+/** Removes a dotted operator path from an in-memory version projection. */
+function deleteDocumentPath(source: Record<string, unknown>, path: string): void {
+  const segments = path.split('.');
+  const leaf = segments.pop();
+  if (leaf == null) return;
+  let current: Record<string, unknown> = source;
+  for (const segment of segments) {
+    const next = current[segment];
+    if (typeof next !== 'object' || next === null || next instanceof Map) return;
+    current = next as Record<string, unknown>;
+  }
+  delete current[leaf];
+}
+
 /** The values an `$addToSet` specification would add, flattening the `$each` form. */
 function addToSetCandidates(spec: unknown): unknown[] {
   if (
@@ -228,9 +242,16 @@ function operatorsMutateDocument(
   $push: unknown,
   $pull: unknown,
   $addToSet: unknown,
+  $unset: unknown,
 ): boolean {
   if (hasOperatorKeys($push) || hasOperatorKeys($pull)) {
     return true;
+  }
+
+  if (hasOperatorKeys($unset)) {
+    for (const path of Object.keys($unset as Record<string, unknown>)) {
+      if (resolveDocumentPath(currentObject, path) !== undefined) return true;
+    }
   }
 
   if (!hasOperatorKeys($addToSet)) {
@@ -280,13 +301,24 @@ function isDuplicateVersion(
     'actionsHash',
   ];
 
-  const { $push: _$push, $pull: _$pull, $addToSet: _$addToSet, ...directUpdates } = updateData;
+  const {
+    $push: _$push,
+    $pull: _$pull,
+    $addToSet: _$addToSet,
+    $unset,
+    ...directUpdates
+  } = updateData;
 
-  if (Object.keys(directUpdates).length === 0 && !actionsHash) {
+  if (Object.keys(directUpdates).length === 0 && !hasOperatorKeys($unset) && !actionsHash) {
     return null;
   }
 
   const wouldBeVersion = { ...currentData, ...directUpdates } as Record<string, unknown>;
+  if (hasOperatorKeys($unset)) {
+    for (const path of Object.keys($unset as Record<string, unknown>)) {
+      deleteDocumentPath(wouldBeVersion, path);
+    }
+  }
   const lastVersion = versions[versions.length - 1] as Record<string, unknown>;
 
   if (actionsHash && lastVersion.actionsHash !== actionsHash) {
@@ -440,21 +472,18 @@ export function createAgentMethods(
   mongoose: typeof import('mongoose'),
   deps: AgentDeps,
 ): {
-  getAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  getAgent: (
+    searchParameter: FilterQuery<IAgent>,
+    projection?: ProjectionType<IAgent>,
+  ) => Promise<IAgent | null>;
   getAgentVersions: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent['versions'] | null>;
   getAgentWithVersionCount: (
     searchParameter: FilterQuery<IAgent>,
   ) => Promise<(IAgent & { version: number }) | null>;
   getAgents: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent[]>;
   createAgent: (agentData: Record<string, unknown>) => Promise<IAgent>;
-  hasAgentWithMCPServerName: ({
-    agentIds,
-    serverName,
-  }: {
-    agentIds: Types.ObjectId[];
-    serverName: string;
-  }) => Promise<boolean>;
-  getMCPServerNamesByAgentIds: (agentIds: Types.ObjectId[]) => Promise<string[]>;
+  getAgentIdsByMCPServerName: (serverName: string) => Promise<Types.ObjectId[]>;
+  getAgentsWithMCPServerNames: () => Promise<Array<Pick<IAgent, '_id' | 'mcpServerNames'>>>;
   updateAgent: (
     searchParameter: FilterQuery<IAgent>,
     updateData: Record<string, unknown>,
@@ -562,9 +591,12 @@ export function createAgentMethods(
   /**
    * Get an agent document based on the provided search parameter.
    */
-  async function getAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
+  async function getAgent(
+    searchParameter: FilterQuery<IAgent>,
+    projection?: ProjectionType<IAgent>,
+  ): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return await Agent.findOne(searchParameter).lean<IAgent>();
+    return await Agent.findOne(searchParameter, projection).lean<IAgent>();
   }
 
   /**
@@ -609,48 +641,26 @@ export function createAgentMethods(
     return await Agent.find(searchParameter).lean<IAgent[]>();
   }
 
-  async function hasAgentWithMCPServerName({
-    agentIds,
-    serverName,
-  }: {
-    agentIds: Types.ObjectId[];
-    serverName: string;
-  }): Promise<boolean> {
-    if (agentIds.length === 0) {
-      return false;
-    }
-
+  /** Returns the ids of every agent referencing `serverName`, the candidate set
+   *  for agent-mediated MCP access checks. Index-covered by `mcpServerNames`. */
+  async function getAgentIdsByMCPServerName(serverName: string): Promise<Types.ObjectId[]> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const agent = await Agent.exists({
-      _id: { $in: agentIds },
-      mcpServerNames: serverName,
-    });
-
-    return agent !== null;
+    const agents = await Agent.find({ mcpServerNames: serverName }, { _id: 1 }).lean<
+      Array<Pick<IAgent, '_id'>>
+    >();
+    return agents.map((agent) => agent._id);
   }
 
-  async function getMCPServerNamesByAgentIds(agentIds: Types.ObjectId[]): Promise<string[]> {
-    if (agentIds.length === 0) {
-      return [];
-    }
-
+  /** Returns every agent with a non-empty `mcpServerNames`, so access
+   *  calculations can start from the (typically small) set of agents that
+   *  actually reference MCP servers instead of every accessible agent. */
+  async function getAgentsWithMCPServerNames(): Promise<
+    Array<Pick<IAgent, '_id' | 'mcpServerNames'>>
+  > {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const agents = await Agent.find(
-      {
-        _id: { $in: agentIds },
-        mcpServerNames: { $exists: true, $not: { $size: 0 } },
-      },
-      { mcpServerNames: 1 },
-    ).lean<Array<Pick<IAgent, 'mcpServerNames'>>>();
-
-    const serverNames = new Set<string>();
-    for (const agent of agents) {
-      for (const serverName of agent.mcpServerNames ?? []) {
-        serverNames.add(serverName);
-      }
-    }
-
-    return Array.from(serverNames);
+    return await Agent.find({ mcpServerNames: { $type: 'string' } }, { mcpServerNames: 1 }).lean<
+      Array<Pick<IAgent, '_id' | 'mcpServerNames'>>
+    >();
   }
 
   /**
@@ -678,7 +688,7 @@ export function createAgentMethods(
     if (currentAgent) {
       const currentObject = currentAgent.toObject() as unknown as Record<string, unknown>;
       const { __v, _id, id: __id, versions, author: _author, ...versionData } = currentObject;
-      const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+      const { $push, $pull, $addToSet, $unset, ...directUpdates } = updateData;
 
       /** Self-heal: drop allowlist ids whose skill no longer exists in the
        *  database or the external registry.
@@ -747,7 +757,12 @@ export function createAgentMethods(
 
       const shouldCreateVersion =
         !skipVersioning &&
-        (forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet);
+        (forceVersion ||
+          Object.keys(directUpdates).length > 0 ||
+          $push ||
+          $pull ||
+          $addToSet ||
+          $unset);
 
       if (shouldCreateVersion) {
         const duplicateVersion = isDuplicateVersion(
@@ -768,6 +783,7 @@ export function createAgentMethods(
           $push,
           $pull,
           $addToSet,
+          $unset,
         );
         if (duplicateVersion && !forceVersion && !mutatesOutsideSnapshot) {
           suppressedVersionEntry = true;
@@ -781,6 +797,7 @@ export function createAgentMethods(
           delete updateData.$addToSet;
           delete updateData.$push;
           delete updateData.$pull;
+          delete updateData.$unset;
         }
       }
 
@@ -789,6 +806,11 @@ export function createAgentMethods(
         ...directUpdates,
         updatedAt: new Date(),
       };
+      if (hasOperatorKeys($unset)) {
+        for (const path of Object.keys($unset as Record<string, unknown>)) {
+          deleteDocumentPath(versionEntry, path);
+        }
+      }
 
       if (actionsHash) {
         versionEntry.actionsHash = actionsHash;
@@ -1222,7 +1244,14 @@ export function createAgentMethods(
       }
     }
 
-    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
+    const restoresDeploymentDefault = !Object.prototype.hasOwnProperty.call(
+      revertToVersion,
+      'code_environment_id',
+    );
+    const revertUpdate = restoresDeploymentDefault
+      ? { $set: revertToVersion, $unset: { code_environment_id: 1 } }
+      : { $set: revertToVersion };
+    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
       new: true,
     }).lean<IAgent>();
     if (!revertedAgent) {
@@ -1264,8 +1293,8 @@ export function createAgentMethods(
     getAgentWithVersionCount,
     getAgents,
     createAgent,
-    hasAgentWithMCPServerName,
-    getMCPServerNamesByAgentIds,
+    getAgentIdsByMCPServerName,
+    getAgentsWithMCPServerNames,
     updateAgent,
     deleteAgent,
     deleteUserAgents,

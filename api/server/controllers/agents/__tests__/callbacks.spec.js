@@ -855,6 +855,7 @@ describe('createToolEndCallback', () => {
         codeExecutionContext: {
           baseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
+          executionRouteKey: `stateful:${'a'.repeat(32)}`,
         },
       });
       await toolEndCallback({ output: event.output }, event.metadata);
@@ -870,6 +871,7 @@ describe('createToolEndCallback', () => {
           conversationId: 'thread789',
           codeApiBaseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
+          executionRouteKey: `stateful:${'a'.repeat(32)}`,
         }),
       );
       expect(res.write).toHaveBeenCalledTimes(2);
@@ -1123,6 +1125,7 @@ describe('tool input validation marker', () => {
 
     expect(data.result.tool_call.inputValidationError).toBe(true);
     expect(contentParts[0].tool_call.inputValidationError).toBe(true);
+    expect(contentParts[0].tool_call.stepId).toBe('step-1');
     expect(toolInputValidationErrors.size).toBe(0);
   });
 
@@ -1171,6 +1174,7 @@ describe('tool input validation marker', () => {
 
     expect(data.result.tool_call).not.toHaveProperty('inputValidationError');
     expect(contentParts[0].tool_call).not.toHaveProperty('inputValidationError');
+    expect(contentParts[0].tool_call.stepId).toBe('step-1');
   });
 });
 

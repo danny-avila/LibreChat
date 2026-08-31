@@ -76,8 +76,61 @@ export function resolveToolApprovalPolicy(
  * any multi-process deployment. Pair this predicate with the checkpointer
  * assignment at the `Run.create` call site.
  */
-export function isHITLEnabled(policy: TToolApprovalPolicy | undefined): boolean {
+export function isHITLEnabled(
+  policy: TToolApprovalPolicy | undefined,
+): policy is NonNullable<TToolApprovalPolicy> {
   return policy?.enabled === true;
+}
+
+/**
+ * Whether the configured policy can structurally return `ask` for any tool.
+ *
+ * `bypass` and `dontAsk` are non-pausing fallbacks; only an explicit ask rule
+ * or a programmatic hook can tighten them to `ask`. A catch-all deny remains
+ * non-pausing because deny wins over every hook/rule, while a catch-all allow
+ * removes the default mode's unmatched-tool ask fallback. More-specific pattern
+ * overlap is intentionally treated conservatively because the run's complete
+ * lazy tool surface is not known at admission time.
+ */
+export function isToolApprovalPauseCapable(
+  policy: TToolApprovalPolicy | undefined,
+  hasProgrammaticHooks = false,
+  toolNames?: readonly string[],
+): boolean {
+  if (!isHITLEnabled(policy)) {
+    return false;
+  }
+  const enabledPolicy = policy;
+  if (toolNames != null) {
+    const names = Array.from(new Set(toolNames.filter((name) => name.length > 0)));
+    if (names.length === 0) {
+      return false;
+    }
+    const matches = (patterns: string[] | undefined, name: string): boolean =>
+      patterns?.some((pattern) => globToRegex(pattern).test(name)) === true;
+    return names.some((name) => {
+      if (matches(enabledPolicy.deny, name)) {
+        return false;
+      }
+      if (hasProgrammaticHooks || matches(enabledPolicy.ask, name)) {
+        return true;
+      }
+      if (matches(enabledPolicy.allow, name)) {
+        return false;
+      }
+      return enabledPolicy.mode !== 'bypass' && enabledPolicy.mode !== 'dontAsk';
+    });
+  }
+  if (policy?.deny?.includes('*')) {
+    return false;
+  }
+  if (hasProgrammaticHooks || (policy?.ask?.length ?? 0) > 0) {
+    return true;
+  }
+  if (policy?.mode === 'bypass' || policy?.mode === 'dontAsk') {
+    return false;
+  }
+  return policy?.allow?.includes('*') !== true;
 }
 
 /**
@@ -91,6 +144,17 @@ export function isHITLEnabled(policy: TToolApprovalPolicy | undefined): boolean 
 function globToRegex(pattern: string): RegExp {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
+}
+
+/** Whether an enabled static policy unconditionally denies one concrete tool name. */
+export function isToolDeniedByApprovalPolicy(
+  policy: TToolApprovalPolicy | undefined,
+  toolName: string,
+): boolean {
+  return (
+    isHITLEnabled(policy) &&
+    policy.deny?.some((pattern) => globToRegex(pattern).test(toolName)) === true
+  );
 }
 
 /**
@@ -252,6 +316,8 @@ export interface PendingActionContext {
   responseMessageId?: string;
   /** Optional TTL (ms). When set, `expiresAt = createdAt + ttlMs`. */
   ttlMs?: number;
+  /** Optional absolute upper bound inherited from an enclosing event binding. */
+  expiresAt?: Date | string | number;
   /** Override actionId; defaults to a fresh uuid. */
   actionId?: string;
   /** SDK interrupt id (`RunInterruptResult.interruptId`) for cross-process resume. */
@@ -661,6 +727,25 @@ export function buildPendingAction(
   ctx: PendingActionContext,
 ): Agents.PendingAction {
   const createdAt = Date.now();
+  const ttlExpiresAt = typeof ctx.ttlMs === 'number' ? createdAt + ctx.ttlMs : undefined;
+  let absoluteExpiresAt: number | undefined;
+  if (typeof ctx.expiresAt === 'number') {
+    absoluteExpiresAt = ctx.expiresAt;
+  } else if (ctx.expiresAt instanceof Date) {
+    absoluteExpiresAt = ctx.expiresAt.getTime();
+  } else if (typeof ctx.expiresAt === 'string') {
+    absoluteExpiresAt = new Date(ctx.expiresAt).getTime();
+  }
+  const finiteAbsoluteExpiresAt = Number.isFinite(absoluteExpiresAt)
+    ? absoluteExpiresAt
+    : undefined;
+  let expiresAt = ttlExpiresAt;
+  if (finiteAbsoluteExpiresAt != null) {
+    expiresAt =
+      ttlExpiresAt == null
+        ? finiteAbsoluteExpiresAt
+        : Math.min(ttlExpiresAt, finiteAbsoluteExpiresAt);
+  }
   return {
     actionId: ctx.actionId ?? randomUUID(),
     streamId: ctx.streamId,
@@ -669,7 +754,7 @@ export function buildPendingAction(
     responseMessageId: ctx.responseMessageId,
     payload,
     createdAt,
-    expiresAt: typeof ctx.ttlMs === 'number' ? createdAt + ctx.ttlMs : undefined,
+    expiresAt,
     interruptId: ctx.interruptId,
     threadId: ctx.threadId,
     requestFingerprint: ctx.requestFingerprint,

@@ -15,6 +15,7 @@ const {
   getOpenIdIssuer,
   getBalanceConfig,
   selectOpenIdRole,
+  getTokenCacheTtlMs,
   getAvatarSaveParams,
   isEmailDomainAllowed,
   getAvatarFileStrategy,
@@ -23,6 +24,7 @@ const {
   getOpenIdRoleSyncOptions,
   getOpenIdRolesForOpenIdSync,
   getLibreChatRolesForOpenIdSync,
+  DEFAULT_OAUTH_TOKEN_TTL_SECONDS,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
@@ -188,7 +190,7 @@ const exchangeAccessTokenIfNeeded = async (config, accessToken, sub, fromCache =
       {
         access_token: grantResponse.access_token,
       },
-      grantResponse.expires_in * 1000,
+      getTokenCacheTtlMs(grantResponse.expires_in, DEFAULT_OAUTH_TOKEN_TTL_SECONDS),
     );
     return grantResponse.access_token;
   }
@@ -370,12 +372,11 @@ async function exchangeTokenForOverage(accessToken, sub) {
     );
   }
 
-  const ttlMs =
-    Number.isFinite(grantResponse.expires_in) && grantResponse.expires_in > 0
-      ? grantResponse.expires_in * 1000
-      : 3600 * 1000;
-
-  await tokensCache.set(cacheKey, { access_token: grantResponse.access_token }, ttlMs);
+  await tokensCache.set(
+    cacheKey,
+    { access_token: grantResponse.access_token },
+    getTokenCacheTtlMs(grantResponse.expires_in, DEFAULT_OAUTH_TOKEN_TTL_SECONDS),
+  );
 
   return grantResponse.access_token;
 }

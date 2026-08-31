@@ -19,6 +19,7 @@ const {
   applyCspNonce,
   createCspPolicy,
   shellCacheHeaders,
+  escapeHtmlAttribute,
   ErrorController,
   QUERY_DEVTOOLS_HEADER,
   createSecurityHeaders,
@@ -33,7 +34,9 @@ const {
   setupGracefulShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  configureAgentEventRuntime,
   GenerationJobManager,
+  createAgentEventTerminalHandler,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -43,6 +46,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { resumeAgentEventDetachedAction } = require('./services/Agents/detachedActionResume');
 const {
   recordExpiredScheduleApproval,
   initializeScheduleErasureSweep,
@@ -65,6 +69,7 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const agentEventMethods = require('~/models');
 
 /** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
 configureFileConfigRegexEngine();
@@ -290,6 +295,11 @@ if (cluster.isMaster) {
   // but an already-fired scheduled generation can still reach HITL here. Settle
   // its durable run when the generic approval runtime expires it.
   GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.setTerminalHostActionHandler(
+    createAgentEventTerminalHandler(agentEventMethods, {
+      resumeDetachedAction: resumeAgentEventDetachedAction,
+    }),
+  );
   GenerationJobManager.initialize();
   /**
    * The master may assign the sweep worker before or after this worker has
@@ -394,6 +404,7 @@ if (cluster.isMaster) {
     // principal) still merges DB `__base__` overrides, which must not drive which hook
     // modules load in every worker (matches api/server/index.js's baseOnly usage).
     const baseAppConfig = await getAppConfig({ baseOnly: true });
+    configureAgentEventRuntime(baseAppConfig?.endpoints?.agents?.eventDriven);
     const toolApproval = baseAppConfig?.endpoints?.agents?.toolApproval;
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
@@ -429,8 +440,8 @@ if (cluster.isMaster) {
       res.vary(QUERY_DEVTOOLS_HEADER);
 
       const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-      const saneLang = lang.replace(/"/g, '&quot;');
-      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+      const saneLang = escapeHtmlAttribute(lang);
+      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, () => `lang="${saneLang}"`);
       updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
 
       /* Nonce last: every injected script above must be stamped too. */
@@ -509,6 +520,8 @@ if (cluster.isMaster) {
     app.use('/api/admin/insights', routes.insights);
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
+    app.use('/api/admin/code-environments', routes.adminCodeEnvironments);
+    app.use('/api/code-environments', routes.codeEnvironments);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
     app.use('/api/api-keys', routes.apiKeys);
@@ -527,7 +540,13 @@ if (cluster.isMaster) {
     app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
-    app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
+    app.use(
+      '/images/',
+      createValidateImageRequest({
+        secureImageLinks: appConfig.secureImageLinks,
+      }),
+      routes.staticRoute,
+    );
     app.use('/api/share', preAuthTenantMiddleware, routes.share);
     app.use('/api/roles', routes.roles);
     app.use('/api/agents', routes.agents);

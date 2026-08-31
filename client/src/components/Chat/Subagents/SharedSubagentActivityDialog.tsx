@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRecoilValue, useResetRecoilState } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@librechat/client';
+import { SubagentActivityScrollSurface } from './SubagentActivity';
+import SubagentConversation from './SubagentConversation';
 import { activeSubagentPanel } from '~/store/subagents';
 import { adaptLivePersistedActivity } from './adapters';
-import SubagentActivity from './SubagentActivity';
 import { useLocalize } from '~/hooks';
 
 /** Public-share fallback for subagent activity already embedded in the shared message payload. */
@@ -67,14 +68,23 @@ export default function SharedSubagentActivityDialog({ shareId }: { shareId?: st
             {activity.title}
           </OGDialogTitle>
         </OGDialogHeader>
-        <SubagentActivity
-          activityId={
-            selection == null
-              ? undefined
-              : `${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`
-          }
-          activity={activity}
-        />
+        <SubagentActivityScrollSurface padded={false}>
+          <SubagentConversation
+            turns={[
+              {
+                taskId:
+                  selection == null
+                    ? 'shared-subagent'
+                    : `${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`,
+                trigger: {
+                  kind: 'parent_dispatch',
+                  summary: selection?.prompt ?? '',
+                },
+                activity,
+              },
+            ]}
+          />
+        </SubagentActivityScrollSurface>
       </OGDialogContent>
     </OGDialog>
   );

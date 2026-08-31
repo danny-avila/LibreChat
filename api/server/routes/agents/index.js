@@ -18,6 +18,10 @@ const {
   exemptAgentTriggerFromIpLimiter,
   captureScheduleFireContext,
   exemptFromUserLimiter: exemptScheduleFromUserLimiter,
+  detectGenerationRetry,
+  isConfirmedGenerationRetry,
+  generationRetryProbeLimiter,
+  generationRetryLimiter,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -31,6 +35,11 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const SteerController = require('~/server/controllers/agents/steer');
+const {
+  AgentQueuedTurnEnqueueController,
+  AgentQueuedTurnListController,
+  AgentQueuedTurnCancelController,
+} = require('~/server/controllers/agents/queuedTurns');
 const {
   GENERATION_PROTOCOL_HEADER,
   GENERATION_PROTOCOL_V2,
@@ -64,10 +73,7 @@ function hasTenantMismatch(job, user) {
  * validation, not-found, and authorization envelopes; it never leaks an
  * existing job's marker to an unauthorized caller. */
 function negotiateRequestGenerationProtocol(req) {
-  return Math.min(
-    getRequestedGenerationProtocol(req),
-    getServerGenerationProtocol(GenerationJobManager),
-  );
+  return Math.min(getRequestedGenerationProtocol(req), getServerGenerationProtocol());
 }
 
 /** Every generation-control JSON envelope carries the exact numeric protocol
@@ -94,9 +100,7 @@ async function sendJoblessStatus(req, res, conversationId) {
   );
   const generationProtocolVersion = Math.min(
     requestedProtocolVersion,
-    claimed.steers.length > 0
-      ? claimed.generationProtocolVersion
-      : getServerGenerationProtocol(GenerationJobManager),
+    claimed.steers.length > 0 ? claimed.generationProtocolVersion : getServerGenerationProtocol(),
   );
   res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
   return res.json({
@@ -229,7 +233,12 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     logger.warn(`[AgentStream] Refusing stream with invalid generation identity: ${streamId}`);
     return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
   }
-  const streamTelemetry = createSseStreamTelemetry({ req, res, streamId, isResume });
+  const streamTelemetry = createSseStreamTelemetry({
+    req,
+    res,
+    streamId,
+    isResume,
+  });
 
   res.setHeader('Content-Encoding', 'identity');
   res.setHeader('Content-Type', 'text/event-stream');
@@ -384,7 +393,9 @@ router.get('/chat/stream/:streamId', async (req, res) => {
           final: true,
           reconcile: true,
           reconcileReason: generationReplaced ? 'generation_replaced' : 'terminal_payload_missing',
-          ...(expectedGenerationTerminal && { terminalStatus: currentJob.status }),
+          ...(expectedGenerationTerminal && {
+            terminalStatus: currentJob.status,
+          }),
           generationCreatedAt: authorizedGenerationCreatedAt,
           conversation: {
             conversationId: currentJob?.conversationId ?? job.conversationId ?? streamId,
@@ -976,7 +987,9 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
         // Steers that never reached an injection boundary — restored client-side
         // as queued chips so the user's words aren't dropped with the abort.
         ...(!abortResult.persistenceFailed &&
-          abortResult.pendingSteers?.length > 0 && { pendingSteers: abortResult.pendingSteers }),
+          abortResult.pendingSteers?.length > 0 && {
+            pendingSteers: abortResult.pendingSteers,
+          }),
       });
     }
 
@@ -1077,17 +1090,66 @@ router.post(
   SteerController.SteerArmController,
 );
 
+router.post(
+  '/chat/queued-turns',
+  configMiddleware,
+  ...steerLimiters,
+  createMessageFilterPii({
+    getConfig: (req) => req.config?.messageFilter?.pii,
+    getFilters: (req) => req.config?.filters,
+    getFiles,
+  }),
+  moderateText,
+  AgentQueuedTurnEnqueueController,
+);
+/** Synchronizing durable queue state is read-only and polled while work is
+ * pending. It must not consume the model-submission admission budget. */
+router.get('/chat/queued-turns', configMiddleware, AgentQueuedTurnListController);
+router.delete(
+  '/chat/queued-turns/:queuedTurnId',
+  configMiddleware,
+  ...steerLimiters,
+  AgentQueuedTurnCancelController,
+);
+
 router.use('/', v1);
 
 const chatRouter = express.Router();
+const useMessageIpLimiter = isEnabled(LIMIT_MESSAGE_IP);
+const useMessageUserLimiter = isEnabled(LIMIT_MESSAGE_USER);
 chatRouter.use(configMiddleware);
-
-if (isEnabled(LIMIT_MESSAGE_IP)) {
-  chatRouter.use(unless(exemptAgentTriggerFromIpLimiter, messageIpLimiter));
+if (useMessageIpLimiter || useMessageUserLimiter) {
+  chatRouter.use(
+    unless(
+      (req) => exemptAgentTriggerFromIpLimiter(req) || exemptScheduleFromUserLimiter(req),
+      generationRetryProbeLimiter,
+    ),
+  );
+  chatRouter.use(detectGenerationRetry);
+  chatRouter.use(
+    unless(
+      (req) => exemptAgentTriggerFromIpLimiter(req) || exemptScheduleFromUserLimiter(req),
+      generationRetryLimiter,
+    ),
+  );
 }
 
-if (isEnabled(LIMIT_MESSAGE_USER)) {
-  chatRouter.use(unless(exemptScheduleFromUserLimiter, messageUserLimiter));
+if (useMessageIpLimiter) {
+  chatRouter.use(
+    unless(
+      (req) => exemptAgentTriggerFromIpLimiter(req) || isConfirmedGenerationRetry(req),
+      messageIpLimiter,
+    ),
+  );
+}
+
+if (useMessageUserLimiter) {
+  chatRouter.use(
+    unless(
+      (req) => exemptScheduleFromUserLimiter(req) || isConfirmedGenerationRetry(req),
+      messageUserLimiter,
+    ),
+  );
 }
 
 chatRouter.use('/', chat);

@@ -4,6 +4,7 @@ import {
   applyModelSpecPreset,
   findModelSpecByName,
   isModelSpecEndpointMatch,
+  resolveModelSpecForEndpoint,
   resolveModelSpecPromptPrefixVariables,
   sanitizeModelSpecs,
 } from './index';
@@ -181,6 +182,37 @@ describe('modelSpecs helpers', () => {
     expect(findModelSpecByName({ list: [modelSpec] }, 'guarded-openai')).toBe(modelSpec);
     expect(isModelSpecEndpointMatch(modelSpec, EModelEndpoint.openAI)).toBe(true);
     expect(isModelSpecEndpointMatch(modelSpec, EModelEndpoint.google)).toBe(false);
+  });
+
+  it('should resolve a model spec only for its selected endpoint', () => {
+    const modelSpec: TModelSpec = {
+      name: 'restricted-agent',
+      label: 'Restricted Agent',
+      preset: { agent_id: 'agent_restricted' },
+    } as TModelSpec;
+    const modelSpecs = { list: [modelSpec] };
+
+    expect(
+      resolveModelSpecForEndpoint({
+        modelSpecs,
+        spec: 'restricted-agent',
+        endpoint: EModelEndpoint.agents,
+      }),
+    ).toEqual({ modelSpec });
+    expect(
+      resolveModelSpecForEndpoint({
+        modelSpecs,
+        spec: 'missing-agent',
+        endpoint: EModelEndpoint.agents,
+      }),
+    ).toEqual({ error: 'invalid-model-spec' });
+    expect(
+      resolveModelSpecForEndpoint({
+        modelSpecs,
+        spec: 'restricted-agent',
+        endpoint: EModelEndpoint.openAI,
+      }),
+    ).toEqual({ error: 'model-spec-mismatch' });
   });
 
   /**

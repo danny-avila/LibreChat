@@ -248,6 +248,41 @@ describe('GenerationJobManager startup telemetry', () => {
     await manager.destroy();
   });
 
+  it('waits for provider-owner drain before settling an event-driven abort', async () => {
+    const manager = createManager();
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'stream-event-provider-drain-wait';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'delivery-1' },
+    });
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, job.metadata.providerExecutionId!),
+    ).resolves.toBe(true);
+
+    let abortSettled = false;
+    const aborting = manager.abortJob(streamId).finally(() => (abortSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(job.abortController.signal.aborted).toBe(true);
+    expect(abortSettled).toBe(false);
+    expect(handler).not.toHaveBeenCalled();
+
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await expect(aborting).resolves.toMatchObject({ success: true });
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({ agentEventDeliveryKey: 'delivery-1', status: 'aborted' }),
+      [],
+      expect.any(Array),
+    );
+    await manager.destroy();
+  });
+
   it('finishes a destructive abort immediately when the provider never started', async () => {
     const manager = createManager();
     const streamId = 'stream-provider-never-started';
@@ -1606,6 +1641,10 @@ describe('GenerationJobManager startup telemetry', () => {
 
       expect(onError).not.toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
       expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(0);
+      /** Shutdown finishes cancelling on the tick after `destroy()` resolves, so settle the
+       * queue before counting. Without this the count only came back to the baseline when
+       * something else — a console write from the logger — happened to yield first. */
+      await jest.advanceTimersByTimeAsync(0);
       expect(jest.getTimerCount()).toBe(timerCountBeforeInitialize);
 
       await jest.advanceTimersByTimeAsync(

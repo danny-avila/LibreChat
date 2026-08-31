@@ -13,6 +13,7 @@ import {
   LocalStorageKeys,
   PermissionBits,
   removeCodeExecutionCaller,
+  resolveModelCatalogKey,
   resolveStatefulCodeEnvironment,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -83,6 +84,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     hide_sequential_outputs,
     stateful_code_sessions,
     stateful_code_environment,
+    code_environment_id,
     recursion_limit,
     category,
     support_contact,
@@ -123,6 +125,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       hide_sequential_outputs,
       stateful_code_sessions: normalizedStatefulCodeSessions,
       stateful_code_environment: normalizedStatefulCodeEnvironment,
+      code_environment_id: agent_id ? code_environment_id : (code_environment_id ?? undefined),
       recursion_limit,
       category,
       support_contact,
@@ -613,7 +616,7 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
-      if (!(models[provider] ?? []).includes(model)) {
+      if (!(models[resolveModelCatalogKey(provider, models)] ?? []).includes(model)) {
         return showToast({
           message: localize('com_error_model_not_found'),
           status: 'error',

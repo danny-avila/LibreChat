@@ -12,6 +12,7 @@ import {
   eReasoningModeSchema,
   eReasoningContextSchema,
   subagentThreadLineageSchema,
+  getGoogleThinkingBudgetBounds,
 } from './schemas';
 
 describe('anthropicSettings', () => {
@@ -516,6 +517,37 @@ describe('googleSettings', () => {
     it('allows values within the legacy 8K limit', () => {
       expect(set(4096, 'gemini-1.5-flash')).toBe(4096);
       expect(set(8192, 'gemini-2.0-flash')).toBe(8192);
+    });
+  });
+
+  describe('getGoogleThinkingBudgetBounds()', () => {
+    it('returns the documented Pro floor and ceiling', () => {
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-pro')).toEqual({ min: 128, max: 32768 });
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-pro-preview-05-06')).toEqual({
+        min: 128,
+        max: 32768,
+      });
+    });
+
+    it('returns the documented Flash floor and ceiling', () => {
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-flash')).toEqual({ min: 0, max: 24576 });
+    });
+
+    it('returns the documented Flash Lite floor and ceiling', () => {
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-flash-lite')).toEqual({
+        min: 512,
+        max: 24576,
+      });
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-flash-lite-preview-09-2025')).toEqual({
+        min: 512,
+        max: 24576,
+      });
+    });
+
+    it('does not apply 2.5 bounds to other Gemini families', () => {
+      expect(getGoogleThinkingBudgetBounds('gemini-2.0-flash')).toBeUndefined();
+      expect(getGoogleThinkingBudgetBounds('gemini-3-pro')).toBeUndefined();
+      expect(getGoogleThinkingBudgetBounds('gemini-1.5-pro')).toBeUndefined();
     });
   });
 

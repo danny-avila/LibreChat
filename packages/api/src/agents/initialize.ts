@@ -48,6 +48,7 @@ import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { TextContentFragment } from '../protection/types';
 import type { TFilterFilesByAgentAccess } from './resources';
 import type { MCPToolAlias } from '~/tools/classification';
+import type { AgentExecutionContext } from './runtime';
 import {
   injectSkillCatalog,
   resolveSkillCatalog,
@@ -94,9 +95,10 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { createRequestAgentExecutionContext } from './runtime';
+import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
-import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
@@ -195,13 +197,13 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
  * partial from a bound agent-event continuation cannot speak for the database.
  */
 export function readResolvedConversationFiles(
-  req: Pick<ServerRequest, 'resolvedConversation'>,
+  runtime: Pick<AgentExecutionContext, 'resolvedConversation'>,
   conversationId: string,
 ): string[] | undefined {
-  if (!Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
+  if (!Object.prototype.hasOwnProperty.call(runtime, 'resolvedConversation')) {
     return undefined;
   }
-  const resolved = req.resolvedConversation;
+  const resolved = runtime.resolvedConversation;
   if (resolved === null) {
     return [];
   }
@@ -215,8 +217,8 @@ export function readResolvedConversationFiles(
   return resolved.files ?? [];
 }
 
-function getMaxCatalogSkills(req: ServerRequest): number | undefined {
-  const endpoints = req.config?.endpoints as
+function getMaxCatalogSkills(runtime: AgentExecutionContext): number | undefined {
+  const endpoints = runtime.appConfig?.endpoints as
     | Record<string, { skills?: { maxCatalogSkills?: number } } | undefined>
     | undefined;
   return endpoints?.[EModelEndpoint.agents]?.skills?.maxCatalogSkills;
@@ -403,6 +405,10 @@ export type InitializedAgent = Agent & {
    * own and are never listed here.
    */
   intentToolNames?: string[];
+  /** Marker-verified tool names whose model-authored intent labels are safe compaction guidance. */
+  semanticIntentToolNames?: string[];
+  /** Tool names whose unverified schemas veto global semantic-intent trust for same-name calls. */
+  semanticIntentBlockedToolNames?: string[];
   /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
    *  registered for this agent. Authoritative LibreChat-only signal of the
    *  inline memory opt-in for the execution path, since some contexts hold the
@@ -510,10 +516,12 @@ export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
  * Matches the CJS signature from api/server/services/Endpoints/agents/agent.js
  */
 export interface InitializeAgentParams {
-  /** Request object */
-  req: ServerRequest;
-  /** Response object */
-  res: ServerResponse;
+  /** Explicit transport-free execution state. */
+  runtime?: AgentExecutionContext;
+  /** Request-backed compatibility adapter for callers not yet migrated. */
+  req?: ServerRequest;
+  /** Deprecated response adapter retained only for source compatibility. */
+  res?: ServerResponse;
   /** Agent to initialize */
   agent: Agent;
   /** Conversation ID (optional) */
@@ -526,8 +534,6 @@ export interface InitializeAgentParams {
   requestFiles?: IMongoFile[];
   /** Function to load agent tools */
   loadTools?: (params: {
-    req: ServerRequest;
-    res: ServerResponse;
     provider: string;
     agentId: string;
     tools: string[];
@@ -713,8 +719,6 @@ export async function initializeAgent(
   db?: InitializeAgentDbMethods,
 ): Promise<InitializedAgent> {
   const {
-    req,
-    res,
     agent,
     loadTools,
     requestFiles = [],
@@ -725,9 +729,15 @@ export async function initializeAgent(
     allowedProviders,
     isInitialAgent = false,
   } = params;
-  const requestFileOwnerId = req.user?.id;
+  const runtime =
+    params.runtime ?? (params.req ? createRequestAgentExecutionContext(params.req) : null);
+  if (runtime == null) {
+    throw new Error('initializeAgent requires an explicit execution context');
+  }
+  const { user, appConfig } = runtime;
+  const requestFileOwnerId = user?.id;
   const requestFileOwnerScope: FileOwnerScope | undefined = requestFileOwnerId
-    ? { userId: requestFileOwnerId, tenantId: req.user?.tenantId }
+    ? { userId: requestFileOwnerId, tenantId: user?.tenantId }
     : undefined;
 
   if (!db) {
@@ -754,7 +764,7 @@ export async function initializeAgent(
     agentTraversalError = error;
   }
   const agentDefinitionFinding = inspectContent(agentFragments, {
-    filters: req.config?.filters,
+    filters: appConfig?.filters,
   });
   if (agentDefinitionFinding != null) {
     throw new ContentFilterError(agentDefinitionFinding);
@@ -763,7 +773,7 @@ export async function initializeAgent(
     agentTraversalError != null &&
     isContentTraversalProtected({
       error: agentTraversalError,
-      filters: req.config?.filters,
+      filters: appConfig?.filters,
     })
   ) {
     throw agentTraversalError;
@@ -778,7 +788,7 @@ export async function initializeAgent(
    * defer/programmatic classification, the background and intent passes —
    * reads `agent.tools` / `agent.tool_options` after this point.
    */
-  const configRawServerNames = Object.keys(req.config?.mcpConfig ?? {});
+  const configRawServerNames = Object.keys(appConfig?.mcpConfig ?? {});
   const configNeedsNormalization = configRawServerNames.some(
     (name) => normalizeServerName(name) !== name,
   );
@@ -802,7 +812,7 @@ export async function initializeAgent(
       return Promise.resolve(null);
     }
     healNamesPromise ??= db
-      .getAccessibleMcpServerNames(req.user?.id, req.user?.role)
+      .getAccessibleMcpServerNames(user?.id, user?.role)
       /** The merged registry read tolerates config-server init failures and
        *  can silently omit config-only servers; the snapshot-derived config
        *  names restore them so the audit stays genuinely complete. */
@@ -870,7 +880,7 @@ export async function initializeAgent(
             names: params.manualSkills,
             getSkillByName: db.getSkillByName,
             accessibleSkillIds: params.accessibleSkillIds!,
-            userId: req.user?.id,
+            userId: user?.id,
             skillStates: params.skillStates,
             defaultActiveOnShare: params.defaultActiveOnShare,
           })
@@ -879,19 +889,19 @@ export async function initializeAgent(
         ? resolveAlwaysApplySkills({
             listAlwaysApplySkills: db.listAlwaysApplySkills,
             accessibleSkillIds: params.accessibleSkillIds!,
-            userId: req.user?.id,
+            userId: user?.id,
             skillStates: params.skillStates,
             defaultActiveOnShare: params.defaultActiveOnShare,
           })
         : Promise.resolve<ResolvedAlwaysApplySkill[] | undefined>(undefined),
-      hasActivePiiFields(req.config?.filters?.skills?.pii, ['name', 'description'])
+      hasActivePiiFields(appConfig?.filters?.skills?.pii, ['name', 'description'])
         ? resolveSkillCatalog({
             accessibleSkillIds: params.accessibleSkillIds!,
             listSkillsByAccess: db.listSkillsByAccess,
-            userId: req.user?.id,
+            userId: user?.id,
             skillStates: params.skillStates,
             defaultActiveOnShare: params.defaultActiveOnShare,
-            maxCatalogSkills: getMaxCatalogSkills(req),
+            maxCatalogSkills: getMaxCatalogSkills(runtime),
           })
         : Promise.resolve<ResolvedSkillCatalog | undefined>(undefined),
     ]);
@@ -926,7 +936,7 @@ export async function initializeAgent(
           (skill) => skill.disableModelInvocation !== true,
         ) ?? []),
       ],
-      req.config?.filters,
+      appConfig?.filters,
     );
   }
 
@@ -960,7 +970,7 @@ export async function initializeAgent(
   if (effectiveStatefulSessions) {
     const allowedStatefulCodeEnvironments = resolveAllowedStatefulCodeEnvironments(
       params.allowedStatefulCodeEnvironments ??
-        req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
+        appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
     );
     if (!allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment)) {
       throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
@@ -969,6 +979,8 @@ export async function initializeAgent(
   const codeExecutionContext = resolveCodeExecutionContext({
     statefulSessions: effectiveStatefulSessions,
     environment: statefulCodeEnvironment,
+    environmentId: agent.code_environment_id,
+    environments: appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments,
     userId: requestFileOwnerId,
     agentId: agent.id,
     conversationId,
@@ -1016,7 +1028,7 @@ export async function initializeAgent(
      * every code-output ref.
      */
     const [convoFileIds, threadMessages] = await Promise.all([
-      readResolvedConversationFiles(req, conversationId) ?? db.getConvoFiles(conversationId),
+      readResolvedConversationFiles(runtime, conversationId) ?? db.getConvoFiles(conversationId),
       needsThreadWalk && getThreadMessages
         ? getThreadMessages({ conversationId }, 'messageId parentMessageId files attachments')
         : null,
@@ -1124,7 +1136,7 @@ export async function initializeAgent(
       endpointType = EModelEndpoint.custom;
     }
 
-    currentFiles = filterFilesByEndpointConfig(req, {
+    currentFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
       files: currentFiles,
       endpoint: agent.endpoint ?? '',
       endpointType,
@@ -1132,7 +1144,7 @@ export async function initializeAgent(
   }
 
   assertModelBoundContent({
-    filters: req.config?.filters,
+    filters: appConfig?.filters,
     files: currentFiles,
   });
 
@@ -1145,13 +1157,13 @@ export async function initializeAgent(
   if (requestFileOwnerId && requestUsageFiles.length > 0) {
     await db.updateFilesUsage(requestUsageFiles, undefined, {
       user: requestFileOwnerId,
-      tenantId: req.user?.tenantId,
+      tenantId: user?.tenantId,
     });
   }
   if (requestFileOwnerId && toolUsageFiles.length > 0) {
     await db.updateFilesUsage(toolUsageFiles, undefined, {
       user: requestFileOwnerId,
-      tenantId: req.user?.tenantId,
+      tenantId: user?.tenantId,
     });
   }
 
@@ -1161,10 +1173,10 @@ export async function initializeAgent(
     agentContextAttachments: primedAgentContextAttachments,
     tool_resources,
   } = await primeResources({
-    req: req as never,
+    principal: user,
     getFiles: db.getFiles as never,
     filterFiles: db.filterFilesByAgentAccess,
-    appConfig: req.config,
+    appConfig,
     agentId: agent.id,
     attachments: currentFiles
       ? (Promise.resolve(currentFiles) as unknown as Promise<TFile[]>)
@@ -1257,8 +1269,6 @@ export async function initializeAgent(
    */
   const callLoadTools = async (tools: string[]) =>
     loadTools?.({
-      req,
-      res,
       provider,
       agentId: agent.id,
       tools,
@@ -1351,7 +1361,7 @@ export async function initializeAgent(
 
   const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
     provider,
-    appConfig: req.config,
+    appConfig,
   });
   if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
@@ -1363,7 +1373,11 @@ export async function initializeAgent(
   };
 
   const options: InitializeResultBase = await getOptions({
-    req,
+    runtime: {
+      appConfig,
+      user,
+      requestBody: runtime.requestBody,
+    },
     endpoint: provider,
     model_parameters: finalModelOptions,
     db,
@@ -1480,7 +1494,7 @@ export async function initializeAgent(
     const memoryResult = registerMemoryTools({
       toolRegistry,
       toolDefinitions,
-      validKeys: req.config?.memory?.validKeys,
+      validKeys: appConfig?.memory?.validKeys,
     });
     toolDefinitions = memoryResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.memory, memoryResult.toolNames);
@@ -1521,6 +1535,8 @@ export async function initializeAgent(
   }
 
   let intentToolNames: string[] | undefined;
+  let semanticIntentToolNames: string[] | undefined;
+  let semanticIntentBlockedToolNames: string[] | undefined;
 
   /**
    * Inject the `run_in_background` param into eligible opted-in tools and
@@ -1535,7 +1551,7 @@ export async function initializeAgent(
      *  while `mcpConfig` keys the original name, so index the ephemeral
      *  servers by their normalized form. */
     const ephemeralServerNames = new Set<string>();
-    for (const [serverName, serverConfig] of Object.entries(req.config?.mcpConfig ?? {})) {
+    for (const [serverName, serverConfig] of Object.entries(appConfig?.mcpConfig ?? {})) {
       if (serverConfig != null && requiresEphemeralUserConnection(serverConfig)) {
         ephemeralServerNames.add(normalizeServerName(serverName));
       }
@@ -1543,7 +1559,7 @@ export async function initializeAgent(
     /** Resolve the boundary against every configured server, not just the
      *  ephemeral subset: a non-ephemeral name ending in an ephemeral one would
      *  otherwise be misread as ephemeral. */
-    const allServerNames = Object.keys(req.config?.mcpConfig ?? {}).map(normalizeServerName);
+    const allServerNames = Object.keys(appConfig?.mcpConfig ?? {}).map(normalizeServerName);
     const oauthActionNames = new Set(oauthActionToolNames ?? []);
     const backgroundResult = applyBackgroundToolCalls({
       toolDefinitions,
@@ -1616,9 +1632,9 @@ export async function initializeAgent(
   if (agent.instructions && agent.instructions !== '') {
     const resolvedInstructions = replaceSpecialVars({
       text: agent.instructions,
-      user: req.user ? (req.user as unknown as TUser) : null,
-      now: req.conversationCreatedAt,
-      timezone: req.body?.timezone,
+      user: user ? (user as unknown as TUser) : null,
+      now: runtime.conversationCreatedAt,
+      timezone: runtime.requestBody.timezone,
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
       agent.instructions = undefined;
@@ -1656,10 +1672,10 @@ export async function initializeAgent(
       listSkillsByAccess: db?.listSkillsByAccess,
       codeEnvAvailable: effectiveCodeEnvAvailable,
       statefulSessions: effectiveStatefulSessions,
-      userId: req.user?.id,
+      userId: user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
-      maxCatalogSkills: getMaxCatalogSkills(req),
+      maxCatalogSkills: getMaxCatalogSkills(runtime),
       resolvedCatalog: resolvedSkillCatalog,
     });
     toolDefinitions = skillResult.toolDefinitions;
@@ -1701,6 +1717,12 @@ export async function initializeAgent(
     capabilityToolNames,
   });
   toolDefinitions = intentSanitized.toolDefinitions;
+  if (intentSanitized.semanticIntentToolNames.length > 0) {
+    semanticIntentToolNames = intentSanitized.semanticIntentToolNames;
+  }
+  if (intentSanitized.semanticIntentBlockedToolNames.length > 0) {
+    semanticIntentBlockedToolNames = intentSanitized.semanticIntentBlockedToolNames;
+  }
 
   const hasFinalAgentTools =
     (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
@@ -1733,7 +1755,7 @@ export async function initializeAgent(
       ? finalAttachments
       : requestAttachments.concat(agentContextAttachments);
 
-  const endpointConfigs = req.config?.endpoints;
+  const endpointConfigs = appConfig?.endpoints;
   const providerConfig =
     customEndpointConfig ?? endpointConfigs?.[agent.provider as keyof typeof endpointConfigs];
   const providerMaxToolResultChars =
@@ -1764,6 +1786,8 @@ export async function initializeAgent(
     mcpToolAliases,
     backgroundToolNames,
     intentToolNames,
+    semanticIntentToolNames,
+    semanticIntentBlockedToolNames,
     actionsEnabled,
     accessibleMcpServerNames: resolvedAuditNames,
     baseContextTokens,

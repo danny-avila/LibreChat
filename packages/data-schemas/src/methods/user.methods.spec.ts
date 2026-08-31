@@ -425,6 +425,140 @@ describe('User Methods - Database Tests', () => {
     });
   });
 
+  describe('claimSamlIdentity', () => {
+    test('should atomically bind an unbound SAML user', async () => {
+      const user = await User.create({
+        name: 'Legacy SAML User',
+        email: 'legacy-saml@example.com',
+        provider: 'saml',
+      });
+
+      const updated = await methods.claimSamlIdentity(user._id?.toString() ?? '', 'saml-123', {
+        name: 'Current SAML User',
+      });
+
+      expect(updated).toMatchObject({
+        name: 'Current SAML User',
+        samlId: 'saml-123',
+      });
+    });
+
+    test('should preserve an existing different SAML binding', async () => {
+      const user = await User.create({
+        email: 'bound-saml@example.com',
+        provider: 'saml',
+        samlId: 'original-saml-id',
+      });
+
+      const updated = await methods.claimSamlIdentity(user._id?.toString() ?? '', 'new-saml-id', {
+        name: 'Untrusted Name',
+      });
+      const stored = await User.findById(user._id).lean<t.IUser>();
+
+      expect(updated).toBeNull();
+      expect(stored).toMatchObject({ samlId: 'original-saml-id' });
+      expect(stored?.name).not.toBe('Untrusted Name');
+    });
+
+    test('should update a user when the SAML binding already matches', async () => {
+      const user = await User.create({
+        email: 'matching-saml@example.com',
+        provider: 'saml',
+        samlId: 'saml-123',
+      });
+
+      const updated = await methods.claimSamlIdentity(user._id?.toString() ?? '', 'saml-123', {
+        name: 'Updated Name',
+      });
+
+      expect(updated).toMatchObject({
+        name: 'Updated Name',
+        samlId: 'saml-123',
+      });
+    });
+
+    test('should not convert a user registered with a different provider', async () => {
+      const user = await User.create({
+        email: 'local-user@example.com',
+        provider: 'local',
+      });
+
+      const updated = await methods.claimSamlIdentity(user._id?.toString() ?? '', 'saml-123', {});
+      const stored = await User.findById(user._id).lean<t.IUser>();
+
+      expect(updated).toBeNull();
+      expect(stored).toMatchObject({ provider: 'local' });
+      expect(stored?.samlId).toBeUndefined();
+    });
+
+    test('should allow only one concurrent first-time SAML binding', async () => {
+      const user = await User.create({
+        email: 'concurrent-saml@example.com',
+        provider: 'saml',
+      });
+      const userId = user._id?.toString() ?? '';
+
+      const results = await Promise.all([
+        methods.claimSamlIdentity(userId, 'saml-a', { name: 'Identity A' }),
+        methods.claimSamlIdentity(userId, 'saml-b', { name: 'Identity B' }),
+      ]);
+      const stored = await User.findById(user._id).lean<t.IUser>();
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      expect(['saml-a', 'saml-b']).toContain(stored?.samlId);
+      expect(results.find(Boolean)?.samlId).toBe(stored?.samlId);
+    });
+
+    test('should invalidate cached auth documents after a successful claim', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        email: 'cached-saml@example.com',
+        provider: 'saml',
+      });
+      const userId = user._id?.toString() ?? '';
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await methodsWithCache.claimSamlIdentity(userId, 'saml-123', {});
+
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
+    test('should not invalidate cached auth documents after a rejected claim', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        email: 'cached-bound-saml@example.com',
+        provider: 'saml',
+        samlId: 'original-saml-id',
+      });
+      const cache = {
+        get: jest.fn(),
+        delete: jest.fn(),
+      };
+      const getCache = jest.fn().mockReturnValue(cache);
+      const methodsWithCache = createUserMethods(mongoose, { getCache });
+
+      const updated = await methodsWithCache.claimSamlIdentity(
+        user._id?.toString() ?? '',
+        'different-saml-id',
+        {},
+      );
+
+      expect(updated).toBeNull();
+      expect(getCache).not.toHaveBeenCalled();
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(cache.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getUserById', () => {
     test('should get user by ID', async () => {
       const user = await User.create({

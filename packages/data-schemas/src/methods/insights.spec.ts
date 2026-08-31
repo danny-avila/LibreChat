@@ -741,8 +741,9 @@ describe('Insights methods', () => {
     expect(crossTenant.latest).toEqual(expect.objectContaining({ conversations: [], pages: 1 }));
   });
 
-  it('omits the unfiltered recent-conversation facet during searches', async () => {
-    const aggregateSpy = jest.spyOn(mongoose.models.Conversation, 'aggregate');
+  it('uses focused DocumentDB-compatible aggregations during searches', async () => {
+    const conversationAggregateSpy = jest.spyOn(mongoose.models.Conversation, 'aggregate');
+    const messageAggregateSpy = jest.spyOn(mongoose.models.Message, 'aggregate');
 
     try {
       await createInsightsMethods(mongoose).getInsights({
@@ -751,19 +752,46 @@ describe('Insights methods', () => {
         search: 'conversation-id',
       });
 
-      type FacetStage = { $facet?: Record<string, unknown> };
-      const facets = aggregateSpy.mock.calls
-        .flatMap(([pipeline]) => (pipeline as FacetStage[]).map((stage) => stage.$facet))
-        .filter((facet): facet is Record<string, unknown> => facet != null);
-      const unfilteredFacet = facets.find((facet) => 'daily' in facet);
-      const searchedFacet = facets.find(
-        (facet) => 'recentConversations' in facet && !('daily' in facet),
+      type AggregationStage = {
+        $count?: string;
+        $facet?: Record<string, unknown>;
+        $limit?: number;
+        $lookup?: Record<string, unknown>;
+        $setWindowFields?: Record<string, unknown>;
+        $unionWith?: unknown;
+      };
+      const conversationPipelines = conversationAggregateSpy.mock.calls.map(
+        ([pipeline]) => pipeline as AggregationStage[],
+      );
+      const allStages = [
+        ...conversationPipelines.flat(),
+        ...messageAggregateSpy.mock.calls.flatMap(([pipeline]) => pipeline as AggregationStage[]),
+      ];
+      const searchedPipelines = conversationPipelines.filter((pipeline) =>
+        pipeline.some((stage) => stage.$lookup),
+      );
+      const unfilteredRecentPipelines = conversationPipelines.filter(
+        (pipeline) =>
+          !pipeline.some((stage) => stage.$lookup) && pipeline.some((stage) => stage.$limit),
       );
 
-      expect(unfilteredFacet).not.toHaveProperty('recentConversations');
-      expect(searchedFacet).toHaveProperty('recentConversations');
+      expect(
+        allStages.every(
+          (stage) =>
+            stage.$facet == null && stage.$setWindowFields == null && stage.$unionWith == null,
+        ),
+      ).toBe(true);
+      expect(searchedPipelines).toHaveLength(2);
+      expect(searchedPipelines.some((pipeline) => pipeline.some((stage) => stage.$count))).toBe(
+        true,
+      );
+      expect(searchedPipelines.some((pipeline) => pipeline.some((stage) => stage.$limit))).toBe(
+        true,
+      );
+      expect(unfilteredRecentPipelines).toHaveLength(0);
     } finally {
-      aggregateSpy.mockRestore();
+      conversationAggregateSpy.mockRestore();
+      messageAggregateSpy.mockRestore();
     }
   });
 

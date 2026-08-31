@@ -4,6 +4,11 @@ process.env.CREDS_KEY =
   process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 const CENTRAL_EXPORT_ATTRIBUTE = 'librechat.langfuse.central_export.enabled';
+const exportTelemetry = (plan: string, reason: string) => ({
+  'librechat.langfuse.export_plan': plan,
+  'librechat.langfuse.export_reason': reason,
+  'librechat.tenant.id': 'tenant-1',
+});
 const envKeys = [
   'LANGFUSE_PUBLIC_KEY',
   'LANGFUSE_SECRET_KEY',
@@ -181,6 +186,7 @@ describe('buildLangfuseConfig', () => {
       secretKey: 'sk-tenant-1',
       baseUrl: 'http://langfuse-fanout-collector:4318/tenant/eu',
       librechatTraceAttributes: {
+        ...exportTelemetry('tenant_fanout', 'configured'),
         'librechat.langfuse.tenant_export.enabled': 'true',
         'librechat.langfuse.destination': 'eu',
       },
@@ -208,6 +214,7 @@ describe('buildLangfuseConfig', () => {
     expect(config).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://langfuse-fanout-collector:4318',
+      librechatTraceAttributes: exportTelemetry('central_only', 'missing_credentials'),
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -233,6 +240,7 @@ describe('buildLangfuseConfig', () => {
     expect(config).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://langfuse-fanout-collector:4318',
+      librechatTraceAttributes: exportTelemetry('central_only', 'missing_credentials'),
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -249,8 +257,46 @@ describe('buildLangfuseConfig', () => {
       publicKey: 'pk-central',
       secretKey: 'sk-central',
       baseUrl: 'https://central.langfuse.example',
+      librechatTraceAttributes: exportTelemetry('central_only', 'fanout_disabled'),
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('records when fanout is enabled without a collector URL', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(buildLangfuseConfig({ tenantId: 'tenant-1' })).toMatchObject({
+      publicKey: 'pk-central',
+      secretKey: 'sk-central',
+      librechatTraceAttributes: exportTelemetry('central_only', 'collector_unconfigured'),
+    });
+  });
+
+  it('records when an enabled tenant connection has an unknown destination', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-tenant-1',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'unknown-destination',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toMatchObject({
+      baseUrl: 'http://collector-from-env:4318',
+      librechatTraceAttributes: exportTelemetry('central_only', 'destination_unconfigured'),
     });
   });
 
@@ -271,6 +317,7 @@ describe('buildLangfuseConfig', () => {
       enabled: false,
       librechatTraceAttributes: {
         [CENTRAL_EXPORT_ATTRIBUTE]: 'false',
+        ...exportTelemetry('disabled', 'fanout_disabled'),
       },
       tags: ['tenant:tenant-1'],
     });
@@ -294,6 +341,7 @@ describe('buildLangfuseConfig', () => {
       enabled: false,
       librechatTraceAttributes: {
         [CENTRAL_EXPORT_ATTRIBUTE]: 'false',
+        ...exportTelemetry('disabled', 'tenant_disabled'),
       },
       tags: ['tenant:tenant-1'],
     });
@@ -326,6 +374,7 @@ describe('buildLangfuseConfig', () => {
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       librechatTraceAttributes: {
         [CENTRAL_EXPORT_ATTRIBUTE]: 'false',
+        ...exportTelemetry('tenant_fanout', 'configured'),
         'librechat.langfuse.tenant_export.enabled': 'true',
         'librechat.langfuse.destination': 'us',
       },
@@ -359,6 +408,7 @@ describe('buildLangfuseConfig', () => {
       enabled: false,
       librechatTraceAttributes: {
         [CENTRAL_EXPORT_ATTRIBUTE]: 'false',
+        ...exportTelemetry('disabled', 'emergency_disabled'),
       },
       tags: ['tenant:tenant-1'],
     });
@@ -385,6 +435,7 @@ describe('buildLangfuseConfig', () => {
     ).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
+      librechatTraceAttributes: exportTelemetry('central_only', 'tenant_disabled'),
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -410,6 +461,7 @@ describe('buildLangfuseConfig', () => {
     ).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
+      librechatTraceAttributes: exportTelemetry('central_only', 'tenant_disabled'),
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -436,6 +488,7 @@ describe('buildLangfuseConfig', () => {
       enabled: false,
       librechatTraceAttributes: {
         [CENTRAL_EXPORT_ATTRIBUTE]: 'false',
+        ...exportTelemetry('disabled', 'tenant_disabled'),
       },
       tags: ['tenant:tenant-1'],
     });
@@ -453,6 +506,7 @@ describe('buildLangfuseConfig', () => {
         deterministicTraceId: true,
         baseUrl: 'http://collector-from-env:4318',
         mediaUploadEnabled: false,
+        librechatTraceAttributes: exportTelemetry('central_only', 'tenant_disabled'),
         metadata: { 'librechat.tenant.id': 'tenant-1' },
         tags: ['tenant:tenant-1'],
       });
@@ -470,6 +524,7 @@ describe('buildLangfuseConfig', () => {
       expect(buildLangfuseConfig({ tenantId: 'tenant-1' })).toEqual({
         deterministicTraceId: true,
         baseUrl: 'http://collector-from-env:4318',
+        librechatTraceAttributes: exportTelemetry('central_only', 'tenant_disabled'),
         metadata: { 'librechat.tenant.id': 'tenant-1' },
         tags: ['tenant:tenant-1'],
       });

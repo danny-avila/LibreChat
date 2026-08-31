@@ -34,6 +34,7 @@ const createAssistant = async (req, res) => {
 
     const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
       req,
+      res,
       tools,
     });
     const healedTools = await healMcpToolNames({
@@ -85,7 +86,7 @@ const createAssistant = async (req, res) => {
 
     const assistant = await openai.beta.assistants.create(assistantData);
 
-    const createData = { user: req.user.id };
+    const createData = { user: req.user.id, endpoint };
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
@@ -153,6 +154,7 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
   let hasFileSearch = false;
   const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
     req,
+    res: req.res,
     tools: updateData.tools,
   });
   const healedTools = await healMcpToolNames({

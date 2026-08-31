@@ -47,6 +47,11 @@ export function createUserMethods(
     returnUser?: boolean,
   ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
   updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  claimSamlIdentity: (
+    userId: string,
+    samlId: string,
+    profileData: Pick<Partial<IUser>, 'username' | 'name'>,
+  ) => Promise<IUser | null>;
   acceptTerms: (userId: string) => Promise<IUser | null>;
   searchUsers: ({
     searchPattern,
@@ -293,6 +298,31 @@ export function createUserMethods(
       runValidators: true,
     }).lean<IUser>();
     await invalidateAuthUserDocCache(userId);
+    return updated;
+  }
+
+  /** Atomically updates a SAML user only when the incoming identity can claim the document. */
+  async function claimSamlIdentity(
+    userId: string,
+    samlId: string,
+    profileData: Pick<Partial<IUser>, 'username' | 'name'>,
+  ): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    const updated = await User.findOneAndUpdate(
+      {
+        _id: userId,
+        provider: 'saml',
+        $or: [{ samlId }, { samlId: { $exists: false } }, { samlId: null }, { samlId: '' }],
+      },
+      {
+        $set: { ...profileData, samlId },
+        $unset: { expiresAt: '' },
+      },
+      { new: true, runValidators: true },
+    ).lean<IUser>();
+    if (updated) {
+      await invalidateAuthUserDocCache(userId);
+    }
     return updated;
   }
 
@@ -800,6 +830,7 @@ export function createUserMethods(
     countUsers,
     createUser,
     updateUser,
+    claimSamlIdentity,
     acceptTerms,
     searchUsers,
     getUserById,

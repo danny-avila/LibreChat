@@ -56,10 +56,12 @@ function invokeHandler(
     directOnlyToolNames: string[];
     codeExecutionOnlyToolNames: string[];
   },
+  agentId?: string,
 ): Promise<ToolExecuteResult[]> {
   return new Promise((resolve, reject) => {
     const request = {
       toolCalls,
+      agentId,
       callerCapabilityProjection,
       resolve,
       reject,
@@ -661,7 +663,57 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** The execution already happened, so identity-only evidence flows —
+       * with blank content and no artifact, never the blocked output. */
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        {
+          input: {},
+          outputFiltered: true,
+          output: {
+            name: 'filtered_output_tool',
+            tool_call_id: 'call_filtered_output',
+            content: '',
+          },
+        },
+        expect.any(Object),
+      );
+      expect(JSON.stringify(toolEndCallback.mock.calls)).not.toContain(protectedValue);
+    });
+
+    it('supplies the executed arguments alongside the output to the tool end callback', async () => {
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'submit_move',
+        invoke: jest.fn(async () => ({ content: '{"ok":true}' })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools, toolEndCallback });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_submit_move', name: 'submit_move', args: { gameId: 'game-1', expectedPly: 8 } },
+      ]);
+
+      expect(result.content).toBe('{"ok":true}');
+      /** The stream-consumer tool-end path cannot reconstruct execution input,
+       * so the execution handler — which owns both halves — must supply it.
+       * The event-actor action recorder fences its declared argument subset
+       * against exactly this field; without it, warm continuation silently
+       * degrades to cold history rebuilds (proven by live canary). */
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        {
+          input: { gameId: 'game-1', expectedPly: 8 },
+          output: expect.objectContaining({
+            name: 'submit_move',
+            tool_call_id: 'call_submit_move',
+            content: '{"ok":true}',
+          }),
+        },
+        expect.any(Object),
+      );
     });
 
     it.each([
@@ -767,7 +819,13 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** Execution identity flows despite the blocked output; the protected
+       * content itself never reaches the callback. */
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        expect.objectContaining({ outputFiltered: true }),
+        expect.any(Object),
+      );
+      expect(JSON.stringify(toolEndCallback.mock.calls)).not.toContain(protectedValue);
     });
 
     it('fails closed when tool output cannot be completely traversed', async () => {
@@ -819,7 +877,14 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('could not be completely inspected');
       expect(result.artifact).toBeUndefined();
-      expect(toolEndCallback).not.toHaveBeenCalled();
+      /** The tool did execute; only its uninspectable output is withheld. */
+      expect(toolEndCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outputFiltered: true,
+          output: expect.objectContaining({ content: '' }),
+        }),
+        expect.any(Object),
+      );
     });
   });
 
@@ -1364,6 +1429,7 @@ describe('createToolExecuteHandler', () => {
     function createSkillHandler(
       getSkillByName: ToolExecuteOptions['getSkillByName'],
       filters?: Record<string, unknown>,
+      onSkillResolved?: ToolExecuteOptions['onSkillResolved'],
     ) {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
@@ -1372,7 +1438,7 @@ describe('createToolExecuteHandler', () => {
           ...(filters != null ? { req: { config: { filters } } } : {}),
         },
       }));
-      return createToolExecuteHandler({ loadTools, getSkillByName });
+      return createToolExecuteHandler({ loadTools, getSkillByName, onSkillResolved });
     }
 
     /** Skill with one bundled file plus every dep the priming gate requires,
@@ -1439,6 +1505,42 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('cannot be invoked by the model');
       expect(result.errorMessage).toContain('pii-redactor');
+    });
+
+    it('captures the exact identity of a successfully model-invoked Skill', async () => {
+      const onSkillResolved = jest.fn();
+      const getSkillByName = jest.fn(async () => ({
+        _id: { toString: () => 'skill-id' } as never,
+        name: 'analysis',
+        body: 'Analyze the position.',
+        fileCount: 0,
+        version: 4,
+      }));
+      const handler = createSkillHandler(getSkillByName, undefined, onSkillResolved);
+
+      const [result] = await invokeHandler(
+        handler,
+        [
+          {
+            id: 'call_skill_identity',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'analysis' },
+          },
+        ],
+        undefined,
+        'agent-child',
+      );
+
+      expect(result.status).toBe('success');
+      expect(onSkillResolved).toHaveBeenCalledWith(
+        {
+          id: 'skill-id',
+          name: 'analysis',
+          version: 4,
+          contentDigest: expect.any(String),
+        },
+        { agentId: 'agent-child' },
+      );
     });
 
     it('blocks stored skill instructions before injecting them into model context', async () => {
@@ -4387,7 +4489,7 @@ describe('createToolExecuteHandler', () => {
       });
 
       expect(result.status).toBe('success');
-      expect(markSandboxReady).toHaveBeenCalledWith('v2:user:abc');
+      expect(markSandboxReady).toHaveBeenCalledWith('v2:user:abc', 'stateful');
       expect(markSandboxReady).toHaveBeenCalledWith('conversation-1');
 
       jest.mocked(markSandboxReady).mockClear();

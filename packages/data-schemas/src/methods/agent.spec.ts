@@ -20,6 +20,7 @@ import type {
 } from 'mongoose';
 import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
 import { createAgentMethods, type AgentMethods } from './agent';
+import { tenantStorage } from '~/config/tenantContext';
 import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '~/models';
 
@@ -548,6 +549,129 @@ describe('Agent Methods', () => {
       });
 
       expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    describe('MCP server name candidate lookups', () => {
+      test('getAgentsWithMCPServerNames returns only agents with a non-empty list, projected', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'MCP Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['server-a', 'server-b'],
+        });
+        await createAgent({
+          id: `no-mcp-${agentId}`,
+          name: 'Plain Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+        });
+
+        const candidates = await methods.getAgentsWithMCPServerNames();
+
+        expect(candidates).toHaveLength(1);
+        expect(candidates[0].mcpServerNames).toEqual(['server-a', 'server-b']);
+        expect(Object.keys(candidates[0]).sort()).toEqual(['_id', 'mcpServerNames']);
+      });
+
+      test('getAgentsWithMCPServerNames returns empty when no agent references MCP servers', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'Plain Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+        });
+
+        expect(await methods.getAgentsWithMCPServerNames()).toEqual([]);
+      });
+
+      test('getAgentsWithMCPServerNames stays within the active tenant', async () => {
+        const tenantA = `tenant-a-${uuidv4()}`;
+        const tenantB = `tenant-b-${uuidv4()}`;
+        const { agentId, authorId } = createTestIds();
+        const agentA = await tenantStorage.run({ tenantId: tenantA }, async () =>
+          createAgent({
+            id: agentId,
+            name: 'Tenant A MCP Agent',
+            provider: 'test',
+            model: 'test-model',
+            author: authorId,
+            mcpServerNames: ['server-a'],
+          }),
+        );
+        const agentB = await tenantStorage.run({ tenantId: tenantB }, async () =>
+          createAgent({
+            id: agentId,
+            name: 'Tenant B MCP Agent',
+            provider: 'test',
+            model: 'test-model',
+            author: authorId,
+            mcpServerNames: ['server-b'],
+          }),
+        );
+
+        const inA = await tenantStorage.run({ tenantId: tenantA }, () =>
+          methods.getAgentsWithMCPServerNames(),
+        );
+        const inB = await tenantStorage.run({ tenantId: tenantB }, () =>
+          methods.getAgentsWithMCPServerNames(),
+        );
+
+        expect(inA.map((agent) => agent._id.toString())).toEqual([agentA._id.toString()]);
+        expect(inB.map((agent) => agent._id.toString())).toEqual([agentB._id.toString()]);
+      });
+
+      test('getAgentIdsByMCPServerName returns ids of agents referencing the server', async () => {
+        const { agentId, authorId } = createTestIds();
+        const withServer = await createAgent({
+          id: agentId,
+          name: 'Gitlab Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['gitlab', 'other'],
+        });
+        await createAgent({
+          id: `second-${agentId}`,
+          name: 'Second Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['gitlab'],
+        });
+        await createAgent({
+          id: `unrelated-${agentId}`,
+          name: 'Unrelated Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['not-gitlab'],
+        });
+
+        const ids = (await methods.getAgentIdsByMCPServerName('gitlab')).map((id) => id.toString());
+
+        expect(ids).toHaveLength(2);
+        expect(ids).toContain(withServer._id.toString());
+      });
+
+      test('getAgentIdsByMCPServerName returns empty when no agent references the server', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['other-server'],
+        });
+
+        expect(await methods.getAgentIdsByMCPServerName('gitlab')).toEqual([]);
+      });
     });
 
     test('should derive the server from a key whose raw tool name contains the delimiter', async () => {
@@ -1910,6 +2034,23 @@ describe('Agent Methods', () => {
       expect(thirdUpdate!.versions).toHaveLength(4);
     });
 
+    test('should unset a field and omit it from the recorded version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        code_environment_id: 'attached-vm',
+      });
+
+      const updated = await updateAgent({ id: agentId }, { $unset: { code_environment_id: 1 } });
+
+      expect(updated!.code_environment_id).toBeUndefined();
+      expect(updated!.versions).toHaveLength(2);
+      expect(updated!.versions![1].code_environment_id).toBeUndefined();
+    });
+
     test('should handle parameter objects correctly', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
@@ -2403,6 +2544,24 @@ describe('Agent Methods', () => {
       expect(revertedAgent.author.toString()).toBe(originalAuthor.toString());
       expect(revertedAgent.name).toBe('Original Agent');
       expect(revertedAgent.description).toBe('Original description');
+    });
+
+    test('should clear an explicit code environment when the restored version used the default', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Default Environment Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await updateAgent({ id: agentId }, { code_environment_id: 'replacement-environment' });
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.code_environment_id).toBeUndefined();
     });
 
     test('should prune deleted skill ids when reverting to an older version', async () => {

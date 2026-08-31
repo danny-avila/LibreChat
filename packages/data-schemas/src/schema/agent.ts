@@ -81,6 +81,9 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       type: String,
       enum: ['user', 'agent-user', 'conversation'],
     },
+    code_environment_id: {
+      type: String,
+    },
     /** @deprecated Use edges instead */
     agent_ids: {
       type: [String],

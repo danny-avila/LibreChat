@@ -19,7 +19,8 @@ import type {
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
-import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
@@ -226,6 +227,13 @@ export interface UserConnectionContext {
   requestScopedConnections?: RequestScopedMCPConnectionStore;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Cancels the connection's SDK requests when the caller itself is cancelled; previously only
+   *  OAuth connections could carry a signal, leaving non-OAuth discovery uncancellable. */
+  signal?: AbortSignal;
+  /** Absolute epoch-ms bound on the whole connect-and-list operation. `connectionTimeout` bounds
+   *  only a single `connect()`, so a caller that must return within a fixed budget sets this to
+   *  cap every segment, including `tools/list` pagination and the unauthenticated fallback. */
+  deadlineMs?: number;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -250,6 +258,8 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
+  oboIdentityContext?: AuthIdentityContext;
 }
 
 /** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
@@ -266,6 +276,8 @@ export interface UserMCPConnectionOptions extends UserConnectionContext {
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
+  oboIdentityContext?: AuthIdentityContext;
 }
 
 export interface ToolDiscoveryOptions {
@@ -279,10 +291,14 @@ export interface ToolDiscoveryOptions {
   requestBody?: RequestBody;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Absolute epoch-ms bound on the whole discovery operation; see `UserConnectionContext`. */
+  deadlineMs?: number;
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
+  oboIdentityContext?: AuthIdentityContext;
 }
 
 export interface ToolDiscoveryResult {

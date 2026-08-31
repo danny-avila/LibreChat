@@ -36,6 +36,35 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.isTemporary !== undefined) {
     patch.isTemporary = metadata.isTemporary;
   }
+  if (metadata.agentEventDeliveryKey) {
+    patch.agentEventDeliveryKey = metadata.agentEventDeliveryKey;
+  }
+  if (metadata.agentEventInvocationKey) {
+    patch.agentEventInvocationKey = metadata.agentEventInvocationKey;
+  }
+  if (metadata.agentEventInvocationGenerationCreatedAt !== undefined) {
+    patch.agentEventInvocationGenerationCreatedAt =
+      metadata.agentEventInvocationGenerationCreatedAt;
+  }
+  if (metadata.agentEventDetachedActionProducerRequired !== undefined) {
+    patch.agentEventDetachedActionProducerRequired =
+      metadata.agentEventDetachedActionProducerRequired;
+  }
+  if (metadata.agentEventDetachedTerminalEvidence) {
+    patch.agentEventDetachedTerminalEvidence = metadata.agentEventDetachedTerminalEvidence;
+  }
+  if (metadata.agentEventBindingId) {
+    patch.agentEventBindingId = metadata.agentEventBindingId;
+  }
+  if (metadata.agentEventExpectedAction) {
+    patch.agentEventExpectedAction = metadata.agentEventExpectedAction;
+  }
+  if (metadata.agentEventSuspension) {
+    patch.agentEventSuspension = metadata.agentEventSuspension;
+  }
+  if (metadata.agentEventLegacyTurnToken) {
+    patch.agentEventLegacyTurnToken = metadata.agentEventLegacyTurnToken;
+  }
   if (metadata.scheduleId) {
     patch.scheduleId = metadata.scheduleId;
   }
@@ -74,6 +103,9 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   }
   if (metadata.activityPhaseSnapshot) {
     patch.activityPhaseSnapshot = metadata.activityPhaseSnapshot;
+  }
+  if (metadata.compactionSemanticIndex) {
+    patch.compactionSemanticIndex = metadata.compactionSemanticIndex;
   }
   return patch;
 }

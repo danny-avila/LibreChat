@@ -6,6 +6,7 @@ import type {
   AgentContinueTarget,
   AgentSteerTarget,
   AgentTriggerEvent,
+  AgentTriggerExpectedAction,
   AgentTriggerMode,
 } from './envelope';
 import type { AgentTriggerEnqueueOptions } from './delivery';
@@ -38,6 +39,8 @@ interface AgentTriggerIngressBody {
   target?: AgentContinueTarget | AgentFireTarget | AgentSteerTarget;
   input?: string;
   orderingKey?: string;
+  coalesce?: { key?: string };
+  expectedAction?: AgentTriggerExpectedAction;
 }
 
 export interface AgentTriggerIngressDependencies {
@@ -133,7 +136,20 @@ function enqueueOptions(body: AgentTriggerIngressBody): AgentTriggerEnqueueOptio
   if (body.orderingKey != null && typeof body.orderingKey !== 'string') {
     throw new AgentTriggerIngressError('orderingKey must be a string');
   }
-  return body.orderingKey == null ? {} : { orderingKey: body.orderingKey };
+  let coalesce: AgentTriggerEnqueueOptions['coalesce'];
+  if (body.coalesce != null) {
+    if (typeof body.coalesce !== 'object' || Array.isArray(body.coalesce)) {
+      throw new AgentTriggerIngressError('coalesce must be an object');
+    }
+    if (typeof body.coalesce.key !== 'string') {
+      throw new AgentTriggerIngressError('coalesce.key must be a string');
+    }
+    coalesce = { key: body.coalesce.key };
+  }
+  return {
+    ...(body.orderingKey != null && { orderingKey: body.orderingKey }),
+    ...(coalesce != null && { coalesce }),
+  };
 }
 
 function toPublicDelivery(delivery: Awaited<ReturnType<AgentTriggerService['getDeliveryStatus']>>) {
@@ -156,6 +172,15 @@ function toPublicDelivery(delivery: Awaited<ReturnType<AgentTriggerService['getD
         retryable: delivery.lastError.retryable,
         attemptedAt: delivery.lastError.attemptedAt.toISOString(),
         ...(delivery.lastError.status != null && { status: delivery.lastError.status }),
+      },
+    }),
+    ...(delivery.handling != null && {
+      handling: {
+        ...delivery.handling,
+        startedAt: delivery.handling.startedAt.toISOString(),
+        ...(delivery.handling.settledAt != null && {
+          settledAt: delivery.handling.settledAt.toISOString(),
+        }),
       },
     }),
   };
@@ -217,6 +242,7 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
           source: { id: sourceKeyId, type: 'remote_api_key' },
         },
         input: body.input as string,
+        ...(body.expectedAction != null && { expectedAction: body.expectedAction }),
       };
       if (body.mode === 'continue' && req._agentEventBindingResolved !== true) {
         throw new AgentTriggerIngressError(

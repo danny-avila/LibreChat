@@ -1,6 +1,10 @@
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { getRequestId, getTenantId, getUserId } from '@librechat/data-schemas';
 import type { AgentTriggerExecutionHostDeps, AgentTriggerFetch } from './host';
+import {
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+} from './detachedAction';
 import { createAgentTriggerEnvelope, getAgentTriggerIdempotencyKey } from './envelope';
 import { AgentTriggerExecutionError, createAgentTriggerExecutionHost } from './host';
 
@@ -212,8 +216,12 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
 
     const bodies = fetcher.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as unknown);
     expect(bodies).toEqual([
-      expect.objectContaining({ clientRequestId: getAgentTriggerIdempotencyKey(envelope) }),
-      expect.objectContaining({ clientRequestId: getAgentTriggerIdempotencyKey(envelope) }),
+      expect.objectContaining({
+        clientRequestId: getAgentTriggerIdempotencyKey(envelope),
+      }),
+      expect.objectContaining({
+        clientRequestId: getAgentTriggerIdempotencyKey(envelope),
+      }),
     ]);
   });
 
@@ -415,7 +423,10 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
 
     resolveToken('signed-token');
     resolveTimezone('UTC');
-    await expect(pending).resolves.toMatchObject({ mode: 'fire', status: 'started' });
+    await expect(pending).resolves.toMatchObject({
+      mode: 'fire',
+      status: 'started',
+    });
   });
 
   it('observes caller cancellation while asynchronous setup is pending', async () => {
@@ -425,7 +436,9 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
       deps(fetcher, { mintToken: () => new Promise<string>(() => undefined) }),
     );
     const controller = new AbortController();
-    const pending = host.dispatch(createFireEnvelope(), { signal: controller.signal });
+    const pending = host.dispatch(createFireEnvelope(), {
+      signal: controller.signal,
+    });
     controller.abort();
 
     await pending.catch((error: unknown) => {
@@ -575,10 +588,109 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     });
   });
 
+  it('carries a prepared queued-turn payload and settles it after admission', async () => {
+    const envelope = createContinueEnvelope();
+    const admitted = {
+      mode: 'continue' as const,
+      streamId: 'conversation-1',
+      conversationId: 'conversation-1',
+      generationCreatedAt: 50,
+      status: 'started' as const,
+    };
+    const settleOnAdmission = jest.fn(async () => undefined);
+    const getBaseUrl = jest.fn(() => 'http://127.0.0.1:3080');
+    const admissionSource = {
+      source: 'agent-queued-turn',
+      sourceId: 'queued-turn-1',
+      claimId: 'queued-delivery-1',
+      claimBy: 'queued-worker-1',
+    };
+    const prepareContinue = jest.fn(async () => ({
+      status: 'ready' as const,
+      input: 'queued user turn',
+      parentMessageId: 'latest-response',
+      expectedPredecessorCreatedAt: 49,
+      files: [{ file_id: 'file-1' }],
+      quotes: ['quoted context'],
+      manualSkills: ['research'],
+      admissionSource,
+      settleOnAdmission,
+    }));
+    const fetcher = fetchMock(async () => response(admitted));
+    const host = createAgentTriggerExecutionHost(
+      deps(fetcher, {
+        prepareContinue,
+        getBaseUrl,
+      }),
+    );
+
+    await expect(host.dispatch(envelope, { attempt: 3, maxAttempts: 3 })).resolves.toEqual(
+      admitted,
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+      text: 'queued user turn',
+      parentMessageId: 'latest-response',
+      expectedPredecessorCreatedAt: 49,
+      files: [{ file_id: 'file-1' }],
+      quotes: ['quoted context'],
+      manualSkills: ['research'],
+      agentContinuationAdmission: admissionSource,
+    });
+    expect(getBaseUrl).toHaveBeenCalledWith({ localOnly: true });
+    expect(prepareContinue).toHaveBeenCalledWith(envelope, {
+      idempotencyKey: getAgentTriggerIdempotencyKey(envelope),
+      attempt: 3,
+      maxAttempts: 3,
+    });
+    expect(settleOnAdmission).toHaveBeenCalledWith(admitted);
+  });
+
+  it('keeps a prepared queued turn claimed when admission settlement is unavailable', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response({
+            mode: 'continue',
+            streamId: 'conversation-1',
+            conversationId: 'conversation-1',
+            status: 'started',
+          }),
+        ),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'queued user turn',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+            settleOnAdmission: async () => {
+              throw new Error('mongo unavailable');
+            },
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'ambiguous',
+      retryable: true,
+      code: 'PREPARATION_SETTLEMENT_FAILED',
+    });
+    expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
+  });
+
   it('carries server-resolved binding identity only on bound child continuations', async () => {
     const base = createContinueEnvelope();
+    if (base.mode !== 'continue') {
+      throw new Error('Expected a continue envelope');
+    }
     const envelope = {
       ...base,
+      event: { ...base.event, payload: { blob: 'x'.repeat(4096) } },
+      expectedAction: {
+        toolName: 'submit_move',
+        argumentSubset: { gameId: 'game-1', expectedPly: 7 },
+      },
       target: {
         ...base.target,
         bindingId: `evtbind_${'a'.repeat(48)}`,
@@ -598,6 +710,77 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     const headers = fetcher.mock.calls[0][1]?.headers as Record<string, string>;
     expect(headers['x-lc-agent-event-binding']).toBe(`evtbind_${'a'.repeat(48)}`);
     expect(headers['x-lc-agent-event-source-key']).toBe('source-key');
+    /** The unbounded source payload never rides the delivery body; the actor
+     * binds an invocation from event identity alone. */
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+      agentEventDelivery: {
+        deliveryKey: getAgentTriggerIdempotencyKey(envelope),
+        event: {
+          id: envelope.event.id,
+          type: envelope.event.type,
+          occurredAt: envelope.event.occurredAt,
+          source: envelope.event.source,
+        },
+        expectedAction: envelope.expectedAction,
+      },
+    });
+    expect(
+      JSON.parse(String(fetcher.mock.calls[0][1]?.body)).agentEventDelivery.event,
+    ).not.toHaveProperty('payload');
+  });
+
+  it('projects only the bounded internal detached-completion authority', async () => {
+    const base = createContinueEnvelope();
+    if (base.mode !== 'continue') {
+      throw new Error('Expected a continue envelope');
+    }
+    const completion = {
+      version: 1 as const,
+      invocationId: 'original-delivery-1',
+      generationCreatedAt: 1_787_000_000_000,
+      wakeGenerationCreatedAt: 1_787_000_000_000,
+      taskId: 'event-actor-task-1',
+      idempotencyKey: 'a'.repeat(64),
+    };
+    const envelope = {
+      ...base,
+      target: {
+        ...base.target,
+        bindingId: 'binding-1',
+        sourceKeyId: 'source-key-1',
+      },
+      event: {
+        id: completion.taskId,
+        type: EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+        occurredAt: completion.generationCreatedAt + 1,
+        source: {
+          id: EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+          type: 'internal',
+        },
+        payload: completion,
+      },
+      expectedAction: { toolName: 'submit_move' },
+    };
+    const fetcher = fetchMock(async () =>
+      response({
+        streamId: 'conversation-1',
+        conversationId: 'conversation-1',
+        generationCreatedAt: completion.generationCreatedAt + 2,
+        status: 'started',
+      }),
+    );
+    const getBaseUrl = jest.fn(() => 'http://127.0.0.1:3080');
+
+    await createAgentTriggerExecutionHost(deps(fetcher, { getBaseUrl })).dispatch(envelope);
+
+    expect(getBaseUrl).toHaveBeenCalledWith({ localOnly: true });
+    const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
+    expect(body.clientRequestId).toBe(getAgentTriggerIdempotencyKey(envelope));
+    expect(body.agentEventDelivery).toMatchObject({
+      deliveryKey: getAgentTriggerIdempotencyKey(envelope),
+      internalCompletion: completion,
+    });
+    expect(body.agentEventDelivery.event).not.toHaveProperty('payload');
   });
 
   it.each(['PARENT_NOT_READY', 'EVENT_ACTOR_NOT_READY'])(
@@ -707,7 +890,10 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       deps(
         fetchMock(async () =>
           response(
-            { code: 'PARENT_STATE_UNAVAILABLE', error: 'Parent state is unavailable.' },
+            {
+              code: 'PARENT_STATE_UNAVAILABLE',
+              error: 'Parent state is unavailable.',
+            },
             { status: 503, headers: { 'retry-after': '1' } },
           ),
         ),
@@ -761,7 +947,11 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     const host = createAgentTriggerExecutionHost(
       deps(
         fetchMock(async () =>
-          response({ streamId: 'other', conversationId: 'other', status: 'started' }),
+          response({
+            streamId: 'other',
+            conversationId: 'other',
+            status: 'started',
+          }),
         ),
       ),
     );

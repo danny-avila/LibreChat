@@ -37,6 +37,7 @@ export * from './types/web';
 export * from './types/graph';
 export * from './types/insights';
 export * from './types/subagents';
+export * from './types/queuedTurns';
 /* access permissions */
 export * from './accessPermissions';
 /* query/mutation keys */

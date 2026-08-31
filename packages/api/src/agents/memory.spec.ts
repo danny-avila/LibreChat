@@ -712,6 +712,32 @@ describe('createMemoryTool tokenLimit enforcement', () => {
     expect(setMemory).toHaveBeenCalledTimes(2);
   });
 
+  it('treats a persisted key as a replacement in a new tool instance', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** ~100 tokens; adding this value to its previous version would exceed the
+     *  limit, while replacing it correctly remains within the limit. */
+    const value = 'word '.repeat(100).trim();
+    const firstTool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+    });
+
+    await firstTool.invoke({ key: 'k1', value });
+
+    const secondTool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 100,
+      tokenCountsByKey: new Map([['k1', 100]]),
+    });
+
+    await secondTool.invoke({ key: 'k1', value });
+
+    expect(setMemory).toHaveBeenCalledTimes(2);
+  });
+
   it('fires onWrite after a successful set, but not when the write fails', async () => {
     const onWrite = jest.fn();
     const okTool = createMemoryTool({
@@ -743,6 +769,38 @@ describe('createMemoryTool tokenLimit enforcement', () => {
     await tool.invoke({ key: 'k1' });
 
     expect(onWrite).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('memory token limit guidance', () => {
+  it('describes the aggregate limit and never reports negative remaining capacity', async () => {
+    const [, process] = await createMemoryProcessor({
+      res: { headersSent: false, write: jest.fn() } as unknown as Response,
+      userId: 'user-1',
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      config: { tokenLimit: 100 },
+      memoryMethods: {
+        setMemory: jest.fn().mockResolvedValue({ ok: true }),
+        deleteMemory: jest.fn().mockResolvedValue({ ok: true }),
+        getUserMemories: jest.fn().mockResolvedValue([]),
+        getFormattedMemories: jest.fn().mockResolvedValue({
+          withKeys: 'existing memory',
+          withoutKeys: 'existing memory',
+          totalTokens: 150,
+          tokenCountsByKey: new Map([['preferences', 150]]),
+        }),
+      },
+    });
+
+    await process([]);
+
+    const runCalls = (Run.create as jest.Mock).mock.calls;
+    const runConfig = runCalls[runCalls.length - 1][0];
+    expect(runConfig.graphConfig.instructions).toContain(
+      'Maximum 100 tokens across all memory values.',
+    );
+    expect(runConfig.graphConfig.additional_instructions).toContain('Remaining capacity: 0 tokens');
   });
 });
 

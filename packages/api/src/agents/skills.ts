@@ -6,6 +6,7 @@ import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents'
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
+import { createSkillContentDigest } from './compatibility';
 import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
 
@@ -30,6 +31,8 @@ export type TGetSkillByName = (
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Monotonic Skill document version used by checkpoint context compatibility. */
+  version?: number;
   author: Types.ObjectId;
   /** Structured SKILL.md metadata retained for model-bound policy checks. */
   frontmatter?: Record<string, unknown>;
@@ -780,6 +783,27 @@ export function buildSkillPrimeMessage(skill: { name: string; body: string }): I
   };
 }
 
+/** Builds the exact live Skill overlay placed at the tail of an event actor checkpoint fork. */
+export function buildAgentEventActorSkillMessages(
+  skills: ReadonlyMap<string, string>,
+): HumanMessage[] {
+  return [...skills.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(
+      ([name, body]) =>
+        new HumanMessage({
+          id: `event-actor-skill:${createSkillContentDigest(`${name}\0${body}`)}`,
+          content: body,
+          additional_kwargs: {
+            isMeta: true,
+            source: SKILL_MESSAGE_SOURCE,
+            trigger: SKILL_TRIGGER_MODEL,
+            skillName: name,
+          },
+        }),
+    );
+}
+
 export interface ResolveManualSkillsParams {
   /** Skill names the user invoked (via `$` popover or `always-apply`). */
   names: string[];
@@ -798,6 +822,7 @@ export interface ResolveManualSkillsParams {
     _id: Types.ObjectId;
     name: string;
     body: string;
+    version?: number;
     author: Types.ObjectId | string;
     deployment?: boolean;
     /** Structured SKILL.md metadata retained for model-bound policy checks. */
@@ -846,6 +871,8 @@ export interface ResolvedSkillPrime {
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Monotonic Skill revision used by checkpoint compatibility. */
+  version?: number;
   /** Structured SKILL.md metadata retained for model-bound policy checks. */
   frontmatter?: Record<string, unknown>;
   /**
@@ -980,6 +1007,7 @@ export async function resolveManualSkills(
           _id: skill._id,
           name: skill.name,
           body: skill.body,
+          version: skill.version,
           frontmatter: skill.frontmatter,
         };
         if (skill.allowedTools !== undefined) {
@@ -1016,6 +1044,7 @@ export interface ResolveAlwaysApplySkillsParams {
       author: Types.ObjectId | string;
       frontmatter?: Record<string, unknown>;
       allowedTools?: string[];
+      version?: number;
       deployment?: boolean;
     }>;
     has_more?: boolean;
@@ -1140,6 +1169,7 @@ export async function resolveAlwaysApplySkills(
         _id: skill._id,
         name: skill.name,
         body: skill.body,
+        version: skill.version,
         frontmatter: skill.frontmatter,
       };
       if (skill.allowedTools !== undefined) {

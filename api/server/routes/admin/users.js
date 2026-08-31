@@ -10,6 +10,7 @@ const {
   purgeAgentTriggerDeliveriesForUser,
 } = require('~/server/services/Agents/triggers');
 const db = require('~/models');
+const { invalidateCodeEnvironmentConfigCache } = require('~/server/services/Config');
 
 const router = express.Router();
 
@@ -27,6 +28,8 @@ const handlers = createAdminUsersHandlers({
   cancelAgentTriggerUserPurge,
   purgeAgentTriggerDeliveriesForUser,
   deleteUserById: db.deleteUserById,
+  deleteUserCodeEnvironments: db.deleteUserCodeEnvironments,
+  invalidateCodeEnvironmentConfigCache,
   deleteConfig: db.deleteConfig,
   deleteAclEntries: db.deleteAclEntries,
 });
