@@ -262,7 +262,12 @@ function buildSynthesizedPhaseLabel(run: FoldRun): SynthesizedPhaseHeader | unde
   for (let position = 0; position < run.content.length; position += 1) {
     const part = run.content[position];
     if (part?.type !== ContentTypes.ACTIVITY_LABEL) {
-      claimable += claimsActivity(part) ? 1 : 0;
+      /** A part the block cannot hold FLUSHES it in `groupSequentialToolCalls`
+       *  — a handoff call, or the agent update beside it — so whatever came
+       *  before is no longer claimable. Without the reset, `tool → transfer →
+       *  label` reads as a claimed batch here while the grouping drops that
+       *  label entirely through `coversTransferCall`. */
+      claimable = claimsActivity(part) ? claimable + 1 : 0;
       continue;
     }
     const claimed = claimable;

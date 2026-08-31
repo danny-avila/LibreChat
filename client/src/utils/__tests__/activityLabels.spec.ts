@@ -782,6 +782,19 @@ describe('groupActivityPhases — what a fold may not swallow', () => {
     ).toBeUndefined();
   });
 
+  it('does not let a handoff carry an earlier call into the next label', () => {
+    /** `groupSequentialToolCalls` flushes the block at the non-groupable
+     *  transfer and then drops the label through `coversTransferCall`, so
+     *  neither batch heads a rendered group. */
+    const batch = (index: number) => [
+      toolPart(`t${index}a`),
+      toolPart(`t${index}b`, `${Constants.LC_TRANSFER_TO_}agent_${index}`),
+      childLabel(`Handed off ${index}`),
+    ];
+
+    expect(groupActivityPhases([...batch(1), ...batch(2)])).toBeUndefined();
+  });
+
   it('resets the claim at a blank reservation, as the grouping does', () => {
     /** The blank label closes the first batch's claim, so the filled label
      *  after it claims nothing and heads no group. */

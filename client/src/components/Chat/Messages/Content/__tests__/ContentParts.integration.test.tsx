@@ -684,11 +684,13 @@ describe('ContentParts — synthesized activity folds', () => {
     expect(screen.queryByRole('button', { name: FIRST })).toBeNull();
   });
 
-  it('keeps the toggle when the summary spans more content than the fold did', () => {
+  it('starts a fresh card when the summary claims more content than the fold did', () => {
     /** The server extends a phase back across short intermediate text; the
      *  client treats that text as a boundary so a bare final answer can never
-     *  hide. The two spans therefore start in different places, and the shared
-     *  card identity has to survive that. */
+     *  hide, and the two spans therefore start in different places. A card
+     *  covering different content IS a different card — it is keyed and
+     *  mounted as one, and the toggle does not carry. Documented, not desired:
+     *  the same-span case above keeps it, which is the common one. */
     const preface = makeTextPart('Checking now.');
     const { rerender } = render(
       <RecoilRoot>
@@ -708,7 +710,7 @@ describe('ContentParts — synthesized activity folds', () => {
 
     expect(screen.getByRole('button', { name: 'Reviewed the release paths' })).toHaveAttribute(
       'aria-expanded',
-      'true',
+      'false',
     );
   });
 

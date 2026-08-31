@@ -727,20 +727,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
         />
       );
     };
-    /** Card identity for the shared toggle map. Ordinal, NOT span-anchored: a
-     *  synthesized fold and the server phase that replaces it need the same
-     *  entry, and the server may extend its start across short unphased text
-     *  the client treats as a boundary — which would move a span-anchored id
-     *  and drop the reader's open card on the swap. Phase cards only ever
-     *  append in content order, so the ordinal holds still. */
-    const phaseOrdinals = new Map<number, number>();
-    let phaseOrdinal = 0;
-    phaseSegments.forEach((segment, index) => {
-      if (segment.type === 'phase') {
-        phaseOrdinal += 1;
-        phaseOrdinals.set(index, phaseOrdinal);
-      }
-    });
     const hasParallelContent = content?.some((part) => part?.groupId != null) === true;
     return (
       <ApprovalProvider>
@@ -750,7 +736,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
             <Sources messageId={messageId} conversationId={conversationId || undefined} />
           )}
           {renderPendingSkills()}
-          {phaseSegments.map((segment, segmentIndex) => {
+          {phaseSegments.map((segment) => {
             if (segment.type !== 'phase') {
               return renderSegment(
                 segment.content,
@@ -760,19 +746,18 @@ const ContentPartsBody = memo(function ContentPartsBody({
               );
             }
             const synthesized = segment.synthesized === true;
-            /** A synthesized card has no marker to key on, and its header
-             *  ticks with the newest child label — keying on the label would
-             *  remount the card on every tick. Anchor it to the span's first
-             *  part instead, which also holds still while the run streams. */
-            const phaseKeyIndex = synthesized
-              ? segmentKeyIndex(segment)
-              : getPartKeyIndex(segment.labelPart, segment.labelIndex);
+            /** Entrance bookkeeping still keys on the marker. */
+            const phaseKeyIndex = getPartKeyIndex(segment.labelPart, segment.labelIndex);
+            /** The RENDER key is the span, not the header. A synthesized card's
+             *  header ticks with the newest child label, so keying on it would
+             *  remount the card on every tick — and when the summary finally
+             *  lands, a card keyed the same way as the fold it replaces is
+             *  RECONCILED rather than remounted, so a reader who opened the
+             *  ticker keeps it open with no state to hand over. A phase with no
+             *  children has no span to anchor to and keeps its marker key. */
+            const cardKeyIndex = segment.hasContent ? segmentKeyIndex(segment) : phaseKeyIndex;
             const labelText = getActivityLabelText(segment.labelPart);
             const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
-            /** Toggle memory is shared with the tool groups so the reader's
-             *  choice survives the swap from ticker to generated summary,
-             *  which unmounts the synthesized card and mounts the real one. */
-            const cardId = `phase:${phaseOrdinals.get(segmentIndex) ?? 0}`;
             /** While a run streams, the cursor sits INSIDE a synthesized span.
              *  A collapsed card would swallow it, so the card carries it below
              *  the header and the nested body stands down. */
@@ -804,17 +789,15 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 segment.content,
                 absoluteIndexAt(segment.startIndex),
                 segmentIndices,
-                `phase-awaiting-${phaseKeyIndex}`,
+                `phase-awaiting-${cardKeyIndex}`,
               );
             }
             return (
               <ActivityPhaseGroup
-                key={`activity-${synthesized ? 'fold' : 'phase'}-${messageId}-${phaseKeyIndex}`}
+                key={`activity-phase-${messageId}-${cardKeyIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
                 hasPendingApproval={hasPendingApproval}
-                initialExpansionState={expansionState.get(cardId)}
-                onExpansionChange={(state) => handleGroupExpansionChange(cardId, state)}
                 animateEntrance={
                   /** Never for a synthesized card. The entrance mounts a card
                    *  OPEN and folds it shut, and this component remounts
@@ -844,7 +827,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
                   segment.content,
                   absoluteIndexAt(segment.startIndex),
                   segmentIndices,
-                  `phase-content-${phaseKeyIndex}`,
+                  `phase-content-${cardKeyIndex}`,
                   true,
                   ownsCursor,
                 )}
