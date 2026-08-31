@@ -10,7 +10,7 @@ import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
 import type { TGetFiles, TFilterFilesByAgentAccess } from './resources';
-import { primeResources } from './resources';
+import { primeResources, isAgentScopedFile } from './resources';
 
 // Mock logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -2129,6 +2129,43 @@ describe('primeResources', () => {
       const searchResource = result.tool_resources?.[EToolResources.file_search];
       expect(searchResource?.file_ids).toContain('embedded-context');
       expect(searchResource?.files?.map((f) => f.file_id) ?? []).not.toContain('embedded-context');
+    });
+
+    it('keeps generated code outputs user-scoped, never agent-scoped', () => {
+      expect(isAgentScopedFile({ context: FileContext.execute_code })).toBe(false);
+      expect(isAgentScopedFile({ context: FileContext.message_attachment })).toBe(false);
+      expect(isAgentScopedFile({ context: FileContext.agents })).toBe(true);
+    });
+
+    it('rebuilds an embedded code output under files, not agent file_ids', async () => {
+      const codeOutput: TFile = {
+        user: 'user1',
+        file_id: 'code-output',
+        filename: 'plot.csv',
+        filepath: '/uploads/plot.csv',
+        object: 'file',
+        type: 'text/csv',
+        bytes: 512,
+        embedded: true,
+        usage: 0,
+        context: FileContext.execute_code,
+      };
+      mockGetFiles.mockResolvedValue([codeOutput]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: { [EToolResources.context]: { file_ids: ['code-output'] } },
+        attachments: undefined,
+        requestFileSet,
+        agentId: 'agent1',
+      });
+
+      const searchResource = result.tool_resources?.[EToolResources.file_search];
+      expect(searchResource?.files?.map((f) => f.file_id)).toContain('code-output');
+      expect(searchResource?.file_ids ?? []).not.toContain('code-output');
     });
 
     it('rebuilds an embedded user attachment under files, not agent file_ids', async () => {
