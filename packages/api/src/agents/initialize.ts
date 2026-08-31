@@ -1314,6 +1314,12 @@ export async function initializeAgent(
     loadCodeApiKey: db.loadCodeApiKey,
     provisionCandidates: deferredProvisionFiles as unknown as TFile[],
     legacyFileUploadUX,
+    filterByEndpointPolicy: (files) =>
+      filterFilesByEndpointRuntimeConfig(appConfig, {
+        files: files as unknown as IMongoFile[],
+        endpoint: agent.endpoint ?? '',
+        endpointType: endpointFileType,
+      }) as unknown as TFile[],
   });
 
   /**

@@ -97,6 +97,80 @@ describe('primeResources', () => {
     });
   });
 
+  describe('when the endpoint policy rejects a persistent context file', () => {
+    it('keeps it out of provisioning and out of attachments', async () => {
+      /* These files are read inside primeResources, so the caller never sees them to
+       * filter. A provider or policy change since they were attached must still stop
+       * their bytes reaching the Code API or RAG. */
+      const rejected: TFile[] = [
+        {
+          user: 'user1',
+          file_id: 'stale-context-file',
+          filename: 'legacy.csv',
+          filepath: '/uploads/legacy.csv',
+          object: 'file' as const,
+          type: 'text/csv',
+          bytes: 1024,
+          embedded: false,
+          usage: 0,
+          source: FileSources.local,
+        },
+      ];
+      mockGetFiles.mockResolvedValue(rejected);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources: { [EToolResources.context]: { file_ids: ['stale-context-file'] } },
+        agentId: 'agent_test',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+        filterByEndpointPolicy: () => [],
+      });
+
+      expect(result.provisionState).toBeUndefined();
+      expect(result.attachments).toBeUndefined();
+    });
+
+    it('still provisions a persistent context file the policy allows', async () => {
+      const allowed: TFile[] = [
+        {
+          user: 'user1',
+          file_id: 'live-context-file',
+          filename: 'data.csv',
+          filepath: '/uploads/data.csv',
+          object: 'file' as const,
+          type: 'text/csv',
+          bytes: 1024,
+          embedded: false,
+          usage: 0,
+          source: FileSources.local,
+        },
+      ];
+      mockGetFiles.mockResolvedValue(allowed);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources: { [EToolResources.context]: { file_ids: ['live-context-file'] } },
+        agentId: 'agent_test',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+        filterByEndpointPolicy: (files) => files,
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toEqual([
+        'live-context-file',
+      ]);
+    });
+  });
+
   describe('when `context` capability is disabled', () => {
     it('should not fetch context files even if tool_resources has context file_ids', async () => {
       (mockAppConfig.endpoints![EModelEndpoint.agents] as TAgentsEndpoint).capabilities = [];
