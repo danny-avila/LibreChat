@@ -281,6 +281,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
            * before the transaction. */
           await models.PluginAuth.createCollection();
           await models.Token.createCollection();
+          await models.Group.createCollection();
           const server = await models.MCPServer.findById(serverId).lean();
           if (!server) {
             throw new Error('DocumentDB authority probe server was not created');

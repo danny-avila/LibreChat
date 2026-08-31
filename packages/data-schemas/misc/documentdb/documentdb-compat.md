@@ -252,8 +252,8 @@ tunnel and none were documented before:
 
 ## Method sweep (2026-08-31)
 
-`sweep.documentdb.spec.ts` drives every exported data-schemas method (510 at
-the time of writing) against a real engine, auto-synthesizing arguments,
+`sweep.documentdb.spec.ts` drives every exported data-schemas method (509 at
+the time of writing; constructor-valued exports are excluded) against a real engine, auto-synthesizing arguments,
 repairing them from validation errors, and counting the driver queries each
 method actually issues — a method that issues none is reported un-adjudicated
 instead of silently green. Run once against in-memory MongoDB
@@ -262,8 +262,9 @@ matrices (`SWEEP_REPORT_PATH`).
 
 Corrected-harness baseline (replica-set MongoDB, real ACL cascades, index DDL
 and transaction-lifecycle instrumentation, per-invocation async attribution,
-seeded authority-transaction case): **369 of 510 methods issue at least one
-query; zero rejections on MongoDB**. The remaining 141 issue none (validation
+seeded authority-transaction case, constructor exports excluded): **369 of 509
+methods issue at least one query; zero rejections on MongoDB**. The remaining
+140 issue none (validation
 rejected the synthesized arguments, or a guard short-circuited); they are
 listed in the matrix and shrink by adding `ARG_OVERRIDES` entries.
 

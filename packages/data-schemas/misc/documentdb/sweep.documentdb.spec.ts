@@ -363,14 +363,16 @@ const ARG_OVERRIDES: Record<string, () => SweepCase | Promise<SweepCase>> = {
         permBits: PermissionBits.VIEW,
         grantedBy: userId,
       });
-      /** The proof transaction READS PluginAuth and Token; with
-       * `autoCreate: false` on a fresh run-scoped database those collections
-       * do not exist, and DocumentDB rejects any statement in a transaction
-       * that touches a non-existent collection — surfacing as
+      /** The proof transaction READS PluginAuth, Token, Group, and Config;
+       * with `autoCreate: false` on a fresh run-scoped database those
+       * collections do not exist, and DocumentDB rejects any statement in a
+       * transaction that touches a non-existent collection — surfacing as
        * `proof_unavailable` before the commit is ever reached. Materialize
        * every transaction-read collection outside the transaction. */
       await models.PluginAuth.createCollection();
       await models.Token.createCollection();
+      await models.Group.createCollection();
+      await models.Config.createCollection();
     });
     const server = await tenantStorage.run(context, () =>
       models.MCPServer.findById(serverId).lean<{
@@ -466,7 +468,12 @@ type SweepFn = (...args: unknown[]) => unknown;
  * variadic-unknown view the sweep needs to invoke them generically. */
 const methodMap: Record<string, SweepFn> = Object.fromEntries(
   Object.entries(methods).flatMap(([name, member]) =>
-    typeof member === 'function' ? [[name, member as SweepFn]] : [],
+    /** Error classes ride along in some method bundles (e.g. `SessionError`);
+     * a constructor is not a sweepable method and would inflate the totals as
+     * a permanently un-driven row. */
+    typeof member === 'function' && !/^class[\s{]/.test(String(member))
+      ? [[name, member as SweepFn]]
+      : [],
   ),
 );
 const methodNames = Object.keys(methodMap).sort();
