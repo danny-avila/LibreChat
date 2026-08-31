@@ -2,6 +2,7 @@ import React from 'react';
 import { DndProvider } from 'react-dnd';
 import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { ReasoningEffort } from 'librechat-data-provider';
 import { act, render, screen, within, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
@@ -175,6 +176,47 @@ describe('Queue', () => {
     expect(sendButton).toBeDisabled();
     fireEvent.click(sendButton);
     expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['local', {}],
+    ['server-owned', { server: { id: 'server-q1', status: 'queued' as const, revision: 1 } }],
+  ])('disables live actions for a reasoning override on a %s row', (_kind, row) => {
+    renderQueue([
+      queued({
+        ...row,
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+      }),
+    ]);
+    const sendButton = screen.getByText('com_ui_send_now');
+    const interruptButton = screen.getByTestId('queued-interrupt-now');
+
+    expect(sendButton).toBeDisabled();
+    expect(interruptButton).toBeDisabled();
+    expect(sendButton).toHaveAttribute('title', 'com_ui_send_now_paused');
+    fireEvent.click(sendButton);
+    fireEvent.click(interruptButton);
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+
+  it('allows a reasoning override to start a new generation while idle', () => {
+    renderQueue(
+      [
+        queued({
+          reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+        }),
+      ],
+      steeringWith({ duringRunActive: false, canSteer: false, canSendQueuedNow: true }),
+    );
+    const sendButton = screen.getByText('com_ui_send_now');
+
+    expect(sendButton).toBeEnabled();
+    fireEvent.click(sendButton);
+    expect(mockSendQueuedNow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+      }),
+    );
   });
 
   it('moves a message down the queue with the arrow keys', () => {

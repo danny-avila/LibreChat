@@ -2,13 +2,13 @@ import { memo, useRef, useMemo, useState, useLayoutEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
-import type { SettingDefinition, TConversation } from 'librechat-data-provider';
-import useThinkingSetting from '~/hooks/Input/useThinkingSetting';
+import type { SettingDefinition, TConversation, TReasoningOverride } from 'librechat-data-provider';
+import { ReasoningControl, useComposerReasoning } from '../Reasoning';
 import useReducedMotion from '~/hooks/Generic/useReducedMotion';
-import { useSetIndexOptions, useLocalize } from '~/hooks';
 import Effort, { resolveEffortLabel } from './Effort';
 import { useGetStartupConfig } from '~/data-provider';
 import { useChatContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 /** Matches `animate-composer-popover`'s opacity leg, so the button and the
@@ -19,9 +19,18 @@ const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
 interface ThinkingControlProps {
   setting: SettingDefinition;
   conversation: TConversation | null;
+  value?: TReasoningOverride;
+  disabled: boolean;
+  onChange: (value: TReasoningOverride) => void;
 }
 
-function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
+function ThinkingControl({
+  setting,
+  conversation,
+  value,
+  disabled,
+  onChange,
+}: ThinkingControlProps) {
   const localize = useLocalize();
   const reducedMotion = useReducedMotion();
   /* Ariakit owns the open state rather than a controlled `open`/`setOpen` pair:
@@ -30,7 +39,6 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
      popup. */
   const popover = Ariakit.usePopoverStore({ placement: 'bottom' });
   const open = popover.useState('open');
-  const { setOption } = useSetIndexOptions();
   const disclosureRef = useRef<HTMLButtonElement>(null);
   const ghostsRef = useRef<HTMLSpanElement>(null);
   const currentRef = useRef<HTMLSpanElement>(null);
@@ -40,10 +48,15 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
      admin can still override the setting's default (e.g. reasoning_effort:
      high), and labelling that state Auto would disagree with what actually
      runs, and with the Parameters panel. */
-  const raw = conversation?.[setting.key as keyof TConversation] ?? setting.default;
-  const value = raw == null ? undefined : String(raw);
+  const raw =
+    value?.key === setting.key
+      ? value.value
+      : (conversation?.[setting.key as keyof TConversation] ?? setting.default);
+  const currentValue = raw == null ? undefined : String(raw);
   const display =
-    value == null ? localize('com_ui_auto') : resolveEffortLabel(setting, value, localize);
+    currentValue == null
+      ? localize('com_ui_auto')
+      : resolveEffortLabel(setting, currentValue, localize);
 
   /* Every label this button can show, in the active language. All of them get
      measured rather than picking by character count: the longest string is not
@@ -85,6 +98,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
         ref={disclosureRef}
         data-testid="composer-thinking-button"
         onClick={(event) => event.stopPropagation()}
+        disabled={disabled}
         aria-label={localize('com_ui_composer_thinking_value', { 0: display })}
         render={
           <TooltipAnchor
@@ -158,7 +172,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
            the edge was invisible against the popup's own background. */
         className="animate-composer-popover z-50 rounded-2xl border border-border-medium bg-surface-tertiary shadow-lg outline-none"
       >
-        <Effort setting={setting} conversation={conversation} setOption={setOption} />
+        <Effort setting={setting} conversation={conversation} value={value} onChange={onChange} />
       </Ariakit.Popover>
     </Ariakit.PopoverProvider>
   );
@@ -176,17 +190,47 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
  *
  * Split in two so the control's hooks are never behind that early return.
  */
-function Thinking() {
+interface ThinkingProps {
+  index: number;
+  disabled: boolean;
+  hasAddedConversation: boolean;
+}
+
+function Thinking({ index, disabled, hasAddedConversation }: ThinkingProps) {
   const { conversation } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
-  const setting = useThinkingSetting(conversation ?? null);
-  const parametersEnabled = startupConfig?.interface?.parameters === true;
+  const parametersEnabled = startupConfig?.interface?.parameters;
+  const reasoning = useComposerReasoning({
+    conversation: conversation ?? null,
+    index,
+    hasAddedConversation,
+    enabled: parametersEnabled,
+  });
 
-  if (!parametersEnabled || !setting) {
+  if (parametersEnabled !== true || reasoning == null) {
     return null;
   }
 
-  return <ThinkingControl setting={setting} conversation={conversation ?? null} />;
+  if (reasoning.setting.type !== 'enum' || reasoning.setting.options?.length === 0) {
+    return (
+      <ReasoningControl
+        setting={reasoning.setting}
+        value={reasoning.value}
+        disabled={disabled}
+        onChange={reasoning.setValue}
+      />
+    );
+  }
+
+  return (
+    <ThinkingControl
+      setting={reasoning.setting}
+      conversation={conversation ?? null}
+      value={reasoning.value}
+      disabled={disabled}
+      onChange={reasoning.setValue}
+    />
+  );
 }
 
 export default memo(Thinking);

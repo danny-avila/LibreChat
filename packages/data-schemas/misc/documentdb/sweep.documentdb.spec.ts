@@ -627,10 +627,13 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
       );
     }
     if (STRICT) {
-      /** Enforced against the FINALIZED rows: the per-test assertion has
+      /** Enforced against the FINALIZED rows: the per-test check has
        * already passed for a row that timed out and only later recorded its
        * engine rejection. */
-      expect(rejected.map((row) => `${row.name}: ${row.engineError}`)).toEqual([]);
+      const rejectionDetails = rejected.map((row) => `${row.name}: ${row.engineError}`);
+      if (rejectionDetails.length > 0) {
+        throw new Error(`DocumentDB method sweep rejected:\n${rejectionDetails.join('\n')}`);
+      }
     }
   }, 120_000);
 

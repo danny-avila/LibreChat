@@ -18,6 +18,7 @@ const composerModules = collectSourceModules(composerRoot);
 
 const protectedModules = [
   ...composerModules,
+  join(__dirname, '..', '..', 'Reasoning.tsx'),
   join(__dirname, '..', '..', 'EscalateNowButton.tsx'),
   join(__dirname, '..', '..', '..', 'Messages', 'Content', 'Parts', 'PendingSteers.tsx'),
   join(__dirname, '..', '..', '..', '..', '..', 'hooks', 'Input', 'usePaletteEntries.tsx'),

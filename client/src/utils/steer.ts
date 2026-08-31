@@ -232,7 +232,11 @@ export function appendAppliedSteerIds(prev: string[], steerIds: string[]): strin
   return [...prev, ...fresh].slice(-APPLIED_STEER_IDS_CAP);
 }
 
-export type SteerCarriedContext = { quotes?: string[]; manualSkills?: string[] };
+export type SteerCarriedContext = {
+  quotes?: string[];
+  manualSkills?: string[];
+  reasoningOverride?: TMessage['reasoningOverride'];
+};
 
 /** Quotes ride the steer POST (the server merges them into the injected
  *  turn) but chips, reseeds, and queued conversions still carry them locally
@@ -242,9 +246,11 @@ export type SteerCarriedContext = { quotes?: string[]; manualSkills?: string[] }
 export function carriedSteerContext(source?: SteerCarriedContext): SteerCarriedContext {
   const quotes = source?.quotes;
   const manualSkills = source?.manualSkills;
+  const reasoningOverride = source?.reasoningOverride;
   return {
     ...(quotes && quotes.length > 0 && { quotes }),
     ...(manualSkills && manualSkills.length > 0 && { manualSkills }),
+    ...(reasoningOverride != null && { reasoningOverride }),
   };
 }
 

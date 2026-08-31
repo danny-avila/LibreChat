@@ -1,6 +1,6 @@
-import { memo, useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { memo, useRef, useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { CircleHelp } from 'lucide-react';
-import { Constants } from 'librechat-data-provider';
+import { Constants, reasoningOverrideSchema } from 'librechat-data-provider';
 import {
   HoverCard,
   IconButton,
@@ -8,9 +8,9 @@ import {
   HoverCardContent,
   HoverCardPortal,
 } from '@librechat/client';
-import type { SettingDefinition, TConversation } from 'librechat-data-provider';
+import type { SettingDefinition, TConversation, TReasoningOverride } from 'librechat-data-provider';
 import type { CSSProperties } from 'react';
-import type { TSetOption, LocalizeFunction } from '~/common';
+import type { LocalizeFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks';
 import useReducedMotion from '~/hooks/Generic/useReducedMotion';
 import { useLocalize } from '~/hooks';
@@ -67,7 +67,8 @@ export function resolveEffortLabel(
 interface EffortProps {
   setting: SettingDefinition;
   conversation: TConversation | null;
-  setOption: TSetOption;
+  value?: TReasoningOverride;
+  onChange: (value: TReasoningOverride) => void;
 }
 
 /**
@@ -81,7 +82,7 @@ interface EffortProps {
  * The level is deliberately not named in here: the button that opens this owns
  * that, so the value never appears in two places at once.
  */
-function Effort({ setting, conversation, setOption }: EffortProps) {
+function Effort({ setting, conversation, value, onChange }: EffortProps) {
   const localize = useLocalize();
   const trackRef = useRef<HTMLDivElement>(null);
   /** Ref drives the gesture (pointermove fires before a state flush would land);
@@ -102,7 +103,10 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
 
   /* Same resolution as the trigger: an untouched conversation falls back to
      the setting's possibly admin-overridden default, not to the separate mode. */
-  const raw = conversation?.[setting.key as keyof TConversation] ?? setting.default;
+  const raw =
+    value?.key === setting.key
+      ? value.value
+      : (conversation?.[setting.key as keyof TConversation] ?? setting.default);
   const current = raw == null ? undefined : String(raw);
   const isUngraded = current == null || UNGRADED_VALUES.has(current);
   const activeIndex = isUngraded ? -1 : levels.indexOf(current);
@@ -151,10 +155,20 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
       : -1;
   const restoreIndex = rememberedIndex >= 0 ? rememberedIndex : 0;
   const shownIndex = activeIndex >= 0 ? activeIndex : restoreIndex;
+  const initialShownIndex = useRef(shownIndex);
+
+  useLayoutEffect(() => {
+    stopRefs.current[initialShownIndex.current]?.focus();
+  }, []);
 
   const select = useCallback(
-    (value: string) => setOption(setting.key)(value),
-    [setOption, setting.key],
+    (nextValue: string) => {
+      const parsed = reasoningOverrideSchema.safeParse({ key: setting.key, value: nextValue });
+      if (parsed.success) {
+        onChange(parsed.data);
+      }
+    },
+    [onChange, setting.key],
   );
   const label = useCallback(
     (value: string) => resolveEffortLabel(setting, value, localize),

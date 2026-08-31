@@ -1,8 +1,14 @@
+import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
+import {
+  pendingReasoningOverrideFamily,
+  removePendingReasoningOverride,
+} from '~/components/Chat/Input/Composer/state';
 import { clearLocalStorage } from '~/utils/localStorage';
 import store from '~/store';
 
 export default function useClearStates() {
+  const reasoningStore = useStore();
   const clearConversations = store.useClearConvoState();
   const clearSubmissions = store.useClearSubmissionState();
 
@@ -33,6 +39,9 @@ export default function useClearStates() {
           reset(store.showSkillsPopoverFamily(key));
           reset(store.pendingManualSkillsByConvoId(key.toString()));
           reset(store.pendingQuotesByConvoId(key.toString()));
+          const indexKey = key.toString();
+          reasoningStore.set(pendingReasoningOverrideFamily(indexKey), undefined);
+          removePendingReasoningOverride(indexKey);
           /**
            * Pending skill/quote queues are keyed by the conversation id the
            * composer wrote under, not this UI index — also clear by the resolved
@@ -43,6 +52,8 @@ export default function useClearStates() {
           if (convoId != null) {
             reset(store.pendingManualSkillsByConvoId(convoId));
             reset(store.pendingQuotesByConvoId(convoId));
+            reasoningStore.set(pendingReasoningOverrideFamily(convoId), undefined);
+            removePendingReasoningOverride(convoId);
           }
           reset(store.activePromptByIndex(key));
           reset(store.globalAudioURLFamily(key));
@@ -55,7 +66,7 @@ export default function useClearStates() {
 
         clearLocalStorage(skipFirst);
       },
-    [],
+    [reasoningStore],
   );
 
   return clearStates;

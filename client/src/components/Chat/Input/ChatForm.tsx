@@ -32,15 +32,15 @@ import {
   useAssistantsMapContext,
   BadgeRowProvider,
 } from '~/Providers';
-import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useComposerRestore from '~/hooks/Input/useComposerRestore';
+import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
-import PastedTextDialog from './Files/PastedTextDialog';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
 import InterruptSteerButton from './InterruptSteerButton';
 import Hints, { composerHintId } from './Composer/Hints';
+import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
 import ProjectLandingChip from '../ProjectLandingChip';
 import useDictation from '~/hooks/Input/useDictation';
@@ -49,11 +49,11 @@ import useSteering from '~/hooks/Chat/useSteering';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import SkillsCommand from './SkillsCommand';
+import AutoPlayAudio from './AutoPlayAudio';
 import Waveform from './Composer/Waveform';
 import CollapseChat from './CollapseChat';
 import { mainTextareaId } from '~/common';
 import QuoteButton from './QuoteButton';
-import AutoPlayAudio from './AutoPlayAudio';
 import ToolDialogs from './ToolDialogs';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -258,6 +258,7 @@ const ChatForm = memo(function ChatForm({
         overrideFiles,
         overrideQuotes: context?.quotes ?? [],
         overrideManualSkills: context?.manualSkills ?? [],
+        overrideReasoning: context?.reasoningOverride ?? null,
         overrideClientRequestId: context?.clientRequestId,
         overrideRecoverySteerId: context?.recoverySteerId,
         overrideExpectedPredecessorCreatedAt: context?.expectedPredecessorCreatedAt,
@@ -735,6 +736,7 @@ const ChatForm = memo(function ChatForm({
                   speechDisabled={disableInputs || isNotAppendable || answerMode.composerLocked}
                   dictation={dictation}
                   actionSlot={actionSlot}
+                  hasAddedConversation={addedConvo != null}
                 />
                 <ToolDialogs />
               </BadgeRowProvider>
