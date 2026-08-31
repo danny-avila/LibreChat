@@ -4,7 +4,6 @@ import {
   getLangChainErrorCode,
   resolveLangChainError,
   getUserFacingProviderError,
-  stripLangChainTroubleshootingUrl,
   isFatalAgentInitializationError,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
 } from './errors';
@@ -41,25 +40,6 @@ describe('LangChain provider error text', () => {
   const troubleshooting = (code: string) =>
     `\n\nTroubleshooting URL: https://docs.langchain.com/oss/javascript/langchain/errors/${code}/\n`;
 
-  describe('stripLangChainTroubleshootingUrl', () => {
-    it('removes the docs URL and the whitespace that framed it', () => {
-      const message = `429 budget exceeded${troubleshooting('MODEL_RATE_LIMIT')}`;
-      expect(stripLangChainTroubleshootingUrl(message)).toBe('429 budget exceeded');
-    });
-
-    it('removes every occurrence when a wrapped error carries more than one', () => {
-      const message = `outer${troubleshooting('MODEL_RATE_LIMIT')}inner${troubleshooting(
-        'MODEL_NOT_FOUND',
-      )}`;
-      expect(stripLangChainTroubleshootingUrl(message)).toBe('outer inner');
-    });
-
-    it('leaves provider text without the tail untouched', () => {
-      const message = '400 Bad Request\nRequest contains an invalid argument';
-      expect(stripLangChainTroubleshootingUrl(message)).toBe(message);
-    });
-  });
-
   describe('getLangChainErrorCode', () => {
     it('prefers the field LangChain stamps on the error', () => {
       const error = Object.assign(new Error('429 budget exceeded'), {
@@ -79,6 +59,10 @@ describe('LangChain provider error text', () => {
         expect(getLangChainErrorCode(error)).toBeUndefined();
       },
     );
+
+    it('survives an error-like object whose message is not a string', () => {
+      expect(getLangChainErrorCode({ message: { error: 'rate limited' } })).toBeUndefined();
+    });
   });
 
   describe('resolveLangChainError', () => {
@@ -114,6 +98,11 @@ describe('LangChain provider error text', () => {
 
     it('does not attempt to read a message off a non-Error rejection', () => {
       expect(getUserFacingProviderError('boom', false)).toBe('An error occurred');
+    });
+
+    it('coerces an Error whose message was overwritten with an object', () => {
+      const error = Object.assign(new Error('replaced'), { message: { error: 'rate limited' } });
+      expect(getUserFacingProviderError(error, false)).toBe('[object Object]');
     });
   });
 });

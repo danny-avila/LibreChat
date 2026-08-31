@@ -118,7 +118,6 @@ const {
   appendYouTubeVideoParts,
   resolveGoogleVideoError,
   resolveLangChainError,
-  stripLangChainTroubleshootingUrl,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
@@ -162,6 +161,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  stripLangChainTroubleshootingUrl,
   DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');

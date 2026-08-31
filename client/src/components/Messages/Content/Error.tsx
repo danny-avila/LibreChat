@@ -1,5 +1,11 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
+import {
+  ErrorTypes,
+  alternateName,
+  ViolationTypes,
+  parseLangChainErrorCode,
+  stripLangChainTroubleshootingUrl,
+} from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
@@ -9,19 +15,17 @@ import CodeBlock from './CodeBlock';
 const localizedErrorPrefix = 'com_error';
 
 /**
- * LangChain classifies provider errors by appending a docs URL to the message. The server now
- * converts the classified ones into typed payloads, but messages persisted before it did still
- * carry the URL, so the code is read back out of the text to localize those the same way.
+ * The server converts classified LangChain failures into typed payloads, but messages persisted
+ * before it did still carry the docs URL, so the code is read back out of the text to localize
+ * those the same way. Codes without copy fall through to the provider text, stripped of the URL.
  */
-const langChainErrorCodeUrl = /langchain\.com\/\S*\/errors\/([A-Za-z_]+)/i;
-
 const langChainErrorKeys: Record<string, TranslationKeys> = {
   MODEL_NOT_FOUND: 'com_error_model_not_found',
   MODEL_RATE_LIMIT: 'com_error_model_rate_limit',
 };
 
 function getLangChainErrorKey(text: string): TranslationKeys | undefined {
-  const code = text.match(langChainErrorCodeUrl)?.[1]?.toUpperCase();
+  const code = parseLangChainErrorCode(text);
   return code == null ? undefined : langChainErrorKeys[code];
 }
 
@@ -153,7 +157,9 @@ const errorMessages = {
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
   const jsonString = extractJson(text);
-  const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
+  const providerText = stripLangChainTroubleshootingUrl(text);
+  const errorMessage =
+    providerText.length > 512 && !jsonString ? providerText.slice(0, 512) + '...' : providerText;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
 
   const langChainErrorKey = getLangChainErrorKey(text);

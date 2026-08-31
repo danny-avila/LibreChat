@@ -50,12 +50,13 @@ describe('Error — typed provider errors', () => {
     expect(screen.getByText(catalog[key])).toBeInTheDocument();
   });
 
-  it('keeps the provider message for a LangChain code without localized copy', () => {
+  it('keeps the provider message for a LangChain code without localized copy, minus the URL', () => {
     const raw =
-      'An error occurred while processing the request: could not parse output Troubleshooting URL: https://docs.langchain.com/oss/javascript/langchain/errors/OUTPUT_PARSING_FAILURE/';
+      'An error occurred while processing the request: could not parse output\n\nTroubleshooting URL: https://docs.langchain.com/oss/javascript/langchain/errors/OUTPUT_PARSING_FAILURE/\n';
     render(<Error text={raw} />);
 
     expect(screen.getByText(/could not parse output/)).toBeInTheDocument();
+    expect(screen.queryByText(/langchain\.com/i)).not.toBeInTheDocument();
   });
 
   it('falls back to the raw provider text for an unmapped error', () => {

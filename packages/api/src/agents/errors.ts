@@ -1,4 +1,8 @@
-import { ErrorTypes } from 'librechat-data-provider';
+import {
+  ErrorTypes,
+  parseLangChainErrorCode,
+  stripLangChainTroubleshootingUrl,
+} from 'librechat-data-provider';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
 
@@ -51,17 +55,6 @@ export function isFatalAgentInitializationError(
 export const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
 
 /**
- * LangChain appends `\n\nTroubleshooting URL: <docs url>\n` to `error.message` for every error it
- * classifies, so any provider message forwarded verbatim credits a third party for a failure that
- * belongs to the provider. Consumes the surrounding whitespace so a stripped tail leaves no gap.
- */
-const LANGCHAIN_TROUBLESHOOTING_URL =
-  /\s*Troubleshooting URL:\s*https?:\/\/\S*langchain\S*\/errors\/[A-Za-z_]+\/?\s*/g;
-
-/** The classification carried by that URL, recoverable when the error object no longer holds it. */
-const LANGCHAIN_ERROR_CODE_URL = /langchain\S*\/errors\/([A-Za-z_]+)/i;
-
-/**
  * LangChain error codes we answer with localized copy. Codes absent here keep the provider's own
  * message (minus the docs URL), which is more specific than any generic string we could write.
  */
@@ -70,35 +63,19 @@ const LANGCHAIN_ERROR_TYPES: Record<string, ErrorTypes> = {
   MODEL_RATE_LIMIT: ErrorTypes.MODEL_RATE_LIMIT,
 };
 
-function toErrorMessage(error: unknown): string | undefined {
-  if (typeof error === 'string') {
-    return error;
-  }
-  if (error == null || typeof error !== 'object') {
-    return undefined;
-  }
-  const { message } = error as { message?: unknown };
-  return typeof message === 'string' ? message : undefined;
-}
-
 /**
  * Reads LangChain's classification off the error, falling back to the docs URL it stamps into the
  * message so a re-thrown or serialized error still classifies.
  */
 export function getLangChainErrorCode(error: unknown): string | undefined {
-  if (error != null && typeof error === 'object') {
-    const { lc_error_code: code } = error as { lc_error_code?: unknown };
-    if (typeof code === 'string' && code.length > 0) {
-      return code.toUpperCase();
-    }
+  if (error == null || typeof error !== 'object') {
+    return parseLangChainErrorCode(error);
   }
-  const match = toErrorMessage(error)?.match(LANGCHAIN_ERROR_CODE_URL);
-  return match?.[1]?.toUpperCase();
-}
-
-/** Removes LangChain's appended docs URL so provider text carries no third-party attribution. */
-export function stripLangChainTroubleshootingUrl(message: string): string {
-  return message.replace(LANGCHAIN_TROUBLESHOOTING_URL, ' ').trim();
+  const { lc_error_code: code, message } = error as { lc_error_code?: unknown; message?: unknown };
+  if (typeof code === 'string' && code.length > 0) {
+    return code.toUpperCase();
+  }
+  return parseLangChainErrorCode(message);
 }
 
 /**
