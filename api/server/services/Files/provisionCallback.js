@@ -12,6 +12,7 @@ function createProvisionFilesCallback({ req, agentToolContexts, resolvePrimaryAg
     provisionToCodeEnv,
     provisionToVectorDB,
     updateFile: db.updateFile,
+    updateCodeEnvRef: db.updateFileCodeEnvRef,
   });
 }
 

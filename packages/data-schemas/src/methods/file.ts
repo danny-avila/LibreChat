@@ -1,5 +1,6 @@
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '../config/winston';
@@ -489,6 +490,42 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Records one code-environment route pointer without rewriting the rest of `metadata`.
+   * Agents provisioning the same file to different deployments write concurrently, and a
+   * whole-object `$set` built from each caller's pre-provisioning snapshot would drop the
+   * sibling route that landed in between.
+   *
+   * @param data - The file, its route key, the pointer to store, and an optional legacy pointer
+   * @returns A promise that resolves to the updated file document, or null when absent
+   */
+  async function updateFileCodeEnvRef(data: {
+    file_id: string;
+    routeKey: string;
+    ref: CodeEnvRef;
+    legacyRef?: CodeEnvRef;
+  }): Promise<IMongoFile | null> {
+    const { file_id, routeKey, ref, legacyRef } = data;
+    /* Route keys become dotted update paths, so a key carrying `.` or a leading `$` would
+     * write somewhere other than the intended entry. They come from server config, which
+     * makes a malformed one a configuration error worth surfacing. */
+    if (routeKey.length === 0 || routeKey.includes('.') || routeKey.startsWith('$')) {
+      throw new Error(`Invalid code environment route key "${routeKey}"`);
+    }
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const update: Record<string, CodeEnvRef> = {
+      [`metadata.codeEnvRefs.${routeKey}`]: ref,
+    };
+    if (legacyRef) {
+      update['metadata.codeEnvRef'] = legacyRef;
+    }
+    return File.findOneAndUpdate(
+      { file_id },
+      { $set: update, $unset: { expiresAt: '' } },
+      { new: true },
+    ).lean<IMongoFile>();
+  }
+
+  /**
    * Increments the usage of a file identified by file_id.
    * @param data - The data to update, must contain file_id and the increment value for usage
    * @returns A promise that resolves to the updated file document
@@ -760,6 +797,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     claimCodeFile,
     createFile,
     updateFile,
+    updateFileCodeEnvRef,
     updateFileUsage,
     deleteFile,
     deleteFiles,

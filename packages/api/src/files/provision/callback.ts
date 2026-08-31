@@ -2,7 +2,7 @@ import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import { EToolResources } from 'librechat-data-provider';
 import type { AgentToolResources, TFile } from 'librechat-data-provider';
-import type { CodeExecutionRoute, ProvisionService } from './service';
+import type { CodeEnvRefUpdate, CodeExecutionRoute, ProvisionService } from './service';
 import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
 import { isAgentScopedFile } from '~/agents/resources';
@@ -13,6 +13,25 @@ interface FileUpdate {
   file_id: string;
   metadata?: Record<string, unknown>;
   embedded?: boolean;
+}
+
+/** One attempt plus one retry: a transient write failure would otherwise leave the record
+ *  unprovisioned while the queue is cleared. */
+async function persistWithRetry(
+  write: () => Promise<unknown>,
+  onFailure: (error: unknown) => void,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await write();
+      return true;
+    } catch (error) {
+      if (attempt === 1) {
+        onFailure(error);
+      }
+    }
+  }
+  return false;
 }
 
 /** The slice of a per-agent tool context this callback reads and updates. */
@@ -30,6 +49,7 @@ export interface ProvisionCallbackDeps {
   provisionToCodeEnv: ProvisionService['provisionToCodeEnv'];
   provisionToVectorDB: ProvisionService['provisionToVectorDB'];
   updateFile: (update: FileUpdate) => Promise<unknown>;
+  updateCodeEnvRef: (update: CodeEnvRefUpdate) => Promise<unknown>;
 }
 
 /**
@@ -75,23 +95,23 @@ export function createProvisionFilesCallback({
   provisionToCodeEnv,
   provisionToVectorDB,
   updateFile,
+  updateCodeEnvRef,
 }: ProvisionCallbackDeps): (toolNames: string[], agentId?: string) => Promise<void> {
   /* Agents in a handoff or parallel graph are initialized independently over the same
    * request attachments, so each holds its own ProvisionState for the same file. Keyed
    * per file, destination and scope, this makes the upload happen once for the request;
-   * every agent still applies the result to its own tool resources below. */
+   * every agent still applies the result to its own tool resources below. The shared
+   * work includes the database write, because the tools loaded right after this callback
+   * re-read the stored record and skip files whose reference is not there yet. */
   const inFlight = new Map<string, Promise<unknown>>();
 
-  function shareProvisioning<T>(
-    key: string | undefined,
-    start: () => Promise<T>,
-  ): { promise: Promise<T>; owner: boolean } {
+  function shareProvisioning<T>(key: string | undefined, start: () => Promise<T>): Promise<T> {
     if (key == null) {
-      return { promise: start(), owner: true };
+      return start();
     }
     const existing = inFlight.get(key) as Promise<T> | undefined;
     if (existing) {
-      return { promise: existing, owner: false };
+      return existing;
     }
     const promise = start();
     inFlight.set(key, promise);
@@ -102,7 +122,7 @@ export function createProvisionFilesCallback({
         inFlight.delete(key);
       }
     });
-    return { promise, owner: true };
+    return promise;
   }
 
   return async function provisionFiles(toolNames: string[], agentId?: string): Promise<void> {
@@ -198,11 +218,6 @@ export function createProvisionFilesCallback({
       toolResources[resourceType] = { ...resource, files };
     };
 
-    const pendingUpdates: FileUpdate[] = [];
-    /** Code env updates tracked separately: primeCodeFiles reads the persisted record,
-     *  so an unpersisted code ref makes the file invisible to the tool it was uploaded for. */
-    const codeUpdateIds = new Set<string>();
-
     /** Files whose provisioning rejected this turn; kept queued so a transient
      *  outage can retry next turn instead of being silently dropped. */
     const failedCodeFiles: TFile[] = [];
@@ -211,21 +226,36 @@ export function createProvisionFilesCallback({
       const queuedCodeFiles = provisionState.codeEnvFiles;
       const results = await Promise.allSettled(
         queuedCodeFiles.map(async (file) => {
-          const { promise, owner } = shareProvisioning(shareKey(`code:${codeRouteKey}`, file), () =>
-            provisionToCodeEnv({
-              req,
-              file,
-              entity_id: entityIdForFile(file),
-              route: ctx.codeExecutionContext,
-            }),
+          const referenceSet = await shareProvisioning(
+            shareKey(`code:${codeRouteKey}`, file),
+            async () => {
+              const { referenceSet: refs, refUpdate } = await provisionToCodeEnv({
+                req,
+                file,
+                entity_id: entityIdForFile(file),
+                route: ctx.codeExecutionContext,
+              });
+              /* primeCodeFiles re-reads the database and skips files without a stored
+               * reference, so a tool loaded after an unpersisted upload would run against
+               * an attachment it cannot see. Fail instead of answering from missing input. */
+              const persisted = await persistWithRetry(
+                () => updateCodeEnvRef(refUpdate),
+                (error) =>
+                  logger.error(
+                    `[provisionFiles] Failed to persist code environment reference for file ${refUpdate.file_id}`,
+                    error,
+                  ),
+              );
+              if (!persisted) {
+                throw new Error(
+                  `Failed to persist the code environment reference for file ${refUpdate.file_id}`,
+                );
+              }
+              return refs;
+            },
           );
-          const { referenceSet, fileUpdate } = await promise;
           file.metadata = { ...file.metadata, ...referenceSet };
           addProvisionedFile(file, EToolResources.execute_code);
-          if (owner) {
-            codeUpdateIds.add(fileUpdate.file_id);
-            pendingUpdates.push(fileUpdate);
-          }
         }),
       );
       results.forEach((result, index) => {
@@ -241,14 +271,27 @@ export function createProvisionFilesCallback({
       const queuedVectorFiles = provisionState.vectorDBFiles;
       const results = await Promise.allSettled(
         queuedVectorFiles.map(async (file) => {
-          const { promise, owner } = shareProvisioning(shareKey('search', file), () =>
-            provisionToVectorDB({
+          const result = await shareProvisioning(shareKey('search', file), async () => {
+            const provisioned = await provisionToVectorDB({
               req,
               file,
               entity_id: entityIdForFile(file),
-            }),
-          );
-          const result = await promise;
+            });
+            /* The vectors are already stored, so a failed flag write costs a re-embed next
+             * turn rather than this turn's results. Logged, not fatal. */
+            if (provisioned.embedded && provisioned.fileUpdate) {
+              const update = provisioned.fileUpdate;
+              await persistWithRetry(
+                () => updateFile(update),
+                (error) =>
+                  logger.error(
+                    `[provisionFiles] Failed to persist embedding state for file ${update.file_id}`,
+                    error,
+                  ),
+              );
+            }
+            return provisioned;
+          });
           if (result.embedded) {
             file.embedded = true;
             addProvisionedFile(
@@ -256,9 +299,6 @@ export function createProvisionFilesCallback({
               EToolResources.file_search,
               entityIdForFile(file) !== undefined,
             );
-            if (owner && result.fileUpdate) {
-              pendingUpdates.push(result.fileUpdate);
-            }
           }
         }),
       );
@@ -273,38 +313,6 @@ export function createProvisionFilesCallback({
        * narrows results, but a search that silently omits the file the user asked about
        * is a wrong answer, not a smaller one. */
       provisionState.vectorDBFiles = failedVectorFiles;
-    }
-
-    if (pendingUpdates.length > 0) {
-      const persist = async (updates: FileUpdate[]): Promise<FileUpdate[]> => {
-        const results = await Promise.allSettled(
-          updates.map((update: FileUpdate) => updateFile(update)),
-        );
-        return updates.filter(
-          (_: FileUpdate, index: number) => results[index].status === 'rejected',
-        );
-      };
-
-      /* One retry: a transient write failure otherwise leaves the record unprovisioned
-       * while the queue is cleared. */
-      let failed = await persist(pendingUpdates);
-      if (failed.length > 0) {
-        failed = await persist(failed);
-      }
-
-      for (const update of failed) {
-        logger.error(`[provisionFiles] Failed to persist provisioning for file ${update.file_id}`);
-      }
-
-      /* primeCodeFiles re-reads the database and skips files without a persisted ref,
-       * so continuing here would run code against an attachment the tool cannot see.
-       * Fail the preflight instead of producing a silently incomplete result. */
-      const unpersistedCodeFiles = failed.filter((update) => codeUpdateIds.has(update.file_id));
-      if (unpersistedCodeFiles.length > 0) {
-        throw new Error(
-          `Failed to persist code environment references for ${unpersistedCodeFiles.length} file(s); aborting tool execution rather than running without them`,
-        );
-      }
     }
 
     /* Provisioning failed outright, so the sandbox or vector store does not have the

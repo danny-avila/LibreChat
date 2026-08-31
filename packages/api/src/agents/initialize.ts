@@ -1089,6 +1089,13 @@ export async function initializeAgent(
         ? getThreadData(threadMessages, threadAnchor).fileIds
         : undefined;
 
+    /* Linear continuation APIs supply no anchor: the Responses API always continues via
+     * `previous_response_id`, and chat completions may send `conversation_id` alone. There
+     * is no branch to walk in either case, so the conversation's own file refs are both the
+     * correct scope and the only one available. Without this the deferred lookup never runs
+     * there, and a later code or search call executes without the attachment. */
+    const provisionFileIds = threadFileIds && threadFileIds.length > 0 ? threadFileIds : fileIds;
+
     /**
      * Retrieve execute_code files filtered to the current thread.
      * This includes both code-generated files and user-uploaded execute_code files.
@@ -1127,9 +1134,8 @@ export async function initializeAgent(
       wantsProvisioning &&
       db.getDeferredProvisionFiles &&
       requestFileOwnerScope &&
-      threadFileIds &&
-      threadFileIds.length > 0
-        ? (db.getDeferredProvisionFiles(threadFileIds, requestFileOwnerScope, {
+      provisionFileIds.length > 0
+        ? (db.getDeferredProvisionFiles(provisionFileIds, requestFileOwnerScope, {
             code: wantsCodeFiles,
             search: wantsSearchFiles,
           }) as Promise<IMongoFile[]>)
