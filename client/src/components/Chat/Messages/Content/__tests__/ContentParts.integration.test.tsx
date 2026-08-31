@@ -619,6 +619,37 @@ describe('ContentParts — synthesized activity folds', () => {
     );
   });
 
+  it('ticks the header forward as each sub-group resolves', () => {
+    const steps = ['Read the config', 'Checked the callers', 'Confirmed the fix'];
+    const content: TMessageContentParts[] = [];
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={[]} />
+      </RecoilRoot>,
+    );
+
+    const headers: string[] = [];
+    steps.forEach((step, index) => {
+      content.push(makeMcpToolCall(`t${index}`), makeChildLabel(step));
+      rerender(
+        <RecoilRoot>
+          <ContentParts {...baseProps} content={[...content]} />
+        </RecoilRoot>,
+      );
+      const panel = screen.queryByTestId('activity-phase-panel');
+      if (panel == null) {
+        return;
+      }
+      const card = panel.parentElement?.querySelector('button');
+      headers.push(card?.getAttribute('aria-label') ?? '');
+      expect(card).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    /** One card from the second activity on, its line always the newest —
+     *  and never re-opening underneath the reader as the run advances. */
+    expect(headers).toEqual(['Checked the callers', 'Confirmed the fix']);
+  });
+
   it('refuses to fold a span holding an unresolved approval', () => {
     const awaiting = {
       type: ContentTypes.TOOL_CALL,
