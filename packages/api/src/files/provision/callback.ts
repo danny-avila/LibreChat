@@ -2,8 +2,8 @@ import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import { EToolResources } from 'librechat-data-provider';
 import type { AgentToolResources, TFile } from 'librechat-data-provider';
+import type { CodeExecutionRoute, ProvisionService } from './service';
 import type { ProvisionState } from '~/agents/resources';
-import type { ProvisionService } from './service';
 import type { ServerRequest } from '~/types';
 import { isAgentScopedFile } from '~/agents/resources';
 import { CREATE_FILE_TOOL_NAME } from '~/agents/tools';
@@ -19,6 +19,8 @@ interface FileUpdate {
 export interface ProvisionToolContext {
   provisionState?: ProvisionState;
   tool_resources?: AgentToolResources;
+  /** Code API deployment this agent resolved, so uploads land where it will execute. */
+  codeExecutionContext?: CodeExecutionRoute;
 }
 
 export interface ProvisionCallbackDeps {
@@ -166,6 +168,7 @@ export function createProvisionFilesCallback({
     /** Files whose provisioning rejected this turn; kept queued so a transient
      *  outage can retry next turn instead of being silently dropped. */
     const failedCodeFiles: TFile[] = [];
+    const failedVectorFiles: TFile[] = [];
     if (needsCode && provisionState.codeEnvFiles.length > 0) {
       const queuedCodeFiles = provisionState.codeEnvFiles;
       const results = await Promise.allSettled(
@@ -174,6 +177,7 @@ export function createProvisionFilesCallback({
             req,
             file,
             entity_id: entityIdForFile(file),
+            route: ctx.codeExecutionContext,
           });
           file.metadata = { ...file.metadata, ...referenceSet };
           addProvisionedFile(file, EToolResources.execute_code);
@@ -212,15 +216,16 @@ export function createProvisionFilesCallback({
           }
         }),
       );
-      const failedVectorFiles: TFile[] = [];
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           logger.error('[provisionFiles] Vector DB provisioning failed', result.reason);
           failedVectorFiles.push(queuedVectorFiles[index]);
         }
       });
-      /* Unlike code, an unembedded file only narrows search results and is re-queued
-       * next turn, so it does not abort the run. */
+      /* Preserved for a later retry, and fatal for this turn like a code failure. An
+       * earlier version let search proceed on the grounds that a missing embedding only
+       * narrows results, but a search that silently omits the file the user asked about
+       * is a wrong answer, not a smaller one. */
       provisionState.vectorDBFiles = failedVectorFiles;
     }
 
@@ -256,11 +261,16 @@ export function createProvisionFilesCallback({
       }
     }
 
-    /* Uploading to the code environment failed outright, so the sandbox does not have
-     * the attachment; running the tool anyway would answer from missing input. */
+    /* Provisioning failed outright, so the sandbox or vector store does not have the
+     * attachment; running the tool anyway would answer from missing input. */
     if (failedCodeFiles.length > 0) {
       throw new Error(
         `Failed to provision ${failedCodeFiles.length} file(s) to the code environment; aborting tool execution rather than running without them`,
+      );
+    }
+    if (failedVectorFiles.length > 0) {
+      throw new Error(
+        `Failed to provision ${failedVectorFiles.length} file(s) for search; aborting tool execution rather than searching without them`,
       );
     }
   };
