@@ -2311,7 +2311,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         $cond: [{ $in: [path, allowed] }, path, null],
       });
       /** Estimated serialized bytes for one already-clipped activity item; the
-       *  constants cover the non-string JSON envelope per item type. */
+       *  constants cover the non-string JSON envelope per item type. This is a
+       *  BSON-transfer budget: `$strLenBytes` measures exactly what MongoDB
+       *  ships to the API. JSON escaping can expand strings after transfer,
+       *  which the API bounds precisely — `boundActivity` in
+       *  `packages/api/src/agents/activity.ts` re-fits the same array to 64KB
+       *  of `JSON.stringify` output before anything reaches a response. */
       const activityItemBytes = (item: string) => ({
         $switch: {
           branches: [

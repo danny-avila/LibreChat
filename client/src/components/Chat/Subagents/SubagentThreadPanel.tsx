@@ -299,6 +299,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const activeThreadRef = useRef(threadId);
   const selectionThreadRef = useRef(threadId);
   const selectionGenerationRef = useRef(0);
+  /** Locally retained turn buffers reset in a passive effect; until it has run
+   *  for the current thread they still hold the previous thread's turns and
+   *  must not render. Stamped inside that reset effect. */
+  const retainedTurnsGenerationRef = useRef(0);
   const turnDetailRequestsRef = useRef(new Set<string>());
   const historyRequestRef = useRef<string | null>(null);
   const historyHasLoadedRef = useRef(false);
@@ -329,6 +333,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setMovingWindowTurns([]);
     setRebaseTurns([]);
     setPostRebaseTurns([]);
+    retainedTurnsGenerationRef.current = selectionGenerationRef.current;
     postRebaseTurnsRef.current = [];
     setHistoryRebaseActive(false);
     historyRebaseActiveRef.current = false;
@@ -771,14 +776,17 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       turns: latestConversationTurns,
     };
   }, [historyRebaseActive, latestConversationTurns, latestHistoryGeneration, threadId, threadView]);
+  const retainedTurnsValid = retainedTurnsGenerationRef.current === selectionGenerationRef.current;
   const conversationTurns = useMemo(() => {
-    const durableTurns = mergeChildConversationTurns(
-      olderTurns,
-      movingWindowTurns,
-      rebaseTurns,
-      postRebaseTurns,
-      latestConversationTurns,
-    );
+    const durableTurns = retainedTurnsValid
+      ? mergeChildConversationTurns(
+          olderTurns,
+          movingWindowTurns,
+          rebaseTurns,
+          postRebaseTurns,
+          latestConversationTurns,
+        )
+      : mergeChildConversationTurns(latestConversationTurns);
     if (durableTurns.length > 0) {
       const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
       if (selectedTurnIndex >= 0) {
@@ -828,6 +836,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     olderTurns,
     postRebaseTurns,
     rebaseTurns,
+    retainedTurnsValid,
     selection,
     taskId,
     turnDetailOverrides,
