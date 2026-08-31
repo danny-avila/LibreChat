@@ -460,11 +460,13 @@ export const validateFiles = ({
       fileList[i] = newFile;
     }
 
+    /* Unified mode routes by MIME type but does not widen what may be uploaded: the
+     * endpoint allowlist is the same ceiling the server enforces in `filterFile`, so
+     * accepting extraction-capable types beyond it only turns a preflight message into
+     * a failed request. */
     let mimeTypesToCheck = supportedMimeTypes;
-    const isUnifiedMode = !toolResource && endpointFileConfig?.legacyFileUploadUX !== true;
-    if (toolResource === EToolResources.context || isUnifiedMode) {
+    if (toolResource === EToolResources.context) {
       mimeTypesToCheck = [
-        ...(supportedMimeTypes || []),
         ...(fileConfig?.text?.supportedMimeTypes || []),
         ...(fileConfig?.ocr?.supportedMimeTypes || []),
         ...(fileConfig?.stt?.supportedMimeTypes || []),

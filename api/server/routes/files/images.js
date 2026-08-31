@@ -21,6 +21,7 @@ const {
 const {
   processAgentFileUpload,
   processImageFile,
+  resolvesToTextDelivery,
   filterFile,
 } = require('~/server/services/Files/process');
 const { checkPermission } = require('~/server/services/PermissionService');
@@ -59,7 +60,14 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+    /* An image the config routes to text delivery has to go through the agent upload
+     * path, which extracts and stores the text. The image pipeline would persist the
+     * routing without any text, leaving the file out of provider delivery and out of
+     * the text context both. */
+    const takesAgentUploadPath =
+      metadata.tool_resource != null || (await resolvesToTextDelivery({ req, metadata }));
+
+    if (!isAssistantsEndpoint(metadata.endpoint) && takesAgentUploadPath) {
       const denied = await verifyAgentUploadPermission({
         req,
         res,
