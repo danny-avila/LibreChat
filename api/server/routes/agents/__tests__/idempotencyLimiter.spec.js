@@ -87,15 +87,16 @@ describe('start-generation idempotency before message limiters', () => {
     mockExemptSchedule.mockReturnValue(false);
   });
 
-  it('lets a confirmed retry reach the controller without consuming either limiter', async () => {
+  it('keeps a confirmed retry behind the shared IP limiter', async () => {
     mockHasGenerationClaim.mockResolvedValue(true);
+    mockIpLimiter.mockImplementationOnce((_req, _res, next) => next());
 
     const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-1' });
 
     expect(response.status).toBe(201);
     expect(mockRetryProbeLimiter).toHaveBeenCalledTimes(1);
     expect(mockRetryLimiter).toHaveBeenCalledTimes(1);
-    expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockIpLimiter).toHaveBeenCalledTimes(1);
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 

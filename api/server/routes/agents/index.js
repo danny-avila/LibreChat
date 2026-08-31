@@ -1136,10 +1136,7 @@ if (useMessageIpLimiter || useMessageUserLimiter) {
 
 if (useMessageIpLimiter) {
   chatRouter.use(
-    unless(
-      (req) => exemptAgentTriggerFromIpLimiter(req) || isConfirmedGenerationRetry(req),
-      messageIpLimiter,
-    ),
+    unless(exemptAgentTriggerFromIpLimiter, messageIpLimiter),
   );
 }
 
