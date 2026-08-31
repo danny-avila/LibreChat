@@ -325,6 +325,31 @@ describe('expandSharePointFolders', () => {
     expect(result.truncatedBy).toBe('sizeLimit');
   });
 
+  it('treats an exhausted byte budget as exhausted rather than unlimited', async () => {
+    mockGraph({ 'folder-1': [driveFile('a', 400), driveFile('b', 400), driveFile('c', 400)] });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      maxTotalBytes: 0,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['a']);
+    expect(result.truncatedBy).toBe('sizeLimit');
+  });
+
+  it('applies no aggregate cap when none is configured', async () => {
+    mockGraph({ 'folder-1': [driveFile('a', 400), driveFile('b', 400), driveFile('c', 400)] });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['a', 'b', 'c']);
+    expect(result.truncatedBy).toBeNull();
+  });
+
   it('keeps a single file that alone exceeds the byte budget, leaving the verdict to the uploader', async () => {
     mockGraph({ 'folder-1': [driveFile('enormous', 10_000)] });
 

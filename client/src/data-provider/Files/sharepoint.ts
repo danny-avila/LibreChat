@@ -150,8 +150,8 @@ export async function expandSharePointFolders({
 }): Promise<SharePointFolderExpansion> {
   const screenFile = createScreen?.();
   const fileLimit = maxFiles == null ? Number.POSITIVE_INFINITY : Math.max(maxFiles, 0);
-  const byteLimit =
-    maxTotalBytes == null || maxTotalBytes <= 0 ? Number.POSITIVE_INFINITY : maxTotalBytes;
+  /** Absent means no aggregate cap; zero means the caller's budget is already spent. */
+  const byteLimit = maxTotalBytes == null ? Number.POSITIVE_INFINITY : Math.max(maxTotalBytes, 0);
   let collectedBytes = 0;
   const files: SharePointFile[] = [];
   const unreadableFolders: string[] = [];
