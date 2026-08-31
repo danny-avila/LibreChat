@@ -38,6 +38,13 @@ export interface ProvisionDeps {
   }) => Promise<Record<string, string | undefined>>;
 }
 
+/** The Code API deployment an agent resolved for this turn. */
+export interface CodeExecutionRoute {
+  baseUrl?: string;
+  executionProfile?: 'default' | 'stateful';
+  executionRouteKey?: string;
+}
+
 /** Deferred database write produced by a successful provisioning call. */
 export interface ProvisionFileUpdate {
   file_id: string;
@@ -53,7 +60,12 @@ export interface CodeEnvReferenceSetResult {
 
 export interface ProvisionService {
   loadCodeApiKey: (userId: string) => Promise<string | undefined>;
-  provisionToCodeEnv: (params: { req: ServerRequest; file: TFile; entity_id?: string }) => Promise<{
+  provisionToCodeEnv: (params: {
+    req: ServerRequest;
+    file: TFile;
+    entity_id?: string;
+    route?: CodeExecutionRoute;
+  }) => Promise<{
     referenceSet: CodeEnvReferenceSetResult;
     fileUpdate: ProvisionFileUpdate;
   }>;
@@ -193,10 +205,12 @@ export function createProvisionService({
     req,
     file,
     entity_id,
+    route,
   }: {
     req: ServerRequest;
     file: TFile;
     entity_id?: string;
+    route?: CodeExecutionRoute;
   }) {
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     if (!uploadCodeEnvFile) {
@@ -212,12 +226,19 @@ export function createProvisionService({
     const kind = entity_id ? 'agent' : 'user';
     const id = entity_id ?? (req.user?.id as string);
 
+    /* Upload to the deployment this agent actually resolved. Hard-coding the default
+     * meant a stateful agent's file was uploaded to the wrong Code API and then had to
+     * be re-uploaded by priming, and a deployment whose only healthy Code API is the
+     * configured stateful one could not provision at all. */
+    const executionProfile = route?.executionProfile ?? 'default';
     const uploaded = await uploadCodeEnvFile({
       req,
       stream,
       filename: provisionFilename(file),
       kind,
       id,
+      ...(route?.baseUrl ? { codeApiBaseUrl: route.baseUrl } : {}),
+      executionProfile,
     });
 
     /* Merge rather than overwrite: the eager upload path persists the same shape via
@@ -228,7 +249,8 @@ export function createProvisionService({
       id,
       storage_session_id: uploaded.storage_session_id,
       file_id: uploaded.file_id,
-      executionProfile: 'default',
+      executionProfile,
+      ...(route?.executionRouteKey ? { executionRouteKey: route.executionRouteKey } : {}),
       provisionedAt: Date.now(),
     });
 
@@ -264,9 +286,14 @@ export function createProvisionService({
     entity_id?: string;
     existingStream?: Readable;
   }): Promise<{ embedded: boolean; fileUpdate: { file_id: string; embedded?: boolean } | null }> {
+    /* Throwing rather than reporting a benign non-embed: a fulfilled result records no
+     * failure, so the queue clears and file_search runs as though its inputs were
+     * there, returning silently incomplete results. The explicit upload path already
+     * treats a missing RAG service as an error. */
     if (!process.env.RAG_API_URL) {
-      logger.warn('[provisionToVectorDB] RAG_API_URL not defined, skipping vector provisioning');
-      return { embedded: false, fileUpdate: null };
+      throw new Error(
+        `Cannot provision file "${file.filename}" for search: RAG_API_URL is not defined`,
+      );
     }
 
     /* Unique per attempt: two concurrent requests provisioning the same file_id would

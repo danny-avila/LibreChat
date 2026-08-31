@@ -1204,17 +1204,30 @@ export async function initializeAgent(
     currentFiles = requestUsageFiles.concat(toolUsageFiles);
   }
 
-  if (currentFiles && currentFiles.length) {
+  if ((currentFiles && currentFiles.length) || deferredProvisionFiles.length > 0) {
     let endpointType: EModelEndpoint | undefined;
     if (!paramEndpoints.has(agent.endpoint ?? '')) {
       endpointType = EModelEndpoint.custom;
     }
 
-    currentFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
-      files: currentFiles,
-      endpoint: agent.endpoint ?? '',
-      endpointType,
-    });
+    if (currentFiles && currentFiles.length) {
+      currentFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
+        files: currentFiles,
+        endpoint: agent.endpoint ?? '',
+        endpointType,
+      });
+    }
+
+    /* The same endpoint configuration governs both paths. A file this endpoint refuses
+     * by size, MIME type, or a files-disabled setting must not reach the Code API or
+     * RAG through provisioning just because it left the delivery set. */
+    if (deferredProvisionFiles.length > 0) {
+      deferredProvisionFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
+        files: deferredProvisionFiles,
+        endpoint: agent.endpoint ?? '',
+        endpointType,
+      }) as IMongoFile[];
+    }
   }
 
   assertModelBoundContent({

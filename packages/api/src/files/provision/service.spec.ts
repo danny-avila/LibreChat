@@ -95,6 +95,54 @@ describe('createProvisionService', () => {
       expect(uploadCodeEnvFile).not.toHaveBeenCalled();
     });
 
+    it('uploads to the agent resolved route and records its key', async () => {
+      const { service, uploadCodeEnvFile } = buildService();
+
+      const result = await service.provisionToCodeEnv({
+        req,
+        file: makeFile(),
+        route: {
+          baseUrl: 'http://stateful.test/v1',
+          executionProfile: 'stateful',
+          executionRouteKey: 'stateful:abc',
+        },
+      });
+
+      expect(uploadCodeEnvFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          codeApiBaseUrl: 'http://stateful.test/v1',
+          executionProfile: 'stateful',
+        }),
+      );
+      expect(result.referenceSet.codeEnvRefs?.['stateful:abc']?.executionProfile).toBe('stateful');
+    });
+
+    it('defaults to the default deployment when no route is resolved', async () => {
+      const { service, uploadCodeEnvFile } = buildService();
+
+      const result = await service.provisionToCodeEnv({ req, file: makeFile() });
+
+      expect(uploadCodeEnvFile).toHaveBeenCalledWith(
+        expect.objectContaining({ executionProfile: 'default' }),
+      );
+      expect(uploadCodeEnvFile.mock.calls[0][0].codeApiBaseUrl).toBeUndefined();
+      expect(result.referenceSet.codeEnvRefs?.default?.file_id).toBe('remote-1');
+    });
+
+    it('fails search provisioning when the vector service is not configured', async () => {
+      const previous = process.env.RAG_API_URL;
+      delete process.env.RAG_API_URL;
+      const { service } = buildService();
+
+      await expect(service.provisionToVectorDB({ req, file: makeFile() })).rejects.toThrow(
+        /RAG_API_URL is not defined/,
+      );
+
+      if (previous != null) {
+        process.env.RAG_API_URL = previous;
+      }
+    });
+
     it('preserves pointers for other code routes', async () => {
       const { service } = buildService();
       const statefulRef = {
