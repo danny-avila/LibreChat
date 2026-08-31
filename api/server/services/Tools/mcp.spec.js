@@ -123,12 +123,12 @@ describe('loadMCPServerCatalogs', () => {
       user.id,
       'config-only',
       servers[0].serverConfig,
-      { deadlineMs: 123 },
     );
     expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledWith(
       user.id,
       'config-only',
       servers[0].serverConfig,
+      { deadlineMs: 123 },
     );
     expect(mockCacheMCPServerTools).toHaveBeenCalledWith({ serverName: 'config-only' });
     expect(result).toEqual({
