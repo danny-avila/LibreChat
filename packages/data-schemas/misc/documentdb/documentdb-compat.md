@@ -270,11 +270,21 @@ listed in the matrix and shrink by adding `ARG_OVERRIDES` entries. The report's 
 cross-engine diffing (`diff <(jq .rows a.json) <(jq .rows b.json)`); run
 metadata lives outside it.
 
-The first live DocumentDB 5.0.0 run (2026-08-31, pre-correction harness:
-363 driven) found **zero engine rejections and zero divergences from its
-matching MongoDB baseline**. The corrected harness adjudicates strictly more —
-index DDL, transaction commits, ACL cascades — so the next live run is the
-authoritative matrix for those surfaces.
+**Authoritative live run (2026-08-31, hardened harness, DocumentDB 5.0.0):
+370 of 509 methods drove at least one query; zero engine rejections; the
+matrix is byte-identical to the MongoDB baseline** — every row's outcome and
+query count matches, so there is no engine divergence anywhere the sweep can
+reach. This run adjudicated index DDL, transaction commits and aborts, ACL
+cascades, and the authority snapshot's own transaction, none of which the
+first (pre-hardening) run could see.
+
+The same run turned the compatibility suite's `MCP authority snapshot` probe
+green for the first time on any real cluster. It had failed since July with
+`proof_unavailable`: `loadAuthoritativeSnapshot` reads nine collections inside
+its transaction, DocumentDB rejects in-transaction statements against
+namespaces that do not exist, and `asMCPError` converted that server rejection
+into a reason naming nothing about the cause. The method now materializes
+those namespaces before opening the transaction.
 
 This sweep exists because every incompatibility found so far was invisible
 until someone thought to look for its class; here the engine adjudicates
