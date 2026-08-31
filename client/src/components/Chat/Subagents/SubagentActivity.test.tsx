@@ -214,13 +214,18 @@ const base: ChildActivity = {
 };
 
 describe('SubagentActivity', () => {
-  it.each(['running', 'failed', 'cancelled'] as const)(
+  it.each(['failed', 'cancelled'] as const)(
     'renders the %s lifecycle through the shared view',
     (status) => {
       render(<SubagentActivity activity={{ ...base, status }} />);
       expect(screen.getByText(`com_ui_subagent_thread_status_${status}`)).toBeInTheDocument();
     },
   );
+
+  it('shows no status chip while running, matching the main chat view', () => {
+    render(<SubagentActivity activity={{ ...base, status: 'running' }} />);
+    expect(screen.queryByText('com_ui_subagent_thread_status_running')).not.toBeInTheDocument();
+  });
 
   it('does not repeat the completed lifecycle in the conversation body', () => {
     render(<SubagentActivity activity={base} />);
@@ -393,7 +398,7 @@ describe('SubagentActivity', () => {
       />,
     );
 
-    expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_status_running')).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_control_status_submitted')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_control_status_accepted')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_control_status_applied')).toBeInTheDocument();

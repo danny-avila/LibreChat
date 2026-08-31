@@ -22,20 +22,27 @@ const AMBER_DOT = 'bg-amber-600 dark:bg-amber-500';
  * - `interrupting`: asked to seal generation at the next safe boundary — the
  *   amber label and pulsing dot say "working, not stuck". Until the arm is
  *   server-confirmed (`confirmed` false) the label shows without its check.
- * - `applied`: the running response durably absorbed the words (amber double
- *   check, persistent — it renders identically live, on reload, and in
- *   shared/search views).
+ * - `applied`: the running response durably absorbed the words (double check,
+ *   persistent). It stays lit amber only while the owning response is still
+ *   generating — the window where "did it land" is the question — then
+ *   settles to the same muted gray as the timestamp, so a conversation full
+ *   of historical steers doesn't glow forever.
  *
  * The hover explanations render through the shared `InfoHoverCard` with the
  * receipt as the trigger, so the info text doubles as the accessible name.
  */
 const SteerReceipt = memo(function SteerReceipt({
   state,
+  live = false,
   confirmed = true,
   animateIn = false,
   className,
 }: {
   state: SteerReceiptState;
+  /** Applied only: the owning response is still generating, so the receipt is
+   *  the newest thing on screen and keeps the amber steering identity. Off
+   *  (settled, reload, share, search) it dims to the timestamp gray. */
+  live?: boolean;
   /** Server confirmation of the underlying enqueue/arm; an interrupt awaiting
    *  its ACK shows the label and pulse without a check. */
   confirmed?: boolean;
@@ -62,15 +69,15 @@ const SteerReceipt = memo(function SteerReceipt({
       <span
         data-testid="steer-receipt"
         data-receipt-state="applied"
+        data-receipt-live={live ? 'true' : undefined}
         className={cn('flex items-center', className)}
       >
         <InfoHoverCard side={ESide.Top} text={localize('com_ui_steer_applied_info')}>
           <CheckCheck
             className={cn(
-              'h-4 w-4',
-              AMBER_ICON,
-              animateIn &&
-                'duration-theme-normal ease-out animate-in fade-in-0 zoom-in-50 motion-reduce:animate-none',
+              'h-4 w-4 transition-colors duration-theme-normal motion-reduce:transition-none',
+              live ? AMBER_ICON : 'text-text-secondary',
+              animateIn && 'ease-out animate-in fade-in-0 zoom-in-50 motion-reduce:animate-none',
             )}
             aria-hidden="true"
           />

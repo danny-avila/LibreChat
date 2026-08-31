@@ -556,6 +556,49 @@ describe('agentsEndpointSchema', () => {
     }
   });
 
+  it('accepts a principal-owned environment without deployment pairing metadata', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            owner: 'principal',
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects pairing metadata on a principal-owned environment', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            owner: 'principal',
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects pairing configuration for a managed environment', () => {
     const result = agentsEndpointSchema.safeParse({
       statefulCodeSessions: {

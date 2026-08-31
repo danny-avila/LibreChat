@@ -18,6 +18,7 @@ export * from './message';
 export * from './agent';
 export * from './agentApiKey';
 export * from './agentCategory';
+export * from './codeEnvironment';
 export * from './role';
 export * from './action';
 export * from './assistant';
