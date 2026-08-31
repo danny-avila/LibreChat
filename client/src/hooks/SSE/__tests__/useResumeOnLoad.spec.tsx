@@ -794,7 +794,7 @@ describe('useResumeOnLoad', () => {
         conversationId: CONVERSATION_ID,
         userMessage: {
           messageId: 'replacement-user',
-          parentMessageId: Constants.NO_PARENT,
+          parentMessageId: String(Constants.NO_PARENT),
           conversationId: CONVERSATION_ID,
           text: 'Replacement prompt',
         },
