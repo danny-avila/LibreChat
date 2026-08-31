@@ -733,10 +733,16 @@ describe('ContentParts — synthesized activity folds', () => {
   });
 
   it('resets the card when the reader pages to another sibling', () => {
-    /** `MultiMessage` renders siblings without a key and reuses this instance,
-     *  so an index-anchored card would otherwise carry one response's open
-     *  state into an unrelated one. `siblingIdx` moves here and does not move
-     *  at settle, which is what separates the two. */
+    /** `MultiMessage` reuses this instance across siblings, so a card anchored
+     *  only to a content index would carry one response's open state into an
+     *  unrelated one. The provider id on the span's first call separates them.
+     *  No message identity can: `messageId` moves at settle too. */
+    const otherSibling = [
+      makeMcpToolCall('other-1'),
+      makeChildLabel(FIRST),
+      makeMcpToolCall('other-2'),
+      makeChildLabel(TICKER),
+    ];
     const { rerender } = render(
       <RecoilRoot>
         <ContentParts {...baseProps} siblingIdx={0} content={labeledRun()} />
@@ -750,12 +756,33 @@ describe('ContentParts — synthesized activity folds', () => {
           {...baseProps}
           siblingIdx={1}
           messageId="sibling-msg"
-          content={labeledRun()}
+          content={otherSibling}
         />
       </RecoilRoot>,
     );
 
     expect(foldHeader()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('survives background churn that renumbers the response in place', () => {
+    /** `MultiMessage` recomputes the viewed response's positional index when a
+     *  sibling is added or dropped around it — dropping an optimistic row
+     *  moves the newest response from index 1 to 0 while the reader stays on
+     *  it. Nothing about the response changed, so neither should the card. */
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} siblingIdx={1} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} siblingIdx={0} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('leaves an unlabeled run rendering exactly as before', () => {

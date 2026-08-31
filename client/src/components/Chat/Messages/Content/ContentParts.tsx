@@ -8,6 +8,7 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
+import type { ActivityPhaseSegment } from '~/utils/activityLabels';
 import {
   mapAttachments,
   getPartKeyIndex,
@@ -683,6 +684,19 @@ const ContentPartsBody = memo(function ContentPartsBody({
       }
       return absoluteIndexAt(segment.startIndex);
     };
+    /** Stable render identity for a phase card. See the key comment below. */
+    const phaseCardKey = (segment: Extract<ActivityPhaseSegment, { type: 'phase' }>): string => {
+      const position = segment.hasContent
+        ? segmentKeyIndex(segment)
+        : getPartKeyIndex(segment.labelPart, segment.labelIndex);
+      for (const part of segment.content) {
+        const toolCallId = part == null ? '' : getToolCallId(part);
+        if (toolCallId) {
+          return `${toolCallId}:${position}`;
+        }
+      }
+      return `${position}`;
+    };
     const renderSegment = (
       segmentContent: Array<TMessageContentParts | undefined>,
       segmentStartIndex: number,
@@ -746,18 +760,19 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  ticker keeps it open with no state to hand over. A phase with no
              *  children has no span to anchor to and keeps its marker key.
              *
-             *  `messageId` is deliberately absent. The assistant streams under
-             *  a synthetic `${userMessage.messageId}_` for the WHOLE run and
-             *  only takes its server id at `finalHandler` — batched with
+             *  The span's position carries it, paired with the first tool
+             *  call's provider id. No message identity goes into it, and none
+             *  can: `MultiMessage` reuses this instance across siblings, but
+             *  `messageId` moves at settle (batched with
              *  `setIsSubmitting(false)`, so that commit is indistinguishable
-             *  from a sibling switch by message identity alone. A key carrying
-             *  `messageId` therefore remounts every card at settle and drops
-             *  whatever the reader had open. `siblingIdx` separates the two:
-             *  it moves when the reader pages to another response and holds
-             *  still when the same response takes its real id — which matters
-             *  because `MultiMessage` renders siblings without a key and
-             *  reuses this instance. */
-            const cardKeyIndex = segment.hasContent ? segmentKeyIndex(segment) : phaseKeyIndex;
+             *  from a sibling switch) and the positional `siblingIdx` moves
+             *  under background churn that deliberately PRESERVES the viewed
+             *  response. Both halves survive those: the position is
+             *  content-derived, and the provider id is what separates two
+             *  siblings whose cards start at the same index. Pairing them also
+             *  keeps repeated provider ids in one message apart, the way
+             *  `getToolGroupId` uses an occurrence counter. */
+            const cardKey = phaseCardKey(segment);
             const labelText = getActivityLabelText(segment.labelPart);
             const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
             /** While a run streams, the cursor sits INSIDE a synthesized span.
@@ -784,12 +799,12 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 segment.content,
                 absoluteIndexAt(segment.startIndex),
                 segmentIndices,
-                `phase-awaiting-${cardKeyIndex}`,
+                `phase-awaiting-${cardKey}`,
               );
             }
             return (
               <ActivityPhaseGroup
-                key={`activity-phase-${siblingIdx ?? 0}-${cardKeyIndex}`}
+                key={`activity-phase-${cardKey}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
                 hasPendingApproval={hasPendingApproval}
@@ -821,7 +836,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
                   segment.content,
                   absoluteIndexAt(segment.startIndex),
                   segmentIndices,
-                  `phase-content-${cardKeyIndex}`,
+                  `phase-content-${cardKey}`,
                   true,
                   ownsCursor,
                 )}
