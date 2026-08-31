@@ -2004,5 +2004,33 @@ describe('primeResources', () => {
       expect(result.provisionState).toBeUndefined();
       expect(refFile.metadata?.codeEnvRef).toBeDefined();
     });
+
+    it('skips the liveness check when JWT auth has no req to mint from', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const checkSessionsAlive = jest.fn();
+      const refFile = makeCodeFile({
+        file_id: 'principal-file',
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'remote' },
+        },
+      });
+
+      const result = await primeResources({
+        principal: { id: 'user1', role: 'USER' },
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([refFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive,
+      });
+
+      expect(checkSessionsAlive).not.toHaveBeenCalled();
+      expect(result.provisionState).toBeUndefined();
+      expect(refFile.metadata?.codeEnvRef).toBeDefined();
+    });
   });
 });
