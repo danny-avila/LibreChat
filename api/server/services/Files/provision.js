@@ -7,6 +7,7 @@ const {
   createAxiosInstance,
   codeServerHttpAgent,
   codeServerHttpsAgent,
+  getCodeApiAuthHeaders,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
@@ -19,13 +20,22 @@ const { getStrategyFunctions } = require('./strategies');
 
 const axios = createAxiosInstance();
 
+/** Composes code-API auth: legacy X-API-Key when configured, plus JWT bearer when enabled. */
+async function buildCodeApiHeaders({ apiKey, req }) {
+  return {
+    'User-Agent': 'LibreChat/1.0',
+    ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+    ...(await getCodeApiAuthHeaders(req)),
+  };
+}
+
 /** Env var holding the code-execution API key (symmetric with LIBRECHAT_CODE_BASEURL). */
 const CODE_API_KEY_FIELD = 'LIBRECHAT_CODE_API_KEY';
 
 /**
  * Loads the code-execution API key for a user. Call once per request and pass the
  * result to checkSessionsAlive to avoid redundant lookups. Returns undefined when
- * no key is configured, so provisioning is skipped rather than failing the turn.
+ * no key is configured; JWT-mode code auth can still authorize provisioning.
  *
  * @param {string} userId
  * @returns {Promise<string | undefined>} The code-execution API key, if configured
@@ -172,10 +182,11 @@ async function provisionToVectorDB({ req, file, entity_id, existingStream }) {
  *
  * @param {object} params
  * @param {import('librechat-data-provider').TFile} params.file - File with metadata.codeEnvRef
- * @param {string} params.apiKey - CODE_API_KEY
+ * @param {string} [params.apiKey] - Legacy CODE_API_KEY, when configured
+ * @param {object} [params.req] - Request used to mint JWT code auth, when enabled
  * @returns {Promise<boolean>} true if the file is still accessible in the code env
  */
-async function checkCodeEnvFileAlive({ file, apiKey }) {
+async function checkCodeEnvFileAlive({ file, apiKey, req }) {
   const ref = file.metadata?.codeEnvRef;
   if (!ref?.storage_session_id || !ref?.file_id) {
     return false;
@@ -187,10 +198,7 @@ async function checkCodeEnvFileAlive({ file, apiKey }) {
       method: 'get',
       url: `${baseURL}/files/${ref.storage_session_id}`,
       params: { detail: 'summary' },
-      headers: {
-        'User-Agent': 'LibreChat/1.0',
-        'X-API-Key': apiKey,
-      },
+      headers: await buildCodeApiHeaders({ apiKey, req }),
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
       timeout: 5000,
@@ -213,11 +221,12 @@ async function checkCodeEnvFileAlive({ file, apiKey }) {
  *
  * @param {object} params
  * @param {import('librechat-data-provider').TFile[]} params.files - Files with metadata.codeEnvRef
- * @param {string} params.apiKey - Pre-loaded CODE_API_KEY
+ * @param {string} [params.apiKey] - Pre-loaded legacy CODE_API_KEY, when configured
+ * @param {object} [params.req] - Request used to mint JWT code auth, when enabled
  * @param {number} [params.staleSafeWindowMs=21600000] - Skip the live check if the file was provisioned to the code env within this window (default 6h)
  * @returns {Promise<Set<string>>} Set of file_ids that are confirmed alive
  */
-async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 60 * 1000 }) {
+async function checkSessionsAlive({ files, apiKey, req, staleSafeWindowMs = 6 * 60 * 60 * 1000 }) {
   const aliveFileIds = new Set();
   const now = Date.now();
 
@@ -251,6 +260,7 @@ async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 
 
   // One API call per session (in parallel)
   const baseURL = getCodeBaseURL();
+  const headers = await buildCodeApiHeaders({ apiKey, req });
   const sessionChecks = Array.from(sessionGroups.entries()).map(
     async ([session_id, fileEntries]) => {
       try {
@@ -258,10 +268,7 @@ async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 
           method: 'get',
           url: `${baseURL}/files/${session_id}`,
           params: { detail: 'summary' },
-          headers: {
-            'User-Agent': 'LibreChat/1.0',
-            'X-API-Key': apiKey,
-          },
+          headers,
           httpAgent: codeServerHttpAgent,
           httpsAgent: codeServerHttpsAgent,
           timeout: 5000,

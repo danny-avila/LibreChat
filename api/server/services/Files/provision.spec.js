@@ -11,12 +11,17 @@ jest.mock('@librechat/agents', () => ({
   getCodeBaseURL: jest.fn(() => 'http://code.test/v1'),
 }));
 
-jest.mock('@librechat/api', () => ({
-  logAxiosError: jest.fn(),
-  createAxiosInstance: jest.fn(() => jest.fn()),
-  codeServerHttpAgent: {},
-  codeServerHttpsAgent: {},
-}));
+jest.mock('@librechat/api', () => {
+  const axiosInstance = jest.fn();
+  return {
+    logAxiosError: jest.fn(),
+    createAxiosInstance: jest.fn(() => axiosInstance),
+    codeServerHttpAgent: {},
+    codeServerHttpsAgent: {},
+    getCodeApiAuthHeaders: jest.fn().mockResolvedValue({}),
+    __codeAxios: axiosInstance,
+  };
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
@@ -31,7 +36,8 @@ jest.mock('./strategies', () => ({
 }));
 
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { loadCodeApiKey } = require('./provision');
+const { getCodeApiAuthHeaders, __codeAxios } = require('@librechat/api');
+const { loadCodeApiKey, checkSessionsAlive } = require('./provision');
 
 describe('loadCodeApiKey', () => {
   afterEach(() => jest.clearAllMocks());
@@ -51,5 +57,48 @@ describe('loadCodeApiKey', () => {
     loadAuthValues.mockResolvedValue({});
 
     await expect(loadCodeApiKey('user-1')).resolves.toBeUndefined();
+  });
+});
+
+describe('checkSessionsAlive', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  const staleFile = (id) => ({
+    file_id: id,
+    filename: `${id}.csv`,
+    metadata: {
+      codeEnvRef: {
+        kind: 'user',
+        id: 'u1',
+        storage_session_id: 'sess-1',
+        file_id: `remote-${id}`,
+        provisionedAt: 1,
+      },
+    },
+  });
+
+  it('authenticates the live check with JWT bearer headers when no legacy key is set', async () => {
+    getCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer jwt-token' });
+    __codeAxios.mockResolvedValue({ data: [{ fileId: 'remote-f1' }] });
+
+    const alive = await checkSessionsAlive({
+      files: [staleFile('f1')],
+      req: { user: { id: 'u1' } },
+    });
+
+    expect(getCodeApiAuthHeaders).toHaveBeenCalledWith({ user: { id: 'u1' } });
+    const headers = __codeAxios.mock.calls[0][0].headers;
+    expect(headers.Authorization).toBe('Bearer jwt-token');
+    expect(headers['X-API-Key']).toBeUndefined();
+    expect(alive.has('f1')).toBe(true);
+  });
+
+  it('sends the legacy X-API-Key alongside bearer minting when configured', async () => {
+    getCodeApiAuthHeaders.mockResolvedValue({});
+    __codeAxios.mockResolvedValue({ data: [] });
+
+    await checkSessionsAlive({ files: [staleFile('f2')], apiKey: 'legacy-key' });
+
+    expect(__codeAxios.mock.calls[0][0].headers['X-API-Key']).toBe('legacy-key');
   });
 });
