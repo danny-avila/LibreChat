@@ -1,5 +1,5 @@
 import { librechat } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
+import type { DynamicSettingProps, ImageDetail } from 'librechat-data-provider';
 
 type LibreChatKeys = keyof typeof librechat;
 
@@ -10,7 +10,7 @@ type LibreChatParams = {
   maxContextTokens?: number;
   fileTokenLimit?: number;
   modelLabel?: string | null;
-  imageDetail?: string;
+  imageDetail?: ImageDetail;
 };
 
 /**

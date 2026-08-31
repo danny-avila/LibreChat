@@ -20,10 +20,11 @@ import type {
   AgentToolOptions,
   TEndpointOption,
   ReasoningResponseKey,
+  StatefulCodeEnvironment,
+  ImageDetail,
   TFile,
   Agent,
   TUser,
-  StatefulCodeEnvironment,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
@@ -375,7 +376,7 @@ export type InitializedAgent = Agent & {
   resendFiles: boolean;
   /** Detail level LibreChat encodes image content blocks with, from the agent's
    * model parameters. Absent when the agent does not configure one. */
-  imageDetail?: string;
+  imageDetail?: ImageDetail;
   tool_resources?: AgentToolResources;
   userMCPAuthMap?: Record<string, Record<string, string>>;
   /** Tool map for ToolNode to use when executing tools (required for PTC) */

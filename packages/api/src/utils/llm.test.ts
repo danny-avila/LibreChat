@@ -1,3 +1,4 @@
+import { ImageDetail } from 'librechat-data-provider';
 import { extractLibreChatParams } from './llm';
 
 describe('extractLibreChatParams', () => {
@@ -30,7 +31,7 @@ describe('extractLibreChatParams', () => {
       maxContextTokens: 4096,
       fileTokenLimit: 50000,
       modelLabel: 'GPT-4',
-      imageDetail: 'high',
+      imageDetail: ImageDetail.high,
       model: 'gpt-4',
       temperature: 0.7,
       max_tokens: 1000,
@@ -43,7 +44,7 @@ describe('extractLibreChatParams', () => {
     expect(result.maxContextTokens).toBe(4096);
     expect(result.fileTokenLimit).toBe(50000);
     expect(result.modelLabel).toBe('GPT-4');
-    expect(result.imageDetail).toBe('high');
+    expect(result.imageDetail).toBe(ImageDetail.high);
     expect(result.modelOptions).toEqual({
       model: 'gpt-4',
       temperature: 0.7,
@@ -52,9 +53,9 @@ describe('extractLibreChatParams', () => {
   });
 
   it('should keep imageDetail out of the model options sent to the provider', () => {
-    const result = extractLibreChatParams({ model: 'gpt-4o', imageDetail: 'low' });
+    const result = extractLibreChatParams({ model: 'gpt-4o', imageDetail: ImageDetail.low });
 
-    expect(result.imageDetail).toBe('low');
+    expect(result.imageDetail).toBe(ImageDetail.low);
     expect(result.modelOptions).toEqual({ model: 'gpt-4o' });
     expect('imageDetail' in result.modelOptions).toBe(false);
   });
