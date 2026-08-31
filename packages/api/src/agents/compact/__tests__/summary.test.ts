@@ -99,7 +99,7 @@ const smallWindowAgent = {
   model_parameters: { model: 'test-small-window' },
 };
 
-/** Text that does not collapse under BPE, so token size tracks length. */
+/** Text that does not collapse under BPE; oversized input follows the conservative byte estimate. */
 function bulk(label: string, words: number): string {
   const parts: string[] = [label];
   for (let i = 0; i < words; i++) {
@@ -847,16 +847,16 @@ describe('compactConversation', () => {
   it('reserves for a prior checkpoint larger than the current output cap', async () => {
     /** An administrator who lowers `maxSummaryTokens` leaves behind a checkpoint
      *  bigger than the new cap; pass one still carries the whole thing. */
-    const priorText = bulk('prior', 4000);
+    const priorText = bulk('prior', 1500);
     const withLargePriorSummary: TMessage[] = [
       ...branch,
       assistantMessage('m5', 'm4', [
         { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: priorText }] },
       ] as TMessage['content']),
-      userMessage('m6', 'm5', bulk('tailA', 1300)),
-      userMessage('m7', 'm6', bulk('tailB', 1300)),
-      userMessage('m8', 'm7', bulk('tailC', 1300)),
-      userMessage('m9', 'm8', bulk('tailD', 1300)),
+      userMessage('m6', 'm5', bulk('tailA', 600)),
+      userMessage('m7', 'm6', bulk('tailB', 600)),
+      userMessage('m8', 'm7', bulk('tailC', 600)),
+      userMessage('m9', 'm8', bulk('tailD', 600)),
     ];
 
     await expect(
@@ -951,7 +951,7 @@ describe('compactConversation', () => {
     const longBranch: TMessage[] = [];
     let parent = Constants.NO_PARENT as string;
     for (let i = 0; i < 8; i++) {
-      longBranch.push(userMessage(`L${i}`, parent, bulk(`seg${i}`, 1400)));
+      longBranch.push(userMessage(`L${i}`, parent, bulk(`seg${i}`, 850)));
       parent = `L${i}`;
     }
 
@@ -1552,7 +1552,7 @@ describe('compactConversation', () => {
   it('reserves for the longer of the initial and update prompts', async () => {
     /** A long update prompt is what later passes actually send; sizing from the
      *  initial one alone lets a later pass overflow after billing. */
-    const longUpdate = bulk('update', 4000);
+    const longUpdate = bulk('update', 2000);
     await compactConversation({
       req: makeReq({ prompt: 'short', updatePrompt: longUpdate }),
       agent: smallWindowAgent,
