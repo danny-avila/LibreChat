@@ -5,6 +5,7 @@ import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { Request as ServerRequest } from 'express';
 
+import { isCodeApiJwtAuthEnabled } from '~/auth/codeapi';
 import { TOOL_RESOURCE_KEYS } from './orphans';
 
 /** Removes runtime-only file records before persisted Agent resources enter tool initialization. */
@@ -59,7 +60,8 @@ export type TProvisionToVectorDB = (params: {
  */
 export type TCheckSessionsAlive = (params: {
   files: TFile[];
-  apiKey: string;
+  req?: ServerRequest & { user?: IUser };
+  apiKey?: string;
   staleSafeWindowMs?: number;
 }) => Promise<Set<string>>;
 
@@ -72,8 +74,6 @@ export type ProvisionState = {
   codeEnvFiles: TFile[];
   /** Files that need embedding into the vector DB for file_search */
   vectorDBFiles: TFile[];
-  /** Pre-loaded CODE_API_KEY to avoid redundant credential fetches */
-  codeApiKey?: string;
   /** Set of file_ids confirmed alive in code env (from staleness check) */
   aliveFileIds: Set<string>;
 };
@@ -451,25 +451,32 @@ export const primeResources = async ({
       const needsVectorDB = enabledToolResources.has(EToolResources.file_search);
 
       if (needsCodeEnv || needsVectorDB) {
+        const jwtCodeAuth = isCodeApiJwtAuthEnabled();
         let codeApiKey: string | undefined;
         if (needsCodeEnv && loadCodeApiKey && resourcePrincipal?.id) {
           try {
             codeApiKey = await loadCodeApiKey(resourcePrincipal.id);
           } catch (error) {
             logger.error('[primeResources] Failed to load CODE_API_KEY', error);
-            warnings.push('Code execution file provisioning unavailable');
+            if (!jwtCodeAuth) {
+              warnings.push('Code execution file provisioning unavailable');
+            }
           }
         }
+        /** JWT-mode deployments mint bearer tokens per request, so a legacy
+         *  LIBRECHAT_CODE_API_KEY is not required for code-env provisioning. */
+        const codeAuthAvailable = codeApiKey != null || jwtCodeAuth;
 
         // Batch staleness check: identify which code env files are still alive
-        let aliveFileIds: Set<string> = new Set();
-        if (needsCodeEnv && codeApiKey && checkSessionsAlive) {
+        let aliveFileIds: Set<string> | undefined;
+        if (needsCodeEnv && codeAuthAvailable && checkSessionsAlive) {
           const filesWithIdentifiers = attachments.filter(
             (f) => f?.metadata?.codeEnvRef && f.file_id,
           );
           if (filesWithIdentifiers.length > 0) {
             aliveFileIds = await checkSessionsAlive({
               files: filesWithIdentifiers as TFile[],
+              req,
               apiKey: codeApiKey,
             });
           }
@@ -484,30 +491,45 @@ export const primeResources = async ({
             continue;
           }
 
-          if (
-            needsCodeEnv &&
-            codeApiKey &&
-            !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
-          ) {
-            const hasCodeEnvRef = !!file.metadata?.codeEnvRef;
-            const isStale = hasCodeEnvRef && !aliveFileIds.has(file.file_id);
+          if (needsCodeEnv && codeAuthAvailable) {
+            const legacyRef = file.metadata?.codeEnvRef;
+            const isStale =
+              legacyRef != null && aliveFileIds != null && !aliveFileIds.has(file.file_id);
 
-            if (!hasCodeEnvRef || isStale) {
-              if (isStale) {
-                logger.info(
-                  `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
-                );
-                file.metadata = { ...file.metadata, codeEnvRef: undefined };
-              }
+            /** Staleness must be repaired even for files that pre-categorization already
+             *  added to execute_code resources, so the check runs before the processed
+             *  guard. Clear both the legacy ref and its route entry, else getCodeEnvRefs
+             *  keeps resolving the dead session over the re-provisioned one. */
+            if (isStale) {
+              logger.info(
+                `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
+              );
+              const staleRouteKey =
+                legacyRef.executionRouteKey ?? legacyRef.executionProfile ?? 'default';
+              const remainingRefs = Object.fromEntries(
+                Object.entries(file.metadata?.codeEnvRefs ?? {}).filter(
+                  ([routeKey]) => routeKey !== staleRouteKey,
+                ),
+              );
+              file.metadata = {
+                ...file.metadata,
+                codeEnvRef: undefined,
+                codeEnvRefs: Object.keys(remainingRefs).length > 0 ? remainingRefs : undefined,
+              };
               codeEnvFiles.push(file);
-            } else {
-              // File is alive, categorize it now
-              addFileToResource({
-                file,
-                resourceType: EToolResources.execute_code,
-                tool_resources,
-                processedResourceFiles,
-              });
+            } else if (
+              !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
+            ) {
+              if (legacyRef == null) {
+                codeEnvFiles.push(file);
+              } else {
+                addFileToResource({
+                  file,
+                  resourceType: EToolResources.execute_code,
+                  tool_resources,
+                  processedResourceFiles,
+                });
+              }
             }
           }
 
@@ -523,7 +545,7 @@ export const primeResources = async ({
         }
 
         if (codeEnvFiles.length > 0 || vectorDBFiles.length > 0) {
-          provisionState = { codeEnvFiles, vectorDBFiles, codeApiKey, aliveFileIds };
+          provisionState = { codeEnvFiles, vectorDBFiles, aliveFileIds: aliveFileIds ?? new Set() };
         }
       }
     }

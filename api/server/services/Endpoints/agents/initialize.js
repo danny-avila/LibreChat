@@ -531,7 +531,7 @@ const initializeClient = async ({
       /** @type {import('@librechat/api').TFileUpdate[]} */
       const pendingUpdates = [];
 
-      if (needsCode && provisionState.codeEnvFiles.length > 0 && provisionState.codeApiKey) {
+      if (needsCode && provisionState.codeEnvFiles.length > 0) {
         const results = await Promise.allSettled(
           provisionState.codeEnvFiles.map(async (file) => {
             const { codeEnvRef, fileUpdate } = await provisionToCodeEnv({
