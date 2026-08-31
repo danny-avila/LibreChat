@@ -93,6 +93,20 @@ function describeConversation(conv) {
 }
 
 /**
+ * Coerces an exported timestamp into a usable Date. An unparseable value would
+ * otherwise persist as an Invalid Date and fail the whole batch at bulk-write time,
+ * which happens after per-conversation isolation and so cannot be attributed or
+ * skipped. Callers keep their own handling for a missing timestamp.
+ *
+ * @param {number|string|Date} value - Timestamp from the export, already in milliseconds.
+ * @returns {Date} The parsed date, or the current time when it cannot be parsed.
+ */
+function toImportedDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+/**
  * Identifies ChatGPT messages that never rendered in the source conversation:
  * system prompts, the reasoning summaries that get merged into their response, and
  * the hidden context blocks newer exports inject ahead of the first user turn
@@ -169,13 +183,24 @@ function importEachConversation({
 function getImporter(jsonData) {
   // For array-based formats (ChatGPT or Claude)
   if (Array.isArray(jsonData)) {
-    // Claude format has chat_messages array in each conversation
-    if (jsonData.length > 0 && jsonData[0]?.chat_messages) {
-      logger.info('Importing Claude conversation');
-      return importClaudeConvo;
+    /**
+     * Scan for the first recognizable entry rather than trusting index 0: a single
+     * malformed conversation at the head of an export would otherwise reject the
+     * whole file, while the same file imports fine when that entry appears later.
+     */
+    for (const conv of jsonData) {
+      // Claude format has chat_messages array in each conversation
+      if (conv?.chat_messages) {
+        logger.info('Importing Claude conversation');
+        return importClaudeConvo;
+      }
+      // ChatGPT format has mapping object in each conversation
+      if (conv?.mapping) {
+        logger.info('Importing ChatGPT conversation');
+        return importChatGptConvo;
+      }
     }
-    // ChatGPT format has mapping object in each conversation
-    if (jsonData.length === 0 || jsonData[0]?.mapping) {
+    if (jsonData.length === 0) {
       logger.info('Importing ChatGPT conversation');
       return importChatGptConvo;
     }
@@ -203,7 +228,7 @@ function getImporter(jsonData) {
  * @param {Object} jsonData - The JSON data containing the chatbot conversation.
  * @param {string} requestUserId - The ID of the user making the import request.
  * @param {Function} [builderFactory=createImportBatchBuilder] - The factory function to create an import batch builder.
- * @returns {Promise<void>} - A promise that resolves when the import is complete.
+ * @returns {Promise<ImportSummary>} Counts of imported and skipped conversations.
  * @throws {Error} - If there is an error creating the conversation from the JSON file.
  */
 async function importChatBotUiConvo(
@@ -222,19 +247,26 @@ async function importChatBotUiConvo(
       userRole,
     });
 
-    for (const historyItem of jsonData.history) {
-      importBatchBuilder.startConversation(EModelEndpoint.openAI);
-      for (const message of historyItem.messages) {
-        if (message.role === 'assistant') {
-          importBatchBuilder.addGptMessage(message.content, historyItem.model.id);
-        } else if (message.role === 'user') {
-          importBatchBuilder.addUserMessage(message.content);
+    const summary = importEachConversation({
+      conversations: jsonData.history,
+      importBatchBuilder,
+      requestUserId,
+      importConversation: (historyItem) => {
+        importBatchBuilder.startConversation(EModelEndpoint.openAI);
+        for (const message of historyItem.messages) {
+          if (message.role === 'assistant') {
+            importBatchBuilder.addGptMessage(message.content, historyItem.model.id);
+          } else if (message.role === 'user') {
+            importBatchBuilder.addUserMessage(message.content);
+          }
         }
-      }
-      importBatchBuilder.finishConversation(historyItem.name, new Date(), {}, defaultModel);
-    }
+        importBatchBuilder.finishConversation(historyItem.name, new Date(), {}, defaultModel);
+      },
+    });
+
     await importBatchBuilder.saveBatch();
     logger.info(`user: ${requestUserId} | ChatbotUI conversation imported`);
+    return summary;
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from ChatbotUI file`, error);
     throw error;
@@ -291,8 +323,8 @@ async function importClaudeConvo(
 
     const importClaudeConversation = (conv) => {
       const chatMessages = conv?.chat_messages;
-      if (chatMessages != null && !Array.isArray(chatMessages)) {
-        throw new Error('Conversation has an invalid chat_messages list');
+      if (!Array.isArray(chatMessages)) {
+        throw new Error('Conversation has no chat_messages list');
       }
 
       importBatchBuilder.startConversation(EModelEndpoint.anthropic);
@@ -300,7 +332,7 @@ async function importClaudeConvo(
       let lastMessageId = Constants.NO_PARENT;
       let lastTimestamp = null;
 
-      for (const msg of chatMessages || []) {
+      for (const msg of chatMessages) {
         const isCreatedByUser = msg.sender === 'human';
         const messageId = uuidv4();
 
@@ -313,7 +345,7 @@ async function importClaudeConvo(
 
         // Parse timestamp, fallback to conversation create_time or current time
         const messageTime = msg.created_at || conv.created_at;
-        let createdAt = messageTime ? new Date(messageTime) : new Date();
+        let createdAt = messageTime ? toImportedDate(messageTime) : new Date();
 
         // Ensure timestamp is after the previous message.
         // Messages are sorted by createdAt and buildTree expects parents to appear before children.
@@ -347,7 +379,7 @@ async function importClaudeConvo(
         lastMessageId = messageId;
       }
 
-      const createdAt = conv.created_at ? new Date(conv.created_at) : new Date();
+      const createdAt = conv.created_at ? toImportedDate(conv.created_at) : new Date();
       importBatchBuilder.finishConversation(
         conv.name || 'Imported Claude Chat',
         createdAt,
@@ -378,7 +410,7 @@ async function importClaudeConvo(
  * @param {Object} jsonData - The JSON data representing the conversation.
  * @param {string} requestUserId - The ID of the user making the import request.
  * @param {Function} [builderFactory=createImportBatchBuilder] - The factory function to create an import batch builder.
- * @returns {Promise<void>} - A promise that resolves when the import is complete.
+ * @returns {Promise<ImportSummary>} Counts of imported and skipped conversations.
  */
 async function importLibreChatConvo(
   jsonData,
@@ -479,6 +511,7 @@ async function importLibreChatConvo(
     );
     await importBatchBuilder.saveBatch();
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
+    return { imported: 1, failed: 0 };
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from LibreChat file`, error);
     throw error;
@@ -666,7 +699,7 @@ function processConversation(conv, importBatchBuilder, requestUserId, defaultMod
     // Use create_time from ChatGPT export to ensure proper message ordering
     // For null timestamps, use the conversation's create_time as fallback, or current time as last resort
     const messageTime = mapping.message.create_time || conv.create_time;
-    const createdAt = messageTime ? new Date(messageTime * 1000) : new Date();
+    const createdAt = messageTime ? toImportedDate(messageTime * 1000) : new Date();
 
     const message = {
       messageId: newMessageId,
@@ -704,8 +737,10 @@ function processConversation(conv, importBatchBuilder, requestUserId, defaultMod
 
   importBatchBuilder.finishConversation(
     conv.title,
-    new Date(conv.create_time * 1000),
-    {},
+    conv.create_time ? toImportedDate(conv.create_time * 1000) : new Date(),
+    /** Keeps the conversation on the model its messages were imported with, so the
+     * next turn is sent to the same model the chat is labeled with. */
+    conv.default_model_slug ? { model: conv.default_model_slug } : {},
     defaultModel,
   );
 }

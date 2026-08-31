@@ -949,6 +949,37 @@ describe('importChatGptConvo', () => {
       expect(importBatchBuilder.saveBatch).not.toHaveBeenCalled();
     });
 
+    it('should skip a malformed first entry rather than rejecting the whole file', async () => {
+      const [readable, corrupt, alsoReadable] = modernExport();
+      const jsonData = [corrupt, readable, alsoReadable];
+
+      const { summary, savedMessages } = await importModernExport(jsonData);
+
+      expect(summary).toEqual({ imported: 2, failed: 1 });
+      expect(savedMessages.some((msg) => msg.text === 'Puttanesca.')).toBe(true);
+    });
+
+    it('should keep the conversation on the model its messages were imported with', async () => {
+      const { importBatchBuilder } = await importModernExport(modernExport());
+
+      const [conversation] = importBatchBuilder.conversations;
+      expect(conversation.title).toBe('Deploying the staging cluster');
+      expect(conversation.model).toBe('gpt-5-thinking');
+    });
+
+    it('should not persist an invalid date when create_time is unparseable', async () => {
+      const jsonData = modernExport().slice(0, 1);
+      jsonData[0].create_time = 'not-a-timestamp';
+      jsonData[0].mapping['user-1'].message.create_time = 'also-not-a-timestamp';
+
+      const { savedMessages, importBatchBuilder } = await importModernExport(jsonData);
+
+      for (const message of savedMessages) {
+        expect(Number.isNaN(message.createdAt.getTime())).toBe(false);
+      }
+      expect(Number.isNaN(importBatchBuilder.conversations[0].createdAt.getTime())).toBe(false);
+    });
+
     it('should throw for an export file with no conversations instead of reporting success', async () => {
       const requestUserId = 'user-123';
       const importBatchBuilder = new ImportBatchBuilder(requestUserId);
@@ -1488,6 +1519,33 @@ describe('importChatBotUiConvo', () => {
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
+
+  it('should report the number of conversations it actually imported', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'chatbotui-export.json'), 'utf8'),
+    );
+    const requestUserId = 'custom-user-456';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    const summary = await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(summary).toEqual({ imported: jsonData.history.length, failed: 0 });
+    expect(summary.imported).toBeGreaterThan(1);
+  });
+
+  it('should throw for an export whose history is empty rather than reporting a success', async () => {
+    const jsonData = { version: 1, history: [], folders: [], prompts: [] };
+    const requestUserId = 'custom-user-456';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
+    const importer = getImporter(jsonData);
+    await expect(importer(jsonData, requestUserId, () => importBatchBuilder)).rejects.toThrow(
+      'No conversations found in this file',
+    );
+    expect(importBatchBuilder.saveBatch).not.toHaveBeenCalled();
+  });
 });
 
 describe('getImporter', () => {
@@ -1505,6 +1563,18 @@ describe('getImporter', () => {
 
   it('should route empty arrays to the ChatGPT importer without throwing', () => {
     expect(() => getImporter([])).not.toThrow();
+  });
+
+  it('should recognize a ChatGPT export whose first entry is malformed', () => {
+    const jsonData = [{ title: 'Corrupted entry' }, { title: 'Readable', mapping: {} }];
+
+    expect(getImporter(jsonData)).toBe(getImporter([{ mapping: {} }]));
+  });
+
+  it('should recognize a Claude export whose first entry is malformed', () => {
+    const jsonData = [{ name: 'Corrupted entry' }, { name: 'Readable', chat_messages: [] }];
+
+    expect(getImporter(jsonData)).toBe(getImporter([{ chat_messages: [] }]));
   });
 });
 
@@ -2167,6 +2237,61 @@ describe('importClaudeConvo', () => {
       {},
       expect.any(String),
     );
+  });
+
+  it('should count a conversation with no chat_messages list as failed', async () => {
+    const jsonData = [
+      { uuid: 'conv-missing', name: 'Missing list', created_at: '2025-01-15T10:00:00.000Z' },
+      {
+        uuid: 'conv-ok',
+        name: 'Readable',
+        created_at: '2025-01-15T11:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T11:00:01.000Z',
+            content: [{ type: 'text', text: 'Still here' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    const summary = await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(summary).toEqual({ imported: 1, failed: 1 });
+    expect(importBatchBuilder.conversations).toHaveLength(1);
+  });
+
+  it('should not persist an invalid date when created_at is unparseable', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-bad-date',
+        name: 'Bad date',
+        created_at: 'not-a-date',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: 'also-not-a-date',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(Number.isNaN(importBatchBuilder.messages[0].createdAt.getTime())).toBe(false);
+    expect(Number.isNaN(importBatchBuilder.conversations[0].createdAt.getTime())).toBe(false);
   });
 
   it('should keep importing after an unreadable conversation', async () => {

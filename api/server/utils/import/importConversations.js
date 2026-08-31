@@ -36,7 +36,7 @@ const importConversations = async (job) => {
       userRole,
     );
     logger.debug(`user: ${requestUserId} | Finished importing conversations`);
-    return { imported: summary?.imported ?? 1, failed: summary?.failed ?? 0 };
+    return summary;
   } catch (error) {
     logger.error(`user: ${requestUserId} | Failed to import conversation: `, error);
     throw error; // throw error all the way up so request does not return success
