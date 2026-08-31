@@ -67,8 +67,8 @@ async function loadMCPServerCatalogs({ user, servers, upstreamTokenProvider, obo
         }),
       formatServerTools: formatMCPServerTools,
       getCachedServerTools: getMCPServerTools,
-      getServerToolFunctionsSnapshot: (userId, serverName, serverConfig) =>
-        mcpManager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig),
+      getServerToolFunctionsSnapshot: (userId, serverName, serverConfig, options) =>
+        mcpManager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig, options),
       cacheServerTools: cacheMCPServerTools,
     },
   );
