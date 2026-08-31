@@ -449,6 +449,16 @@ const processFileURL = async ({
   }
 };
 
+/** Agent uploads carry endpoint=agents; resolve the file config from the agent's
+ *  own provider so provider-specific defaultLLMDeliveryPath overrides are honored. */
+const resolveUploadEndpoint = async ({ endpoint, agent_id }) => {
+  if (!agent_id) {
+    return endpoint;
+  }
+  const uploadAgent = await db.getAgent({ id: agent_id });
+  return uploadAgent?.provider || endpoint;
+};
+
 const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig }) => {
   const isLegacyFileUploadUX = endpointConfig?.legacyFileUploadUX === true;
   if (isLegacyFileUploadUX) {
@@ -479,9 +489,10 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id, endpoint } = metadata;
+  const { file_id, temp_file_id, endpoint, agent_id } = metadata;
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+  const configEndpoint = await resolveUploadEndpoint({ endpoint, agent_id });
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint: configEndpoint });
   const llmDeliveryPath = resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
@@ -721,15 +732,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     tool_resource === EToolResources.ocr ? EToolResources.context : tool_resource;
 
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  // An agent upload carries endpoint=agents; resolve the file config from the agent's
-  // own provider so provider-specific defaultLLMDeliveryPath overrides are honored.
-  let endpoint = req.body?.endpoint;
-  if (agent_id) {
-    const uploadAgent = await db.getAgent({ id: agent_id });
-    if (uploadAgent?.provider) {
-      endpoint = uploadAgent.provider;
-    }
-  }
+  const endpoint = await resolveUploadEndpoint({ endpoint: req.body?.endpoint, agent_id });
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
 
   if (agent_id && !tool_resource && !messageAttachment) {

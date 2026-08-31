@@ -1809,6 +1809,44 @@ describe('processImageFile', () => {
       true,
     );
   });
+
+  test('resolves llmDeliveryPath from the agent provider config for agent image uploads', async () => {
+    const { createFile, getAgent } = require('~/models');
+    getAgent.mockResolvedValueOnce({ provider: 'Custom Provider' });
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.webp',
+      bytes: 256,
+      width: 100,
+      height: 80,
+    });
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      endpoints: {
+        'Custom Provider': { defaultLLMDeliveryPath: { overrides: { 'image/*': 'none' } } },
+      },
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: {
+        file_id: 'image-file-id',
+        agent_id: 'agent-abc',
+        endpoint: EModelEndpoint.agents,
+      },
+    });
+
+    expect(getAgent).toHaveBeenCalledWith({ id: 'agent-abc' });
+    expect(handleImageUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: EModelEndpoint.agents }),
+    );
+    expect(createFile).toHaveBeenCalledWith(
+      expect.objectContaining({ llmDeliveryPath: 'none' }),
+      true,
+    );
+  });
 });
 
 describe('processFileURL', () => {
