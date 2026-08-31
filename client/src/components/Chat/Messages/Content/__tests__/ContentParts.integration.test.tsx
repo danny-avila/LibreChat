@@ -480,3 +480,126 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     );
   });
 });
+
+describe('ContentParts — synthesized activity folds', () => {
+  /** Settled by default: the fold is content-derived, so history and a live
+   *  run partition identically. The streaming case gets its own test below. */
+  const baseProps = {
+    messageId: 'msg1',
+    isCreatedByUser: false,
+    isLast: true,
+    isSubmitting: false,
+    isLatestMessage: true,
+  };
+
+  const makeChildLabel = (label: string): TMessageContentParts =>
+    ({
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: label,
+      pending: false,
+    }) as unknown as TMessageContentParts;
+
+  const TICKER = 'Confirmed the fix';
+  const FIRST = 'Found 43 available GitHub tools';
+
+  const labeledRun = () => [
+    makeMcpToolCall('t1'),
+    makeChildLabel(FIRST),
+    makeMcpToolCall('t2'),
+    makeChildLabel(TICKER),
+  ];
+
+  /** The card's header and the last sub-group's header carry the same text by
+   *  design — the ticker IS that sub-group's line. The card is the outer one. */
+  const foldHeader = () => screen.getAllByRole('button', { name: TICKER })[0];
+
+  it('folds a labeled run into one collapsed card headed by the newest label', () => {
+    renderContentParts({ ...baseProps, content: labeledRun() });
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'false');
+    /** Collapsed means unmounted, so the earlier row is not merely hidden. */
+    expect(screen.queryByRole('button', { name: FIRST })).toBeNull();
+    expect(screen.getAllByRole('button', { name: TICKER })).toHaveLength(1);
+  });
+
+  it('reveals the sub-groups, each still collapsed, when the card is opened', () => {
+    renderContentParts({ ...baseProps, content: labeledRun() });
+
+    fireEvent.click(foldHeader());
+
+    expect(screen.getByRole('button', { name: FIRST })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getAllByRole('button', { name: TICKER })[1]).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('leaves the in-flight tool call outside the card', () => {
+    renderContentParts({
+      ...baseProps,
+      isSubmitting: true,
+      content: [...labeledRun(), makeMcpToolCall('t3', false)],
+    });
+
+    /** The call the reader is watching stays a sibling of the card, so it is
+     *  still on screen once the fold settles shut over everything before it. */
+    const panel = screen.getByTestId('activity-phase-panel');
+    expect(panel.contains(screen.getByTestId('tool-call'))).toBe(false);
+  });
+
+  it('keeps the reader’s toggle when the ticker advances', () => {
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          content={[...labeledRun(), makeMcpToolCall('t3'), makeChildLabel('Checked the callers')]}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Checked the callers' })[0]).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('keeps the reader’s toggle when a server summary replaces the ticker', () => {
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          content={[...labeledRun(), makePhasePart(0, 4, 'Reviewed the release paths')]}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Reviewed the release paths' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('leaves an unlabeled run rendering exactly as before', () => {
+    renderContentParts({
+      ...baseProps,
+      content: [makeMcpToolCall('t1'), makeMcpToolCall('t2')],
+    });
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+    expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
+  });
+});

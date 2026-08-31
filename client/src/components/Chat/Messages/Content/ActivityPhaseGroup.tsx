@@ -4,6 +4,7 @@ import { ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
+import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import {
   useExpandCollapse,
   useLazyCollapseBody,
@@ -56,6 +57,8 @@ export default function ActivityPhaseGroup({
   showCursor = false,
   animateEntrance = false,
   hasPendingApproval = false,
+  initialExpansionState,
+  onExpansionChange,
 }: {
   labelPart: ActivityPhasePart;
   children: ReactNode;
@@ -63,6 +66,12 @@ export default function ActivityPhaseGroup({
   showCursor?: boolean;
   animateEntrance?: boolean;
   hasPendingApproval?: boolean;
+  /** Message-wide toggle memory, shared with `ToolCallGroup`. A synthesized
+   *  card is replaced by the real phase card once the run's summary lands,
+   *  and a reader who opened the ticker to watch must not have it snap shut
+   *  underneath them by that swap. */
+  initialExpansionState?: ToolCallGroupExpansionState;
+  onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
 }) {
   const label = getActivityLabelText(labelPart);
   const hasFailure = labelPart.status === 'failed' || labelPart.status === 'partial';
@@ -71,22 +80,27 @@ export default function ActivityPhaseGroup({
    *  marker after this commit; a later sibling update must not cancel the
    *  already-scheduled fold before its first animation frame. */
   const [shouldAnimateEntrance] = useState(smoothStreaming && animateEntrance && label.length > 0);
+  const restoredExpansion =
+    initialExpansionState?.userOverride === true ? initialExpansionState : null;
   /** A filled phase marker lands on top of activity the reader is already
    *  looking at. The card therefore mounts in the shape of what was there
    *  BEFORE it — header at zero height, panel open, chrome transparent — and
    *  folds into the summary on the next painted frame. Growing the header
    *  while the panel collapses keeps the block's height strictly decreasing,
    *  so the content compresses upward instead of being shoved down by a
-   *  header that appeared underneath it and then yanked back up. */
-  const foldsIn = shouldAnimateEntrance && hasContent;
-  const [isExpanded, setIsExpanded] = useState(foldsIn);
+   *  header that appeared underneath it and then yanked back up.
+   *
+   *  A restored toggle skips it: that fold is the reader's own decision about
+   *  a card they have already watched arrive. */
+  const foldsIn = shouldAnimateEntrance && hasContent && restoredExpansion == null;
+  const [isExpanded, setIsExpanded] = useState(restoredExpansion?.isExpanded ?? foldsIn);
   const [isSettled, setIsSettled] = useState(!foldsIn);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const panelId = useId();
   const cancelEntranceRef = useRef<(() => void) | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const previousIsExpandedRef = useRef(isExpanded);
-  const userOverrideRef = useRef(false);
+  const userOverrideRef = useRef(restoredExpansion != null);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
   /** A phase label can resolve while an approval card inside it is still
    *  pending (see ApprovalContext), and ToolApproval owns unsent local
@@ -132,13 +146,15 @@ export default function ActivityPhaseGroup({
   );
 
   const handleToggle = useCallback(() => {
+    const nextExpanded = !isExpanded;
     userOverrideRef.current = true;
     cancelEntranceRef.current?.();
     cancelEntranceRef.current = null;
     mountBody();
     setIsSettled(true);
-    setIsExpanded((expanded) => !expanded);
-  }, [mountBody]);
+    setIsExpanded(nextExpanded);
+    onExpansionChange?.({ isExpanded: nextExpanded, userOverride: true });
+  }, [isExpanded, mountBody, onExpansionChange]);
 
   /** Only the folding entrance drives the header off its natural height.
    *  History and reduced-motion render the plain, unstyled row. */

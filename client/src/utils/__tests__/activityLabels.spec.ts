@@ -2,6 +2,7 @@ import { ContentTypes } from 'librechat-data-provider';
 import type { TActivityLabelEvent, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import {
   applyActivityLabelPart,
+  getActivityLabelText,
   groupActivityPhases,
   lastCursorContentIdx,
   lastVisibleContentIdx,
@@ -514,5 +515,205 @@ describe('groupActivityPhases', () => {
         hasContent: false,
       }),
     ]);
+  });
+});
+
+describe('groupActivityPhases — synthesized folds', () => {
+  const toolPart = (id: string): TMessageContentParts =>
+    ({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id, name: 'web_search', args: '{}', output: 'ok' },
+    }) as unknown as TMessageContentParts;
+
+  const childLabel = (label: string, status?: string): TMessageContentParts =>
+    labelPart({
+      activity_label: label,
+      pending: false,
+      ...(status != null && { status }),
+    } as Partial<TActivityLabelEvent['part']>) as unknown as TMessageContentParts;
+
+  const answer = (value = 'Here is what I found.'): TMessageContentParts =>
+    ({ type: ContentTypes.TEXT, text: value }) as TMessageContentParts;
+
+  const commentary = (value: string): TMessageContentParts =>
+    ({ type: ContentTypes.TEXT, text: value, phase: 'commentary' }) as TMessageContentParts;
+
+  const thinking = (): TMessageContentParts =>
+    ({ type: ContentTypes.THINK, think: 'weighing options' }) as unknown as TMessageContentParts;
+
+  const foldOf = (segments: ReturnType<typeof groupActivityPhases>) => {
+    const fold = segments?.find((segment) => segment.type === 'phase');
+    return fold?.type === 'phase' ? fold : undefined;
+  };
+
+  it('folds a run of two labeled activity blocks into one card', () => {
+    const segments = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config'),
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+    ]);
+
+    expect(segments).toHaveLength(1);
+    expect(foldOf(segments)).toMatchObject({
+      synthesized: true,
+      startIndex: 0,
+      labelIndex: 3,
+      hasContent: true,
+    });
+    expect(getActivityLabelText(foldOf(segments)?.labelPart)).toBe('Checked the callers');
+  });
+
+  it('carries the newest filled child label as the ticker', () => {
+    const segments = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config'),
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+      toolPart('t3'),
+      childLabel('Confirmed the fix'),
+    ]);
+
+    expect(getActivityLabelText(foldOf(segments)?.labelPart)).toBe('Confirmed the fix');
+    expect(foldOf(segments)?.labelPart.activity_count).toBe(3);
+  });
+
+  it('leaves in-flight activity past the newest label outside the card', () => {
+    const segments = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config'),
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+      thinking(),
+      toolPart('t3'),
+    ]);
+
+    expect(foldOf(segments)?.contentIndices).toEqual([0, 1, 2, 3]);
+    expect(segments?.[1]).toMatchObject({ type: 'content', contentIndices: [4, 5] });
+  });
+
+  it('does not fold a single labeled block', () => {
+    expect(
+      groupActivityPhases([toolPart('t1'), toolPart('t2'), childLabel('Read both files')]),
+    ).toBeUndefined();
+  });
+
+  it('does not fold unlabeled tool calls', () => {
+    expect(groupActivityPhases([toolPart('t1'), toolPart('t2'), toolPart('t3')])).toBeUndefined();
+  });
+
+  it('stops a fold at the answer text so it can never be hidden', () => {
+    const segments = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config'),
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+      answer('Done.'),
+    ]);
+
+    expect(foldOf(segments)?.contentIndices).toEqual([0, 1, 2, 3]);
+    expect(segments?.[1]).toMatchObject({ type: 'content', contentIndices: [4] });
+  });
+
+  it('absorbs short commentary but breaks on a substantial block', () => {
+    const short = groupActivityPhases([
+      commentary('One moment.'),
+      toolPart('t1'),
+      childLabel('Read the config'),
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+    ]);
+    expect(foldOf(short)?.contentIndices).toEqual([0, 1, 2, 3, 4]);
+
+    const long = groupActivityPhases([
+      commentary('x'.repeat(201)),
+      toolPart('t1'),
+      childLabel('Read the config'),
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+    ]);
+    expect(foldOf(long)?.contentIndices).toEqual([1, 2, 3, 4]);
+  });
+
+  it('aggregates child status onto the card', () => {
+    const partial = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config', 'failed'),
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+    ]);
+    expect(foldOf(partial)?.labelPart.status).toBe('partial');
+
+    const failed = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config', 'failed'),
+      toolPart('t2'),
+      childLabel('Checked the callers', 'failed'),
+    ]);
+    expect(foldOf(failed)?.labelPart.status).toBe('failed');
+  });
+
+  it('stands down when the message carries parallel content', () => {
+    const parallel = {
+      ...(toolPart('t2') as object),
+      groupId: 'g1',
+    } as unknown as TMessageContentParts;
+
+    expect(
+      groupActivityPhases([
+        toolPart('t1'),
+        childLabel('Read the config'),
+        parallel,
+        childLabel('Checked the callers'),
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('never folds a span a server marker already claims', () => {
+    const phase = labelPart({ activity_label: 'Reviewed the release paths', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 4,
+      activity_count: 2,
+    });
+
+    const segments = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config'),
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+      phase as never,
+    ]);
+
+    expect(segments).toHaveLength(1);
+    expect(segments?.[0]).toMatchObject({ type: 'phase', labelIndex: 4 });
+    expect(segments?.[0]).not.toHaveProperty('synthesized', true);
+  });
+
+  it('folds a trailing run left unclaimed after a server phase', () => {
+    const phase = labelPart({ activity_label: 'Reviewed the release paths', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+
+    const segments = groupActivityPhases([
+      toolPart('t1'),
+      childLabel('Read the config'),
+      phase as never,
+      toolPart('t2'),
+      childLabel('Checked the callers'),
+      toolPart('t3'),
+      childLabel('Confirmed the fix'),
+    ]);
+
+    const synthesized = segments?.filter(
+      (segment) => segment.type === 'phase' && segment.synthesized === true,
+    );
+    expect(synthesized).toHaveLength(1);
+    expect(synthesized?.[0]).toMatchObject({ startIndex: 3 });
   });
 });

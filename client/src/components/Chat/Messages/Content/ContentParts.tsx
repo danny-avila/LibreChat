@@ -328,7 +328,10 @@ const ContentPartsBody = memo(function ContentPartsBody({
     const labels = new Map<string, number>();
     const ordinals = new Map<number, number>();
     for (const segment of phaseSegments ?? []) {
-      if (segment.type === 'phase') {
+      /** Synthesized cards are deliberately excluded: their header key moves
+       *  with the ticker, and a moving key reads here as a re-key — which
+       *  would suppress the entrance fold on every real marker after it. */
+      if (segment.type === 'phase' && segment.synthesized !== true) {
         const text = getActivityLabelText(segment.labelPart);
         const occurrence = (labels.get(text) ?? 0) + 1;
         indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
@@ -682,6 +685,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       segmentIndices: ReadonlyArray<number>,
       key: string,
       withinPhase = false,
+      ownsCursor = false,
     ) => {
       return (
         <ContentPartsBody
@@ -694,7 +698,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           attachments={inlineAttachments}
           searchResults={searchResults}
           isCreatedByUser={isCreatedByUser}
-          isLast={isLast && segmentIndices.includes(globalLastContentIdx)}
+          isLast={!ownsCursor && isLast && segmentIndices.includes(globalLastContentIdx)}
           isSubmitting={isSubmitting}
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
@@ -727,35 +731,65 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 `phase-adjacent-${segmentKeyIndex(segment)}`,
               );
             }
-            const phaseKeyIndex = getPartKeyIndex(segment.labelPart, segment.labelIndex);
+            const synthesized = segment.synthesized === true;
+            /** A synthesized card has no marker to key on, and its header
+             *  ticks with the newest child label — keying on the label would
+             *  remount the card on every tick. Anchor it to the span's first
+             *  part instead, which also holds still while the run streams. */
+            const phaseKeyIndex = synthesized
+              ? segmentKeyIndex(segment)
+              : getPartKeyIndex(segment.labelPart, segment.labelIndex);
             const labelText = getActivityLabelText(segment.labelPart);
+            const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
+            /** Toggle memory is shared with the tool groups so the reader's
+             *  choice survives the swap from ticker to generated summary,
+             *  which unmounts the synthesized card and mounts the real one.
+             *  Anchored to the span rather than to either header, so both
+             *  cards address the same entry — and to the part's stable key,
+             *  so the entry survives the re-index at compaction. */
+            const cardId = `phase:${segmentKeyIndex(segment)}`;
+            /** While a run streams, the cursor sits INSIDE a synthesized span.
+             *  A collapsed card would swallow it, so the card carries it below
+             *  the header and the nested body stands down. */
+            const ownsCursor =
+              synthesized &&
+              isLast &&
+              effectiveIsSubmitting &&
+              segmentIndices.includes(globalLastContentIdx);
             return (
               <ActivityPhaseGroup
-                key={`activity-phase-${messageId}-${phaseKeyIndex}`}
+                key={`activity-${synthesized ? 'fold' : 'phase'}-${messageId}-${phaseKeyIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
                 hasPendingApproval={segment.content.some(
                   (part) => part != null && hasPendingApprovalInPart(part),
                 )}
+                initialExpansionState={expansionState.get(cardId)}
+                onExpansionChange={(state) => handleGroupExpansionChange(cardId, state)}
                 animateEntrance={
-                  previousPhases != null &&
-                  !previousPhases.indices.has(phaseKeyIndex) &&
-                  (!hasPhaseRekey ||
-                    (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >
-                      (previousPhases.labels.get(labelText) ?? 0))
+                  synthesized
+                    ? effectiveIsSubmitting
+                    : previousPhases != null &&
+                      !previousPhases.indices.has(phaseKeyIndex) &&
+                      (!hasPhaseRekey ||
+                        (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >
+                          (previousPhases.labels.get(labelText) ?? 0))
                 }
                 showCursor={
-                  isLast &&
-                  effectiveIsSubmitting &&
-                  absoluteIndexAt(segment.labelIndex) === globalLastContentIdx
+                  synthesized
+                    ? ownsCursor
+                    : isLast &&
+                      effectiveIsSubmitting &&
+                      absoluteIndexAt(segment.labelIndex) === globalLastContentIdx
                 }
               >
                 {renderSegment(
                   segment.content,
                   absoluteIndexAt(segment.startIndex),
-                  segment.contentIndices.map(absoluteIndexAt),
+                  segmentIndices,
                   `phase-content-${phaseKeyIndex}`,
                   true,
+                  ownsCursor,
                 )}
               </ActivityPhaseGroup>
             );
