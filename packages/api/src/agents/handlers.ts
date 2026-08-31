@@ -75,7 +75,10 @@ import {
 } from './intent';
 import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
-import { BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS } from './backgroundCompletion';
+import {
+  BACKGROUND_TASK_ABORT_GRACE_MS,
+  BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
+} from './backgroundCompletion';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { createSkillContentDigest } from './compatibility';
 import { parseFrontmatter } from '../skills/import';
@@ -4918,11 +4921,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
                 let producerHeartbeatInFlight: Promise<void> | undefined;
+                let producerHeartbeatStopped = false;
                 const producerAdmission = completionAdmission;
                 const producerHeartbeat =
                   producerAdmission == null
                     ? undefined
                     : setInterval(() => {
+                        if (producerHeartbeatStopped) {
+                          return;
+                        }
                         if (producerHeartbeatInFlight != null) {
                           return;
                         }
@@ -4946,12 +4953,49 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           });
                       }, BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS);
                 (producerHeartbeat as { unref?: () => void } | undefined)?.unref?.();
+                const stopProducerHeartbeat = async (retireReason?: string): Promise<void> => {
+                  if (!producerHeartbeatStopped) {
+                    producerHeartbeatStopped = true;
+                    if (producerHeartbeat != null) {
+                      clearInterval(producerHeartbeat);
+                    }
+                  }
+                  await producerHeartbeatInFlight;
+                  if (retireReason == null || producerAdmission == null) {
+                    return;
+                  }
+                  try {
+                    const retired = await producerAdmission.retire(retireReason);
+                    if (!retired) {
+                      logger.warn(
+                        `[background] Could not retire timed-out completion delivery for task ${task.id}.`,
+                      );
+                    }
+                  } catch (retireError) {
+                    logger.warn(
+                      `[background] Failed to retire timed-out completion delivery for task ${task.id}:`,
+                      retireError,
+                    );
+                  }
+                };
+                let producerRetirementTimeout: ReturnType<typeof setTimeout> | undefined;
+                const requestBackgroundAbort = (): void => {
+                  backgroundAbortController.abort(
+                    new DOMException('Background task timed out', 'AbortError'),
+                  );
+                  producerRetirementTimeout = setTimeout(() => {
+                    producerRetirementTimeout = undefined;
+                    void stopProducerHeartbeat(
+                      'background task did not settle after its abort grace period',
+                    );
+                  }, BACKGROUND_TASK_ABORT_GRACE_MS);
+                  producerRetirementTimeout.unref?.();
+                };
                 void (async () => {
                   try {
-                    const result = await withBackgroundTaskTimeout(invokePromise, () =>
-                      backgroundAbortController.abort(
-                        new DOMException('Background task timed out', 'AbortError'),
-                      ),
+                    const result = await withBackgroundTaskTimeout(
+                      invokePromise,
+                      requestBackgroundAbort,
                     );
                     if (isCodeCall) {
                       markCodeSandboxWarm();
@@ -5093,10 +5137,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     await persistBackgroundResult({ output: deliveredError, status: 'error' });
                     await wakeDetachedActor();
                   } finally {
-                    if (producerHeartbeat != null) {
-                      clearInterval(producerHeartbeat);
+                    if (producerRetirementTimeout != null) {
+                      clearTimeout(producerRetirementTimeout);
                     }
-                    await producerHeartbeatInFlight;
+                    await stopProducerHeartbeat();
                   }
                 })();
                 if (
