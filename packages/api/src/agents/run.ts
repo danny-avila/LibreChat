@@ -295,6 +295,7 @@ const customProviders = new Set([
   Providers.MOONSHOT,
   Providers.OPENROUTER,
   KnownEndpoints.ollama,
+  KnownEndpoints.llmman,
 ]);
 
 type AgentReasoningKey = 'reasoning_content' | 'reasoning';
