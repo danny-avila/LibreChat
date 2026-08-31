@@ -105,6 +105,9 @@ const {
   resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
+const {
+  createProvisionFilesCallback,
+} = require('~/server/services/Files/provisionCallback');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
@@ -1102,6 +1105,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
         // Create tool execute options for event-driven tool execution
         const toolExecuteOptions = {
+          provisionFiles: createProvisionFilesCallback({ req, agentToolContexts }),
           loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
             const ctx =
               agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
@@ -1316,6 +1320,7 @@ const executeResponse = async (envelope, { req, res }) => {
         });
 
         const toolExecuteOptions = {
+          provisionFiles: createProvisionFilesCallback({ req, agentToolContexts }),
           loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
             const ctx =
               agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
