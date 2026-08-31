@@ -244,6 +244,7 @@ const {
   processFileURL,
   sweepExpiredFiles,
   startExpiredFileSweep,
+  filterFile,
 } = require('./process');
 const {
   inspectContent,
@@ -2410,5 +2411,54 @@ describe('startExpiredFileSweep', () => {
       }),
     );
     expect(interval).toBe('sweep-interval');
+  });
+});
+
+describe('filterFile endpoint resolution', () => {
+  /* getEndpointFileConfig consults endpointType ahead of endpoint, so a composer upload
+   * carrying `agents` would keep the Agents policy and shadow the provider the caller
+   * resolved. */
+  /* mergeFileConfig is mocked here, so these are raw byte values rather than the
+   * megabytes an admin would write. The agents policy refuses the file on size and the
+   * provider policy accepts it, which makes the assertions read as which one governed. */
+  const policyConfig = {
+    ...makeFileConfig(),
+    endpoints: {
+      default: {
+        disabled: false,
+        fileLimit: 10,
+        fileSizeLimit: 1_000_000,
+        totalSizeLimit: 1_000_000,
+        supportedMimeTypes: [/^image\/png$/],
+      },
+      agents: { fileSizeLimit: 1 },
+      'Custom Provider': { fileSizeLimit: 1_000_000 },
+    },
+  };
+
+  const makeFilterReq = (endpointType) => ({
+    body: {
+      endpoint: EModelEndpoint.agents,
+      ...(endpointType ? { endpointType } : {}),
+      file_id: '00000000-0000-4000-8000-000000000000',
+      width: 1,
+      height: 1,
+    },
+    file: { size: 10, mimetype: 'image/png', originalname: 'a.png' },
+    config: {},
+  });
+
+  beforeEach(() => {
+    mergeFileConfig.mockReturnValue(policyConfig);
+  });
+
+  test('applies the resolved provider policy even when the request names an endpoint type', () => {
+    expect(() =>
+      filterFile({ req: makeFilterReq('agents'), image: true, endpoint: 'Custom Provider' }),
+    ).not.toThrow();
+  });
+
+  test('keeps the request endpoint type when no override is given', () => {
+    expect(() => filterFile({ req: makeFilterReq('agents'), image: true })).toThrow(/size limit/i);
   });
 });

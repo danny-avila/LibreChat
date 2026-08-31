@@ -68,6 +68,7 @@ function buildHarness({
     }));
   const updateFile = jest.fn(async () => ({}));
   const updateCodeEnvRef = jest.fn(async () => ({}));
+  const addEmbeddedEntity = jest.fn(async () => ({}));
   const agentToolContexts = new Map<string, ProvisionToolContext>(contexts);
 
   return {
@@ -75,6 +76,7 @@ function buildHarness({
     provisionToVectorDB,
     updateFile,
     updateCodeEnvRef,
+    addEmbeddedEntity,
     agentToolContexts,
     provisionFiles: createProvisionFilesCallback({
       req,
@@ -83,6 +85,7 @@ function buildHarness({
       provisionToVectorDB: provisionToVectorDB as never,
       updateFile,
       updateCodeEnvRef,
+      addEmbeddedEntity,
     }),
   };
 }

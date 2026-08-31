@@ -129,6 +129,44 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     );
   });
 
+  it('keeps archives and columnar data off the text fallback', () => {
+    /* These land on the text fallback rather than the capability gate, and the default
+     * text matcher accepts them, so they would be decoded as UTF-8 into the prompt. */
+    for (const mimeType of [
+      'application/zip',
+      'application/x-zip-compressed',
+      'application/x-tar',
+      'application/epub+zip',
+      'application/vnd.apache.parquet',
+    ]) {
+      expect(resolveDefaultLLMDeliveryPath(mimeType, undefined, undefined, 'openAI')).toBe('none');
+    }
+  });
+
+  it('keeps recoverable types on the text fallback', () => {
+    for (const mimeType of [
+      'text/plain',
+      'text/csv',
+      'application/json',
+      'application/vnd.oasis.opendocument.text',
+      'application/vnd.ms-excel',
+      'message/rfc822',
+    ]) {
+      expect(resolveDefaultLLMDeliveryPath(mimeType, undefined, undefined, 'openAI')).toBe('text');
+    }
+  });
+
+  it('still honors an explicit override for an unparsable type', () => {
+    expect(
+      resolveDefaultLLMDeliveryPath(
+        'application/zip',
+        { overrides: { 'application/zip': 'text' } },
+        undefined,
+        'openAI',
+      ),
+    ).toBe('text');
+  });
+
   it('still honors an explicit override for video', () => {
     /* Capability gating applies to the system default only; an admin who configures a
      * destination has made the decision. */

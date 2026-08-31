@@ -72,6 +72,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     ref: CodeEnvRef;
     legacyRef?: CodeEnvRef;
   }) => Promise<IMongoFile | null>;
+  addFileEmbeddedEntity: (data: {
+    file_id: string;
+    entityId: string;
+  }) => Promise<IMongoFile | null>;
   updateFileUsage: (data: {
     file_id: string;
     inc?: number;
@@ -554,6 +558,30 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Records that a file has been embedded into one vector namespace, without disturbing
+   * the namespaces already recorded. Agents that share a file record, as a duplicate does
+   * with its source, each need their own embedding.
+   *
+   * @param data - The file and the entity whose namespace now holds its vectors
+   * @returns A promise that resolves to the updated file document, or null when absent
+   */
+  async function addFileEmbeddedEntity(data: {
+    file_id: string;
+    entityId: string;
+  }): Promise<IMongoFile | null> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    return File.findOneAndUpdate(
+      { file_id: data.file_id },
+      {
+        $set: { embedded: true },
+        $addToSet: { 'metadata.embeddedEntities': data.entityId },
+        $unset: { expiresAt: '' },
+      },
+      { new: true },
+    ).lean<IMongoFile>();
+  }
+
+  /**
    * Increments the usage of a file identified by file_id.
    * @param data - The data to update, must contain file_id and the increment value for usage
    * @returns A promise that resolves to the updated file document
@@ -826,6 +854,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     createFile,
     updateFile,
     updateFileCodeEnvRef,
+    addFileEmbeddedEntity,
     updateFileUsage,
     deleteFile,
     deleteFiles,

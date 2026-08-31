@@ -97,6 +97,55 @@ describe('primeResources', () => {
     });
   });
 
+  describe('embedding state across agents that share a file record', () => {
+    const sharedContextFile = (embeddedEntities?: string[]): TFile =>
+      ({
+        user: 'user1',
+        file_id: 'shared-context-file',
+        filename: 'notes.pdf',
+        filepath: '/uploads/notes.pdf',
+        object: 'file' as const,
+        type: 'application/pdf',
+        bytes: 1024,
+        usage: 0,
+        embedded: true,
+        source: FileSources.local,
+        context: FileContext.agents,
+        ...(embeddedEntities ? { metadata: { embeddedEntities } } : {}),
+      }) as TFile;
+
+    const primeFor = (agentId: string, file: TFile) => {
+      mockGetFiles.mockResolvedValue([file]);
+      return primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources: { [EToolResources.context]: { file_ids: ['shared-context-file'] } },
+        agentId,
+        enabledToolResources: new Set([EToolResources.file_search]),
+      });
+    };
+
+    it('re-embeds for an agent whose namespace was never provisioned', async () => {
+      /* A duplicated agent inherits the file id but searches its own namespace, so the
+       * record-wide embedded flag cannot answer for it. */
+      const result = await primeFor('agent-b', sharedContextFile(['agent-a']));
+
+      expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
+        'shared-context-file',
+      ]);
+    });
+
+    it('does not re-embed for the agent that already provisioned it', async () => {
+      const result = await primeFor('agent-a', sharedContextFile(['agent-a']));
+
+      expect(result.provisionState).toBeUndefined();
+    });
+  });
+
   describe('when policy screening rejects a persistent context file', () => {
     it('keeps it out of provisioning and out of attachments', async () => {
       /* These files are read inside primeResources, so the caller never sees them to
@@ -2221,7 +2270,8 @@ describe('primeResources', () => {
         embedded: true,
         usage: 0,
         context: FileContext.agents,
-      };
+        metadata: { embeddedEntities: ['agent1'] },
+      } as TFile;
       mockGetFiles.mockResolvedValue([embeddedContextFile]);
 
       const result = await primeResources({
@@ -2238,6 +2288,41 @@ describe('primeResources', () => {
       const searchResource = result.tool_resources?.[EToolResources.file_search];
       expect(searchResource?.file_ids).toContain('embedded-context');
       expect(searchResource?.files?.map((f) => f.file_id) ?? []).not.toContain('embedded-context');
+    });
+
+    it('re-embeds an agent context file recorded before namespaces were tracked', async () => {
+      /* Records predating per-namespace tracking cannot say which agent holds their
+       * vectors, so they are provisioned once for the agent that next uses them and carry
+       * the namespace afterwards. */
+      const legacyContextFile = {
+        user: 'user1',
+        file_id: 'legacy-context',
+        filename: 'handbook.pdf',
+        filepath: '/uploads/handbook.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: true,
+        usage: 0,
+        context: FileContext.agents,
+      } as TFile;
+      mockGetFiles.mockResolvedValue([legacyContextFile]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: { [EToolResources.context]: { file_ids: ['legacy-context'] } },
+        attachments: undefined,
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.file_search]),
+      });
+
+      expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
+        'legacy-context',
+      ]);
     });
 
     it('queues a deferred candidate for provisioning without delivering it again', async () => {

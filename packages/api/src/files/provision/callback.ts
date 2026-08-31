@@ -51,6 +51,8 @@ export interface ProvisionCallbackDeps {
   provisionToVectorDB: ProvisionService['provisionToVectorDB'];
   updateFile: (update: FileUpdate) => Promise<unknown>;
   updateCodeEnvRef: (update: CodeEnvRefUpdate) => Promise<unknown>;
+  /** Records one vector namespace without disturbing the others already recorded. */
+  addEmbeddedEntity: (update: { file_id: string; entityId: string }) => Promise<unknown>;
 }
 
 /**
@@ -97,6 +99,7 @@ export function createProvisionFilesCallback({
   provisionToVectorDB,
   updateFile,
   updateCodeEnvRef,
+  addEmbeddedEntity,
 }: ProvisionCallbackDeps): (toolNames: string[], agentId?: string) => Promise<CodeEnvFile[]> {
   /* Agents in a handoff or parallel graph are initialized independently over the same
    * request attachments, so each holds its own ProvisionState for the same file. Keyed
@@ -300,8 +303,15 @@ export function createProvisionFilesCallback({
              * turn rather than this turn's results. Logged, not fatal. */
             if (provisioned.embedded && provisioned.fileUpdate) {
               const update = provisioned.fileUpdate;
+              /* Vectors live under the entity that provisioned them, so the namespace is
+               * recorded alongside the flag. Agents sharing a record, as a duplicate does
+               * with its source, each need their own embedding. */
+              const namespace = entityIdForFile(file);
               await persistWithRetry(
-                () => updateFile(update),
+                () =>
+                  namespace != null
+                    ? addEmbeddedEntity({ file_id: update.file_id, entityId: namespace })
+                    : updateFile(update),
                 (error) =>
                   logger.error(
                     `[provisionFiles] Failed to persist embedding state for file ${update.file_id}`,
@@ -313,6 +323,12 @@ export function createProvisionFilesCallback({
           });
           if (result.embedded) {
             file.embedded = true;
+            const namespace = entityIdForFile(file);
+            if (namespace != null) {
+              const recorded = new Set(file.metadata?.embeddedEntities ?? []);
+              recorded.add(namespace);
+              file.metadata = { ...file.metadata, embeddedEntities: [...recorded] };
+            }
             addProvisionedFile(
               file,
               EToolResources.file_search,
