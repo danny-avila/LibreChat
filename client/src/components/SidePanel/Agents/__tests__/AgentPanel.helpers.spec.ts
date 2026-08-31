@@ -141,6 +141,24 @@ describe('composeAgentUpdatePayload', () => {
 
     expect(payload.stateful_code_environment).toBe('agent-user');
   });
+
+  it('sends a deployment-default reset for an existing agent', () => {
+    const form = createForm();
+    form.code_environment_id = null;
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.code_environment_id).toBeNull();
+  });
+
+  it('omits a deployment-default reset when creating an agent', () => {
+    const form = createForm();
+    form.code_environment_id = null;
+
+    const { payload } = composeAgentUpdatePayload(form);
+
+    expect(payload.code_environment_id).toBeUndefined();
+  });
 });
 
 describe('persistAvatarChanges', () => {

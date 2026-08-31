@@ -4,6 +4,7 @@ import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import { Bot, ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
 import {
@@ -14,6 +15,7 @@ import {
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { isAbnormalTerminalStatus } from './status';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -33,59 +35,82 @@ function TriggerIcon({ kind }: { kind: ChildConversationTurn['trigger']['kind'] 
   );
 }
 
-function ExternalEventTrigger({ turn }: { turn: ChildConversationTurn }) {
+function ExternalEventTrigger({
+  turn,
+  fullWidth,
+}: {
+  turn: ChildConversationTurn;
+  fullWidth: boolean;
+}) {
   const localize = useLocalize();
   const [expanded, setExpanded] = useState(false);
   const details = turn.trigger.externalEvent;
   const label = localize('com_ui_subagent_trigger_external_event');
+  let body: ReactNode;
   if (details == null) {
-    return (
-      <div className="flex min-h-9 items-center gap-2 text-sm text-text-secondary">
+    body = (
+      <div className="flex items-center gap-1.5 text-xs font-medium text-text-secondary">
         <TriggerIcon kind="external_event" />
-        <span className="font-medium">{label}</span>
+        <span>{label}</span>
       </div>
+    );
+  } else {
+    body = (
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-auto min-h-6 w-full justify-start gap-1.5 px-0 text-left text-xs font-medium text-text-secondary hover:bg-transparent hover:text-text-primary"
+          >
+            <TriggerIcon kind="external_event" />
+            <span>{label}</span>
+            <span className="min-w-0 truncate font-normal">
+              {details.eventType} · {details.sourceType}
+            </span>
+            <span className="sr-only">{details.occurredAt}</span>
+            <ChevronDown
+              size={14}
+              aria-hidden
+              className={`ml-auto shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="ml-8 border-l border-border-light py-1 pl-3 text-xs text-text-secondary">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+            <dt>{localize('com_ui_subagent_event_type')}</dt>
+            <dd className="break-words text-text-primary">{details.eventType}</dd>
+            <dt>{localize('com_ui_subagent_event_source')}</dt>
+            <dd className="break-words text-text-primary">{details.sourceType}</dd>
+            <dt>{localize('com_ui_subagent_event_received')}</dt>
+            <dd className="break-words text-text-primary">
+              {new Date(details.occurredAt).toLocaleString()}
+            </dd>
+            {details.expectedActionToolName != null && (
+              <>
+                <dt>{localize('com_ui_subagent_event_expected_action')}</dt>
+                <dd className="break-words text-text-primary">{details.expectedActionToolName}</dd>
+              </>
+            )}
+          </dl>
+        </CollapsibleContent>
+      </Collapsible>
     );
   }
   return (
-    <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <CollapsibleTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-auto min-h-9 w-full justify-start gap-2 px-0 text-left text-sm text-text-secondary hover:bg-transparent hover:text-text-primary"
-        >
-          <TriggerIcon kind="external_event" />
-          <span className="font-medium">{label}</span>
-          <span className="min-w-0 truncate text-xs">
-            {details.eventType} · {details.sourceType}
-          </span>
-          <span className="sr-only">{details.occurredAt}</span>
-          <ChevronDown
-            size={15}
-            aria-hidden
-            className={`ml-auto shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-          />
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="ml-8 border-l border-border-light py-1 pl-3 text-xs text-text-secondary">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-          <dt>{localize('com_ui_subagent_event_type')}</dt>
-          <dd className="break-words text-text-primary">{details.eventType}</dd>
-          <dt>{localize('com_ui_subagent_event_source')}</dt>
-          <dd className="break-words text-text-primary">{details.sourceType}</dd>
-          <dt>{localize('com_ui_subagent_event_received')}</dt>
-          <dd className="break-words text-text-primary">
-            {new Date(details.occurredAt).toLocaleString()}
-          </dd>
-          {details.expectedActionToolName != null && (
-            <>
-              <dt>{localize('com_ui_subagent_event_expected_action')}</dt>
-              <dd className="break-words text-text-primary">{details.expectedActionToolName}</dd>
-            </>
-          )}
-        </dl>
-      </CollapsibleContent>
-    </Collapsible>
+    <MessageRow
+      id={`${turn.taskId}:trigger`}
+      icon={<TriggerIcon kind="external_event" />}
+      label={label}
+      footer={null}
+      timestamp={turn.trigger.createdAt ?? details?.occurredAt}
+      ariaLabel={label}
+      headerPrefix=""
+      isCreatedByUser={true}
+      fullWidth={fullWidth}
+    >
+      {body}
+    </MessageRow>
   );
 }
 
@@ -105,7 +130,7 @@ function TriggerMessage({ turn, fullWidth }: { turn: ChildConversationTurn; full
     [turn.trigger.summary],
   );
   if (turn.trigger.kind === 'external_event') {
-    return <ExternalEventTrigger turn={turn} />;
+    return <ExternalEventTrigger turn={turn} fullWidth={fullWidth} />;
   }
   return (
     <MessageRow
@@ -166,8 +191,27 @@ function ChildMessage({
   const agentsMap = useAgentsMapContext();
   const agent = agentId == null ? undefined : agentsMap?.[agentId];
   const label = agent?.name ?? turn.activity.title;
-  const detailsLimited =
-    turn.activity.activityTruncated === true || hasTruncatedActivityDetails(turn.activity);
+  const wholeActivityTruncated = turn.activity.activityTruncated === true;
+  const detailsLimited = wholeActivityTruncated || hasTruncatedActivityDetails(turn.activity);
+  let limitedNotice: ReactNode;
+  if (wholeActivityTruncated && onLoadDetails != null && detailState !== 'unavailable') {
+    limitedNotice = (
+      <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
+        {detailState === 'error'
+          ? localize('com_ui_retry')
+          : localize('com_ui_subagent_show_full_activity')}
+      </Button>
+    );
+  } else if (wholeActivityTruncated) {
+    limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
+  } else {
+    /** Only item-level fields were shortened for display; the run's full
+     *  activity is otherwise present, so avoid the alarming "unavailable"
+     *  framing there. */
+    limitedNotice = (
+      <span className="italic">{localize('com_ui_subagent_activity_details_truncated')}</span>
+    );
+  }
   const iconData = {
     endpoint: EModelEndpoint.agents,
     modelLabel: label,
@@ -187,7 +231,9 @@ function ChildMessage({
       }
       label={label}
       footer={
-        turn.activity.status === 'completed' ? null : <SubagentStatus activity={turn.activity} />
+        isAbnormalTerminalStatus(turn.activity.status) ? (
+          <SubagentStatus activity={turn.activity} />
+        ) : null
       }
       ariaLabel={label}
       headerPrefix=""
@@ -204,19 +250,7 @@ function ChildMessage({
         onCancelControl={onCancelControl}
       />
       {detailsLimited && detailState !== 'loading' && (
-        <div className="mt-2 text-xs text-text-secondary">
-          {turn.activity.activityTruncated === true &&
-          onLoadDetails != null &&
-          detailState !== 'unavailable' ? (
-            <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
-              {detailState === 'error'
-                ? localize('com_ui_retry')
-                : localize('com_ui_subagent_show_full_activity')}
-            </Button>
-          ) : (
-            localize('com_ui_subagent_activity_details_unavailable')
-          )}
-        </div>
+        <div className="mt-2 text-xs text-text-secondary">{limitedNotice}</div>
       )}
       {detailState === 'loading' && (
         <div className="mt-2 text-xs text-text-secondary" aria-live="polite">

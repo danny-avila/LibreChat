@@ -520,6 +520,8 @@ if (cluster.isMaster) {
     app.use('/api/admin/insights', routes.insights);
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
+    app.use('/api/admin/code-environments', routes.adminCodeEnvironments);
+    app.use('/api/code-environments', routes.codeEnvironments);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
     app.use('/api/api-keys', routes.apiKeys);

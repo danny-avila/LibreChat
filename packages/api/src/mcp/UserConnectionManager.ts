@@ -2,19 +2,20 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type * as t from './types';
 import {
-  cancelMCPToolsChanged,
-  getMCPAppToolsPublicationGeneration,
-  getMCPToolsChangedGeneration,
-  notifyMCPToolsChanged,
-  renewMCPToolsChangedGeneration,
-} from '~/mcp/toolsChanged';
-import {
+  canBackfillSharedServerInstructions,
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
 } from './utils';
+import {
+  cancelMCPToolsChanged,
+  getMCPAppToolsPublicationGeneration,
+  getMCPToolsChangedGeneration,
+  notifyMCPToolsChanged,
+  renewMCPToolsChangedGeneration,
+} from '~/mcp/toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
@@ -25,6 +26,7 @@ import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
+import { isEnabled } from '~/utils';
 
 type PendingConnection = {
   promise: Promise<MCPConnection>;
@@ -733,7 +735,8 @@ export abstract class UserConnectionManager {
         this.userConnections.get(userId)?.set(serverName, connection);
       }
 
-      logger.info(`[MCP][User: ${userId}] Connection successfully established`);
+      logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
+      await this.backfillResolvedInstructions(serverName, config, connection, userId);
       if (!ephemeralConnection) {
         await this.updateUserLastActivity(userId);
         await this.assertToolPublicationLeaseCurrent(connection, userId, serverName, creationGuard);
@@ -752,6 +755,65 @@ export abstract class UserConnectionManager {
         this.removeUserConnection(userId, serverName);
       }
       throw error; // Re-throw the error to the caller
+    }
+  }
+
+  /**
+   * An explicitly startup-deferred, context-independent YAML server has no
+   * fetched text until its first live connection. Persist that static text so
+   * subsequent context builds include it. OAuth/OBO, user credentials, custom
+   * variables, and runtime placeholders stay connection-scoped: their
+   * instructions can vary by identity or request and must never enter the
+   * shared registry. Best-effort: a failure here must never break connection
+   * creation.
+   */
+  protected async backfillResolvedInstructions(
+    serverName: string,
+    config: t.ParsedServerConfig | undefined,
+    connection: MCPConnection,
+    userId: string,
+  ): Promise<void> {
+    try {
+      if (!config || !isEnabled(config.serverInstructions)) {
+        return;
+      }
+      /** Only the YAML tier is writable here, and a config-overlay, user, or plugin
+       *  server would otherwise spend a cache round-trip per connection to rediscover
+       *  that. An unset source is left to proceed: it predates per-tier stamping and
+       *  the registry still resolves it by name. A config-tier override shadowing a
+       *  YAML base keeps the base's 'yaml' tag (`overlaySource`), so `config` is also
+       *  passed through for the registry's field-level identity check. */
+      if (
+        isUserSourced(config) ||
+        isPluginSourced(config) ||
+        config.source === 'config' ||
+        !canBackfillSharedServerInstructions(config)
+      ) {
+        return;
+      }
+      const instructions = connection.client.getInstructions();
+      if (!instructions) {
+        return;
+      }
+      if (config.resolvedInstructions != null) {
+        return;
+      }
+      const updated = await MCPServersRegistry.getInstance().setResolvedInstructions(
+        serverName,
+        instructions,
+        userId,
+        config,
+      );
+      if (updated) {
+        logger.info(
+          `[MCP][User: ${userId}][${serverName}] Stored server instructions from live connection`,
+        );
+      }
+    } catch (error) {
+      logger.warn(
+        `[MCP][User: ${userId}][${serverName}] Failed to store server instructions from live connection`,
+        error,
+      );
     }
   }
 

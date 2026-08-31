@@ -51,6 +51,7 @@ jest.mock('@librechat/api', () => ({
   exemptFromConcurrencyLimiter: jest.fn(() => false),
   toPendingSteer: jest.fn((item) => item),
   isSteerPreemptSupported: jest.fn(() => true),
+  isSteerTerminalContinuationSupported: jest.fn(() => false),
   buildRecoveredSteerPayload: jest.fn(() => null),
   deleteAgentCheckpoint: jest.fn(),
   getViolationInfo: jest.fn(() => ({

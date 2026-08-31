@@ -71,7 +71,9 @@ const MAX_LIVE_ACTIVITY_ITEMS = 100;
 const MAX_LIVE_ACTIVITY_BYTES = 64 * 1024;
 const MAX_SINGLE_ACTIVITY_ENCODED_BYTES = MAX_LIVE_ACTIVITY_BYTES - 2;
 const MAX_SINGLE_ACTIVITY_TEXT_BYTES = 60 * 1024;
-const REDACTED_REASONING_MARKER = '…';
+/** Substituted for reasoning text by pre-retention servers; current servers
+ *  transport the bounded reasoning text itself. */
+export const REDACTED_REASONING_MARKER = '…';
 
 const encodedBytes = (value: unknown): number =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -276,6 +278,9 @@ export type ActiveSubagentPanel = {
     progressKey: string;
     /** Message anchors merged into the same parent-owned activity group. */
     siblingParentMessageIds?: string[];
+    /** The selection deliberately targets a historical task; the panel must
+     *  not snap it forward when the actor thread receives a newer delivery. */
+    pinnedTask?: boolean;
   };
 };
 
@@ -596,10 +601,6 @@ export function reduceSubagentProgress(
     if (firstSequence != null) expected = firstSequence;
   }
 
-  const sanitizeSequencedEvent = (event: SubagentUpdateEvent): SubagentUpdateEvent =>
-    source === 'detached' && event.phase === 'reasoning_delta'
-      ? { ...event, data: undefined }
-      : event;
   const drainPending = () => {
     pending.sort((left, right) => (left.activitySequence ?? 0) - (right.activitySequence ?? 0));
     while (pending[0]?.activitySequence === expected) {
@@ -618,16 +619,15 @@ export function reduceSubagentProgress(
     if (key != null && seen.has(key)) continue;
     if (validActivitySequence(sequence)) {
       if (sequence < expected || pendingSequences.has(sequence)) continue;
-      const pendingEvent = sanitizeSequencedEvent(event);
       if (sequence === expected) {
-        directEvents.push(pendingEvent);
+        directEvents.push(event);
         expected += 1;
         drainPending();
       } else if (
         pending.length < MAX_PENDING_SEQUENCE_EVENTS &&
-        encodedBytes([...pending, pendingEvent]) <= MAX_PENDING_SEQUENCE_BYTES
+        encodedBytes([...pending, event]) <= MAX_PENDING_SEQUENCE_BYTES
       ) {
-        pending.push(pendingEvent);
+        pending.push(event);
         pendingSequences.add(sequence);
       }
     } else {

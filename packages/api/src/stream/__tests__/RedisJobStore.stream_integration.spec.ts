@@ -3109,6 +3109,92 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('terminal claim-or-seal atomically assigns the final steer race', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { STEER_ENQUEUE_NOT_RUNNING } = await import('../interfaces/IJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const claimStream = `steer-terminal-claim-${Date.now()}`;
+      const claimJob = await store.createJob(claimStream, 'steer-user', claimStream);
+      const first = buildSteer('terminal-first', 'first');
+      const second = buildSteer('terminal-second', 'second');
+      await store.enqueueSteer(claimStream, first, claimJob.createdAt);
+      await store.enqueueSteer(claimStream, second, claimJob.createdAt);
+
+      await expect(
+        store.admitTerminalSteers(
+          claimStream,
+          { allowClaim: true, keepOpenWhenEmpty: false },
+          claimJob.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'claimed', items: [first, second] });
+      await expect(store.peekClaimedSteers(claimStream, claimJob.createdAt)).resolves.toEqual([
+        first,
+        second,
+      ]);
+      await expect(
+        store.enqueueSteer(claimStream, buildSteer('terminal-later', 'later'), claimJob.createdAt),
+      ).resolves.toBe(1);
+
+      const openStream = `steer-terminal-open-${Date.now()}`;
+      const openJob = await store.createJob(openStream, 'steer-user', openStream);
+      await expect(
+        store.admitTerminalSteers(
+          openStream,
+          { allowClaim: true, keepOpenWhenEmpty: true },
+          openJob.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'open' });
+      await expect(
+        store.enqueueSteer(
+          openStream,
+          buildSteer('terminal-planned', 'planned'),
+          openJob.createdAt,
+        ),
+      ).resolves.toBe(1);
+
+      const sealStream = `steer-terminal-seal-${Date.now()}`;
+      const sealJob = await store.createJob(sealStream, 'steer-user', sealStream);
+      const queued = buildSteer('terminal-queued', 'ordinary follow-up');
+      await store.enqueueSteer(sealStream, queued, sealJob.createdAt);
+      await expect(
+        store.admitTerminalSteers(
+          sealStream,
+          { allowClaim: false, keepOpenWhenEmpty: false },
+          sealJob.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'sealed' });
+      await expect(
+        store.enqueueSteer(sealStream, buildSteer('terminal-raced', 'raced'), sealJob.createdAt),
+      ).resolves.toBe(STEER_ENQUEUE_NOT_RUNNING);
+      await expect(store.closeAndDrainSteers(sealStream, sealJob.createdAt)).resolves.toEqual([
+        queued,
+      ]);
+
+      const replacement = await store.createJob(sealStream, 'steer-user', sealStream);
+      await expect(
+        store.admitTerminalSteers(
+          sealStream,
+          { allowClaim: true, keepOpenWhenEmpty: false },
+          sealJob.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'unavailable' });
+      await expect(
+        store.enqueueSteer(
+          sealStream,
+          buildSteer('terminal-replacement', 'replacement'),
+          replacement.createdAt,
+        ),
+      ).resolves.toBe(1);
+
+      await store.destroy();
+    });
+
     test('terminal CAS atomically returns and parks claimed plus queued steers', async () => {
       if (!ioredisClient) {
         return;

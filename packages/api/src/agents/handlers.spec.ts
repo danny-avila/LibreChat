@@ -4489,7 +4489,7 @@ describe('createToolExecuteHandler', () => {
       });
 
       expect(result.status).toBe('success');
-      expect(markSandboxReady).toHaveBeenCalledWith('v2:user:abc');
+      expect(markSandboxReady).toHaveBeenCalledWith('v2:user:abc', 'stateful');
       expect(markSandboxReady).toHaveBeenCalledWith('conversation-1');
 
       jest.mocked(markSandboxReady).mockClear();

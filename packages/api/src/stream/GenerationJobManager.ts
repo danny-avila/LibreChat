@@ -2939,6 +2939,51 @@ class GenerationJobManagerClass {
     );
   }
 
+  /** Returns immutable proof that one exact request crossed generation
+   * admission, even after the generation job itself has completed or been
+   * replaced. Built-in stores retain this started receipt for the bounded
+   * idempotency horizon; legacy custom stores fall back to the live job. */
+  async getGenerationAdmissionEvidence(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    conversationId: string = streamId,
+  ): Promise<{ generationId: string; generationCreatedAt: number } | null> {
+    if (!CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)) {
+      return null;
+    }
+    const getClaim = this.jobStore.getIdempotencyClaim;
+    if (getClaim != null) {
+      const claim = await getClaim.call(
+        this.jobStore,
+        this.generationClaimKey(userId, clientRequestId, streamId),
+      );
+      if (claim == null) {
+        return null;
+      }
+      const normalized = normalizeTokenClaim(claim, 'admission evidence');
+      assertClaimMatchesRequest(normalized, streamId, conversationId);
+      if (normalized.startedAt == null) {
+        return null;
+      }
+      return {
+        generationId: normalized.streamId,
+        generationCreatedAt: normalized.startedAt,
+      };
+    }
+
+    const job = await this.jobStore.getJob(streamId);
+    if (
+      job == null ||
+      job.userId !== userId ||
+      (job.conversationId ?? streamId) !== conversationId ||
+      job.idempotencyClientRequestId !== clientRequestId
+    ) {
+      return null;
+    }
+    return { generationId: streamId, generationCreatedAt: job.createdAt };
+  }
+
   /** Atomically prevents an unpublished automatic continuation from starting
    * after its delivery has been retired for manual recovery. If recovery wins
    * the unstarted idempotency claim (directly or through the existing takeover

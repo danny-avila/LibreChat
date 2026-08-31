@@ -1,14 +1,20 @@
 const AgentClient = require('../client');
-const { isSteeringSupported, isSteerPreemptSupported } = require('@librechat/api');
+const {
+  isSteeringSupported,
+  isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
+} = require('@librechat/api');
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   isSteeringSupported: jest.fn(() => true),
   isSteerPreemptSupported: jest.fn(() => true),
+  isSteerTerminalContinuationSupported: jest.fn(() => true),
 }));
 
 const mockIsSteeringSupported = isSteeringSupported;
 const mockIsPreemptSupported = isSteerPreemptSupported;
+const mockIsTerminalContinuationSupported = isSteerTerminalContinuationSupported;
 
 /** Minimal `this` for the wiring builder — it only reads these three. */
 function buildWiring(streamId, { jobCreatedAt = 1700000000000 } = {}) {
@@ -25,6 +31,7 @@ describe('AgentClient.buildSteerWiring — preempt capability gating', () => {
     jest.clearAllMocks();
     mockIsSteeringSupported.mockReturnValue(true);
     mockIsPreemptSupported.mockReturnValue(true);
+    mockIsTerminalContinuationSupported.mockReturnValue(true);
   });
 
   it('returns both boundary hooks and the poll when preempt is supported', () => {
@@ -33,6 +40,16 @@ describe('AgentClient.buildSteerWiring — preempt capability gating', () => {
     expect(typeof wiring.hook).toBe('function');
     expect(typeof wiring.preemptHook).toBe('function');
     expect(typeof wiring.preemption?.shouldPreempt).toBe('function');
+    expect(typeof wiring.terminalHook).toBe('function');
+  });
+
+  it('omits only terminal continuation when the SDK lacks Stop continuation', () => {
+    mockIsTerminalContinuationSupported.mockReturnValue(false);
+    const wiring = buildWiring('stream-terminal-unsupported');
+
+    expect(typeof wiring.hook).toBe('function');
+    expect(typeof wiring.preemptHook).toBe('function');
+    expect(wiring.terminalHook).toBeUndefined();
   });
 
   /**

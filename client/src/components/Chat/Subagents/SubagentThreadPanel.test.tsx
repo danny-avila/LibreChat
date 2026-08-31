@@ -237,7 +237,15 @@ jest.mock('@librechat/client', () => {
         </button>
       );
     },
-    Textarea: (props: React.ComponentProps<'textarea'>) => <textarea {...props} />,
+    composerSurfaceClasses: () => '',
+    composerSurfaceShadow: { focused: '', blurred: '', within: '' },
+    TextareaAutosize: ({
+      minRows: _minRows,
+      maxRows: _maxRows,
+      ...props
+    }: React.ComponentProps<'textarea'> & { minRows?: number; maxRows?: number }) => (
+      <textarea {...props} />
+    ),
     useMediaQuery: () => mockIsMobile,
     useToastContext: () => ({ showToast: mockShowToast }),
   };
@@ -351,7 +359,7 @@ describe('SubagentThreadPanel', () => {
       'parent-conversation',
       'child-thread',
       'task',
-      undefined,
+      { keepPreviousData: true },
     );
     expect(mockUseSubagentActivityStream).toHaveBeenCalledWith(selection, false);
     expect(screen.getByText('Research child')).toBeInTheDocument();
@@ -1256,7 +1264,7 @@ describe('SubagentThreadPanel', () => {
       'parent-conversation',
       'child-thread',
       'task',
-      { refetchInterval: 2000 },
+      { keepPreviousData: true, refetchInterval: 2000 },
     );
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(eventSelection, true);
     expect(

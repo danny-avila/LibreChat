@@ -202,6 +202,7 @@ const convoSchema: Schema<IConversation> = new Schema(
                 message: `Compaction semantic index exceeds ${MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES} entries`,
               },
             },
+            providedEntryCount: { type: Number, min: 0, default: undefined },
           },
           _id: false,
           default: undefined,

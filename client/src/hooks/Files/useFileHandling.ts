@@ -267,7 +267,6 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         const fileId = (body.get('file_id') as string | null) ?? data.temp_file_id;
         takeUploadRecovery(fileId)?.onSuccess?.(fileId);
         clearUploadTimer(fileId);
-        console.log('upload success', data);
         if (agent_id) {
           queryClient.refetchQueries([QueryKeys.agent, agent_id]);
           return;

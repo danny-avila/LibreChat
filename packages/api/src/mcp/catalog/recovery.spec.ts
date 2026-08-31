@@ -1,7 +1,13 @@
+import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
 import { loadMCPServerCatalogs, recoverMCPServerCatalogs } from './recovery';
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
 
 const user = { id: 'user-1' } as IUser;
 const serverConfig = (name: string): ParsedServerConfig =>
@@ -92,6 +98,40 @@ describe('recoverMCPServerCatalogs', () => {
     expect(discoverServerTools).toHaveBeenCalledTimes(7);
     expect(maxActive).toBe(3);
     expect(result.size).toBe(7);
+  });
+
+  it('logs configuration-impossible discovery failures at debug, keeping error for the unexpected', async () => {
+    const servers = [
+      { serverName: 'policy-blocked', serverConfig: serverConfig('blocked') },
+      { serverName: 'crashed', serverConfig: serverConfig('crashed') },
+    ];
+
+    const result = await recoverMCPServerCatalogs(
+      { user, servers },
+      {
+        loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+        discoverServerTools: jest.fn(async ({ serverName }: ToolDiscoveryOptions) => {
+          if (serverName === 'policy-blocked') {
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              'Resolved MCP server URL is not allowed by the configured domain policy.',
+            );
+          }
+          throw new Error('socket hang up');
+        }),
+        formatServerTools: jest.fn(),
+      },
+    );
+
+    expect(result.size).toBe(0);
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.stringContaining('policy-blocked is not recoverable under current configuration'),
+    );
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('crashed'),
+      expect.any(Error),
+    );
   });
 
   it('keeps successful catalogs when another server fails or has no authoritative tools', async () => {

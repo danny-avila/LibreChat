@@ -13,6 +13,7 @@ const {
   sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
+  createCodeExecutionRouteKey,
   getCodeExecutionBaseUrl,
   assertUploadContentAllowed,
   hasActiveFilePolicy,
@@ -350,7 +351,29 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       return res.status(400).send('Bad request');
     }
     const executionProfile = requestedProfile ?? 'default';
-    const baseUrl = getCodeExecutionBaseUrl(executionProfile);
+    const requestedRouteKey = req.query.execution_route_key;
+    if (
+      requestedRouteKey != null &&
+      (typeof requestedRouteKey !== 'string' ||
+        executionProfile !== 'stateful' ||
+        !/^stateful:[a-f0-9]{32}$/.test(requestedRouteKey))
+    ) {
+      logger.debug(`${logPrefix} invalid execution_route_key`);
+      return res.status(400).send('Bad request');
+    }
+    const environments =
+      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const configuredEnvironment = requestedRouteKey
+      ? environments?.find(
+          (environment) =>
+            createCodeExecutionRouteKey('stateful', environment) === requestedRouteKey,
+        )
+      : undefined;
+    if (requestedRouteKey && !configuredEnvironment) {
+      logger.debug(`${logPrefix} unknown execution_route_key`);
+      return res.status(404).send('Not found');
+    }
+    const baseUrl = getCodeExecutionBaseUrl(executionProfile, configuredEnvironment);
 
     const { getDownloadStream } = getStrategyFunctions(FileSources.execute_code);
     if (!getDownloadStream) {

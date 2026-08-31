@@ -13,6 +13,8 @@ import {
   createAgentTriggerDeliveryMethods,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
+  AgentTriggerClaimContentionError,
+  CLAIM_CAS_MAX_ATTEMPTS,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
 import {
@@ -239,6 +241,28 @@ describe('agent trigger delivery methods', () => {
     );
 
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
+  });
+
+  it('surfaces exhausted claim contention as a retryable failure, not an empty queue', async () => {
+    const enqueued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    const casSpy = jest.spyOn(Delivery.collection, 'findOneAndUpdate').mockResolvedValue(null);
+    try {
+      await expect(
+        methods.claimNextAgentTriggerDelivery({
+          workerId: 'worker-contended',
+          claimToken: 'claim-contended',
+          now: START,
+          leaseUntil: new Date(START.getTime() + 60_000),
+        }),
+      ).rejects.toBeInstanceOf(AgentTriggerClaimContentionError);
+      expect(casSpy).toHaveBeenCalledTimes(CLAIM_CAS_MAX_ATTEMPTS);
+    } finally {
+      casSpy.mockRestore();
+    }
+    /** The losing worker owns nothing: the delivery stays claimable. */
+    await expect(Delivery.findById(enqueued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'pending',
+    });
   });
 
   it('keeps capability work visible but nonclaimable to pre-capability consumers', async () => {
@@ -613,6 +637,50 @@ describe('agent trigger delivery methods', () => {
         leaseUntil: new Date(START.getTime() + 60_000),
       }),
     ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
+  it('treats an already successful internal delivery as terminal retirement evidence', async () => {
+    const source = { id: 'agent-queued-turn', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'queued-turn-already-succeeded',
+        envelope: { event: { source } },
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      now: START,
+    });
+    await methods.completeAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      attempt: attempt!,
+      result: { status: 'settled' },
+      settledAt: START,
+    });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: new Date(START.getTime() + 1),
+        reason: 'source already terminalized',
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { status: 'settled' },
+      settledAt: START,
+    });
   });
 
   it('does not retire a completion already leased by a resolver for a manual poll', async () => {
@@ -4189,6 +4257,43 @@ describe('agent trigger delivery methods', () => {
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
   });
 
+  it('retains trigger purge state when queued-turn cleanup fails', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    let unavailable = true;
+    const purgeQueuedTurnsForUser = jest.fn(async () => {
+      if (unavailable) {
+        throw new Error('queued-turn store unavailable');
+      }
+    });
+    const purgeMethods = createAgentTriggerDeliveryMethods(mongoose, {
+      purgeQueuedTurnsForUser,
+    });
+    await User.create({
+      _id: user,
+      email: 'purge-callback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await purgeMethods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await purgeMethods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(purgeMethods.deleteAgentTriggerDeliveriesByUser(user)).rejects.toThrow(
+      'queued-turn store unavailable',
+    );
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    unavailable = false;
+    await expect(purgeMethods.deleteAgentTriggerDeliveriesByUser(user)).resolves.toBeUndefined();
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+    expect(purgeQueuedTurnsForUser).toHaveBeenCalledTimes(2);
+  });
+
   it('recovers an armed purge after the user deletion commits', async () => {
     const user = new mongoose.Types.ObjectId();
     const fenceStartedAt = new Date(START);
@@ -4207,6 +4312,42 @@ describe('agent trigger delivery methods', () => {
 
     await User.deleteOne({ _id: user });
     await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+  });
+
+  it('retains a recovery marker when queued-turn purge cannot be confirmed', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    let unavailable = true;
+    const purgeQueuedTurnsForUser = jest.fn(async () => {
+      if (unavailable) {
+        throw new Error('queued-turn store unavailable');
+      }
+    });
+    const purgeMethods = createAgentTriggerDeliveryMethods(mongoose, {
+      purgeQueuedTurnsForUser,
+    });
+    await User.create({
+      _id: user,
+      email: 'purge-recovery-callback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await purgeMethods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await purgeMethods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(purgeMethods.recoverAgentTriggerUserPurges()).rejects.toThrow(
+      'queued-turn store unavailable',
+    );
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    unavailable = false;
+    await expect(purgeMethods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
     expect(await Delivery.countDocuments({ user })).toBe(0);
     expect(await LaneSequence.countDocuments({ user })).toBe(0);
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);

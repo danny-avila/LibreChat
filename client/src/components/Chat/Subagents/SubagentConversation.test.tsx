@@ -107,23 +107,23 @@ describe('SubagentConversation', () => {
     );
 
     expect(screen.getAllByText('com_ui_subagent_trigger_parent_dispatch')).toHaveLength(2);
-    expect(screen.getAllByText('com_ui_subagent_trigger_external_event')).toHaveLength(1);
+    expect(screen.getAllByText('com_ui_subagent_trigger_external_event')).toHaveLength(2);
     expect(screen.getByText('Investigate the release.')).toBeInTheDocument();
     expect(screen.getByText('Checked the constraints.')).toBeInTheDocument();
     expect(screen.getByText('search')).toBeInTheDocument();
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_status_completed')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_status_running')).not.toBeInTheDocument();
     expect(screen.getByTestId('thinking-cursor')).toBeInTheDocument();
-    expect(container.querySelectorAll('.message-render')).toHaveLength(3);
-    expect(container.querySelectorAll('.user-turn')).toHaveLength(1);
+    expect(container.querySelectorAll('.message-render')).toHaveLength(4);
+    expect(container.querySelectorAll('.user-turn')).toHaveLength(2);
     expect(container.querySelectorAll('.agent-turn')).toHaveLength(2);
     expect(container.querySelector('[data-subagent-conversation]')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_prompt')).not.toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_activity_details_truncated')).toBeInTheDocument();
     expect(
-      screen.queryByText('com_ui_subagent_activity_details_truncated'),
+      screen.queryByText('com_ui_subagent_activity_details_unavailable'),
     ).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_activity_details_unavailable')).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', {

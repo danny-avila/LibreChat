@@ -20,6 +20,8 @@ import type {
   SteerArmResult,
   SteerEnqueueReceiptResult,
   SteerEnqueueVersionedResult,
+  TerminalSteerAdmissionPolicy,
+  TerminalSteerAdmissionResult,
   SteerReceipt,
   SteerReceiptInput,
   ParkedSteerClaim,
@@ -1114,6 +1116,42 @@ const STEER_DRAIN_LUA =
   'if ttl >= 0 and ttl < tonumber(ARGV[2]) then redis.call("EXPIRE", KEYS[i], ARGV[2]) end end ' +
   'redis.call("DEL", KEYS[2]) ' +
   'return items';
+
+/** Atomic terminal choice: claim the current v2 FIFO batch, or close steer
+ * admission when the queue is empty / the continuation budget is exhausted.
+ * The first return entry is the outcome; claimed item JSON follows it. */
+const STEER_TERMINAL_ADMISSION_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return { "unavailable" } end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" ' +
+  'or redis.call("HGET", KEYS[1], "steersClosed") == "1" then return { "unavailable" } end ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'if ARGV[3] ~= "1" or redis.call("HGET", KEYS[1], "generationProtocolVersion") ~= "2" then ' +
+  'redis.call("HSET", KEYS[1], "steersClosed", "1") return { "sealed" } end ' +
+  'if #items == 0 and ARGV[4] == "1" then return { "open" } end ' +
+  'if #items == 0 then redis.call("HSET", KEYS[1], "steersClosed", "1") return { "sealed" } end ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local decodedItems = {} local decodedReceipts = {} ' +
+  'for i = 1, #items do local ok, item = pcall(cjson.decode, items[i]) ' +
+  'if not ok or type(item) ~= "table" or not item.steerId then ' +
+  'return redis.error_reply("invalid steer queue item") end decodedItems[i] = item ' +
+  'if item.clientSteerId then local raw = redis.call("HGET", KEYS[4], item.clientSteerId) ' +
+  'if not raw then return redis.error_reply("missing steer receipt") end ' +
+  'local receiptOk, receipt = pcall(cjson.decode, raw) ' +
+  'if not receiptOk or type(receipt) ~= "table" ' +
+  'or receipt.clientSteerId ~= item.clientSteerId ' +
+  'or tostring(receipt.generationCreatedAt or "") ~= currentCreatedAt ' +
+  'or receipt.state ~= "queued" or not receipt.item ' +
+  'or receipt.item.steerId ~= item.steerId ' +
+  'or receipt.item.clientSteerId ~= item.clientSteerId then ' +
+  'return redis.error_reply("invalid steer receipt") end decodedReceipts[i] = receipt end end ' +
+  'redis.call("RPUSH", KEYS[3], unpack(items)) redis.call("EXPIRE", KEYS[3], ARGV[2]) ' +
+  'for i = 1, #items do local item = decodedItems[i] local receipt = decodedReceipts[i] ' +
+  'if receipt then receipt.item = item receipt.state = "claimed" ' +
+  'redis.call("HSET", KEYS[4], item.clientSteerId, cjson.encode(receipt)) end end ' +
+  'for i = 4, 5 do local ttl = redis.call("TTL", KEYS[i]) ' +
+  'if ttl >= 0 and ttl < tonumber(ARGV[2]) then redis.call("EXPIRE", KEYS[i], ARGV[2]) end end ' +
+  'redis.call("DEL", KEYS[2]) local result = { "claimed" } ' +
+  'for i = 1, #items do result[#result + 1] = items[i] end return result';
 
 /** Roll back claimed items whose durable applied-part write failed. New
  * enqueues may have landed after the drain, so the failed accepted batch is
@@ -2717,6 +2755,18 @@ export class RedisJobStore implements IJobStoreV2 {
     return (await this.redis.exists(KEYS.idempotency(key))) === 1;
   }
 
+  async getIdempotencyClaim(key: string): Promise<IdempotencyClaimValue | null> {
+    const value = await this.redis.get(KEYS.idempotency(key));
+    if (value == null) {
+      return null;
+    }
+    try {
+      return JSON.parse(value) as IdempotencyClaimValue;
+    } catch {
+      throw new Error('Invalid generation idempotency claim');
+    }
+  }
+
   async takeoverIdempotencyKey(
     key: string,
     expected: IdempotencyClaimValue,
@@ -4142,6 +4192,35 @@ export class RedisJobStore implements IJobStoreV2 {
       String(this.runningStorageTtlSeconds()),
     );
     return this.parseSteerItems(raw);
+  }
+
+  async admitTerminalSteers(
+    streamId: string,
+    policy: TerminalSteerAdmissionPolicy,
+    expectedCreatedAt?: number,
+  ): Promise<TerminalSteerAdmissionResult> {
+    const raw = await this.redis.eval(
+      STEER_TERMINAL_ADMISSION_LUA,
+      5,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      String(this.runningStorageTtlSeconds()),
+      policy.allowClaim ? '1' : '0',
+      policy.keepOpenWhenEmpty ? '1' : '0',
+    );
+    if (!Array.isArray(raw) || typeof raw[0] !== 'string') {
+      return { outcome: 'unavailable' };
+    }
+    if (raw[0] !== 'claimed') {
+      return {
+        outcome: raw[0] === 'sealed' || raw[0] === 'open' ? raw[0] : 'unavailable',
+      };
+    }
+    return { outcome: 'claimed', items: this.parseSteerItems(raw.slice(1)) };
   }
 
   async restoreClaimedSteers(

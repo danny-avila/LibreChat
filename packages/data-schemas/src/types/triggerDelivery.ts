@@ -15,6 +15,7 @@ export type AgentTriggerDeliveryStatus =
 export const AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 = 'event_actor_detached_action_v1';
 export const AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 =
   'background_tool_completion_v1';
+export const AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1 = 'agent_queued_turn_v1';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
 export interface AgentTriggerHandlingState {

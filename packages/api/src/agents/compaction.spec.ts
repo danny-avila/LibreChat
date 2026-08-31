@@ -5,11 +5,12 @@ import {
   MAX_COMPACTION_SEMANTIC_INDEX_SOURCE_CONTENT_INDEX,
   MAX_COMPACTION_SEMANTIC_INDEX_TEXT_LENGTH,
 } from '@librechat/data-schemas';
+import type { CompactionSemanticIndex, CompactionSemanticIndexSnapshot } from '@librechat/agents';
 import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
-import type { CompactionSemanticIndex } from '@librechat/agents';
 import {
   createCompactionSemanticIndexProjection,
   restoreCompactionSemanticIndex,
+  restoreCompactionSemanticIndexSnapshot,
 } from './compaction';
 
 const index = [
@@ -53,6 +54,7 @@ describe('compaction semantic index continuation projection', () => {
 
     expect(projection).toEqual({
       version: 1,
+      providedEntryCount: 2,
       entries: [
         index[0],
         {
@@ -62,6 +64,36 @@ describe('compaction semantic index continuation projection', () => {
       ],
     });
     expect(restoreCompactionSemanticIndex(projection)).toEqual(projection?.entries);
+  });
+
+  it('preserves cumulative omission counts across JSON persistence', () => {
+    const snapshot = {
+      entries: index,
+      providedEntryCount: 17,
+    } satisfies CompactionSemanticIndexSnapshot;
+    const projection = createCompactionSemanticIndexProjection(snapshot);
+
+    expect(projection).toEqual({
+      version: 1,
+      entries: [index[0], { ...index[1], text: '' }],
+      providedEntryCount: 17,
+    });
+    expect(restoreCompactionSemanticIndexSnapshot(JSON.parse(JSON.stringify(projection)))).toEqual({
+      entries: projection?.entries,
+      providedEntryCount: 17,
+    });
+  });
+
+  it('defaults legacy projections to their retained entry count', () => {
+    const legacyProjection = {
+      version: 1,
+      entries: [index[0]],
+    } satisfies ICompactionSemanticIndexProjection;
+
+    expect(restoreCompactionSemanticIndexSnapshot(legacyProjection)).toEqual({
+      entries: legacyProjection.entries,
+      providedEntryCount: 1,
+    });
   });
 
   it('fails closed for malformed or oversized continuation state', () => {
@@ -77,10 +109,16 @@ describe('compaction semantic index continuation projection', () => {
       version: 1,
       entries: [null],
     } as never;
+    const impossibleCount = {
+      version: 1,
+      entries: index,
+      providedEntryCount: 1,
+    } as ICompactionSemanticIndexProjection;
 
     expect(restoreCompactionSemanticIndex(malformed)).toBeUndefined();
     expect(restoreCompactionSemanticIndex(oversized)).toBeUndefined();
     expect(restoreCompactionSemanticIndex(corrupt)).toBeUndefined();
+    expect(restoreCompactionSemanticIndexSnapshot(impossibleCount)).toBeUndefined();
     expect(createCompactionSemanticIndexProjection(oversized.entries)).toBeUndefined();
   });
 

@@ -1,6 +1,7 @@
 import {
   Constants,
   MCPOptionsSchema,
+  extractEnvVariable,
   normalizeServerName,
   normalizeMCPToolKey,
   buildServerNameAliases,
@@ -211,6 +212,9 @@ type UserScopedConnectionConfig = Pick<
   ParsedServerConfig,
   'requiresOAuth' | 'source' | 'dbId' | 'startup'
 > & {
+  /** Loosened like the fields below: raw (pre-inspection) configs carry
+   *  optional API-key fields, and the gating predicates only inspect them. */
+  apiKey?: { key?: string; source?: 'user' | 'admin' } | null;
   args?: string[];
   /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
    *  scoping predicates only check key presence */
@@ -227,7 +231,15 @@ type UserScopedConnectionConfig = Pick<
 };
 
 function placeholderBearingFields(config: UserScopedConnectionConfig): PlaceholderValue[] {
-  return [config.args, config.env, config.headers, config.oauth, config.oauth_headers, config.url];
+  return [
+    config.apiKey?.key,
+    config.args,
+    config.env,
+    config.headers,
+    config.oauth,
+    config.oauth_headers,
+    config.url,
+  ];
 }
 
 /** Whether a server should use MCP OAuth handling. */
@@ -273,7 +285,7 @@ function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
 
 function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
   if (typeof value === 'string') {
-    return pattern.test(value);
+    return pattern.test(value) || pattern.test(extractEnvVariable(value));
   }
   if (Array.isArray(value)) {
     return value.some((item) => hasPlaceholder(item, pattern));
@@ -291,11 +303,13 @@ function addRuntimeBodyPlaceholderFields(
   fields: Set<keyof RequestBody>,
 ): void {
   if (typeof value === 'string') {
-    for (const match of value.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
-      const placeholderKey = match[1];
-      const field = placeholderKey ? BODY_PLACEHOLDER_FIELDS[placeholderKey] : undefined;
-      if (field) {
-        fields.add(field);
+    for (const candidate of new Set([value, extractEnvVariable(value)])) {
+      for (const match of candidate.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
+        const placeholderKey = match[1];
+        const field = placeholderKey ? BODY_PLACEHOLDER_FIELDS[placeholderKey] : undefined;
+        if (field) {
+          fields.add(field);
+        }
       }
     }
     return;
@@ -406,6 +420,27 @@ export function requiresUserScopedConnection(config: UserScopedConnectionConfig)
 export function canUseAppConnection(config: UserScopedConnectionConfig): boolean {
   return (
     config.startup !== false && !isUserSourced(config) && !requiresUserScopedConnection(config)
+  );
+}
+
+/**
+ * Server instructions fetched from a connection are safe to retain in the
+ * shared YAML registry only when the connection cannot vary by identity or
+ * request. `startup: false` is the one context-independent reason startup
+ * inspection leaves instructions unresolved; every other deferred case can
+ * expose authenticated or request-specific instructions to another user.
+ */
+export function canBackfillSharedServerInstructions(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.startup === false &&
+    !requiresUserScopedConnection(config) &&
+    /** A configured `oauth` block is identity-scoped even when `requiresOAuth`
+     *  is unset or was stamped `false` by the skipped startup inspection —
+     *  `requiresUserScopedConnection` alone would let it through while
+     *  `isOAuthServer` still arms the OAuth machinery for the unstamped case. */
+    config.oauth == null &&
+    config.oauth_headers == null &&
+    config.apiKey?.source !== 'user'
   );
 }
 

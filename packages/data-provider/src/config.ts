@@ -1001,6 +1001,39 @@ export const checkpointerSchema = z
 
 export type TCheckpointerConfig = z.infer<typeof checkpointerSchema>;
 
+const codeEnvironmentBaseURLSchema = z
+  .string()
+  .trim()
+  .url()
+  .refine(
+    (value) => {
+      try {
+        const url = new URL(value);
+        return (
+          (url.protocol === 'http:' || url.protocol === 'https:') &&
+          !value.includes('?') &&
+          !value.includes('#') &&
+          url.search.length === 0 &&
+          url.hash.length === 0
+        );
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Code environment baseURL must be an HTTP(S) base URL without query or fragment' },
+  );
+
+export function isSecureCodeEnvironmentControlURL(baseURL: string): boolean {
+  try {
+    const url = new URL(baseURL.trim());
+    if (url.protocol === 'https:') return true;
+    if (url.protocol !== 'http:') return false;
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1041,6 +1074,77 @@ export const agentsEndpointSchema = baseEndpointSchema
       statefulCodeSessions: z
         .object({
           allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
+          /** Operator-managed execution environments. Attached entries route to a
+           * Code API deployment backed by an outbound librechat-code worker. */
+          environments: z
+            .array(
+              z.object({
+                id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+                name: z.string().min(1).max(100),
+                type: z.enum(['managed', 'attached']),
+                baseURL: codeEnvironmentBaseURLSchema,
+                default: z.boolean().optional(),
+                /** Distinguishes operator policy from a principal-authorized
+                 * environment merged into request-scoped server config. */
+                owner: z.enum(['deployment', 'principal']).optional().default('deployment'),
+                /** Server-only enrollment metadata. `tokenEnv` names an
+                 * environment variable and never contains the token itself. */
+                pairing: z
+                  .object({
+                    workerId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+                    tokenEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+                  })
+                  .optional(),
+              }),
+            )
+            .optional(),
+        })
+        .superRefine((value, context) => {
+          if (!value?.environments) return;
+          const ids = new Set<string>();
+          let defaults = 0;
+          for (const environment of value.environments) {
+            if (environment.pairing != null && environment.type !== 'attached') {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Only attached code environments may configure pairing',
+                path: ['environments', environment.id, 'pairing'],
+              });
+            }
+            if (environment.pairing != null && environment.owner !== 'deployment') {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Only deployment-owned code environments may configure pairing',
+                path: ['environments', environment.id, 'pairing'],
+              });
+            }
+            if (
+              environment.pairing != null &&
+              !isSecureCodeEnvironmentControlURL(environment.baseURL)
+            ) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Paired code environments require HTTPS outside loopback development',
+                path: ['environments', environment.id, 'baseURL'],
+              });
+            }
+            if (ids.has(environment.id)) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: `Duplicate code environment id: ${environment.id}`,
+                path: ['environments'],
+              });
+            }
+            ids.add(environment.id);
+            if (environment.default === true) defaults += 1;
+          }
+          if (value.environments.length > 0 && defaults !== 1) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'Exactly one stateful code environment must be the default',
+              path: ['environments'],
+            });
+          }
         })
         .optional(),
       /** Optional trusted origin for in-process agent event delivery. */

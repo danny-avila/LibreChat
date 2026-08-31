@@ -54,6 +54,10 @@ export type SubagentActivityItem =
     }
   | {
       type: 'reasoning';
+      /** Bounded user-visible reasoning text; absent on projections persisted
+       *  before reasoning retention (rendered as a marker). */
+      text?: string;
+      textTruncated?: boolean;
     }
   | {
       type: 'activity_label';
