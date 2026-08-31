@@ -39,18 +39,18 @@ export interface SharePointFile {
   sharePointItem: SharePointDriveItem;
 }
 
-/** Why a folder item was left out before it was ever downloaded. */
-export type SharePointSkipReason = 'size' | 'duplicate';
+/** Why a picked item was left out before it was ever downloaded. */
+export type SharePointSkipReason = 'duplicate';
 
 /** What ended the walk early, or null when it ran to completion. */
-export type SharePointTruncation = 'fileLimit' | 'requestBudget';
+export type SharePointTruncation = 'fileLimit' | 'sizeLimit' | 'requestBudget';
 
 /** Outcome of walking the selected folders, including what had to be left out. */
 export interface SharePointFolderExpansion {
   files: SharePointFile[];
   /** Folders whose contents could not be listed, by name. */
   unreadableFolders: string[];
-  /** Folder items the caller's screen rejected before download, by name and reason. */
+  /** Items the caller's screen rejected before download, by name and reason. */
   skippedFiles: { name: string; reason: SharePointSkipReason }[];
   /** What cut the walk short, so the caller can say which limit was hit. */
   truncatedBy: SharePointTruncation | null;
@@ -129,9 +129,9 @@ async function fetchChildrenPage(url: string, accessToken: string): Promise<Driv
  * as pages arrive rather than after a folder has been materialized in full.
  *
  * Upload policy stays with the caller: `createScreen` builds a screen for this one
- * walk, deciding which folder items are worth downloading, so this module never
- * duplicates the uploader's rules and the screen can accumulate state across the walk
- * without leaking it into the next one. Folders the user cannot list — including
+ * walk, applied to directly picked files and folder contents alike so neither can
+ * consume a slot the uploader would reclaim. The screen accumulates state across the
+ * walk without leaking it into the next one. Folders the user cannot list — including
  * share-only results that carry no drive identifiers to traverse — are reported
  * instead of failing the whole selection.
  */
@@ -139,15 +139,20 @@ export async function expandSharePointFolders({
   items,
   accessToken,
   maxFiles,
+  maxTotalBytes,
   createScreen,
 }: {
   items: SharePointFile[];
   accessToken: string;
   maxFiles?: number;
+  maxTotalBytes?: number;
   createScreen?: () => (file: SharePointFile) => SharePointSkipReason | null;
 }): Promise<SharePointFolderExpansion> {
   const screenFile = createScreen?.();
   const fileLimit = maxFiles == null ? Number.POSITIVE_INFINITY : Math.max(maxFiles, 0);
+  const byteLimit =
+    maxTotalBytes == null || maxTotalBytes <= 0 ? Number.POSITIVE_INFINITY : maxTotalBytes;
+  let collectedBytes = 0;
   const files: SharePointFile[] = [];
   const unreadableFolders: string[] = [];
   const skippedFiles: { name: string; reason: SharePointSkipReason }[] = [];
@@ -164,11 +169,24 @@ export async function expandSharePointFolders({
     if (seenFiles.has(key)) {
       return true;
     }
+    const reason = screenFile?.(file) ?? null;
+    if (reason != null) {
+      seenFiles.add(key);
+      skippedFiles.push({ name: file.name, reason });
+      return true;
+    }
     if (files.length >= fileLimit) {
       truncatedBy = 'fileLimit';
       return false;
     }
+    /** The batch is headed for rejection once it passes the aggregate cap, so stop with
+     * what fits and say so rather than downloading everything to attach none of it. */
+    if (collectedBytes + file.size > byteLimit && files.length > 0) {
+      truncatedBy = 'sizeLimit';
+      return false;
+    }
     seenFiles.add(key);
+    collectedBytes += file.size;
     files.push(file);
     return true;
   };
@@ -193,11 +211,6 @@ export async function expandSharePointFolders({
     const childFile = toSharePointFile(child, driveId);
     if (childFile.isFolder === true) {
       enqueueFolder(childFile);
-      return true;
-    }
-    const reason = screenFile?.(childFile) ?? null;
-    if (reason != null) {
-      skippedFiles.push({ name: childFile.name, reason });
       return true;
     }
     return collect(childFile);

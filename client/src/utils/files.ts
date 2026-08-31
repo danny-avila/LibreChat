@@ -258,7 +258,7 @@ export const getFileSignature = (
 ): string => `${name}-${size}-${type?.split('/')[0] ?? 'file'}`;
 
 /** Normalizes the configured per-file cap: absent, zero, and negative all mean "no limit". */
-export const getFileSizeLimit = ({ fileSizeLimit }: EndpointFileConfig): number | null =>
+const getFileSizeLimit = ({ fileSizeLimit }: EndpointFileConfig): number | null =>
   fileSizeLimit != null && fileSizeLimit > 0 ? fileSizeLimit : null;
 
 export const validateFileSizes = ({

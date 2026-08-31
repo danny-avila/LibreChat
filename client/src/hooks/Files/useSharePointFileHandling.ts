@@ -5,7 +5,7 @@ import type { SharePointFile, SharePointSkipReason } from '~/data-provider/Files
 import type { FileHandlingState } from './useFileHandling';
 import type { ExtendedFile } from '~/common';
 import useFileHandling, { useFileHandlingNoChatContext } from './useFileHandling';
-import { getFileSignature, getFileSizeLimit } from '~/utils/files';
+import { getFileSignature } from '~/utils/files';
 import useSharePointDownload from './useSharePointDownload';
 
 /**
@@ -25,15 +25,38 @@ function remainingFileSlots(
 }
 
 /**
- * Builds a screen for one folder walk, applying the rules `partitionUploads` applies
- * after download so a duplicate or oversized file neither consumes an attachment slot
- * nor costs a download only to be discarded. State is per-walk: signatures accumulate
- * as candidates are accepted, matching the within-selection duplicate rule, and are
- * discarded with the screen rather than carrying into the next selection.
+ * Remaining aggregate byte budget, so an expansion stops at the point the batch would
+ * be rejected outright rather than downloading everything and attaching none of it.
+ */
+function remainingTotalBytes(
+  totalSizeLimit: number | undefined,
+  files: Map<string, ExtendedFile>,
+): number | undefined {
+  if (totalSizeLimit == null || totalSizeLimit <= 0) {
+    return undefined;
+  }
+  return Math.max(totalSizeLimit - attachedBytes(files), 0);
+}
+
+/** Bytes already committed by the current selection, which the aggregate cap must respect. */
+function attachedBytes(files: Map<string, ExtendedFile>): number {
+  let total = 0;
+  for (const file of files.values()) {
+    total += file.size;
+  }
+  return total;
+}
+
+/**
+ * Builds a screen for one walk that drops what the uploader would reclaim anyway: a
+ * pick already present in the current selection, by the same signature
+ * `partitionUploads` uses. Signatures accumulate as candidates are accepted, matching
+ * the within-selection duplicate rule, and are discarded with the screen.
  *
- * Images are exempt from the size check. The upload pipeline defers it until after HEIC
- * conversion and resizing, so an image over the limit in Graph's metadata may still be
- * accepted once shrunk — final-size validation stays authoritative.
+ * Size deliberately stays out of it. The uploader defers size checks until after HEIC
+ * conversion and resizing, so a file's Graph metadata cannot say whether it will be
+ * accepted; judging it here skips files the pipeline would have taken. The aggregate
+ * cap is handled by truncating the walk instead, which is reported rather than silent.
  */
 function createFolderScreenFactory(
   endpointFileConfig: EndpointFileConfig | undefined,
@@ -43,8 +66,6 @@ function createFolderScreenFactory(
     return undefined;
   }
 
-  const sizeLimit = getFileSizeLimit(endpointFileConfig);
-
   return () => {
     const signatures = new Set(
       Array.from(files.values()).map((file) =>
@@ -53,13 +74,13 @@ function createFolderScreenFactory(
     );
 
     return (candidate) => {
-      const type = inferMimeType(candidate.name, '');
-      const signature = getFileSignature(candidate.name, candidate.size, type);
+      const signature = getFileSignature(
+        candidate.name,
+        candidate.size,
+        inferMimeType(candidate.name, ''),
+      );
       if (signatures.has(signature)) {
         return 'duplicate';
-      }
-      if (sizeLimit != null && candidate.size >= sizeLimit && !type.startsWith('image/')) {
-        return 'size';
       }
       signatures.add(signature);
       return null;
@@ -97,6 +118,7 @@ export default function useSharePointFileHandling(
   const { downloadSharePointFiles, isDownloading, downloadProgress, error } = useSharePointDownload(
     {
       maxFiles: remainingFileSlots(props?.endpointFileConfig?.fileLimit, files),
+      maxTotalBytes: remainingTotalBytes(props?.endpointFileConfig?.totalSizeLimit, files),
       createScreen,
       onFilesDownloaded: async (downloadedFiles: File[]) => {
         const fileArray = Array.from(downloadedFiles);
@@ -141,6 +163,7 @@ export function useSharePointFileHandlingNoChatContext(
   const { downloadSharePointFiles, isDownloading, downloadProgress, error } = useSharePointDownload(
     {
       maxFiles: remainingFileSlots(props?.endpointFileConfig?.fileLimit, files),
+      maxTotalBytes: remainingTotalBytes(props?.endpointFileConfig?.totalSizeLimit, files),
       createScreen,
       onFilesDownloaded: async (downloadedFiles: File[]) => {
         const fileArray = Array.from(downloadedFiles);

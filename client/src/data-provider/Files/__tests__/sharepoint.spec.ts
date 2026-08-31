@@ -272,32 +272,70 @@ describe('expandSharePointFolders', () => {
   });
 
   it('leaves out folder contents the caller screens away', async () => {
-    mockGraph({
-      'folder-1': [driveFile('small', 100), driveFile('huge', 10_000), driveFile('also-small', 50)],
-    });
+    mockGraph({ 'folder-1': [driveFile('keep-1'), driveFile('drop'), driveFile('keep-2')] });
 
     const result = await expandSharePointFolders({
       items: [pickedFolder('folder-1')],
       accessToken: ACCESS_TOKEN,
-      createScreen: () => (file) => (file.size >= 1_000 ? 'size' : null),
+      createScreen: () => (file) => (file.name === 'drop.txt' ? 'duplicate' : null),
     });
 
-    expect(result.files.map((file) => file.id)).toEqual(['small', 'also-small']);
-    expect(result.skippedFiles).toEqual([{ name: 'huge.txt', reason: 'size' }]);
+    expect(result.files.map((file) => file.id)).toEqual(['keep-1', 'keep-2']);
+    expect(result.skippedFiles).toEqual([{ name: 'drop.txt', reason: 'duplicate' }]);
     expect(result.truncatedBy).toBeNull();
   });
 
   it('does not spend a slot on a screened-out file', async () => {
-    mockGraph({ 'folder-1': [driveFile('huge', 10_000), driveFile('small', 10)] });
+    mockGraph({ 'folder-1': [driveFile('drop'), driveFile('keep')] });
 
     const result = await expandSharePointFolders({
       items: [pickedFolder('folder-1')],
       accessToken: ACCESS_TOKEN,
       maxFiles: 1,
-      createScreen: () => (file) => (file.size >= 1_000 ? 'size' : null),
+      createScreen: () => (file) => (file.name === 'drop.txt' ? 'duplicate' : null),
     });
 
-    expect(result.files.map((file) => file.id)).toEqual(['small']);
+    expect(result.files.map((file) => file.id)).toEqual(['keep']);
+  });
+
+  it('screens directly picked files too, so they cannot consume a slot either', async () => {
+    mockGraph({ 'folder-1': [driveFile('from-folder')] });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFile('already-attached'), pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      maxFiles: 1,
+      createScreen: () => (file) => (file.name === 'already-attached.txt' ? 'duplicate' : null),
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['from-folder']);
+    expect(result.skippedFiles).toEqual([{ name: 'already-attached.txt', reason: 'duplicate' }]);
+  });
+
+  it('stops at the aggregate byte budget and reports why', async () => {
+    mockGraph({ 'folder-1': [driveFile('a', 400), driveFile('b', 400), driveFile('c', 400)] });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      maxTotalBytes: 1_000,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['a', 'b']);
+    expect(result.truncatedBy).toBe('sizeLimit');
+  });
+
+  it('keeps a single file that alone exceeds the byte budget, leaving the verdict to the uploader', async () => {
+    mockGraph({ 'folder-1': [driveFile('enormous', 10_000)] });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      maxTotalBytes: 1_000,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['enormous']);
+    expect(result.truncatedBy).toBeNull();
   });
 
   it('reports a duplicate of an existing attachment without downloading it', async () => {

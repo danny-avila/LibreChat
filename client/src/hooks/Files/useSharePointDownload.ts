@@ -14,6 +14,8 @@ interface UseSharePointDownloadProps {
   onError?: (error: Error) => void;
   /** Remaining attachment slots, so folder contents cannot overrun the endpoint's file limit. */
   maxFiles?: number;
+  /** Remaining aggregate byte budget, so an expansion stops where the batch would be rejected. */
+  maxTotalBytes?: number;
   /** Builds a per-walk screen applying the uploader's rules to folder contents. */
   createScreen?: () => (file: SharePointFile) => SharePointSkipReason | null;
 }
@@ -29,6 +31,7 @@ export default function useSharePointDownload({
   onFilesDownloaded,
   onError,
   maxFiles,
+  maxTotalBytes,
   createScreen,
 }: UseSharePointDownloadProps = {}): UseSharePointDownloadReturn {
   const localize = useLocalize();
@@ -85,6 +88,7 @@ export default function useSharePointDownload({
             items: files,
             accessToken,
             maxFiles,
+            maxTotalBytes,
             createScreen,
           });
           filesToDownload = expansion.files;
@@ -99,12 +103,11 @@ export default function useSharePointDownload({
             });
           }
 
-          const skippedBySize = expansion.skippedFiles.filter(
-            (file) => file.reason === 'size',
-          ).length;
-          if (skippedBySize > 0) {
+          if (expansion.skippedFiles.length > 0) {
             showToast({
-              message: localize('com_files_sharepoint_folders_oversized', { 0: skippedBySize }),
+              message: localize('com_files_sharepoint_folders_duplicate', {
+                0: expansion.skippedFiles.length,
+              }),
               status: 'warning',
               duration: 5000,
             });
@@ -120,14 +123,16 @@ export default function useSharePointDownload({
             );
           }
 
+          const truncationMessage = {
+            fileLimit: 'com_files_sharepoint_folder_limit',
+            sizeLimit: 'com_files_sharepoint_folder_too_large',
+            requestBudget: 'com_files_sharepoint_folder_too_deep',
+          } as const;
           if (expansion.truncatedBy != null) {
             showToast({
-              message: localize(
-                expansion.truncatedBy === 'fileLimit'
-                  ? 'com_files_sharepoint_folder_limit'
-                  : 'com_files_sharepoint_folder_too_deep',
-                { 0: filesToDownload.length },
-              ),
+              message: localize(truncationMessage[expansion.truncatedBy], {
+                0: filesToDownload.length,
+              }),
               status: 'warning',
               duration: 5000,
             });
@@ -208,6 +213,7 @@ export default function useSharePointDownload({
       refetchToken,
       localize,
       maxFiles,
+      maxTotalBytes,
       createScreen,
     ],
   );
