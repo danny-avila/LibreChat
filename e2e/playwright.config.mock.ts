@@ -26,6 +26,69 @@ const labelServerPath = path.resolve(rootPath, 'e2e/setup/fake-label-server.js')
  *  `writeRuntimeMockConfig` substitutes any override into the generated copy. */
 const LABEL_PORT = process.env.E2E_LABEL_PORT || '8889';
 const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
+/** Model-fixture record mode: the run hook taps the REAL provider stream into a
+ *  replayable fixture instead of overriding the model (e2e/setup/model-replay.js). */
+const modelFixtureRecording = process.env.E2E_MODEL_FIXTURES === 'record';
+const recordModelHookPath = path.resolve(rootPath, 'e2e/setup/record-model.js');
+const recordProviderBaseURL =
+  process.env.E2E_RECORD_PROVIDER_BASE_URL || 'https://api.deepseek.com/v1';
+const recordProviderModel = process.env.E2E_RECORD_PROVIDER_MODEL || 'deepseek-chat';
+if (modelFixtureRecording && !process.env.E2E_RECORD_PROVIDER_API_KEY) {
+  throw new Error('E2E_MODEL_FIXTURES=record requires E2E_RECORD_PROVIDER_API_KEY');
+}
+/**
+ * Each fixture belongs to exactly one spec, and a spec records only its own.
+ * Accepting an arbitrary name would leave a second fixture beside the
+ * committed one carrying the same prompts, and the server-side ambiguity
+ * check would then refuse to bind either — a successful recording run would
+ * disable the keyless lane.
+ */
+const RECORDABLE_FIXTURES = ['deepseek-two-turn', 'deepseek-tool-call'];
+if (modelFixtureRecording && !process.env.E2E_MODEL_FIXTURE_NAME) {
+  throw new Error('E2E_MODEL_FIXTURES=record requires E2E_MODEL_FIXTURE_NAME');
+}
+if (
+  modelFixtureRecording &&
+  !RECORDABLE_FIXTURES.includes(process.env.E2E_MODEL_FIXTURE_NAME ?? '')
+) {
+  throw new Error(
+    `E2E_MODEL_FIXTURE_NAME must be one of ${RECORDABLE_FIXTURES.join(', ')}; ` +
+      `received ${process.env.E2E_MODEL_FIXTURE_NAME}`,
+  );
+}
+/**
+ * Playwright documents `-c` as an alias for `--config`, so both spellings are
+ * parsed — recognising only the long form would let the short one slip past.
+ *
+ * Derived configs (`playwright.config.redis.ts`, `.mermaid.ts`) spread this
+ * config and then replace `testMatch`, discarding the record-mode restriction
+ * below — their specs would reach the paid provider and rewrite the selected
+ * fixture. The restriction cannot be enforced through a value a consumer can
+ * overwrite, so record mode refuses any config but this one.
+ */
+if (modelFixtureRecording) {
+  /** Only the process that parsed the CLI carries `--config`; Playwright
+   *  workers do not, and must not be judged on an argument they never saw. */
+  const configFlagIndex = process.argv.findIndex(
+    (arg) =>
+      arg === '--config' || arg === '-c' || arg.startsWith('--config=') || arg.startsWith('-c='),
+  );
+  const configFlag = configFlagIndex === -1 ? undefined : process.argv[configFlagIndex];
+  let configPath: string | undefined;
+  if (configFlag?.includes('=')) {
+    configPath = configFlag.slice(configFlag.indexOf('=') + 1);
+  } else if (configFlag) {
+    configPath = process.argv[configFlagIndex + 1];
+  }
+  if (configPath && !/playwright\.config\.mock\.ts$/.test(configPath)) {
+    throw new Error(
+      `E2E_MODEL_FIXTURES=record only runs under playwright.config.mock.ts, not ${configPath}; ` +
+        'derived configs replace testMatch and would send their specs to the real provider',
+    );
+  }
+}
+const assistantsServerPath = path.resolve(rootPath, 'e2e/setup/fake-assistants-server.js');
+const ASSISTANTS_PORT = process.env.E2E_ASSISTANTS_PORT || '8890';
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
 const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
@@ -37,13 +100,17 @@ const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
 
 const vanillaOverrides = {
   TENANT_ISOLATION_STRICT: 'false',
+  TRUST_TENANT_HEADER: 'true',
   OPENAI_API_KEY: 'user_provided',
   OPENID_CLIENT_ID: '',
   OPENID_ISSUER: '',
   OPENID_AUTO_REDIRECT: 'false',
   ALLOW_SOCIAL_LOGIN: 'false',
   ALLOW_SOCIAL_REGISTRATION: 'false',
+  ALLOW_SHARED_LINKS_PUBLIC: 'true',
   STREAM_KEEP_COMPLETED_JOBS: 'true',
+  FORK_IP_MAX: '100',
+  FORK_USER_MAX: '100',
   /** A local `.env` may enable balance enforcement, which `neutralizeCredentialEnv`
    *  does not blank (not credential-shaped); the fresh e2e user has no balance
    *  record, so every streaming spec would be refused with a token_balance
@@ -55,9 +122,23 @@ const baseEnv = {
   ...getLocalE2EEnv(),
   CONFIG_PATH: configPath,
   DEPLOYMENT_SKILLS_DIR: deploymentSkillsPath,
-  /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model. */
-  LIBRECHAT_TEST_RUN_HOOK: fakeModelHookPath,
+  /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model —
+   *  or, in model-fixture record mode, to tap the real provider stream. */
+  LIBRECHAT_TEST_RUN_HOOK: modelFixtureRecording ? recordModelHookPath : fakeModelHookPath,
+  ...(modelFixtureRecording
+    ? {
+        E2E_MODEL_FIXTURE_NAME: process.env.E2E_MODEL_FIXTURE_NAME ?? '',
+        E2E_RECORD_PROVIDER_API_KEY: process.env.E2E_RECORD_PROVIDER_API_KEY ?? '',
+      }
+    : {}),
   ...(enableDynamicMcp ? { E2E_MCP_LIST_CHANGED: 'true', E2E_MCP_STATE_PATH: MCP_STATE_PATH } : {}),
+  /** The Assistants runtime uses the OpenAI SDK directly, outside the agents run hook. */
+  ASSISTANTS_API_KEY: 'e2e-mock-assistants-key',
+  ASSISTANTS_BASE_URL: `http://127.0.0.1:${ASSISTANTS_PORT}/v1`,
+  ASSISTANTS_MODELS: 'gpt-4o-mini',
+  ...(process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
+    ? { E2E_CODE_BRIDGE_ADMIN_TOKEN: process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN }
+    : {}),
   ...vanillaOverrides,
 };
 
@@ -107,10 +188,56 @@ function writeRuntimeMockConfig() {
         ].join('\n'),
       }
     : { allowedDomain: '', stdioEnv: '', networkServers: '' };
+  const recordProviderBlock = modelFixtureRecording
+    ? [
+        `- name: 'Replay Record Provider'`,
+        `  apiKey: '\${E2E_RECORD_PROVIDER_API_KEY}'`,
+        `  baseURL: '${recordProviderBaseURL}'`,
+        '  models:',
+        '    default:',
+        `      - '${recordProviderModel}'`,
+        '    fetch: false',
+        '  titleConvo: false',
+        `  modelDisplayLabel: 'Replay Record Provider'`,
+      ].join('\n    ')
+    : '# __E2E_MODEL_RECORD_PROVIDER__';
   config = config
+    .replace('# __E2E_MODEL_RECORD_PROVIDER__', recordProviderBlock)
+    .replace(
+      '# __E2E_MODEL_RECORD_ADDED_ENDPOINT__',
+      modelFixtureRecording
+        ? `- 'Replay Record Provider'`
+        : '# __E2E_MODEL_RECORD_ADDED_ENDPOINT__',
+    )
     .replace('# __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__', dynamicMcpConfig.allowedDomain)
     .replace('# __E2E_DYNAMIC_MCP_STDIO_ENV__', dynamicMcpConfig.stdioEnv)
     .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers);
+  const codeBridgeURL = process.env.E2E_CODE_BRIDGE_URL;
+  const codeBridgePairing = process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
+    ? [
+        '      owner: deployment',
+        '      pairing:',
+        '        workerId: e2e-vm',
+        '        tokenEnv: E2E_CODE_BRIDGE_ADMIN_TOKEN',
+      ]
+    : [];
+  config = config.replace(
+    '# __E2E_CODE_BRIDGE_CONFIG__',
+    codeBridgeURL
+      ? [
+          '  - stateful_code_sessions',
+          'statefulCodeSessions:',
+          '  allowedEnvironments: ["conversation"]',
+          '  environments:',
+          '    - id: e2e-vm',
+          '      name: E2E attached VM',
+          '      type: attached',
+          `      baseURL: ${JSON.stringify(codeBridgeURL)}`,
+          '      default: true',
+          ...codeBridgePairing,
+        ].join('\n    ')
+      : '# __E2E_CODE_BRIDGE_CONFIG__',
+  );
   /** Keep the generated config in lockstep with the overridable label-server
    *  port: the template hard-codes 8889, so an `E2E_LABEL_PORT` override that
    *  moved only the server and its health check would report ready while
@@ -167,6 +294,12 @@ export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
   globalTeardown: require.resolve('./setup/global-teardown.mock'),
   testDir: 'specs/mock/',
+  /** Record mode swaps the fake model for a real provider, so it must never
+   * run the whole mock suite: every spec's prompts would reach the paid
+   * endpoint, and each fresh conversation would truncate and rewrite the one
+   * selected fixture, leaving whichever scenario ran last. Without this an
+   * unfiltered entry point (`npm run e2e:mock`) does exactly that. */
+  ...(modelFixtureRecording ? { testMatch: /model-replay[a-z-]*\.spec\.ts$/ } : {}),
   outputDir: 'specs/.test-results',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -236,10 +369,26 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
+      // Stateful provider-boundary fake for Assistant CRUD and streamed runs.
+      command: `node ${assistantsServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_ASSISTANTS_PORT: ASSISTANTS_PORT },
+      url: `http://127.0.0.1:${ASSISTANTS_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
       // Start one LibreChat process, or a two-process topology behind a test-only proxy, after the
       // network fixtures so inspection and persistent connections agree.
       command: `node ${serverPath}`,
       cwd: rootPath,
+      // Only the one-replica harness may assert the scheduler's single-process topology.
+      // The two-replica MCP suite must leave scheduled writes disabled.
+      env: {
+        ...process.env,
+        ...(replicaCount === 1 ? { SCHEDULES_SINGLE_PROCESS: 'true' } : {}),
+      },
       url: baseURL,
       stdout: 'pipe',
       ignoreHTTPSErrors: true,

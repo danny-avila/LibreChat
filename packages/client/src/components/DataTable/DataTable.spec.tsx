@@ -30,8 +30,9 @@ jest.mock('~/hooks', () => ({
   useMediaQuery: jest.fn(() => false),
 }));
 
-// jsdom can't measure layout, so @tanstack/react-virtual's measurement-driven re-render loop
-// never converges (infinite "Too many re-renders"). Stub it to render every row deterministically.
+// jsdom reports a zero-height scroll container, so the real virtualizer resolves an empty
+// range and no row assertion below would find its row. Stub it to render every row
+// deterministically; DataTable.virtualization.spec.tsx covers the real virtualizer.
 jest.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({
     count,
@@ -76,6 +77,12 @@ jest.mock('lucide-react', () => ({
   ),
   ArrowDownUp: ({ className }: { className?: string }) => (
     <span data-testid="arrow-down-up" className={className} />
+  ),
+  Inbox: ({ className }: { className?: string }) => (
+    <span data-testid="inbox-icon" className={className} />
+  ),
+  SearchX: ({ className }: { className?: string }) => (
+    <span data-testid="search-x-icon" className={className} />
   ),
 }));
 

@@ -276,6 +276,28 @@ export function supportsContext1m(model: string): boolean {
 }
 
 /**
+ * Checks whether a native Anthropic Claude model supports prompt caching.
+ *
+ * This uses the configured model ID directly. Resolving it through a token
+ * map first can collapse a newly released Claude model to the generic
+ * `claude-` fallback and incorrectly disable cache control.
+ */
+export function supportsPromptCache(model: string): boolean {
+  if (model.includes('claude-3-5-sonnet-latest') || model.includes('claude-3.5-sonnet-latest')) {
+    return false;
+  }
+
+  return (
+    /claude-3[-.]7/.test(model) ||
+    /claude-3[-.]5-(?:sonnet|haiku)/.test(model) ||
+    /claude-3-(?:sonnet|haiku|opus)?/.test(model) ||
+    /claude-(?:sonnet|opus|haiku)[-.]?(?:[4-9]|\d{2,})/.test(model) ||
+    /claude-(?:[4-9]|\d{2,})(?:[-.](?:sonnet|opus|haiku))?/.test(model) ||
+    s.isMythosClassModel(model)
+  );
+}
+
+/**
  * A Bedrock Claude model ID may be prefixed (`anthropic.claude-*`,
  * `us.anthropic.claude-*`, `global.anthropic.claude-*`) or bare (`claude-*`,
  * used when the LibreChat model ID maps to an application inference profile).

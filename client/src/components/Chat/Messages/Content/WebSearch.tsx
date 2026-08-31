@@ -2,10 +2,15 @@ import { useMemo, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { Globe, ChevronDown } from 'lucide-react';
-import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-provider';
+import type {
+  TAttachment,
+  ValidSource,
+  SearchResultData,
+  PartMetadata,
+} from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
+import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { StackedFavicons } from '~/components/Web/Sources';
-import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useToolCallIntent } from './Parts/intent';
 import { useSearchContext } from '~/Providers';
 import cn from '~/utils/cn';
@@ -85,6 +90,7 @@ export default function WebSearch({
   output,
   attachments,
   onExpand,
+  runStepStatus,
 }: {
   isLast?: boolean;
   isSubmitting: boolean;
@@ -93,13 +99,17 @@ export default function WebSearch({
   initialProgress: number;
   attachments?: TAttachment[];
   onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
 }) {
   const localize = useLocalize();
   /** Model-authored live label (web_search carries `intent` natively);
    *  persists as the settled label like the other tool cards. */
   const intent = useToolCallIntent(args);
   const { searchResults } = useSearchContext();
-  const error = typeof output === 'string' && output.toLowerCase().includes('error processing');
+  const error =
+    (typeof output === 'string' && output.toLowerCase().includes('error processing')) ||
+    runStepStatus === 'failed';
+  const isClosed = runStepStatus != null;
 
   // Server tool calls (srvtoolu_) never receive ON_RUN_STEP_COMPLETED, so progress
   // stays at the default 0.1. Treat the search as complete if attachments have results.
@@ -108,15 +118,27 @@ export default function WebSearch({
       attachments?.some((att) => att.type === Tools.web_search && att[Tools.web_search]) ?? false,
     [attachments],
   );
-  const effectiveProgress = hasResults && !isSubmitting ? 1 : progress;
-  const cancelled = (!isSubmitting && effectiveProgress < 1) || error === true;
+  const effectiveProgress = isClosed || (hasResults && !isSubmitting) ? 1 : progress;
+  /**
+   * `error` folds into this branch deliberately: an errored search has always
+   * rendered as nothing (the `cancelled` early-return below), so a step closed
+   * as `failed` lands in the same place rather than inventing a failure UI
+   * this component has never had — or worse, falling through to the streaming
+   * branch and shimmering forever.
+   */
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled' || error
+    : (!isSubmitting && effectiveProgress < 1) || error === true;
 
-  const finalizing = isSubmitting && isLast && effectiveProgress === 1;
+  const finalizing = !isClosed && isSubmitting && isLast && effectiveProgress === 1;
   /** A search that is the message's FINAL part stays "finalizing" only while
    *  the submission is live — afterwards it must settle like any other call,
    *  or the completed label (and its settled intent announcement) never
-   *  renders and the card shimmers forever. */
-  const complete = effectiveProgress === 1 && !finalizing && (!isLast || !isSubmitting);
+   *  renders and the card shimmers forever. A closed step settles immediately
+   *  on its own status instead of waiting for the submission to end. */
+  const complete = isClosed
+    ? !cancelled
+    : effectiveProgress === 1 && !finalizing && (!isLast || !isSubmitting);
 
   const ownTurn = useMemo((): string => {
     if (!attachments) {
@@ -186,6 +208,7 @@ export default function WebSearch({
   const sourceCount = allSources.length;
   const [showSourceList, setShowSourceList] = useState(() => autoExpand && sourceCount > 0);
   const { style: sourceExpandStyle, ref: sourceExpandRef } = useExpandCollapse(showSourceList);
+  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(showSourceList);
 
   useEffect(() => {
     if (autoExpand && sourceCount > 0) {
@@ -194,6 +217,7 @@ export default function WebSearch({
   }, [autoExpand, sourceCount]);
 
   const handleToggleSources = () => {
+    mountBody();
     setShowSourceList((prev) => {
       const next = !prev;
       if (next) {
@@ -250,31 +274,33 @@ export default function WebSearch({
           )}
         </button>
         {hasSourceData && (
-          <div style={sourceExpandStyle}>
+          <div style={sourceExpandStyle} onTransitionEnd={handleTransitionEnd}>
             <div className="overflow-hidden" ref={sourceExpandRef}>
-              <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
-                {allSources.map((source, i) => {
-                  const domain = getCleanDomain(source.link);
-                  return (
-                    <a
-                      key={source.link}
-                      href={source.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={cn(
-                        'flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
-                        i > 0 && 'border-t border-border-light',
-                      )}
-                    >
-                      <FaviconImage domain={domain} className="size-4 shrink-0 rounded-sm" />
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
-                        {source.title || domain}
-                      </span>
-                      <span className="shrink-0 text-[11px] text-text-secondary">{domain}</span>
-                    </a>
-                  );
-                })}
-              </div>
+              {shouldRenderBody && (
+                <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
+                  {allSources.map((source, i) => {
+                    const domain = getCleanDomain(source.link);
+                    return (
+                      <a
+                        key={source.link}
+                        href={source.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          'flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
+                          i > 0 && 'border-t border-border-light',
+                        )}
+                      >
+                        <FaviconImage domain={domain} className="size-4 shrink-0 rounded-sm" />
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
+                          {source.title || domain}
+                        </span>
+                        <span className="shrink-0 text-[11px] text-text-secondary">{domain}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

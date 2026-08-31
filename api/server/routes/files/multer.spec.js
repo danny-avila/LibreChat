@@ -215,6 +215,8 @@ describe('Multer Configuration', () => {
       const cb = jest.fn((err, result) => {
         expect(err).toBeInstanceOf(Error);
         expect(err.message).toBe('Only JSON files are allowed');
+        expect(err.statusCode).toBe(415);
+        expect(err.body).toEqual({ message: 'Only JSON files are allowed' });
         expect(result).toBe(false);
         done();
       });
@@ -298,6 +300,72 @@ describe('Multer Configuration', () => {
       });
 
       fileFilter(mockReq, zipFile, cb);
+    });
+
+    it.each(['application/x-shellscript', 'text/x-shellscript'])(
+      'should normalize %s to application/x-sh and accept the upload',
+      (reportedType) => {
+        const { mergeFileConfig } = require('librechat-data-provider');
+        const fileFilter = createFileFilter(mergeFileConfig());
+        const shellFile = {
+          ...mockFile,
+          originalname: 'script.sh',
+          mimetype: reportedType,
+        };
+
+        const cb = jest.fn();
+        fileFilter(mockReq, shellFile, cb);
+
+        expect(cb).toHaveBeenCalledWith(null, true);
+        expect(shellFile.mimetype).toBe('application/x-sh');
+      },
+    );
+
+    /** Normalization runs before the allowlist check, so an admin who applied one of the documented
+     *  `.sh` workarounds must not be broken by it. Both recipes target `application/x-sh`, which is
+     *  exactly what the alias now produces. */
+    it.each([
+      ['the canonical type (#4660, #5689, #6297)', ['application/x-sh']],
+      ['broad patterns (#14804)', ['image/.*', 'text/.*', 'application/.*']],
+    ])(
+      'should keep accepting .sh for an existing workaround config allowing %s',
+      (_label, supportedMimeTypes) => {
+        const { mergeFileConfig } = require('librechat-data-provider');
+        const fileFilter = createFileFilter(
+          mergeFileConfig({ endpoints: { agents: { supportedMimeTypes } } }),
+        );
+        mockReq.body.endpoint = 'agents';
+        const shellFile = {
+          ...mockFile,
+          originalname: 'script.sh',
+          mimetype: 'application/x-shellscript',
+        };
+
+        const cb = jest.fn();
+        fileFilter(mockReq, shellFile, cb);
+
+        expect(cb).toHaveBeenCalledWith(null, true);
+      },
+    );
+
+    it('should reject an unsupported type with a 415 the client can surface', () => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(mergeFileConfig());
+      const binaryFile = {
+        ...mockFile,
+        originalname: 'program.exe',
+        mimetype: 'application/x-msdownload',
+      };
+
+      const cb = jest.fn();
+      fileFilter(mockReq, binaryFile, cb);
+
+      expect(cb).toHaveBeenCalledTimes(1);
+      const [error, result] = cb.mock.calls[0];
+      expect(result).toBe(false);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.statusCode).toBe(415);
+      expect(error.body).toEqual({ message: 'Unsupported file type: application/x-msdownload' });
     });
 
     it('should use real mergeFileConfig function', async () => {

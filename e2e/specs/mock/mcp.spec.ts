@@ -8,7 +8,13 @@ import {
   uniqueAgentName,
   waitForPersistedAgent,
 } from './agents.helpers';
-import { MOCK_ENDPOINTS, fetchJson, getAccessToken, mockReply, sendMessage } from './helpers';
+import {
+  MOCK_ENDPOINTS,
+  fetchJson,
+  getAccessToken,
+  mockReply,
+  sendMessageAndWaitForCompletion,
+} from './helpers';
 
 const MCP_SERVER_NAME = 'e2e-memory';
 const MCP_TOOL_NAME = 'remember_fact';
@@ -135,7 +141,7 @@ test.describe('agent builder MCP tools', () => {
 
       await reopenedForm.getByRole('button', { name: 'Select Agent' }).click();
 
-      const response = await sendMessage(page, `hello from ${agentName}`);
+      const response = await sendMessageAndWaitForCompletion(page, `hello from ${agentName}`);
       expect(response.ok()).toBeTruthy();
       await expect(mockReply(page)).toBeVisible({ timeout: 30000 });
     } finally {

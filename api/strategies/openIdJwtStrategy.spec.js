@@ -9,6 +9,8 @@ const mockAuthUserDocCacheStore = {
   delete: jest.fn(),
 };
 const mockGetLogStores = jest.fn(() => mockAuthUserDocCacheStore);
+const mockGetTenantId = jest.fn();
+const mockRunAsSystem = jest.fn((callback) => callback());
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
     capturedStrategyOptions = opts;
@@ -27,6 +29,8 @@ jest.mock('https-proxy-agent', () => ({
 }));
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+  getTenantId: mockGetTenantId,
+  runAsSystem: mockRunAsSystem,
 }));
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
@@ -37,14 +41,17 @@ jest.mock('@librechat/api', () => ({
   buildAuthUserDocCacheKey: jest.fn(() => 'auth-user-doc-key'),
   getAuthUserDocCacheMode: jest.fn(() => 'off'),
   getCachedAuthUserDoc: jest.fn(),
+  getValidOpenIdReuseUserId: jest.fn(),
   invalidateCachedAuthUserDoc: jest.fn(),
   setCachedAuthUserDoc: jest.fn(),
   getHttpsProxyAgent: jest.fn(() => undefined),
+  isAccessTokenJwt: jest.requireActual('@librechat/api').isAccessTokenJwt,
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   updateUser: jest.fn(),
+  isAgentTriggerPrincipalActive: jest.fn(() => true),
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
@@ -61,13 +68,15 @@ const {
   findOpenIDUser,
   getAuthUserDocCacheMode,
   getCachedAuthUserDoc,
+  getValidOpenIdReuseUserId,
   invalidateCachedAuthUserDoc,
   setCachedAuthUserDoc,
 } = require('@librechat/api');
 const openIdJwtLogin = require('./openIdJwtStrategy');
-const { findUser, updateUser } = require('~/models');
+const { findUser, updateUser, isAgentTriggerPrincipalActive } = require('~/models');
 
 function resetAuthUserDocCacheMocks() {
+  mockGetTenantId.mockReturnValue(undefined);
   mockAuthUserDocCacheStore.get.mockResolvedValue(undefined);
   mockAuthUserDocCacheStore.set.mockResolvedValue(undefined);
   mockAuthUserDocCacheStore.delete.mockResolvedValue(undefined);
@@ -75,12 +84,15 @@ function resetAuthUserDocCacheMocks() {
   buildAuthUserDocCacheKey.mockReturnValue('auth-user-doc-key');
   getAuthUserDocCacheMode.mockReturnValue('off');
   getCachedAuthUserDoc.mockResolvedValue(undefined);
+  getValidOpenIdReuseUserId.mockReturnValue(null);
   invalidateCachedAuthUserDoc.mockResolvedValue(undefined);
   setCachedAuthUserDoc.mockResolvedValue(undefined);
 }
 
 beforeEach(() => {
   resetAuthUserDocCacheMocks();
+  mockRunAsSystem.mockClear();
+  isAgentTriggerPrincipalActive.mockResolvedValue(true);
 });
 
 function withEnv(env, callback) {
@@ -285,7 +297,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'session-access',
       id_token: 'session-id',
       refresh_token: 'session-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
@@ -304,7 +316,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'cookie-access',
       id_token: 'cookie-id',
       refresh_token: 'cookie-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
@@ -329,11 +341,17 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'session-access',
       id_token: 'cookie-id',
       refresh_token: 'session-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
-  it('should use raw Bearer token as access_token fallback when neither session nor cookie has one', async () => {
+  const encodeSegment = (value) => Buffer.from(JSON.stringify(value)).toString('base64');
+  const makeJwt = (claims, header = { alg: 'RS256' }) =>
+    `${encodeSegment(header)}.${encodeSegment(claims)}.signature`;
+
+  const resourceEnv = { OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'api://resource-app' };
+
+  it('should decline the raw Bearer token when nothing identifies it as an access token', async () => {
     const req = {
       headers: {
         authorization: 'Bearer raw-bearer-token',
@@ -343,9 +361,136 @@ describe('openIdJwtStrategy – token source handling', () => {
 
     const { user } = await invokeVerify(req, payload);
 
-    expect(user.federatedTokens.access_token).toBe('raw-bearer-token');
+    expect(user.federatedTokens.access_token).toBeUndefined();
     expect(user.federatedTokens.id_token).toBe('cookie-id');
     expect(user.federatedTokens.refresh_token).toBe('cookie-refresh');
+    expect(user.federatedTokens.expires_at).toBeUndefined();
+  });
+
+  it('should decline an Entra-shaped ID token rather than reuse it as the OBO assertion', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: 'client-id', nonce: 'n-0S6_WzA2Mj', tid: 'tenant-1' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should decline a multi-audience ID token that also names a configured resource', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: ['client-id', 'api://resource-app'], nonce: 'n-0S6' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should decline an ID token carrying a provider-added scope claim', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: 'client-id', scope: 'openid email profile' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should decline a raw Bearer token carrying the ID-token-only at_hash claim', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: 'api://resource-app', at_hash: 'HK6E_P6Dh8Y93mRN' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should reuse a raw Bearer token whose audience names a configured resource', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const claims = { ...payload, aud: 'api://resource-app' };
+    const rawToken = makeJwt(claims);
+    const req = { headers: { authorization: `Bearer ${rawToken}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBe(rawToken);
+    expect(user.federatedTokens.expires_at).toBe(payload.exp);
+  });
+
+  it('should reuse a raw Bearer token declaring the RFC 9068 `at+jwt` header type', async () => {
+    withEnv(resourceEnv, () => openIdJwtLogin(mockOpenIdConfig));
+
+    const rawToken = makeJwt(payload, { alg: 'RS256', typ: 'at+JWT' });
+    const req = { headers: { authorization: `Bearer ${rawToken}` } };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe(rawToken);
+  });
+
+  it('should decline a raw Bearer token whose only audience is the OIDC client id', async () => {
+    withEnv({ OPENID_CLIENT_ID: 'client-id', OPENID_AUDIENCE: 'client-id' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    const claims = { ...payload, aud: 'client-id', scp: 'User.Read' };
+    const req = { headers: { authorization: `Bearer ${makeJwt(claims)}` } };
+
+    const { user } = await invokeVerify(req, claims);
+
+    expect(user.federatedTokens.access_token).toBeUndefined();
+  });
+
+  it('should decode expires_at from a session access token that is itself a JWT', async () => {
+    const sessionAccessExp = 1234567890;
+    const sessionAccessToken = `header.${Buffer.from(
+      JSON.stringify({ sub: 'oidc-123', exp: sessionAccessExp }),
+    ).toString('base64')}.signature`;
+    const req = {
+      headers: { authorization: 'Bearer raw-bearer-token' },
+      session: {
+        openidTokens: {
+          accessToken: sessionAccessToken,
+          idToken: 'session-id',
+          refreshToken: 'session-refresh',
+        },
+      },
+    };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe(sessionAccessToken);
+    expect(user.federatedTokens.expires_at).toBe(sessionAccessExp);
+    expect(user.federatedTokens.expires_at).not.toBe(payload.exp);
+  });
+
+  it('should store an opaque session access token with no expiry alongside a decodable stale ID token', async () => {
+    const staleIdToken = `header.${Buffer.from(
+      JSON.stringify({ sub: 'oidc-123', exp: Math.floor(Date.now() / 1000) - 3600 }),
+    ).toString('base64')}.signature`;
+    const req = {
+      headers: { authorization: 'Bearer raw-bearer-token' },
+      session: {
+        openidTokens: {
+          accessToken: 'opaque-session-access',
+          idToken: staleIdToken,
+          refreshToken: 'session-refresh',
+        },
+      },
+    };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe('opaque-session-access');
+    expect(user.federatedTokens.id_token).toBe(staleIdToken);
+    expect(user.federatedTokens.expires_at).toBeUndefined();
   });
 
   it('should set id_token to undefined when not available in session or cookies', async () => {
@@ -416,11 +561,13 @@ describe('openIdJwtStrategy – auth user document cache', () => {
   });
 
   it('uses the cached user document in on mode without a database lookup', async () => {
+    mockGetTenantId.mockReturnValue('tenant-a');
     const cachedUser = {
       _id: 'cached-user',
       role: SystemRoles.USER,
       provider: 'openid',
       email: 'cached@example.com',
+      tenantId: 'tenant-a',
     };
     getAuthUserDocCacheMode.mockReturnValue('on');
     getCachedAuthUserDoc.mockResolvedValue(cachedUser);
@@ -431,6 +578,7 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       strategy: 'openid-jwt',
       subject: payload.sub,
       issuer: 'https://issuer.example.com',
+      tenantId: 'tenant-a',
     });
     expect(findOpenIDUser).not.toHaveBeenCalled();
     expect(user).toMatchObject({
@@ -440,6 +588,32 @@ describe('openIdJwtStrategy – auth user document cache', () => {
     });
     expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
     expect(invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cached OpenID user while account deletion is fenced', async () => {
+    mockGetTenantId.mockReturnValue('tenant-a');
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue({
+      _id: 'cached-user',
+      role: SystemRoles.USER,
+      provider: 'openid',
+      tenantId: 'tenant-a',
+    });
+    isAgentTriggerPrincipalActive.mockResolvedValue(false);
+
+    const result = await invokeVerify(req, payload);
+
+    expect(result).toEqual({
+      user: false,
+      info: {
+        message: 'Account deletion is in progress',
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      },
+    });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+    expect(mockRunAsSystem).toHaveBeenCalledWith(expect.any(Function));
+    expect(isAgentTriggerPrincipalActive).toHaveBeenCalledWith('cached-user');
+    expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
   });
 
   it('populates the cache after a miss with the fresh user document', async () => {
@@ -456,6 +630,88 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       expect.objectContaining({ id: 'user-abc' }),
     );
     expect(invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cached user document from another tenant', async () => {
+    mockGetTenantId.mockReturnValue('tenant-b');
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue({
+      _id: 'tenant-a-user',
+      role: SystemRoles.ADMIN,
+      provider: 'openid',
+      email: 'cached@example.com',
+      tenantId: 'tenant-a',
+    });
+    findOpenIDUser.mockResolvedValue({
+      user: { ...baseUser, _id: { toString: () => 'tenant-b-user' }, tenantId: 'tenant-b' },
+      error: null,
+      migration: false,
+    });
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(buildAuthUserDocCacheKey).toHaveBeenCalledWith({
+      strategy: 'openid-jwt',
+      subject: payload.sub,
+      issuer: 'https://issuer.example.com',
+      tenantId: 'tenant-b',
+    });
+    expect(findOpenIDUser).toHaveBeenCalled();
+    expect(user).toMatchObject({ id: 'tenant-b-user', tenantId: 'tenant-b' });
+    expect(setCachedAuthUserDoc).toHaveBeenCalledWith(
+      mockAuthUserDocCacheStore,
+      'auth-user-doc-key',
+      expect.objectContaining({ id: 'tenant-b-user', tenantId: 'tenant-b' }),
+    );
+  });
+
+  it('uses the signed OpenID user id as cache scope before tenant context is available', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getValidOpenIdReuseUserId.mockReturnValue('tenant-a-user');
+    getCachedAuthUserDoc.mockResolvedValue({
+      _id: 'tenant-a-user',
+      role: SystemRoles.USER,
+      provider: 'openid',
+      email: 'cached@example.com',
+      tenantId: 'tenant-a',
+    });
+
+    const { user } = await invokeVerify(
+      {
+        headers: {
+          authorization: 'Bearer tok',
+          cookie: 'openid_user_id=signed-user-id',
+        },
+        session: {},
+      },
+      payload,
+    );
+
+    expect(getValidOpenIdReuseUserId).toHaveBeenCalledWith('signed-user-id');
+    expect(buildAuthUserDocCacheKey).toHaveBeenCalledWith({
+      strategy: 'openid-jwt',
+      subject: payload.sub,
+      issuer: 'https://issuer.example.com',
+      userId: 'tenant-a-user',
+    });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+    expect(user).toMatchObject({ id: 'tenant-a-user', tenantId: 'tenant-a' });
+  });
+
+  it('does not cache a lookup result outside the active tenant scope', async () => {
+    mockGetTenantId.mockReturnValue('tenant-b');
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue(undefined);
+    findOpenIDUser.mockResolvedValue({
+      user: { ...baseUser, tenantId: 'tenant-a' },
+      error: null,
+      migration: false,
+    });
+
+    await invokeVerify(req, payload);
+
+    expect(findOpenIDUser).toHaveBeenCalled();
+    expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
   });
 
   it('invalidates instead of populating when login mutates the user', async () => {

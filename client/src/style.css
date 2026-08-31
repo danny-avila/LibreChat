@@ -18,9 +18,11 @@
   --gray-400: 153 150 150;
   --gray-500: 89 89 89;
   --gray-600: 66 66 66;
+  --gray-650: 57 57 57;
   --gray-700: 47 47 47;
   --gray-800: 33 33 33;
   --gray-850: 23 23 23;
+  --gray-875: 18 18 18;
   --gray-900: 13 13 13;
   --green-50: 236 253 245;
   --green-100: 209 250 229;
@@ -66,7 +68,7 @@
   --blue-800: 30 64 175;
   --blue-900: 30 58 138;
   --blue-950: 23 37 84;
-  --brand-purple: 171 104 255;
+  --brand-purple: 126 34 206;
   --gizmo-gray-500: 153 153 153;
   --gizmo-gray-600: 102 102 102;
   --gizmo-gray-950: 15 15 15;
@@ -145,7 +147,7 @@
 }
 
 html {
-  --brand-purple: 171 104 255;
+  --brand-purple: 126 34 206;
   --presentation: var(--white);
   --text-primary: var(--gray-800);
   --text-secondary: var(--gray-600);
@@ -166,6 +168,7 @@ html {
   --surface-active-alt: var(--gray-200);
   --surface-hover: var(--gray-200);
   --surface-hover-alt: var(--gray-300);
+  --surface-composer-hover: var(--gray-200);
   --surface-primary: var(--white);
   --surface-primary-alt: var(--gray-50);
   --surface-primary-contrast: var(--gray-100);
@@ -180,6 +183,7 @@ html {
   --surface-destructive: var(--red-700);
   --surface-destructive-hover: var(--red-800);
   --surface-chat: var(--white);
+  --surface-code: var(--surface-primary-alt);
   --surface-qr: var(--white);
   --border-light: var(--gray-200);
   --border-light-alpha: 1;
@@ -212,6 +216,15 @@ html {
   --status-neutral-border: var(--gray-300);
   --text-on-status: var(--white);
 
+  /* Categorical series scale — slot order is the CVD-safety mechanism */
+  --series-1: 5 110 189;
+  --series-2: 233 86 13;
+  --series-3: 0 148 142;
+  --series-4: 182 123 5;
+  --series-5: 216 90 142;
+  --series-6: 126 35 205;
+  --series-7: 1 131 1;
+
   --surface-inverted: var(--gray-850);
   --surface-inverted-hover: var(--gray-700);
   --text-inverted: var(--white);
@@ -219,7 +232,25 @@ html {
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
   --radius: 0.5rem;
+  --theme-control-radius: 0.75rem;
+  --theme-round-control-radius: 9999px;
+  --theme-surface-radius: 1rem;
+  --theme-large-surface-radius: 1.5rem;
+  --theme-control-height: 2.25rem;
+  --theme-space-compact: 0.375rem;
+  --theme-space-normal: 0.75rem;
+  --theme-font-family: Inter, sans-serif;
+  --theme-elevation-surface: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --theme-motion-fast: 150ms;
+  --theme-motion-normal: 200ms;
   --switch-unchecked: 0 0% 58%;
+  --provider-openai: #19c37d;
+  --provider-openai-gpt4: #ab68ff;
+  --provider-openai-reasoning: #000000;
+  --provider-anthropic: #d09a74;
+  --provider-azure: linear-gradient(0.375turn, #61bde2, #4389d0);
+  --provider-bedrock: #268672;
+  --provider-foreground: #ffffff;
 }
 .dark {
   --brand-purple: 171 104 255;
@@ -229,7 +260,7 @@ html {
   --text-secondary-alt: var(--gray-400);
   --text-tertiary: var(--gray-400);
   --text-warning: var(--amber-500);
-  --text-destructive: var(--status-error);
+  --text-destructive: var(--red-400);
   --link: var(--blue-400);
   --link-hover: var(--blue-300);
   --link-visited: 192 132 252;
@@ -240,8 +271,9 @@ html {
   --header-button-hover: var(--gray-700);
   --surface-active: var(--gray-500);
   --surface-active-alt: var(--gray-700);
-  --surface-hover: var(--gray-600);
+  --surface-hover: var(--gray-650);
   --surface-hover-alt: var(--gray-600);
+  --surface-composer-hover: var(--gray-600);
   --surface-primary: var(--gray-900);
   --surface-primary-alt: var(--gray-850);
   --surface-primary-contrast: var(--gray-850);
@@ -249,13 +281,14 @@ html {
   --surface-secondary-alt: var(--gray-800);
   --surface-tertiary: var(--gray-700);
   --surface-tertiary-alt: var(--gray-700);
-  --surface-dialog: var(--gray-850);
+  --surface-dialog: var(--gray-875);
   --surface-overlay: 0 0 0;
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
   --surface-chat: var(--gray-700);
+  --surface-code: var(--presentation);
   --surface-qr: var(--white);
   --border-light: var(--gray-700);
   --border-medium-alt: var(--gray-600);
@@ -284,6 +317,15 @@ html {
   --status-neutral-border: var(--gray-700);
   --text-on-status: var(--white);
 
+  /* Categorical series scale — same hues, stepped for the dark surface */
+  --series-1: 9 140 238;
+  --series-2: 217 87 35;
+  --series-3: 6 158 152;
+  --series-4: 200 133 12;
+  --series-5: 213 82 130;
+  --series-6: 171 104 254;
+  --series-7: 80 167 49;
+
   --surface-inverted: var(--white);
   --surface-inverted-hover: var(--gray-100);
   --text-inverted: var(--gray-850);
@@ -291,6 +333,13 @@ html {
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
   --switch-unchecked: 0 0% 40%;
+  --provider-openai: #19c37d;
+  --provider-openai-gpt4: #ab68ff;
+  --provider-openai-reasoning: #000000;
+  --provider-anthropic: #d09a74;
+  --provider-azure: linear-gradient(0.375turn, #61bde2, #4389d0);
+  --provider-bedrock: #268672;
+  --provider-foreground: #ffffff;
 }
 .gizmo {
   --text-primary: var(--gizmo-gray-950);
@@ -546,115 +595,81 @@ pre {
   margin: 0;
 }
 
-/* Scroll-to-bottom button — enter */
+/* Show the message time when the row is hovered. Tailwind group-hover
+   loses to `[@media(hover:hover)]:opacity-0` (same specificity, :where()).
+
+   Keyboard focus reveals it too, but only `:focus-visible`: a pointer that
+   clicks a tool card or an expand toggle inside the row leaves focus sitting
+   there, and plain `:focus-within` would pin the time open long after the
+   pointer moved away.
+
+   The condition matches the row itself as well as its descendants, because
+   `MessageNav` focuses the row through `tabindex="-1"` and `:has()` never
+   matches its own subject. Text-entry controls are excluded, because they
+   match `:focus-visible` on a plain mouse click. See `revealOnRowHoverClasses`
+   in `components/Chat/Messages/styles.ts` for the full reasoning. */
+@media (hover: hover) {
+  .message-render .message-timestamp {
+    opacity: 0;
+  }
+
+  .message-render:hover .message-timestamp,
+  .message-render:focus-visible .message-timestamp,
+  .message-render:has(:focus-visible:not(:is(input, textarea, [contenteditable])))
+    .message-timestamp {
+    opacity: 1;
+  }
+}
+
+/* Scroll-to-bottom: fade and rise on the same path. No scale. */
+/* Inertness during the transition is owned by the button's `interactive` prop,
+   not by these classes: the wrapper is already inert, and a descendant that
+   opts back into pointer events stays hit-testable however its parent paints. */
 .scroll-animation-enter {
   opacity: 0;
-  transform: translateY(12px) scale(0.9);
-  pointer-events: none;
+  transform: translateY(8px);
 }
 
 .scroll-animation-enter-active {
-  animation: scroll-btn-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--resize-dur) var(--resize-ease),
+    transform var(--resize-dur) var(--resize-ease);
 }
 
 .scroll-animation-enter-done {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
 }
 
-@keyframes scroll-btn-enter {
-  0% {
-    opacity: 0;
-    transform: translateY(12px) scale(0.9);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.scroll-animation-exit {
+  opacity: 1;
+  transform: translateY(0);
 }
 
-/* Scroll-to-bottom button — exit */
 .scroll-animation-exit-active {
-  animation: scroll-btn-exit 0.25s cubic-bezier(0.4, 0, 1, 1) forwards;
-  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 180ms cubic-bezier(0.4, 0, 1, 1),
+    transform 180ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 .scroll-animation-exit-done {
   display: none;
 }
 
-@keyframes scroll-btn-exit {
-  0% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+@media (prefers-reduced-motion: reduce) {
+  .scroll-animation-enter,
+  .scroll-animation-exit,
+  .scroll-animation-exit-active {
+    transform: none;
   }
-  100% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.95);
-  }
-}
 
-/* Scroll-to-bottom button */
-.premium-scroll-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  background-color: #ffffff;
-  z-index: 10;
-  overflow: hidden;
-  transition: transform 100ms ease;
-}
-
-.dark .premium-scroll-button {
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  background-color: #2a2a2e;
-}
-
-.scroll-animation-enter-active .premium-scroll-button {
-  pointer-events: none !important;
-}
-
-.premium-scroll-button:active {
-  transform: scale(0.95);
-}
-
-.blink {
-  animation: blink 1s linear infinite;
-}
-@keyframes blink {
-  0% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes blink {
-  0% {
-    opacity: 1;
-  }
-  79% {
-    opacity: 1;
-  }
-  80% {
-    opacity: 0;
-  }
-  99% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
+  .scroll-animation-enter-active,
+  .scroll-animation-exit-active {
+    transition: opacity 150ms ease;
   }
 }
 
@@ -1276,9 +1291,16 @@ button {
 }
 
 /* Webkit scrollbar */
+:root {
+  /* Width of the app's own scrollbars, and so of the band a
+     `scrollbar-gutter: stable` container holds back. `.scrollbar-gutter-spacer`
+     reserves the same band without becoming a scroll container. */
+  --scrollbar-size: 0.5rem;
+}
+
 ::-webkit-scrollbar {
   height: 0.1em;
-  width: 0.5rem;
+  width: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -1339,6 +1361,18 @@ button {
 body,
 html {
   height: 100%;
+}
+
+/* Scoped to the drawer-gesture breakpoint (useSidebarState's 768px): on small
+   screens the app never scrolls at the root, so chaining out of nested
+   scrollers has nothing legitimate to reach — this kills Chrome Android's
+   pull-to-refresh and horizontal overscroll gliding into browser navigation.
+   Desktop keeps native trackpad back/forward and refresh gestures. */
+@media (max-width: 768px) {
+  body,
+  html {
+    overscroll-behavior: none;
+  }
 }
 
 .dark body,
@@ -1627,16 +1661,6 @@ html {
   text-decoration-line: underline;
   text-underline-offset: 2px;
 }
-@-webkit-keyframes blink {
-  to {
-    visibility: hidden;
-  }
-}
-@keyframes blink {
-  to {
-    visibility: hidden;
-  }
-}
 .hidden-visibility {
   visibility: hidden;
 }
@@ -1704,49 +1728,46 @@ html {
   }
 }
 
-@-webkit-keyframes pulseSize {
+/* Pre-response dot: enters on the streamed-text fade curve, then breathes
+   on opacity — replaces the legacy scale throb so waiting and text arrival
+   share one motion language.
+
+   Custom CSS exception: this indicator is a `::after` pseudo-element on the
+   `.result-thinking` hook, shown only while an ancestor carries `.submitting`
+   and the hook itself is `:empty`. No `@librechat/client` primitive can
+   express "render only while an ancestor is in state X and I have no
+   children" — a component would have to own that state, which the streaming
+   markdown path deliberately keeps in the DOM so the dot costs no React
+   renders per token. Scoped to the one selector, colored from
+   `--text-primary` so both themes follow, and disabled under
+   prefers-reduced-motion. */
+@keyframes lc-dot-breathe {
   0%,
-  to {
-    -webkit-transform: scaleX(1);
-    transform: scaleX(1);
+  100% {
+    opacity: 1;
   }
   50% {
-    -webkit-transform: scale3d(1.25, 1.25, 1);
-    transform: scale3d(1.25, 1.25, 1);
-  }
-}
-@keyframes pulseSize {
-  0%,
-  to {
-    -webkit-transform: scaleX(1);
-    transform: scaleX(1);
-  }
-  50% {
-    -webkit-transform: scale3d(1.25, 1.25, 1);
-    transform: scale3d(1.25, 1.25, 1);
+    opacity: 0.3;
   }
 }
 .submitting .result-thinking:empty:last-child:after {
-  -webkit-font-smoothing: subpixel-antialiased;
-  -webkit-animation: pulseSize 1.25s ease-in-out infinite;
-  animation: pulseSize 1.25s ease-in-out infinite;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  background-color: #0d0d0d;
+  animation:
+    lc-fade-in 250ms ease-out both,
+    lc-dot-breathe 1.5s ease-in-out 250ms infinite;
   background-color: rgb(var(--text-primary));
   border-radius: 50%;
-  box-sizing: border-box;
   content: ' ';
   display: block;
   height: 12px;
   position: absolute;
   top: -11px;
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-  -webkit-transform-origin: center;
-  transform-origin: center;
   width: 12px;
-  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submitting .result-thinking:empty:last-child:after {
+    animation: none;
+  }
 }
 
 .shadow-stroke {
@@ -1891,6 +1912,28 @@ html {
 /* Remove cursors when streaming is complete */
 .result-streaming:not(.submitting) :is(ul, ol) li:after {
   display: none !important;
+}
+
+/* Smooth streaming: one-shot fade-in on newly streamed words.
+   Duration must match FADE_DURATION_MS in Chat/Messages/Content/animate.tsx */
+@keyframes lc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-lc-fade] {
+  animation: lc-fade-in 250ms ease-out both;
+  animation-delay: var(--lc-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-lc-fade] {
+    animation: none;
+  }
 }
 
 .webkit-dark-styles,
@@ -2107,9 +2150,12 @@ html {
   transform-origin: 50% 50%;
 }
 
-.message-content {
+.message-content,
+.message-editor-text {
   font-size: var(--markdown-font-size, var(--font-size-base));
-  line-height: 1.4;
+  line-height: 1.6;
+  /* `.prose` sets max-width: 65ch; fill the chat-form column instead. */
+  max-width: none;
 }
 
 .message-content pre code {
@@ -2173,6 +2219,52 @@ html {
 
 :focus {
   outline: none;
+}
+
+html[data-input-modality='pointer']
+  :where(
+    input:not([type]),
+    input:is(
+      [type='text'],
+      [type='search'],
+      [type='email'],
+      [type='password'],
+      [type='url'],
+      [type='tel'],
+      [type='number'],
+      [type='date'],
+      [type='datetime-local'],
+      [type='month'],
+      [type='week'],
+      [type='time']
+    ),
+    textarea
+  ):is(:focus, :focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+html[data-input-modality='keyboard']
+  :where(
+    input:not([type]),
+    input:is(
+      [type='text'],
+      [type='search'],
+      [type='email'],
+      [type='password'],
+      [type='url'],
+      [type='tel'],
+      [type='number'],
+      [type='date'],
+      [type='datetime-local'],
+      [type='month'],
+      [type='week'],
+      [type='time']
+    ),
+    textarea
+  ):not(.lc-field):focus-visible {
+  outline: 2px solid rgb(var(--text-primary)) !important;
+  outline-offset: 2px !important;
 }
 
 :focus-visible {
@@ -2427,5 +2519,5 @@ html {
 }
 
 .sharepoint-picker-bg {
-  background-color: #f5f5f5;
+  background-color: rgb(var(--surface-dialog));
 }

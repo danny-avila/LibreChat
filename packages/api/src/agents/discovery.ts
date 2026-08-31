@@ -1,6 +1,17 @@
 import { logger } from '@librechat/data-schemas';
-import { ResourceType, PermissionBits, EModelEndpoint } from 'librechat-data-provider';
-import type { Agent, GraphEdge, TModelsConfig, TEndpointOption } from 'librechat-data-provider';
+import {
+  ResourceType,
+  PermissionBits,
+  EModelEndpoint,
+  MAX_SUBAGENT_GRAPH_NODES,
+} from 'librechat-data-provider';
+import type {
+  Agent,
+  GraphEdge,
+  TModelsConfig,
+  TEndpointOption,
+  AgentSubagentGraph,
+} from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
 import type {
   InitializedAgent,
@@ -13,7 +24,10 @@ import { validateAgentModel as defaultValidateAgentModel } from './validation';
 import { initializeAgent as defaultInitializeAgent } from './initialize';
 import { createEdgeCollector, filterOrphanedEdges } from './edges';
 import { isFatalAgentInitializationError } from './errors';
+import { createConcurrencyLimiter } from '~/utils/promise';
 import { createSequentialChainEdges } from './chain';
+
+const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
 /**
  * Callback invoked after a sub-agent is successfully initialized.
@@ -55,6 +69,8 @@ export interface DiscoverConnectedAgentsParams {
   requestFiles?: InitializeAgentParams['requestFiles'];
   conversationId?: string | null;
   parentMessageId?: string | null;
+  /** Normalized runtime request metadata forwarded to MCP tool loading. */
+  requestBody?: InitializeAgentParams['requestBody'];
   /**
    * ResourceType to check each sub-agent's access against. Defaults to
    * `AGENT` for the in-app chat flow. Callers whose entry-point gates on
@@ -91,6 +107,8 @@ export interface DiscoverConnectedAgentsParams {
   codeEnvAvailable?: InitializeAgentParams['codeEnvAvailable'];
   /** Sibling of `codeEnvAvailable` — the `stateful_code_sessions` capability flag, forwarded to every handoff `initializeAgent`. */
   statefulSessionsAvailable?: InitializeAgentParams['statefulSessionsAvailable'];
+  /** Deployment policy for stateful workspace scopes, forwarded unchanged to every referenced agent. */
+  allowedStatefulCodeEnvironments?: InitializeAgentParams['allowedStatefulCodeEnvironments'];
   /**
    * Run-level inline memory availability gate. Forwarded verbatim to every
    * handoff agent so sub-agents that list the `memory` capability expand the
@@ -147,6 +165,212 @@ export interface DiscoverConnectedAgentsResult {
   userMCPAuthMap?: Record<string, Record<string, string>>;
 }
 
+export type GraphSubagentHostConfig = InitializedAgent & {
+  subagentGraphConfigs?: Array<{
+    definition: AgentSubagentGraph;
+    memberConfigs: InitializedAgent[];
+  }>;
+};
+
+export interface ResolveSubagentGraphsParams extends DiscoverConnectedAgentsParams {
+  /** Top-level primary/handoff configs whose saved graph spawn targets should be resolved. */
+  rootConfigs: GraphSubagentHostConfig[];
+}
+
+async function initializeReferencedAgent(
+  agentId: string,
+  params: DiscoverConnectedAgentsParams,
+  deps: DiscoverConnectedAgentsDeps,
+): Promise<{ agent: Agent; config: InitializedAgent } | null> {
+  const agent = await deps.getAgent({ id: agentId });
+  if (!agent) {
+    logger.warn(`[initializeReferencedAgent] Agent ${agentId} not found, skipping`);
+    deps.onAgentSkipped?.(agentId);
+    return null;
+  }
+
+  const userId = params.req.user?.id;
+  if (!userId) {
+    logger.warn(`[initializeReferencedAgent] No authenticated user, skipping agent ${agentId}`);
+    deps.onAgentSkipped?.(agentId);
+    return null;
+  }
+
+  const hasAccess = await deps.checkPermission({
+    userId,
+    role: params.req.user?.role,
+    resourceType: params.resourceType ?? ResourceType.AGENT,
+    resourceId: agent._id,
+    requiredPermission: PermissionBits.VIEW,
+  });
+  if (!hasAccess) {
+    logger.warn(`[initializeReferencedAgent] User ${userId} lacks VIEW access to agent ${agentId}`);
+    deps.onAgentSkipped?.(agentId);
+    return null;
+  }
+
+  const validateAgentModel = deps.validateAgentModel ?? defaultValidateAgentModel;
+  const validation = await validateAgentModel({
+    req: params.req,
+    res: params.res,
+    agent,
+    modelsConfig: params.modelsConfig,
+    logViolation: deps.logViolation,
+  });
+  if (!validation.isValid) {
+    throw new Error(validation.error?.message);
+  }
+
+  const scopedSkillIds = params.computeAccessibleSkillIds?.(agent);
+  const initializeAgent = deps.initializeAgent ?? defaultInitializeAgent;
+  const config = await initializeAgent(
+    {
+      req: params.req,
+      res: params.res,
+      agent,
+      loadTools: params.loadTools,
+      requestFiles: params.requestFiles,
+      conversationId: params.conversationId,
+      parentMessageId: params.parentMessageId,
+      requestBody: params.requestBody,
+      endpointOption: {
+        ...(params.endpointOption ?? {}),
+        endpoint: EModelEndpoint.agents,
+      },
+      allowedProviders: params.allowedProviders,
+      accessibleSkillIds: scopedSkillIds,
+      skillAuthoringAvailable: params.computeSkillAuthoringAvailable?.(agent, scopedSkillIds),
+      skillStates: params.skillStates,
+      defaultActiveOnShare: params.defaultActiveOnShare,
+      codeEnvAvailable: params.codeEnvAvailable,
+      backgroundToolsAvailable: params.backgroundToolsAvailable,
+      toolIntentsAvailable: params.toolIntentsAvailable,
+      statefulSessionsAvailable: params.statefulSessionsAvailable,
+      allowedStatefulCodeEnvironments: params.allowedStatefulCodeEnvironments,
+      memoryAvailable: params.memoryAvailable,
+    },
+    deps.db,
+  );
+  deps.onAgentInitialized?.(agentId, agent, config);
+  return { agent, config };
+}
+
+/** Resolves saved graph spawn targets without promoting graph-only members to top-level nodes. */
+export async function resolveSubagentGraphs(
+  params: ResolveSubagentGraphsParams,
+  deps: DiscoverConnectedAgentsDeps,
+): Promise<Record<string, Record<string, string>> | undefined> {
+  const configById = new Map(params.rootConfigs.map((config) => [config.id, config]));
+  const attemptedGraphMemberIds = new Set<string>();
+  const failedMemberIds = new Set<string>();
+  const loadGraphMember = createConcurrencyLimiter(SUBAGENT_GRAPH_LOAD_CONCURRENCY);
+  let userMCPAuthMap: Record<string, Record<string, string>> | undefined;
+  for (const config of params.rootConfigs) {
+    if (config.userMCPAuthMap) {
+      userMCPAuthMap = { ...userMCPAuthMap, ...config.userMCPAuthMap };
+    }
+  }
+
+  for (const rootConfig of params.rootConfigs) {
+    const resolvedGraphs: NonNullable<GraphSubagentHostConfig['subagentGraphConfigs']> = [];
+    for (const definition of rootConfig.subagents?.enabled === true
+      ? (rootConfig.subagents.graphs ?? [])
+      : []) {
+      const memberIds = [...new Set(definition.agent_ids)];
+      const newMemberIds = memberIds.filter(
+        (memberId) => !configById.has(memberId) && !attemptedGraphMemberIds.has(memberId),
+      );
+      if (attemptedGraphMemberIds.size + newMemberIds.length > MAX_SUBAGENT_GRAPH_NODES) {
+        logger.warn('[resolveSubagentGraphs] Subagent graph node limit exceeded', {
+          parentAgentId: rootConfig.id,
+          graphType: definition.type,
+          loadedSubagentCount: attemptedGraphMemberIds.size,
+          stagedSubagentCount: newMemberIds.length,
+          maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+        });
+        continue;
+      }
+      for (const memberId of newMemberIds) {
+        attemptedGraphMemberIds.add(memberId);
+      }
+
+      const resolvedMembers = await Promise.all(
+        memberIds.map((memberId) => {
+          const existing = configById.get(memberId);
+          if (existing) {
+            return Promise.resolve({ config: existing });
+          }
+          if (failedMemberIds.has(memberId)) {
+            return Promise.resolve(null);
+          }
+          return loadGraphMember(async () => {
+            try {
+              const resolved = await initializeReferencedAgent(memberId, params, {
+                ...deps,
+                onAgentInitialized: undefined,
+              });
+              if (!resolved) {
+                failedMemberIds.add(memberId);
+              }
+              return resolved;
+            } catch (error) {
+              if (isFatalAgentInitializationError(error)) {
+                throw error;
+              }
+              failedMemberIds.add(memberId);
+              logger.error(
+                `[resolveSubagentGraphs] Error processing graph member ${memberId}:`,
+                error,
+              );
+              deps.onAgentSkipped?.(memberId);
+              return null;
+            }
+          });
+        }),
+      );
+      for (let index = 0; index < memberIds.length; index++) {
+        const resolvedMember = resolvedMembers[index];
+        if (!resolvedMember) {
+          continue;
+        }
+        const memberId = memberIds[index];
+        configById.set(memberId, resolvedMember.config);
+        if (resolvedMember.config.userMCPAuthMap) {
+          userMCPAuthMap = {
+            ...userMCPAuthMap,
+            ...resolvedMember.config.userMCPAuthMap,
+          };
+        }
+        if ('agent' in resolvedMember) {
+          deps.onAgentInitialized?.(memberId, resolvedMember.agent, resolvedMember.config);
+        }
+      }
+      if (resolvedMembers.some((member) => member == null)) {
+        logger.warn('[resolveSubagentGraphs] Skipping incomplete graph subagent', {
+          parentAgentId: rootConfig.id,
+          graphType: definition.type,
+          expectedMemberCount: memberIds.length,
+          resolvedMemberCount: resolvedMembers.filter(Boolean).length,
+        });
+        continue;
+      }
+      const memberConfigs: InitializedAgent[] = [];
+      for (let index = 0; index < memberIds.length; index++) {
+        const resolvedMember = resolvedMembers[index] as {
+          config: InitializedAgent;
+        };
+        memberConfigs.push(resolvedMember.config);
+      }
+      resolvedGraphs.push({
+        definition,
+        memberConfigs,
+      });
+    }
+    rootConfig.subagentGraphConfigs = resolvedGraphs;
+  }
+  return userMCPAuthMap;
+}
+
 /**
  * Discovers and initializes all agents reachable from `primaryConfig.edges`
  * via BFS. This is the shared graph-topology discovery logic that enables
@@ -162,40 +386,8 @@ export async function discoverConnectedAgents(
   params: DiscoverConnectedAgentsParams,
   deps: DiscoverConnectedAgentsDeps,
 ): Promise<DiscoverConnectedAgentsResult> {
-  const {
-    req,
-    res,
-    primaryConfig,
-    agent_ids,
-    endpointOption,
-    allowedProviders,
-    modelsConfig,
-    loadTools,
-    requestFiles,
-    conversationId,
-    parentMessageId,
-    resourceType = ResourceType.AGENT,
-    computeAccessibleSkillIds,
-    computeSkillAuthoringAvailable,
-    skillStates,
-    defaultActiveOnShare,
-    codeEnvAvailable,
-    backgroundToolsAvailable,
-    toolIntentsAvailable,
-    statefulSessionsAvailable,
-    memoryAvailable,
-  } = params;
-
-  const {
-    getAgent,
-    checkPermission,
-    logViolation,
-    db,
-    onAgentInitialized,
-    onAgentSkipped,
-    initializeAgent = defaultInitializeAgent,
-    validateAgentModel = defaultValidateAgentModel,
-  } = deps;
+  const { primaryConfig, agent_ids } = params;
+  const { onAgentSkipped } = deps;
 
   const agentConfigs = new Map<string, InitializedAgent>();
   const skippedAgentIds = new Set<string>();
@@ -210,90 +402,14 @@ export async function discoverConnectedAgents(
   };
 
   const processAgent = async (agentId: string): Promise<Agent | null> => {
-    const agent = await getAgent({ id: agentId });
-    if (!agent) {
-      logger.warn(
-        `[discoverConnectedAgents] Handoff agent ${agentId} not found, skipping (orphaned reference)`,
-      );
-      markSkipped(agentId);
-      return null;
-    }
-
-    const userId = req.user?.id;
-    if (!userId) {
-      logger.warn(
-        `[discoverConnectedAgents] No authenticated user on request, skipping handoff agent ${agentId}`,
-      );
-      markSkipped(agentId);
-      return null;
-    }
-
-    const hasAccess = await checkPermission({
-      userId,
-      role: req.user?.role,
-      resourceType,
-      resourceId: agent._id,
-      requiredPermission: PermissionBits.VIEW,
+    const loaded = await initializeReferencedAgent(agentId, params, {
+      ...deps,
+      onAgentSkipped: markSkipped,
     });
-
-    if (!hasAccess) {
-      logger.warn(
-        `[discoverConnectedAgents] User ${userId} lacks VIEW access to handoff agent ${agentId}, skipping`,
-      );
-      markSkipped(agentId);
+    if (!loaded) {
       return null;
     }
-
-    const validation = await validateAgentModel({
-      req,
-      res,
-      agent,
-      modelsConfig,
-      logViolation,
-    });
-
-    if (!validation.isValid) {
-      throw new Error(validation.error?.message);
-    }
-
-    /**
-     * Force `endpoint: agents` on the per-sub-agent init call so
-     * `initializeAgent`'s `isAgentsEndpoint`-gated `allowedProviders`
-     * check always fires for handoff sub-agents, regardless of which
-     * endpoint the caller entered through. Without this, the OpenAI-
-     * compat routes (whose `endpointOption.endpoint` is the primary
-     * provider, not `agents`) would silently bypass the provider
-     * allowlist configured under `endpoints.agents.allowedProviders`.
-     */
-    const subAgentEndpointOption: Partial<TEndpointOption> = {
-      ...(endpointOption ?? {}),
-      endpoint: EModelEndpoint.agents,
-    };
-
-    const scopedSkillIds = computeAccessibleSkillIds?.(agent);
-    const config = await initializeAgent(
-      {
-        req,
-        res,
-        agent,
-        loadTools,
-        requestFiles,
-        conversationId,
-        parentMessageId,
-        endpointOption: subAgentEndpointOption,
-        allowedProviders,
-        accessibleSkillIds: scopedSkillIds,
-        skillAuthoringAvailable: computeSkillAuthoringAvailable?.(agent, scopedSkillIds),
-        skillStates,
-        defaultActiveOnShare,
-        codeEnvAvailable,
-        backgroundToolsAvailable,
-        toolIntentsAvailable,
-        statefulSessionsAvailable,
-        memoryAvailable,
-      },
-      db,
-    );
+    const { agent, config } = loaded;
 
     if (userMCPAuthMap != null) {
       Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
@@ -305,7 +421,6 @@ export async function discoverConnectedAgents(
     }
 
     agentConfigs.set(agentId, config);
-    onAgentInitialized?.(agentId, agent, config);
     return agent;
   };
 
@@ -368,12 +483,11 @@ export async function discoverConnectedAgents(
   const filteredEdges = filterOrphanedEdges(preFilterEdges, skippedAgentIds);
 
   /**
-   * Keep discovery's reachability model aligned with the agents SDK's
-   * runtime semantics. `MultiAgentGraph.createWorkflow` adds one
-   * LangGraph edge per `from` source, so a multi-source edge
-   * `{ from: ['A', 'B'], to: 'C' }` is really `A -> C` OR `B -> C` —
-   * either source firing routes to `C`. Reachability therefore advances
-   * through an edge whenever ANY of its sources is already reachable.
+   * Discovery computes structural reachability before compiling the SDK
+   * graph. A multi-source direct edge is an all-source runtime barrier, but
+   * discovery deliberately advances when any surviving source is reachable:
+   * inaccessible/orphaned sources are removed below, reducing the barrier to
+   * the branches the caller can actually run.
    *
    * Two semantics to reconcile when pruning after orphan-filter:
    *
@@ -414,7 +528,7 @@ export async function discoverConnectedAgents(
    *   - Agents referenced as an endpoint in a surviving edge are always
    *     kept (a multi-source edge co-source like B in
    *     `{ from: ['A','B'], to: 'C' }` where nothing reaches B still
-   *     needs B present for the SDK's per-source `addEdge` to compile).
+   *     needs B present for the SDK waiting barrier to compile).
    */
   const anyReachable = (value: string | string[], reachableSet: Set<string>): boolean => {
     const ids = Array.isArray(value) ? value : [value];
@@ -480,13 +594,12 @@ export async function discoverConnectedAgents(
    *   crash `StateGraph.compile` with `Found edge ending at unknown
    *   node`).
    * - For kept edges with an array `from`, strip out unreachable
-   *   co-sources. The SDK's per-source `addEdge` fires independently
-   *   (each source becomes its own `addEdge(source, dest)` call), so
-   *   losing an unreachable co-source doesn't invalidate the routes
-   *   through the surviving ones. Leaving the dead co-source in the
-   *   array was propping up agents that `reachable` had already
-   *   excluded — in `MultiAgentGraph.analyzeGraph` they'd then show up
-   *   as incoming-less nodes and execute as unintended parallel roots.
+   *   co-sources. The SDK represents a multi-source direct edge as a
+   *   synchronization barrier, so retaining a source that was pruned
+   *   would leave the destination waiting forever. Removing dead sources
+   *   preserves the barrier across the remaining reachable branches and
+   *   prevents pruned agents from reappearing as unintended parallel roots
+   *   during `MultiAgentGraph.analyzeGraph`.
    *
    * After sanitization every endpoint in every surviving edge is
    * guaranteed to be in `reachable`, which lets the agent prune below

@@ -1,6 +1,6 @@
 {
   "name": "@librechat/client",
-  "version": "0.4.63",
+  "version": "0.4.76",
   "description": "React components for LibreChat",
   "repository": {
     "type": "git",
@@ -20,11 +20,13 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./tailwind-preset": "./tailwind.preset.cjs",
     "./style.css": "./dist/style.css",
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "tailwind.preset.cjs"
   ],
   "scripts": {
     "clean": "rimraf dist",
@@ -52,6 +54,7 @@
     "@radix-ui/react-hover-card": "^1.0.5",
     "@radix-ui/react-icons": "^1.3.0",
     "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-popover": "^1.0.7",
     "@radix-ui/react-progress": "^1.1.2",
     "@radix-ui/react-radio-group": "^1.3.7",
     "@radix-ui/react-select": "^2.2.5",
@@ -61,6 +64,7 @@
     "@radix-ui/react-switch": "^1.2.5",
     "@radix-ui/react-tabs": "^1.0.3",
     "@radix-ui/react-toast": "^1.1.5",
+    "@rc-component/mini-decimal": "^1.0.1",
     "@react-spring/web": "^10.0.1",
     "@tanstack/react-query": "^4.28.0 || ^5.0.0",
     "@tanstack/react-table": "^8.11.7",
@@ -112,6 +116,7 @@
     "react-dom": "^18.2.0",
     "react-i18next": "^15.4.0",
     "rimraf": "^6.1.3",
+    "tailwindcss": "^3.4.1",
     "tailwindcss-radix": "^2.8.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.3"

@@ -1,4 +1,5 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { OGDialog, OGDialogContent, OGDialogTitle } from './OriginalDialog';
 import ControlCombobox from './ControlCombobox';
 
 type CapturedObserver = {
@@ -195,5 +196,70 @@ describe('ControlCombobox popover sizing', () => {
     });
 
     expect(getPopoverWidth()).toBe('275px');
+  });
+
+  it('filters listed options when the search field is typed in', () => {
+    render(
+      <ControlCombobox
+        selectedValue="a"
+        displayValue="Option A"
+        items={items}
+        setValue={() => undefined}
+        ariaLabel="Test combobox"
+        searchPlaceholder="Search projects"
+        isCollapsed={false}
+        showCarat
+      />,
+    );
+    openPopover();
+
+    const search = screen.getByPlaceholderText('Search projects');
+    fireEvent.change(search, { target: { value: 'Option B' } });
+
+    expect(screen.getByRole('option', { name: 'Option B' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Option A' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ControlCombobox portal placement', () => {
+  const renderInDialog = (portal: boolean) =>
+    render(
+      <OGDialog open>
+        <OGDialogContent>
+          <OGDialogTitle>Change project</OGDialogTitle>
+          <ControlCombobox
+            selectedValue="a"
+            displayValue="Option A"
+            items={items}
+            setValue={() => undefined}
+            ariaLabel="Test combobox"
+            searchPlaceholder="Search projects"
+            isCollapsed={false}
+            showCarat
+            portal={portal}
+          />
+        </OGDialogContent>
+      </OGDialog>,
+    );
+
+  it('portals to the document by default so existing dialogs keep their current placement', () => {
+    renderInDialog(true);
+    openPopover();
+
+    const dialog = screen.getByRole('dialog', { name: 'Change project' });
+    expect(dialog.contains(screen.getByPlaceholderText('Search projects'))).toBe(false);
+  });
+
+  it('keeps the popover inside the dialog when portal is false, so its search field stays typeable', () => {
+    renderInDialog(false);
+    openPopover();
+
+    const dialog = screen.getByRole('dialog', { name: 'Change project' });
+    const search = screen.getByPlaceholderText('Search projects');
+    expect(dialog.contains(search)).toBe(true);
+
+    fireEvent.change(search, { target: { value: 'Option B' } });
+    expect(screen.getByRole('option', { name: 'Option B' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Option A' })).not.toBeInTheDocument();
   });
 });

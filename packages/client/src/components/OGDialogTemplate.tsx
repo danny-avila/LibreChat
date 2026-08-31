@@ -121,7 +121,7 @@ const OGDialogTemplate: ForwardRefExoticComponent<
       overlayClassName={overlayClassName}
       showCloseButton={showCloseButton}
       ref={ref}
-      className={cn('w-11/12 border-none bg-surface-primary text-text-primary', className ?? '')}
+      className={cn('w-11/12 border-none bg-surface-dialog text-text-primary', className ?? '')}
       onClick={(e) => e.stopPropagation()}
     >
       <OGDialogHeader className={cn(headerClassName ?? '')}>

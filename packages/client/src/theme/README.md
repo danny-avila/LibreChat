@@ -1,5 +1,36 @@
 # Dynamic Theme System for @librechat/client
 
+## Versioned theme definitions
+
+New themes should use the versioned `ThemeDefinition` interface. Definitions are data-only, may
+provide separate light and dark overrides, and resolve missing values against LibreChat's bundled
+defaults before any CSS variables are applied.
+
+```tsx
+const compactTheme: ThemeDefinition = {
+  version: 1,
+  name: 'compact',
+  modes: {
+    light: {
+      appearance: {
+        controlRadius: '0.25rem',
+        roundControlRadius: '9999px',
+        surfaceRadius: '0.5rem',
+        largeSurfaceRadius: '0.75rem',
+        controlHeight: '2rem',
+      },
+    },
+  },
+};
+
+<ThemeProvider themeDefinition={compactTheme}>{children}</ThemeProvider>;
+```
+
+The initial appearance registry intentionally covers only shared control shape, surface shape,
+control height, compact/normal spacing, UI typography, surface elevation, and fast/normal motion.
+`themeRGB`, `REACT_APP_THEME_*`, and the existing localStorage keys remain supported through legacy
+adapters. Theme application removes only variables owned by the theme module when a theme is reset.
+
 This theme system allows you to dynamically change colors in your React application using CSS variables and Tailwind CSS. It combines dark/light mode switching with dynamic color theming capabilities.
 
 ## Table of Contents
@@ -42,9 +73,10 @@ The theme system operates in three layers:
 
 ### Custom Theme Behavior
 
-- Only applies when `themeRGB` prop is provided
+- Prefer the versioned `themeDefinition` prop; the legacy `themeRGB` prop remains supported
 - Overrides CSS variables with bare `R G B` channel triplets
-- Maintains compatibility with existing CSS
+- Resolves missing `themeDefinition` values against the bundled light/dark defaults
+- Leaves colors omitted by legacy `themeRGB` unset so consumer CSS continues to cascade
 
 ## Basic Usage
 
@@ -109,7 +141,10 @@ itself: `color: rgb(var(--text-primary));`.
 Update your `tailwind.config.js`:
 
 ```js
+const libreChatTailwindPreset = require('@librechat/client/tailwind-preset');
+
 module.exports = {
+  presets: [libreChatTailwindPreset],
   content: [
     './src/**/*.{js,jsx,ts,tsx}',
     // Include component library files
@@ -129,6 +164,10 @@ module.exports = {
   },
 };
 ```
+
+The published preset supplies the semantic appearance utilities used by theme-aware component
+variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compact`, and
+`duration-theme-fast`. Keep the preset enabled even when defining additional project utilities.
 
 ### 5. Use Theme Colors in Components
 
@@ -389,7 +428,7 @@ This format allows Tailwind to apply opacity modifiers like `bg-surface-primary/
 #### 1. Colors Not Applying
 
 - **Issue**: Custom theme colors aren't showing
-- **Solution**: Ensure you're passing the `themeRGB` prop to ThemeProvider
+- **Solution**: Pass a valid `themeDefinition`, or use the legacy `themeRGB` prop for color-only overrides
 - **Check**: CSS variables in DevTools should show a bare `R G B` triplet
 
 #### 2. Circular Reference Errors
@@ -502,7 +541,14 @@ function App() {
 }
 ```
 
-**Important**: Props passed to ThemeProvider will override stored values on initial mount. Only pass props when you explicitly want to override the user's saved preferences.
+**Important**: The `themeDefinition`, `themeRGB`, and `themeName` props override stored values and
+remain synchronized when they change. Only pass theme props when the parent should control those
+values; otherwise use the context setters and allow stored preferences to remain authoritative.
+
+Set `persistThemeDefinition={false}` when a parent controls a deployment or embedded theme that
+must not replace the user's stored theme definition, legacy colors, name, or source. Appearance
+mode changes remain independently persisted through `color-theme`; leave `initialTheme` undefined
+when the stored light, dark, or system preference should remain authoritative.
 
 ## Contributing
 

@@ -58,7 +58,7 @@ export default function SelectedPrincipalsList({
           return (
             <div
               key={share.idOnTheSource + '-principalList'}
-              className="flex items-center justify-between rounded-2xl border border-border-light bg-surface-primary p-3"
+              className="flex flex-col gap-3 rounded-xl border border-border-light bg-transparent p-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <PrincipalAvatar principal={share} size="md" />
@@ -77,7 +77,7 @@ export default function SelectedPrincipalsList({
                 </div>
               </div>
 
-              <div className="flex flex-shrink-0 items-center gap-2">
+              <div className="flex w-full flex-shrink-0 items-center justify-end gap-2 sm:w-auto">
                 {lockOwner ? (
                   <span className="px-3 py-2 text-sm font-medium text-text-secondary">
                     {localize('com_ui_role_owner')}

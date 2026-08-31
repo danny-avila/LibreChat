@@ -6,6 +6,7 @@ import type { FocusEvent, FC } from 'react';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
+import { AnimatedText } from '../animate';
 import { cn } from '~/utils';
 
 /**
@@ -14,12 +15,15 @@ import { cn } from '~/utils';
  */
 export const ThinkingContent: FC<{
   children: React.ReactNode;
-}> = memo(({ children }) => {
+  animate?: boolean;
+}> = memo(({ children, animate = false }) => {
   const fontSize = useAtomValue(fontSizeAtom);
+  const content =
+    animate && typeof children === 'string' ? <AnimatedText text={children} /> : children;
 
   return (
     <div className="relative rounded-lg border border-border-light bg-surface-secondary p-3 pb-8 text-text-secondary">
-      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
+      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{content}</p>
     </div>
   );
 });
@@ -37,6 +41,7 @@ export const ThinkingButton = memo(
     content,
     contentId,
     showCopyButton = true,
+    animateLabel = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -44,6 +49,7 @@ export const ThinkingButton = memo(
     content?: string;
     contentId: string;
     showCopyButton?: boolean;
+    animateLabel?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -87,7 +93,16 @@ export const ThinkingButton = memo(
               aria-hidden="true"
             />
           </span>
-          {label}
+          <span
+            key={label}
+            className={cn(
+              'min-w-0 truncate text-left',
+              animateLabel &&
+                'duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none',
+            )}
+          >
+            {label}
+          </span>
         </button>
         {content && showCopyButton && (
           <Button
@@ -124,6 +139,29 @@ export const ThinkingButton = memo(
     );
   },
 );
+
+/**
+ * ThinkingLabel - Non-interactive variant of the ThinkingButton header row,
+ * for reasoning that happened but whose text is not available to this view
+ * (detached subagent projections retain only a marker). Keeps the reasoning
+ * presentation identical across surfaces without offering an empty disclosure.
+ */
+export const ThinkingLabel = memo(({ label, title }: { label: string; title?: string }) => {
+  const fontSize = useAtomValue(fontSizeAtom);
+  return (
+    <div className="mb-2 pb-2 pt-2">
+      <div
+        className={cn('flex w-full items-center justify-start leading-[18px]', fontSize)}
+        title={title}
+      >
+        <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+          <Lightbulb className="icon-sm text-text-secondary" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 truncate text-left text-text-secondary">{label}</span>
+      </div>
+    </div>
+  );
+});
 
 /**
  * FloatingThinkingBar - Floating bar with expand/collapse and copy buttons
@@ -333,6 +371,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
 ThinkingButton.displayName = 'ThinkingButton';
 ThinkingContent.displayName = 'ThinkingContent';
+ThinkingLabel.displayName = 'ThinkingLabel';
 FloatingThinkingBar.displayName = 'FloatingThinkingBar';
 Thinking.displayName = 'Thinking';
 

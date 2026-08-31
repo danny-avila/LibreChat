@@ -1,7 +1,12 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { PermissionTypes, Permissions, AgentCapabilities } from 'librechat-data-provider';
+import {
+  PermissionTypes,
+  Permissions,
+  AgentCapabilities,
+  removeCodeExecutionCaller,
+} from 'librechat-data-provider';
 import {
   Label,
   Switch,
@@ -30,6 +35,7 @@ import { useLocalize, useHasAccess } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers';
 import { isEphemeralAgent, ESide } from '~/common';
 import ItemDialog from './ItemDialog/ItemDialog';
+import { mcpAllToken } from './items/selectors';
 import { InfoTrigger } from '../Advanced/ui';
 import { Collapse } from '~/components/ui';
 import SkillsDialog from './SkillsDialog';
@@ -51,7 +57,8 @@ export default function ToolsSection({ agentId }: Props) {
 
   const { control, getValues, setValue } = useFormContext<AgentForm>();
   const { agentsConfig, regularTools, mcpServersMap } = useAgentPanelContext();
-  const { removeTool: removeMCPTool } = useRemoveMCPTool();
+  const mcpServerNames = useMemo(() => Array.from(mcpServersMap?.keys() ?? []), [mcpServersMap]);
+  const { removeTool: removeMCPTool } = useRemoveMCPTool({ serverNames: mcpServerNames });
   const deleteAgentAction = useDeleteAgentAction({
     onSuccess: () => {
       showToast({
@@ -151,6 +158,11 @@ export default function ToolsSection({ agentId }: Props) {
       switch (patch.type) {
         case 'builtin':
           setValue(patch.field as keyof AgentForm, patch.value as never, { shouldDirty: true });
+          if (patch.field === AgentCapabilities.execute_code && patch.value === false) {
+            setValue('tool_options', removeCodeExecutionCaller(getValues('tool_options')), {
+              shouldDirty: true,
+            });
+          }
           break;
         case 'tool-remove': {
           const current = (getValues('tools') ?? []) as string[];
@@ -253,7 +265,9 @@ export default function ToolsSection({ agentId }: Props) {
         item.kind === 'mcp'
           ? {
               ...item,
-              toolCount: (item.server.tools ?? []).filter((t) => enabled.has(t.tool_id)).length,
+              toolCount: enabled.has(mcpAllToken(item.id))
+                ? (item.server.tools ?? []).length
+                : (item.server.tools ?? []).filter((t) => enabled.has(t.tool_id)).length,
             }
           : item,
       );

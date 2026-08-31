@@ -1,7 +1,44 @@
+import type { TMessageContentParts } from './types/assistants';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
+import { ContentTypes } from './types/runs';
+
+/** A generated reasoning title describes the text as it existed at generation time.
+ *  Any manual edit or merge into a different reasoning step invalidates the entire
+ *  title revision domain while preserving unrelated content metadata. */
+export function stripReasoningLabelMetadata(part: TMessageContentParts): TMessageContentParts {
+  if (part.type !== ContentTypes.THINK) {
+    return part;
+  }
+  const {
+    reasoning_label: _label,
+    reasoning_label_step_id: _stepId,
+    reasoning_label_attempts: _attempts,
+    reasoning_label_submitted_chars: _submittedChars,
+    reasoning_label_revision: _revision,
+    reasoning_label_status: _status,
+    ...unlabeledPart
+  } = part;
+  return unlabeledPart;
+}
 
 export type ParentMessage = TMessage & { children: TMessage[]; depth: number };
+
+/**
+ * Memoizes built trees per messages-array identity. The same query data feeds
+ * several independent `select`s (ChatView plus the branch-tail helpers), which
+ * used to rebuild the full tree five times per cache write. Exactly two slots
+ * per array — the bare tree and the tree for the LATEST fileMap identity — so
+ * a long-lived cached conversation cannot accumulate a tree per historical
+ * file-map; entries die with the messages array itself.
+ */
+type TreeCacheEntry = {
+  bare?: TMessage[];
+  fileMap?: Record<string, TFile>;
+  hydrated?: TMessage[];
+};
+const treeCache = new WeakMap<(TMessage | undefined)[], TreeCacheEntry>();
+
 /**
  * Builds the render tree from the flat messages array. Order-robust: live
  * stream/steer/preempt cache writes can momentarily place a child before its
@@ -19,6 +56,16 @@ export function buildTree({
 }) {
   if (messages === null) {
     return null;
+  }
+
+  const cached = treeCache.get(messages);
+  if (cached) {
+    if (fileMap == null && cached.bare) {
+      return cached.bare;
+    }
+    if (fileMap != null && cached.fileMap === fileMap && cached.hydrated) {
+      return cached.hydrated;
+    }
   }
 
   const messageMap: Record<string, ParentMessage> = {};
@@ -95,5 +142,16 @@ export function buildTree({
     }
   }
 
-  return rootMessages as TMessage[];
+  const tree = rootMessages as TMessage[];
+  const entry = cached ?? {};
+  if (fileMap == null) {
+    entry.bare = tree;
+  } else {
+    entry.fileMap = fileMap;
+    entry.hydrated = tree;
+  }
+  if (!cached) {
+    treeCache.set(messages, entry);
+  }
+  return tree;
 }

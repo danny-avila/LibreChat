@@ -24,10 +24,10 @@ function setup(
   const setters: {
     setRunEnd?: (value: RunEnd | null) => void;
     setIsSubmitting?: (value: boolean) => void;
-    setQueue?: (value: { id: string; text: string; createdAt: number }[]) => void;
-    setNewConvoQueue?: (value: { id: string; text: string; createdAt: number }[]) => void;
+    setQueue?: (value: QueuedMessage[]) => void;
+    setNewConvoQueue?: (value: QueuedMessage[]) => void;
     setInterruptFlag?: (value: DrainAfterAbort | false) => void;
-    queueRef?: { current: { id: string; text: string; createdAt: number }[] };
+    queueRef?: { current: QueuedMessage[] };
   } = {};
 
   function Harness() {
@@ -66,7 +66,11 @@ const emptyOverrides = expect.objectContaining({
   overrideQueuedMessageOrigin: expect.any(Object),
 });
 
-const queuedMessage = (id: string, text: string) => ({ id, text, createdAt: Date.now() });
+const queuedMessage = (id: string, text: string) => ({
+  id,
+  text,
+  createdAt: Date.now(),
+});
 
 const runEnd = (overrides: Partial<RunEnd> = {}): RunEnd => ({
   conversationId: CONVO_ID,
@@ -95,6 +99,55 @@ describe('useQueueDrain', () => {
 
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith({ text: 'first follow-up' }, emptyOverrides);
+  });
+
+  it('does not locally drain or renew server-owned Agent rows', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          ...queuedMessage('q-server', 'the server starts this turn'),
+          files: [{ file_id: 'server-held-file' }],
+          clientRequestId: 'client-request-1',
+          server: { id: 'server-queue-1', status: 'queued', revision: 1 },
+        },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(ask).not.toHaveBeenCalled();
+    expect(mockMarkFilesUsage).not.toHaveBeenCalledWith({
+      file_ids: ['server-held-file'],
+    });
+  });
+
+  it('retains the terminal boundary until server authority releases a local successor', async () => {
+    const localSuccessor = queuedMessage('q-local', 'legacy successor');
+    const queue: QueuedMessage[] = [
+      {
+        ...queuedMessage('q-server', 'server-owned predecessor'),
+        server: { id: 'server-queue-1', status: 'queued', revision: 1 },
+      },
+      localSuccessor,
+    ];
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), queue);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(ask).not.toHaveBeenCalled();
+
+    act(() => {
+      setters.setQueue!([localSuccessor]);
+    });
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'legacy successor' }, emptyOverrides);
   });
 
   it('parks a mismatched signal instead of draining into the wrong conversation', async () => {
@@ -152,12 +205,18 @@ describe('useQueueDrain', () => {
   it('renews the TTL hold on attachments that stay queued', async () => {
     const { setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
-        { ...queuedMessage('q1', 'first'), files: [{ file_id: 'sent', type: 'image/png' }] },
+        {
+          ...queuedMessage('q1', 'first'),
+          files: [{ file_id: 'sent', type: 'image/png' }],
+        },
         {
           ...queuedMessage('q2', 'second'),
           files: [{ file_id: 'still-queued', type: 'image/png' }],
         },
-        { ...queuedMessage('q3', 'third'), files: [{ file_id: 'also-queued', type: 'image/png' }] },
+        {
+          ...queuedMessage('q3', 'third'),
+          files: [{ file_id: 'also-queued', type: 'image/png' }],
+        },
       ]);
     });
 
@@ -176,7 +235,10 @@ describe('useQueueDrain', () => {
   it('does not renew when nothing with attachments stays queued', async () => {
     const { setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
-        { ...queuedMessage('q1', 'only one'), files: [{ file_id: 'sent', type: 'image/png' }] },
+        {
+          ...queuedMessage('q1', 'only one'),
+          files: [{ file_id: 'sent', type: 'image/png' }],
+        },
       ]);
     });
 
@@ -193,7 +255,10 @@ describe('useQueueDrain', () => {
    *  enqueue-time hold. */
   it('renews every queued attachment across multiple capped batches', async () => {
     const manyFiles = (prefix: string, n: number) =>
-      Array.from({ length: n }, (_, i) => ({ file_id: `${prefix}-${i}`, type: 'image/png' }));
+      Array.from({ length: n }, (_, i) => ({
+        file_id: `${prefix}-${i}`,
+        type: 'image/png',
+      }));
     const { setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
         { ...queuedMessage('q1', 'first'), files: manyFiles('sent', 2) },
@@ -222,7 +287,10 @@ describe('useQueueDrain', () => {
   it('renews a restored item when the send is refused', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
-        { ...queuedMessage('q1', 'refused'), files: [{ file_id: 'restored', type: 'image/png' }] },
+        {
+          ...queuedMessage('q1', 'refused'),
+          files: [{ file_id: 'restored', type: 'image/png' }],
+        },
       ]);
     });
     ask.mockReturnValue(false);
@@ -243,7 +311,10 @@ describe('useQueueDrain', () => {
     try {
       setup(({ set }) => {
         set(store.queuedMessagesByConvoId(CONVO_ID), [
-          { ...queuedMessage('q1', 'waiting'), files: [{ file_id: 'held', type: 'image/png' }] },
+          {
+            ...queuedMessage('q1', 'waiting'),
+            files: [{ file_id: 'held', type: 'image/png' }],
+          },
         ]);
       });
 
@@ -287,10 +358,16 @@ describe('useQueueDrain', () => {
   it('renews the pre-migration NEW_CONVO queue alongside the active one', async () => {
     setup(({ set }) => {
       set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
-        { ...queuedMessage('n1', 'queued pre-migration'), files: [{ file_id: 'pending-migrate' }] },
+        {
+          ...queuedMessage('n1', 'queued pre-migration'),
+          files: [{ file_id: 'pending-migrate' }],
+        },
       ]);
       set(store.queuedMessagesByConvoId(CONVO_ID), [
-        { ...queuedMessage('q1', 'queued after'), files: [{ file_id: 'already-migrated' }] },
+        {
+          ...queuedMessage('q1', 'queued after'),
+          files: [{ file_id: 'already-migrated' }],
+        },
       ]);
     });
 
@@ -303,7 +380,10 @@ describe('useQueueDrain', () => {
   it('does not double-count the queue before migration', async () => {
     setup(({ set }) => {
       set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
-        { ...queuedMessage('n1', 'new convo'), files: [{ file_id: 'only-once' }] },
+        {
+          ...queuedMessage('n1', 'new convo'),
+          files: [{ file_id: 'only-once' }],
+        },
       ]);
     }, Constants.NEW_CONVO as string);
 
@@ -558,7 +638,12 @@ describe('useQueueDrain', () => {
         { id: 'ordinary-before-url', text: 'ordinary follow-up', createdAt: 1 },
       ]);
       set(store.queuedMessagesByConvoId(CONVO_ID), [
-        { id: 'interrupt-after-url', text: 'interrupt next', createdAt: 2, priority: true },
+        {
+          id: 'interrupt-after-url',
+          text: 'interrupt next',
+          createdAt: 2,
+          priority: true,
+        },
       ]);
       set(store.drainAfterAbortByIndex(INDEX), {
         conversationId: CONVO_ID,

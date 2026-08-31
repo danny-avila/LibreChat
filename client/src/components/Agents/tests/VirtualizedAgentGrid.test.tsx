@@ -160,10 +160,6 @@ jest.mock('~/hooks', () => ({
   },
 }));
 
-jest.mock('../SmartLoader', () => ({
-  useHasData: () => true,
-}));
-
 jest.mock('../AgentCard', () => {
   return function MockAgentCard({
     agent,
@@ -264,6 +260,21 @@ describe('VirtualizedAgentGrid', () => {
     const spinner = document.querySelector('.spinner');
     expect(spinner).toBeInTheDocument();
     expect(spinner).toHaveClass('h-8 w-8 text-text-primary');
+  });
+
+  it('retains cached agents while refetching', () => {
+    const useMarketplaceAgentsInfiniteQuery = (
+      jest.requireMock('~/data-provider/Agents') as MarketplaceAgentsMock
+    ).useMarketplaceAgentsInfiniteQuery;
+    useMarketplaceAgentsInfiniteQuery.mockImplementation(() =>
+      createMockInfiniteQuery({ isFetching: true }),
+    );
+
+    renderComponent();
+
+    expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-card-2')).toBeInTheDocument();
   });
 
   it('has proper accessibility attributes', () => {

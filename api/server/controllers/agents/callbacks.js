@@ -4,15 +4,18 @@ const {
   Tools,
   StepTypes,
   StepEvents,
+  ContentTypes,
   FileContext,
   ErrorTypes,
   UsageEvents,
+  getRunStepDurationMs,
 } = require('librechat-data-provider');
 const {
   GraphEvents,
   GraphNodeKeys,
   ToolEndHandler,
   createContentAggregator,
+  summarizeEvent,
 } = require('@librechat/agents');
 const {
   sendEvent,
@@ -28,6 +31,7 @@ const {
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
+const { preflightCodeOutputBatch } = require('~/server/services/Files/Code/preflight');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
 function isHostFileAuthoringArtifact(artifact) {
@@ -36,6 +40,46 @@ function isHostFileAuthoringArtifact(artifact) {
 
 function isCodeArtifactToolOutput(output) {
   return isCodeSessionToolName(output.name) || isHostFileAuthoringArtifact(output.artifact);
+}
+
+function addStatefulWorkspaceChange(attachment, artifact, executionProfile) {
+  if (!attachment || executionProfile !== 'stateful' || !isHostFileAuthoringArtifact(artifact)) {
+    return attachment;
+  }
+  const path =
+    typeof artifact.path === 'string' && artifact.path.length > 0
+      ? artifact.path
+      : attachment.filename;
+  if (typeof path !== 'string' || path.length === 0) {
+    return attachment;
+  }
+  attachment.workspaceChange = {
+    profile: 'stateful',
+    operation: artifact.created === true ? 'created' : 'updated',
+    path,
+  };
+  return attachment;
+}
+
+async function enqueueCodeOutputBatch({
+  req,
+  artifact,
+  artifactPromises,
+  codeExecutionContext,
+  processEntry,
+}) {
+  const entries = await preflightCodeOutputBatch({ req, artifact, codeExecutionContext });
+  let persistenceChain = Promise.resolve();
+  for (const entry of entries) {
+    const current = persistenceChain
+      .then(() => processEntry(entry))
+      .catch(() => {
+        logger.error('Error processing code output');
+        return null;
+      });
+    persistenceChain = current.then(() => undefined);
+    artifactPromises.push(current);
+  }
 }
 
 class ModelEndHandler {
@@ -106,20 +150,7 @@ class ModelEndHandler {
       if (!usage) {
         return this.finalize(errorMessage);
       }
-      const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
-      if (modelName) {
-        usage.model = modelName;
-      }
-      if (agentContext.provider) {
-        usage.provider = agentContext.provider;
-      }
-      /** Tag the producing agent so multi-endpoint graphs can price each call
-       *  with its own endpoint token config (recordCollectedUsage resolver). */
-      if (agentContext.agentId) {
-        usage.agentId = agentContext.agentId;
-      }
-
-      let taggedUsage = markSummarizationUsage(usage, metadata);
+      let taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
       /** Hidden intermediate sequential-agent calls are billed but never shown.
        *  Tag them non-primary on the COLLECTED usage too (not just the emit) so
        *  recordCollectedUsage excludes their output from the parent's tokenCount
@@ -351,13 +382,73 @@ function getDefaultHandlers({
   usageCost = null,
   contextUsageSink = null,
   usageEmitSink = null,
+  eventChildActivity = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
     );
   }
-  const emitForJob = (eventData) => emitEvent(res, streamId, eventData, jobCreatedAt);
+  const eventActivityPhases = {
+    [GraphEvents.ON_RUN_STEP]: 'run_step',
+    [GraphEvents.ON_RUN_STEP_DELTA]: 'run_step_delta',
+    [GraphEvents.ON_RUN_STEP_COMPLETED]: 'run_step_completed',
+    [GraphEvents.ON_RUN_STEP_CLOSED]: 'run_step_closed',
+    [GraphEvents.ON_MESSAGE_DELTA]: 'message_delta',
+    [GraphEvents.ON_REASONING_DELTA]: 'reasoning_delta',
+  };
+  /** Event tasks retain one logical task id across HITL resume, while each
+   * handler instance is a new generation invocation. Keep replay identity
+   * unique per invocation; the existing stream transport preserves order.
+   * Reusing a zero-based activitySequence here would make the client discard
+   * resumed frames as duplicates of the pre-pause generation. */
+  const eventActivityInvocationId = eventChildActivity == null ? null : nanoid();
+  let eventActivitySequence = 0;
+  let eventActivityPending = 0;
+  let eventActivityCircuitOpen = false;
+  let eventActivityTail = Promise.resolve();
+  const publishEventChildActivity = (eventData) => {
+    const phase = eventActivityPhases[eventData?.event];
+    if (
+      eventChildActivity == null ||
+      phase == null ||
+      eventActivityCircuitOpen ||
+      eventActivityPending >= 128
+    ) {
+      return;
+    }
+    const sequence = eventActivitySequence++;
+    eventActivityPending += 1;
+    const update = {
+      runId: eventChildActivity.runId,
+      parentRunId: eventChildActivity.parentRunId,
+      subagentRunId: eventChildActivity.subagentRunId,
+      subagentType: eventChildActivity.subagentType,
+      subagentKind: 'agent',
+      subagentAgentId: eventChildActivity.subagentAgentId,
+      parentAgentId: eventChildActivity.parentAgentId,
+      depth: 1,
+      ancestry: [],
+      phase,
+      data: eventData.data,
+      label: summarizeEvent(eventData.event, eventData.data),
+      timestamp: new Date().toISOString(),
+      activityEventId: `${eventChildActivity.subagentRunId}:${eventActivityInvocationId}:${sequence}`,
+    };
+    eventActivityTail = eventActivityTail
+      .then(() => eventChildActivity.publish(update))
+      .catch((error) => {
+        eventActivityCircuitOpen = true;
+        logger.warn('[getDefaultHandlers] Failed to publish event child activity', error);
+      })
+      .finally(() => {
+        eventActivityPending = Math.max(0, eventActivityPending - 1);
+      });
+  };
+  const emitForJob = (eventData) => {
+    publishEventChildActivity(eventData);
+    return emitEvent(res, streamId, eventData, jobCreatedAt);
+  };
   /**
    * Emit a token-usage event, attaching the authoritative per-event USD cost
    * when cost display is enabled. The backend is the single source of truth
@@ -427,6 +518,54 @@ function getDefaultHandlers({
         }
       },
     },
+    [GraphEvents.ON_RUN_STEP_CLOSED]: {
+      /**
+       * Handle ON_RUN_STEP_CLOSED event — the terminal signal for a run step.
+       *
+       * Stamped onto the aggregated part before it is forwarded. The SDK's
+       * `aggregateContent` has no notion of this event, so without stamping
+       * here the status would exist only on the live client message: a reload
+       * or a resumable reconnect would drop it and fall back to inferring
+       * "stopped" from `isSubmitting`, which is the behavior this fixes.
+       *
+       * Forwarded unconditionally, without the visibility gating the other
+       * step events apply — a step whose `on_run_step` reached the client must
+       * get its closure, or the client is left inferring again.
+       *
+       * @param {string} event - The event name.
+       * @param {RunStepClosedEvent} data - The event data.
+       */
+      handle: async (event, data) => {
+        const stepId = data?.id;
+        if (typeof stepId === 'string' && contentParts) {
+          /**
+           * Resolved through `stepMap` only. The event's own `index` is the
+           * SDK's, and the steer/HITL offset wrappers shift `ON_RUN_STEP` but
+           * pass closures through untouched — so falling back to it would
+           * stamp an unrelated part in any run containing an injection.
+           * Skipping is the safe failure here; a missing status degrades to
+           * the old heuristic, a misplaced one mislabels the wrong card.
+           */
+          const index = stepMap?.get(stepId)?.index;
+          const part = typeof index === 'number' ? contentParts[index] : undefined;
+          if (part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
+            part.tool_call.runStepStatus = data.status;
+            /**
+             * The raw derivable duration, left unset rather than zeroed when
+             * the event cannot support a trustworthy one — no `created_at`,
+             * or clocks that disagree. Whether it is *worth showing* is the
+             * renderer's call; persisting the fact unfiltered keeps that
+             * threshold adjustable without data loss.
+             */
+            const durationMs = getRunStepDurationMs(data);
+            if (durationMs != null) {
+              part.tool_call.runStepDurationMs = durationMs;
+            }
+          }
+        }
+        await emitForJob({ event, data });
+      },
+    },
     [GraphEvents.ON_RUN_STEP_DELTA]: {
       /**
        * Handle ON_RUN_STEP_DELTA event.
@@ -472,10 +611,14 @@ function getDefaultHandlers({
           });
         }
         aggregateContent({ event, data });
-        if (validationDetails != null) {
-          const runStep = stepMap?.get(data?.result?.id);
-          const toolCall = contentParts?.[runStep?.index]?.tool_call;
-          if (toolCall != null) {
+        const stepId = data?.result?.id;
+        const runStep = stepMap?.get(stepId);
+        const toolCall = contentParts?.[runStep?.index]?.tool_call;
+        if (toolCall != null) {
+          if (typeof stepId === 'string') {
+            toolCall.stepId = stepId;
+          }
+          if (validationDetails != null) {
             toolCall.inputValidationError = true;
           }
         }
@@ -887,106 +1030,90 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
       return;
     }
 
-    for (const file of output.artifact.files) {
-      /* `inherited` files are unchanged passthroughs of inputs the caller
-       * already owns (skill files, prior session inputs, inherited
-       * .dirkeep markers). Skip post-processing: re-downloading with the
-       * user's session key 403s when the file is entity-scoped, and the
-       * input is already persisted at its origin. They remain available
-       * to subsequent calls via primeInvokedSkills / session inheritance. */
-      if (file.inherited) {
-        continue;
-      }
-      const { id, name } = file;
-      const toolCallId = output.tool_call_id;
-      artifactPromises.push(
-        (async () => {
-          const result = await processCodeOutput({
-            req,
-            id,
-            name,
-            messageId: metadata.run_id,
-            toolCallId,
-            conversationId: metadata.thread_id,
-            /**
-             * Use the FILE's `storage_session_id` (storage session),
-             * not the top-level artifact `session_id` (exec session).
-             * The codeapi worker reports two distinct ids on a tool
-             * result:
-             *   - `artifact.session_id` is the EXEC session — the
-             *     sandbox VM that ran the bash command. Files don't
-             *     live there; it's torn down post-execution.
-             *   - `file.storage_session_id` is the STORAGE session —
-             *     the file-server bucket prefix where artifacts
-             *     actually live and are served from.
-             * `processCodeOutput` builds `/download/{session_id}/{id}`,
-             * so passing the exec id resolves to a path the file-server
-             * doesn't know about and 404s. Fall back to artifact-level
-             * for older worker payloads that may not populate per-file
-             * ids.
-             */
-            session_id: file.storage_session_id ?? output.artifact.session_id,
-          });
-          const fileMetadata = result?.file ?? null;
-          const finalize = result?.finalize;
-          if (!fileMetadata) {
-            return null;
-          }
-          /* Initial emit: ship the attachment to the client immediately
-           * (carries `status: 'pending'` for office buckets so the UI
-           * shows "preparing preview…"). The agent's response stops
-           * blocking on extraction here.
-           *
-           * Use the shared `isStreamWritable` predicate rather than the
-           * narrower `streamId || res.headersSent` check that lived
-           * here before — a client disconnect mid-stream
-           * (`res.writableEnded`) would otherwise hit `res.write` and
-           * raise `ERR_STREAM_WRITE_AFTER_END` (caught by the outer
-           * IIFE catch but logged as noise). Same gate the Responses
-           * path uses below. */
-          if (isStreamWritable(res, streamId)) {
-            writeAttachment(res, streamId, fileMetadata, jobCreatedAt);
-          }
-          /* Deferred preview rendering: extraction continues running
-           * even after the HTTP response closes. If the stream is still
-           * open when the preview resolves, push an `attachment`
-           * update event so the UI patches in place; otherwise React
-           * Query polling on `/api/files/:file_id/preview` picks it up.
-           *
-           * Spread the full updated record (mirroring the initial emit
-           * shape) and overlay `messageId`/`toolCallId` from the
-           * current run. The DB record preserves the original
-           * `messageId` across cross-turn filename reuse so
-           * `getCodeGeneratedFiles` can trace the file back to its
-           * original assistant message; routing the update SSE by the
-           * persisted id would land the patch on a stale message
-           * slot — turn-N's pending placeholder would stay stuck while
-           * turn-1's already-resolved attachment got re-merged.
-           * (Codex P1 review on PR #12957.) */
-          runPreviewFinalize({
-            finalize,
-            fileId: fileMetadata.file_id,
-            previewRevision: result?.previewRevision,
-            onResolved: (updated) => {
-              writeAttachmentUpdate(
-                res,
-                streamId,
-                {
-                  ...updated,
-                  messageId: metadata.run_id,
-                  toolCallId,
-                },
-                jobCreatedAt,
-              );
-            },
-          });
-          return fileMetadata;
-        })().catch((error) => {
-          logger.error('Error processing code output:', error);
+    const toolCallId = output.tool_call_id;
+    await enqueueCodeOutputBatch({
+      req,
+      artifact: output.artifact,
+      artifactPromises,
+      codeExecutionContext: metadata.codeExecutionContext,
+      processEntry: async ({ file, sessionId, preparedBuffer, downloadFallback }) => {
+        const result = await processCodeOutput({
+          req,
+          id: file.id,
+          name: file.name,
+          messageId: metadata.run_id,
+          toolCallId,
+          conversationId: metadata.thread_id,
+          session_id: sessionId,
+          codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
+          executionProfile: metadata.codeExecutionContext?.executionProfile,
+          executionRouteKey: metadata.codeExecutionContext?.executionRouteKey,
+          preparedBuffer,
+          downloadFallback,
+        });
+        const fileMetadata = addStatefulWorkspaceChange(
+          result?.file ?? null,
+          output.artifact,
+          metadata.codeExecutionContext?.executionProfile,
+        );
+        const finalize = result?.finalize;
+        if (!fileMetadata) {
           return null;
-        }),
-      );
-    }
+        }
+        /* Initial emit: ship the attachment to the client immediately
+         * (carries `status: 'pending'` for office buckets so the UI
+         * shows "preparing preview…"). The agent's response stops
+         * blocking on extraction here.
+         *
+         * Use the shared `isStreamWritable` predicate rather than the
+         * narrower `streamId || res.headersSent` check that lived
+         * here before — a client disconnect mid-stream
+         * (`res.writableEnded`) would otherwise hit `res.write` and
+         * raise `ERR_STREAM_WRITE_AFTER_END` (caught by the outer
+         * IIFE catch but logged as noise). Same gate the Responses
+         * path uses below. */
+        if (isStreamWritable(res, streamId)) {
+          writeAttachment(res, streamId, fileMetadata, jobCreatedAt);
+        }
+        /* Deferred preview rendering: extraction continues running
+         * even after the HTTP response closes. If the stream is still
+         * open when the preview resolves, push an `attachment`
+         * update event so the UI patches in place; otherwise React
+         * Query polling on `/api/files/:file_id/preview` picks it up.
+         *
+         * Spread the full updated record (mirroring the initial emit
+         * shape) and overlay `messageId`/`toolCallId` from the
+         * current run. The DB record preserves the original
+         * `messageId` across cross-turn filename reuse so
+         * `getCodeGeneratedFiles` can trace the file back to its
+         * original assistant message; routing the update SSE by the
+         * persisted id would land the patch on a stale message
+         * slot — turn-N's pending placeholder would stay stuck while
+         * turn-1's already-resolved attachment got re-merged.
+         * (Codex P1 review on PR #12957.) */
+        runPreviewFinalize({
+          finalize,
+          fileId: fileMetadata.file_id,
+          previewRevision: result?.previewRevision,
+          onResolved: (updated) => {
+            writeAttachmentUpdate(
+              res,
+              streamId,
+              {
+                ...updated,
+                messageId: metadata.run_id,
+                toolCallId,
+                ...(fileMetadata.workspaceChange
+                  ? { workspaceChange: fileMetadata.workspaceChange }
+                  : {}),
+              },
+              jobCreatedAt,
+            );
+          },
+        });
+        return fileMetadata;
+      },
+    });
   };
 }
 
@@ -1007,6 +1134,44 @@ function createAttachmentEmitter({ res, streamId = null, jobCreatedAt }) {
       return;
     }
     writeAttachment(res, streamId, attachment, jobCreatedAt);
+  };
+}
+
+/**
+ * Streams `on_ptc_tool_call` lifecycle events for the tool calls a
+ * programmatic tool-calling program makes from inside the sandbox. Those
+ * inner calls open no run step of their own, so without this the card shows
+ * a running spinner for the whole program with no sign of what it is doing.
+ *
+ * Fire-and-forget like the attachment emitter: a closed stream drops the
+ * event rather than failing the tool call that produced it.
+ *
+ * @param {Object} params
+ * @param {ServerResponse} params.res
+ * @param {string | null} [params.streamId]
+ * @param {number} [params.jobCreatedAt]
+ * @returns {(event: import('librechat-data-provider').PtcToolCallEvent) => void}
+ */
+function createPtcProgressEmitter({ res, streamId = null, jobCreatedAt }) {
+  return (event) => {
+    if (!event || !isStreamWritable(res, streamId)) {
+      return;
+    }
+    const payload = { event: StepEvents.ON_PTC_TOOL_CALL, data: event };
+    if (streamId) {
+      /* Absorb a rejected transport here. The emitter is called from a
+       * synchronous try/catch inside `instrumentPtcToolMap`, which cannot
+       * observe a rejected promise — without this catch a failed emit would
+       * surface as an unhandled rejection on every affected inner call
+       * instead of being dropped as the telemetry it is. */
+      Promise.resolve(
+        GenerationJobManager.emitChunk(streamId, payload, { expectedCreatedAt: jobCreatedAt }),
+      ).catch(() => {
+        /* dropped: the trace is best-effort */
+      });
+      return;
+    }
+    sendEvent(res, payload);
   };
 }
 
@@ -1035,6 +1200,7 @@ function createBackgroundCodeResultHandler({ req, updateToolCallResult }) {
   return createCodeHarvestHandler({
     req,
     updateToolCallResult,
+    preflightCodeOutputBatch,
     processCodeOutput,
     runPreviewFinalize,
   });
@@ -1209,92 +1375,78 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
-    for (const file of output.artifact.files) {
-      /* `inherited` files are unchanged passthroughs of inputs the caller
-       * already owns (skill files, prior session inputs, inherited
-       * .dirkeep markers). Skip post-processing: re-downloading with the
-       * user's session key 403s when the file is entity-scoped, and the
-       * input is already persisted at its origin. They remain available
-       * to subsequent calls via primeInvokedSkills / session inheritance. */
-      if (file.inherited) {
-        continue;
-      }
-      const { id, name } = file;
-      const toolCallId = output.tool_call_id;
-      artifactPromises.push(
-        (async () => {
-          const result = await processCodeOutput({
-            req,
-            id,
-            name,
-            messageId: metadata.run_id,
-            toolCallId,
-            conversationId: metadata.thread_id,
-            /**
-             * Use the FILE's `storage_session_id` (storage session),
-             * not the top-level artifact `session_id` (exec session).
-             * The codeapi worker reports two distinct ids on a tool
-             * result:
-             *   - `artifact.session_id` is the EXEC session — the
-             *     sandbox VM that ran the bash command. Files don't
-             *     live there; it's torn down post-execution.
-             *   - `file.storage_session_id` is the STORAGE session —
-             *     the file-server bucket prefix where artifacts
-             *     actually live and are served from.
-             * `processCodeOutput` builds `/download/{session_id}/{id}`,
-             * so passing the exec id resolves to a path the file-server
-             * doesn't know about and 404s. Fall back to artifact-level
-             * for older worker payloads that may not populate per-file
-             * ids.
-             */
-            session_id: file.storage_session_id ?? output.artifact.session_id,
-          });
-          const fileMetadata = result?.file ?? null;
-          const finalize = result?.finalize;
-          if (!fileMetadata) {
-            return null;
-          }
+    const toolCallId = output.tool_call_id;
+    await enqueueCodeOutputBatch({
+      req,
+      artifact: output.artifact,
+      artifactPromises,
+      codeExecutionContext: metadata.codeExecutionContext,
+      processEntry: async ({ file, sessionId, preparedBuffer, downloadFallback }) => {
+        const result = await processCodeOutput({
+          req,
+          id: file.id,
+          name: file.name,
+          messageId: metadata.run_id,
+          toolCallId,
+          conversationId: metadata.thread_id,
+          session_id: sessionId,
+          codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
+          executionProfile: metadata.codeExecutionContext?.executionProfile,
+          executionRouteKey: metadata.codeExecutionContext?.executionRouteKey,
+          preparedBuffer,
+          downloadFallback,
+        });
+        const fileMetadata = addStatefulWorkspaceChange(
+          result?.file ?? null,
+          output.artifact,
+          metadata.codeExecutionContext?.executionProfile,
+        );
+        const finalize = result?.finalize;
+        if (!fileMetadata) {
+          return null;
+        }
 
-          /* Initial emit (Open Responses extension format). The agent's
-           * response no longer blocks on extraction. */
-          if (isStreamWritable(res, null)) {
+        /* Initial emit (Open Responses extension format). The agent's
+         * response no longer blocks on extraction. */
+        if (isStreamWritable(res, null)) {
+          writeResponsesAttachment(
+            res,
+            tracker,
+            buildResponsesAttachment(fileMetadata, toolCallId),
+            metadata,
+          );
+        }
+
+        /* Deferred preview rendering: extract HTML in the background
+         * and emit a follow-up `librechat:attachment` with the same
+         * `file_id` so the client merges the resolved record over the
+         * pending placeholder. Fire-and-forget — survives response
+         * close; polling covers the post-close gap. */
+        runPreviewFinalize({
+          finalize,
+          fileId: fileMetadata.file_id,
+          previewRevision: result?.previewRevision,
+          onResolved: (updated) => {
+            if (!isStreamWritable(res, null)) {
+              return;
+            }
             writeResponsesAttachment(
               res,
               tracker,
-              buildResponsesAttachment(fileMetadata, toolCallId),
+              buildResponsesAttachment(
+                fileMetadata.workspaceChange
+                  ? { ...updated, workspaceChange: fileMetadata.workspaceChange }
+                  : updated,
+                toolCallId,
+              ),
               metadata,
             );
-          }
+          },
+        });
 
-          /* Deferred preview rendering: extract HTML in the background
-           * and emit a follow-up `librechat:attachment` with the same
-           * `file_id` so the client merges the resolved record over the
-           * pending placeholder. Fire-and-forget — survives response
-           * close; polling covers the post-close gap. */
-          runPreviewFinalize({
-            finalize,
-            fileId: fileMetadata.file_id,
-            previewRevision: result?.previewRevision,
-            onResolved: (updated) => {
-              if (!isStreamWritable(res, null)) {
-                return;
-              }
-              writeResponsesAttachment(
-                res,
-                tracker,
-                buildResponsesAttachment(updated, toolCallId),
-                metadata,
-              );
-            },
-          });
-
-          return fileMetadata;
-        })().catch((error) => {
-          logger.error('Error processing code output:', error);
-          return null;
-        }),
-      );
-    }
+        return fileMetadata;
+      },
+    });
   };
 }
 
@@ -1317,6 +1469,7 @@ function buildResponsesAttachment(fileMetadata, toolCallId) {
     textFormat: fileMetadata.textFormat ?? null,
     status: fileMetadata.status,
     previewError: fileMetadata.previewError,
+    workspaceChange: fileMetadata.workspaceChange,
   };
 }
 
@@ -1341,6 +1494,35 @@ function markSummarizationUsage(usage, metadata) {
     return { ...usage, usage_type: 'summarization' };
   }
   return usage;
+}
+
+/**
+ * Stamps provider/model/agent identity onto one model call before billing or
+ * API response aggregation. The graph owns this context; provider payloads do
+ * not consistently include it, and cache normalization depends on it.
+ */
+function contextualizeModelUsage(usage, metadata, agentContext = {}) {
+  const taggedUsage = { ...usage };
+  const context = agentContext ?? {};
+  const invokedProvider = metadata?.__invoked_provider;
+  const invokedModel = metadata?.__invoked_model;
+  const modelName =
+    metadata?.ls_model_name ||
+    (typeof invokedModel === 'string' && invokedModel !== '' ? invokedModel : undefined) ||
+    context.clientOptions?.model;
+  const provider =
+    (typeof invokedProvider === 'string' && invokedProvider !== '' ? invokedProvider : undefined) ||
+    context.provider;
+  if (modelName) {
+    taggedUsage.model = modelName;
+  }
+  if (provider) {
+    taggedUsage.provider = provider;
+  }
+  if (context.agentId) {
+    taggedUsage.agentId = context.agentId;
+  }
+  return markSummarizationUsage(taggedUsage, metadata);
 }
 
 const agentLogHandlerObj = { handle: agentLogHandler };
@@ -1377,9 +1559,11 @@ module.exports = {
   getDefaultHandlers,
   createToolEndCallback,
   createAttachmentEmitter,
+  createPtcProgressEmitter,
   createBackgroundCodeResultHandler,
   isStreamWritable,
   markSummarizationUsage,
+  contextualizeModelUsage,
   buildSummarizationHandlers,
   createResponsesToolEndCallback,
 };

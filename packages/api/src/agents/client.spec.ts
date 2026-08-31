@@ -1,5 +1,49 @@
 import { ContentTypes } from 'librechat-data-provider';
-import { prependFileContext, prependQuotes, type FormattedMessageWithContent } from './client';
+import { Tokenizer as AiTokenizer } from 'ai-tokenizer';
+import { Providers, StandardGraph } from '@librechat/agents';
+import { HumanMessage } from '@librechat/agents/langchain/messages';
+import type { TMessage } from 'librechat-data-provider';
+import {
+  createCachedTokenCounter,
+  prependQuotes,
+  prependFileContext,
+  applyAttachmentOnlyText,
+  type FormattedMessageWithContent,
+} from './client';
+import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
+
+describe('createCachedTokenCounter', () => {
+  it('enables stable-message reuse in the agents runtime', async () => {
+    const getTokenCount = jest.spyOn(AiTokenizer.prototype, 'count');
+    try {
+      const tokenCounter = await createCachedTokenCounter('o200k_base');
+      const graph = new StandardGraph({
+        runId: 'token-cache-integration',
+        agents: [
+          {
+            agentId: 'primary',
+            provider: Providers.OPENAI,
+            instructions: 'Test instructions',
+          },
+        ],
+        tokenCounter,
+      });
+      const agentContext = graph.agentContexts.get('primary');
+      await agentContext?.tokenCalculationPromise;
+      getTokenCount.mockClear();
+      const message = new HumanMessage('Stable retained context');
+
+      agentContext?.contextPressureTokenCounts?.count(message);
+      const callsAfterFirstCount = getTokenCount.mock.calls.length;
+      agentContext?.contextPressureTokenCounts?.count(message);
+
+      expect(callsAfterFirstCount).toBeGreaterThan(0);
+      expect(getTokenCount).toHaveBeenCalledTimes(callsAfterFirstCount);
+    } finally {
+      getTokenCount.mockRestore();
+    }
+  });
+});
 
 describe('prependFileContext', () => {
   it('prepends file context to string content', () => {
@@ -111,5 +155,54 @@ describe('prependQuotes', () => {
 
     prependQuotes(message, null);
     expect(message.content).toBe('Explain this.');
+  });
+});
+
+describe('applyAttachmentOnlyText', () => {
+  const withFiles = [{ file_id: 'f1' }] as TMessage['files'];
+
+  it('substitutes text for an empty user turn that carries files', () => {
+    const message: FormattedMessageWithContent = { role: 'user', content: '' };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toBe(ATTACHMENT_ONLY_TEXT);
+  });
+
+  it('leaves a user turn that already has text alone', () => {
+    const message: FormattedMessageWithContent = { role: 'user', content: 'Summarize it' };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toBe('Summarize it');
+  });
+
+  it('leaves content that quotes or file context already filled alone', () => {
+    const message: FormattedMessageWithContent = {
+      role: 'user',
+      content: [{ type: ContentTypes.TEXT, text: 'Attached file text' }],
+    };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toEqual([{ type: ContentTypes.TEXT, text: 'Attached file text' }]);
+  });
+
+  it('ignores turns without files', () => {
+    const message: FormattedMessageWithContent = { role: 'user', content: '' };
+
+    applyAttachmentOnlyText(message, []);
+    expect(message.content).toBe('');
+
+    applyAttachmentOnlyText(message, null);
+    expect(message.content).toBe('');
+  });
+
+  it('ignores non-user turns', () => {
+    const message: FormattedMessageWithContent = { role: 'assistant', content: '' };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toBe('');
   });
 });

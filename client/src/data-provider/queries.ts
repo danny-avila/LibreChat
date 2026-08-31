@@ -1,3 +1,4 @@
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
   dataService,
@@ -6,14 +7,6 @@ import {
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  UseInfiniteQueryOptions,
-  QueryObserverResult,
-  UseQueryOptions,
-  InfiniteData,
-} from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
 import type {
   Action,
   TPreset,
@@ -30,6 +23,13 @@ import type {
   SharedLinksListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
+import type {
+  UseInfiniteQueryOptions,
+  QueryObserverResult,
+  UseQueryOptions,
+  InfiniteData,
+} from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite, isNotFoundError } from '~/utils';
 
@@ -109,6 +109,68 @@ export const useConversationsInfiniteQuery = (
     cacheTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
+};
+
+/**
+ * Pinned chats are a hand-curated set, so the sidebar fetches the whole thing rather
+ * than paginating it: a pin older than the first page of the Chats list would
+ * otherwise stay hidden until that list scrolled far enough to reach it, and
+ * `groupConversationsByDate` keeps pins out of the Chats groups entirely, so any pin
+ * this query does not return is invisible in the sidebar. The page size is therefore a
+ * request size, not a cap; the query drains the cursor.
+ */
+export const pinnedConversationsPageSize = 100;
+
+export const usePinnedConversationsQuery = (
+  params: Pick<ConversationListParams, 'tags'> = {},
+  config?: UseQueryOptions<ConversationListResponse>,
+): QueryObserverResult<ConversationListResponse> => {
+  const { tags } = params;
+  const queryClient = useQueryClient();
+  const queryKey = [QueryKeys.pinnedConversations, { tags }];
+
+  return useQuery<ConversationListResponse>(
+    queryKey,
+    async () => {
+      const conversations: ConversationListResponse['conversations'] = [];
+      let cursor: string | undefined;
+
+      do {
+        let page: ConversationListResponse;
+        try {
+          page = await dataService.listConversations({
+            pinned: true,
+            tags,
+            limit: pinnedConversationsPageSize,
+            cursor,
+          });
+        } catch (error) {
+          /** A page failing partway through the drain must not throw away the pins
+           * already loaded: publish them so the retry, which starts the drain over,
+           * renders against the partial set instead of an empty section. */
+          if (conversations.length > 0) {
+            queryClient.setQueryData<ConversationListResponse>(queryKey, {
+              conversations,
+              nextCursor: cursor ?? null,
+            });
+          }
+          throw error;
+        }
+        conversations.push(...page.conversations);
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+
+      return { conversations, nextCursor: null };
+    },
+    {
+      /* Left on the React Query defaults for focus and reconnect, matching the
+         conversations query: a pin changed in another tab is only reconciled by a
+         refetch, since the mutation that made it never touched this cache. */
+      staleTime: 5 * 60 * 1000,
+      cacheTime: 30 * 60 * 1000,
+      ...config,
+    },
+  );
 };
 
 export const useMessagesInfiniteQuery = (

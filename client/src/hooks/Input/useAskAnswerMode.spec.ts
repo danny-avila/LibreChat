@@ -75,6 +75,32 @@ describe('useAskAnswerMode', () => {
     expect(result.current.popoverVisible).toBe(false);
   });
 
+  it('locks the composer for a batch, and hands it back the moment it collapses', () => {
+    mockUseGetMessages.mockReturnValue({
+      data: {
+        ...liveAsk,
+        questions: [
+          { id: 'environment', question: 'Which environment?' },
+          { id: 'window', question: 'Which window?' },
+        ],
+      },
+    });
+
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    expect(result.current.active).toBe(true);
+    expect(result.current.batchMode).toBe(true);
+    expect(result.current.options).toEqual([]);
+    expect(result.current.draftId).toBeNull();
+    /** The bounded form owns the answer, so the composer never speaks for it. */
+    expect(result.current.composerAnswers).toBe(false);
+    expect(result.current.composerLocked).toBe(true);
+    /** Text is declined, not claimed: claiming it dropped whatever was staged
+     *  when the pause began. */
+    expect(result.current.submitText('must stay out of the normal send path')).toBe(false);
+    expect(mockSubmitAskAnswer).not.toHaveBeenCalled();
+  });
+
   it('disables the query and forces liveAsk null for a new (unsaved) conversation', () => {
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
 

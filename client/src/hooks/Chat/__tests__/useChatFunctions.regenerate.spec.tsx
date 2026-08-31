@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage, TSubmission } from 'librechat-data-provider';
 import useChatFunctions from '../useChatFunctions';
+import { isPasteSubmitted } from '~/utils';
 
 const mockNavigate = jest.fn();
 const mockSetShowStopButton = jest.fn();
@@ -49,6 +50,7 @@ jest.mock('~/store', () => ({
   default: {
     isTemporary: 'isTemporary',
     isSubmittingFamily: () => 'isSubmitting',
+    submissionStartFamily: () => 'submissionStart',
     showStopButtonByIndex: () => 'showStopButton',
     pendingManualSkillsByConvoId: () => 'pendingManualSkills',
     pendingQuotesByConvoId: () => 'pendingQuotes',
@@ -57,6 +59,7 @@ jest.mock('~/store', () => ({
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
 }));
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
   logger: {
     log: jest.fn(),
     dir: jest.fn(),
@@ -290,5 +293,94 @@ describe('useChatFunctions regenerate', () => {
       setMessages.mock.calls.at(-1)?.[0].map((message: TMessage) => message.messageId),
     ).toEqual(['user-1', 'assistant-1_']);
     expect(messages.at(-1)?.messageId).toBe('assistant-1_');
+  });
+});
+
+describe('useChatFunctions ask attachments', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetQueryData.mockReturnValue({});
+  });
+
+  /** The server titles an attachment-only turn from the submitted filenames
+   *  (getAttachmentTitleText), so the fresh-file mapping must carry them. */
+  it('carries the filename on freshly attached files', () => {
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+    const files = new Map([
+      [
+        'file-1',
+        {
+          file_id: 'file-1',
+          filepath: '/uploads/file-1',
+          filename: 'quarterly-report.pdf',
+          type: 'application/pdf',
+        },
+      ],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: null,
+        conversation: conversation(Constants.NEW_CONVO as string),
+        getMessages: () => [],
+        setMessages,
+        setSubmission,
+        files,
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask({ text: '' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.files?.[0]).toMatchObject({
+      file_id: 'file-1',
+      filename: 'quarterly-report.pdf',
+    });
+  });
+
+  it('marks files consumed through overrideFiles as submitted', () => {
+    const overrideFiles = [
+      {
+        file_id: 'queued-override-file',
+        temp_file_id: 'queued-override-temp-file',
+        filepath: '/uploads/queued-override-file',
+        filename: 'queued-override.txt',
+        type: 'text/plain',
+      },
+    ];
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: null,
+        conversation: conversation(Constants.NEW_CONVO as string),
+        getMessages: () => [],
+        setMessages,
+        setSubmission,
+        files: new Map(),
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask(
+        { text: 'queued override' },
+        {
+          overrideFiles,
+        },
+      );
+    });
+
+    expect(isPasteSubmitted('queued-override-file')).toBe(true);
+    expect(isPasteSubmitted('queued-override-temp-file')).toBe(true);
   });
 });

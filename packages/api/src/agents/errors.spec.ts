@@ -2,12 +2,13 @@ import { ErrorTypes } from 'librechat-data-provider';
 import { AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE, isFatalAgentInitializationError } from './errors';
 
 describe('isFatalAgentInitializationError', () => {
-  it.each([ErrorTypes.RESOURCE_RECOVERY_REQUIRED, AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE])(
-    'classifies %s as fatal',
-    (code) => {
-      expect(isFatalAgentInitializationError({ code })).toBe(true);
-    },
-  );
+  it.each([
+    ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+    ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+    AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
+  ])('classifies %s as fatal', (code) => {
+    expect(isFatalAgentInitializationError({ code })).toBe(true);
+  });
 
   it('allows skill-added MCP tools to fall back while keeping resource recovery fatal', () => {
     const options = { allowExpectedMCPFallback: true };

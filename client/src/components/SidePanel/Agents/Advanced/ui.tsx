@@ -11,9 +11,6 @@ import type { ReactNode } from 'react';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-export const sectionLabelClass =
-  'text-[11px] font-medium uppercase tracking-wide text-text-secondary';
-
 /** Prominent heading for a top-level settings group (Essentials, Orchestration). */
 export const groupHeadingClass = 'text-sm font-semibold text-text-primary';
 

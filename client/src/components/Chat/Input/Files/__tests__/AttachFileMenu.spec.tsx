@@ -49,7 +49,11 @@ jest.mock('@librechat/client', () => {
     DropdownPopup: (props) =>
       R.createElement(
         'div',
-        null,
+        {
+          'data-testid': 'dropdown-popup',
+          'data-modal': props.modal,
+          'data-portal': props.portal,
+        },
         R.createElement('div', { onClick: () => props.setIsOpen(!props.isOpen) }, props.trigger),
         props.isOpen &&
           R.createElement(
@@ -261,6 +265,13 @@ describe('AttachFileMenu', () => {
       setupMocks();
       renderMenu({ disabled: false });
       expect(screen.getByRole('button', { name: /attach file options/i })).not.toBeDisabled();
+    });
+
+    it('portals the menu without making the conversation tree inert', () => {
+      setupMocks();
+      renderMenu();
+      expect(screen.getByTestId('dropdown-popup')).toHaveAttribute('data-modal', 'false');
+      expect(screen.getByTestId('dropdown-popup')).toHaveAttribute('data-portal', 'true');
     });
   });
 

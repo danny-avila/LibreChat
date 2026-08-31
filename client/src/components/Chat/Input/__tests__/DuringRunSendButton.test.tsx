@@ -67,16 +67,24 @@ function Harness({ steering }: { steering: SteeringControls }) {
 type MenuOptions = StubOptions & {
   enterInterrupts?: boolean;
   enterToSend?: boolean;
+  shortcutsEnabled?: boolean;
   customShortcuts?: Record<string, ShortcutOverride>;
 };
 
 function openMenu(options: MenuOptions = {}) {
-  const { enterInterrupts = false, enterToSend = true, customShortcuts = {}, ...stub } = options;
+  const {
+    enterInterrupts = false,
+    enterToSend = true,
+    shortcutsEnabled = true,
+    customShortcuts = {},
+    ...stub
+  } = options;
   render(
     <RecoilRoot
       initializeState={({ set }) => {
         set(store.steerInterruptsByDefault, enterInterrupts);
         set(store.enterToSend, enterToSend);
+        set(store.shortcutsEnabled, shortcutsEnabled);
         set(store.customShortcuts, customShortcuts);
       }}
     >
@@ -256,5 +264,13 @@ describe('DuringRunSendButton — hints follow the effective bindings', () => {
     expect(kbdFor('com_ui_queue')).toBeNull();
     expect(kbdFor('com_ui_interrupt_steer')).toBe('Ctrl ⇧ ⏎');
     expect(kbdFor('com_ui_interrupt_send')).toBe('Alt ⏎');
+  });
+
+  test('keeps plain Enter but hides shortcut hints when shortcuts are disabled', () => {
+    openMenu({ canSteer: true, shortcutsEnabled: false });
+    expect(kbdFor('com_ui_steer')).toBe('⏎');
+    expect(kbdFor('com_ui_queue')).toBeNull();
+    expect(kbdFor('com_ui_interrupt_steer')).toBeNull();
+    expect(kbdFor('com_ui_interrupt_send')).toBeNull();
   });
 });

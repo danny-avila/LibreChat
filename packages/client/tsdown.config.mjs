@@ -23,6 +23,7 @@ export default defineConfig({
   // CommonJS (jest.config.js / babel.config.js are CJS) while still shipping dual ESM/CJS.
   fixedExtension: true,
   define,
+  copy: [{ from: 'src/icons/provider/assets', to: 'dist' }],
   // Extract all component CSS into a single `dist/style.css` (no import left in the JS, so the
   // CJS output stays valid CommonJS). Consumers import `@librechat/client/style.css` once.
   css: { inject: false },

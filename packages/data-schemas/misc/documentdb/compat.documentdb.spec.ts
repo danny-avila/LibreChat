@@ -20,6 +20,7 @@ import {
 import { decrementTagCounts } from '~/methods/conversationTag';
 import { tenantStorage } from '~/config/tenantContext';
 import { supportsTransactions } from '~/utils/transactions';
+import { createScheduleMethods } from '~/methods/schedule';
 import { createUserMethods } from '~/methods/user';
 import { createFileMethods } from '~/methods/file';
 import { createModels } from '~/models';
@@ -35,9 +36,13 @@ import { createModels } from '~/models';
  * suite only runs when DOCUMENTDB_URI is set and skips otherwise.
  *
  * Run (from packages/data-schemas, against a DEDICATED database):
- *   DOCUMENTDB_URI="mongodb://user:pass@127.0.0.1:27017/librechat_compat?tls=true&retryWrites=false" \
+ *   DOCUMENTDB_URI="mongodb://user:pass@127.0.0.1:27017/librechat_compat\
+ *     ?tls=true&retryWrites=false&authSource=admin&authMechanism=SCRAM-SHA-1&directConnection=true" \
  *   DOCUMENTDB_TLS_CA_FILE="global-bundle.pem" \
  *     npx jest --config misc/documentdb/jest.documentdb.config.mjs
+ *
+ * `authSource`/`authMechanism`/`directConnection` are load-bearing against a
+ * real cluster (see audit.documentdb.spec.ts for why each is required).
  *
  * Through an SSH tunnel, additionally set
  *   DOCUMENTDB_TLS_ALLOW_INVALID_HOSTNAMES=true
@@ -351,6 +356,82 @@ describeLive('Amazon DocumentDB live compatibility', () => {
         ? 'present'
         : 'MISSING — DocumentDB rejects retryable writes';
       expect(typeof disabled).toBe('boolean');
+    });
+  });
+
+  /**
+   * The scheduler's rewritten write shapes (classic operators, worker clock — the
+   * DocumentDB-portable replacements for its original pipeline/$$NOW CAS forms),
+   * exercised through the real methods against the live engine.
+   */
+  describe('scheduler write shapes', () => {
+    const scheduleMethods = () => createScheduleMethods(mongoose);
+    const scheduleData = (overrides: Record<string, unknown> = {}) => ({
+      id: `sched_compat_${runId}_${randomUUID().slice(0, 8)}`,
+      user: new mongoose.Types.ObjectId(),
+      name: `compat ${runId}`,
+      prompt: 'compat probe',
+      agent_id: 'agent_compat',
+      cadence: { frequency: 'daily', hour: 8, minute: 0 },
+      timezone: 'America/New_York',
+      target: 'new',
+      enabled: true,
+      nextRunAt: new Date(Date.now() - 60_000),
+      ...overrides,
+    });
+
+    afterAll(async () => {
+      await mongoose.models.Schedule.deleteMany({ name: `compat ${runId}` });
+      await mongoose.models.ScheduleRun.deleteMany({ scheduleId: { $regex: runId } });
+    });
+
+    it('claims a due schedule via the classic-operator lease CAS', async () => {
+      const methods = scheduleMethods();
+      const schedule = await methods.createSchedule(scheduleData() as never);
+      const claimed = await methods.claimDueSchedule({
+        instanceId: `compat-${runId}`,
+        leaseMs: 60_000,
+      });
+      expect(claimed?.leaseUntil).toBeInstanceOf(Date);
+      // Held lease: a second claim must not steal it.
+      const contender = await methods.claimDueSchedule({
+        instanceId: `compat2-${runId}`,
+        leaseMs: 60_000,
+      });
+      expect(contender?.id).not.toBe(schedule.id);
+      capabilities['scheduler lease CAS'] = 'supported';
+    });
+
+    it('stamps and resolves an abort request with guarded classic updates', async () => {
+      const methods = scheduleMethods();
+      const schedule = await methods.createSchedule(scheduleData() as never);
+      const scheduledFor = new Date('2026-07-20T12:00:00Z');
+      await mongoose.models.ScheduleRun.create({
+        scheduleId: schedule.id,
+        user: schedule.user,
+        scheduledFor,
+        status: 'started',
+        firedAt: new Date(),
+      });
+      expect(await methods.requestRunAbort(schedule.id, scheduledFor, 'stop')).toBe(true);
+      await methods.markRunAbortPersisted(schedule.id, scheduledFor);
+      const state = await methods.getScheduleRunAbortState(schedule.id, scheduledFor);
+      expect(state?.abortSource).toBe('stop');
+      expect(state?.abortPersistedAt).toBeInstanceOf(Date);
+      capabilities['scheduler abort stamps'] = 'supported';
+    });
+
+    it('arms only an unarmed row through the shared arming CAS', async () => {
+      const methods = scheduleMethods();
+      const schedule = await methods.createSchedule(
+        scheduleData({ nextRunAt: undefined }) as never,
+      );
+      const armAt = new Date(Date.now() + HOUR);
+      expect(await methods.armSchedule(schedule.id, armAt, 0)).toBe(true);
+      expect(await methods.armSchedule(schedule.id, new Date(Date.now() + 2 * HOUR), 0)).toBe(
+        false,
+      );
+      capabilities['scheduler arming CAS'] = 'supported';
     });
   });
 });

@@ -19,8 +19,9 @@ import {
   OGDialogTrigger,
 } from '@librechat/client';
 import type { TDialogProps } from '~/common';
-import { useUserKey, useLocalize } from '~/hooks';
+import { useUserKey, useLocalize, useClockFormat } from '~/hooks';
 import { NotificationSeverity } from '~/common';
+import { formatKeyExpiryLabel } from './utils';
 import CustomConfig from './CustomEndpoint';
 import BedrockConfig from './BedrockConfig';
 import GoogleConfig from './GoogleConfig';
@@ -363,6 +364,13 @@ const SetKeyDialog = ({
 
   const EndpointComponent = endpointComponents[configuredEndpoint] ?? endpointComponents['default'];
   const expiryTime = getExpiry();
+  const hour12 = useClockFormat();
+  let currentExpiryLabel: string | null = null;
+  if (expiryTime === 'never') {
+    currentExpiryLabel = localize('com_endpoint_config_key_never_expires');
+  } else if (expiryTime !== undefined) {
+    currentExpiryLabel = formatKeyExpiryLabel(localize, expiryTime, hour12);
+  }
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
@@ -372,23 +380,18 @@ const SetKeyDialog = ({
             {`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
           </OGDialogTitle>
         </OGDialogHeader>
-        <div className="grid w-full items-center gap-2 py-4">
-          <small className="text-text-destructive">
-            {expiryTime === 'never'
-              ? localize('com_endpoint_config_key_never_expires')
-              : `${localize('com_endpoint_config_key_encryption')} ${new Date(
-                  expiryTime ?? 0,
-                ).toLocaleString()}`}
-          </small>
+        <div className="grid w-full items-center gap-2 py-2">
+          {currentExpiryLabel && (
+            <small className="text-text-destructive">{currentExpiryLabel}</small>
+          )}
           <Dropdown
-            label="Expires "
+            label={`${localize('com_endpoint_config_new_key_expiration')}: `}
             value={expiresAtLabel}
             onChange={handleExpirationChange}
             options={expirationOptions.map((option) => option.label)}
             sizeClasses="w-[185px]"
             portal={false}
           />
-          <div className="mt-2" />
           <FormProvider {...methods}>
             <EndpointComponent
               userKey={userKey}

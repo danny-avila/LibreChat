@@ -1,4 +1,4 @@
-import { getTenantId } from '@librechat/data-schemas';
+import { SYSTEM_TENANT_ID, getTenantId } from '@librechat/data-schemas';
 import { createHash, createPrivateKey, randomUUID, sign as cryptoSign } from 'crypto';
 import type { KeyObject, JsonWebKey } from 'crypto';
 import type { ServerRequest } from '~/types';
@@ -202,9 +202,14 @@ function resolveSingleTenantId(): string {
   return DEFAULT_SINGLE_TENANT_ID;
 }
 
+/**
+ * `SYSTEM_TENANT_ID` marks an ambient background context (e.g. the expired-file
+ * sweep) rather than a real tenant, so it is treated as absent: minting it into
+ * `tenant_id` would claim a tenant whose Code API sessions never existed.
+ */
 function resolveTenantId(user: CodeApiUserContext): string | undefined {
   const tenantId = stringifyClaimValue(user.tenantId) ?? getTenantId();
-  if (tenantId) {
+  if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
     return tenantId;
   }
   if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {

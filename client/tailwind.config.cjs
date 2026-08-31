@@ -2,6 +2,7 @@
 const {
   createTailwindColors,
 } = require('../packages/client/src/theme/utils/createTailwindColors.js');
+const libreChatTailwindPreset = require('../packages/client/tailwind.preset.cjs');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -12,6 +13,7 @@ module.exports = {
   ],
   // darkMode: 'class',
   darkMode: ['class'],
+  presets: [libreChatTailwindPreset],
   theme: {
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
@@ -33,6 +35,18 @@ module.exports = {
         'accordion-up': {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: 0 },
+        },
+        /** Radix Collapsible exposes its own height variable, not the accordion one.
+         *  The fade rides along so the rows dissolve instead of squashing. Opening
+         *  decelerates into place; closing accelerates away, because a decelerating
+         *  close stalls over its final pixels before the unmount. */
+        'collapsible-down': {
+          from: { height: 0, opacity: 0 },
+          to: { height: 'var(--radix-collapsible-content-height)', opacity: 1 },
+        },
+        'collapsible-up': {
+          from: { height: 'var(--radix-collapsible-content-height)', opacity: 1 },
+          to: { height: 0, opacity: 0 },
         },
         'slide-in-right': {
           '0%': { transform: 'translateX(100%)' },
@@ -73,6 +87,8 @@ module.exports = {
         'fade-in': 'fadeIn 0.5s ease-out forwards',
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'collapsible-down': 'collapsible-down 0.3s cubic-bezier(0, 0, 0.2, 1)',
+        'collapsible-up': 'collapsible-up 0.2s cubic-bezier(0.4, 0, 1, 1)',
         'slide-in-right': 'slide-in-right 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'slide-in-left': 'slide-in-left 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'slide-out-left': 'slide-out-left 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',

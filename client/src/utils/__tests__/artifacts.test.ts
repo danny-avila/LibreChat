@@ -66,6 +66,7 @@ describe('detectArtifactTypeFromFile', () => {
     ['legacy.xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     ['sheet.ods', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION],
+    ['template.potx', TOOL_ARTIFACT_TYPES.PRESENTATION],
   ])('classifies %s by extension', (filename, expected) => {
     /* Office types require `textFormat: 'html'` to route to their HTML
      * preview buckets — the security gate added for Codex P1 review on
@@ -153,6 +154,10 @@ describe('detectArtifactTypeFromFile', () => {
     ['application/x-xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     [
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      TOOL_ARTIFACT_TYPES.PRESENTATION,
+    ],
+    [
+      'application/vnd.openxmlformats-officedocument.presentationml.template',
       TOOL_ARTIFACT_TYPES.PRESENTATION,
     ],
   ])('routes office MIME %s to its preview bucket when extension is missing', (mime, expected) => {

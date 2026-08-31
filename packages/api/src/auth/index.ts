@@ -1,5 +1,6 @@
 export * from './domain';
 export * from './openid';
+export * from './saml';
 export * from './proxy';
 export * from './exchange';
 export * from './refresh';
@@ -10,3 +11,5 @@ export * from './invite';
 export * from './codeapi';
 export * from './openidRoleSync';
 export * from './userDocCache';
+export * from './reuse';
+export * from './openid/index';

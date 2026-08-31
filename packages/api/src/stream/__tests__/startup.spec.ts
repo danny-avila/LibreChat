@@ -2,6 +2,12 @@ import type { AbortResult } from '~/stream/interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { ServerSentEvent } from '~/types';
 import {
+  REDIS_ABORT_ACK_TIMEOUT_MS,
+  REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+  REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
+} from '~/stream/internal/timing';
+import {
   GenerationJobManagerClass,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
 } from '~/stream/GenerationJobManager';
@@ -28,6 +34,33 @@ function createManager(): GenerationJobManagerClass {
   });
   manager.initialize();
   return manager;
+}
+
+class DeferredEventTransport extends InMemoryEventTransport {
+  private pendingDeliveries: Array<() => void> = [];
+
+  override emitChunk(streamId: string, event: unknown, generationId?: number): void {
+    this.pendingDeliveries.push(() => super.emitChunk(streamId, event, generationId));
+  }
+
+  override emitDone(streamId: string, event: unknown, generationId?: number): void {
+    this.pendingDeliveries.push(() => super.emitDone(streamId, event, generationId));
+  }
+
+  flushDeliveries(): void {
+    const deliveries = this.pendingDeliveries;
+    this.pendingDeliveries = [];
+    for (const deliver of deliveries) {
+      deliver();
+    }
+  }
+}
+
+function getEventLabel(event: ServerSentEvent): string | undefined {
+  if (!('data' in event) || typeof event.data !== 'object' || event.data == null) {
+    return undefined;
+  }
+  return typeof event.data.label === 'string' ? event.data.label : undefined;
 }
 
 function createPendingAction(streamId: string) {
@@ -66,6 +99,12 @@ describe('GenerationJobManager startup telemetry', () => {
           parentMessageId: 'parent-1',
         },
         responseMessageId: 'response-1',
+        isRegenerate: true,
+        mcpRequestBody: {
+          messageId: 'response-1',
+          conversationId: 'overridden-conversation',
+          parentMessageId: 'response-1',
+        },
         sender: 'Agent',
         endpoint: 'agents',
         iconURL: 'https://example.com/icon.png',
@@ -96,6 +135,12 @@ describe('GenerationJobManager startup telemetry', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      isRegenerate: true,
+      mcpRequestBody: {
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      },
       sender: 'Agent',
       endpoint: 'agents',
       iconURL: 'https://example.com/icon.png',
@@ -104,6 +149,8 @@ describe('GenerationJobManager startup telemetry', () => {
       isTemporary: false,
       promptTokens: 0,
       discoveredTools: [],
+      providerExecutionId: expect.any(String),
+      providerDrained: true,
     });
     expect(job.metadata.tenantId).toBeUndefined();
     expect(job.metadata.pendingAction).toBeUndefined();
@@ -114,6 +161,211 @@ describe('GenerationJobManager startup telemetry', () => {
       job.createdAt,
     );
 
+    await manager.destroy();
+  });
+
+  it('retains a terminal generation until its exact provider segment has drained', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-retention';
+    const job = await manager.createJob(streamId, 'user-1');
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId),
+    ).resolves.toBe(true);
+
+    await expect(manager.abortJob(streamId)).resolves.toMatchObject({ success: true });
+    await expect(manager.getActiveJobIdsForUser('user-1')).resolves.toEqual([]);
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([streamId]);
+    await expect(manager.getJobStore().getJob(streamId)).resolves.toMatchObject({
+      status: 'aborted',
+      providerExecutionId,
+      providerDrained: false,
+    });
+
+    await expect(
+      manager.markProviderExecutionDrained(streamId, job.createdAt, 'different-segment'),
+    ).resolves.toBe(false);
+    await expect(manager.getJobStore().getJob(streamId)).resolves.toMatchObject({
+      providerDrained: false,
+    });
+
+    await expect(
+      manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId),
+    ).resolves.toBe(true);
+    await expect(manager.getJobStore().getJob(streamId)).resolves.toBeNull();
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([]);
+    await manager.destroy();
+  });
+
+  it('keeps an undrained stale approval visible to destructive cleanup only', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-stale-approval';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.beginProviderExecution(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await manager.getJobStore().transitionStatus(streamId, {
+      from: 'running',
+      to: 'requires_action',
+      expectCreatedAt: job.createdAt,
+    });
+
+    await expect(manager.getActiveJobIdsForUser('user-1')).resolves.toEqual([]);
+    await expect(manager.getCleanupBlockingJobIdsForUser('user-1')).resolves.toEqual([streamId]);
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await manager.destroy();
+  });
+
+  it('waits for provider-owner drain proof before destructive abort returns', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-wait';
+    const job = await manager.createJob(streamId, 'user-1');
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, job.metadata.providerExecutionId!),
+    ).resolves.toBe(true);
+    let abortSettled = false;
+    const aborting = manager
+      .abortJob(streamId, { awaitProviderDrain: true })
+      .finally(() => (abortSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(job.abortController.signal.aborted).toBe(true);
+    expect(abortSettled).toBe(false);
+
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await expect(aborting).resolves.toMatchObject({ success: true });
+    expect(abortSettled).toBe(true);
+    await manager.destroy();
+  });
+
+  it('waits for provider-owner drain before settling an event-driven abort', async () => {
+    const manager = createManager();
+    const handler = jest.fn().mockResolvedValue(undefined);
+    manager.setTerminalHostActionHandler(handler);
+    const streamId = 'stream-event-provider-drain-wait';
+    const job = await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: { agentEventDeliveryKey: 'delivery-1' },
+    });
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, job.metadata.providerExecutionId!),
+    ).resolves.toBe(true);
+
+    let abortSettled = false;
+    const aborting = manager.abortJob(streamId).finally(() => (abortSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(job.abortController.signal.aborted).toBe(true);
+    expect(abortSettled).toBe(false);
+    expect(handler).not.toHaveBeenCalled();
+
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await expect(aborting).resolves.toMatchObject({ success: true });
+    expect(handler).toHaveBeenCalledWith(
+      streamId,
+      expect.objectContaining({ agentEventDeliveryKey: 'delivery-1', status: 'aborted' }),
+      [],
+      expect.any(Array),
+    );
+    await manager.destroy();
+  });
+
+  it('finishes a destructive abort immediately when the provider never started', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-never-started';
+    await manager.createJob(streamId, 'user-1');
+
+    await expect(manager.abortJob(streamId, { awaitProviderDrain: true })).resolves.toMatchObject({
+      success: true,
+    });
+    await expect(manager.getJobStore().getJob(streamId)).resolves.toBeNull();
+    await manager.destroy();
+  });
+
+  it('rechecks provider drain when provider startup races the destructive abort', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-start-race';
+    const job = await manager.createJob(streamId, 'user-1');
+    const jobStore = manager.getJobStore();
+    const transition = jobStore.transitionStatusAndDrainSteers.bind(jobStore);
+    jest
+      .spyOn(jobStore, 'transitionStatusAndDrainSteers')
+      .mockImplementationOnce(async (...args) => {
+        await expect(
+          manager.beginProviderExecution(
+            streamId,
+            job.createdAt,
+            job.metadata.providerExecutionId!,
+          ),
+        ).resolves.toBe(true);
+        return transition(...args);
+      });
+
+    let abortSettled = false;
+    const aborting = manager
+      .abortJob(streamId, { awaitProviderDrain: true })
+      .finally(() => (abortSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(job.abortController.signal.aborted).toBe(true);
+    expect(abortSettled).toBe(false);
+
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+    await expect(aborting).resolves.toMatchObject({ success: true });
+    expect(abortSettled).toBe(true);
+    await manager.destroy();
+  });
+
+  it('does not expose a replacement until its overwritten provider segment drains', async () => {
+    const manager = createManager();
+    const streamId = 'stream-provider-drain-replacement';
+    const predecessor = await manager.createJob(streamId, 'user-1');
+    await expect(
+      manager.beginProviderExecution(
+        streamId,
+        predecessor.createdAt,
+        predecessor.metadata.providerExecutionId!,
+      ),
+    ).resolves.toBe(true);
+    let replacementSettled = false;
+    const replacing = manager
+      .createJob(streamId, 'user-1')
+      .finally(() => (replacementSettled = true));
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(predecessor.abortController.signal.aborted).toBe(true);
+    expect(replacementSettled).toBe(false);
+
+    // The replacement already owns the job hash, so the predecessor can only
+    // publish its exact cross-replica proof; it must not mark the new segment.
+    await expect(
+      manager.markProviderExecutionDrained(
+        streamId,
+        predecessor.createdAt,
+        predecessor.metadata.providerExecutionId!,
+      ),
+    ).resolves.toBe(false);
+
+    const replacement = await replacing;
+    expect(replacement.createdAt).not.toBe(predecessor.createdAt);
+    expect(replacementSettled).toBe(true);
     await manager.destroy();
   });
 
@@ -641,6 +893,936 @@ describe('GenerationJobManager startup telemetry', () => {
     await manager.destroy();
   });
 
+  it('delivers only matching generation-tagged chunks after terminal cleanup before done', async () => {
+    const streamId = 'stream-terminal-delayed-chunk';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const order: string[] = [];
+    const subscription = await manager.subscribe(
+      streamId,
+      (event) => {
+        const label = getEventLabel(event);
+        if (label != null) {
+          order.push(label);
+        }
+      },
+      () => order.push('done'),
+    );
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { label: 'matching' },
+      } as ServerSentEvent);
+      eventTransport.emitChunk(streamId, { data: { label: 'untagged' } });
+      eventTransport.emitChunk(streamId, { data: { label: 'mismatched' } }, job.createdAt + 1);
+
+      await expect(manager.abortJob(streamId)).resolves.toMatchObject({ success: true });
+      await manager.markProviderExecutionDrained(
+        streamId,
+        job.createdAt,
+        job.metadata.providerExecutionId!,
+      );
+      await expect(jobStore.getJob(streamId)).resolves.toBeNull();
+      expect(order).toEqual([]);
+
+      eventTransport.flushDeliveries();
+
+      expect(order).toEqual(['matching', 'done']);
+    } finally {
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('rejects a delayed predecessor chunk after a replacement runtime is installed', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const streamId = 'stream-delayed-predecessor-chunk';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const predecessor = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const received: string[] = [];
+    const subscription = await manager.subscribe(streamId, (event) => {
+      const label = getEventLabel(event);
+      if (label != null) {
+        received.push(label);
+      }
+    });
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { label: 'predecessor' },
+      } as ServerSentEvent);
+      now.mockReturnValue(2000);
+      const replacement = await manager.createJob(streamId, 'user-1', 'conversation-1');
+
+      expect(replacement.createdAt).toBeGreaterThan(predecessor.createdAt);
+      eventTransport.flushDeliveries();
+
+      expect(received).toEqual([]);
+    } finally {
+      now.mockRestore();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('lets a matching terminal drain win after a pre-signal durable fence', async () => {
+    const streamId = 'stream-fenced-terminal-drain';
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60_000 }),
+      eventTransport,
+      isRedis: false,
+    });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_ABORT_ACK_TIMEOUT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS,
+      );
+      expect(onError).not.toHaveBeenCalled();
+
+      eventTransport.emitDone(streamId, { final: true }, job.createdAt);
+      expect(onDone).toHaveBeenCalledWith({ final: true });
+
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS);
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('keeps a fenced predecessor attached while its durable handoff receipt is pending', async () => {
+    const streamId = 'stream-fenced-handoff-pending';
+    const clientRequestId = 'req-fenced-handoff-pending';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const owner = new GenerationJobManagerClass();
+    const replacer = new GenerationJobManagerClass();
+    owner.configure({ jobStore, eventTransport, isRedis: false });
+    replacer.configure({ jobStore, eventTransport, isRedis: false });
+    owner.initialize();
+    replacer.initialize();
+    const predecessor = await owner.createJob(streamId, 'user-1', 'conversation-1');
+    const predecessorDone = jest.fn();
+    const predecessorError = jest.fn();
+    const predecessorSubscription = await owner.subscribe(
+      streamId,
+      () => undefined,
+      predecessorDone,
+      predecessorError,
+    );
+    const claim = await replacer.claimGeneration(
+      'user-1',
+      clientRequestId,
+      streamId,
+      'conversation-1',
+      2,
+    );
+    const actualMarkStarted = jobStore.markIdempotencyKeyStarted.bind(jobStore);
+    let signalLegacyMarkStarted: (() => void) | undefined;
+    const legacyMarkStarted = new Promise<void>((resolve) => {
+      signalLegacyMarkStarted = resolve;
+    });
+    let releaseLegacyMark: (() => void) | undefined;
+    const legacyMarkGate = new Promise<void>((resolve) => {
+      releaseLegacyMark = resolve;
+    });
+    const markStartedSpy = jest
+      .spyOn(jobStore, 'markIdempotencyKeyStarted')
+      .mockImplementationOnce(async (...args) => {
+        signalLegacyMarkStarted?.();
+        await legacyMarkGate;
+        return actualMarkStarted(...args);
+      });
+    let creatingReplacement: ReturnType<typeof replacer.createJob> | undefined;
+    jest.useFakeTimers();
+
+    try {
+      creatingReplacement = replacer.createJob(streamId, 'user-1', 'conversation-1', {
+        idempotencyClientRequestId: clientRequestId,
+        idempotencyClaimToken: claim.existing!.claimToken,
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+      await legacyMarkStarted;
+
+      await owner.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+
+      expect(predecessorDone).not.toHaveBeenCalled();
+      expect(predecessorError).not.toHaveBeenCalled();
+      expect(eventTransport.getSubscriberCount(streamId)).toBe(1);
+
+      releaseLegacyMark?.();
+      const replacement = await creatingReplacement;
+
+      expect(replacement.createdAt).toBeGreaterThan(predecessor.createdAt);
+      expect(predecessorDone).toHaveBeenCalledWith(
+        expect.objectContaining({
+          final: true,
+          reconcile: true,
+          reconcileReason: 'generation_replaced',
+          generationCreatedAt: predecessor.createdAt,
+        }),
+      );
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+      expect(predecessorError).not.toHaveBeenCalled();
+      expect(owner.getRuntimeStats()).toMatchObject({
+        runtimeStateSize: 0,
+        fencedRuntimeRetirements: 0,
+      });
+
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+      expect(predecessorError).not.toHaveBeenCalled();
+      expect(owner.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      releaseLegacyMark?.();
+      await creatingReplacement?.catch(() => undefined);
+      markStartedSpy.mockRestore();
+      predecessorSubscription?.unsubscribe();
+      await Promise.all([owner.destroy(), replacer.destroy()]);
+    }
+  });
+
+  it('bounds a stalled replacement lookup before recycling the fenced subscriber', async () => {
+    const streamId = 'stream-fenced-handoff-lookup-stalled';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    const getJobSpy = jest.spyOn(jobStore, 'getJob');
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      getJobSpy.mockImplementation(() => new Promise<null>(() => undefined));
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      await jest.advanceTimersByTimeAsync(REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS);
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      getJobSpy.mockRestore();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('lets queued predecessor done drain after its successor job disappears', async () => {
+    const streamId = 'stream-fenced-handoff-successor-gone';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const predecessor = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      await jest.advanceTimersByTimeAsync(1);
+      const successor = await jobStore.createJob(
+        streamId,
+        'user-1',
+        'conversation-1',
+        undefined,
+        { generationProtocolVersion: 2 },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'successor-gone-attempt',
+      );
+      eventTransport.emitDone(streamId, { final: true }, predecessor.createdAt);
+      await jobStore.deleteJob(streamId, successor.createdAt);
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS - 1);
+
+      expect(onDone).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      eventTransport.flushDeliveries();
+
+      expect(onDone).toHaveBeenCalledWith({ final: true });
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('preserves a full terminal drain when a pending handoff settles at its deadline', async () => {
+    const streamId = 'stream-fenced-handoff-deadline-drain';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const predecessor = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      await jest.advanceTimersByTimeAsync(1);
+      const successor = await jobStore.createJob(
+        streamId,
+        'user-1',
+        'conversation-1',
+        undefined,
+        { generationProtocolVersion: 2 },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'deadline-successor-attempt',
+      );
+
+      await jest.advanceTimersByTimeAsync(REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS - 2);
+      eventTransport.emitDone(streamId, { final: true }, predecessor.createdAt);
+      await jobStore.acknowledgeReplacedJobs?.(streamId, successor.creationAttemptId!, [
+        predecessor.createdAt,
+      ]);
+      await jest.advanceTimersByTimeAsync(1);
+
+      expect(onDone).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      eventTransport.flushDeliveries();
+
+      expect(onDone).toHaveBeenCalledWith({ final: true });
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('retires a durably fenced runtime immediately when no subscriber is attached', async () => {
+    const streamId = 'stream-fenced-without-subscriber';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = Object.assign(new InMemoryEventTransport(), {
+      recordAbortAcknowledgement: jest.fn().mockResolvedValue(true),
+    });
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const getJob = jest.spyOn(jobStore, 'getJob');
+    const clearContentState = jest.spyOn(jobStore, 'clearContentState');
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: true });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    getJob.mockClear();
+    clearContentState.mockClear();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(manager.getRuntimeStats()).toMatchObject({
+        runtimeStateSize: 0,
+        earlyBufferedEvents: 0,
+        earlyBufferedBytes: 0,
+      });
+      expect(clearContentState).toHaveBeenCalledWith(streamId, job.createdAt);
+      expect(getJob).not.toHaveBeenCalled();
+      expect(eventTransport.recordAbortAcknowledgement).toHaveBeenCalledWith(
+        streamId,
+        job.createdAt,
+      );
+    } finally {
+      await manager.destroy();
+    }
+  });
+
+  it('does not record abort proof for a runtime this manager does not own', async () => {
+    const streamId = 'stream-fenced-non-owner';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = Object.assign(new InMemoryEventTransport(), {
+      recordAbortAcknowledgement: jest.fn().mockResolvedValue(true),
+    });
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: true });
+    manager.initialize();
+    const durableJob = await jobStore.createJob(streamId, 'user-1', 'conversation-1');
+
+    try {
+      await expect(manager.getJob(streamId)).resolves.toBeDefined();
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+
+      expect(eventTransport.recordAbortAcknowledgement).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+        createdAt: durableJob.createdAt,
+        status: 'running',
+      });
+    } finally {
+      await manager.destroy();
+    }
+  });
+
+  it('cancels a fenced retirement when its last subscriber detaches', async () => {
+    const streamId = 'stream-fenced-before-subscriber-detach';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const originalGetJob = jobStore.getJob.bind(jobStore);
+    const getJob = jest.spyOn(jobStore, 'getJob');
+    const clearContentState = jest.spyOn(jobStore, 'clearContentState');
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: true });
+    jest.useFakeTimers();
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onAllSubscribersLeft = jest.fn();
+    job.emitter.on('allSubscribersLeft', onAllSubscribersLeft);
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    await jest.advanceTimersByTimeAsync(0);
+    getJob.mockClear();
+    clearContentState.mockClear();
+    let signalLookupStarted: (() => void) | undefined;
+    const lookupStarted = new Promise<void>((resolve) => {
+      signalLookupStarted = resolve;
+    });
+    let releaseLookup: (() => void) | undefined;
+    const lookupGate = new Promise<void>((resolve) => {
+      releaseLookup = resolve;
+    });
+    getJob.mockImplementationOnce(async (...args) => {
+      signalLookupStarted?.();
+      await lookupGate;
+      return originalGetJob(...args);
+    });
+    const timerCountBeforeFence = jest.getTimerCount();
+    let detached = false;
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(jest.getTimerCount()).toBe(timerCountBeforeFence + 1);
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+      await lookupStarted;
+
+      subscription?.unsubscribe();
+      detached = true;
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(manager.getRuntimeStats()).toMatchObject({
+        runtimeStateSize: 0,
+        earlyBufferedEvents: 0,
+        earlyBufferedBytes: 0,
+      });
+      expect(clearContentState).toHaveBeenCalledWith(streamId, job.createdAt);
+      expect(getJob).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled();
+      expect(onAllSubscribersLeft).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(timerCountBeforeFence);
+
+      releaseLookup?.();
+      await jest.advanceTimersByTimeAsync(0);
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+      );
+
+      expect(getJob).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled();
+      expect(onAllSubscribersLeft).not.toHaveBeenCalled();
+    } finally {
+      releaseLookup?.();
+      getJob.mockRestore();
+      if (!detached) {
+        subscription?.unsubscribe();
+      }
+      await manager.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(['manual', 'timer'] as const)(
+    'does not apply a %s fenced predecessor detach to an unattached successor',
+    async (detachment) => {
+      const streamId = 'stream-fenced-detach-with-successor';
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+      const eventTransport = new DeferredEventTransport();
+      registerChunkPublicationCapability(eventTransport, async () => false);
+      const manager = new GenerationJobManagerClass();
+      manager.configure({ jobStore, eventTransport, isRedis: false });
+      jest.useFakeTimers();
+      manager.initialize();
+      const predecessor = await manager.createJob(streamId, 'user-1', 'conversation-1');
+      const predecessorError = jest.fn();
+      const predecessorSubscription = await manager.subscribe(
+        streamId,
+        () => undefined,
+        undefined,
+        predecessorError,
+      );
+
+      try {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+        });
+        expect(predecessor.abortController.signal.aborted).toBe(true);
+        expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+
+        const successor = await manager.createJob(streamId, 'user-1', 'conversation-2');
+        const successorAllSubscribersLeft = jest.fn();
+        successor.emitter.on('allSubscribersLeft', successorAllSubscribersLeft);
+        const updateJob = jest.spyOn(jobStore, 'updateJob');
+        updateJob.mockClear();
+
+        if (detachment === 'manual') {
+          predecessorSubscription?.unsubscribe();
+        } else {
+          await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+          await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+        }
+        await jest.advanceTimersByTimeAsync(0);
+
+        expect(successor.abortController.signal.aborted).toBe(false);
+        if (detachment === 'timer') {
+          expect(predecessorError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+        } else {
+          expect(predecessorError).not.toHaveBeenCalled();
+        }
+        expect(successorAllSubscribersLeft).not.toHaveBeenCalled();
+        expect(updateJob).not.toHaveBeenCalled();
+        expect(manager.getRuntimeStats()).toMatchObject({
+          runtimeStateSize: 1,
+          fencedRuntimeRetirements: 0,
+        });
+        await expect(manager.hasJob(streamId)).resolves.toBe(true);
+      } finally {
+        predecessorSubscription?.unsubscribe();
+        await manager.destroy();
+        jest.useRealTimers();
+      }
+    },
+  );
+
+  it('cancels a scheduled fenced retirement when services are reconfigured', async () => {
+    const streamId = 'stream-fenced-before-reconfigure';
+    const oldJobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const oldEventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(oldEventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore: oldJobStore, eventTransport: oldEventTransport, isRedis: false });
+    jest.useFakeTimers();
+    manager.initialize();
+    const oldJob = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const oldError = jest.fn();
+    const oldSubscription = await manager.subscribe(streamId, () => undefined, undefined, oldError);
+    await jest.advanceTimersByTimeAsync(0);
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      expect(oldJob.abortController.signal.aborted).toBe(true);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+
+      const currentJobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+      const currentEventTransport = new InMemoryEventTransport();
+      const currentGetJob = jest.spyOn(currentJobStore, 'getJob');
+      const currentClearContentState = jest.spyOn(currentJobStore, 'clearContentState');
+      manager.configure({
+        jobStore: currentJobStore,
+        eventTransport: currentEventTransport,
+        isRedis: false,
+      });
+      await manager.createJob(streamId, 'user-1', 'conversation-2');
+      currentGetJob.mockClear();
+      currentClearContentState.mockClear();
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(0);
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+      );
+
+      expect(oldError).not.toHaveBeenCalled();
+      expect(currentGetJob).not.toHaveBeenCalled();
+      expect(currentClearContentState).not.toHaveBeenCalled();
+      await expect(manager.hasJob(streamId)).resolves.toBe(true);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+    } finally {
+      jest.useRealTimers();
+      oldSubscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('cancels an in-flight fenced retirement lookup when services are reconfigured', async () => {
+    const streamId = 'stream-fenced-lookup-before-reconfigure';
+    const oldJobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const oldEventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(oldEventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore: oldJobStore, eventTransport: oldEventTransport, isRedis: false });
+    jest.useFakeTimers();
+    manager.initialize();
+    const oldJob = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const oldError = jest.fn();
+    const oldSubscription = await manager.subscribe(streamId, () => undefined, undefined, oldError);
+    await jest.advanceTimersByTimeAsync(0);
+    const originalGetJob = oldJobStore.getJob.bind(oldJobStore);
+    let signalLookupStarted: (() => void) | undefined;
+    const lookupStarted = new Promise<void>((resolve) => {
+      signalLookupStarted = resolve;
+    });
+    let releaseLookup: (() => void) | undefined;
+    const lookupGate = new Promise<void>((resolve) => {
+      releaseLookup = resolve;
+    });
+    const getJobSpy = jest.spyOn(oldJobStore, 'getJob').mockImplementationOnce(async (...args) => {
+      signalLookupStarted?.();
+      await lookupGate;
+      return originalGetJob(...args);
+    });
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      expect(oldJob.abortController.signal.aborted).toBe(true);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+      await lookupStarted;
+
+      const currentJobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+      const currentEventTransport = new InMemoryEventTransport();
+      const currentGetJob = jest.spyOn(currentJobStore, 'getJob');
+      const currentClearContentState = jest.spyOn(currentJobStore, 'clearContentState');
+      manager.configure({
+        jobStore: currentJobStore,
+        eventTransport: currentEventTransport,
+        isRedis: false,
+      });
+      await manager.createJob(streamId, 'user-1', 'conversation-2');
+      currentGetJob.mockClear();
+      currentClearContentState.mockClear();
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(0);
+      releaseLookup?.();
+      await Promise.resolve();
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+      );
+
+      expect(oldError).not.toHaveBeenCalled();
+      expect(currentGetJob).not.toHaveBeenCalled();
+      expect(currentClearContentState).not.toHaveBeenCalled();
+      await expect(manager.hasJob(streamId)).resolves.toBe(true);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+    } finally {
+      releaseLookup?.();
+      getJobSpy.mockRestore();
+      jest.useRealTimers();
+      oldSubscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('cancels fenced retirement timers when the manager is destroyed', async () => {
+    const streamId = 'stream-fenced-before-destroy';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    jest.useFakeTimers();
+    const timerCountBeforeInitialize = jest.getTimerCount();
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    await jest.advanceTimersByTimeAsync(0);
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+
+      await manager.destroy();
+      const errorCountAfterDestroy = onError.mock.calls.length;
+
+      expect(onError).not.toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(0);
+      /** Shutdown finishes cancelling on the tick after `destroy()` resolves, so settle the
+       * queue before counting. Without this the count only came back to the baseline when
+       * something else — a console write from the logger — happened to yield first. */
+      await jest.advanceTimersByTimeAsync(0);
+      expect(jest.getTimerCount()).toBe(timerCountBeforeInitialize);
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+      );
+
+      expect(onError).toHaveBeenCalledTimes(errorCountAfterDestroy);
+      expect(onError).not.toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(jest.getTimerCount()).toBe(timerCountBeforeInitialize);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+    }
+  });
+
+  it('does not start a fenced retirement after shutdown preparation', async () => {
+    const streamId = 'stream-fenced-during-shutdown';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    let signalPublicationStarted: (() => void) | undefined;
+    const publicationStarted = new Promise<void>((resolve) => {
+      signalPublicationStarted = resolve;
+    });
+    let resolvePublication: ((published: false) => void) | undefined;
+    const publicationGate = new Promise<false>((resolve) => {
+      resolvePublication = resolve;
+    });
+    registerChunkPublicationCapability(eventTransport, async () => {
+      signalPublicationStarted?.();
+      return publicationGate;
+    });
+    const clearContentState = jest.spyOn(jobStore, 'clearContentState');
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    jest.useFakeTimers();
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const subscription = await manager.subscribe(streamId, () => undefined);
+    clearContentState.mockClear();
+    let emitting: Promise<void> | undefined;
+
+    try {
+      emitting = manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      await publicationStarted;
+
+      manager.prepareForShutdown();
+      resolvePublication?.(false);
+      await emitting;
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(clearContentState).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+    } finally {
+      resolvePublication?.(false);
+      await emitting?.catch(() => undefined);
+      subscription?.unsubscribe();
+      await manager.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('reconnect-closes a fenced generation when no terminal arrives within the drain window', async () => {
+    const streamId = 'stream-fenced-terminal-missing';
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60_000 }),
+      eventTransport,
+      isRedis: false,
+    });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS - 1);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(1);
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('reconnect-closes only the fenced predecessor after a replacement installs during grace', async () => {
+    const streamId = 'stream-fenced-predecessor-replaced';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const owner = new GenerationJobManagerClass();
+    const replacer = new GenerationJobManagerClass();
+    owner.configure({ jobStore, eventTransport, isRedis: false });
+    replacer.configure({ jobStore, eventTransport, isRedis: false });
+    owner.initialize();
+    replacer.initialize();
+    const predecessor = await owner.createJob(streamId, 'user-1', 'conversation-1');
+    const predecessorError = jest.fn();
+    const predecessorSubscription = await owner.subscribe(
+      streamId,
+      () => undefined,
+      undefined,
+      predecessorError,
+    );
+    let replacementSubscription: Awaited<ReturnType<typeof owner.subscribe>> = null;
+    jest.useFakeTimers();
+
+    try {
+      await owner.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+
+      const replacement = await replacer.createJob(streamId, 'user-1', 'conversation-1');
+      const current = await owner.getJob(streamId);
+      const replacementDone = jest.fn();
+      const replacementError = jest.fn();
+      replacementSubscription = await owner.subscribe(
+        streamId,
+        () => undefined,
+        replacementDone,
+        replacementError,
+        { expectedCreatedAt: replacement.createdAt },
+      );
+
+      expect(replacement.createdAt).toBeGreaterThan(predecessor.createdAt);
+      expect(current?.createdAt).toBe(replacement.createdAt);
+      expect(replacementSubscription).not.toBeNull();
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+
+      expect(predecessorError).not.toHaveBeenCalled();
+      expect(replacementError).not.toHaveBeenCalled();
+      expect(replacementDone).not.toHaveBeenCalled();
+      expect(owner.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(eventTransport.getSubscriberCount(streamId)).toBe(2);
+
+      eventTransport.flushDeliveries();
+
+      expect(predecessorError).not.toHaveBeenCalled();
+      expect(replacementError).not.toHaveBeenCalled();
+      expect(replacementDone).not.toHaveBeenCalled();
+      expect(owner.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(eventTransport.getSubscriberCount(streamId)).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+
+      expect(predecessorError).not.toHaveBeenCalled();
+      expect(replacementError).not.toHaveBeenCalled();
+      expect(replacementDone).not.toHaveBeenCalled();
+      expect(owner.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(eventTransport.getSubscriberCount(streamId)).toBe(1);
+    } finally {
+      jest.useRealTimers();
+      predecessorSubscription?.unsubscribe();
+      replacementSubscription?.unsubscribe();
+      await Promise.all([owner.destroy(), replacer.destroy()]);
+    }
+  });
+
   it('does not return a lazy runtime replaced while its abort listener activates', async () => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
@@ -1147,7 +2329,9 @@ describe('GenerationJobManager startup telemetry', () => {
 
       const result = await aborting;
       expect(result).toMatchObject({ success: false, finalEvent: null });
-      expect(result.failureReason).toBeUndefined();
+      // Deletion is named for what it is. The point of this test is that it is NOT
+      // reported as a replacement — nothing took the conversation over.
+      expect(result.failureReason).toBe('job_not_found');
       expect(job.abortController.signal.aborted).toBe(true);
     } finally {
       releaseTransition?.();
@@ -1208,6 +2392,11 @@ describe('GenerationJobManager startup telemetry', () => {
       });
       expect(job.abortController.signal.aborted).toBe(true);
       expect(abortDisposer).toHaveBeenCalledTimes(1);
+      await manager.markProviderExecutionDrained(
+        streamId,
+        job.createdAt,
+        job.metadata.providerExecutionId!,
+      );
       await expect(jobStore.getJob(streamId)).resolves.toBeNull();
       await expect(manager.steering.peek(streamId, job.createdAt)).resolves.toEqual([]);
     } finally {
@@ -1633,6 +2822,86 @@ describe('GenerationJobManager startup telemetry', () => {
     await manager.destroy();
   });
 
+  it('holds terminal error publication until required persistence finishes', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+    const streamId = 'stream-error-persistence-barrier';
+    const job = await manager.createJob(streamId, 'user-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    let releasePersistence!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+
+    const completing = manager.completeJob(streamId, 'initialization failed', job.createdAt, {
+      beforeErrorPublication: () => persistence,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(onError).not.toHaveBeenCalled();
+    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+      status: 'error',
+      error: 'initialization failed',
+      terminalPersistencePending: true,
+    });
+
+    releasePersistence();
+    await expect(completing).resolves.toBe(true);
+
+    expect(onError).toHaveBeenCalledWith('initialization failed');
+    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+      status: 'error',
+      error: 'initialization failed',
+      terminalPersistencePending: false,
+    });
+    subscription?.unsubscribe();
+    await manager.destroy();
+  });
+
+  it('publishes reconciliation when required error persistence fails', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+    const streamId = 'stream-error-persistence-fails';
+    const job = await manager.createJob(streamId, 'user-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+
+    await expect(
+      manager.completeJob(streamId, 'initialization failed', job.createdAt, {
+        beforeErrorPublication: async () => {
+          throw new Error('message store unavailable');
+        },
+      }),
+    ).resolves.toBe(true);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        final: true,
+        reconcile: true,
+        terminalStatus: 'error',
+      }),
+    );
+    subscription?.unsubscribe();
+    await manager.destroy();
+  });
+
   it('atomically terminalizes a paused job when post-HITL persistence fails', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const manager = new GenerationJobManagerClass();
@@ -1935,6 +3204,11 @@ describe('GenerationJobManager startup telemetry', () => {
       streamId,
       expect.objectContaining({ aborted: true }),
       job.createdAt,
+    );
+    await manager.markProviderExecutionDrained(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
     );
     await expect(jobStore.getJob(streamId)).resolves.toBeNull();
     expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);

@@ -8,9 +8,9 @@ import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { shouldRenderEndpointOption } from '../utils';
+import { cn, getSpecAgentAvatarURL } from '~/utils';
 import SpecDescription from './SpecDescription';
 import SpecIcon from './SpecIcon';
-import { cn } from '~/utils';
 
 interface SearchResultsProps {
   results: (TModelSpec | Endpoint)[] | null;
@@ -25,6 +25,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
     handleSelectModel,
     handleSelectEndpoint,
     endpointsConfig,
+    agentsMap,
   } = useModelSelectorContext();
 
   const {
@@ -78,7 +79,11 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
               >
                 {(spec.showIconInMenu ?? true) && (
                   <div className="flex-shrink-0">
-                    <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />
+                    <SpecIcon
+                      currentSpec={spec}
+                      endpointsConfig={endpointsConfig}
+                      agentAvatarURL={getSpecAgentAvatarURL(spec, agentsMap)}
+                    />
                   </div>
                 )}
                 <div className="flex min-w-0 flex-col gap-1">

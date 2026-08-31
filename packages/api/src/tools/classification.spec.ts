@@ -4,8 +4,10 @@ import type { GenericTool } from '@librechat/agents';
 import type { LCToolRegistry } from './classification';
 import {
   buildToolRegistryFromAgentOptions,
+  aliasMCPToolOptions,
   agentHasProgrammaticTools,
   buildToolClassification,
+  collectMCPToolAliases,
   getServerNameFromTool,
   agentHasDeferredTools,
 } from './classification';
@@ -25,6 +27,111 @@ describe('classification.ts', () => {
     it('should handle multiple delimiters', () => {
       const result = getServerNameFromTool('some_tool_mcp_Server_Name');
       expect(result).toBe('Server_Name');
+    });
+  });
+
+  describe('collectMCPToolAliases', () => {
+    it('collects both alias directions from definitions', () => {
+      const defs = [
+        { name: 'search_mcp_acme', serverName: 'acme', serverToolName: 'acme_search' },
+        {
+          name: 'acme_list_mcp_acme',
+          serverName: 'acme',
+          serverToolName: 'acme_list',
+          currentToolName: 'list',
+        },
+        { name: 'plain_mcp_acme', serverName: 'acme' },
+      ];
+
+      expect(collectMCPToolAliases(defs)).toEqual([
+        { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
+        { name: 'acme_list_mcp_acme', aliasName: 'list_mcp_acme' },
+      ]);
+    });
+
+    it('normalizes the server name when reconstructing alias keys', () => {
+      const defs = [
+        {
+          name: 'search_mcp_My_Server',
+          serverName: 'My Server',
+          serverToolName: 'my_server_search',
+        },
+      ];
+
+      expect(collectMCPToolAliases(defs)).toEqual([
+        { name: 'search_mcp_My_Server', aliasName: 'my_server_search_mcp_My_Server' },
+      ]);
+    });
+  });
+
+  describe('aliasMCPToolOptions', () => {
+    it('aliases pre-strip option keys onto the current instance name, identity-gated', () => {
+      /** Wildcard-expanded catalogs rename stripped tools without any
+       *  `agent.tools` entry to preserve the spelling — persisted defer,
+       *  programmatic, background, and intent settings must follow. */
+      const defs = [
+        {
+          name: 'search_mcp_acme',
+          serverName: 'acme',
+          serverToolName: 'acme_search',
+        },
+        { name: 'list_items_mcp_acme', serverName: 'acme' },
+      ];
+      const agentToolOptions: AgentToolOptions = {
+        acme_search_mcp_acme: { defer_loading: true },
+      };
+
+      aliasMCPToolOptions(collectMCPToolAliases(defs), agentToolOptions);
+
+      expect(agentToolOptions['search_mcp_acme']).toEqual({ defer_loading: true });
+      const registry = buildToolRegistryFromAgentOptions(defs, agentToolOptions);
+      expect(registry.get('search_mcp_acme')?.defer_loading).toBe(true);
+    });
+
+    it('aliases current-keyed options back onto a legacy-named instance', () => {
+      /** The editor migrates `tool_options` keys to the current catalog
+       *  spelling, while an unedited `agent.tools` entry keeps the legacy
+       *  instance name — options must follow the reverse direction too. */
+      const defs = [
+        {
+          name: 'acme_search_mcp_acme',
+          serverName: 'acme',
+          serverToolName: 'acme_search',
+          currentToolName: 'search',
+        },
+      ];
+      const agentToolOptions: AgentToolOptions = {
+        search_mcp_acme: { defer_loading: true },
+      };
+
+      aliasMCPToolOptions(collectMCPToolAliases(defs), agentToolOptions);
+
+      expect(agentToolOptions['acme_search_mcp_acme']).toEqual({ defer_loading: true });
+      const registry = buildToolRegistryFromAgentOptions(defs, agentToolOptions);
+      expect(registry.get('acme_search_mcp_acme')?.defer_loading).toBe(true);
+    });
+
+    it('never overrides an explicit entry under the instance name', () => {
+      const defs = [{ name: 'search_mcp_acme', serverName: 'acme', serverToolName: 'acme_search' }];
+      const agentToolOptions: AgentToolOptions = {
+        search_mcp_acme: { defer_loading: false },
+        acme_search_mcp_acme: { defer_loading: true },
+      };
+
+      aliasMCPToolOptions(collectMCPToolAliases(defs), agentToolOptions);
+
+      expect(agentToolOptions['search_mcp_acme']).toEqual({ defer_loading: false });
+    });
+
+    it('does nothing without recorded upstream identity', () => {
+      const defs = [{ name: 'search_mcp_acme', serverName: 'acme' }];
+      const agentToolOptions: AgentToolOptions = {
+        acme_search_mcp_acme: { defer_loading: true },
+      };
+
+      aliasMCPToolOptions(collectMCPToolAliases(defs), agentToolOptions);
+
+      expect(agentToolOptions['search_mcp_acme']).toBeUndefined();
     });
   });
 

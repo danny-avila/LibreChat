@@ -16,15 +16,29 @@ const ChatFileRowWrapper = ({ children }: { children: React.ReactNode }) => (
 );
 
 function FileFormChat({
+  index,
   conversation,
   files,
   setFiles,
   setFilesLoading,
+  isPastedTextFile,
+  isPasteActionPending,
+  onEditPastedText,
+  onMovePastedTextInline,
 }: {
+  index: number;
   conversation: TConversation | null;
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Marks chips the composer generated from a long paste, so only those offer the paste
+   * affordances. Filenames cannot carry that decision: users can upload a `pasted-text.txt`. */
+  isPastedTextFile?: (file: ExtendedFile) => boolean;
+  /** Hides the paste actions while a replacement upload or inline move is in flight for the
+   * chip, so the same original cannot be acted on twice. */
+  isPasteActionPending?: (file: ExtendedFile) => boolean;
+  onEditPastedText?: (file: ExtendedFile) => void;
+  onMovePastedTextInline?: (file: ExtendedFile) => void;
 }) {
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
   const { endpoint: _endpoint } = conversation ?? { endpoint: null };
@@ -41,11 +55,16 @@ function FileFormChat({
     <>
       <FileRow
         files={files}
+        index={index}
         setFiles={setFiles}
         abortUpload={abortUpload}
         setFilesLoading={setFilesLoading}
         isRTL={isRTL}
         Wrapper={ChatFileRowWrapper}
+        isPastedTextFile={isPastedTextFile}
+        isPasteActionPending={isPasteActionPending}
+        onEditPastedText={onEditPastedText}
+        onMovePastedTextInline={onMovePastedTextInline}
       />
     </>
   );

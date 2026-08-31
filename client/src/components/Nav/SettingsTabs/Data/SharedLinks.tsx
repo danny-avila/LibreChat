@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo, useRef } from 'react';
 import { Trans } from 'react-i18next';
 import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
@@ -42,6 +42,7 @@ export default function SharedLinks() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [isOpen, setIsOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   const searchStore = useRecoilValue(store.search);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -62,6 +63,17 @@ export default function SharedLinks() {
       ...prev,
       search: value.trim(),
     }));
+  }, []);
+
+  const getRowId = useCallback((row: SharedLinkRow) => row.shareId, []);
+
+  /** Radix would otherwise seat focus on the search field, flashing its ring every
+   *  time the dialog opens. Anchor focus to the content instead: it is a landing
+   *  spot rather than a tab stop, so it shows no ring and the first Tab reaches a
+   *  real control that does. */
+  const handleOpenAutoFocus = useCallback((event: Event) => {
+    event.preventDefault();
+    contentRef.current?.focus();
   }, []);
 
   const allLinks = useMemo<SharedLinkRow[]>(() => {
@@ -184,11 +196,11 @@ export default function SharedLinks() {
               to={`/share/${shareId}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center gap-1 truncate rounded-sm text-link underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-text-primary"
+              className="group flex items-center gap-1.5 truncate rounded-sm font-medium text-text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
             >
               <span className="truncate">{title}</span>
               <ExternalLink
-                className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
+                className="size-3.5 flex-shrink-0 text-text-tertiary transition-colors group-hover:text-text-secondary"
                 aria-hidden="true"
               />
             </Link>
@@ -225,7 +237,7 @@ export default function SharedLinks() {
             <TooltipAnchor
               description={localize('com_ui_open_source_chat_new_tab')}
               render={
-                <Button asChild variant="ghost" className="h-8 w-8 p-0 hover:bg-surface-hover">
+                <Button asChild variant="row-action" size="icon-sm">
                   <a
                     href={`/c/${row.original.conversationId}`}
                     target="_blank"
@@ -243,8 +255,8 @@ export default function SharedLinks() {
               description={localize('com_ui_delete_shared_link_heading')}
               render={
                 <Button
-                  variant="ghost"
-                  className="h-8 w-8 p-0 hover:bg-surface-hover"
+                  variant="row-action"
+                  size="icon-sm"
                   onClick={() => {
                     setDeleteRow(row.original);
                     setIsDeleteOpen(true);
@@ -278,8 +290,10 @@ export default function SharedLinks() {
         </OGDialogTrigger>
 
         <OGDialogContent
-          title={localize('com_nav_shared_links')}
-          className="w-11/12 max-w-5xl bg-surface-primary text-text-primary shadow-2xl"
+          ref={contentRef}
+          tabIndex={-1}
+          onOpenAutoFocus={handleOpenAutoFocus}
+          className="w-11/12 max-w-3xl shadow-2xl focus:outline-none"
         >
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_shared_links')}</OGDialogTitle>
@@ -287,8 +301,8 @@ export default function SharedLinks() {
           <VirtualizedDataTable
             columns={columns}
             data={allLinks}
-            getRowId={(row) => row.shareId}
-            className="scrollbar-gutter-stable h-[60vh]"
+            getRowId={getRowId}
+            className="scrollbar-gutter-stable max-h-[60vh] min-h-80"
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
             isFetching={isFetching}
@@ -300,6 +314,7 @@ export default function SharedLinks() {
             isLoading={isLoading}
             config={{
               selection: { enableRowSelection: false, showCheckboxes: false },
+              skeleton: { count: 6 },
               search: { enableSearch: searchStore.enabled === true, debounce: 300 },
             }}
           />

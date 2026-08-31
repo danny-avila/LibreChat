@@ -1,3 +1,4 @@
+const { ATTACHMENT_ONLY_TEXT } = require('@librechat/api');
 const { EModelEndpoint, ContentTypes } = require('librechat-data-provider');
 const {
   AIMessage,
@@ -18,12 +19,18 @@ const {
  * @returns {(Object)} - The formatted message.
  */
 const formatVisionMessage = ({ message, image_urls, endpoint }) => {
+  // Omit an empty text part for image-only messages. Anthropic rejects empty
+  // text content blocks with HTTP 400, and an empty block adds nothing for
+  // other providers either.
+  const hasText = typeof message.content === 'string' && message.content.trim() !== '';
+  const textPart = hasText ? [{ type: ContentTypes.TEXT, text: message.content }] : [];
+
   if (endpoint === EModelEndpoint.anthropic) {
-    message.content = [...image_urls, { type: ContentTypes.TEXT, text: message.content }];
+    message.content = [...image_urls, ...textPart];
     return message;
   }
 
-  message.content = [{ type: ContentTypes.TEXT, text: message.content }, ...image_urls];
+  message.content = [...textPart, ...image_urls];
 
   return message;
 };
@@ -69,6 +76,15 @@ const formatMessage = ({ message, userName, assistantName, endpoint, langChain =
       image_urls: message.image_urls,
       endpoint,
     });
+  }
+
+  /**
+   * An attachment-only turn whose files reach the model out-of-band (RAG,
+   * code environment) leaves nothing in the content itself, and providers
+   * such as Anthropic reject an empty user message outright.
+   */
+  if (role === 'user' && content === '' && message.files?.length > 0) {
+    formattedMessage.content = ATTACHMENT_ONLY_TEXT;
   }
 
   if (_name) {

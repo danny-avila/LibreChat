@@ -49,6 +49,19 @@ function hasExplicitConfig(
       return interfaceConfig?.skills !== undefined;
     case PermissionTypes.SHARED_LINKS:
       return interfaceConfig?.sharedLinks !== undefined;
+    case PermissionTypes.SCHEDULES: {
+      // `schedules` is dual-purpose. The BOOLEAN form is the RUNTIME kill switch read
+      // by getLimits, NOT a permission config: treating it as explicit would write
+      // SCHEDULES.USE into the role docs, and removing the kill switch later would
+      // leave that disabled permission stuck (forbidden) until manual repair. Only an
+      // OBJECT carrying explicit use/create is permission intent; runtime-only limits
+      // (maxPerUser, fireConcurrency, …) are not.
+      const schedules = interfaceConfig?.schedules;
+      if (typeof schedules !== 'object' || schedules == null) {
+        return false;
+      }
+      return schedules.use !== undefined || schedules.create !== undefined;
+    }
     default:
       return false;
   }
@@ -199,6 +212,12 @@ export async function updateInterfacePermissions({
       typeof defaults.agents === 'object' ? defaults.agents?.public : undefined;
     const skillsDefaultPublic =
       typeof defaults.skills === 'object' ? defaults.skills?.public : undefined;
+    // `schedules` is intentionally absent from the interface DEFAULTS (it is
+    // experimental/default-off at runtime), so the PERMISSION defaults are stated here.
+    // Runtime availability and the role permission are separate concerns: a user may hold
+    // the permission while the feature stays off until an admin enables it.
+    const schedulesDefaultUse = true;
+    const schedulesDefaultCreate = true;
     const sharedLinksDefaultCreate =
       typeof defaults.sharedLinks === 'boolean' ? undefined : defaults.sharedLinks?.create;
     const sharedLinksDefaultShare =
@@ -524,6 +543,29 @@ export async function updateInterfacePermissions({
                   : getConfigPublic(loadedInterface.sharedLinks),
                 defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.SHARE_PUBLIC],
                 sharedLinksDefaultPublic,
+              ),
+            }
+          : {}),
+      },
+      [PermissionTypes.SCHEDULES]: {
+        [Permissions.USE]: getPermissionValue(
+          // Only an OBJECT `use` drives the permission; the boolean form is the runtime
+          // kill switch and must not seed SCHEDULES.USE (see hasExplicitConfig), so a
+          // removed kill switch can never leave USE stuck false.
+          typeof loadedInterface.schedules === 'object'
+            ? loadedInterface.schedules?.use
+            : undefined,
+          defaultPerms[PermissionTypes.SCHEDULES]?.[Permissions.USE],
+          schedulesDefaultUse,
+        ),
+        ...((typeof interfaceConfig?.schedules === 'object' &&
+          'create' in interfaceConfig.schedules) ||
+        !existingPermissions?.[PermissionTypes.SCHEDULES]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                getConfigCreate(loadedInterface.schedules),
+                defaultPerms[PermissionTypes.SCHEDULES]?.[Permissions.CREATE],
+                schedulesDefaultCreate ?? true,
               ),
             }
           : {}),

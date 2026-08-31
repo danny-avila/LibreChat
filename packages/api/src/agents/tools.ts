@@ -97,8 +97,8 @@ export interface RegisterCodeExecutionToolsParams {
   /**
    * When `true`, the registered `bash_tool` description is the hedged
    * stateful-session variant (workspace usually persists across calls, may
-   * reset at any time). Paired with `toolExecution.sandbox.statefulSessions`
-   * in `createRun`; resolved per-agent during initialization.
+   * reset at any time). Transport routing is resolved independently from the
+   * actually executing agent at tool-load time.
    */
   statefulSessions?: boolean;
 }

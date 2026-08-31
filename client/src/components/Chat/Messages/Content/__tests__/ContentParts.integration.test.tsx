@@ -16,6 +16,7 @@ jest.mock('~/hooks', () => ({
     style: { display: 'grid', gridTemplateRows: isExpanded ? '1fr' : '0fr' },
     ref: { current: null },
   }),
+  useLazyCollapseBody: jest.requireActual('~/hooks/Messages/useLazyCollapseBody').default,
   useProgress: (initial: number) => (initial >= 1 ? 1 : initial),
   scheduleMessageContentLayoutReconcile: jest.fn(() => jest.fn()),
 }));
@@ -57,6 +58,7 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
+  useMediaQuery: () => false,
   Button: ({
     children,
     variant: _variant,
@@ -78,7 +80,6 @@ jest.mock('../Parts', () => ({
   Reasoning: () => <div data-testid="reasoning" />,
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
-  EditTextPart: () => <div data-testid="edit-text" />,
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
@@ -127,7 +128,12 @@ jest.mock('~/utils', () => {
 
 const MCP_DELIMITER = '_mcp_';
 
-const makeMcpToolCall = (id: string, hasOutput = true): TMessageContentParts =>
+const makeMcpToolCall = (
+  id: string,
+  hasOutput = true,
+  stepId?: string,
+  agentId?: string,
+): TMessageContentParts =>
   ({
     type: ContentTypes.TOOL_CALL,
     [ContentTypes.TOOL_CALL]: {
@@ -135,6 +141,8 @@ const makeMcpToolCall = (id: string, hasOutput = true): TMessageContentParts =>
       name: `getTinyImage${MCP_DELIMITER}Everything`,
       args: '{}',
       output: hasOutput ? 'image_returned' : '',
+      ...(stepId == null ? {} : { stepId }),
+      ...(agentId == null ? {} : { agentId }),
     },
   }) as unknown as TMessageContentParts;
 
@@ -150,6 +158,17 @@ const makeMcpToolCallWithoutId = (name: string, hasOutput = true): TMessageConte
 
 const makeTextPart = (text: string): TMessageContentParts =>
   ({ type: ContentTypes.TEXT, text }) as unknown as TMessageContentParts;
+
+const makePhasePart = (start: number, end: number, label: string): TMessageContentParts =>
+  ({
+    type: ContentTypes.ACTIVITY_LABEL,
+    [ContentTypes.ACTIVITY_LABEL]: label,
+    activity_label_type: 'phase',
+    activity_start_index: start,
+    activity_end_index: end,
+    activity_count: end - start,
+    pending: false,
+  }) as unknown as TMessageContentParts;
 
 const imageAttachment = (toolCallId: string, name = 'tiny.png'): TAttachment =>
   ({
@@ -248,6 +267,27 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
   });
 
+  it('keeps an earlier step attachment off a live repeated provider call', () => {
+    const content = [
+      makeMcpToolCall('call_0', true, 'step-1', 'agent_a'),
+      makeMcpToolCall('call_1', true, 'step-1', 'agent_a'),
+      makeTextPart('between runs'),
+      makeMcpToolCall('call_0', false, undefined, 'agent_a'),
+      makeMcpToolCall('call_2', false, undefined, 'agent_a'),
+    ];
+    const previousAttachment = {
+      ...imageAttachment('call_0', 'previous.png'),
+      agentId: 'agent_a',
+      stepId: 'step-1',
+    } as unknown as TAttachment;
+
+    renderContentParts({ ...baseProps, content, attachments: [previousAttachment] });
+
+    const groups = screen.getAllByTestId('attachment-group');
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveAttribute('data-count', '1');
+  });
+
   it('keeps a manually expanded completed tool group open when its content index shifts', () => {
     const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
     const nextContent = [makeTextPart('streamed preface'), ...content];
@@ -276,9 +316,87 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     );
   });
 
+  it('keeps repeated legacy provider-id groups independently expanded', () => {
+    const content = [
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_1'),
+      makeTextPart('between batches'),
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_2'),
+    ];
+    const nextContent = [makeTextPart('streamed preface'), ...content];
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    fireEvent.click(toggles[1]);
+    expect(toggles[0]).toHaveAttribute('aria-expanded', 'false');
+    expect(toggles[1]).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={nextContent} />
+      </RecoilRoot>,
+    );
+    const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
+    expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('counts repeated legacy provider-id groups across activity phases', () => {
+    const content = [
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_1'),
+      makePhasePart(0, 2, 'First phase'),
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_2'),
+      makePhasePart(3, 5, 'Second phase'),
+    ];
+    const shiftedContent = [
+      makeTextPart('streamed preface'),
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_1'),
+      makePhasePart(1, 3, 'First phase'),
+      makeMcpToolCall('call_0'),
+      makeMcpToolCall('call_2'),
+      makePhasePart(4, 6, 'Second phase'),
+    ];
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={content} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'First phase' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Second phase' }));
+    const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    fireEvent.click(toggles[1]);
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={shiftedContent} />
+      </RecoilRoot>,
+    );
+    for (const phase of ['First phase', 'Second phase']) {
+      const phaseToggle = screen.getByRole('button', { name: phase });
+      if (phaseToggle.getAttribute('aria-expanded') !== 'true') {
+        fireEvent.click(phaseToggle);
+      }
+    }
+    const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
+    expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('keeps a running tool group open when an individual tool is expanded before completion', () => {
     const runningContent = [makeMcpToolCall('t1', false), makeMcpToolCall('t2', false)];
-    const completedContent = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+    const completedContent = [
+      makeMcpToolCall('t1', true, 'step-1'),
+      makeMcpToolCall('t2', true, 'step-1'),
+    ];
 
     const { rerender } = render(
       <RecoilRoot>

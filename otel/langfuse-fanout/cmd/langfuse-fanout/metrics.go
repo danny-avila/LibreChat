@@ -55,7 +55,7 @@ func newGatewayMetrics() *gatewayMetrics {
 		traceExports: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "langfuse_fanout_trace_exports_total",
 			Help: "Total trace export attempts through the Langfuse fanout gateway.",
-		}, []string{"destination", "result"}),
+		}, []string{"destination", "result", "tenant_id"}),
 		mediaDivergence: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "langfuse_fanout_media_divergence_total",
 			Help: "Media fanout upstream response divergence by kind. Values are counts only; no media IDs or URLs are exposed.",
@@ -125,11 +125,19 @@ func (m *gatewayMetrics) recordUpstream(operation string, destination string, st
 	m.upstreamDuration.With(labels).Observe(duration.Seconds())
 }
 
-func (m *gatewayMetrics) recordTraceExport(destination string, result string) {
+func (m *gatewayMetrics) recordTraceExport(destination string, result string, tenantID string) {
 	if m == nil {
 		return
 	}
-	m.traceExports.WithLabelValues(normalizeMetricLabel(destination), result).Inc()
+	m.traceExports.WithLabelValues(normalizeMetricLabel(destination), result, tenantMetricLabel(tenantID)).Inc()
+}
+
+func tenantMetricLabel(tenantID string) string {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return "unknown"
+	}
+	return tenantID
 }
 
 func (m *gatewayMetrics) recordMediaDivergence(kind string, destination string) {
