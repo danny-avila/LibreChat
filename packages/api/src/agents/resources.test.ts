@@ -2131,6 +2131,26 @@ describe('primeResources', () => {
       expect(searchResource?.files?.map((f) => f.file_id) ?? []).not.toContain('embedded-context');
     });
 
+    it('never queues a text-source record, which has no streamable backing', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const textFile = makeCodeFile({ file_id: 'text-record', source: FileSources.text });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([textFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+      });
+
+      expect(result.provisionState).toBeUndefined();
+      expect(result.attachments?.map((f) => f?.file_id)).toContain('text-record');
+    });
+
     it('grants agent scope only to agent setup files', () => {
       expect(isAgentScopedFile({ context: FileContext.agents })).toBe(true);
       expect(isAgentScopedFile({ context: FileContext.execute_code })).toBe(false);
