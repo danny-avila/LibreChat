@@ -279,7 +279,7 @@ describe('expandSharePointFolders', () => {
     const result = await expandSharePointFolders({
       items: [pickedFolder('folder-1')],
       accessToken: ACCESS_TOKEN,
-      screenFile: (file) => (file.size >= 1_000 ? 'size' : null),
+      createScreen: () => (file) => (file.size >= 1_000 ? 'size' : null),
     });
 
     expect(result.files.map((file) => file.id)).toEqual(['small', 'also-small']);
@@ -294,7 +294,7 @@ describe('expandSharePointFolders', () => {
       items: [pickedFolder('folder-1')],
       accessToken: ACCESS_TOKEN,
       maxFiles: 1,
-      screenFile: (file) => (file.size >= 1_000 ? 'size' : null),
+      createScreen: () => (file) => (file.size >= 1_000 ? 'size' : null),
     });
 
     expect(result.files.map((file) => file.id)).toEqual(['small']);
@@ -306,11 +306,42 @@ describe('expandSharePointFolders', () => {
     const result = await expandSharePointFolders({
       items: [pickedFolder('folder-1')],
       accessToken: ACCESS_TOKEN,
-      screenFile: (file) => (file.name === 'already-here.txt' ? 'duplicate' : null),
+      createScreen: () => (file) => (file.name === 'already-here.txt' ? 'duplicate' : null),
     });
 
     expect(result.files.map((file) => file.id)).toEqual(['new-one']);
     expect(result.skippedFiles).toEqual([{ name: 'already-here.txt', reason: 'duplicate' }]);
+  });
+
+  it('creates one screen per walk so its state does not leak between selections', async () => {
+    mockGraph({ 'folder-1': [driveFile('same-name')] });
+    const seen: string[] = [];
+    const createScreen = () => {
+      const names = new Set<string>();
+      return (file) => {
+        if (names.has(file.name)) {
+          return 'duplicate';
+        }
+        names.add(file.name);
+        seen.push(file.name);
+        return null;
+      };
+    };
+
+    const first = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      createScreen,
+    });
+    const second = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      createScreen,
+    });
+
+    expect(first.files.map((file) => file.id)).toEqual(['same-name']);
+    expect(second.files.map((file) => file.id)).toEqual(['same-name']);
+    expect(seen).toEqual(['same-name.txt', 'same-name.txt']);
   });
 
   it('reports a share-only folder as unreadable without calling Graph', async () => {

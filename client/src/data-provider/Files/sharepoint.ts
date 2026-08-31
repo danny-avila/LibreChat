@@ -128,22 +128,25 @@ async function fetchChildrenPage(url: string, accessToken: string): Promise<Driv
  * listing is the unit of work, so `maxFiles` and the request budget are both applied
  * as pages arrive rather than after a folder has been materialized in full.
  *
- * Upload policy stays with the caller: `screenFile` decides which folder items are
- * worth downloading, so this module never duplicates the uploader's rules. Folders
- * the user cannot list — including share-only results that carry no drive identifiers
- * to traverse — are reported instead of failing the whole selection.
+ * Upload policy stays with the caller: `createScreen` builds a screen for this one
+ * walk, deciding which folder items are worth downloading, so this module never
+ * duplicates the uploader's rules and the screen can accumulate state across the walk
+ * without leaking it into the next one. Folders the user cannot list — including
+ * share-only results that carry no drive identifiers to traverse — are reported
+ * instead of failing the whole selection.
  */
 export async function expandSharePointFolders({
   items,
   accessToken,
   maxFiles,
-  screenFile,
+  createScreen,
 }: {
   items: SharePointFile[];
   accessToken: string;
   maxFiles?: number;
-  screenFile?: (file: SharePointFile) => SharePointSkipReason | null;
+  createScreen?: () => (file: SharePointFile) => SharePointSkipReason | null;
 }): Promise<SharePointFolderExpansion> {
+  const screenFile = createScreen?.();
   const fileLimit = maxFiles == null ? Number.POSITIVE_INFINITY : Math.max(maxFiles, 0);
   const files: SharePointFile[] = [];
   const unreadableFolders: string[] = [];

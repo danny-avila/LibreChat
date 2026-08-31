@@ -14,8 +14,8 @@ interface UseSharePointDownloadProps {
   onError?: (error: Error) => void;
   /** Remaining attachment slots, so folder contents cannot overrun the endpoint's file limit. */
   maxFiles?: number;
-  /** Applies the uploader's rules to folder contents before they are downloaded. */
-  screenFile?: (file: SharePointFile) => SharePointSkipReason | null;
+  /** Builds a per-walk screen applying the uploader's rules to folder contents. */
+  createScreen?: () => (file: SharePointFile) => SharePointSkipReason | null;
 }
 
 interface UseSharePointDownloadReturn {
@@ -29,7 +29,7 @@ export default function useSharePointDownload({
   onFilesDownloaded,
   onError,
   maxFiles,
-  screenFile,
+  createScreen,
 }: UseSharePointDownloadProps = {}): UseSharePointDownloadReturn {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -85,7 +85,7 @@ export default function useSharePointDownload({
             items: files,
             accessToken,
             maxFiles,
-            screenFile,
+            createScreen,
           });
           filesToDownload = expansion.files;
 
@@ -208,7 +208,7 @@ export default function useSharePointDownload({
       refetchToken,
       localize,
       maxFiles,
-      screenFile,
+      createScreen,
     ],
   );
 
