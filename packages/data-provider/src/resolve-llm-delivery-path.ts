@@ -1,5 +1,10 @@
 import type { TDefaultLLMDeliveryPath, TDefaultLLMDeliveryPathConfig } from './file-config';
-import { EModelEndpoint, isDocumentSupportedProvider, isMediaSupportedProvider } from './schemas';
+import {
+  EModelEndpoint,
+  isDocumentSupportedProvider,
+  isKnownProviderIdentifier,
+  isMediaSupportedProvider,
+} from './schemas';
 import { isBedrockDocumentType } from './file-config';
 
 /** Audio and video reach the model only through the media encoders, which support a
@@ -71,10 +76,13 @@ export function resolveDefaultLLMDeliveryPath(
    *  admin's decision. A known endpoint that cannot encode documents or media would
    *  otherwise accept the upload and hand the model nothing at all. */
   /** `agents` is a container, not a provider: it is what an upload reports when the
-   *  agent's real provider could not be resolved, as for ephemeral agents. Judging
-   *  capability from it would downgrade media the actual provider can deliver, so an
-   *  unresolved provider keeps the system default. */
-  const providerKnown = endpoint != null && endpoint !== EModelEndpoint.agents;
+   *  agent's real provider could not be resolved, as for ephemeral agents. A custom
+   *  endpoint name is likewise unresolvable here, since its real provider is chosen
+   *  at request time and is usually OpenAI- or Anthropic-compatible. Judging
+   *  capability from either would downgrade media the actual provider can deliver,
+   *  so an unresolved provider keeps the system default. */
+  const providerKnown =
+    endpoint != null && endpoint !== EModelEndpoint.agents && isKnownProviderIdentifier(endpoint);
   if (systemDefault === 'provider' && providerKnown && !isProviderCapable(mimeType, endpoint)) {
     return 'text';
   }

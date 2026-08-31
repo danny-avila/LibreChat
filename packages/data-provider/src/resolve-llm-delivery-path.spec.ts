@@ -198,6 +198,15 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     );
   });
 
+  it('keeps the system default for a custom endpoint name', () => {
+    expect(resolveDefaultLLMDeliveryPath('application/pdf', undefined, undefined, 'MyOpenAI')).toBe(
+      'provider',
+    );
+    expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'MyOpenAI')).toBe(
+      'provider',
+    );
+  });
+
   it('should export SYSTEM_LLM_DELIVERY_DEFAULTS with correct shape', () => {
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.fallback).toBe('text');
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.overrides).toEqual({
