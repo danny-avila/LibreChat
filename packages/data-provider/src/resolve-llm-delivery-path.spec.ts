@@ -17,6 +17,10 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     expect(resolveDefaultLLMDeliveryPath('video/mp4')).toBe('provider');
   });
 
+  it('should return system default for audio when no config provided', () => {
+    expect(resolveDefaultLLMDeliveryPath('audio/mpeg')).toBe('provider');
+  });
+
   it('should return system fallback for unknown mime types', () => {
     expect(resolveDefaultLLMDeliveryPath('text/plain')).toBe('text');
   });
@@ -109,6 +113,7 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.overrides).toEqual({
       'image/*': 'provider',
       'video/*': 'provider',
+      'audio/*': 'provider',
       'application/pdf': 'provider',
     });
   });
