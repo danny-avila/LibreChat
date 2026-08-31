@@ -2415,7 +2415,18 @@ export const configSchema = z.object({
        * endpoint > a custom endpoint's own config.
        */
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
-      [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
+      [EModelEndpoint.openAI]: baseEndpointSchema
+        .merge(
+          z.object({
+            /**
+             * Optional static headers merged into every request to this built-in endpoint.
+             * Values support placeholder resolution (env vars, `{{user_*}}`, `{{LIBRECHAT_BODY_*}}`,
+             * custom user variables), matching the behavior on Custom Endpoints.
+             */
+            headers: z.record(z.string()).optional(),
+          }),
+        )
+        .optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
       [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
