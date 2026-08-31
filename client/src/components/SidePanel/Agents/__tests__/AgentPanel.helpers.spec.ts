@@ -1,12 +1,13 @@
 /**
  * @jest-environment jsdom
  */
-import { Constants, type Agent } from 'librechat-data-provider';
+import { Constants, Tools, type Agent } from 'librechat-data-provider';
 import type { AgentModelParameters } from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
   composeAgentUpdatePayload,
+  composeAgentTools,
   persistAvatarChanges,
   isAvatarUploadOnlyDirty,
   hasPersistedDirtyFields,
@@ -351,3 +352,61 @@ describe('mayHavePersistedChange', () => {
     ).toBe(false);
   });
 });
+
+describe('composeAgentTools', () => {
+  it('includes file_search when explicitly enabled', () => {
+    const form = createForm();
+    form.file_search = true;
+
+    const tools = composeAgentTools(form);
+    expect(tools).toContain(Tools.file_search);
+  });
+
+  it('includes file_search when knowledge files exist even if file_search flag is false', () => {
+    const form = createForm();
+    form.file_search = false;
+    form.agent = {
+      id: 'agent_123',
+      name: 'Test Agent',
+      knowledge_files: [['doc1.pdf', {}]],
+      tool_resources: { file_search: { file_ids: ['doc1'] } },
+    } as unknown as Agent;
+
+    const tools = composeAgentTools(form);
+    expect(tools).toContain(Tools.file_search);
+  });
+
+  it('includes execute_code when code files exist even if execute_code flag is false', () => {
+    const form = createForm();
+    form.execute_code = false;
+    form.agent = {
+      id: 'agent_123',
+      name: 'Test Agent',
+      code_files: [['script.py', {}]],
+      tool_resources: { execute_code: { file_ids: ['script'] } },
+    } as unknown as Agent;
+
+    const tools = composeAgentTools(form);
+    expect(tools).toContain(Tools.execute_code);
+  });
+
+  it('does not duplicate tools if already present in form.tools', () => {
+    const form = createForm();
+    form.file_search = true;
+    form.tools = [Tools.file_search];
+
+    const tools = composeAgentTools(form);
+    expect(tools.filter((t) => t === Tools.file_search)).toHaveLength(1);
+  });
+
+  it('omits file_search and execute_code when disabled and no files are present', () => {
+    const form = createForm();
+    form.file_search = false;
+    form.execute_code = false;
+
+    const tools = composeAgentTools(form);
+    expect(tools).not.toContain(Tools.file_search);
+    expect(tools).not.toContain(Tools.execute_code);
+  });
+});
+

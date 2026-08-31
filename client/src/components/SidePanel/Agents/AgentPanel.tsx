@@ -142,6 +142,47 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
   } as const;
 }
 
+/**
+ * Composes the complete list of tools for an agent submission.
+ * Ensures file-backed built-in capabilities (such as file_search and execute_code)
+ * are included whenever the capability is explicitly enabled OR the agent holds attached files.
+ */
+export function composeAgentTools(data: AgentForm): string[] {
+  const tools = [...(data.tools ?? [])];
+
+  const hasCodeFiles = Boolean(
+    data.code_files?.length ||
+      data.agent?.code_files?.length ||
+      data.agent?.tool_resources?.execute_code?.file_ids?.length,
+  );
+  const hasKnowledgeFiles = Boolean(
+    data.knowledge_files?.length ||
+      data.agent?.knowledge_files?.length ||
+      data.agent?.tool_resources?.file_search?.file_ids?.length,
+  );
+
+  if (
+    (data.execute_code === true || hasCodeFiles) &&
+    !tools.includes(Tools.execute_code)
+  ) {
+    tools.push(Tools.execute_code);
+  }
+  if (
+    (data.file_search === true || hasKnowledgeFiles) &&
+    !tools.includes(Tools.file_search)
+  ) {
+    tools.push(Tools.file_search);
+  }
+  if (data.web_search === true && !tools.includes(Tools.web_search)) {
+    tools.push(Tools.web_search);
+  }
+  if (data.memory === true && !tools.includes(Tools.memory)) {
+    tools.push(Tools.memory);
+  }
+
+  return tools;
+}
+
 type UploadAvatarFn = (variables: { agent_id: string; formData: FormData }) => Promise<Agent>;
 
 export interface PersistAvatarChangesParams {
@@ -564,20 +605,7 @@ export default function AgentPanel() {
 
   const onSubmit = useCallback(
     async (data: AgentForm) => {
-      const tools = data.tools ?? [];
-
-      if (data.execute_code === true) {
-        tools.push(Tools.execute_code);
-      }
-      if (data.file_search === true) {
-        tools.push(Tools.file_search);
-      }
-      if (data.web_search === true) {
-        tools.push(Tools.web_search);
-      }
-      if (data.memory === true) {
-        tools.push(Tools.memory);
-      }
+      const tools = composeAgentTools(data);
 
       const { payload: basePayload, provider, model } = composeAgentUpdatePayload(data, agent_id);
 
