@@ -13,6 +13,10 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     expect(resolveDefaultLLMDeliveryPath('application/pdf')).toBe('provider');
   });
 
+  it('should return system default for videos when no config provided', () => {
+    expect(resolveDefaultLLMDeliveryPath('video/mp4')).toBe('provider');
+  });
+
   it('should return system fallback for unknown mime types', () => {
     expect(resolveDefaultLLMDeliveryPath('text/plain')).toBe('text');
   });
@@ -104,6 +108,7 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.fallback).toBe('text');
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.overrides).toEqual({
       'image/*': 'provider',
+      'video/*': 'provider',
       'application/pdf': 'provider',
     });
   });
