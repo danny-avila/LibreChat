@@ -37,7 +37,8 @@ jest.mock('./strategies', () => ({
 
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getCodeApiAuthHeaders, __codeAxios } = require('@librechat/api');
-const { loadCodeApiKey, checkSessionsAlive } = require('./provision');
+const { getStrategyFunctions } = require('./strategies');
+const { loadCodeApiKey, checkSessionsAlive, provisionToCodeEnv } = require('./provision');
 
 describe('loadCodeApiKey', () => {
   afterEach(() => jest.clearAllMocks());
@@ -100,5 +101,60 @@ describe('checkSessionsAlive', () => {
     await checkSessionsAlive({ files: [staleFile('f2')], apiKey: 'legacy-key' });
 
     expect(__codeAxios.mock.calls[0][0].headers['X-API-Key']).toBe('legacy-key');
+  });
+});
+
+describe('provisionToCodeEnv', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  const setupStrategies = (uploadCodeEnvFile) => {
+    const getDownloadStream = jest.fn().mockResolvedValue({ pipe: jest.fn() });
+    getStrategyFunctions.mockImplementation((source) =>
+      source === 'execute_code' ? { handleFileUpload: uploadCodeEnvFile } : { getDownloadStream },
+    );
+  };
+
+  it('renames converted images to match the stored MIME type', async () => {
+    const uploadCodeEnvFile = jest
+      .fn()
+      .mockResolvedValue({ storage_session_id: 's1', file_id: 'r1' });
+    setupStrategies(uploadCodeEnvFile);
+
+    const result = await provisionToCodeEnv({
+      req: { user: { id: 'u1' } },
+      file: {
+        file_id: 'f1',
+        filename: 'photo.jpg',
+        type: 'image/webp',
+        source: 'local',
+        filepath: '/x/photo.jpg',
+        metadata: {},
+      },
+    });
+
+    expect(uploadCodeEnvFile).toHaveBeenCalledWith(
+      expect.objectContaining({ filename: 'photo.webp' }),
+    );
+    expect(result.codeEnvRef.file_id).toBe('r1');
+  });
+
+  it('keeps filenames untouched when the extension already matches or the file is not an image', async () => {
+    const uploadCodeEnvFile = jest
+      .fn()
+      .mockResolvedValue({ storage_session_id: 's1', file_id: 'r1' });
+    setupStrategies(uploadCodeEnvFile);
+    const baseFile = { file_id: 'f1', source: 'local', filepath: '/x/f', metadata: {} };
+
+    await provisionToCodeEnv({
+      req: { user: { id: 'u1' } },
+      file: { ...baseFile, filename: 'data.csv', type: 'text/csv' },
+    });
+    await provisionToCodeEnv({
+      req: { user: { id: 'u1' } },
+      file: { ...baseFile, filename: 'pic.webp', type: 'image/webp' },
+    });
+
+    expect(uploadCodeEnvFile.mock.calls[0][0].filename).toBe('data.csv');
+    expect(uploadCodeEnvFile.mock.calls[1][0].filename).toBe('pic.webp');
   });
 });
