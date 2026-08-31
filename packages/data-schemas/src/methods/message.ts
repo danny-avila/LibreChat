@@ -347,10 +347,17 @@ const SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT = SUBAGENT_TRANSCRIPT_PAGE_LIMIT 
  * an execution did not write a private subagent transcript. Project only the
  * visible activity vocabulary and bound it before MongoDB returns the row.
  */
-export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 16;
-const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 2048;
-const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 512;
-const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 1024;
+/**
+ * Per-item bounds mirror `SUBAGENT_ACTIVITY_LIMITS` in `packages/api`
+ * (`src/agents/activity.ts`) at worst-case 4-byte UTF-8, so activity projected
+ * from ordinary message content is clipped no harder than activity projected
+ * from a private transcript. The whole view stays bounded downstream by the
+ * 64KB serialized-activity budget and the 256KB response trim.
+ */
+export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 100;
+const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 8192;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 2048;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 4096;
 const SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT = 128;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT = 512;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT = 8;

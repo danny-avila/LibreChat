@@ -190,12 +190,19 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     selectedEventActor?.actorId ??
     eventSummary?.actorId ??
     foregroundTitle;
-  const { data, isLoading, isError, isReadinessPending, refetch } = useSubagentThreadQuery(
-    selection.parentConversationId,
-    threadId,
-    taskId,
-    eventTaskRunning ? { refetchInterval: ACTIVE_THREAD_REFRESH_MS } : undefined,
-  );
+  const { data, isLoading, isError, isPreviousData, isReadinessPending, refetch } =
+    useSubagentThreadQuery(selection.parentConversationId, threadId, taskId, {
+      /** A new delivery re-keys this query to its task. Keeping the previous
+       *  thread view mounted while the fresh one loads stops the whole panel
+       *  from flashing back to a loading dot on every incoming event. */
+      keepPreviousData: true,
+      ...(eventTaskRunning ? { refetchInterval: ACTIVE_THREAD_REFRESH_MS } : {}),
+    });
+  /** The retained view describes the PREVIOUS task while a re-keyed fetch is in
+   *  flight: its thread-scoped rows (turns, history cursors) stay valid, but its
+   *  task-scoped fields (selected activity, status, control receipts) must not
+   *  be attributed to the newly selected task. */
+  const taskView = isPreviousData ? undefined : data;
   const latestHistoryGeneration = JSON.stringify([
     data?.nextCursor ?? null,
     ...(data?.turns?.map((turn) => turn.taskId) ?? []),
@@ -203,11 +210,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const latestHistoryGenerationRef = useRef(latestHistoryGeneration);
   latestHistoryGenerationRef.current = latestHistoryGeneration;
   const durableTerminal =
-    subagentThreadHasTaskEvidence(data, taskId) &&
-    (data?.status === 'completed' ||
-      data?.status === 'failed' ||
-      data?.status === 'interrupted' ||
-      data?.status === 'cancelled');
+    subagentThreadHasTaskEvidence(taskView, taskId) &&
+    (taskView?.status === 'completed' ||
+      taskView?.status === 'failed' ||
+      taskView?.status === 'interrupted' ||
+      taskView?.status === 'cancelled');
   const priorTerminalRef = useRef(false);
   useSubagentActivityStream(selection, !durableTerminal || eventTaskRunning);
 
@@ -566,7 +573,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
 
   useEffect(() => {
     if (transientControl == null) return;
-    const durableReceipt = data?.controlReceipts?.find(
+    const durableReceipt = taskView?.controlReceipts?.find(
       (receipt) => receipt.invocationId === transientControl.invocationId,
     );
     if (durableReceipt == null) return;
@@ -583,13 +590,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     }
     if (closesTaskControls(durableReceipt)) setControlsClosed(true);
     setControlState(null);
-  }, [data?.controlReceipts, retryControl, setControlState, transientControl]);
+  }, [retryControl, setControlState, taskView?.controlReceipts, transientControl]);
 
   useEffect(() => {
-    if (data?.controlReceipts?.some(closesTaskControls)) {
+    if (taskView?.controlReceipts?.some(closesTaskControls)) {
       setControlsClosed(true);
     }
-  }, [data?.controlReceipts]);
+  }, [taskView?.controlReceipts]);
 
   const submitControl = useCallback(
     (action: SubagentControlAction, controlId?: string, retry?: SubagentControlRequest) => {
@@ -707,14 +714,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   );
   const activity = useMemo(() => {
     if (selection.durable == null) return liveActivity;
-    if (data == null) {
+    if (taskView == null) {
       const activityWithoutData =
         progress == null ? { ...liveActivity, status: 'dispatched' as const } : liveActivity;
       return transientControl == null
         ? activityWithoutData
         : { ...activityWithoutData, controls: [transientControl] };
     }
-    const durable = adaptDurableThreadActivity(data, selection.durable.taskId);
+    const durable = adaptDurableThreadActivity(taskView, selection.durable.taskId);
     const useLiveItems =
       (durable.status === 'running' || durable.status === 'dispatched') &&
       liveActivity.items.length > 0;
@@ -734,7 +741,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       return merged;
     }
     return { ...merged, controls: [...(merged.controls ?? []), transientControl] };
-  }, [data, liveActivity, progress, selection.durable, transientControl]);
+  }, [liveActivity, progress, selection.durable, taskView, transientControl]);
   const panelTitle = selection.event == null ? activity.title : selectedEventActorName;
   const latestConversationTurns = useMemo(
     () => (data == null ? [] : adaptDurableThreadConversation(data)),
@@ -848,7 +855,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     selection.durable == null || data == null || Array.isArray(data.turns);
   const taskInaccessible = controlInaccessible || transientControl?.reason === 'task_inaccessible';
   const controlAvailable =
-    selection.durable != null && data?.status === 'running' && !taskInaccessible && !controlsClosed;
+    selection.durable != null &&
+    taskView?.status === 'running' &&
+    !taskInaccessible &&
+    !controlsClosed;
   const controlPending =
     controlTask.isLoading || transientControl?.status === 'submitted' || retryControl != null;
   const showControlFooter =
@@ -856,11 +866,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const canContinueAsChat =
     selection.host === 'conversation' &&
     selection.durable != null &&
-    data?.subagentKind === 'agent' &&
-    data.agentId != null &&
-    data.status === 'completed' &&
-    subagentThreadHasTaskEvidence(data, taskId) &&
-    data.messages.some((message) => message.messageId === `${taskId}:assistant`);
+    taskView?.subagentKind === 'agent' &&
+    taskView.agentId != null &&
+    taskView.status === 'completed' &&
+    subagentThreadHasTaskEvidence(taskView, taskId) &&
+    taskView.messages.some((message) => message.messageId === `${taskId}:assistant`);
 
   const continueAsChat = useCallback(() => {
     if (!canContinueAsChat || selection.durable == null) return;

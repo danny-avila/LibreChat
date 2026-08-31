@@ -1949,8 +1949,8 @@ describe('Message Operations', () => {
             tool_call: {
               id: 'move-1',
               name: 'submit_move',
-              args: 'x'.repeat(2_000),
-              output: 'y'.repeat(4_000),
+              args: 'x'.repeat(3_000),
+              output: 'y'.repeat(5_000),
               progress: 1,
               inputValidationError: true,
             },
@@ -1990,8 +1990,8 @@ describe('Message Operations', () => {
           outputTruncated: true,
         }),
       );
-      expect(retainedTool.input.length).toBeLessThan(2_000);
-      expect(retainedTool.output.length).toBeLessThan(4_000);
+      expect(retainedTool.input.length).toBeLessThan(3_000);
+      expect(retainedTool.output.length).toBeLessThan(5_000);
       const retainedLabel = messages[0].subagentActivity?.find(
         (activity) => (activity as { type?: string }).type === 'activity_label',
       ) as { agentIds: string[]; labelTruncated: boolean; toolCallIds: string[] };
@@ -1999,8 +1999,8 @@ describe('Message Operations', () => {
       expect(retainedLabel.agentIds).toHaveLength(8);
       expect(retainedLabel.labelTruncated).toBe(true);
       expect(JSON.stringify(messages[0])).not.toContain('activity-0');
-      expect(JSON.stringify(messages[0])).not.toContain('x'.repeat(1_000));
-      expect(JSON.stringify(messages[0])).not.toContain('y'.repeat(2_000));
+      expect(JSON.stringify(messages[0])).not.toContain('x'.repeat(2_049));
+      expect(JSON.stringify(messages[0])).not.toContain('y'.repeat(4_097));
     });
 
     it('bounds public control receipts before materializing the message page', async () => {
