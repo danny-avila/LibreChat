@@ -236,6 +236,44 @@ beforeEach(async () => {
 });
 
 describe('MCP authority proofs', () => {
+  test('materializes every snapshot namespace before opening the transaction', async () => {
+    /** Amazon DocumentDB rejects in-transaction statements against collections
+     * that do not exist, and `asMCPError` reports that as `proof_unavailable`
+     * — so a deployment that has never written a PluginAuth or Token row
+     * cannot resolve any authority proof. Dropping those namespaces here
+     * reproduces that state; the resolve must recreate them and succeed. */
+    const optionalNamespaces = ['PluginAuth', 'Token'] as const;
+    for (const modelName of optionalNamespaces) {
+      await models[modelName].collection.drop().catch(() => undefined);
+    }
+    const existing = await mongoose.connection.db!.listCollections().toArray();
+    const names = new Set(existing.map((collection) => collection.name));
+    for (const modelName of optionalNamespaces) {
+      expect(names.has(models[modelName].collection.collectionName)).toBe(false);
+    }
+
+    /** Dropping the credential namespaces also empties the credential state,
+     * so the target must expect the post-drop revision — the point under test
+     * is that the transaction OPENS against missing namespaces, not that the
+     * credential is unchanged. */
+    const proof = await resolve([
+      target(
+        SERVER_NAME,
+        serverId.toHexString(),
+        serverSourceRevision,
+        null,
+        createMCPAuthorityCredentialRevision(['API_KEY'], []),
+      ),
+    ]);
+
+    expect(proof.servers).toHaveLength(1);
+    const after = await mongoose.connection.db!.listCollections().toArray();
+    const afterNames = new Set(after.map((collection) => collection.name));
+    for (const modelName of optionalNamespaces) {
+      expect(afterNames.has(models[modelName].collection.collectionName)).toBe(true);
+    }
+  });
+
   test('creates one immutable shared snapshot and current per-server revisions', async () => {
     const proof = await resolve();
 

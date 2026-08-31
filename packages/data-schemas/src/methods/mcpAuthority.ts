@@ -35,6 +35,7 @@ import type {
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { MCP_AUTHORITY_PROOF_VERSION } from '~/types';
 import { getTenantId } from '~/config/tenantContext';
+import logger from '~/config/winston';
 
 interface PinnableQuery {
   session(session: ClientSession): this;
@@ -998,10 +999,61 @@ function asMCPError(error: unknown): MCPAuthorityProofError {
   );
 }
 
+/** Every collection the authoritative snapshot reads inside its transaction. */
+const AUTHORITY_SNAPSHOT_MODELS = [
+  'User',
+  'Role',
+  'Group',
+  'Config',
+  'MCPServer',
+  'Agent',
+  'AclEntry',
+  'PluginAuth',
+  'Token',
+] as const;
+
 export function createMCPAuthorityMethods(
   mongoose: typeof import('mongoose'),
   hooks: MCPAuthorityMethodHooks = {},
 ): MCPAuthorityDatabaseMethods {
+  let snapshotNamespacesReady: Promise<void> | undefined;
+
+  /** Amazon DocumentDB rejects any statement inside a transaction that touches
+   * a collection which does not exist, and `asMCPError` converts that server
+   * rejection into `proof_unavailable` — so on a deployment where, say, no
+   * `PluginAuth` or `Token` row has ever been written, every authority proof
+   * fails with an error that names nothing about the real cause. Materializing
+   * the snapshot's namespaces before the transaction opens costs one `create`
+   * per collection per process and nothing on MongoDB, which tolerates the
+   * in-transaction read either way. */
+  async function ensureSnapshotNamespaces(): Promise<void> {
+    snapshotNamespacesReady ??= (async () => {
+      for (const modelName of AUTHORITY_SNAPSHOT_MODELS) {
+        const model = mongoose.models[modelName];
+        if (model == null) {
+          continue;
+        }
+        try {
+          await model.createCollection();
+        } catch (error) {
+          /** Already present, or a concurrent creator won the race — either way
+           * the namespace now exists. A genuine failure (e.g. a role without
+           * create rights) surfaces from the transaction itself. */
+          logger.debug(
+            `[MCPAuthority] Could not pre-create the ${modelName} collection:`,
+            (error as Error)?.message,
+          );
+        }
+      }
+    })();
+    try {
+      await snapshotNamespacesReady;
+    } catch (error) {
+      snapshotNamespacesReady = undefined;
+      throw error;
+    }
+  }
+
   async function loadCurrentProof(
     userId: string,
     tenantId: string | undefined,
@@ -1541,6 +1593,7 @@ export function createMCPAuthorityMethods(
     if (suppliedSession?.inTransaction()) {
       reject('proof_unavailable', 'MCP authority reads cannot use a caller transaction snapshot');
     }
+    await ensureSnapshotNamespaces();
     const session = suppliedSession ?? (await mongoose.startSession());
     const ownsSession = suppliedSession == null;
     try {
