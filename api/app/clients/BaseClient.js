@@ -1740,11 +1740,15 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
+      /* An explicit `provider` path is authoritative: lazy provisioning stamps
+       * `embedded`/`codeEnvRef` on files that are still meant for the model, so the
+       * legacy tool-provisioning exclusion only applies to records without one. */
       if (
-        file.embedded === true ||
-        file.metadata?.codeEnvRef != null ||
-        file.metadata?.codeEnvRefs != null ||
-        file.metadata?.fileIdentifier != null
+        file.llmDeliveryPath !== 'provider' &&
+        (file.embedded === true ||
+          file.metadata?.codeEnvRef != null ||
+          file.metadata?.codeEnvRefs != null ||
+          file.metadata?.fileIdentifier != null)
       ) {
         allFiles.push(file);
         continue;
