@@ -926,7 +926,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
     const extractedTextPlan = getUploadExtractedTextPlan({
       endpoint: metadata.endpoint,
-      toolResource: tool_resource,
+      toolResource: effectiveToolResource,
       mimeType: file.mimetype,
       fileConfig,
       ocrConfigured: appConfig?.ocr != null,
