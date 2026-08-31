@@ -97,6 +97,7 @@ jest.mock('~/endpoints', () => ({
 jest.mock('~/files', () => ({
   filterFilesByEndpointConfig: jest.fn(() => []),
   filterFilesByEndpointRuntimeConfig: jest.fn(() => []),
+  isLegacyFileUploadUX: jest.fn(() => false),
 }));
 
 jest.mock('~/prompts', () => ({
@@ -2991,6 +2992,35 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
       expect.anything(),
       expect.objectContaining({ code: true }),
     );
+  });
+
+  it('keeps an anchored branch scoped to itself when it references no files', async () => {
+    /* Widening an empty branch to the conversation would provision a sibling branch's
+     * attachments, sending files this branch never mentioned to the Code API or RAG. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([{ messageId: 'm1' }]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['sibling-branch-file']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+    mockGetThreadData.mockReturnValueOnce({ fileIds: [] });
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'parent-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getDeferredProvisionFiles).not.toHaveBeenCalled();
   });
 
   it('prefers the thread scope for deferred files when an anchor is supplied', async () => {

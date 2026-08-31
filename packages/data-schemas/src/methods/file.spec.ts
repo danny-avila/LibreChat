@@ -740,6 +740,89 @@ describe('File Methods', () => {
       expect(results.map((file) => file.file_id)).toEqual([deferredId]);
     });
 
+    it('still queues a file whose only code reference is for another route', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const otherRouteId = uuidv4();
+      await makeFile(otherRouteId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRefs: {
+            'stateful:a': {
+              kind: 'user',
+              id: ownerId.toString(),
+              storage_session_id: 'session-a',
+              file_id: otherRouteId,
+              executionRouteKey: 'stateful:a',
+            },
+          },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [otherRouteId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'stateful:b' },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([otherRouteId]);
+    });
+
+    it('omits a file already provisioned for the active route', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const sameRouteId = uuidv4();
+      await makeFile(sameRouteId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRefs: {
+            'stateful:b': {
+              kind: 'user',
+              id: ownerId.toString(),
+              storage_session_id: 'session-b',
+              file_id: sameRouteId,
+              executionRouteKey: 'stateful:b',
+            },
+          },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [sameRouteId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'stateful:b' },
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('treats a legacy pointer without a route key as the default deployment', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const legacyId = uuidv4();
+      await makeFile(legacyId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'session',
+            file_id: legacyId,
+          },
+        },
+      });
+      const ownerScope = { userId: ownerId.toString(), tenantId: 'tenant-a' };
+
+      const onDefault = await fileMethods.getDeferredProvisionFiles([legacyId], ownerScope, {
+        code: true,
+        codeRouteKey: 'default',
+      });
+      const onStateful = await fileMethods.getDeferredProvisionFiles([legacyId], ownerScope, {
+        code: true,
+        codeRouteKey: 'stateful:b',
+      });
+
+      expect(onDefault).toEqual([]);
+      expect(onStateful.map((file) => file.file_id)).toEqual([legacyId]);
+    });
+
     it('omits a file that already carries every requested result', async () => {
       const ownerId = new mongoose.Types.ObjectId();
       const embeddedId = uuidv4();

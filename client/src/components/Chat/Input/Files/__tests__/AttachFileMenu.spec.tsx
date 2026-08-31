@@ -105,6 +105,7 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false 
 
 function setupMocks(overrides: { provider?: string } = {}) {
   const translations: Record<string, string> = {
+    com_files_upload_local_machine: 'From Local Computer',
     com_files_upload_sharepoint: 'Upload from SharePoint',
     com_sidepanel_attach_files: 'Attach Files',
     com_ui_upload_code_environment: 'Upload to Code Environment',
@@ -161,6 +162,51 @@ function openMenu() {
 
 describe('AttachFileMenu', () => {
   beforeEach(jest.clearAllMocks);
+
+  describe('unified mode upload sources', () => {
+    it('uses a single upload button when SharePoint is disabled', () => {
+      setupMocks();
+      renderMenu({ endpointFileConfig: {} });
+
+      expect(screen.getByRole('button', { name: /attach files/i })).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /attach file options/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('offers SharePoint alongside local upload when SharePoint is enabled', () => {
+      setupMocks();
+      mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: true } });
+      renderMenu({ endpointFileConfig: {} });
+
+      openMenu();
+
+      expect(screen.getByText('From Local Computer')).toBeInTheDocument();
+      expect(screen.getByText('Upload from SharePoint')).toBeInTheDocument();
+    });
+
+    it('does not offer a destination choice on either source', () => {
+      setupMocks();
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: true,
+        fileSearchEnabled: true,
+        codeEnabled: true,
+      });
+      mockUseAgentToolPermissions.mockReturnValue({
+        fileSearchAllowedByAgent: true,
+        codeAllowedByAgent: true,
+        provider: undefined,
+      });
+      mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: true } });
+      renderMenu({ endpointFileConfig: {} });
+
+      openMenu();
+
+      expect(screen.queryByText('Upload to Code Environment')).not.toBeInTheDocument();
+      expect(screen.queryByText('Upload for File Search')).not.toBeInTheDocument();
+      expect(screen.queryByText('Upload as Text')).not.toBeInTheDocument();
+    });
+  });
 
   describe('Upload to Provider vs Upload Image', () => {
     it('shows "Upload to Provider" when endpointType is custom (resolved from agent provider)', () => {

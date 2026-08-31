@@ -1774,6 +1774,41 @@ describe('primeResources', () => {
       expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toContain('none-file');
     });
 
+    it('provisions nothing when the legacy destination chooser is active', async () => {
+      /* In legacy mode the destination is the user's explicit choice and the upload path
+       * already acted on it, so a missing reference records a decline, not pending work.
+       * Queueing on it would send the file to a service the user did not select. */
+      const providerFile: TFile = {
+        user: 'user1',
+        file_id: 'provider-file',
+        filename: 'data.csv',
+        filepath: '/path/data.csv',
+        type: 'text/csv',
+        bytes: 5000,
+        object: 'file' as const,
+        usage: 0,
+        embedded: false,
+        source: FileSources.local,
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([providerFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+        loadCodeApiKey: jest.fn().mockResolvedValue('code-key'),
+        legacyFileUploadUX: true,
+      });
+
+      expect(result.attachments?.map((f) => f?.file_id)).toContain('provider-file');
+      expect(result.provisionState).toBeUndefined();
+    });
+
     it('should include files with undefined llmDeliveryPath in attachments (legacy files)', async () => {
       const legacyFile: TFile = {
         user: 'user1',
