@@ -196,6 +196,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /* Provisioning moved into this package; the controllers build the callback from it. */
+  createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,
   SAFE_CONVERSATION_TITLE: 'New Chat',
   resolveConversationTitle: (...args) => mockResolveConversationTitle(...args),
