@@ -3,7 +3,11 @@ import { Constants } from 'librechat-data-provider';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
-import { loadMCPServerCatalogs, recoverMCPServerCatalogs } from './recovery';
+import {
+  MCPCatalogCapacityError,
+  loadMCPServerCatalogs,
+  recoverMCPServerCatalogs,
+} from './recovery';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -101,7 +105,7 @@ describe('recoverMCPServerCatalogs', () => {
       discoverServerTools,
       formatServerTools: jest.fn().mockReturnValue({}),
     };
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
       Array.from({ length: 4 }, () => loadMCPServerCatalogs({ user, servers }, deps)),
     );
 
@@ -109,7 +113,15 @@ describe('recoverMCPServerCatalogs', () => {
     expect(discoverServerTools).toHaveBeenCalledTimes(21);
     expect(maxActive).toBe(3);
     expect(results).toHaveLength(4);
-    expect(results.flatMap((result) => [...result.serverTools.keys()])).toHaveLength(21);
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(3);
+    expect(results.filter(({ status }) => status === 'rejected')).toEqual([
+      { status: 'rejected', reason: expect.any(MCPCatalogCapacityError) },
+    ]);
+    expect(
+      results.flatMap((result) =>
+        result.status === 'fulfilled' ? [...result.value.serverTools.keys()] : [],
+      ),
+    ).toHaveLength(21);
   });
 
   it('logs configuration-impossible discovery failures at debug, keeping error for the unexpected', async () => {
@@ -546,7 +558,48 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
 
     expect(maxActive).toBe(3);
     const options = getServerToolFunctionsSnapshot.mock.calls[0]?.[3];
-    expect(options?.deadlineMs).toBeGreaterThanOrEqual(before + 3000);
-    expect(options?.deadlineMs).toBeLessThanOrEqual(Date.now() + 3000);
+    expect(options?.deadlineMs).toBeGreaterThanOrEqual(before + 30_000);
+    expect(options?.deadlineMs).toBeLessThanOrEqual(Date.now() + 30_000);
+  });
+
+  it('cancels queued catalog work when the originating request ends', async () => {
+    const controller = new AbortController();
+    const releases: Array<() => void> = [];
+    const servers = Array.from({ length: 9 }, (_, index) => ({
+      serverName: `server-${index}`,
+      serverConfig: serverConfig(`server-${index}`),
+    }));
+    const getServerToolFunctionsSnapshot = jest.fn(
+      () =>
+        new Promise<{ tools: null }>((resolve) => {
+          releases.push(() => resolve({ tools: null }));
+        }),
+    );
+
+    const loading = loadMCPServerCatalogs(
+      { user, servers, signal: controller.signal },
+      {
+        getCachedServerTools: jest.fn().mockResolvedValue(null),
+        getServerToolFunctionsSnapshot,
+        cacheServerTools: jest.fn(),
+        loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+        discoverServerTools: jest.fn().mockResolvedValue({ tools: null }),
+        formatServerTools: jest.fn().mockReturnValue({}),
+      },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(getServerToolFunctionsSnapshot).toHaveBeenCalledTimes(3);
+
+    controller.abort();
+    releases.splice(0).forEach((release) => release());
+    await loading;
+
+    expect(getServerToolFunctionsSnapshot).toHaveBeenCalledTimes(3);
+    expect(getServerToolFunctionsSnapshot).toHaveBeenCalledWith(
+      user.id,
+      'server-0',
+      servers[0].serverConfig,
+      expect.objectContaining({ signal: controller.signal }),
+    );
   });
 });

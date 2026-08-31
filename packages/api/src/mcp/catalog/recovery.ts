@@ -5,6 +5,7 @@ import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
 import { hasCustomUserVars, getMissingCustomUserVars } from '../utils';
 import { getServerCustomUserVars } from '../auth';
+import { mcpConfig } from '../mcpConfig';
 
 /** Bounds all outbound catalog reads across this runtime. */
 const CATALOG_FANOUT_CONCURRENCY = 3;
@@ -81,6 +82,17 @@ interface CatalogWorkLane {
   resolve: (admitted: boolean) => void;
   nextIndex: number;
   inFlight: number;
+  signal?: AbortSignal;
+  onAbort?: () => void;
+}
+
+export class MCPCatalogCapacityError extends Error {
+  readonly code = 'MCP_CATALOG_CAPACITY';
+
+  constructor() {
+    super('MCP catalog capacity is temporarily exhausted');
+    this.name = 'MCPCatalogCapacityError';
+  }
 }
 
 /** Bounds one server's discovery, honouring a shorter operator `initTimeout`. */
@@ -96,6 +108,7 @@ async function discoverCandidate(
   user: IUser,
   { serverName, serverConfig, customUserVars }: RecoveryCandidate,
   deps: MCPServerCatalogRecoveryDeps,
+  signal?: AbortSignal,
 ): Promise<[string, LCAvailableTools | null]> {
   try {
     const result = await deps.discoverServerTools({
@@ -104,6 +117,7 @@ async function discoverCandidate(
       configServers: { [serverName]: serverConfig },
       customUserVars,
       deadlineMs: Date.now() + resolveBudget(serverConfig),
+      signal,
     });
     return [
       serverName,
@@ -130,6 +144,9 @@ function finishCatalogLane(lane: CatalogWorkLane): void {
     return;
   }
   activeCatalogLanes.delete(lane);
+  if (lane.signal != null && lane.onAbort != null) {
+    lane.signal.removeEventListener('abort', lane.onAbort);
+  }
   lane.resolve(true);
 }
 
@@ -160,8 +177,14 @@ function scheduleCatalogWork(): void {
   }
 }
 
-function runCatalogWork(tasks: ReadonlyArray<() => Promise<void>>): Promise<boolean> {
+function runCatalogWork(
+  tasks: ReadonlyArray<() => Promise<void>>,
+  signal?: AbortSignal,
+): Promise<boolean> {
   if (tasks.length === 0) {
+    return Promise.resolve(true);
+  }
+  if (signal?.aborted) {
     return Promise.resolve(true);
   }
   if (activeCatalogLanes.size >= CATALOG_FANOUT_CONCURRENCY) {
@@ -174,7 +197,18 @@ function runCatalogWork(tasks: ReadonlyArray<() => Promise<void>>): Promise<bool
       resolve,
       nextIndex: 0,
       inFlight: 0,
+      signal,
     };
+    lane.onAbort = () => {
+      lane.nextIndex = lane.tasks.length;
+      for (let index = pendingCatalogLanes.length - 1; index >= 0; index -= 1) {
+        if (pendingCatalogLanes[index] === lane) {
+          pendingCatalogLanes.splice(index, 1);
+        }
+      }
+      finishCatalogLane(lane);
+    };
+    signal?.addEventListener('abort', lane.onAbort, { once: true });
     activeCatalogLanes.add(lane);
     pendingCatalogLanes.push(lane);
     scheduleCatalogWork();
@@ -191,10 +225,14 @@ function runCatalogWork(tasks: ReadonlyArray<() => Promise<void>>): Promise<bool
  * proves pointless, and bounds everything else by a per-server budget.
  */
 export async function recoverMCPServerCatalogs(
-  params: { user: IUser; servers: readonly MCPServerCatalogRecoveryInput[] },
+  params: {
+    user: IUser;
+    servers: readonly MCPServerCatalogRecoveryInput[];
+    signal?: AbortSignal;
+  },
   deps: MCPServerCatalogRecoveryDeps,
 ): Promise<Map<string, LCAvailableTools>> {
-  const { user, servers } = params;
+  const { user, servers, signal } = params;
   /** Only the config tier retries a failed stub on its own clock. A `yaml`- or `user`-sourced
    *  stub has no such timer, so skipping it unconditionally would hide the server for good —
    *  exactly the state this recovery exists to escape. */
@@ -242,11 +280,12 @@ export async function recoverMCPServerCatalogs(
   const results: Array<[string, LCAvailableTools | null] | undefined> = [];
   const admitted = await runCatalogWork(
     authorized.map((candidate, index) => async () => {
-      results[index] = await discoverCandidate(user, candidate, deps);
+      results[index] = await discoverCandidate(user, candidate, deps, signal);
     }),
+    signal,
   );
   if (!admitted) {
-    return new Map();
+    throw new MCPCatalogCapacityError();
   }
 
   return new Map(
@@ -258,10 +297,14 @@ export async function recoverMCPServerCatalogs(
 
 /** Loads cached, connected, then passive MCP catalogs for a marketplace-style list request. */
 export async function loadMCPServerCatalogs(
-  params: { user: IUser; servers: readonly MCPServerCatalogRecoveryInput[] },
+  params: {
+    user: IUser;
+    servers: readonly MCPServerCatalogRecoveryInput[];
+    signal?: AbortSignal;
+  },
   deps: MCPServerCatalogLoaderDeps,
 ): Promise<MCPServerCatalogLoaderResult> {
-  const { user, servers } = params;
+  const { user, servers, signal } = params;
   const cached: MCPServerCatalogEntry[] = await Promise.all(
     servers.map(async ({ serverName, serverConfig }) => {
       try {
@@ -275,7 +318,7 @@ export async function loadMCPServerCatalogs(
   );
 
   const snapshots = [...cached];
-  await runCatalogWork(
+  const snapshotsAdmitted = await runCatalogWork(
     cached.flatMap((entry, index) =>
       entry.tools != null
         ? []
@@ -286,7 +329,7 @@ export async function loadMCPServerCatalogs(
                   user.id,
                   entry.serverName,
                   entry.serverConfig,
-                  { deadlineMs: Date.now() + RECOVERY_BUDGET_MS },
+                  { deadlineMs: Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS, signal },
                 );
                 snapshots[index] = { ...entry, ...snapshot, source: 'snapshot' as const };
               } catch (error) {
@@ -299,7 +342,11 @@ export async function loadMCPServerCatalogs(
             },
           ],
     ),
+    signal,
   );
+  if (!snapshotsAdmitted) {
+    throw new MCPCatalogCapacityError();
+  }
 
   const coldServers = snapshots
     .filter(({ tools }) => tools == null)
@@ -307,8 +354,11 @@ export async function loadMCPServerCatalogs(
   let recovered = new Map<string, LCAvailableTools>();
   if (coldServers.length > 0) {
     try {
-      recovered = await recoverMCPServerCatalogs({ user, servers: coldServers }, deps);
+      recovered = await recoverMCPServerCatalogs({ user, servers: coldServers, signal }, deps);
     } catch (error) {
+      if (error instanceof MCPCatalogCapacityError) {
+        throw error;
+      }
       logger.error('[MCP catalog loader] Failed to recover cold server catalogs:', error);
     }
   }
