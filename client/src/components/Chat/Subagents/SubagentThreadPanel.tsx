@@ -54,8 +54,9 @@ import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
-import { renderAgentAvatar, setDraft } from '~/utils';
 import { useAgentsMapContext } from '~/Providers';
+import { renderAgentAvatar } from '~/utils';
+import store from '~/store';
 
 const EVENT_TASK_PAGE_SIZE = 3;
 const TERMINAL_CONTROL_REASONS = new Set([
@@ -257,33 +258,36 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     progress.status !== 'error';
 
   const [controlMessage, setControlMessage] = useState('');
-  /** The draft as it stood when the continuation was requested. The fork lands
-   *  after an async round trip, and the composer is unmounted by then. */
-  const continuedDraftRef = useRef('');
+  /** Read at completion, not at submission: the fork lands after a round trip,
+   *  and the composer stays live for it, so anything typed meanwhile must
+   *  travel too. */
+  const controlMessageRef = useRef(controlMessage);
+  controlMessageRef.current = controlMessage;
+  const handOffComposerText = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string, text: string) =>
+        set(store.pendingComposerTextByConvoId(conversationId), text),
+    [],
+  );
   const continueChat = useForkConvoMutation({
     onSuccess: (result) => {
       const continuedConversationId = result.conversation?.conversationId;
       /** The server keeps child threads view-only (`CHILD_THREAD_READ_ONLY_ERROR`),
-       *  so a continuation is a real conversation forked from the thread. Hand it
-       *  the draft through the same per-conversation draft store the composer
-       *  restores from, rather than dropping what the reader typed. */
-      if (continuedConversationId != null && continuedDraftRef.current !== '') {
-        setDraft({
-          id: continuedConversationId,
-          value: continuedDraftRef.current,
-          persistExact: true,
-        });
+       *  so a continuation is a real conversation forked from the thread. Hand
+       *  what the reader typed to that conversation's composer instead of
+       *  dropping it with this panel — in memory, since an unsent draft must not
+       *  be written to storage the reader may have asked not to use. */
+      const draft = controlMessageRef.current.trim();
+      if (continuedConversationId != null && draft !== '') {
+        handOffComposerText(continuedConversationId, draft);
       }
-      continuedDraftRef.current = '';
+      setControlMessage('');
       resetSelection();
       navigateToConvo(result.conversation);
     },
     onError: () => {
-      /** The panel stays open on a failed continuation, so give the reader back
-       *  the draft it was sent with — unless they have started typing again. */
-      const attempted = continuedDraftRef.current;
-      continuedDraftRef.current = '';
-      if (attempted !== '') setControlMessage((current) => (current === '' ? attempted : current));
+      /** The panel stays open on a failed continuation, and the composer still
+       *  holds the words, so there is nothing to restore. */
       showToast({ message: localize('com_ui_continue_chat_error'), status: 'error' });
     },
   });
@@ -942,14 +946,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
 
   const continueAsChat = useCallback(() => {
     if (!canContinueAsChat || selection.durable == null || continueChat.isLoading) return;
-    continuedDraftRef.current = controlMessage.trim();
-    setControlMessage('');
     continueChat.mutate({
       conversationId: selection.durable.threadId,
       messageId: `${selection.durable.taskId}:assistant`,
       option: ForkOptions.DIRECT_PATH,
     });
-  }, [canContinueAsChat, continueChat, controlMessage, selection.durable]);
+  }, [canContinueAsChat, continueChat, selection.durable]);
   /** `control` steers the live run, `continue` carries the thread into a chat
    *  of the reader's own. Both compose into the same field, with the same
    *  placeholder the main chat composer shows for this agent. */

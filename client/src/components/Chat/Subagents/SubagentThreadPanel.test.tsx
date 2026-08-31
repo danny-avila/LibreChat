@@ -16,6 +16,7 @@ import {
 import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
 import SubagentThreadPanel from './SubagentThreadPanel';
 import { getDraft } from '~/utils';
+import store from '~/store';
 
 const mockUseSubagentThreadQuery = jest.fn();
 const mockUseSubagentActivityStream = jest.fn();
@@ -1072,8 +1073,14 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
 
+    let handedOffText: string | undefined;
+    const Observer = () => {
+      handedOffText = useRecoilValue(store.pendingComposerTextByConvoId('continued-chat'));
+      return null;
+    };
     render(
       <RecoilRoot>
+        <Observer />
         <SubagentThreadPanel selection={selection} />
       </RecoilRoot>,
     );
@@ -1095,9 +1102,18 @@ describe('SubagentThreadPanel', () => {
 
     const mutationOptions = mockForkMutate.mock.calls[0][1];
     const conversation = { conversationId: 'continued-chat', agent_id: 'agent-1' };
+    /** Typed AFTER the request went out: the fork lands a round trip later and
+     *  the composer stays live for it, so the newer words are the ones that
+     *  travel. */
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Take this further, starting from the endgame.' },
+    });
     act(() => mutationOptions.onSuccess({ conversation, messages: [] }));
     expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
-    expect(getDraft('continued-chat')).toBe('Take this further.');
+    /** In memory, never in the composer draft store: an unsent draft must not
+     *  be written to storage a reader may have asked not to use. */
+    expect(handedOffText).toBe('Take this further, starting from the endgame.');
+    expect(getDraft('continued-chat')).toBe('');
   });
 
   it('continues with no draft when the reader asks for the chat without typing', () => {
@@ -1108,8 +1124,14 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
 
+    let handedOffText: string | undefined;
+    const Observer = () => {
+      handedOffText = useRecoilValue(store.pendingComposerTextByConvoId('empty-continuation'));
+      return null;
+    };
     render(
       <RecoilRoot>
+        <Observer />
         <SubagentThreadPanel selection={selection} />
       </RecoilRoot>,
     );
@@ -1119,7 +1141,7 @@ describe('SubagentThreadPanel', () => {
     const conversation = { conversationId: 'empty-continuation', agent_id: 'agent-1' };
     act(() => mutationOptions.onSuccess({ conversation, messages: [] }));
     expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
-    expect(getDraft('empty-continuation')).toBe('');
+    expect(handedOffText).toBeUndefined();
   });
 
   it.each([
@@ -1163,15 +1185,14 @@ describe('SubagentThreadPanel', () => {
       target: { value: 'Carry this over.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
-    expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('');
     act(() => mockForkMutate.mock.calls[0][1].onError());
     expect(mockShowToast).toHaveBeenCalledWith({
       message: 'com_ui_continue_chat_error',
       status: 'error',
     });
     expect(screen.getByRole('region')).toBeInTheDocument();
-    /** The panel is still open on this path, so the draft that failed to travel
-     *  comes back rather than being lost with the request. */
+    /** The panel stays open on this path and never took the words away, so the
+     *  reader can retry with them still in front of them. */
     expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('Carry this over.');
   });
 
