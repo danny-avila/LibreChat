@@ -480,13 +480,17 @@ const initializeClient = async ({
       }
 
       const { provisionState } = ctx;
-      /** Code execution expands into bash_tool/read_file (+ their PTC variants);
-       *  the legacy execute_code/run_tools_with_code names are kept for back-compat. */
+      /** Code execution expands into the sandbox file tools (+ their PTC variants);
+       *  the legacy execute_code/run_tools_with_code names are kept for back-compat.
+       *  edit_file and write_file read their target from the code environment, so a
+       *  turn that starts with one of them must provision first. */
       const needsCode =
         toolNames.includes(Constants.EXECUTE_CODE) ||
         toolNames.includes(Constants.PROGRAMMATIC_TOOL_CALLING) ||
         toolNames.includes(Constants.BASH_TOOL) ||
         toolNames.includes(Constants.READ_FILE) ||
+        toolNames.includes(Constants.EDIT_FILE) ||
+        toolNames.includes(Constants.WRITE_FILE) ||
         toolNames.includes(Constants.BASH_PROGRAMMATIC_TOOL_CALLING);
       const needsSearch = toolNames.includes('file_search');
 
@@ -532,9 +536,13 @@ const initializeClient = async ({
        *  so an unpersisted code ref makes the file invisible to the tool it was uploaded for. */
       const codeUpdateIds = new Set();
 
+      /** Files whose provisioning rejected this turn; kept queued so a transient
+       *  outage can retry next turn instead of being silently dropped. */
+      const failedCodeFiles = [];
       if (needsCode && provisionState.codeEnvFiles.length > 0) {
+        const queuedCodeFiles = provisionState.codeEnvFiles;
         const results = await Promise.allSettled(
-          provisionState.codeEnvFiles.map(async (file) => {
+          queuedCodeFiles.map(async (file) => {
             const { referenceSet, fileUpdate } = await provisionToCodeEnv({
               req,
               file,
@@ -546,17 +554,19 @@ const initializeClient = async ({
             pendingUpdates.push(fileUpdate);
           }),
         );
-        for (const result of results) {
+        results.forEach((result, index) => {
           if (result.status === 'rejected') {
             logger.error('[provisionFiles] Code env provisioning failed', result.reason);
+            failedCodeFiles.push(queuedCodeFiles[index]);
           }
-        }
-        provisionState.codeEnvFiles = [];
+        });
+        provisionState.codeEnvFiles = failedCodeFiles;
       }
 
       if (needsSearch && provisionState.vectorDBFiles.length > 0) {
+        const queuedVectorFiles = provisionState.vectorDBFiles;
         const results = await Promise.allSettled(
-          provisionState.vectorDBFiles.map(async (file) => {
+          queuedVectorFiles.map(async (file) => {
             const result = await provisionToVectorDB({
               req,
               file,
@@ -575,12 +585,16 @@ const initializeClient = async ({
             }
           }),
         );
-        for (const result of results) {
+        const failedVectorFiles = [];
+        results.forEach((result, index) => {
           if (result.status === 'rejected') {
             logger.error('[provisionFiles] Vector DB provisioning failed', result.reason);
+            failedVectorFiles.push(queuedVectorFiles[index]);
           }
-        }
-        provisionState.vectorDBFiles = [];
+        });
+        /* Unlike code, an unembedded file only narrows search results and is re-queued
+         * next turn, so it does not abort the run. */
+        provisionState.vectorDBFiles = failedVectorFiles;
       }
 
       if (pendingUpdates.length > 0) {
@@ -611,6 +625,14 @@ const initializeClient = async ({
             `Failed to persist code environment references for ${unpersistedCodeFiles.length} file(s); aborting tool execution rather than running without them`,
           );
         }
+      }
+
+      /* Uploading to the code environment failed outright, so the sandbox does not have
+       * the attachment; running the tool anyway would answer from missing input. */
+      if (failedCodeFiles.length > 0) {
+        throw new Error(
+          `Failed to provision ${failedCodeFiles.length} file(s) to the code environment; aborting tool execution rather than running without them`,
+        );
       }
     },
   };
