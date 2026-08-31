@@ -1,5 +1,37 @@
 import type { RunLLMConfig } from '~/types';
-import { mergeHeaders, resolveConfigHeaders } from './headers';
+import { mediaTypeEssence, mergeHeaders, resolveConfigHeaders } from './headers';
+
+describe('mediaTypeEssence', () => {
+  it('returns the bare type for a header with no parameters', () => {
+    expect(mediaTypeEssence('text/event-stream')).toBe('text/event-stream');
+  });
+
+  it('strips parameters', () => {
+    expect(mediaTypeEssence('text/event-stream; charset=utf-8')).toBe('text/event-stream');
+    expect(mediaTypeEssence('application/json;charset=utf-8')).toBe('application/json');
+  });
+
+  it('lowercases the type', () => {
+    expect(mediaTypeEssence('TEXT/EVENT-STREAM')).toBe('text/event-stream');
+    expect(mediaTypeEssence('Application/JSON; Charset=UTF-8')).toBe('application/json');
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(mediaTypeEssence('  text/plain  ; charset=utf-8')).toBe('text/plain');
+  });
+
+  it('does not match a type named only inside a parameter', () => {
+    expect(mediaTypeEssence('text/plain; boundary=text/event-stream')).toBe('text/plain');
+    expect(mediaTypeEssence('text/plain; x=application/json')).toBe('text/plain');
+  });
+
+  it('returns an empty string for absent or empty headers', () => {
+    expect(mediaTypeEssence(undefined)).toBe('');
+    expect(mediaTypeEssence(null)).toBe('');
+    expect(mediaTypeEssence('')).toBe('');
+    expect(mediaTypeEssence('   ')).toBe('');
+  });
+});
 
 describe('mergeHeaders', () => {
   it('returns undefined when neither side has headers', () => {

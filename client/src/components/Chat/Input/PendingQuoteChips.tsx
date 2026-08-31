@@ -26,9 +26,11 @@ const CLOSE_DELAY_MS = 120;
  * `autoFocusOnShow` is disabled so opening never pulls focus off the composer;
  * `autoFocusOnHide` still returns focus to the trigger when focus was inside.
  *
- * Reads + writes `pendingQuotesByConvoId` directly; the atom is drained in
- * `useChatFunctions.ask` on submit, so chips disappear once the message is sent
- * (the excerpts then re-render as `MessageQuotes` on the user bubble).
+ * Reads + writes `pendingQuotesByConvoId` directly; the atom is drained on
+ * every submit route — `useChatFunctions.ask` for a fresh send, and the
+ * during-run steer/queue/interrupt paths in `useSteering` — so chips disappear
+ * once the message is sent (the excerpts then re-render as `MessageQuotes` on
+ * the user bubble, or inside the steer bubble for a mid-run injection).
  */
 function PendingQuoteChips({ conversationId }: { conversationId: string }) {
   const localize = useLocalize();

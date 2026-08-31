@@ -66,6 +66,9 @@ jest.mock('~/data-provider', () => ({
     isLoading: false,
     isFetching: false,
   }),
+  usePinnedConversationsQuery: () => ({
+    data: { conversations: [], nextCursor: null },
+  }),
   useTitleGeneration: () => mockUseTitleGeneration(),
   useGetEndpointsQuery: () => ({ data: {}, isLoading: false }),
   useGetStartupConfig: () => ({ data: { modelSpecs: { list: [] } } }),
@@ -91,6 +94,11 @@ jest.mock('~/components/Conversations', () => ({
 jest.mock('~/components/Conversations/ProjectsSection', () => ({
   __esModule: true,
   default: () => <div data-testid="projects-stub" />,
+}));
+
+jest.mock('~/components/Conversations/PinnedSection', () => ({
+  __esModule: true,
+  default: () => <div data-testid="pinned-stub" />,
 }));
 
 jest.mock('~/components/Nav/SearchBar', () => ({
@@ -152,6 +160,22 @@ const renderSection = () =>
       </RecoilRoot>
     </QueryClientProvider>,
   );
+
+describe('ConversationsSection section order', () => {
+  it('renders Pinned between Projects and Chats', async () => {
+    const { getByTestId } = renderSection();
+    await settleRenders();
+
+    const projects = getByTestId('projects-stub');
+    const pinned = getByTestId('pinned-stub');
+    const chats = getByTestId('conversations-stub');
+
+    expect(
+      projects.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(pinned.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
 
 describe('ConversationsSection streaming re-renders', () => {
   beforeEach(() => {

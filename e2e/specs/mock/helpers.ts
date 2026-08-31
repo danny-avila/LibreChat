@@ -1,4 +1,6 @@
 import { expect } from '@playwright/test';
+import { ContentTypes } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import type { Page, Response } from '@playwright/test';
 
 /** Substring of the reply emitted by the mock LLM server. */
@@ -17,6 +19,16 @@ export const NEW_CHAT_PATH = '/c/new';
 type RefreshTokenBody = {
   token?: string;
 };
+
+type AgentGenerationStart = {
+  conversationId?: string;
+};
+
+type CompletionOptions = {
+  timeout?: number;
+};
+
+const DEFAULT_COMPLETION_TIMEOUT = 20_000;
 
 export function isAgentsStream(response: Response) {
   return isAgentGenerationStart(response);
@@ -85,12 +97,19 @@ export const messagesView = (page: Page) => page.getByTestId('messages-view');
 export const replyPrompt = (label: string) => `E2E_REPLY:${label}`;
 export const replyText = (label: string) => `E2E reply ${label}`;
 
+/** Same, for a reply that streams a reasoning part ahead of its text part. */
+export const thinkPrompt = (label: string) => `E2E_THINK_REPLY:${label}`;
+export const thinkText = (label: string) => `E2E reasoning ${label}`;
+
 /** The mock reply as rendered in the conversation, scoped to the messages view. */
 export function mockReply(page: Page) {
   return messagesView(page).getByText(new RegExp(MOCK_REPLY_TEXT, 'i'));
 }
 
-/** Type a message, send it, and wait for the streamed `/api/agents` response. */
+/**
+ * Type a message and wait only for generation admission. Use this lower-level
+ * helper when a test intentionally observes a live, paused, aborted, or failed run.
+ */
 export async function sendMessage(page: Page, text: string): Promise<Response> {
   const input = page.getByRole('textbox', { name: 'Message input' });
   await input.click();
@@ -99,6 +118,170 @@ export async function sendMessage(page: Page, text: string): Promise<Response> {
     page.waitForResponse(isAgentsStream, { timeout: 30000 }),
     input.press('Enter'),
   ]);
+  return response;
+}
+
+function formatPersistedMessages(messages: TMessage[]): string {
+  return JSON.stringify(
+    messages.map(
+      ({ content, error, isCreatedByUser, messageId, parentMessageId, text, unfinished }) => ({
+        messageId,
+        parentMessageId,
+        isCreatedByUser,
+        unfinished,
+        error,
+        text: typeof text === 'string' ? text.slice(0, 200) : text,
+        content: content?.map((part) => ({
+          type: part?.type,
+          ...(part?.type === ContentTypes.ERROR
+            ? { error: part[ContentTypes.ERROR], text: part.text }
+            : {}),
+        })),
+      }),
+    ),
+    null,
+    2,
+  );
+}
+
+function conversationIdFromUrl(url: string): string | undefined {
+  const match = new URL(url).pathname.match(/^\/c\/([^/]+)\/?$/);
+  const conversationId = match?.[1];
+  return conversationId && conversationId !== 'new'
+    ? decodeURIComponent(conversationId)
+    : undefined;
+}
+
+/**
+ * Send a message and require the resulting assistant response to be durably finalized.
+ * A streamed answer is not success until its persisted message is terminal and error-free.
+ */
+export async function sendMessageAndWaitForCompletion(
+  page: Page,
+  text: string,
+  options: CompletionOptions = {},
+): Promise<Response> {
+  const token = await getAccessToken(page);
+  const existingConversationId = conversationIdFromUrl(page.url());
+  /** The POST messageId is an optimistic UI placeholder; BaseClient persists a
+   * server-generated user ID. Snapshot history before admission so the new
+   * canonical user→assistant edge can be identified without matching prompt text. */
+  const existingMessages = existingConversationId
+    ? await fetchJson<TMessage[]>(
+        page,
+        `/api/messages/${encodeURIComponent(existingConversationId)}`,
+        token,
+      )
+    : [];
+  const existingMessageIds = new Set(existingMessages.map((message) => message.messageId));
+
+  const response = await sendMessage(page, text);
+  const start = (await response.json()) as AgentGenerationStart;
+  const conversationId = start.conversationId;
+
+  if (!conversationId || conversationId === 'new') {
+    throw new Error(
+      `Generation admission did not identify a persisted turn: ${JSON.stringify({
+        conversationId,
+      })}`,
+    );
+  }
+  if (existingConversationId && existingConversationId !== conversationId) {
+    throw new Error(
+      `Generation admission changed conversations unexpectedly: ${JSON.stringify({
+        existingConversationId,
+        conversationId,
+      })}`,
+    );
+  }
+
+  let assistantMessages: TMessage[] = [];
+  let newMessages: TMessage[] = [];
+  let latestMessages: TMessage[] = [];
+  let latestReadError: string | undefined;
+
+  try {
+    await expect
+      .poll(
+        async () => {
+          try {
+            latestMessages = await fetchJson<TMessage[]>(
+              page,
+              `/api/messages/${encodeURIComponent(conversationId)}`,
+              token,
+            );
+            latestReadError = undefined;
+          } catch (error) {
+            latestReadError = error instanceof Error ? error.message : String(error);
+            return false;
+          }
+
+          newMessages = latestMessages.filter(
+            (message) => !existingMessageIds.has(message.messageId),
+          );
+          const userMessageIds = new Set(
+            newMessages
+              .filter((message) => message.isCreatedByUser === true)
+              .map((message) => message.messageId),
+          );
+          assistantMessages = newMessages.filter(
+            (message) =>
+              message.isCreatedByUser === false &&
+              message.parentMessageId != null &&
+              userMessageIds.has(message.parentMessageId),
+          );
+          return (
+            userMessageIds.size > 0 &&
+            assistantMessages.length > 0 &&
+            assistantMessages.every((message) => message.unfinished === false)
+          );
+        },
+        {
+          timeout: options.timeout ?? DEFAULT_COMPLETION_TIMEOUT,
+          intervals: [250, 500, 1_000],
+          message: 'new assistant response should be durably finalized',
+        },
+      )
+      .toBe(true);
+  } catch (error) {
+    const pollError = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      [
+        'Timed out waiting for the new assistant response to be durably finalized.',
+        latestReadError ? `Latest message read failed: ${latestReadError}` : undefined,
+        `Pre-existing message IDs: ${JSON.stringify([...existingMessageIds])}`,
+        `New persisted messages: ${formatPersistedMessages(newMessages)}`,
+        `Persisted messages: ${formatPersistedMessages(latestMessages)}`,
+        pollError,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    );
+  }
+
+  const failedMessage = assistantMessages.find(
+    (message) =>
+      message.error === true ||
+      message.content?.some((part) => part?.type === ContentTypes.ERROR) === true,
+  );
+  if (failedMessage) {
+    throw new Error(
+      `Persisted assistant response contains an unexpected error: ${formatPersistedMessages([
+        failedMessage,
+      ])}`,
+    );
+  }
+
+  if (!existingConversationId) {
+    await expect
+      .poll(() => conversationIdFromUrl(page.url()), {
+        timeout: 5_000,
+        intervals: [100, 250, 500],
+        message: 'new conversation route should use the admitted conversation ID',
+      })
+      .toBe(conversationId);
+  }
+
   return response;
 }
 

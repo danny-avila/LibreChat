@@ -10,10 +10,10 @@ import {
   isAssistantsEndpoint,
   TUpdateFeedbackRequest,
 } from 'librechat-data-provider';
-import type { TMessageProps } from '~/common';
 import type { TMessageChatContext } from '~/common/types';
+import type { TMessageProps } from '~/common';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
-import useCopyToClipboard from './useCopyToClipboard';
+import useCopyToClipboard, { hasCopyableText } from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
@@ -47,6 +47,7 @@ export default function useMessageActions(props: TMessageActions) {
     latestMessageId,
     latestMessageDepth,
     handleContinue,
+    feedbackEnabled,
     // NOTE: isSubmitting is intentionally NOT destructured here.
     // chatContext.isSubmitting is a getter backed by a ref — destructuring
     // would capture a one-time snapshot. Always access via chatContext.isSubmitting.
@@ -123,6 +124,11 @@ export default function useMessageActions(props: TMessageActions) {
 
   const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
 
+  const getCanCopy = useCallback(
+    () => hasCopyableText({ text, content, searchResults }),
+    [text, content, searchResults],
+  );
+
   const messageLabel = useMemo(() => {
     if (message?.isCreatedByUser === true) {
       return UsernameDisplay ? (user?.name ?? '') || user?.username : localize('com_user_message');
@@ -173,11 +179,14 @@ export default function useMessageActions(props: TMessageActions) {
     index,
     agent,
     feedback,
+    getCanCopy,
     assistant,
     enterEdit,
     conversation,
     messageLabel,
-    handleFeedback,
+    /** Withholding the handler removes the controls: `HoverButtons` renders feedback
+     *  only when it has somewhere to send it. */
+    handleFeedback: feedbackEnabled ? handleFeedback : undefined,
     handleContinue,
     copyToClipboard,
     latestMessageId,

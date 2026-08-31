@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.8.7",
+  "version": "v0.8.8-rc1",
   "description": "",
   "type": "module",
   "scripts": {
@@ -91,6 +91,8 @@
     "micromark-extension-gfm": "^3.0.0",
     "micromark-extension-llm-math": "^3.1.0",
     "micromark-extension-math": "^3.1.0",
+    "micromark-util-character": "^2.1.0",
+    "micromark-util-symbol": "^2.0.0",
     "monaco-editor": "^0.56.0",
     "qrcode.react": "^4.2.0",
     "rc-input-number": "^7.4.2",
@@ -159,11 +161,12 @@
     "jest-environment-jsdom": "^30.2.0",
     "jest-file-loader": "^1.0.3",
     "jest-junit": "^17.0.0",
+    "micromark-util-types": "^2.0.0",
     "postcss": "^8.5.18",
     "postcss-preset-env": "^11.2.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.9.3",
-    "vite": "^8.0.16",
+    "vite": "^8.2.2",
     "vite-plugin-compression2": "^2.5.3",
     "vite-plugin-node-polyfills": "^0.28.0",
     "vite-plugin-pwa": "^1.3.0"

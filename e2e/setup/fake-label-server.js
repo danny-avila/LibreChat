@@ -17,11 +17,18 @@
 const http = require('http');
 
 const PORT = Number(process.env.E2E_LABEL_PORT) || 8889;
+const PHASE_PROMPT_MARKER = 'Summarize what this phase of an agent run accomplished';
 
 /** Recorded label requests, newest last. */
 const requests = [];
 /** Test-controlled response behavior; `reset` restores these defaults. */
-const DEFAULT_BEHAVIOR = { mode: 'ok', label: null, delayMs: 0 };
+const DEFAULT_BEHAVIOR = {
+  mode: 'ok',
+  label: null,
+  phaseLabel: null,
+  labelsByPrompt: {},
+  delayMs: 0,
+};
 let behavior = { ...DEFAULT_BEHAVIOR };
 let labelCount = 0;
 
@@ -161,8 +168,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     /** Whitespace-only output must fill null, leaving the block unlabeled. */
+    const promptLabel = Object.entries(behavior.labelsByPrompt ?? {}).find(([needle]) =>
+      prompt.includes(needle),
+    )?.[1];
+    const isPhase = prompt.includes(PHASE_PROMPT_MARKER);
     const label =
-      behavior.mode === 'blank' ? '   ' : (behavior.label ?? `E2E activity label ${labelCount}`);
+      behavior.mode === 'blank'
+        ? '   '
+        : ((isPhase ? behavior.phaseLabel : promptLabel) ??
+          behavior.label ??
+          `E2E activity label ${labelCount}`);
 
     if (body.stream === true) {
       sendStream(res, body.model, label);

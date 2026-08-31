@@ -1,5 +1,7 @@
+import type { ThemeDefinition } from '../types';
+import applyTheme, { applyResolvedTheme, clearAppliedTheme } from './applyTheme';
 import { defaultTheme } from '../themes/default';
-import applyTheme from './applyTheme';
+import { resolveTheme } from '../registry';
 
 const semanticProperties = [
   '--link',
@@ -14,6 +16,8 @@ const semanticProperties = [
   '--status-success-border',
   '--status-success-strong',
   '--surface-overlay',
+  '--surface-hover',
+  '--surface-composer-hover',
   '--text-on-status',
   '--status-error',
   '--status-neutral-border',
@@ -21,6 +25,7 @@ const semanticProperties = [
 
 afterEach(() => {
   semanticProperties.forEach((property) => document.documentElement.style.removeProperty(property));
+  clearAppliedTheme();
 });
 
 describe('applyTheme', () => {
@@ -39,6 +44,27 @@ describe('applyTheme', () => {
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('10 11 12');
     expect(document.documentElement.style.getPropertyValue('--accent-primary-hover')).toBe(
       '13 14 15',
+    );
+  });
+
+  it('applies the composer hover surface from runtime themes', () => {
+    applyTheme({
+      'rgb-surface-composer-hover': '66 66 66',
+    });
+
+    expect(document.documentElement.style.getPropertyValue('--surface-composer-hover')).toBe(
+      '66 66 66',
+    );
+  });
+
+  it('keeps existing custom hover colors on composer controls', () => {
+    applyTheme({
+      'rgb-surface-hover': '44 45 46',
+    });
+
+    expect(document.documentElement.style.getPropertyValue('--surface-hover')).toBe('44 45 46');
+    expect(document.documentElement.style.getPropertyValue('--surface-composer-hover')).toBe(
+      '44 45 46',
     );
   });
 
@@ -76,5 +102,61 @@ describe('applyTheme', () => {
       defaultTheme['rgb-status-error'],
     );
     expect(document.documentElement.style.getPropertyValue('--surface-overlay')).toBe('89 89 89');
+  });
+
+  it('applies a resolved appearance atomically', () => {
+    const referenceTheme: ThemeDefinition = {
+      version: 1,
+      name: 'compact-reference',
+      modes: {
+        light: {
+          appearance: {
+            controlRadius: '0.25rem',
+            roundControlRadius: '0.25rem',
+            surfaceRadius: '0.5rem',
+            largeSurfaceRadius: '0.5rem',
+            motionFast: '80ms',
+          },
+        },
+      },
+    };
+
+    applyResolvedTheme(resolveTheme(referenceTheme, 'light'));
+
+    const root = document.documentElement;
+    expect(root.dataset.theme).toBe('compact-reference');
+    expect(root.style.getPropertyValue('--theme-control-radius')).toBe('0.25rem');
+    expect(root.style.getPropertyValue('--theme-surface-radius')).toBe('0.5rem');
+    expect(root.style.getPropertyValue('--theme-motion-fast')).toBe('80ms');
+  });
+
+  it('clears only properties owned by the theme module', () => {
+    const root = document.documentElement;
+    root.style.setProperty('--text-primary', '1 2 3');
+    root.style.setProperty('--theme-control-radius', '0.25rem');
+    root.style.setProperty('--markdown-font-size', '18px');
+
+    clearAppliedTheme(root);
+
+    expect(root.style.getPropertyValue('--text-primary')).toBe('');
+    expect(root.style.getPropertyValue('--theme-control-radius')).toBe('');
+    expect(root.style.getPropertyValue('--markdown-font-size')).toBe('18px');
+    root.style.removeProperty('--markdown-font-size');
+  });
+
+  it('applies provider brand backgrounds from the theme', () => {
+    applyResolvedTheme(
+      resolveTheme(
+        {
+          version: 1,
+          name: 'white-label',
+          modes: { light: {} },
+          brands: { 'provider-openai': '#123456' },
+        },
+        'light',
+      ),
+    );
+
+    expect(document.documentElement.style.getPropertyValue('--provider-openai')).toBe('#123456');
   });
 });

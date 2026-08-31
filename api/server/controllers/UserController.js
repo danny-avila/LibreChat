@@ -1,13 +1,15 @@
 const mongoose = require('mongoose');
-const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   getNewS3URL,
   needsRefresh,
+  GenerationJobManager,
   MCPOAuthHandler,
   MCPTokenStorage,
   getAppConfigOptionsFromUser,
   normalizeHttpError,
-  extractWebSearchEnvVars,
+  getWebSearchInstallEntries,
+  getWebSearchUninstallFields,
   deleteAgentCheckpoints,
   deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
@@ -24,7 +26,19 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
-const { getAppConfig } = require('~/server/services/Config');
+const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
+const {
+  drainAgentTriggerDeliveriesForUser,
+  prepareAgentTriggerUserPurge,
+  cancelAgentTriggerUserPurge,
+  purgeAgentTriggerDeliveriesForUser,
+} = require('~/server/services/Agents/triggers');
+const { getAppConfig, invalidateCodeEnvironmentConfigCache } = require('~/server/services/Config');
+const { randomUUID } = require('node:crypto');
+const {
+  quiesceUserSchedules,
+  restoreUserSchedulesFromDeletion,
+} = require('~/server/services/Schedules');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -220,18 +234,17 @@ const updateUserPluginsController = async (req, res) => {
       return res.status(200).send();
     }
 
-    let keys = Object.keys(auth);
-    const values = Object.values(auth); // Used in 'install' block
+    let authEntries = Object.entries(auth);
 
     const isMCPTool = pluginKey.startsWith('mcp_') || pluginKey.includes(Constants.mcp_delimiter);
 
     // Early exit condition:
-    // If keys are empty (meaning auth: {} was likely sent for uninstall, or auth was empty for install)
-    // AND it's not web_search (which has special key handling to populate `keys` for uninstall)
+    // If auth is empty (meaning auth: {} was likely sent for uninstall or install)
+    // AND it's not web_search (which expands its uninstall fields)
     // AND it's NOT (an uninstall action FOR an MCP tool - we need to proceed for this case to clear all its auth)
     // THEN return.
     if (
-      keys.length === 0 &&
+      authEntries.length === 0 &&
       pluginKey !== Tools.web_search &&
       !(action === 'uninstall' && isMCPTool)
     ) {
@@ -248,23 +261,29 @@ const updateUserPluginsController = async (req, res) => {
     if (pluginKey === Tools.web_search) {
       /** @type  {TCustomConfig['webSearch']} */
       const webSearchConfig = appConfig?.webSearch;
-      keys = extractWebSearchEnvVars({
-        keys: action === 'install' ? keys : webSearchKeys,
-        config: webSearchConfig,
-      });
+      authEntries =
+        action === 'install'
+          ? getWebSearchInstallEntries({ auth, config: webSearchConfig })
+          : getWebSearchUninstallFields(webSearchConfig).map((field) => [field, '']);
     }
 
     if (action === 'install') {
-      for (let i = 0; i < keys.length; i++) {
-        authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
+      for (const [field, value] of authEntries) {
+        authService =
+          pluginKey === Tools.web_search && value === ''
+            ? await deleteUserPluginAuth(user.id, field)
+            : await updateUserPluginAuth(user.id, field, pluginKey, value);
         if (authService instanceof Error) {
           logger.error('[authService]', authService);
           ({ status, message } = normalizeHttpError(authService));
+          if (pluginKey === Tools.web_search) {
+            break;
+          }
         }
       }
     } else if (action === 'uninstall') {
       // const isMCPTool was defined earlier
-      if (isMCPTool && keys.length === 0) {
+      if (isMCPTool && authEntries.length === 0) {
         // This handles the case where auth: {} is sent for an MCP tool uninstall.
         // It means "delete all credentials associated with this MCP pluginKey".
         authService = await deleteUserPluginAuth(user.id, null, true, pluginKey);
@@ -286,12 +305,11 @@ const updateUserPluginsController = async (req, res) => {
         }
       } else {
         // This handles:
-        // 1. Web_search uninstall (keys will be populated with all webSearchKeys if auth was {}).
-        // 2. Other tools uninstall (if keys were provided).
-        // 3. MCP tool uninstall if specific keys were provided in `auth` (not current frontend behavior).
-        // If keys is empty for non-MCP tools (and not web_search), this loop won't run, and nothing is deleted.
-        for (let i = 0; i < keys.length; i++) {
-          authService = await deleteUserPluginAuth(user.id, keys[i]); // Deletes by authField name
+        // 1. Web_search uninstall (entries include every configured field).
+        // 2. Other tools uninstall (if auth fields were provided).
+        // 3. MCP tool uninstall if specific fields were provided in `auth`.
+        for (const [field] of authEntries) {
+          authService = await deleteUserPluginAuth(user.id, field); // Deletes by authField name
           if (authService instanceof Error) {
             logger.error('[authService] Error deleting specific auth key:', authService);
             ({ status, message } = normalizeHttpError(authService));
@@ -351,6 +369,9 @@ const updateUserPluginsController = async (req, res) => {
 
 const deleteUserController = async (req, res) => {
   const { user } = req;
+  let triggerDeletionFence;
+  let scheduleSuspensionToken;
+  let userDeleted = false;
 
   try {
     const existingUser = await db.getUserById(
@@ -368,6 +389,40 @@ const deleteUserController = async (req, res) => {
         return res.status(result.status ?? 400).json({ message: msg });
       }
     }
+
+    // Block new trigger admissions across replicas while preserving the user
+    // principal so a transient cleanup failure remains retryable.
+    triggerDeletionFence = new Date();
+    const fenceState = await db.beginAgentTriggerUserDeletion(user.id, triggerDeletionFence);
+    if (fenceState === 'in_progress') {
+      triggerDeletionFence = undefined;
+      throw new Error('Agent trigger account deletion is already in progress');
+    }
+    if (fenceState === 'missing') {
+      triggerDeletionFence = undefined;
+    }
+    if (triggerDeletionFence != null) {
+      await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
+    }
+    await drainAgentTriggerDeliveriesForUser(user.id);
+    await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
+    // Reversibly suspend the user's schedules under a per-attempt token BEFORE draining.
+    // A later cascade step (or this drain) can still fail and cancel the deletion, and the
+    // catch below restores exactly this attempt's rows — so a failed deletion never leaves
+    // a live user with silently disabled, erasure-eligible schedules.
+    scheduleSuspensionToken = randomUUID();
+    if (!(await quiesceUserSchedules(user.id, scheduleSuspensionToken))) {
+      throw new Error('Scheduled executions could not be confirmed stopped');
+    }
+    const activeAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
+      user.id,
+      user.tenantId,
+    );
+    await Promise.all(
+      activeAgentRuns.map((streamId) =>
+        GenerationJobManager.abortJob(streamId, { awaitProviderDrain: true }),
+      ),
+    );
 
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });
@@ -394,7 +449,6 @@ const deleteUserController = async (req, res) => {
       logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
     }
     await deleteUserPluginAuth(user.id, null, true);
-    await db.deleteUserById(user.id);
     await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);
     await db.deleteFiles(null, user.id);
@@ -406,14 +460,67 @@ const deleteUserController = async (req, res) => {
     await db.deleteAllUserMemories(user.id);
     await db.deleteUserPrompts(user.id);
     await db.deleteUserSkills(user.id);
+    await db.deleteUserCodeEnvironments(user.id);
+    await invalidateCodeEnvironmentConfigCache(user.tenantId).catch((error) => {
+      logger.error('[deleteUserController] code environment cache invalidation failed:', error);
+    });
     await deleteUserMcpServers(user.id);
     await db.deleteActions({ user: user.id });
     await db.deleteTokens({ userId: user.id });
     await db.removeUserFromAllGroups(user.id);
     await db.deleteAclEntries({ principalId: user._id });
+    await db.deleteSchedulesByUser(user.id);
+    const deleteResult = await db.deleteUserById(user.id);
+    if (deleteResult.deletedCount !== 1) {
+      throw new Error('User disappeared before account deletion could commit');
+    }
+    userDeleted = true;
+    await purgeAgentTriggerDeliveriesForUser(user.id);
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
+    // The account survives this failed attempt, so its schedules must too: restore the
+    // exact rows this attempt suspended (re-enabled/re-armed from their snapshot). Fenced
+    // to the token, so a schedule the owner deleted meanwhile is not resurrected. A
+    // successful deletion never reaches here (userDeleted short-circuits it).
+    //
+    // RESTORE BEFORE RELEASING THE DELETION FENCE. That fence is what refuses new schedule
+    // writes/claims for this user; releasing it first opens a window where an owner PATCH
+    // could edit a still-suspended row and then have its enabled/next-run state overwritten
+    // by this older snapshot, and where a second deletion attempt could re-suspend these
+    // rows under a new token — making this restore a no-op and stranding the disabled
+    // snapshot permanently.
+    if (scheduleSuspensionToken != null && !userDeleted) {
+      try {
+        await restoreUserSchedulesFromDeletion(user.id, scheduleSuspensionToken);
+      } catch (restoreError) {
+        // Every retry is exhausted at this point. The fence is still released below on
+        // purpose: retaining it would refuse this live account's schedule writes AND make
+        // `beginAgentTriggerUserDeletion` report `in_progress` forever, blocking the retry
+        // that is the convergence path — a later attempt re-suspends by ADOPTING this
+        // snapshot, so its cancel restores these exact rows. Log the token so the state is
+        // recoverable directly if that never happens.
+        logger.error(
+          `[deleteUserController] Failed to restore suspended schedules after a cancelled deletion; they remain disabled for user ${user.id} under suspension token ${scheduleSuspensionToken}`,
+          restoreError,
+        );
+      }
+    }
+    if (triggerDeletionFence != null && !userDeleted) {
+      try {
+        await cancelAgentTriggerUserPurge(user.id, triggerDeletionFence);
+      } catch (purgeFenceError) {
+        logger.error(
+          '[deleteUserController] Failed to disarm trigger purge recovery',
+          purgeFenceError,
+        );
+      }
+      try {
+        await db.cancelAgentTriggerUserDeletion(user.id, triggerDeletionFence);
+      } catch (fenceError) {
+        logger.error('[deleteUserController] Failed to release trigger deletion fence', fenceError);
+      }
+    }
     logger.error('[deleteUserController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });
   }

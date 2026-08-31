@@ -2,6 +2,8 @@ const mockRegistry = {
   ensureConfigServers: jest.fn(),
   getAllServerConfigs: jest.fn(),
 };
+const mockUpstreamTokenProvider = jest.fn().mockResolvedValue(null);
+const mockCreateOpenIDSessionTokenProvider = jest.fn(() => mockUpstreamTokenProvider);
 
 jest.mock('~/config', () => ({
   getMCPServersRegistry: jest.fn(() => mockRegistry),
@@ -34,6 +36,12 @@ jest.mock('@librechat/api', () => ({
   GenerationJobManager: jest.fn(),
   buildOAuthToolCallName: jest.fn((name) => name),
   getUserMCPAuthMap: jest.fn(),
+  createAuthIdentityContext: ({ user, tenantId }) => ({
+    appUserId: user?._id?.toString?.() ?? user?.id,
+    openidSubject: user?.openidId,
+    tenantId: tenantId ?? user?.tenantId,
+    openidIssuer: user?.openidIssuer,
+  }),
   /** Mirrors the real resolver so these tests still exercise the wrapper's own
    *  plumbing - loading the request config and degrading on failure - rather than
    *  the resolution logic, which is unit-tested in packages/api. Like the real
@@ -65,6 +73,9 @@ jest.mock('~/server/services/OboTokenService', () => ({
 }));
 jest.mock('~/server/services/OboPolicyService', () => ({
   createOboTrustChecker: jest.fn(() => async () => true),
+}));
+jest.mock('~/server/services/OpenIDSessionRefresh', () => ({
+  createOpenIDSessionTokenProvider: (...args) => mockCreateOpenIDSessionTokenProvider(...args),
 }));
 jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
@@ -115,8 +126,11 @@ describe('getAssistantToolDefinitions', () => {
     });
 
     expect(definitions).toEqual({
-      code_interpreter: { type: 'code_interpreter' },
-      [toolKey]: mcpDefinition,
+      toolDefinitions: {
+        code_interpreter: { type: 'code_interpreter' },
+        [toolKey]: mcpDefinition,
+      },
+      accessibleServerNames: ['app-server'],
     });
     expect(getMCPServerTools).toHaveBeenCalledWith('u1', 'app-server', serverConfig);
   });
@@ -135,7 +149,8 @@ describe('getAssistantToolDefinitions', () => {
     require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
 
     await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
-      [toolKey]: mcpDefinition,
+      toolDefinitions: { [toolKey]: mcpDefinition },
+      accessibleServerNames: ['app-server'],
     });
     expect(cacheMCPServerTools).toHaveBeenCalledWith({
       userId: 'u1',
@@ -155,17 +170,38 @@ describe('getAssistantToolDefinitions', () => {
     const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({ tools: null });
     require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
     const userMCPAuthMap = { 'mcp_app-server': { API_KEY: 'saved' } };
+    const res = { cookie: jest.fn() };
     getUserMCPAuthMap.mockResolvedValue(userMCPAuthMap);
     reinitMCPServer.mockResolvedValue({ availableTools: { [toolKey]: mcpDefinition } });
 
-    await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
-      [toolKey]: mcpDefinition,
+    await expect(getAssistantToolDefinitions({ req, res, tools: [toolKey] })).resolves.toEqual({
+      toolDefinitions: { [toolKey]: mcpDefinition },
+      accessibleServerNames: ['app-server'],
     });
     expect(reinitMCPServer).toHaveBeenCalledWith({
       user: req.user,
       serverName: 'app-server',
       serverConfig,
       userMCPAuthMap,
+      upstreamTokenProvider: mockUpstreamTokenProvider,
+      oboIdentityContext: {
+        appUserId: 'u1',
+        openidSubject: undefined,
+        tenantId: 'tenant-1',
+        openidIssuer: undefined,
+      },
+    });
+    expect(mockCreateOpenIDSessionTokenProvider).toHaveBeenCalledWith({
+      req,
+      res,
+      user: req.user,
+      identityContext: {
+        appUserId: 'u1',
+        openidSubject: undefined,
+        tenantId: 'tenant-1',
+        openidIssuer: undefined,
+      },
+      tokenPreference: 'access_token',
     });
     expect(getUserMCPAuthMap).toHaveBeenCalledWith({
       userId: 'u1',
@@ -396,6 +432,140 @@ describe('healMcpToolNames', () => {
     });
 
     expect(healed).toEqual([`search${Constants.mcp_delimiter}foo!`]);
+  });
+
+  it('heals a pre-strip prefixed key to the stripped catalog key', async () => {
+    /** Catalog keys drop a redundant leading server-name prefix now; an
+     *  assistant saved before that resubmits the prefixed key and the exact
+     *  lookup would silently drop the tool. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { acme: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
+    const strippedKey = `search${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = {
+      [strippedKey]: { type: 'function', serverToolName: 'acme_search' },
+    };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`acme_search${Constants.mcp_delimiter}acme`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([strippedKey]);
+  });
+
+  it('heals a pre-strip key whose server suffix is already normalized', async () => {
+    /** Keys persisted after server-name normalization carry the NORMALIZED
+     *  suffix, which the raw config names cannot match — the strip heal must
+     *  resolve the boundary against both spellings. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'My Server': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'My Server': {} });
+    const strippedKey = `search${Constants.mcp_delimiter}My_Server`;
+    const toolDefinitions = {
+      [strippedKey]: { type: 'function', serverToolName: 'my_server_search' },
+    };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`my_server_search${Constants.mcp_delimiter}My_Server`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([strippedKey]);
+  });
+
+  it('reuses a provided accessible-server snapshot without re-reading config', async () => {
+    /** The controllers pass the definitions loader's snapshot so the write
+     *  path does not repeat the app-config and registry round trips. */
+    const strippedKey = `search${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = {
+      [strippedKey]: { type: 'function', serverToolName: 'acme_search' },
+    };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`acme_search${Constants.mcp_delimiter}acme`],
+      toolDefinitions,
+      accessibleServerNames: ['acme'],
+    });
+
+    expect(healed).toEqual([strippedKey]);
+    expect(getAppConfig).not.toHaveBeenCalled();
+    expect(mockRegistry.getAllServerConfigs).not.toHaveBeenCalled();
+  });
+
+  it('heals a pre-strip key for a USER-OWNED server absent from the operator config', async () => {
+    /** Assistants reference user DB servers too — the definitions loader
+     *  resolves them, so the heal's audit must include them or the legacy
+     *  key stays unhealed and the controllers drop the tool on edit. */
+    getAppConfig.mockResolvedValue({ mcpConfig: {} });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
+    const strippedKey = `search${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = {
+      [strippedKey]: { type: 'function', serverToolName: 'acme_search' },
+    };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`acme_search${Constants.mcp_delimiter}acme`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([strippedKey]);
+  });
+
+  it('does not heal a stale key onto a sibling that lacks matching upstream identity', async () => {
+    /** With `acme_acme_foo` removed upstream while `acme_foo` kept its raw
+     *  name, the stale key's stripped spelling exists but belongs to a
+     *  DIFFERENT tool — the identity check must reject the rewrite. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { acme: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
+    const staleKey = `acme_acme_foo${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = {
+      [`acme_foo${Constants.mcp_delimiter}acme`]: { type: 'function' },
+      [`foo${Constants.mcp_delimiter}acme`]: { type: 'function', serverToolName: 'acme_foo' },
+    };
+
+    const healed = await healMcpToolNames({ req, tools: [staleKey], toolDefinitions });
+
+    expect(healed).toEqual([staleKey]);
+  });
+
+  it('fails closed on a normalized-suffix key whose slot is CONTESTED', async () => {
+    /** `My Server` and `My_Server!` both normalize to `My_Server`, so a
+     *  normalized-suffix reference is ambiguous between them — rewriting
+     *  persisted data must not bind it to the tie-break winner. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'My Server': {}, 'My_Server!': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'My Server': {}, 'My_Server!': {} });
+    const legacyKey = `my_server_search${Constants.mcp_delimiter}My_Server`;
+    const toolDefinitions = { [`search${Constants.mcp_delimiter}My_Server`]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({ req, tools: [legacyKey], toolDefinitions });
+
+    expect(healed).toEqual([legacyKey]);
+  });
+
+  it('keeps a prefixed key whose stripped spelling is not in the loaded definitions', async () => {
+    /** When the catalog kept the raw name (bare-sibling collision), the
+     *  prefixed key IS canonical and must not be rewritten into a key owned
+     *  by the bare tool. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { acme: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
+    const prefixedKey = `acme_search${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = {
+      [prefixedKey]: { type: 'function' },
+      [`search${Constants.mcp_delimiter}acme`]: { type: 'function' },
+    };
+
+    const healed = await healMcpToolNames({ req, tools: [prefixedKey], toolDefinitions });
+
+    expect(healed).toEqual([prefixedKey]);
   });
 
   it('skips the config read entirely when every delimiter-bearing name resolves', async () => {

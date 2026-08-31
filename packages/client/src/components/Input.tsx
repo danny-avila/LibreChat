@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { fieldControl } from './Field';
 import { cn } from '~/utils';
 import './Field.css';
 
@@ -8,10 +9,7 @@ const Input: React.ForwardRefExoticComponent<InputProps & React.RefAttributes<HT
   React.forwardRef<HTMLInputElement, InputProps>(({ className, ...props }, ref) => {
     return (
       <input
-        className={cn(
-          'lc-field flex h-10 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary ring-offset-surface-primary placeholder:text-text-secondary focus-visible:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary disabled:cursor-not-allowed disabled:opacity-50',
-          className ?? '',
-        )}
+        className={cn(fieldControl, 'ring-offset-surface-primary', className ?? '')}
         ref={ref}
         {...props}
       />

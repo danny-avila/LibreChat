@@ -225,7 +225,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
   }
 
   // Handle loading state
-  if (isLoading || (isFetching && !isFetchingNextPage)) {
+  if ((isLoading || (isFetching && !isFetchingNextPage)) && !hasData) {
     return loadingSpinner;
   }
 

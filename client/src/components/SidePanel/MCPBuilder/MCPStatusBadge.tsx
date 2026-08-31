@@ -1,5 +1,5 @@
 import { Spinner } from '@librechat/client';
-import { Check, PlugZap } from 'lucide-react';
+import { Check, PlugZap, Zap } from 'lucide-react';
 import type { MCPServerStatus } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -15,7 +15,7 @@ interface MCPStatusBadgeProps {
  *
  * Unified color system:
  * - Green: Connected/Active (success)
- * - Blue: Connecting/In-progress
+ * - Blue: Connecting/In-progress or request-scoped on-demand
  * - Amber: Needs user action (OAuth required)
  * - Gray: Disconnected/Inactive (neutral)
  * - Red: Error
@@ -62,6 +62,15 @@ export default function MCPStatusBadge({
       >
         <Spinner className="size-3" />
         <span>{localize('com_nav_mcp_status_connecting')}</span>
+      </div>
+    );
+  }
+
+  if (serverStatus.requestScoped) {
+    return (
+      <div role="status" className={cn(badgeBaseClass, 'bg-status-info-subtle text-status-info')}>
+        <Zap className="size-3" aria-hidden="true" />
+        <span>{localize('com_nav_mcp_status_on_demand')}</span>
       </div>
     );
   }
@@ -121,7 +130,7 @@ export default function MCPStatusBadge({
  *
  * Colors:
  * - Green: Connected
- * - Blue: Connecting/Initializing
+ * - Blue: Connecting/Initializing or request-scoped on-demand
  * - Amber: Needs action (OAuth required while disconnected)
  * - Gray: Disconnected (neutral)
  * - Red: Error
@@ -144,6 +153,10 @@ export function getStatusDotColor(
     return 'bg-status-info';
   }
 
+  if (serverStatus.requestScoped) {
+    return 'bg-status-info';
+  }
+
   if (connectionState === 'connected') {
     return 'bg-status-success';
   }
@@ -153,8 +166,10 @@ export function getStatusDotColor(
   }
 
   if (connectionState === 'disconnected') {
-    // Needs OAuth = amber, otherwise gray
-    return requiresOAuth ? 'bg-status-warning' : 'bg-status-neutral';
+    if (requiresOAuth) {
+      return 'bg-status-warning';
+    }
+    return 'bg-status-neutral';
   }
 
   return 'bg-status-neutral';

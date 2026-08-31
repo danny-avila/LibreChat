@@ -17,6 +17,7 @@ const mockTenantStorageRun = jest.fn(async (context, callback) => {
 const mockSaveMessage = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
+const mockIsAgentTriggerPrincipalActive = jest.fn();
 const mockFilterPersistableAbortContent = jest.fn((content) => content);
 const mockCheckAndIncrementPendingRequest = jest.fn();
 const mockDecrementPendingRequest = jest.fn();
@@ -24,6 +25,8 @@ const mockGenerationJobManager = {
   createJob: jest.fn(),
   emitError: jest.fn(),
   completeJob: jest.fn(),
+  beginProviderExecution: jest.fn(),
+  markProviderExecutionDrained: jest.fn(),
   getResumeState: jest.fn(),
   updateMetadata: jest.fn(),
   claimGeneration: jest.fn(),
@@ -44,8 +47,11 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isScheduleFireRequest: jest.fn(() => false),
+  exemptFromConcurrencyLimiter: jest.fn(() => false),
   toPendingSteer: jest.fn((item) => item),
   isSteerPreemptSupported: jest.fn(() => true),
+  isSteerTerminalContinuationSupported: jest.fn(() => false),
   buildRecoveredSteerPayload: jest.fn(() => null),
   deleteAgentCheckpoint: jest.fn(),
   getViolationInfo: jest.fn(() => ({
@@ -78,6 +84,12 @@ jest.mock('@librechat/api', () => ({
   getAgentStartupTelemetry: jest.fn(() => undefined),
   acceptAgentStartupTelemetry: jest.fn(),
   isUnpersistedPreliminaryParent: jest.fn(async () => false),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    parentMessageId,
+  }),
+  parseAgentEventActorDetachedCompletion: jest.fn(() => undefined),
 }));
 
 jest.mock('~/server/cleanup', () => ({
@@ -100,6 +112,7 @@ jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
+  isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
 }));
 
 const AgentController = require('../request');
@@ -112,9 +125,12 @@ describe('ResumableAgentController tenant context', () => {
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue({ createdAt: '2026-07-31T00:00:00.000Z' });
     mockGetMessages.mockResolvedValue([]);
+    mockIsAgentTriggerPrincipalActive.mockResolvedValue(true);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
     mockGenerationJobManager.completeJob.mockResolvedValue(undefined);
+    mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
+    mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     mockGenerationJobManager.releaseGeneration.mockResolvedValue(undefined);
     mockGenerationJobManager.hasJob.mockResolvedValue(true);
@@ -130,6 +146,10 @@ describe('ResumableAgentController tenant context', () => {
     let allSubscribersLeftHandler;
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
+      metadata: {
+        providerExecutionId: 'provider-segment-1',
+        providerDrained: true,
+      },
       readyPromise: Promise.resolve(),
       abortController: new AbortController(),
       emitter: {

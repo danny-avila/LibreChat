@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
-import type { Run, IState } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
+import type { Run, IState } from '@librechat/agents';
+import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 
 /**
  * Context handed to a test run hook so it can shape fake-model behavior from
@@ -8,7 +9,15 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
  */
 export interface TestRunHookContext {
   messages?: BaseMessage[];
+  /**
+   * Identifies the conversation this run belongs to. A resumed run rebuilds
+   * `createRun` with no messages because state is rehydrated from the
+   * checkpoint, so message history alone cannot tell a resume apart from a
+   * fresh attempt; this is the stable identity across both.
+   */
+  conversationId?: string;
   agents: ReadonlyArray<{ tools?: ReadonlyArray<{ name: string }> }>;
+  modelCallbacks?: readonly ModelBoundChatModelCallback[];
 }
 
 export type TestRunHook = (run: Run<IState>, context: TestRunHookContext) => void;

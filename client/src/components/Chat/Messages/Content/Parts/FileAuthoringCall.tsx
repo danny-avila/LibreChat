@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { FilePenLine, FilePlus2 } from 'lucide-react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import parseJsonField, { parseJsonFieldOccurrences } from './parseJsonField';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
+import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { langFromPath } from './ReadFileCall';
 import { useToolCallIntent } from './intent';
@@ -106,6 +107,8 @@ function buildEditArgsPreview(args: ToolCallArgs): string {
 export default function FileAuthoringCall({
   toolName,
   isSubmitting,
+  runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
@@ -116,6 +119,8 @@ export default function FileAuthoringCall({
   toolName: FileAuthoringToolName;
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -147,10 +152,21 @@ export default function FileAuthoringCall({
     previewLang = fileLang;
   }
 
-  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError } =
-    useToolCallState(initialProgress, isSubmitting, output, !!filePath || !!preview, onExpand);
+  const { showCode, toggleCode, expandStyle, expandRef, phase } = useToolCallState({
+    initialProgress,
+    isSubmitting,
+    output,
+    hasInput: !!filePath || !!preview,
+    onExpand,
+    runStepStatus,
+  });
 
   const highlighted = useLazyHighlight(preview || undefined, previewLang);
+  const { ref: previewPaneRef, onScroll: onPreviewPaneScroll } = useFollowScroll<HTMLPreElement>(
+    highlighted ?? preview,
+    phase === 'running',
+    showCode,
+  );
   const Icon = isCreate && !overwrote ? FilePlus2 : FilePenLine;
   let finishedKey: 'com_ui_created_file' | 'com_ui_updated_file' | 'com_ui_edited_file' =
     'com_ui_edited_file';
@@ -162,7 +178,7 @@ export default function FileAuthoringCall({
     <>
       <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
-          progress={progress}
+          phase={phase}
           onClick={toggleCode}
           inProgressText={
             intent ??
@@ -171,23 +187,22 @@ export default function FileAuthoringCall({
             })
           }
           finishedText={
-            cancelled
+            phase === 'cancelled'
               ? localize('com_ui_cancelled')
               : (intent ?? localize(finishedKey, { 0: fileName }))
           }
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          durationMs={runStepDurationMs}
           icon={
             <Icon
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
-                progress < 1 && !cancelled && !hasError && 'animate-pulse',
+                phase === 'running' && 'animate-pulse',
               )}
               aria-hidden="true"
             />
           }
           hasInput={!!filePath || !!preview}
           isExpanded={showCode}
-          error={cancelled}
         />
       </div>
       <div style={expandStyle}>
@@ -195,7 +210,11 @@ export default function FileAuthoringCall({
           {!!preview && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <CodeWindowHeader language={previewIsDiff ? 'diff' : fileName} code={preview} />
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+              <pre
+                ref={previewPaneRef}
+                onScroll={onPreviewPaneScroll}
+                className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
+              >
                 <code className={`hljs language-${previewLang} !whitespace-pre`}>
                   {highlighted ?? preview}
                 </code>
@@ -204,7 +223,7 @@ export default function FileAuthoringCall({
                 <pre
                   className={cn(
                     'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
-                    hasError ? 'text-status-error' : 'text-text-primary',
+                    phase === 'failed' ? 'text-status-error' : 'text-text-primary',
                   )}
                 >
                   {output}

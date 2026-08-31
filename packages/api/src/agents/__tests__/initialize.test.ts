@@ -96,6 +96,7 @@ jest.mock('~/endpoints', () => ({
 
 jest.mock('~/files', () => ({
   filterFilesByEndpointConfig: jest.fn(() => []),
+  filterFilesByEndpointRuntimeConfig: jest.fn(() => []),
 }));
 
 jest.mock('~/prompts', () => ({
@@ -110,6 +111,7 @@ jest.mock('../resources', () => ({
 }));
 
 import { initializeAgent } from '../initialize';
+import { isFatalAgentInitializationError } from '../errors';
 
 const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
 
@@ -256,6 +258,488 @@ function countUrlContextTools(tools: unknown[] | undefined): number {
       .length ?? 0
   );
 }
+
+describe('initializeAgent — execution context', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('initializes without Express request or response objects', async () => {
+    const { agent, loadTools, db } = createMocks();
+    const previousReqDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'req');
+    Object.defineProperty(globalThis, 'req', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'request-free-stateful',
+                name: 'Request-free stateful',
+                type: 'attached',
+                baseURL: 'https://stateful.example.com/v1',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    try {
+      await expect(
+        initializeAgent(
+          {
+            runtime: {
+              user: { id: 'user-1' } as never,
+              appConfig: appConfig as never,
+              requestBody: { timezone: 'America/New_York' },
+            },
+            agent,
+            loadTools,
+            endpointOption: { endpoint: EModelEndpoint.agents },
+            allowedProviders: new Set([Providers.OPENAI]),
+            isInitialAgent: true,
+          },
+          db,
+        ),
+      ).resolves.toBeDefined();
+    } finally {
+      if (previousReqDescriptor == null) {
+        delete (globalThis as typeof globalThis & { req?: unknown }).req;
+      } else {
+        Object.defineProperty(globalThis, 'req', previousReqDescriptor);
+      }
+    }
+
+    expect(loadTools).toHaveBeenCalledWith(expect.not.objectContaining({ req: expect.anything() }));
+    expect(loadTools).toHaveBeenCalledWith(expect.not.objectContaining({ res: expect.anything() }));
+  });
+});
+
+describe('initializeAgent — current content policy preflight', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('rejects a blocked stored definition before file, resource, tool, or provider side effects', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    agent.instructions = 'Use PRIVATE-INSTRUCTIONS for every response';
+    req.config = {
+      filters: {
+        agentInstructions: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: [{ file_id: 'file-1' } as IMongoFile],
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        error: 'content_filter_block',
+        source: 'agent_instruction',
+        field: 'instructions',
+      },
+    });
+
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not treat unresolved canonical file IDs as agent-definition text', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tool_resources = {
+      [EToolResources.context]: {
+        file_ids: ['canonical-file-1'],
+      },
+    };
+    req.config = {
+      filters: {
+        files: {
+          pii: {
+            starterPatterns: ['sk_prefix'],
+            uninspectable: 'block',
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('rejects a blocked resolved skill before resource or provider side effects', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'private-skill',
+      body: 'Follow PRIVATE-SKILL before answering',
+      author: {
+        toString: () => req.user?.id,
+      } as unknown as import('mongoose').Types.ObjectId,
+    });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: [{ file_id: 'file-1' } as IMongoFile],
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['private-skill'],
+        },
+        { ...db, getSkillByName },
+      ),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        error: 'content_filter_block',
+        source: 'skill',
+        field: 'instructions',
+      },
+    });
+
+    expect(getSkillByName).toHaveBeenCalled();
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it('inspects only the deduped model-bound skill definition when manual invocation wins', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = {
+      toString: () => req.user?.id,
+    } as unknown as import('mongoose').Types.ObjectId;
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'shared-skill',
+      body: 'Safe manually selected instructions',
+      author,
+    });
+    const listAlwaysApplySkills: InitializeAgentDbMethods['listAlwaysApplySkills'] = jest
+      .fn()
+      .mockResolvedValue({
+        skills: [
+          {
+            _id: skillId,
+            name: 'shared-skill',
+            body: 'Discarded PRIVATE-SKILL definition',
+            author,
+          },
+        ],
+        has_more: false,
+        after: null,
+      });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['shared-skill'],
+      },
+      {
+        ...db,
+        getSkillByName,
+        listAlwaysApplySkills,
+        listSkillsByAccess: async () => ({ skills: [], has_more: false, after: null }),
+      },
+    );
+
+    expect(result.manualSkillPrimes).toEqual([
+      expect.objectContaining({
+        name: 'shared-skill',
+        body: 'Safe manually selected instructions',
+      }),
+    ]);
+    expect(result.alwaysApplySkillPrimes).toEqual([]);
+  });
+
+  it('does not traverse resolved skill metadata when skill policy is inactive', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const broadFrontmatter = Object.fromEntries(
+      Array.from({ length: 4_200 }, (_, index) => [`field-${index}`, `value-${index}`]),
+    );
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'broad-skill',
+      body: 'Safe instructions',
+      frontmatter: broadFrontmatter,
+      author: { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId,
+    });
+    req.config = {
+      filters: {
+        messages: { pii: { starterPatterns: ['sk_prefix'] } },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['broad-skill'],
+        },
+        { ...db, getSkillByName },
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('fails closed on traversal only when the affected skill field is selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'broad-skill',
+      body: 'Safe instructions',
+      frontmatter: Object.fromEntries(
+        Array.from({ length: 4_200 }, (_, index) => [`field-${index}`, `value-${index}`]),
+      ),
+      author: { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId,
+    });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            fields: ['frontmatter'],
+            starterPatterns: ['sk_prefix'],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['broad-skill'],
+        },
+        { ...db, getSkillByName },
+      ),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+  });
+
+  it('rejects blocked active skill-catalog metadata before resource or provider side effects', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'] = jest
+      .fn()
+      .mockResolvedValue({
+        skills: [
+          {
+            _id: skillId,
+            name: 'catalog-skill',
+            description: 'Use PRIVATE-CATALOG data',
+            author: {
+              toString: () => req.user?.id,
+            } as unknown as import('mongoose').Types.ObjectId,
+          },
+        ],
+        has_more: false,
+        after: null,
+      });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: [{ file_id: 'file-1' } as IMongoFile],
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+        },
+        { ...db, listSkillsByAccess },
+      ),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        error: 'content_filter_block',
+        source: 'skill',
+        field: 'description',
+      },
+    });
+
+    expect(listSkillsByAccess).toHaveBeenCalledTimes(1);
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).not.toHaveBeenCalled();
+  });
+
+  it('reuses a safe inspected skill-catalog snapshot during initialization', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'] = jest
+      .fn()
+      .mockResolvedValue({
+        skills: [
+          {
+            _id: skillId,
+            name: 'safe-skill',
+            description: 'Safe catalog description',
+            author: {
+              toString: () => req.user?.id,
+            } as unknown as import('mongoose').Types.ObjectId,
+          },
+        ],
+        has_more: false,
+        after: null,
+      });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+      },
+      { ...db, listSkillsByAccess },
+    );
+
+    expect(listSkillsByAccess).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('initializeAgent — custom provider token lookup', () => {
   const CUSTOM_PROVIDER = 'EduGPT';
@@ -847,6 +1331,12 @@ describe('initializeAgent — attachment scoping', () => {
   });
 
   it('owner-scopes request file usage updates while preserving trusted tool files', async () => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
     const requestFile = { file_id: 'request-file', filename: 'request.txt' } as IMongoFile;
     const toolFile = { file_id: 'tool-file', filename: 'tool.txt' } as IMongoFile;
     const { agent, req, res, loadTools, db } = createMocks();
@@ -857,11 +1347,15 @@ describe('initializeAgent — attachment scoping', () => {
       maxContextTokens: undefined,
       modelOptions: { model: agent.model },
     });
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([requestFile, toolFile]);
     (db.getConvoFiles as jest.Mock).mockResolvedValueOnce([toolFile.file_id]);
     (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce([toolFile]);
     (db.updateFilesUsage as jest.Mock)
-      .mockResolvedValueOnce([requestFile])
-      .mockResolvedValueOnce([toolFile]);
+      .mockResolvedValueOnce([{ ...requestFile, filename: 'post-mutation-request.txt' }])
+      .mockResolvedValueOnce([{ ...toolFile, filename: 'post-mutation-tool.txt' }]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_req: ServerRequest, { files }: { files: IMongoFile[] }) => files,
+    );
 
     await initializeAgent(
       {
@@ -883,6 +1377,14 @@ describe('initializeAgent — attachment scoping', () => {
       new Set([EToolResources.file_search]),
       { userId: 'user-1', tenantId: undefined },
     );
+    expect(db.getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: [requestFile.file_id, toolFile.file_id] },
+        user: 'user-1',
+      },
+      {},
+      {},
+    );
     expect(db.updateFilesUsage).toHaveBeenNthCalledWith(1, [requestFile], undefined, {
       user: 'user-1',
       tenantId: undefined,
@@ -891,6 +1393,82 @@ describe('initializeAgent — attachment scoping', () => {
       user: 'user-1',
       tenantId: undefined,
     });
+    await expect(primeResources.mock.calls[0][0].attachments).resolves.toEqual([
+      requestFile,
+      toolFile,
+    ]);
+  });
+
+  it('rejects blocked resent file content before usage mutation or resource priming', async () => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const blockedFile = {
+      file_id: 'blocked-file',
+      filename: 'stored.txt',
+      text: 'PRIVATE-FILE',
+    } as IMongoFile;
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [EToolResources.file_search];
+    req.config = {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getConvoFiles as jest.Mock).mockResolvedValueOnce([blockedFile.file_id]);
+    (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce([blockedFile]);
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([blockedFile]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_req: ServerRequest, { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          conversationId: 'conversation-1',
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        error: 'content_filter_block',
+        source: 'file',
+        field: 'extracted_text',
+      },
+    });
+
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockGetProviderConfig).not.toHaveBeenCalled();
   });
 });
 
@@ -1739,6 +2317,117 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
 
+  it('routes code-file priming through the stateful profile before tools load', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'agent-user';
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful-code.example.com/v1/';
+
+    try {
+      const result = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+
+      expect(loadTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          codeExecutionContext: expect.objectContaining({
+            baseUrl: 'https://stateful-code.example.com/v1',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+          }),
+        }),
+      );
+      expect(result.codeExecutionContext).toEqual(
+        expect.objectContaining({
+          baseUrl: 'https://stateful-code.example.com/v1',
+          executionProfile: 'stateful',
+        }),
+      );
+    } finally {
+      delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+    }
+  });
+
+  it('rejects a stateful environment excluded by deployment policy', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'conversation';
+    req.config = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { allowedEnvironments: ['user'] },
+        },
+      },
+    } as NonNullable<typeof req.config>;
+
+    let error;
+    try {
+      await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      message: 'Stateful code environment is not allowed by this deployment: conversation',
+    });
+    expect(isFatalAgentInitializationError(error)).toBe(true);
+    expect(loadTools).not.toHaveBeenCalled();
+  });
+
+  it('uses an explicit stateful environment allowlist when req.config is unavailable', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'conversation';
+    req.config = undefined;
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+          allowedStatefulCodeEnvironments: ['user'],
+        },
+        db,
+      ),
+    ).rejects.toMatchObject({ code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED });
+    expect(loadTools).not.toHaveBeenCalled();
+  });
+
   it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['execute_code'];
@@ -2426,6 +3115,32 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     expect(loadTools).toHaveBeenCalledWith(
       expect.objectContaining({ accessibleMcpServerNames: accessibleNames }),
     );
+  });
+
+  it('threads the normalized MCP request body into tool discovery', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['custom_tool'];
+    const requestBody = {
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'parent-1',
+    };
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestBody,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(loadTools).toHaveBeenCalledWith(expect.objectContaining({ requestBody }));
   });
 
   it('unions snapshot config names into the audit when the merged read omits them', async () => {

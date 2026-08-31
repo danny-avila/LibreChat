@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.7",
+  "version": "v0.8.8-rc1",
   "description": "",
   "packageManager": "npm@11.13.0",
   "workspaces": [
@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare": "node -e \"import('husky').then((h) => h.default()).catch(() => {})\"",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",
@@ -67,7 +68,10 @@
     "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
     "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:mock:redis": "npm run e2e:prepare && cross-env E2E_STREAM_STORE=redis playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:mock:redis:transport": "npm run e2e:prepare && cross-env E2E_STREAM_STORE=redis playwright test --config=e2e/playwright.config.redis.ts",
     "e2e:benchmark:agents": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.benchmark.ts agent-startup.latency.spec.ts",
+    "e2e:benchmark:navigation": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.navigation-perf.ts",
+    "e2e:benchmark:reasoning": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.reasoning-perf.ts",
     "e2e:bombadil": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.bombadil.ts",
     "e2e:bombadil:run": "playwright test --config=e2e/playwright.config.bombadil.ts",
     "e2e:bombadil:branch-reload": "npm run e2e:prepare && cross-env BOMBADIL_SPECIFICATION=branch-reload.specification.ts BOMBADIL_TIME_LIMIT=30s playwright test --config=e2e/playwright.config.bombadil.ts",
@@ -97,10 +101,12 @@
     "test:all": "npm run test:client && npm run test:api && npm run test:packages:api && npm run test:packages:data-provider && npm run test:packages:data-schemas",
     "e2e:update": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "lint:fix": "eslint --fix \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
-    "lint": "eslint \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
+    "lint:fix": "eslint . --fix",
+    "lint": "eslint .",
     "sort-imports": "node scripts/sort-imports.mts",
     "sort-imports:check": "node scripts/sort-imports.mts --check",
+    "static-checks": "node scripts/static-checks.mts",
+    "static-checks:full": "node scripts/static-checks.mts --full",
     "format": "npx prettier --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
     "b:api-inspect": "NODE_ENV=production bun --inspect run api/server/index.js",
@@ -151,8 +157,9 @@
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.4",
     "@eslint/js": "^9.20.0",
-    "@playwright/test": "^1.56.1",
+    "@playwright/test": "^1.62.1",
     "@types/react-virtualized": "^9.22.0",
+    "brace-expansion": "^2.1.2",
     "caniuse-lite": "^1.0.30001741",
     "cross-env": "^7.0.3",
     "elliptic": "^6.6.1",
@@ -177,7 +184,18 @@
     "typescript-eslint": "^8.60.1"
   },
   "overrides": {
-    "brace-expansion": "^5.0.8",
+    "minimatch@3": {
+      "brace-expansion": "^1.1.16"
+    },
+    "minimatch@5": {
+      "brace-expansion": "^2.1.2"
+    },
+    "minimatch@9": {
+      "brace-expansion": "^2.1.2"
+    },
+    "minimatch@10": {
+      "brace-expansion": "^5.0.8"
+    },
     "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.6",

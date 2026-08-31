@@ -490,6 +490,23 @@ export type ParsedEphemeralAgentId = {
 };
 
 /**
+ * Resolves the display label ("sender") for an ephemeral agent:
+ * `modelLabel` (user/preset) → model spec's `label` → endpoint config's
+ * `modelDisplayLabel` → `''` (lets consumers fall back to the model name).
+ */
+export function getEphemeralSender({
+  modelLabel,
+  specLabel,
+  modelDisplayLabel,
+}: {
+  modelLabel?: string | null;
+  specLabel?: string | null;
+  modelDisplayLabel?: string | null;
+}): string {
+  return modelLabel ?? specLabel ?? modelDisplayLabel ?? '';
+}
+
+/**
  * Encodes an ephemeral agent ID from endpoint, model, optional sender, and optional index.
  * Uses __ to replace : (reserved in graph node names) and ___ to separate sender.
  *

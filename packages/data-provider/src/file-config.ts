@@ -39,6 +39,7 @@ export const fullMimeTypesList = [
   'application/pdf',
   'text/x-php',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.presentationml.template',
   'text/x-python',
   'text/x-script.python',
   'text/x-ruby',
@@ -106,6 +107,7 @@ export const codeInterpreterMimeTypesList = [
   'application/pdf',
   'text/x-php',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.presentationml.template',
   'text/x-python',
   'text/x-script.python',
   'text/x-ruby',
@@ -139,6 +141,7 @@ export const retrievalMimeTypesList = [
   'application/pdf',
   'text/x-php',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.presentationml.template',
   'text/x-python',
   'text/x-script.python',
   'text/x-ruby',
@@ -217,7 +220,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml|calendar))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|x-zip-compressed|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|x-zip-compressed|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.(presentation|template)|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -231,6 +234,7 @@ export const defaultOCRMimeTypes = [
   excelMimeTypes,
   /^application\/pdf$/,
   /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
+  /^application\/vnd\.openxmlformats-officedocument\.presentationml\.template$/,
   /^application\/vnd\.ms-(word|powerpoint)$/,
   /^application\/epub\+zip$/,
   /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
@@ -394,6 +398,7 @@ export const codeTypeMapping: { [key: string]: string } = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx - Excel
   ppt: 'application/vnd.ms-powerpoint', // .ppt - PowerPoint (legacy)
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx - PowerPoint
+  potx: 'application/vnd.openxmlformats-officedocument.presentationml.template', // .potx - PowerPoint template
   ics: 'text/calendar', // .ics - iCalendar
   ical: 'text/calendar', // .ical - iCalendar
   ifb: 'text/calendar', // .ifb - iCalendar free/busy
@@ -411,6 +416,10 @@ export const mimeTypeAliases: Readonly<Record<string, string>> = {
   'application/x-zip-compressed': 'application/zip',
   'text/x-python-script': 'text/x-python',
   'text/x-markdown': 'text/markdown',
+  /** freedesktop shared-mime-info (Chrome on Linux) */
+  'application/x-shellscript': 'application/x-sh',
+  /** libmagic, i.e. `file --mime-type` */
+  'text/x-shellscript': 'application/x-sh',
 };
 
 /**
@@ -431,7 +440,7 @@ export function inferMimeType(fileName: string, currentType: string): string {
 
 export const retrievalMimeTypes = [
   /^(text\/(x-c|x-c\+\+|x-h|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|vtt|xml))$/,
-  /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,
+  /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.(presentation|template))))$/,
 ];
 
 export const megabyte = 1024 * 1024;
@@ -480,6 +489,7 @@ export const fileConfig = {
     maxWidth: 1900,
     maxHeight: 1900,
     quality: 0.92,
+    enforced: false,
   },
   ocr: {
     supportedMimeTypes: defaultOCRMimeTypes,
@@ -524,8 +534,8 @@ export const fileConfigSchema = z.object({
   clientImageResize: z
     .object({
       enabled: z.boolean().optional(),
-      maxWidth: z.number().min(0).optional(),
-      maxHeight: z.number().min(0).optional(),
+      maxWidth: z.number().min(1).optional(),
+      maxHeight: z.number().min(1).optional(),
       quality: z.number().min(0).max(1).optional(),
     })
     .optional(),
@@ -682,6 +692,7 @@ const documentMimeExtensions: ReadonlyArray<readonly [string, readonly string[]]
   ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ['.xlsx']],
   ['application/vnd.ms-powerpoint', ['.ppt']],
   ['application/vnd.openxmlformats-officedocument.presentationml.presentation', ['.pptx']],
+  ['application/vnd.openxmlformats-officedocument.presentationml.template', ['.potx']],
   ['application/vnd.oasis.opendocument.text', ['.odt']],
   ['application/vnd.oasis.opendocument.spreadsheet', ['.ods']],
   ['application/vnd.oasis.opendocument.presentation', ['.odp']],
@@ -1010,11 +1021,12 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     };
   }
 
-  // Merge clientImageResize configuration
+  // Merge clientImageResize configuration; an admin-provided `enabled` overrides the user's setting
   if (dynamic.clientImageResize !== undefined) {
     mergedConfig.clientImageResize = {
       ...mergedConfig.clientImageResize,
       ...dynamic.clientImageResize,
+      enforced: dynamic.clientImageResize.enabled !== undefined,
     };
   }
 

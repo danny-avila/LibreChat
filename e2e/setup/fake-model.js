@@ -12,6 +12,7 @@
 const { FakeChatModel } = require('@librechat/agents');
 const { ChatGenerationChunk } = require('@langchain/core/outputs');
 const { AIMessageChunk } = require('@langchain/core/messages');
+const { tryBindReplay } = require('./model-replay');
 
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
@@ -25,6 +26,7 @@ const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
+const THINK_REPLY_MARKER = 'E2E_THINK_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
@@ -34,10 +36,14 @@ const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
 const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
 const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
+const ACTIVITY_PHASE_REPLY_MARKER = 'E2E_ACTIVITY_PHASE_REPLY:';
 const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const STATEFUL_CODE_MARKER = 'E2E_STATEFUL_CODE:';
+/** Two prose paragraphs, so a spec can select the message's *closing* block. */
+const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
 const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
 const LARGE_MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_LARGE_MERMAID_ARTIFACT_REPLY';
 const HTML_ARTIFACT_REPLY_MARKER = 'E2E_HTML_ARTIFACT_REPLY';
@@ -51,6 +57,8 @@ const DEFERRED_HITL_MARKER = 'E2E_DEFERRED_HITL:';
 const HANDOFF_MARKER = 'E2E_HANDOFF:';
 const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
 const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
+const SUBAGENT_ACTIVITY_MARKER = 'E2E_SUBAGENT_ACTIVITY:';
+const SUBAGENT_ACTIVITY_CHILD_MARKER = 'E2E_SUBAGENT_ACTIVITY_CHILD:';
 const SUBAGENT_MODEL_OVERRIDE_ERROR =
   '[e2e] Streamed subagent result coverage requires an @librechat/agents release with ' +
   'StandardGraph.setSubagentModelOverride';
@@ -68,6 +76,7 @@ const STEER_SPLIT_FINAL_TEXT = 'E2E steer split reply done';
 const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
 const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
+const ACTIVITY_PHASE_FINAL_TEXT = 'E2E activity phase reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
@@ -80,6 +89,7 @@ const RESUME_ICON_REPLY_CHUNKS = 240;
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
+const STATEFUL_CODE_VALUE = 'librechat-bridge-persisted';
 const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
@@ -430,6 +440,45 @@ function replyResponses(text) {
     };
   }
 
+  if (text.includes(PARAGRAPHS_REPLY_MARKER)) {
+    /** The quoted cell sits in the first column, so scrolling the table to its
+     *  right edge carries it out of view. */
+    const wideColumns = [{ header: 'E2E first column header', cell: 'E2E table cell text' }];
+    for (let index = 1; index < 8; index++) {
+      wideColumns.push({
+        header: `E2E column ${index} with a deliberately wide header`,
+        cell: `E2E filler cell ${index} padding the row out`,
+      });
+    }
+    const filler = [];
+    for (let index = 0; index < 4; index++) {
+      filler.push(
+        `E2E filler paragraph ${index} keeps this reply tall enough to overflow a phone viewport so scrolling is exercised for real.`,
+        '',
+      );
+    }
+    return {
+      responses: [
+        [
+          'E2E opening paragraph of the reply, ahead of the closing one.',
+          '',
+          /** Renders inside `.markdown-table-wrapper`, a nested scroll container:
+           *  its `overflow-x: auto` also makes the computed `overflow-y` auto, so
+           *  a selection here is clipped by the table AND by the message list.
+           *  Wide enough to actually overflow sideways, which is what lets a
+           *  spec scroll the selected cell out of view without moving the
+           *  message at all. */
+          `| ${wideColumns.map((column) => column.header).join(' | ')} |`,
+          `| ${wideColumns.map(() => '---').join(' | ')} |`,
+          `| ${wideColumns.map((column) => column.cell).join(' | ')} |`,
+          '',
+          ...filler,
+          'E2E closing paragraph, the last block this message renders.',
+        ].join('\n'),
+      ],
+    };
+  }
+
   const errorName = getMarkerValue(text, FORCED_ERROR_MARKER);
   if (errorName) {
     return {
@@ -442,6 +491,15 @@ function replyResponses(text) {
   if (replyName) {
     return {
       responses: [`E2E reply ${replyName}`],
+    };
+  }
+
+  const thinkName = getMarkerValue(text, THINK_REPLY_MARKER);
+  if (thinkName) {
+    /** The `<think>` tags are parsed downstream by the agents stream pipeline, so this
+     *  yields a reasoning part followed by a text part: two separately editable parts. */
+    return {
+      responses: [`<think>E2E reasoning ${thinkName}</think>\n\nE2E reply ${thinkName}`],
     };
   }
 
@@ -632,15 +690,28 @@ function overrideModel({
   toolCalls,
   thrownError,
   overrideSubagentModel,
+  disableHumanInTheLoop,
   resolveInvocation,
   resolveOnStream,
+  modelCallbacks,
 }) {
+  /** The shared mock profile enables approval HITL for its dedicated specs.
+   * Detached subagents reject that run-level mode before executing, so the
+   * credential-free activity scenario explicitly models a deployment with
+   * approval HITL disabled without weakening the shared profile. */
+  if (disableHumanInTheLoop) {
+    graph.humanInTheLoop = undefined;
+    for (const executor of graph._subagentExecutors ?? []) {
+      executor.humanInTheLoop = undefined;
+    }
+  }
   if (overrideSubagentModel && typeof graph.setSubagentModelOverride !== 'function') {
     overrideModel({
       graph,
       responses: [''],
       sleep,
       thrownError: SUBAGENT_MODEL_OVERRIDE_ERROR,
+      modelCallbacks,
     });
     return;
   }
@@ -654,6 +725,7 @@ function overrideModel({
       resolveInvocation,
       resolveOnStream,
     });
+    model.callbacks = modelCallbacks;
     graph.overrideModel = model;
     if (overrideSubagentModel) {
       graph.setSubagentModelOverride(model);
@@ -677,6 +749,7 @@ function overrideModel({
     emitCustomEvent: true,
     toolCalls,
   });
+  model.callbacks = modelCallbacks;
   graph.overrideModel = model;
 }
 
@@ -1151,6 +1224,57 @@ function activityReplyResponses(label, toolNames) {
 }
 
 /**
+ * Three-turn run with two sequential tool batches for the parent activity-phase
+ * e2e. Each tool invocation produces its own `PostToolBatch`; the final model
+ * turn then closes a phase containing both logical activities. Keeping the
+ * batches sequential is essential because two parallel calls are one activity.
+ */
+function activityPhaseReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [
+        `E2E activity phase reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`,
+      ],
+    };
+  }
+  let invocation = 0;
+  return {
+    responses: [''],
+    resolveInvocation: async () => {
+      invocation += 1;
+      if (invocation === 1) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_phase_alpha_${label}`,
+              name: toolName,
+              args: { fact: `activity phase alpha ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      if (invocation === 2) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_phase_beta_${label}`,
+              name: toolName,
+              args: { fact: `activity phase beta ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      return { response: `${ACTIVITY_PHASE_FINAL_TEXT} ${label}` };
+    },
+  };
+}
+
+/**
  * Pause a real agent run at the ask_user_question tool. The resume controller
  * rebuilds the graph with an empty input-message list, so the test hook selects
  * its ordinary mock reply for the resumed model turn. This deliberately tests
@@ -1172,11 +1296,17 @@ function askUserQuestionResponses(label, toolNames) {
         id: `call_e2e_ask_user_question_${label}`,
         name: ASK_USER_QUESTION_TOOL_NAME,
         args: {
-          question: `Which environment should Bombadil use for ${label}?`,
-          description: 'This deterministic pause exercises the HITL answer and resume lifecycle.',
-          options: [
-            { label: 'Staging', value: 'staging' },
-            { label: 'Production', value: 'production' },
+          questions: [
+            {
+              id: 'environment',
+              question: `Which environment should Bombadil use for ${label}?`,
+              description:
+                'This deterministic pause exercises the HITL answer and resume lifecycle.',
+              options: [
+                { label: 'Staging', value: 'staging' },
+                { label: 'Production', value: 'production' },
+              ],
+            },
           ],
         },
         type: 'tool_call',
@@ -1245,6 +1375,79 @@ function subagentResultResponses(text) {
             type: 'tool_call',
           },
         ],
+      };
+    },
+  };
+}
+
+function parseSubagentActivityMarker(text) {
+  const value = getMarkerValue(text, SUBAGENT_ACTIVITY_MARKER);
+  const separator = value.indexOf(':');
+  if (separator <= 0 || separator === value.length - 1) {
+    return null;
+  }
+
+  const childIds = value.slice(0, separator).split(',').filter(Boolean);
+  if (childIds.length !== 2) {
+    return null;
+  }
+
+  return {
+    childIds,
+    label: value.slice(separator + 1),
+  };
+}
+
+function subagentActivityResponses(text) {
+  const marker = parseSubagentActivityMarker(text);
+  if (!marker) {
+    return null;
+  }
+
+  return {
+    responses: [''],
+    sleep: 50,
+    overrideSubagentModel: true,
+    disableHumanInTheLoop: true,
+    resolveInvocation: (messages) => {
+      const latestUserText = getLatestUserText(messages);
+      for (const [index] of marker.childIds.entries()) {
+        const childPrompt = `${SUBAGENT_ACTIVITY_CHILD_MARKER}${marker.label}:${index + 1}`;
+        if (!latestUserText.includes(childPrompt)) {
+          continue;
+        }
+
+        const progress = Array.from(
+          { length: 100 },
+          (_, phase) => `child-${index + 1}-phase-${phase + 1}`,
+        ).join(' ');
+        return {
+          response: `E2E detached child ${index + 1} activity ${marker.label} ${progress} E2E detached child ${index + 1} complete ${marker.label}`,
+        };
+      }
+
+      const backgroundTaskResults = (messages ?? []).filter(
+        (message) =>
+          messageType(message) === 'tool' &&
+          typeof message?.tool_call_id === 'string' &&
+          message.tool_call_id.startsWith('call_e2e_subagent_activity_'),
+      );
+      if (backgroundTaskResults.length >= marker.childIds.length) {
+        return { response: `E2E detached subagents dispatched ${marker.label}` };
+      }
+
+      return {
+        response: '',
+        toolCalls: marker.childIds.map((childId, index) => ({
+          id: `call_e2e_subagent_activity_${marker.label}_${index + 1}`,
+          name: 'subagent',
+          args: {
+            description: `${SUBAGENT_ACTIVITY_CHILD_MARKER}${marker.label}:${index + 1}`,
+            subagent_type: childId,
+            run_in_background: true,
+          },
+          type: 'tool_call',
+        })),
       };
     },
   };
@@ -1424,6 +1627,60 @@ function backgroundCollectResponses(messages, toolNames) {
       const status = pollText.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
       const echo = pollText.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
       return { responses: [`E2E background collected status=${status} echo=${echo}`] };
+    },
+  };
+}
+
+/** Fresh host-owned run started when the detached result becomes durable. */
+function backgroundCompletionResponses(text) {
+  if (!text.includes('background tool task has finished') || !text.includes('durable result')) {
+    return null;
+  }
+  const status = text.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+  const echo = text.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
+  return {
+    responses: [''],
+    resolveInvocation: async (_messages, options, runManager) => {
+      const agentId = getAgentIdFromInvocationOptions(options, runManager) ?? 'missing';
+      return {
+        response: `E2E background notified status=${status} echo=${echo} agent=${agentId}`,
+      };
+    },
+  };
+}
+
+function statefulCodeResponses(operation, toolNames) {
+  if (!toolNames.has(BASH_TOOL_NAME)) {
+    return {
+      responses: [`E2E stateful code unavailable: ${BASH_TOOL_NAME} was not advertised.`],
+    };
+  }
+
+  const commands = {
+    write: `printf ${STATEFUL_CODE_VALUE} > /mnt/data/librechat-bridge-state.txt && cat /mnt/data/librechat-bridge-state.txt`,
+    read: 'cat /mnt/data/librechat-bridge-state.txt',
+  };
+  const command = commands[operation];
+  if (!command) {
+    return { responses: [`E2E stateful code failed: unsupported operation ${operation}`] };
+  }
+
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: `call_e2e_stateful_code_${operation}`,
+        name: BASH_TOOL_NAME,
+        args: { command },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const toolText = findLastToolMessageText(streamMessages, STATEFUL_CODE_VALUE);
+      if (!toolText) {
+        return null;
+      }
+      return { responses: [`E2E stateful code ${operation} observed ${STATEFUL_CODE_VALUE}`] };
     },
   };
 }
@@ -1716,8 +1973,13 @@ function deferredHitlInvocationResponse({ graph, messages, options, runManager }
           id: askCallId,
           name: ASK_USER_QUESTION_NAME,
           args: {
-            question: `Continue deferred schema check ${label}?`,
-            options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+            questions: [
+              {
+                id: 'confirmation',
+                question: `Continue deferred schema check ${label}?`,
+                options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+              },
+            ],
           },
           type: 'tool_call',
         },
@@ -2010,6 +2272,16 @@ function buildHandoffResponses(graph, parsed) {
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const backgroundCompletion = backgroundCompletionResponses(text);
+  if (backgroundCompletion) {
+    return backgroundCompletion;
+  }
+
+  const subagentActivity = subagentActivityResponses(text);
+  if (subagentActivity) {
+    return subagentActivity;
+  }
+
   const subagentResult = subagentResultResponses(text);
   if (subagentResult) {
     return subagentResult;
@@ -2040,6 +2312,11 @@ function resolveResponses({ graph, messages, text, toolNames }) {
     return reply;
   }
 
+  const statefulCodeOperation = getMarkerValue(text, STATEFUL_CODE_MARKER);
+  if (statefulCodeOperation) {
+    return statefulCodeResponses(statefulCodeOperation, toolNames);
+  }
+
   const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);
   if (steerToolLabel) {
     return steerToolReplyResponses(steerToolLabel, toolNames);
@@ -2058,6 +2335,11 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const activityLabel = getMarkerValue(text, ACTIVITY_REPLY_MARKER);
   if (activityLabel) {
     return activityReplyResponses(activityLabel, toolNames);
+  }
+
+  const activityPhaseLabel = getMarkerValue(text, ACTIVITY_PHASE_REPLY_MARKER);
+  if (activityPhaseLabel) {
+    return activityPhaseReplyResponses(activityPhaseLabel, toolNames);
   }
 
   const askUserQuestionLabel = getMarkerValue(text, ASK_USER_QUESTION_MARKER);
@@ -2178,6 +2460,21 @@ module.exports = function fakeModelHook(run, context) {
   }
 
   const text = getLatestUserText(context?.messages);
+  /** Recorded-session replay outranks marker routing: a conversation whose
+   * prompt matches a fixture's next recorded invocation streams that recording
+   * through the real pipeline instead of a scripted mock response. */
+  if (
+    tryBindReplay({
+      graph,
+      text,
+      agents: context?.agents,
+      messages: context?.messages,
+      conversationId: context?.conversationId,
+      modelCallbacks: context?.modelCallbacks,
+    })
+  ) {
+    return;
+  }
   const toolNames = collectToolNames(context?.agents);
   const handoffScript = parseHandoffScript(text);
   const {
@@ -2186,6 +2483,7 @@ module.exports = function fakeModelHook(run, context) {
     toolCalls,
     thrownError,
     overrideSubagentModel,
+    disableHumanInTheLoop,
     resolveInvocation,
     resolveOnStream,
   } = handoffScript
@@ -2203,6 +2501,7 @@ module.exports = function fakeModelHook(run, context) {
     toolCalls,
     thrownError,
     overrideSubagentModel,
+    disableHumanInTheLoop,
     resolveInvocation: async (streamMessages, streamOptions, runManager) =>
       deferredHitlInvocationResponse({
         graph,
@@ -2216,5 +2515,6 @@ module.exports = function fakeModelHook(run, context) {
       approvalOutcomeResponses(streamMessages) ??
       resolveOnStream?.(streamMessages, streamOptions, runManager) ??
       null,
+    modelCallbacks: context?.modelCallbacks,
   });
 };

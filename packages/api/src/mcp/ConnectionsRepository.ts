@@ -102,13 +102,10 @@ export class ConnectionsRepository {
     if (existingConnection) {
       // Check if config was cached/updated since connection was created
       if (serverConfig.updatedAt && existingConnection.isStale(serverConfig.updatedAt)) {
-        logger.info(
-          `${this.prefix(serverName)} Existing connection for ${serverName} is outdated. Recreating a new connection.`,
-          {
-            connectionCreated: new Date(existingConnection.createdAt).toISOString(),
-            configCachedAt: new Date(serverConfig.updatedAt).toISOString(),
-          },
-        );
+        logger.info(`${this.prefix()} Existing connection is outdated; recreating`, {
+          connectionCreated: new Date(existingConnection.createdAt).toISOString(),
+          configCachedAt: new Date(serverConfig.updatedAt).toISOString(),
+        });
 
         // Disconnect stale connection
         await this.disconnectConnection(serverName);
@@ -162,18 +159,30 @@ export class ConnectionsRepository {
 
     this.connections.set(serverName, connection);
     if (this.ownerId === undefined && options.refreshTools !== false) {
+      /** The snapshot carries ordering reserved before its own `tools/list`, so this
+       * first-connect publication is ordered against concurrent replicas exactly as a
+       * list_changed refresh is. An app-level write that cannot be ordered is dropped, which
+       * left agents with a permanently empty catalog when this path populated it (#14857). */
       if (connection.client.getServerCapabilities()?.tools == null) {
+        const ordering = await connection.reserveToolsPublicationRevision();
+        /** The refresh path reserves again under backoff. Publishing unordered instead would be
+         * dropped in silence, leaving whatever this server last advertised in place. */
+        if (ordering.orderingUnavailable) {
+          await connection.refreshToolList();
+          return connection;
+        }
         await notifyMCPToolsChanged({
           tools: [],
           serverName,
           serverConfig,
           publicationGeneration,
+          publicationRevision: ordering.publicationRevision,
         });
         return connection;
       }
       const initialGeneration = toolsChangedGeneration;
       const snapshot = await connection.fetchToolsSnapshot();
-      if (snapshot.complete) {
+      if (snapshot.complete && !snapshot.orderingUnavailable) {
         if (toolsChangedGeneration !== initialGeneration) {
           await latestToolsChangedPublication;
         } else {
@@ -182,6 +191,7 @@ export class ConnectionsRepository {
             serverName,
             serverConfig,
             publicationGeneration,
+            publicationRevision: snapshot.publicationRevision,
           });
         }
       } else {
@@ -207,7 +217,7 @@ export class ConnectionsRepository {
             if (!options.continueOnError) {
               throw error;
             }
-            logger.warn(`${this.prefix(name)} Failed to establish connection`, error);
+            logger.warn(`${this.prefix()} Failed to establish connection`);
             return [name, null];
           }
         }),
@@ -245,8 +255,8 @@ export class ConnectionsRepository {
     try {
       connection.removeAllListeners?.('toolsChanged');
       await connection.dispose();
-    } catch (err) {
-      logger.error(`${this.prefix(serverName)} Error disposing`, err);
+    } catch {
+      logger.error(`${this.prefix()} Error disposing`);
     } finally {
       await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
     }
@@ -265,8 +275,8 @@ export class ConnectionsRepository {
   }
 
   // Returns formatted log prefix for server messages
-  protected prefix(serverName: string): string {
-    return `[MCP][${serverName}]`;
+  protected prefix(): string {
+    return this.ownerId ? `[MCP][User: ${this.ownerId}]` : '[MCP]';
   }
 
   /**

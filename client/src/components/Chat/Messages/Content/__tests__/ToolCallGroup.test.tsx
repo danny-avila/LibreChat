@@ -65,8 +65,9 @@ jest.mock('~/utils', () => ({
       : name,
   /** Real implementations: the group header resolves its text through these,
    *  so stubbing them out would hide the header logic under test. */
-  getActivityLabelPart: jest.requireActual('~/utils/activityLabels').getActivityLabelPart,
+  getBatchActivityLabelPart: jest.requireActual('~/utils/activityLabels').getBatchActivityLabelPart,
   getActivityLabelText: jest.requireActual('~/utils/activityLabels').getActivityLabelText,
+  hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
 }));
 
 jest.mock('../Parts', () => ({
@@ -250,6 +251,65 @@ describe('ToolCallGroup image hoisting', () => {
     });
 
     expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+  });
+
+  /** A remount into a completed phase card must not flash open and collapse
+   *  again while the parent entrance fold is playing — the phase summary
+   *  already speaks for this activity. */
+  it('mounts collapsed inside a completed phase even while a tool is still active', () => {
+    const voidToolParts = [{ part: makePart('t1', '', 'update_settings'), idx: 0 }];
+    const labelPart = {
+      part: {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: '',
+        pending: true,
+      } as unknown as TMessageContentParts,
+      idx: 1,
+    };
+
+    renderGroup({
+      ...baseProps,
+      parts: voidToolParts,
+      lastContentIdx: 1,
+      labelPart,
+      isSubmitting: true,
+      withinActivityPhase: true,
+    });
+
+    expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  /** A phase can resolve while an approval inside it still blocks the run
+   *  (see ActivityPhaseGroup's pending-approval retention) — the remounted
+   *  group must keep the actionable card mounted, not bury it behind a
+   *  second collapsed disclosure. */
+  it('keeps a pending approval expanded inside a completed phase', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makeApprovalPart('t1'), idx: 0 },
+        { part: makeApprovalPart('t2'), idx: 1 },
+      ],
+      isSubmitting: true,
+      withinActivityPhase: true,
+    });
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
+  });
+
+  it('still expands on user toggle inside a completed phase', () => {
+    renderGroup({ ...baseProps, withinActivityPhase: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+
+    expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
   });
 
   it('does not render tool bodies for an initially collapsed large completed group', () => {

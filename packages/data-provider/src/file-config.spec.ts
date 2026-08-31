@@ -2,6 +2,7 @@ import type { MimeUploadCapability } from './file-config';
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  fileConfigSchema,
   isAnthropicTextDocumentType,
   getConfiguredMimeAccept,
   bedrockDocumentMimeTypes,
@@ -31,6 +32,14 @@ describe('inferMimeType', () => {
 
   it('should normalize application/x-zip-compressed to application/zip', () => {
     expect(inferMimeType('archive.zip', 'application/x-zip-compressed')).toBe('application/zip');
+  });
+
+  it('should normalize application/x-shellscript to application/x-sh', () => {
+    expect(inferMimeType('test.sh', 'application/x-shellscript')).toBe('application/x-sh');
+  });
+
+  it('should normalize text/x-shellscript to application/x-sh', () => {
+    expect(inferMimeType('test.sh', 'text/x-shellscript')).toBe('application/x-sh');
   });
 
   it('should return a type that matches textMimeTypes after normalization', () => {
@@ -65,6 +74,20 @@ describe('inferMimeType', () => {
     expect(baseFileConfig.checkType(normalized)).toBe(true);
   });
 
+  it.each(['application/x-shellscript', 'text/x-shellscript'])(
+    'should produce a type accepted by checkType after normalizing %s',
+    (browserType) => {
+      expect(baseFileConfig.checkType(inferMimeType('test.sh', browserType))).toBe(true);
+    },
+  );
+
+  it.each(['application/x-shellscript', 'text/x-shellscript'])(
+    'should reject raw %s without normalization',
+    (browserType) => {
+      expect(baseFileConfig.checkType(browserType)).toBe(false);
+    },
+  );
+
   it('should reject raw text/x-python-script without normalization', () => {
     expect(baseFileConfig.checkType('text/x-python-script')).toBe(false);
   });
@@ -98,12 +121,16 @@ describe('inferMimeType', () => {
     expect(inferMimeType('deck.pptx', '')).toBe(
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     );
+    expect(inferMimeType('template.potx', '')).toBe(
+      'application/vnd.openxmlformats-officedocument.presentationml.template',
+    );
   });
 
   it('produces Office types accepted by checkType after inference', () => {
     expect(baseFileConfig.checkType(inferMimeType('report.docx', ''))).toBe(true);
     expect(baseFileConfig.checkType(inferMimeType('sheet.xlsx', ''))).toBe(true);
     expect(baseFileConfig.checkType(inferMimeType('legacy.doc', ''))).toBe(true);
+    expect(baseFileConfig.checkType(inferMimeType('template.potx', ''))).toBe(true);
   });
 });
 
@@ -170,7 +197,8 @@ describe('defaultOCRMimeTypes', () => {
     'application/vnd.oasis.opendocument.spreadsheet',
     'application/vnd.oasis.opendocument.presentation',
     'application/vnd.oasis.opendocument.graphics',
-  ])('matches ODF type for OCR: %s', (mimeType) => {
+    'application/vnd.openxmlformats-officedocument.presentationml.template',
+  ])('matches configured OCR type: %s', (mimeType) => {
     expect(checkOCRType(mimeType)).toBe(true);
   });
 });
@@ -184,7 +212,8 @@ describe('supportedMimeTypes', () => {
     'application/vnd.oasis.opendocument.spreadsheet',
     'application/vnd.oasis.opendocument.presentation',
     'application/vnd.oasis.opendocument.graphics',
-  ])('ODF type flows through supportedMimeTypes: %s', (mimeType) => {
+    'application/vnd.openxmlformats-officedocument.presentationml.template',
+  ])('document type flows through supportedMimeTypes: %s', (mimeType) => {
     expect(checkSupported(mimeType)).toBe(true);
   });
 
@@ -1491,6 +1520,20 @@ describe('getConfiguredMimeAccept', () => {
     expect(accept.has('video/*')).toBe(false);
   });
 
+  it('translates a PowerPoint template allowlist to the template extension and MIME', () => {
+    const templateMime = 'application/vnd.openxmlformats-officedocument.presentationml.template';
+    const accept = toSet(
+      getConfiguredMimeAccept(
+        convertStringsToRegex([
+          '^application/vnd\\.openxmlformats-officedocument\\.presentationml\\.template$',
+        ]),
+        IMAGE_DOC,
+      ),
+    );
+
+    expect(accept).toEqual(new Set(['.potx', templateMime]));
+  });
+
   it('emits image/* for an image-only allowlist', () => {
     const accept = toSet(getConfiguredMimeAccept([/^image\/(jpeg|png)$/], IMAGE_DOC));
     expect(accept.has('image/*')).toBe(true);
@@ -1646,5 +1689,50 @@ describe('setFileConfigRegexCompiler (MIME pattern compiler seam)', () => {
     expect(compiled).toHaveLength(1);
     expect(compiled[0].test('application/pdf')).toBe(false);
     expect(compiled[0].test('anything')).toBe(false);
+  });
+});
+
+describe('mergeFileConfig clientImageResize', () => {
+  it('leaves the user in control when no dynamic config is provided', () => {
+    const merged = mergeFileConfig(undefined);
+    expect(merged.clientImageResize?.enabled).toBe(false);
+    expect(merged.clientImageResize?.enforced).toBe(false);
+  });
+
+  it('leaves the user in control when the admin config omits clientImageResize', () => {
+    const merged = mergeFileConfig({ serverFileSizeLimit: 100 });
+    expect(merged.clientImageResize?.enforced).toBe(false);
+  });
+
+  it('enforces an admin-enabled value', () => {
+    const merged = mergeFileConfig({ clientImageResize: { enabled: true } });
+    expect(merged.clientImageResize?.enabled).toBe(true);
+    expect(merged.clientImageResize?.enforced).toBe(true);
+  });
+
+  it('enforces an admin-disabled value', () => {
+    const merged = mergeFileConfig({ clientImageResize: { enabled: false } });
+    expect(merged.clientImageResize?.enabled).toBe(false);
+    expect(merged.clientImageResize?.enforced).toBe(true);
+  });
+
+  it('applies admin resize parameters without enforcing the toggle', () => {
+    const merged = mergeFileConfig({
+      clientImageResize: { maxWidth: 1024, maxHeight: 1024, quality: 0.8 },
+    });
+    expect(merged.clientImageResize?.maxWidth).toBe(1024);
+    expect(merged.clientImageResize?.maxHeight).toBe(1024);
+    expect(merged.clientImageResize?.quality).toBe(0.8);
+    expect(merged.clientImageResize?.enforced).toBe(false);
+  });
+});
+
+describe('fileConfigSchema clientImageResize', () => {
+  it.each(['maxWidth', 'maxHeight'] as const)('rejects a non-positive %s', (dimension) => {
+    const result = fileConfigSchema.safeParse({
+      clientImageResize: { [dimension]: 0 },
+    });
+
+    expect(result.success).toBe(false);
   });
 });

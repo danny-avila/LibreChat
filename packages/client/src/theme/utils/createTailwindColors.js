@@ -28,6 +28,7 @@ const palette = {
     400: '#999696',
     500: '#595959',
     600: '#424242',
+    650: '#393939',
     700: '#2f2f2f',
     800: '#212121',
     850: '#171717',
@@ -88,6 +89,7 @@ function createTailwindColors() {
     'surface-active-alt': cssVar('--surface-active-alt'),
     'surface-hover': cssVar('--surface-hover'),
     'surface-hover-alt': cssVar('--surface-hover-alt'),
+    'surface-composer-hover': cssVar('--surface-composer-hover'),
     'surface-primary': cssVar('--surface-primary'),
     'surface-primary-alt': cssVar('--surface-primary-alt'),
     'surface-primary-contrast': cssVar('--surface-primary-contrast'),
@@ -102,6 +104,7 @@ function createTailwindColors() {
     'surface-destructive': cssVar('--surface-destructive'),
     'surface-destructive-hover': cssVar('--surface-destructive-hover'),
     'surface-chat': cssVar('--surface-chat'),
+    'surface-code': cssVar('--surface-code'),
     'surface-qr': cssVar('--surface-qr'),
     'surface-inverted': cssVar('--surface-inverted'),
     'surface-inverted-hover': cssVar('--surface-inverted-hover'),
@@ -137,6 +140,14 @@ function createTailwindColors() {
     'status-neutral-subtle': cssVar('--status-neutral-subtle'),
     'status-neutral-border': cssVar('--status-neutral-border'),
     'text-on-status': cssVar('--text-on-status'),
+
+    'series-1': cssVar('--series-1'),
+    'series-2': cssVar('--series-2'),
+    'series-3': cssVar('--series-3'),
+    'series-4': cssVar('--series-4'),
+    'series-5': cssVar('--series-5'),
+    'series-6': cssVar('--series-6'),
+    'series-7': cssVar('--series-7'),
 
     'switch-unchecked': hslVar('--switch-unchecked'),
   };

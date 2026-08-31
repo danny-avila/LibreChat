@@ -114,6 +114,51 @@ describe('createAppConfigService', () => {
       expect(deps.getApplicableConfigs).toHaveBeenCalled();
     });
 
+    it('materializes inferred model-spec endpoints in the base config', async () => {
+      const deps = createDeps({
+        loadBaseConfig: jest.fn().mockResolvedValue({
+          modelSpecs: {
+            enforce: false,
+            prioritize: true,
+            list: [{ name: 'agent-spec', label: 'Agent Spec', preset: { agent_id: 'agent_abc' } }],
+          },
+        }),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ baseOnly: true });
+
+      expect(config.modelSpecs?.list?.[0]?.preset?.endpoint).toBe('agents');
+    });
+
+    /**
+     * Admin-panel specs arrive through DB override documents the base config
+     * never saw, so materialization must also run on the merged result.
+     */
+    it('materializes inferred model-spec endpoints contributed by DB overrides', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest.fn().mockResolvedValue([
+          {
+            priority: 10,
+            isActive: true,
+            overrides: {
+              modelSpecs: {
+                list: [
+                  { name: 'agent-spec', label: 'Agent Spec', preset: { agent_id: 'agent_abc' } },
+                ],
+              },
+            },
+          },
+        ]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = (await getAppConfig({ role: 'USER' })) as TestConfig;
+
+      expect(config.modelSpecs?.list?.[0]?.preset?.endpoint).toBe('agents');
+      expect(config.modelSpecs?.list?.[0]?.preset?.agent_id).toBe('agent_abc');
+    });
+
     it('caches empty result — does not re-query DB on second call', async () => {
       const deps = createDeps({ getApplicableConfigs: jest.fn().mockResolvedValue([]) });
       const { getAppConfig } = createAppConfigService(deps);
@@ -419,6 +464,56 @@ describe('createAppConfigService', () => {
       });
     });
 
+    it('re-runs mutable principal config augmentation without rebuilding cached overrides', async () => {
+      const augmentConfig = jest.fn(async ({ appConfig, principals }) => ({
+        ...appConfig,
+        principalCount: principals.length,
+      }));
+      const deps = createDeps({ augmentConfig });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const first = await getAppConfig({ role: 'USER', userId: 'uid1' });
+      const second = await getAppConfig({ role: 'USER', userId: 'uid1' });
+
+      expect(first).toEqual(expect.objectContaining({ principalCount: 2 }));
+      expect(second).toEqual(expect.objectContaining({ principalCount: 2 }));
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(2);
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
+      expect(augmentConfig).toHaveBeenCalledTimes(2);
+      expect(augmentConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseConfig: deps._baseConfig,
+          principals: [
+            { principalType: 'role', principalId: 'USER' },
+            { principalType: 'user', principalId: 'uid1' },
+          ],
+          options: expect.objectContaining({ role: 'USER', userId: 'uid1' }),
+        }),
+      );
+    });
+
+    it('preserves resolved principal restrictions when optional augmentation fails', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest.fn().mockResolvedValue([
+          {
+            priority: 10,
+            overrides: { endpoints: ['untrusted-override'] },
+            isActive: true,
+          },
+        ]),
+        augmentConfig: jest.fn().mockRejectedValue(new Error('authorization unavailable')),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ role: 'USER', userId: 'uid1' });
+
+      expect(config).toEqual(
+        expect.objectContaining({
+          endpoints: ['untrusted-override'],
+        }),
+      );
+    });
+
     it('passes local identity through to getUserPrincipals when provided', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);
@@ -439,7 +534,7 @@ describe('createAppConfigService', () => {
       await getAppConfig({ role: 'USER', userId: 'uid1', idOnTheSource: null });
       await getAppConfig({ role: 'USER', userId: 'uid1', idOnTheSource: 'source-user-1' });
 
-      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(1);
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(2);
       expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
       expect([...deps._cache._store.keys()]).toEqual(
         expect.arrayContaining(['app_config:_OVERRIDE_:__default__:USER:uid1']),

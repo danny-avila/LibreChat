@@ -31,6 +31,7 @@ export interface IThemeRGB {
   'rgb-surface-active-alt'?: string;
   'rgb-surface-hover'?: string;
   'rgb-surface-hover-alt'?: string;
+  'rgb-surface-composer-hover'?: string;
   'rgb-surface-primary'?: string;
   'rgb-surface-primary-alt'?: string;
   'rgb-surface-primary-contrast'?: string;
@@ -85,6 +86,19 @@ export interface IThemeRGB {
   // Brand colors
   'rgb-brand-purple'?: string;
 
+  /**
+   * Categorical data-visualisation scale. Slots carry series identity only — the
+   * order is the colour-vision-deficiency safety mechanism and must not be
+   * reshuffled. Reserved status colors never appear here.
+   */
+  'rgb-series-1'?: string;
+  'rgb-series-2'?: string;
+  'rgb-series-3'?: string;
+  'rgb-series-4'?: string;
+  'rgb-series-5'?: string;
+  'rgb-series-6'?: string;
+  'rgb-series-7'?: string;
+
   // Presentation
   'rgb-presentation'?: string;
 }
@@ -112,6 +126,7 @@ export interface IThemeVariables {
   '--surface-active-alt': string;
   '--surface-hover': string;
   '--surface-hover-alt': string;
+  '--surface-composer-hover': string;
   '--surface-primary': string;
   '--surface-primary-alt': string;
   '--surface-primary-contrast': string;
@@ -163,6 +178,15 @@ export interface IThemeVariables {
   '--status-neutral-border': string;
   '--text-on-status': string;
   '--brand-purple': string;
+
+  '--series-1': string;
+  '--series-2': string;
+  '--series-3': string;
+  '--series-4': string;
+  '--series-5': string;
+  '--series-6': string;
+  '--series-7': string;
+
   '--presentation': string;
 }
 
@@ -189,6 +213,7 @@ export interface IThemeColors {
   'surface-active-alt'?: string;
   'surface-hover'?: string;
   'surface-hover-alt'?: string;
+  'surface-composer-hover'?: string;
   'surface-primary'?: string;
   'surface-primary-alt'?: string;
   'surface-primary-contrast'?: string;
@@ -236,6 +261,14 @@ export interface IThemeColors {
   'status-neutral-border'?: string;
   'text-on-status'?: string;
   'brand-purple'?: string;
+
+  'series-1'?: string;
+  'series-2'?: string;
+  'series-3'?: string;
+  'series-4'?: string;
+  'series-5'?: string;
+  'series-6'?: string;
+  'series-7'?: string;
   presentation?: string;
 
   // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
@@ -248,4 +281,52 @@ export interface IThemeColors {
 export interface Theme {
   name: string;
   colors: IThemeRGB;
+}
+
+export type ThemeMode = 'light' | 'dark';
+
+export interface IThemeAppearance {
+  controlRadius: string;
+  roundControlRadius: string;
+  surfaceRadius: string;
+  largeSurfaceRadius: string;
+  controlHeight: string;
+  spaceCompact: string;
+  spaceNormal: string;
+  fontFamily: string;
+  elevationSurface: string;
+  motionFast: string;
+  motionNormal: string;
+}
+
+export interface ThemeModeDefinition {
+  colors?: IThemeRGB;
+  appearance?: Partial<IThemeAppearance>;
+}
+
+export interface IThemeBrands {
+  'provider-openai': string;
+  'provider-openai-gpt4': string;
+  'provider-openai-reasoning': string;
+  'provider-anthropic': string;
+  'provider-azure': string;
+  'provider-bedrock': string;
+  'provider-foreground': string;
+}
+
+/** Versioned, data-only theme input. Missing values resolve against LibreChat defaults. */
+export interface ThemeDefinition {
+  version: 1;
+  name: string;
+  modes: Partial<Record<ThemeMode, ThemeModeDefinition>>;
+  brands?: Partial<IThemeBrands>;
+}
+
+export interface ResolvedThemeDefinition {
+  version: 1;
+  name: string;
+  mode: ThemeMode;
+  colors: Required<IThemeRGB>;
+  appearance: IThemeAppearance;
+  brands: IThemeBrands;
 }

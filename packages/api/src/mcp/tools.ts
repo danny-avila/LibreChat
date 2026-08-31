@@ -1,5 +1,10 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, buildServerNameAliases, normalizeServerName } from 'librechat-data-provider';
+import {
+  Constants,
+  buildServerNameAliases,
+  normalizeServerName,
+  stripServerNamePrefixes,
+} from 'librechat-data-provider';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
@@ -78,6 +83,35 @@ export interface MCPToolCacheService {
   ) => Promise<LCAvailableTools | null>;
 }
 
+/** Converts an MCP tools/list response into LibreChat's server-qualified catalog format. */
+export function formatMCPServerTools(serverName: string, tools: MCPToolInput[]): LCAvailableTools {
+  const serverTools: LCAvailableTools = {};
+  const keyServerName = normalizeServerName(serverName);
+  const keyToolNames = stripServerNamePrefixes(
+    tools.map((tool) => tool.name),
+    keyServerName,
+  );
+  for (const tool of tools) {
+    const keyToolName = keyToolNames.get(tool.name) ?? tool.name;
+    const name = `${keyToolName}${Constants.mcp_delimiter}${keyServerName}`;
+    const entry: LCFunctionTool = {
+      type: 'function',
+      ['function']: {
+        name,
+        description: tool.description ?? '',
+        parameters: tool.inputSchema
+          ? (normalizeJsonSchema(resolveJsonSchemaRefs(tool.inputSchema)) as JsonSchemaType)
+          : ({ type: 'object', properties: {} } as JsonSchemaType),
+      },
+    };
+    if (keyToolName !== tool.name) {
+      entry.serverToolName = tool.name;
+    }
+    serverTools[name] = entry;
+  }
+  return serverTools;
+}
+
 interface AppServerBoundary {
   serverName: string;
   suffix: string;
@@ -122,11 +156,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     try {
       const appConfigs = await getAllServerConfigs();
       return appConfigs[serverName] != null;
-    } catch (error) {
-      logger.debug(
-        `[MCP Cache] Could not verify app ownership for ${serverName}; using user scope:`,
-        error,
-      );
+    } catch {
+      logger.debug('[MCP Cache] Could not verify app ownership; using user scope');
       return false;
     }
   }
@@ -220,52 +251,26 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     const { userId, serverName, tools, serverConfig, publicationGeneration, publicationRevision } =
       params;
     try {
-      const serverTools: LCAvailableTools = {};
-      const mcpDelimiter = Constants.mcp_delimiter;
-
       if (tools == null) {
-        logger.debug(`[MCP Cache] No tools to update for server ${serverName} (user: ${userId})`);
-        return serverTools;
+        logger.debug('[MCP Cache] No tools to update');
+        return {};
       }
-
-      /** Cache keys are MODEL-FACING: they become builder tool ids, agent.tools
-       *  entries, tool_options keys, and definition names, and must equal the
-       *  runtime instance name (`createToolInstance` in MCP.js), which embeds
-       *  `normalizeServerName(serverName)`. The cache STORE itself stays keyed
-       *  by the raw config name. */
-      const keyServerName = normalizeServerName(serverName);
-      for (const tool of tools) {
-        const name = `${tool.name}${mcpDelimiter}${keyServerName}`;
-        const entry: LCFunctionTool = {
-          type: 'function',
-          ['function']: {
-            name,
-            description: tool.description ?? '',
-            parameters: tool.inputSchema
-              ? (normalizeJsonSchema(resolveJsonSchemaRefs(tool.inputSchema)) as JsonSchemaType)
-              : ({ type: 'object', properties: {} } as JsonSchemaType),
-          },
-        };
-        serverTools[name] = entry;
-      }
+      /** Cache keys are model-facing and must match runtime tool instance names. */
+      const serverTools = formatMCPServerTools(serverName, tools);
 
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
       const configGeneration = resolvedConfig
         ? getMCPAppToolsPublicationGeneration(resolvedConfig)
         : undefined;
       if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
-        logger.debug(
-          `[MCP Cache] Built ${tools.length} tools for request-scoped server ${serverName} (user: ${userId}) without caching`,
-        );
+        logger.debug(`[MCP Cache] Built ${tools.length} request-scoped tool(s) without caching`);
         return serverTools;
       }
 
       if (userId && !(await isAppSharedConfig(serverName, resolvedConfig))) {
         if (setCachedToolsIfCurrent) {
           if (!publicationGeneration || !configGeneration) {
-            logger.debug(
-              `[MCP Cache] Skipped unfenced or unaddressed tool publication for ${serverName} (user: ${userId})`,
-            );
+            logger.debug('[MCP Cache] Skipped unfenced or unaddressed tool publication');
             return null;
           }
           const current = await setCachedToolsIfCurrent(serverTools, {
@@ -275,9 +280,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
             publicationGeneration,
           });
           if (!current) {
-            logger.debug(
-              `[MCP Cache] Ignored stale tool publication for ${serverName} (user: ${userId})`,
-            );
+            logger.debug('[MCP Cache] Ignored stale tool publication');
             return null;
           }
         } else {
@@ -288,6 +291,17 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           userId == null
             ? (publicationGeneration ?? configGeneration)
             : (configGeneration ?? publicationGeneration);
+        /** Only the shared catalog write needs ordering. These tools were just read from the
+         * server, so the caller should still serve them; discarding a correct tool list because
+         * its write could not be ordered is what makes a cache failure look to the user like a
+         * server with no tools at all (#14857). A superseded write is different — another
+         * replica holds something newer — and still discards below. */
+        if (!publicationRevision) {
+          logger.warn(
+            `[MCP Cache] Serving ${tools.length} unpublished tools for ${serverName}: this snapshot reserved no revision, so every request re-fetches them`,
+          );
+          return serverTools;
+        }
         const replaced = await replaceAppServerTools({
           serverName,
           serverTools,
@@ -298,15 +312,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           return null;
         }
       }
-      logger.debug(
-        `[MCP Cache] Updated ${tools.length} tools for server ${serverName}${userId ? ` (user: ${userId})` : ' (app-level)'}`,
-      );
+      logger.debug(`[MCP Cache] Updated ${tools.length} server tool(s)`);
       return serverTools;
     } catch (error) {
-      logger.error(
-        `[MCP Cache] Failed to update tools for ${serverName} (user: ${userId}):`,
-        error,
-      );
+      logger.error('[MCP Cache] Failed to update server tools');
       throw error;
     }
   }
@@ -368,12 +377,23 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         const config = await resolveCacheConfig(undefined, serverName);
         configGeneration = config ? getMCPAppToolsPublicationGeneration(config) : undefined;
       }
+      /** Discarding a publication is warned, not debugged: #14857 was invisible for a release
+       * because the only trace of a dropped app catalog was a debug line no deployment runs.
+       * A drop here means this server's tools are missing for every agent that needs them. */
       if (!configGeneration) {
-        logger.debug(`[MCP Cache] Skipped unaddressed app-level publication for ${serverName}`);
+        logger.warn(
+          `[MCP Cache] Skipped unaddressed app-level publication for ${serverName}; its tools stay unavailable to agents`,
+        );
         return false;
       }
+      /** Ordering is reserved before the `tools/list` that produced these tools and travels with
+       * the snapshot, so a publisher that lost it fetched at an unknown time and cannot be
+       * ordered against concurrent replicas. Allocating one here instead would let a slow fetch
+       * of an old catalog outrank a newer one that reserved after it started. */
       if (!publicationRevision) {
-        logger.debug(`[MCP Cache] Skipped unordered app-level publication for ${serverName}`);
+        logger.warn(
+          `[MCP Cache] Skipped unordered app-level publication for ${serverName}: its snapshot carried no reserved revision, so its tools stay unavailable to agents`,
+        );
         return false;
       }
       const replaced = await setCachedAppServerTools(
@@ -382,9 +402,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         serverTools,
         publicationRevision,
       );
+      /** Expected whenever replicas publish concurrently: the winner already holds newer tools. */
       if (replaced === false) {
         logger.debug(
-          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${publicationRevision ?? '0'}`,
+          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${publicationRevision}`,
         );
         return false;
       }
@@ -421,9 +442,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         ? getMCPAppToolsPublicationGeneration(resolvedConfig)
         : undefined;
       if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
-        logger.debug(
-          `[MCP Cache] Skipped caching ${count} tools for request-scoped server ${serverName} (user: ${userId})`,
-        );
+        logger.debug(`[MCP Cache] Skipped caching ${count} request-scoped tool(s)`);
         return;
       }
       if (await isAppSharedConfig(serverName, resolvedConfig)) {
@@ -440,14 +459,12 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         if (!replaced) {
           return;
         }
-        logger.debug(`Refreshed app-level MCP tools for ${serverName}`);
+        logger.debug('[MCP Cache] Refreshed app-level server tools');
         return;
       }
       if (setCachedToolsIfCurrent) {
         if (!publicationGeneration || !configGeneration) {
-          logger.debug(
-            `[MCP Cache] Skipped unfenced or unaddressed discovered tools for ${serverName} (user: ${userId})`,
-          );
+          logger.debug('[MCP Cache] Skipped unfenced or unaddressed discovered tools');
           return;
         }
         const current = await setCachedToolsIfCurrent(serverTools, {
@@ -457,17 +474,15 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           publicationGeneration,
         });
         if (!current) {
-          logger.debug(
-            `[MCP Cache] Ignored stale discovered tools for ${serverName} (user: ${userId})`,
-          );
+          logger.debug('[MCP Cache] Ignored stale discovered tools');
           return;
         }
       } else {
         await writeCachedTools(serverTools, { userId, serverName, configGeneration });
       }
-      logger.debug(`Cached ${count} MCP server tools for ${serverName} (user: ${userId})`);
+      logger.debug(`[MCP Cache] Cached ${count} server tool(s)`);
     } catch (error) {
-      logger.error(`Failed to cache MCP server tools for ${serverName} (user: ${userId}):`, error);
+      logger.error('[MCP Cache] Failed to cache server tools');
       throw error;
     }
   }
@@ -539,8 +554,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return null;
       }
       return normalizeCachedToolKeys(cached, serverName);
-    } catch (error) {
-      logger.error(`[getMCPServerTools] Error fetching cached tools for ${serverName}:`, error);
+    } catch {
+      logger.error('[MCP Cache] Error fetching cached server tools');
       return null;
     }
   }

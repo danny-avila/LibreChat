@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'fs';
 import { logger } from '@librechat/data-schemas';
-import { CacheKeys } from 'librechat-data-provider';
+import { Time, CacheKeys } from 'librechat-data-provider';
 import { math, isEnabled } from '~/utils';
 
 // To ensure that different deployments do not interfere with each other's cache, we use a prefix for the Redis keys.
@@ -47,6 +47,12 @@ if (FORCED_IN_MEMORY_CACHE_NAMESPACES.length > 0) {
     );
   }
 }
+
+// Violation scores expire after this long without new violations; every violation write
+// restarts the countdown. Non-positive values disable expiry, restoring the legacy
+// accumulate-forever behavior.
+const VIOLATION_SCORE_TTL_MS = math(process.env.VIOLATION_SCORE_TTL, Time.ONE_HOUR);
+const VIOLATION_SCORE_TTL = VIOLATION_SCORE_TTL_MS > 0 ? VIOLATION_SCORE_TTL_MS : undefined;
 
 /** Helper function to safely read Redis CA certificate from file
  * @returns {string|null} The contents of the CA certificate file, or null if not set or on error
@@ -105,6 +111,13 @@ const cacheConfig: {
   CI: boolean;
   DEBUG_MEMORY_CACHE: boolean;
   BAN_DURATION: number; // 2 hours
+  /**
+   * TTL in ms for violation scores: a score expires after this long without new violations
+   * (each violation write restarts the countdown). `undefined` — from a non-positive
+   * setting — disables expiry so scores accumulate forever.
+   * @default 3600000 (1 hour)
+   */
+  VIOLATION_SCORE_TTL: number | undefined;
   /**
    * Number of keys to delete in each batch during Redis DEL operations.
    * In cluster mode, keys are deleted individually in parallel chunks to avoid CROSSSLOT errors.
@@ -176,6 +189,7 @@ const cacheConfig: {
   DEBUG_MEMORY_CACHE: isEnabled(process.env.DEBUG_MEMORY_CACHE),
 
   BAN_DURATION: math(process.env.BAN_DURATION, 7200000), // 2 hours
+  VIOLATION_SCORE_TTL,
 
   /**
    * Number of keys to delete in each batch during Redis DEL operations.

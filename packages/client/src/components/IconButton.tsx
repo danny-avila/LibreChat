@@ -5,12 +5,12 @@ import { cn } from '~/utils';
 
 type IconButtonVariantProps = {
   variant?: 'default' | 'secondary' | 'ghost' | 'destructive' | null;
-  size?: 'xs' | 'sm' | 'md' | 'lg' | null;
-  shape?: 'round' | 'square' | null;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'theme' | null;
+  shape?: 'round' | 'square' | 'theme' | null;
 };
 
 const iconButtonVariants: (props?: IconButtonVariantProps & ClassProp) => string = cva(
-  'inline-flex shrink-0 items-center justify-center rounded-full text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex shrink-0 items-center justify-center text-text-primary transition-colors duration-theme-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
@@ -25,10 +25,12 @@ const iconButtonVariants: (props?: IconButtonVariantProps & ClassProp) => string
         sm: 'size-8',
         md: 'size-9',
         lg: 'size-10',
+        theme: 'size-theme-control',
       },
       shape: {
         round: 'rounded-full',
         square: 'rounded-lg',
+        theme: 'rounded-theme-control-round',
       },
     },
     defaultVariants: {

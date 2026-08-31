@@ -3,7 +3,7 @@ import { RecoilRoot } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import { render } from '@testing-library/react';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from './markdownConfig';
-import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
+import { ArtifactProvider, CodeBlockProvider, MessageContext } from '~/Providers';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import Markdown from './Markdown';
 
@@ -87,6 +87,19 @@ const NewMarkdown = ({ content }: { content: string }) => (
   <Markdown content={content} isLatestMessage={true} />
 );
 
+const streamingContext = {
+  messageId: 'bench',
+  isExpanded: false,
+  isSubmitting: true,
+  isLatestMessage: true,
+};
+
+const FadeMarkdown = ({ content }: { content: string }) => (
+  <MessageContext.Provider value={streamingContext}>
+    <Markdown content={content} isLatestMessage={true} />
+  </MessageContext.Provider>
+);
+
 const measure = (
   Component: React.ComponentType<{ content: string }>,
   prefixes: string[],
@@ -122,19 +135,24 @@ describe('Markdown streaming benchmark (OLD whole-message vs NEW per-block)', ()
     // Warm up module/highlight caches so the first measured run isn't skewed.
     measure(OldMarkdown, prefixes);
     measure(NewMarkdown, prefixes);
+    measure(FadeMarkdown, prefixes);
 
     const old: Array<{ totalMs: number; codeBlockRenders: number }> = [];
     const neu: Array<{ totalMs: number; codeBlockRenders: number }> = [];
+    const fade: Array<{ totalMs: number; codeBlockRenders: number }> = [];
     for (let i = 0; i < iterations; i += 1) {
       old.push(measure(OldMarkdown, prefixes));
       neu.push(measure(NewMarkdown, prefixes));
+      fade.push(measure(FadeMarkdown, prefixes));
     }
 
     const minMs = (rs: Array<{ totalMs: number }>) => Math.min(...rs.map((r) => r.totalMs));
     const oldMs = minMs(old);
     const newMs = minMs(neu);
+    const fadeMs = minMs(fade);
     const oldRenders = old[0].codeBlockRenders;
     const newRenders = neu[0].codeBlockRenders;
+    const fadeRenders = fade[0].codeBlockRenders;
 
     console.log(
       [
@@ -145,16 +163,22 @@ describe('Markdown streaming benchmark (OLD whole-message vs NEW per-block)', ()
         `code-block renders over the stream (structural, noise-free):`,
         `  OLD (whole-message): ${oldRenders}`,
         `  NEW (per-block)    : ${newRenders}`,
+        `  NEW + fade         : ${fadeRenders}`,
         `  reduction          : ${(100 * (1 - newRenders / oldRenders)).toFixed(1)}%`,
         '',
         `total render time (min of ${iterations}, summed Profiler actualDuration; jsdom):`,
-        `  OLD: ${oldMs.toFixed(1)} ms`,
-        `  NEW: ${newMs.toFixed(1)} ms`,
-        `  speedup: ${(oldMs / newMs).toFixed(2)}x`,
+        `  OLD       : ${oldMs.toFixed(1)} ms`,
+        `  NEW       : ${newMs.toFixed(1)} ms`,
+        `  NEW + fade: ${fadeMs.toFixed(1)} ms (${(100 * (fadeMs / newMs - 1)).toFixed(1)}% vs NEW)`,
+        `  speedup vs OLD: ${(oldMs / newMs).toFixed(2)}x (fade: ${(oldMs / fadeMs).toFixed(2)}x)`,
         '=============================================================',
         '',
       ].join('\n'),
     );
+
+    // The fade plugin must not disturb block memoization: code blocks render
+    // exactly as often as without it.
+    expect(fadeRenders).toBe(newRenders);
 
     // Sanity: the per-block renderer must not render code blocks MORE than the
     // whole-message renderer. The real win is asserted separately below.

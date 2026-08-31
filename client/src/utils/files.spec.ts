@@ -1,4 +1,31 @@
-import { normalizeExportFilename } from './files';
+import type { ExtendedFile } from '~/common';
+import { hasIncompleteFiles, normalizeExportFilename } from './files';
+
+describe('hasIncompleteFiles', () => {
+  const createFile = (file_id: string, progress: number): ExtendedFile => ({
+    file_id,
+    progress,
+    size: 1,
+  });
+
+  it('returns true while any attachment is still uploading', () => {
+    const files = new Map([
+      ['complete', createFile('complete', 1)],
+      ['uploading', createFile('uploading', 0.9)],
+    ]);
+
+    expect(hasIncompleteFiles(files)).toBe(true);
+  });
+
+  it('returns false as soon as every attachment is complete', () => {
+    const files = new Map([
+      ['first', createFile('first', 1)],
+      ['second', createFile('second', 1)],
+    ]);
+
+    expect(hasIncompleteFiles(files)).toBe(false);
+  });
+});
 
 describe('normalizeExportFilename', () => {
   it('replaces every whitespace run with a single underscore', () => {

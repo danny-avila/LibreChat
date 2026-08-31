@@ -9,16 +9,13 @@ const mockCache = {
 const mockSaveConvo = jest.fn();
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isEnabled: (val) => val === true || val === 'true',
   sanitizeTitle: (title) => title,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-}));
-
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
 }));
 
 jest.mock('~/cache/getLogStores', () => jest.fn(() => mockCache));
@@ -179,6 +176,39 @@ describe('agents addTitle', () => {
     await pending;
 
     expect(order).toEqual(['cache', 'title-event', 'save']);
+  });
+
+  it('replaces a blocked generated title before caching, emitting, or saving it', async () => {
+    const client = makeClient('BLOCKED-TITLE');
+    const req = makeReq();
+    req.config.filters = {
+      conversationTitles: {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [{ id: 'blocked', label: 'blocked', regex: 'BLOCKED' }],
+        },
+      },
+    };
+    const onTitleGenerated = jest.fn();
+    await addTitle(req, {
+      text: 'hello',
+      client,
+      conversationId: 'cid-filtered',
+      immediate: true,
+      convoReady: Promise.resolve(),
+      onTitleGenerated,
+    });
+
+    expect(mockCache.set).toHaveBeenCalledWith('user-1-cid-filtered', 'New Chat', 120000);
+    expect(onTitleGenerated).toHaveBeenCalledWith({
+      conversationId: 'cid-filtered',
+      title: 'New Chat',
+    });
+    expect(mockSaveConvo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ conversationId: 'cid-filtered', title: 'New Chat' }),
+      expect.objectContaining({ noUpsert: true }),
+    );
   });
 
   it('skips generation when the endpoint disables titleConvo', async () => {

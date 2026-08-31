@@ -4,6 +4,7 @@ import {
   Constants,
   isAgentsEndpoint,
   isEphemeralAgentId,
+  getEphemeralSender,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
 import type {
@@ -134,19 +135,18 @@ export async function loadEphemeralAgent(
     }
   }
 
-  // For ephemeral agents, use modelLabel if provided, then model spec's label,
-  // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
-  const sender =
-    (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel ??
-    modelSpec?.label ??
-    (endpointConfig as { modelDisplayLabel?: string } | undefined)?.modelDisplayLabel ??
-    '';
+  const sender = getEphemeralSender({
+    modelLabel: (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel,
+    specLabel: modelSpec?.label,
+    modelDisplayLabel: (endpointConfig as { modelDisplayLabel?: string } | undefined)
+      ?.modelDisplayLabel,
+  });
 
   // Encode ephemeral agent ID with endpoint, model, and computed sender for display
   const ephemeralId = encodeEphemeralAgentId({
     endpoint,
     model: model as string,
-    sender: sender as string,
+    sender,
   });
 
   const result: Partial<Agent> = {

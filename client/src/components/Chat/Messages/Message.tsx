@@ -13,7 +13,7 @@ const MessageContainer = React.memo(function MessageContainer({
 }) {
   return (
     <div
-      className="text-token-text-primary w-full border-0 bg-transparent"
+      className="w-full border-0 bg-transparent text-text-primary"
       onWheel={handleScroll}
       onTouchMove={handleScroll}
     >
@@ -35,7 +35,7 @@ function Message(props: TMessageProps) {
 
   return (
     <MessageContainer handleScroll={handleScroll}>
-      <div className="m-auto justify-center p-4 py-2 md:gap-6">
+      <div className="m-auto justify-center px-4 py-3 sm:px-0">
         <MessageRender {...props} isSubmitting={effectiveIsSubmitting} chatContext={chatContext} />
       </div>
     </MessageContainer>

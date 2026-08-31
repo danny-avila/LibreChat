@@ -116,14 +116,23 @@ redis.call('DEL', KEYS[2])
 return 1
 `;
 
+/**
+ * Catalog entries can carry `serverToolName` (redundant server-name prefix
+ * stripping): an older replica reading a stripped entry ignores the mapping
+ * and calls the stripped key segment upstream. Versioning the MCP catalog
+ * slices keeps mixed-version replicas on their own representation during a
+ * rolling deploy; stale slices simply expire.
+ */
+const CATALOG_VERSION = 'v2';
+
 export const ToolCacheKeys = {
   GLOBAL: 'tools:global',
   MCP_APP_SERVER: (serverName: string, configGeneration: string): string =>
-    `tools:mcp:app:${encodeURIComponent(serverName)}:${encodeURIComponent(configGeneration)}`,
+    `tools:mcp:app:${CATALOG_VERSION}:${encodeURIComponent(serverName)}:${encodeURIComponent(configGeneration)}`,
   MCP_SERVER: (userId: string, serverName: string, configGeneration?: string): string =>
     configGeneration
-      ? `tools:mcp:user:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}:${encodeURIComponent(configGeneration)}`
-      : `tools:mcp:${userId}:${serverName}`,
+      ? `tools:mcp:user:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}:${CATALOG_VERSION}:${encodeURIComponent(configGeneration)}`
+      : `tools:mcp:${CATALOG_VERSION}:${userId}:${serverName}`,
   MCP_SERVER_GENERATION: (userId: string, serverName: string): string =>
     `tools:metadata:mcp:user-generation:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}`,
   MCP_SERVER_LEGACY_FENCE: (userId: string, serverName: string): string =>

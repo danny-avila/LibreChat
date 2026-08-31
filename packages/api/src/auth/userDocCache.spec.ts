@@ -86,28 +86,61 @@ describe('auth user document cache helpers', () => {
     expect(getAuthUserDocCacheMode()).toBe('off');
   });
 
-  it('builds stable keys from strategy, subject, issuer, and scope', () => {
+  it('builds stable keys from strategy, subject, issuer, tenant, user, and scope', () => {
     const key = buildAuthUserDocCacheKey({
       strategy: ' OpenID-JWT ',
       subject: 'subject-1',
       issuer: 'https://issuer.example.com/',
+      tenantId: 'Tenant-A',
+      userId: 'User-A',
       scope: ' Org-A ',
     });
     const equivalent = buildAuthUserDocCacheKey({
       strategy: 'openid-jwt',
       subject: 'subject-1',
       issuer: 'https://issuer.example.com',
+      tenantId: 'Tenant-A',
+      userId: 'User-A',
+      scope: 'org-a',
+    });
+    const otherTenant = buildAuthUserDocCacheKey({
+      strategy: 'openid-jwt',
+      subject: 'subject-1',
+      issuer: 'https://issuer.example.com',
+      tenantId: 'Tenant-B',
+      userId: 'User-A',
+      scope: 'org-a',
+    });
+    const caseVariantTenant = buildAuthUserDocCacheKey({
+      strategy: 'openid-jwt',
+      subject: 'subject-1',
+      issuer: 'https://issuer.example.com',
+      tenantId: 'tenant-a',
+      userId: 'User-A',
+      scope: 'org-a',
+    });
+    const otherUser = buildAuthUserDocCacheKey({
+      strategy: 'openid-jwt',
+      subject: 'subject-1',
+      issuer: 'https://issuer.example.com',
+      tenantId: 'Tenant-A',
+      userId: 'User-B',
       scope: 'org-a',
     });
     const otherScope = buildAuthUserDocCacheKey({
       strategy: 'openid-jwt',
       subject: 'subject-1',
       issuer: 'https://issuer.example.com',
+      tenantId: 'Tenant-A',
+      userId: 'User-A',
       scope: 'org-b',
     });
 
-    expect(key).toMatch(/^auth-user-doc:v1:/);
+    expect(key).toMatch(/^auth-user-doc:v2:/);
     expect(key).toBe(equivalent);
+    expect(key).not.toBe(otherTenant);
+    expect(key).not.toBe(caseVariantTenant);
+    expect(key).not.toBe(otherUser);
     expect(key).not.toBe(otherScope);
     expect(buildAuthUserDocCacheKey({ strategy: '', subject: 'subject-1' })).toBeUndefined();
     expect(buildAuthUserDocCacheKey({ strategy: 'openid-jwt' })).toBeUndefined();
@@ -115,7 +148,7 @@ describe('auth user document cache helpers', () => {
 
   it('sanitizes sensitive fields and remembers cache keys by user id', async () => {
     const store = makeStore();
-    const cacheKey = 'auth-user-doc:v1:key';
+    const cacheKey = 'auth-user-doc:v2:key';
     const userId = new Types.ObjectId();
 
     await setCachedAuthUserDoc(store, cacheKey, {
@@ -146,7 +179,7 @@ describe('auth user document cache helpers', () => {
 
     expect(store.set).toHaveBeenCalledWith(
       cacheKey,
-      expect.objectContaining({ version: 1, user: expect.any(Object) }),
+      expect.objectContaining({ version: 2, user: expect.any(Object) }),
       AUTH_USER_DOC_CACHE_TTL_MS,
     );
     expect(store.values.get(buildAuthUserDocReverseIndexKey(userId.toString()))).toEqual([
@@ -187,8 +220,8 @@ describe('auth user document cache helpers', () => {
 
   it('returns cached user documents only for the current cache version', async () => {
     const store = makeStore();
-    store.values.set('current', { version: 1, cachedAt: Date.now(), user: { id: 'user-1' } });
-    store.values.set('stale', { version: 0, cachedAt: Date.now(), user: { id: 'user-2' } });
+    store.values.set('current', { version: 2, cachedAt: Date.now(), user: { id: 'user-1' } });
+    store.values.set('stale', { version: 1, cachedAt: Date.now(), user: { id: 'user-2' } });
 
     await expect(getCachedAuthUserDoc(store, 'current')).resolves.toEqual({ id: 'user-1' });
     await expect(getCachedAuthUserDoc(store, 'stale')).resolves.toBeUndefined();

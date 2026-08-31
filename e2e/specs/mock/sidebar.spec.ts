@@ -159,6 +159,10 @@ test.describe('sidebar conversation grouping', () => {
       localStorage.setItem('unifiedSidebarExpanded', JSON.stringify(false)),
     );
     await page.reload({ timeout: 10000 });
+    // The chat header keeps its own mobile toggle mounted and hides it with CSS, so this
+    // testid belongs to the rail alone — a second holder makes the click below strict-mode
+    // flaky rather than failing outright.
+    await expect(page.getByTestId('open-sidebar-button')).toHaveCount(1);
     await expect(page.getByTestId('open-sidebar-button')).toBeVisible();
 
     // Expand: rows first measure during the width animation — the regression window.

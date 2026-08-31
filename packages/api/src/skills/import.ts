@@ -2,8 +2,15 @@ import path from 'path';
 import JSZip from 'jszip';
 import crypto from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
+import {
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
+  hasActivePiiFields,
+  hasActivePiiPatterns,
+} from 'librechat-data-provider';
 import type {
+  AppConfig,
   ISkill,
   ISkillFile,
   CreateSkillInput,
@@ -12,11 +19,30 @@ import type {
 } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
+import type {
+  ContentTraversalLimitError,
+  TextContentFragment,
+  SkillContentInput,
+} from '~/protection';
 import type { ImportLimits } from './limits';
+import {
+  inspectContent,
+  extractFileContent,
+  extractSkillContent,
+  getContentTraversalFragments,
+  hasActiveFilePolicy,
+  hasActiveFileFieldPolicy,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
+  contentFilterUninspectableResponse,
+  getBlockedUninspectableSkillFileField,
+} from '~/protection';
+import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
 import { isSafeSkillFilePath } from './path';
 import { parseSkillMarkdown } from './parse';
+import { isBinaryBuffer } from './binary';
 
 const SKILL_MD = 'SKILL.md';
 
@@ -133,6 +159,7 @@ export interface ImportSkillDeps {
 
 interface ServerRequest extends Request {
   tenantId?: string;
+  config?: AppConfig;
   user: {
     id: string;
     _id: Types.ObjectId;
@@ -141,6 +168,111 @@ interface ServerRequest extends Request {
     tenantId?: string;
   };
   file?: Express.Multer.File;
+}
+
+interface FilterableSkillFile {
+  readonly filename: string;
+  readonly text?: string;
+}
+
+function blockFilteredImportContent(
+  req: ServerRequest,
+  res: Response,
+  skill: SkillContentInput,
+  files: readonly FilterableSkillFile[],
+): boolean {
+  const filters = req.config?.filters;
+  const skillPii = filters?.skills?.pii;
+  const skillPolicyActive = hasActivePiiPatterns(skillPii);
+  const filePolicyActive = hasActiveFilePolicy(filters);
+  if (!skillPolicyActive && !filePolicyActive) {
+    return false;
+  }
+
+  const fragments: TextContentFragment[] = [];
+  let traversalError: ContentTraversalLimitError | undefined;
+  if (skillPolicyActive) {
+    const skillFileNamesActive = hasActivePiiFields(skillPii, ['file_name']);
+    const skillFileTextActive = hasActivePiiFields(skillPii, ['file_text']);
+    try {
+      fragments.push(
+        ...extractSkillContent({
+          name: hasActivePiiFields(skillPii, ['name']) ? skill.name : undefined,
+          displayTitle: hasActivePiiFields(skillPii, ['display_title'])
+            ? skill.displayTitle
+            : undefined,
+          description: hasActivePiiFields(skillPii, ['description'])
+            ? skill.description
+            : undefined,
+          category: hasActivePiiFields(skillPii, ['category']) ? skill.category : undefined,
+          body: hasActivePiiFields(skillPii, ['instructions']) ? skill.body : undefined,
+          instructions: hasActivePiiFields(skillPii, ['instructions'])
+            ? skill.instructions
+            : undefined,
+          importedText: hasActivePiiFields(skillPii, ['imported_text'])
+            ? skill.importedText
+            : undefined,
+          frontmatter: hasActivePiiFields(skillPii, ['frontmatter'])
+            ? skill.frontmatter
+            : undefined,
+          ...(skillFileNamesActive || skillFileTextActive
+            ? {
+                files: files.map((file) => ({
+                  filename: skillFileNamesActive ? file.filename : undefined,
+                  text: skillFileTextActive ? file.text : undefined,
+                })),
+              }
+            : {}),
+        }),
+      );
+    } catch (error) {
+      if (!isContentTraversalLimitError(error)) {
+        throw error;
+      }
+      fragments.push(...getContentTraversalFragments(error));
+      traversalError = error;
+    }
+  }
+
+  if (filePolicyActive) {
+    const fileNamesActive = hasActiveFileFieldPolicy(filters, ['name']);
+    const fileContentActive = hasActiveFileFieldPolicy(filters, ['content']);
+    const fileTextActive = hasActiveFileFieldPolicy(filters, ['extracted_text']);
+    for (const file of files) {
+      fragments.push(
+        ...extractFileContent({
+          originalname: fileNamesActive ? file.filename : undefined,
+          content: fileContentActive ? file.text : undefined,
+          text: fileTextActive ? file.text : undefined,
+        }),
+      );
+    }
+  }
+  const finding = inspectContent(fragments, { filters });
+  if (finding == null) {
+    if (
+      traversalError == null ||
+      !isContentTraversalProtected({ error: traversalError, filters })
+    ) {
+      return false;
+    }
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  res.status(400).json(contentFilterBlockResponse(finding));
+  return true;
+}
+
+function blockUninspectableImportFile(req: ServerRequest, res: Response): boolean {
+  const field = getBlockedUninspectableSkillFileField(req.config?.filters, [
+    'content',
+    'extracted_text',
+  ]);
+  if (field == null) {
+    return false;
+  }
+  res.status(400).json(contentFilterUninspectableResponse(field));
+  return true;
 }
 
 /**
@@ -190,6 +322,8 @@ function getImportLimits(limits?: Partial<ImportLimits>): ImportLimits {
     maxZipBytes: limits?.maxZipBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxZipBytes,
     maxDecompressedBytes:
       limits?.maxDecompressedBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxDecompressedBytes,
+    maxContentInspectionBytes:
+      limits?.maxContentInspectionBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxContentInspectionBytes,
     maxEntries: limits?.maxEntries ?? DEFAULT_SKILL_IMPORT_LIMITS.maxEntries,
     maxSingleFileBytes:
       limits?.maxSingleFileBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes,
@@ -245,9 +379,29 @@ async function handleMarkdown(
   deps: ImportSkillDeps,
   file: Express.Multer.File,
 ) {
+  const limits = getImportLimits(resolveImportLimits(deps.limits, req));
+  const skillPii = req.config?.filters?.skills?.pii;
+  const inspectFileText =
+    hasActivePiiFields(skillPii, ['file_text']) ||
+    hasActiveFileFieldPolicy(req.config?.filters, ['content', 'extracted_text']);
+  const contentInspectionLimit = Math.min(
+    limits.maxContentInspectionBytes,
+    limits.maxDecompressedBytes,
+  );
+  if (
+    inspectFileText &&
+    file.buffer.length > contentInspectionLimit &&
+    blockUninspectableImportFile(req, res)
+  ) {
+    return res;
+  }
+  if (isBinaryBuffer(file.buffer) && blockUninspectableImportFile(req, res)) {
+    return res;
+  }
   const content = file.buffer.toString('utf-8');
 
-  const { name, description, alwaysApply, invalidBooleans, parseError } = parseFrontmatter(content);
+  const parsedSkill = parseSkillMarkdown(content);
+  const { name, description, alwaysApply, frontmatter, invalidBooleans, parseError } = parsedSkill;
   if (parseError) {
     return sendFrontmatterParseError(res, parseError);
   }
@@ -275,6 +429,22 @@ async function handleMarkdown(
   }
 
   const { authorId, authorName, tenantId } = getAuthorInfo(req);
+  if (
+    blockFilteredImportContent(
+      req,
+      res,
+      {
+        name: inferredName,
+        description: description || inferredName,
+        body: content,
+        importedText: content,
+        frontmatter,
+      },
+      [{ filename: file.originalname, text: content }],
+    )
+  ) {
+    return res;
+  }
 
   const result = await deps.createSkill({
     name: inferredName,
@@ -293,6 +463,290 @@ async function handleMarkdown(
   }
 
   return res.status(201).json(skill);
+}
+
+type ImportFileResult = {
+  path: string;
+  status: 'ok' | 'error';
+  error?: string;
+};
+
+interface ArchiveFileDescriptor {
+  readonly entryPath: string;
+  readonly relativePath: string;
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly bytes: number;
+}
+
+interface ArchiveScan {
+  readonly files: ArchiveFileDescriptor[];
+  readonly results: ImportFileResult[];
+  readonly blocked: boolean;
+  readonly cumulativeLimitExceeded: boolean;
+}
+
+interface ArchiveScanCallbacks {
+  readonly onName?: (name: string) => boolean;
+  readonly onFile?: (file: ArchiveFileDescriptor, buffer: Buffer) => boolean | Promise<boolean>;
+}
+
+async function readZipEntry(
+  zipEntry: JSZip.JSZipObject,
+  effectiveLimit: number,
+): Promise<{ buffer: Buffer | null; bytesRead: number }> {
+  const chunks: Buffer[] = [];
+  let bytesRead = 0;
+  let exceededLimit = false;
+  const entryStream = zipEntry.nodeStream('nodebuffer');
+
+  await new Promise<void>((resolve, reject) => {
+    entryStream.on('data', (chunk: Buffer) => {
+      if (exceededLimit) {
+        return;
+      }
+      bytesRead += chunk.length;
+      if (bytesRead > effectiveLimit) {
+        exceededLimit = true;
+        if ('destroy' in entryStream && typeof entryStream.destroy === 'function') {
+          entryStream.destroy();
+        }
+        resolve();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    entryStream.on('end', resolve);
+    entryStream.on('error', reject);
+  });
+
+  return {
+    buffer: exceededLimit ? null : Buffer.concat(chunks),
+    bytesRead,
+  };
+}
+
+async function scanArchiveFiles(
+  zip: JSZip,
+  prefix: string,
+  limits: ImportLimits,
+  callbacks: ArchiveScanCallbacks = {},
+  initialDecompressedBytes = 0,
+  maxDecompressedBytes = limits.maxDecompressedBytes,
+): Promise<ArchiveScan> {
+  const files: ArchiveFileDescriptor[] = [];
+  const results: ImportFileResult[] = [];
+  let totalDecompressed = initialDecompressedBytes;
+  let cumulativeLimitExceeded = false;
+
+  for (const [entryPath, zipEntry] of Object.entries(zip.files)) {
+    if (zipEntry.dir) {
+      continue;
+    }
+    const normalized = entryPath.replace(/\\/g, '/');
+    const relativePath =
+      prefix && normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
+    if (relativePath.toUpperCase() === SKILL_MD.toUpperCase()) {
+      continue;
+    }
+    if (callbacks.onName?.(relativePath || normalized) === true) {
+      return { files, results, blocked: true, cumulativeLimitExceeded };
+    }
+    if (!relativePath || !isSafeSkillFilePath(relativePath)) {
+      results.push({ path: normalized, status: 'error', error: 'Invalid path' });
+      continue;
+    }
+
+    try {
+      const cumulativeLimit = maxDecompressedBytes - totalDecompressed;
+      const effectiveLimit = Math.min(limits.maxSingleFileBytes, cumulativeLimit);
+      if (effectiveLimit <= 0) {
+        cumulativeLimitExceeded = true;
+        results.push({
+          path: relativePath,
+          status: 'error',
+          error: 'Cumulative decompressed size exceeds limit',
+        });
+        break;
+      }
+
+      const { buffer, bytesRead } = await readZipEntry(zipEntry, effectiveLimit);
+      totalDecompressed += bytesRead;
+      if (buffer == null) {
+        const reason =
+          bytesRead > limits.maxSingleFileBytes
+            ? `File too large (max ${limits.maxSingleFileBytes / 1024 / 1024}MB)`
+            : 'Cumulative decompressed size exceeds limit';
+        results.push({ path: relativePath, status: 'error', error: reason });
+        if (bytesRead > cumulativeLimit) {
+          cumulativeLimitExceeded = true;
+          break;
+        }
+        continue;
+      }
+
+      const filename = path.basename(relativePath);
+      const fileDescriptor: ArchiveFileDescriptor = {
+        entryPath,
+        relativePath,
+        filename,
+        mimeType: guessMimeType(filename),
+        bytes: buffer.length,
+      };
+      if ((await callbacks.onFile?.(fileDescriptor, buffer)) === true) {
+        return { files, results, blocked: true, cumulativeLimitExceeded };
+      }
+      files.push(fileDescriptor);
+      results.push({ path: relativePath, status: 'ok' });
+    } catch (error) {
+      logger.error(`[importSkill] Failed to read file ${relativePath}:`, error);
+      results.push({
+        path: relativePath,
+        status: 'error',
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  return { files, results, blocked: false, cumulativeLimitExceeded };
+}
+
+function preflightArchiveNames(
+  zip: JSZip,
+  prefix: string,
+  onName: (name: string) => boolean,
+): boolean {
+  for (const [entryPath, zipEntry] of Object.entries(zip.files)) {
+    if (zipEntry.dir) {
+      continue;
+    }
+    const normalized = entryPath.replace(/\\/g, '/');
+    const relativePath =
+      prefix && normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
+    if (relativePath.toUpperCase() === SKILL_MD.toUpperCase()) {
+      continue;
+    }
+    if (onName(relativePath || normalized)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+interface ArchivePersistenceContext {
+  readonly userId: string;
+  readonly skillId: Types.ObjectId;
+  readonly authorId: Types.ObjectId;
+  readonly tenantId?: string;
+}
+
+async function persistArchiveFile(
+  req: ServerRequest,
+  deps: ImportSkillDeps,
+  file: ArchiveFileDescriptor,
+  buffer: Buffer,
+  context: ArchivePersistenceContext,
+): Promise<void> {
+  const fileId = crypto.randomUUID();
+  const storageFileName = `${fileId}__${file.filename}`;
+  const { filepath, source, storageKey, storageRegion } = await deps.saveBuffer(req, {
+    userId: context.userId,
+    buffer,
+    fileName: storageFileName,
+    basePath: 'uploads',
+    isImage: file.mimeType.startsWith('image/'),
+    tenantId: context.tenantId,
+  });
+
+  try {
+    await deps.upsertSkillFile({
+      skillId: context.skillId,
+      relativePath: file.relativePath,
+      file_id: fileId,
+      filename: file.filename,
+      filepath,
+      storageKey,
+      storageRegion,
+      source,
+      mimeType: file.mimeType,
+      bytes: buffer.length,
+      isExecutable: false,
+      author: context.authorId,
+      tenantId: context.tenantId,
+    });
+  } catch (dbError) {
+    if (deps.deleteFile) {
+      await deps
+        .deleteFile(req, {
+          filepath,
+          storageKey,
+          storageRegion,
+          source,
+          user: context.authorId,
+          tenantId: context.tenantId,
+        })
+        .catch((error) =>
+          logger.error(`[importSkill] Orphan cleanup failed for ${file.relativePath}:`, error),
+        );
+    }
+    throw dbError;
+  }
+}
+
+async function persistPreflightedArchiveFiles(
+  req: ServerRequest,
+  deps: ImportSkillDeps,
+  zip: JSZip,
+  files: readonly ArchiveFileDescriptor[],
+  limits: ImportLimits,
+  context: ArchivePersistenceContext,
+  initialDecompressedBytes = 0,
+): Promise<ImportFileResult[]> {
+  const results: ImportFileResult[] = [];
+  let totalDecompressed = initialDecompressedBytes;
+
+  for (const file of files) {
+    try {
+      const zipEntry = zip.file(file.entryPath);
+      if (zipEntry == null) {
+        throw new Error('Archive entry is no longer available');
+      }
+      const cumulativeLimit = limits.maxDecompressedBytes - totalDecompressed;
+      const effectiveLimit = Math.min(limits.maxSingleFileBytes, cumulativeLimit);
+      if (effectiveLimit <= 0) {
+        results.push({
+          path: file.relativePath,
+          status: 'error',
+          error: 'Cumulative decompressed size exceeds limit',
+        });
+        break;
+      }
+      const { buffer, bytesRead } = await readZipEntry(zipEntry, effectiveLimit);
+      totalDecompressed += bytesRead;
+      if (buffer == null) {
+        results.push({
+          path: file.relativePath,
+          status: 'error',
+          error: 'Archive entry changed after content inspection',
+        });
+        continue;
+      }
+      if (buffer.length !== file.bytes) {
+        throw new Error('Archive entry changed after content inspection');
+      }
+      await persistArchiveFile(req, deps, file, buffer, context);
+      results.push({ path: file.relativePath, status: 'ok' });
+    } catch (error) {
+      logger.error(`[importSkill] Failed to process file ${file.relativePath}:`, error);
+      results.push({
+        path: file.relativePath,
+        status: 'error',
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  return results;
 }
 
 async function handleZip(
@@ -345,6 +799,9 @@ async function handleZip(
   }
 
   const skillMdEntry = zip.file(skillMdPath);
+  if (skillMdEntry == null) {
+    return res.status(400).json({ error: 'Could not read SKILL.md from archive' });
+  }
   const declaredSize =
     (skillMdEntry as unknown as { _data?: { uncompressedSize?: number } })?._data
       ?.uncompressedSize ?? 0;
@@ -353,16 +810,22 @@ async function handleZip(
       .status(400)
       .json({ error: `SKILL.md too large (${Math.round(declaredSize / 1024 / 1024)}MB)` });
   }
-  const skillMdContent = await skillMdEntry?.async('string');
+  const skillMdLimit = Math.min(limits.maxSingleFileBytes, limits.maxDecompressedBytes);
+  const { buffer: skillMdBuffer } = await readZipEntry(skillMdEntry, skillMdLimit);
+  if (skillMdBuffer == null) {
+    return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
+  }
+  if (isBinaryBuffer(skillMdBuffer) && blockUninspectableImportFile(req, res)) {
+    return res;
+  }
+  const skillMdBytes = skillMdBuffer.length;
+  const skillMdContent = skillMdBuffer.toString('utf-8');
   if (!skillMdContent) {
     return res.status(400).json({ error: 'Could not read SKILL.md from archive' });
   }
-  if (Buffer.byteLength(skillMdContent, 'utf-8') > limits.maxSingleFileBytes) {
-    return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
-  }
 
-  const { name, description, alwaysApply, invalidBooleans, parseError } =
-    parseFrontmatter(skillMdContent);
+  const parsedSkill = parseSkillMarkdown(skillMdContent);
+  const { name, description, alwaysApply, frontmatter, invalidBooleans, parseError } = parsedSkill;
   if (parseError) {
     return sendFrontmatterParseError(res, parseError);
   }
@@ -388,9 +851,87 @@ async function handleZip(
     return res.status(400).json({ error: 'Could not determine skill name' });
   }
 
-  const { authorId, authorName, tenantId } = getAuthorInfo(req);
+  const skillPii = req.config?.filters?.skills?.pii;
+  const hasRelevantFilters =
+    hasActivePiiPatterns(skillPii) || hasActiveFilePolicy(req.config?.filters);
+  const inspectArchiveNames =
+    hasActivePiiFields(skillPii, ['file_name']) ||
+    hasActiveFileFieldPolicy(req.config?.filters, ['name']);
+  const inspectArchiveText =
+    hasActivePiiFields(skillPii, ['file_text']) ||
+    hasActiveFileFieldPolicy(req.config?.filters, ['content', 'extracted_text']);
+  const contentInspectionLimit = Math.min(
+    limits.maxContentInspectionBytes,
+    limits.maxDecompressedBytes,
+  );
 
-  // Create the skill (runs full validation: name pattern, description length, etc.)
+  let preflight: ArchiveScan | null = null;
+  if (hasRelevantFilters) {
+    if (inspectArchiveText && skillMdBytes > contentInspectionLimit) {
+      if (blockUninspectableImportFile(req, res)) {
+        return res;
+      }
+    }
+    if (
+      blockFilteredImportContent(
+        req,
+        res,
+        {
+          name: inferredName,
+          description: description || inferredName,
+          body: skillMdContent,
+          importedText: skillMdContent,
+          frontmatter,
+        },
+        [{ filename: file.originalname }, { filename: skillMdPath, text: skillMdContent }],
+      )
+    ) {
+      return res;
+    }
+    if (
+      inspectArchiveNames &&
+      preflightArchiveNames(zip, prefix, (filename) =>
+        blockFilteredImportContent(req, res, {}, [{ filename }]),
+      )
+    ) {
+      return res;
+    }
+    if (inspectArchiveText) {
+      preflight = await scanArchiveFiles(
+        zip,
+        prefix,
+        limits,
+        {
+          onFile: (archiveFile, buffer) => {
+            const isBinary = isBinaryBuffer(buffer);
+            if (isBinary && blockUninspectableImportFile(req, res)) {
+              return true;
+            }
+            const text = isBinary ? undefined : buffer.toString('utf-8');
+            return blockFilteredImportContent(req, res, {}, [
+              { filename: archiveFile.relativePath, text },
+            ]);
+          },
+        },
+        skillMdBytes,
+        contentInspectionLimit,
+      );
+      if (preflight.blocked) {
+        return res;
+      }
+      if (preflight.cumulativeLimitExceeded) {
+        if (blockUninspectableImportFile(req, res)) {
+          return res;
+        }
+        /** Compatibility mode: names and the in-budget prefix were inspected,
+         *  while the regular persistence pass below streams every archive
+         *  entry. `uninspectable: block` takes the branch above. */
+        preflight = null;
+      }
+    }
+  }
+
+  const { authorId, authorName, tenantId } = getAuthorInfo(req);
   const result = await deps.createSkill({
     name: inferredName,
     description: description || inferredName,
@@ -409,148 +950,39 @@ async function handleZip(
     return res.status(500).json({ error: grant.error });
   }
 
-  // Process additional files (everything except SKILL.md)
-  const fileResults: Array<{ path: string; status: 'ok' | 'error'; error?: string }> = [];
-  let totalDecompressed = 0;
-
-  for (const [entryPath, zipEntry] of Object.entries(zip.files)) {
-    if (zipEntry.dir) {
-      continue;
-    }
-    const normalized = entryPath.replace(/\\/g, '/');
-
-    // Strip the prefix if SKILL.md was inside a folder
-    const relativePath =
-      prefix && normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
-
-    // Skip SKILL.md (already used as body)
-    if (relativePath.toUpperCase() === SKILL_MD.toUpperCase()) {
-      continue;
-    }
-
-    if (!relativePath || !isSafeSkillFilePath(relativePath)) {
-      fileResults.push({ path: normalized, status: 'error', error: 'Invalid path' });
-      continue;
-    }
-
-    try {
-      // Stream-decompress with hard byte cap. JSZip's nodeStream decompresses
-      // incrementally so we can abort mid-entry without buffering the full file.
-      const perFileLimit = limits.maxSingleFileBytes;
-      const cumulativeLimit = limits.maxDecompressedBytes - totalDecompressed;
-      const effectiveLimit = Math.min(perFileLimit, cumulativeLimit);
-
-      if (effectiveLimit <= 0) {
-        fileResults.push({
-          path: relativePath,
-          status: 'error',
-          error: 'Cumulative decompressed size exceeds limit',
-        });
-        break;
-      }
-
-      // Stream-decompress with enforced byte limit
-      const chunks: Buffer[] = [];
-      let entryBytes = 0;
-      let exceededLimit = false;
-      const entryStream = zipEntry.nodeStream('nodebuffer');
-
-      await new Promise<void>((resolve, reject) => {
-        entryStream.on('data', (chunk: Buffer) => {
-          if (exceededLimit) {
-            return;
-          }
-          entryBytes += chunk.length;
-          totalDecompressed += chunk.length;
-          if (entryBytes > effectiveLimit) {
-            exceededLimit = true;
-            if ('destroy' in entryStream && typeof entryStream.destroy === 'function') {
-              entryStream.destroy();
-            }
-            resolve();
-            return;
-          }
-          chunks.push(chunk);
-        });
-        entryStream.on('end', resolve);
-        entryStream.on('error', reject);
-      });
-
-      if (exceededLimit) {
-        const reason =
-          entryBytes > perFileLimit
-            ? `File too large (max ${perFileLimit / 1024 / 1024}MB)`
-            : 'Cumulative decompressed size exceeds limit';
-        fileResults.push({ path: relativePath, status: 'error', error: reason });
-        if (entryBytes > cumulativeLimit) {
-          break;
-        }
-        continue;
-      }
-
-      const fileBuffer = Buffer.concat(chunks);
-
-      const fileId = crypto.randomUUID();
-      const filename = path.basename(relativePath);
-      const storageFileName = `${fileId}__${filename}`;
-
-      const mimeType = guessMimeType(filename);
-
-      // Save to file storage (strategy-aware)
-      const { filepath, source, storageKey, storageRegion } = await deps.saveBuffer(req, {
-        userId,
-        buffer: fileBuffer,
-        fileName: storageFileName,
-        basePath: 'uploads',
-        isImage: mimeType.startsWith('image/'),
-        tenantId,
-      });
-
-      // Upsert the SkillFile DB record (runs path validation internally).
-      // If the DB write fails, clean up the stored blob to prevent orphans.
-      try {
-        await deps.upsertSkillFile({
-          skillId: skill._id,
-          relativePath,
-          file_id: fileId,
-          filename,
-          filepath,
-          storageKey,
-          storageRegion,
-          source,
-          mimeType,
-          bytes: fileBuffer.length,
-          isExecutable: false,
-          author: authorId,
-          tenantId,
-        });
-      } catch (dbError) {
-        if (deps.deleteFile) {
-          await deps
-            .deleteFile(req, {
-              filepath,
-              storageKey,
-              storageRegion,
-              source,
-              user: authorId,
-              tenantId,
-            })
-            .catch((e) =>
-              logger.error(`[importSkill] Orphan cleanup failed for ${relativePath}:`, e),
-            );
-        }
-        throw dbError;
-      }
-
-      fileResults.push({ path: relativePath, status: 'ok' });
-    } catch (error) {
-      logger.error(`[importSkill] Failed to process file ${relativePath}:`, error);
-      fileResults.push({
-        path: relativePath,
-        status: 'error',
-        error: (error as Error).message,
-      });
-    }
+  const persistenceContext: ArchivePersistenceContext = {
+    userId,
+    skillId: skill._id,
+    authorId,
+    tenantId,
+  };
+  let fileResults: ImportFileResult[];
+  if (preflight == null) {
+    const processing = await scanArchiveFiles(
+      zip,
+      prefix,
+      limits,
+      {
+        onFile: async (archiveFile, buffer) => {
+          await persistArchiveFile(req, deps, archiveFile, buffer, persistenceContext);
+          return false;
+        },
+      },
+      skillMdBytes,
+    );
+    fileResults = processing.results;
+  } else {
+    const preflightErrors = preflight.results.filter((result) => result.status === 'error');
+    const persisted = await persistPreflightedArchiveFiles(
+      req,
+      deps,
+      zip,
+      preflight.files,
+      limits,
+      persistenceContext,
+      skillMdBytes,
+    );
+    fileResults = [...preflightErrors, ...persisted];
   }
 
   const errors: typeof fileResults = [];
@@ -607,6 +1039,48 @@ const MIME_MAP: Record<string, string> = {
   '.webp': 'image/webp',
   '.pdf': 'application/pdf',
 };
+
+const TEXT_FILE_EXTENSIONS = new Set([
+  '.md',
+  '.txt',
+  '.js',
+  '.ts',
+  '.jsx',
+  '.tsx',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.py',
+  '.sh',
+  '.css',
+  '.html',
+  '.xml',
+  '.csv',
+  '.toml',
+  '.ini',
+  '.svg',
+]);
+
+const TEXT_APPLICATION_MIMES = new Set([
+  'application/json',
+  'application/javascript',
+  'application/xml',
+  'application/x-sh',
+  'application/yaml',
+  'application/toml',
+  'image/svg+xml',
+]);
+
+export function isTextLikeSkillFile(filename: string, mimeType?: string): boolean {
+  const normalizedMime = mimeType?.split(';', 1)[0]?.trim().toLowerCase();
+  if (normalizedMime?.startsWith('text/') === true) {
+    return true;
+  }
+  if (normalizedMime != null && TEXT_APPLICATION_MIMES.has(normalizedMime)) {
+    return true;
+  }
+  return TEXT_FILE_EXTENSIONS.has(path.extname(filename).toLowerCase());
+}
 
 export function guessMimeType(filename: string): string {
   return MIME_MAP[path.extname(filename).toLowerCase()] || 'application/octet-stream';

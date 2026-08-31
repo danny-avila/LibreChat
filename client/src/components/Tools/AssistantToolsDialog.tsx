@@ -157,7 +157,7 @@ function AssistantToolsDialog({
       }}
     >
       <OGDialogContent
-        className="gap-0 overflow-hidden overflow-y-auto bg-surface-secondary p-0 text-left max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+        className="gap-0 overflow-hidden overflow-y-auto bg-surface-dialog p-0 text-left max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
         style={{ minHeight: '610px' }}
       >
         <div>
