@@ -110,9 +110,11 @@ const DRIVER_OPS = [
   'listIndexes',
 ] as const;
 
-/** Duplicate-key violations are server errors but not engine incompatibilities:
- * they prove the write REACHED the engine and hit a constraint. */
-const BENIGN_SERVER_CODES = new Set([11000, 11001]);
+/** Server errors that are not engine incompatibilities: duplicate keys prove
+ * the write REACHED the engine and hit a constraint, and `NamespaceExists`
+ * (48) is the expected outcome of the authority path's idempotent namespace
+ * preflight when a collection is already present. */
+const BENIGN_SERVER_CODES = new Set([11000, 11001, 48]);
 
 function recordEngineError(label: string | null, error: unknown): void {
   if (label == null) return;
@@ -178,6 +180,37 @@ function instrumentDriver(): void {
     };
     (wrapped as { __swept?: boolean }).__swept = true;
     (proto as Record<string, unknown>)[op] = wrapped;
+  }
+}
+
+/** Namespace DDL goes through `Db`, not the `Collection` prototype: the
+ * authority path's `Model.createCollection()` preflight delegates to
+ * `Db.createCollection`. Without this, a DocumentDB rejection of that DDL is
+ * laundered by `asMCPError` into `proof_unavailable`, the row reads as a mere
+ * `threw`, and STRICT passes despite an engine rejection. */
+function instrumentDatabase(): void {
+  const db = mongoose.connection.db;
+  if (db == null) throw new Error('no database handle to instrument');
+  const proto = Object.getPrototypeOf(db) as Record<string, unknown>;
+  for (const op of ['createCollection', 'dropCollection', 'renameCollection']) {
+    const original = proto[op] as (...args: unknown[]) => unknown;
+    if (typeof original !== 'function' || (original as { __swept?: boolean }).__swept) continue;
+    const wrapped = function (this: unknown, ...args: unknown[]) {
+      const label = activeLabel();
+      if (label != null) {
+        (verdicts[label] ??= { queries: 0, outcome: 'ok' }).queries += 1;
+      }
+      const result = original.apply(this, args);
+      if (result instanceof Promise) {
+        return result.catch((error: unknown) => {
+          recordEngineError(label, error);
+          throw error;
+        });
+      }
+      return result;
+    };
+    (wrapped as { __swept?: boolean }).__swept = true;
+    proto[op] = wrapped;
   }
 }
 
@@ -514,6 +547,7 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
       });
     }
     instrumentDriver();
+    instrumentDatabase();
     await instrumentSessions();
   }, 120_000);
 
