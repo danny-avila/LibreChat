@@ -15,6 +15,7 @@ import { primeResources } from './resources';
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
+    info: jest.fn(),
   },
 }));
 
@@ -1799,6 +1800,209 @@ describe('primeResources', () => {
 
       const attachmentIds = result.attachments?.map((f) => f?.file_id);
       expect(attachmentIds).toContain('legacy-file');
+    });
+  });
+
+  describe('code auth gating for lazy provisioning', () => {
+    const priorAuthProvider = process.env.CODEAPI_AUTH_PROVIDER;
+    const priorJwtEnabled = process.env.CODEAPI_JWT_ENABLED;
+
+    afterEach(() => {
+      if (priorAuthProvider === undefined) {
+        delete process.env.CODEAPI_AUTH_PROVIDER;
+      } else {
+        process.env.CODEAPI_AUTH_PROVIDER = priorAuthProvider;
+      }
+      if (priorJwtEnabled === undefined) {
+        delete process.env.CODEAPI_JWT_ENABLED;
+      } else {
+        process.env.CODEAPI_JWT_ENABLED = priorJwtEnabled;
+      }
+    });
+
+    const makeCodeFile = (overrides: Partial<TFile> = {}): TFile => ({
+      user: 'user1',
+      file_id: 'code-file',
+      filename: 'data.csv',
+      filepath: '/path/data.csv',
+      type: 'text/csv',
+      bytes: 5000,
+      object: 'file' as const,
+      usage: 0,
+      embedded: false,
+      source: FileSources.local,
+      llmDeliveryPath: 'none',
+      ...overrides,
+    });
+
+    it('populates codeEnvFiles under JWT code auth without a legacy key', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([makeCodeFile()]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('code-file');
+    });
+
+    it('skips code provisioning when neither a legacy key nor JWT auth is configured', async () => {
+      delete process.env.CODEAPI_AUTH_PROVIDER;
+      delete process.env.CODEAPI_JWT_ENABLED;
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([makeCodeFile()]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        loadCodeApiKey: jest.fn().mockResolvedValue(undefined),
+      });
+
+      expect(result.provisionState).toBeUndefined();
+    });
+
+    it('passes req through to checkSessionsAlive so JWT auth can mint tokens', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const checkSessionsAlive = jest.fn().mockResolvedValue(new Set(['ref-file']));
+      const refFile = makeCodeFile({
+        file_id: 'ref-file',
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'remote' },
+        },
+      });
+
+      await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([refFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive,
+      });
+
+      expect(checkSessionsAlive).toHaveBeenCalledWith(
+        expect.objectContaining({ req: mockReq, apiKey: undefined }),
+      );
+    });
+
+    it('queues re-provisioning and clears refs for a pre-categorized stale code file', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const checkSessionsAlive = jest.fn().mockResolvedValue(new Set<string>());
+      const staleFile = makeCodeFile({
+        file_id: 'stale-file',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user1',
+            storage_session_id: 'sess',
+            file_id: 'remote',
+            executionProfile: 'default',
+          },
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user1',
+              storage_session_id: 'sess',
+              file_id: 'remote',
+              executionProfile: 'default',
+            },
+            'stateful:env1': {
+              kind: 'user',
+              id: 'user1',
+              storage_session_id: 'sess-2',
+              file_id: 'remote-2',
+              executionProfile: 'stateful',
+            },
+          },
+        },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([staleFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive,
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('stale-file');
+      expect(staleFile.metadata?.codeEnvRef).toBeUndefined();
+      expect(staleFile.metadata?.codeEnvRefs?.default).toBeUndefined();
+      expect(staleFile.metadata?.codeEnvRefs?.['stateful:env1']).toBeDefined();
+    });
+
+    it('keeps alive pre-categorized files out of the provisioning queue', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const checkSessionsAlive = jest.fn().mockResolvedValue(new Set(['alive-file']));
+      const aliveFile = makeCodeFile({
+        file_id: 'alive-file',
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'remote' },
+        },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([aliveFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive,
+      });
+
+      expect(result.provisionState).toBeUndefined();
+      const codeFiles = result.tool_resources?.[EToolResources.execute_code]?.files;
+      expect(codeFiles?.map((f) => f.file_id)).toContain('alive-file');
+    });
+
+    it('does not treat refs as stale when no liveness check ran', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const refFile = makeCodeFile({
+        file_id: 'unchecked-file',
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'remote' },
+        },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([refFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+      });
+
+      expect(result.provisionState).toBeUndefined();
+      expect(refFile.metadata?.codeEnvRef).toBeDefined();
     });
   });
 });
