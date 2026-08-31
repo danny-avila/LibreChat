@@ -135,7 +135,8 @@ describe('provisionToCodeEnv', () => {
     expect(uploadCodeEnvFile).toHaveBeenCalledWith(
       expect.objectContaining({ filename: 'photo.webp' }),
     );
-    expect(result.codeEnvRef.file_id).toBe('r1');
+    expect(result.referenceSet.codeEnvRef.file_id).toBe('r1');
+    expect(result.referenceSet.codeEnvRefs.default.executionProfile).toBe('default');
   });
 
   it('keeps filenames untouched when the extension already matches or the file is not an image', async () => {
@@ -156,5 +157,35 @@ describe('provisionToCodeEnv', () => {
 
     expect(uploadCodeEnvFile.mock.calls[0][0].filename).toBe('data.csv');
     expect(uploadCodeEnvFile.mock.calls[1][0].filename).toBe('pic.webp');
+  });
+
+  it('preserves pointers for other code routes when re-provisioning the default route', async () => {
+    const uploadCodeEnvFile = jest
+      .fn()
+      .mockResolvedValue({ storage_session_id: 's-new', file_id: 'r-new' });
+    setupStrategies(uploadCodeEnvFile);
+    const statefulRef = {
+      kind: 'user',
+      id: 'u1',
+      storage_session_id: 's-stateful',
+      file_id: 'r-stateful',
+      executionProfile: 'stateful',
+      executionRouteKey: 'stateful:abc',
+    };
+
+    const result = await provisionToCodeEnv({
+      req: { user: { id: 'u1' } },
+      file: {
+        file_id: 'f1',
+        filename: 'data.csv',
+        type: 'text/csv',
+        source: 'local',
+        filepath: '/x/data.csv',
+        metadata: { codeEnvRefs: { 'stateful:abc': statefulRef } },
+      },
+    });
+
+    expect(result.referenceSet.codeEnvRefs['stateful:abc']).toEqual(statefulRef);
+    expect(result.referenceSet.codeEnvRefs.default.file_id).toBe('r-new');
   });
 });
