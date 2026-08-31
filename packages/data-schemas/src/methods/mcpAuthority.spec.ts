@@ -274,6 +274,51 @@ describe('MCP authority proofs', () => {
     }
   });
 
+  test('retries namespace creation after a transient failure instead of caching it', async () => {
+    /** A swallowed transient failure would settle the once-per-process memo,
+     * skip creation for every later request, and strand authority proofs on
+     * `proof_unavailable` long after the condition cleared. */
+    const retryMethods = createMCPAuthorityMethods(mongoose);
+    const target = () => ({
+      serverName: SERVER_NAME,
+      source: 'database' as const,
+      databaseId: serverId.toHexString(),
+      sourceRevision: serverSourceRevision,
+      expectedCredentialRevision: credentialSourceRevision,
+      expectedOAuthGrantGeneration: 'oauth-generation-1',
+      resolvedConfig: {
+        type: 'sse' as const,
+        url: `https://${SERVER_NAME}.example/mcp`,
+        customUserVars: { API_KEY: { title: 'API key', description: 'Credential' } },
+      },
+      requiresOAuth: true,
+    });
+    const resolveWith = () =>
+      inTenant(() =>
+        retryMethods.resolveMCPAuthorityProof({
+          userId: userId.toHexString(),
+          tenantId: TENANT_ID,
+          boot,
+          targets: [target()],
+        }),
+      );
+
+    const createSpy = jest
+      .spyOn(models.PluginAuth, 'createCollection')
+      .mockRejectedValueOnce(Object.assign(new Error('transient cluster failure'), { code: 91 }));
+    try {
+      await expect(resolveWith()).rejects.toBeInstanceOf(MCPAuthorityProofError);
+    } finally {
+      createSpy.mockRestore();
+    }
+
+    /** The memo must have been cleared: the next call retries creation and
+     * succeeds now that the transient condition is gone. */
+    await expect(resolveWith()).resolves.toEqual(
+      expect.objectContaining({ servers: expect.any(Array) }),
+    );
+  });
+
   test('creates one immutable shared snapshot and current per-server revisions', async () => {
     const proof = await resolve();
 

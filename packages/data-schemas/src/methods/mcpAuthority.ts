@@ -999,6 +999,19 @@ function asMCPError(error: unknown): MCPAuthorityProofError {
   );
 }
 
+/** `NamespaceExists`: the collection is already there, including when a
+ * concurrent creator won the race. */
+const NAMESPACE_EXISTS_CODE = 48;
+
+function isNamespaceExistsError(error: unknown): boolean {
+  const candidate = error as { code?: number; codeName?: string; message?: string };
+  return (
+    candidate?.code === NAMESPACE_EXISTS_CODE ||
+    candidate?.codeName === 'NamespaceExists' ||
+    /already exists/i.test(String(candidate?.message ?? ''))
+  );
+}
+
 /** Every collection the authoritative snapshot reads inside its transaction. */
 const AUTHORITY_SNAPSHOT_MODELS = [
   'User',
@@ -1036,19 +1049,23 @@ export function createMCPAuthorityMethods(
         try {
           await model.createCollection();
         } catch (error) {
-          /** Already present, or a concurrent creator won the race — either way
-           * the namespace now exists. A genuine failure (e.g. a role without
-           * create rights) surfaces from the transaction itself. */
-          logger.debug(
-            `[MCPAuthority] Could not pre-create the ${modelName} collection:`,
-            (error as Error)?.message,
-          );
+          /** The namespace already exists, or a concurrent creator won the
+           * race — either way it is there now. EVERY other failure must
+           * propagate: swallowing one would cache this promise as settled and
+           * skip creation for the rest of the process, so a transient error
+           * would strand authority proofs permanently even after it cleared. */
+          if (!isNamespaceExistsError(error)) {
+            throw error;
+          }
+          logger.debug(`[MCPAuthority] ${modelName} collection already exists`);
         }
       }
     })();
     try {
       await snapshotNamespacesReady;
     } catch (error) {
+      /** Clear the memo so the next request retries rather than inheriting a
+       * failure that may have already cleared. */
       snapshotNamespacesReady = undefined;
       throw error;
     }
