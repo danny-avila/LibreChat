@@ -200,6 +200,36 @@ describe('useMissingConversationRecovery', () => {
     expect(onConfirmedMissing).not.toHaveBeenCalled();
   });
 
+  it('retries a transient message recheck once before confirming the route is missing', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onConfirmedMissing = jest.fn();
+    mockGetMessages
+      .mockRejectedValueOnce(new Error('messages unavailable'))
+      .mockRejectedValue({ status: 404 });
+    mockFetchStreamStatus.mockResolvedValue({ active: false });
+
+    renderHook(
+      () =>
+        useMissingConversationRecovery({
+          conversationId: CONVERSATION_ID,
+          enabled: true,
+          onConfirmedMissing,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await advanceRecoveryDelay();
+    expect(mockGetMessages).toHaveBeenCalledTimes(1);
+
+    await advanceRecoveryDelay();
+    expect(mockGetMessages).toHaveBeenCalledTimes(2);
+    expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
+    expect(onConfirmedMissing).toHaveBeenCalledTimes(1);
+
+    await advanceRecoveryDelay();
+    expect(mockGetMessages).toHaveBeenCalledTimes(2);
+  });
+
   it('does not recheck or remove a conversation with an active generation', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onConfirmedMissing = jest.fn();

@@ -12,6 +12,7 @@ import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { dedupeSteersById, isNotFoundError, removeConvoFromAllQueries } from '~/utils';
 
 const MESSAGE_RECHECK_DELAY_MS = 1_000;
+const MESSAGE_RECHECK_RETRY_LIMIT = 1;
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 
 const isServerNotReadyError = (error: unknown): boolean => {
@@ -114,114 +115,127 @@ export default function useMissingConversationRecovery({
         generationProtocolVersion: 1,
       });
     }
+    let messageRetryTimeout: ReturnType<typeof setTimeout> | undefined;
     let readinessRetryTimeout: ReturnType<typeof setTimeout> | undefined;
-    const timeout = setTimeout(() => {
-      void (async () => {
-        let recoveredMessages: TMessage[] | null = null;
-        try {
-          recoveredMessages = await dataService.getMessagesByConvoId(conversationId);
-        } catch (error) {
-          if (cancelled || !isNotFoundError(error)) {
-            return;
-          }
-        }
-        const recoveredMessageList = recoveredMessages ?? [];
-        const hasRecoveredMessages = recoveredMessageList.length > 0;
+    const recover = async (messageRetriesRemaining: number) => {
+      let recoveredMessages: TMessage[] | null = null;
+      try {
+        recoveredMessages = await dataService.getMessagesByConvoId(conversationId);
+      } catch (error) {
         if (cancelled) {
           return;
         }
-
-        let verifiedStatus;
-        try {
-          verifiedStatus = await fetchStreamStatus(conversationId);
-        } catch (error) {
-          if (!cancelled && hasRecoveredMessages) {
-            queryClient.setQueryData<TMessage[]>(
-              [QueryKeys.messages, conversationId],
-              recoveredMessageList,
-            );
-          }
-          if (!cancelled && isServerNotReadyError(error)) {
-            readinessRetryTimeout = setTimeout(() => {
+        if (!isNotFoundError(error)) {
+          if (messageRetriesRemaining > 0) {
+            messageRetryTimeout = setTimeout(() => {
               if (!cancelled) {
-                void refetchStreamStatus();
+                void recover(messageRetriesRemaining - 1);
               }
             }, MESSAGE_RECHECK_DELAY_MS);
           }
           return;
         }
-        if (cancelled) {
-          // A legacy status read destructively claims these steers. Preserve
-          // their words even though the abandoned view must receive no updates.
-          const claimedSteers = dedupeSteersById(verifiedStatus.unrecoveredSteers).filter(
-            (steer) => !wasInitiallyClaimed(steer),
-          );
-          if (claimedSteers.length > 0) {
-            convertSteersToQueued(conversationId, claimedSteers, {
-              generationProtocolVersion: getGenerationProtocolVersion(verifiedStatus),
-            });
-          }
-          return;
-        }
+      }
+      const recoveredMessageList = recoveredMessages ?? [];
+      const hasRecoveredMessages = recoveredMessageList.length > 0;
+      if (cancelled) {
+        return;
+      }
 
-        if (hasRecoveredMessages) {
+      let verifiedStatus;
+      try {
+        verifiedStatus = await fetchStreamStatus(conversationId);
+      } catch (error) {
+        if (!cancelled && hasRecoveredMessages) {
           queryClient.setQueryData<TMessage[]>(
             [QueryKeys.messages, conversationId],
             recoveredMessageList,
           );
         }
-        queryClient.setQueryData(
-          streamStatusQueryKey(conversationId),
-          verifiedStatus.active
-            ? {
-                ...verifiedStatus,
-                generationHandoff: true,
-              }
-            : verifiedStatus,
+        if (!cancelled && isServerNotReadyError(error)) {
+          readinessRetryTimeout = setTimeout(() => {
+            if (!cancelled) {
+              void refetchStreamStatus();
+            }
+          }, MESSAGE_RECHECK_DELAY_MS);
+        }
+        return;
+      }
+      if (cancelled) {
+        // A legacy status read destructively claims these steers. Preserve
+        // their words even though the abandoned view must receive no updates.
+        const claimedSteers = dedupeSteersById(verifiedStatus.unrecoveredSteers).filter(
+          (steer) => !wasInitiallyClaimed(steer),
         );
-        if (verifiedStatus.active) {
-          recoveringConversationRef.current = null;
-          return;
-        }
-
-        const leftoverSteers = dedupeSteersById(
-          initialStatus?.unrecoveredSteers,
-          initialStatus?.resumeState?.pendingSteers,
-          verifiedStatus.unrecoveredSteers,
-          verifiedStatus.resumeState?.pendingSteers,
-        ).filter((steer) => !wasInitiallyClaimed(steer));
-        if (leftoverSteers.length > 0) {
-          const generationStatus =
-            verifiedStatus.generationProtocolVersion == null ? initialStatus : verifiedStatus;
-          convertSteersToQueued(conversationId, leftoverSteers, {
-            generationProtocolVersion: getGenerationProtocolVersion(generationStatus),
+        if (claimedSteers.length > 0) {
+          convertSteersToQueued(conversationId, claimedSteers, {
+            generationProtocolVersion: getGenerationProtocolVersion(verifiedStatus),
           });
-          recoveringConversationRef.current = null;
-          return;
         }
+        return;
+      }
 
-        if (initialLegacyClaimedSteers.length > 0) {
-          recoveringConversationRef.current = null;
-          return;
-        }
-
-        if (hasRecoveredMessages) {
-          recoveringConversationRef.current = null;
-          return;
-        }
-
+      if (hasRecoveredMessages) {
+        queryClient.setQueryData<TMessage[]>(
+          [QueryKeys.messages, conversationId],
+          recoveredMessageList,
+        );
+      }
+      queryClient.setQueryData(
+        streamStatusQueryKey(conversationId),
+        verifiedStatus.active
+          ? {
+              ...verifiedStatus,
+              generationHandoff: true,
+            }
+          : verifiedStatus,
+      );
+      if (verifiedStatus.active) {
         recoveringConversationRef.current = null;
-        removeConvoFromAllQueries(queryClient, conversationId);
-        queryClient.removeQueries({ queryKey: [QueryKeys.conversation, conversationId] });
-        queryClient.removeQueries({ queryKey: [QueryKeys.messages, conversationId] });
-        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
-        onConfirmedMissingRef.current();
-      })();
+        return;
+      }
+
+      const leftoverSteers = dedupeSteersById(
+        initialStatus?.unrecoveredSteers,
+        initialStatus?.resumeState?.pendingSteers,
+        verifiedStatus.unrecoveredSteers,
+        verifiedStatus.resumeState?.pendingSteers,
+      ).filter((steer) => !wasInitiallyClaimed(steer));
+      if (leftoverSteers.length > 0) {
+        const generationStatus =
+          verifiedStatus.generationProtocolVersion == null ? initialStatus : verifiedStatus;
+        convertSteersToQueued(conversationId, leftoverSteers, {
+          generationProtocolVersion: getGenerationProtocolVersion(generationStatus),
+        });
+        recoveringConversationRef.current = null;
+        return;
+      }
+
+      if (initialLegacyClaimedSteers.length > 0) {
+        recoveringConversationRef.current = null;
+        return;
+      }
+
+      if (hasRecoveredMessages) {
+        recoveringConversationRef.current = null;
+        return;
+      }
+
+      recoveringConversationRef.current = null;
+      removeConvoFromAllQueries(queryClient, conversationId);
+      queryClient.removeQueries({ queryKey: [QueryKeys.conversation, conversationId] });
+      queryClient.removeQueries({ queryKey: [QueryKeys.messages, conversationId] });
+      queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+      onConfirmedMissingRef.current();
+    };
+    const timeout = setTimeout(() => {
+      void recover(MESSAGE_RECHECK_RETRY_LIMIT);
     }, MESSAGE_RECHECK_DELAY_MS);
 
     return () => {
       cancelled = true;
       clearTimeout(timeout);
+      clearTimeout(messageRetryTimeout);
       clearTimeout(readinessRetryTimeout);
     };
   }, [

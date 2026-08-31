@@ -78,18 +78,15 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse();
   const { conversation, newConversation } = chatHelpers;
+  const activeConversation =
+    conversation?.conversationId === conversationId ? conversation : undefined;
   const recoverToNewConversation = useCallback(() => {
-    const chatProjectId = conversation?.chatProjectId ?? project?._id;
+    const chatProjectId = activeConversation?.chatProjectId ?? project?._id;
     newConversation({
       ...(chatProjectId && { template: { chatProjectId } }),
       replace: true,
     });
-  }, [conversation?.chatProjectId, newConversation, project?._id]);
-
-  const activeConversation =
-    chatHelpers.conversation?.conversationId === conversationId
-      ? chatHelpers.conversation
-      : undefined;
+  }, [activeConversation?.chatProjectId, newConversation, project?._id]);
   const activeSubagentThread = activeConversation?.subagentThread;
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
