@@ -2032,5 +2032,71 @@ describe('primeResources', () => {
       expect(result.provisionState).toBeUndefined();
       expect(refFile.metadata?.codeEnvRef).toBeDefined();
     });
+
+    it('never clears a non-default route ref probed against the default Code API', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const checkSessionsAlive = jest.fn().mockResolvedValue(new Set<string>());
+      const statefulRef = {
+        kind: 'user' as const,
+        id: 'user1',
+        storage_session_id: 'sess-stateful',
+        file_id: 'remote-stateful',
+        executionProfile: 'stateful' as const,
+        executionRouteKey: 'stateful:abc',
+      };
+      const statefulFile = makeCodeFile({
+        file_id: 'stateful-file',
+        metadata: { codeEnvRef: statefulRef, codeEnvRefs: { 'stateful:abc': statefulRef } },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([statefulFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive,
+      });
+
+      expect(checkSessionsAlive).not.toHaveBeenCalled();
+      expect(result.provisionState).toBeUndefined();
+      expect(statefulFile.metadata?.codeEnvRef).toEqual(statefulRef);
+      expect(statefulFile.metadata?.codeEnvRefs?.['stateful:abc']).toEqual(statefulRef);
+    });
+
+    it('queues persistent context files on a turn with no request attachments', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const contextFile: TFile = {
+        user: 'user1',
+        file_id: 'context-file',
+        filename: 'handbook.pdf',
+        filepath: '/uploads/handbook.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+      };
+      mockGetFiles.mockResolvedValue([contextFile]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: { [EToolResources.context]: { file_ids: ['context-file'] } },
+        attachments: undefined,
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('context-file');
+      expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toContain('context-file');
+    });
   });
 });

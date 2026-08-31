@@ -10,7 +10,7 @@ const {
   getCodeApiAuthHeaders,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, mergeCodeEnvRef } = require('librechat-data-provider');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getStrategyFunctions } = require('./strategies');
 
@@ -78,7 +78,8 @@ async function loadCodeApiKey(userId) {
  * @param {import('librechat-data-provider').TFile} params.file - The file record from DB
  * @param {string} [params.entity_id] - Optional entity ID (agent_id); when present the ref
  *   is scoped to `kind: 'agent'`, otherwise it falls back to `kind: 'user'`.
- * @returns {Promise<{ codeEnvRef: object, fileUpdate: object }>} Result with deferred DB update
+ * @returns {Promise<{ referenceSet: { codeEnvRef: object, codeEnvRefs: object }, fileUpdate: object }>}
+ *   Merged pointers plus the deferred DB update
  */
 async function provisionToCodeEnv({ req, file, entity_id }) {
   const { getDownloadStream } = getStrategyFunctions(file.source);
@@ -102,21 +103,25 @@ async function provisionToCodeEnv({ req, file, entity_id }) {
     id,
   });
 
-  const codeEnvRef = {
+  /* Merge rather than overwrite: the eager upload path persists the same shape via
+   * mergeCodeEnvRef, so both the legacy pointer and the route-keyed map stay in sync
+   * and pointers for other Code API routes survive re-provisioning. */
+  const referenceSet = mergeCodeEnvRef(file.metadata, {
     kind,
     id,
     storage_session_id: uploaded.storage_session_id,
     file_id: uploaded.file_id,
+    executionProfile: 'default',
     provisionedAt: Date.now(),
-  };
+  });
 
   logger.debug(
     `[provisionToCodeEnv] Provisioned file "${file.filename}" (${file.file_id}) to code env`,
   );
 
   return {
-    codeEnvRef,
-    fileUpdate: { file_id: file.file_id, metadata: { ...file.metadata, codeEnvRef } },
+    referenceSet,
+    fileUpdate: { file_id: file.file_id, metadata: { ...file.metadata, ...referenceSet } },
   };
 }
 

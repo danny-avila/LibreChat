@@ -515,12 +515,12 @@ const initializeClient = async ({
       if (needsCode && provisionState.codeEnvFiles.length > 0) {
         const results = await Promise.allSettled(
           provisionState.codeEnvFiles.map(async (file) => {
-            const { codeEnvRef, fileUpdate } = await provisionToCodeEnv({
+            const { referenceSet, fileUpdate } = await provisionToCodeEnv({
               req,
               file,
               entity_id: entityIdForFile(file),
             });
-            file.metadata = { ...file.metadata, codeEnvRef };
+            file.metadata = { ...file.metadata, ...referenceSet };
             addProvisionedFile(file, EToolResources.execute_code);
             pendingUpdates.push(fileUpdate);
           }),
