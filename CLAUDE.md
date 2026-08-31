@@ -28,6 +28,29 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
 
 ---
 
+## Branching and Pull Requests
+
+- **Branch off `dev`, and target `dev` with every pull request.** All work lands on `dev` first.
+- **`main` is the released branch.** It is kept as a fast-forward of `dev` and synced as-is, so it
+  is always an ancestor of `dev` — equal to it right after a sync, behind it otherwise. It never
+  carries a commit that `dev` does not have.
+- **Never open a backport pull request to `main`.** Anything merged to `dev` reaches `main` at the
+  next sync; a second pull request for the same change is redundant.
+- **The repository's default branch is `main`**, so `gh pr create` and the GitHub UI target it
+  unless told otherwise — always pass `--base dev` explicitly.
+- Pull requests opened against `main` are retargeted to `dev` automatically by
+  `.github/workflows/pr-retarget-dev.yml`. The `target: main` label exempts one, as do release-bound
+  upstream branches (`dev`, `release/*`, `hotfix/*`). Backport branches are deliberately not exempt —
+  a backport merged straight to `main` is what breaks the fast-forward invariant.
+- **`Fixes #N` does not close the issue.** GitHub honors closing keywords only when a pull request
+  merges into the default branch (`main`). Merging to `dev` does not close anything, and the later
+  fast-forward of `main` is not a merge event either — close linked issues by hand.
+- **Git worktrees share one stash stack.** `refs/stash` lives in the common `.git` directory, so a
+  bare `git stash pop` in one worktree can take work stashed in another. Prefer a throwaway WIP
+  commit; if you must stash, `git stash push -m <tag>` and `apply` that specific entry.
+
+---
+
 ## Code Style
 
 ### Naming and File Organization
@@ -207,6 +230,20 @@ Without it, OpenID JWT request burst caching can serve a stale `req.user` until 
 - Frontend tests: `__tests__` directories alongside components; use `test/layout-test-utils` for rendering.
 - Cover loading, success, and error states for UI/data flows.
 
+### Typechecking
+
+- **A green build is not a typecheck.** `packages/api`, `packages/client` and `packages/data-schemas`
+  build with `tsdown` alone, which emits without checking types. Only `packages/data-provider` runs
+  `tsc` as part of its build.
+- Run `npx tsc --noEmit` in the workspace you changed before calling it done. `client` also exposes
+  it as `npm run typecheck`.
+- `packages/client/tsconfig.json` excludes `*.spec.ts(x)` and `*.test.ts(x)`, so test files there are
+  never typechecked — a type error in a spec surfaces only when the test runs.
+- `npm run static-checks` runs the Static Checks CI job locally against your staged files;
+  `npm run static-checks -- --against origin/dev` reproduces what CI sees for a pull request, and
+  `npm run static-checks:full` adds the slow gates (TypeScript, config migration tests, unused i18n
+  keys, unused npm packages).
+
 ### Philosophy
 
 - **Real logic over mocks.** Exercise actual code paths with real dependencies. Mocking is a last resort.
@@ -221,3 +258,7 @@ Without it, OpenID JWT request burst caching can serve a stale `req.user` until 
 ## Formatting
 
 Fix all formatting lint errors (trailing spaces, tabs, newlines, indentation) using auto-fix when available. All TypeScript/ESLint warnings and errors **must** be resolved.
+
+`npm run sort-imports` with no arguments rewrites every file under `api/`, `client/src` and the four
+`packages/*/src` roots — far beyond what you touched. Always pass explicit paths:
+`npm run sort-imports -- path/to/file.ts`.
