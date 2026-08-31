@@ -459,11 +459,18 @@ const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   default: [],
 });
 
-/** Exact terminal generations whose queue boundary was consumed by a
- * server-admitted successor. Each delayed UI terminal event consumes only
- * its matching entry; replica clocks do not impose generation order. */
-const consumedQueuedTurnPredecessorsByConvoId = atomFamily<number[], string>({
-  key: 'consumedQueuedTurnPredecessorsByConvoId',
+export type SettledQueuedTurnReceipt = {
+  clientRequestId: string;
+  status: 'admitted' | 'cancelled';
+  effectivePredecessorCreatedAt?: number;
+  boundaryConsumed?: boolean;
+};
+
+/** Monotonic client knowledge of terminal server queue receipts. Admission
+ * records preserve boundary multiplicity by request identity and remain as
+ * tombstones after consumption so delayed POST responses cannot regress UI. */
+const settledQueuedTurnReceiptsByConvoId = atomFamily<SettledQueuedTurnReceipt[], string>({
+  key: 'settledQueuedTurnReceiptsByConvoId',
   default: [],
 });
 
@@ -796,7 +803,7 @@ export default {
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
-  consumedQueuedTurnPredecessorsByConvoId,
+  settledQueuedTurnReceiptsByConvoId,
   runEndByIndex,
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,

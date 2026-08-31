@@ -3,7 +3,12 @@ import { Constants } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
-import type { DrainAfterAbort, RunEnd, QueuedMessage } from '~/store/families';
+import type {
+  DrainAfterAbort,
+  RunEnd,
+  QueuedMessage,
+  SettledQueuedTurnReceipt,
+} from '~/store/families';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -29,7 +34,7 @@ function setup(
     setInterruptFlag?: (value: DrainAfterAbort | false) => void;
     queue?: QueuedMessage[];
     newConvoQueue?: QueuedMessage[];
-    consumedPredecessors?: number[];
+    settledReceipts?: SettledQueuedTurnReceipt[];
     runEnd?: RunEnd | null;
   } = {};
 
@@ -43,9 +48,7 @@ function setup(
     setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
     setters.queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
     setters.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
-    setters.consumedPredecessors = useRecoilValue(
-      store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID),
-    );
+    setters.settledReceipts = useRecoilValue(store.settledQueuedTurnReceiptsByConvoId(CONVO_ID));
     setters.runEnd = useRecoilValue(store.runEndByIndex(INDEX));
     useQueueDrain(INDEX, activeConversationId, ask);
     return null;
@@ -164,7 +167,13 @@ describe('useQueueDrain', () => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
         queuedMessage('q-local', 'must wait for the admitted run'),
       ]);
-      set(store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID), [41]);
+      set(store.settledQueuedTurnReceiptsByConvoId(CONVO_ID), [
+        {
+          clientRequestId: 'admission-1',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+        },
+      ]);
     });
 
     act(() => {
@@ -173,7 +182,57 @@ describe('useQueueDrain', () => {
 
     await waitFor(() => expect(setters.runEnd).toBeNull());
     expect(ask).not.toHaveBeenCalled();
-    expect(setters.consumedPredecessors).toEqual([]);
+    expect(setters.settledReceipts).toEqual([
+      expect.objectContaining({ clientRequestId: 'admission-1', boundaryConsumed: true }),
+    ]);
+  });
+
+  it('consumes one admission when separate receipts share the same predecessor epoch', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        queuedMessage('q-local', 'wait for both admitted runs'),
+      ]);
+      set(store.settledQueuedTurnReceiptsByConvoId(CONVO_ID), [
+        {
+          clientRequestId: 'admission-1',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+        },
+        {
+          clientRequestId: 'admission-2',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+        },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 41 }));
+    });
+
+    await waitFor(() =>
+      expect(setters.settledReceipts).toEqual([
+        expect.objectContaining({ clientRequestId: 'admission-1', boundaryConsumed: true }),
+        {
+          clientRequestId: 'admission-2',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+        },
+      ]),
+    );
+    expect(ask).not.toHaveBeenCalled();
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 41, endedAt: Date.now() + 1 }));
+    });
+
+    await waitFor(() =>
+      expect(setters.settledReceipts).toEqual([
+        expect.objectContaining({ clientRequestId: 'admission-1', boundaryConsumed: true }),
+        expect.objectContaining({ clientRequestId: 'admission-2', boundaryConsumed: true }),
+      ]),
+    );
+    expect(ask).not.toHaveBeenCalled();
   });
 
   it('migrates the NEW_CONVO queue before discarding a consumed predecessor boundary', async () => {
@@ -182,7 +241,13 @@ describe('useQueueDrain', () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [queuedBeforeResolution]);
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedAfterResolution]);
-      set(store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID), [41]);
+      set(store.settledQueuedTurnReceiptsByConvoId(CONVO_ID), [
+        {
+          clientRequestId: 'admission-1',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+        },
+      ]);
     });
 
     act(() => {
@@ -205,7 +270,13 @@ describe('useQueueDrain', () => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
         queuedMessage('q-local', 'send after the admitted run'),
       ]);
-      set(store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID), [41]);
+      set(store.settledQueuedTurnReceiptsByConvoId(CONVO_ID), [
+        {
+          clientRequestId: 'admission-1',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+        },
+      ]);
     });
 
     act(() => {
@@ -221,7 +292,13 @@ describe('useQueueDrain', () => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
         queuedMessage('q-local', 'send after the lower-clock successor'),
       ]);
-      set(store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID), [42]);
+      set(store.settledQueuedTurnReceiptsByConvoId(CONVO_ID), [
+        {
+          clientRequestId: 'admission-1',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 42,
+        },
+      ]);
     });
 
     act(() => {
@@ -233,7 +310,13 @@ describe('useQueueDrain', () => {
       { text: 'send after the lower-clock successor' },
       emptyOverrides,
     );
-    expect(setters.consumedPredecessors).toEqual([42]);
+    expect(setters.settledReceipts).toEqual([
+      {
+        clientRequestId: 'admission-1',
+        status: 'admitted',
+        effectivePredecessorCreatedAt: 42,
+      },
+    ]);
   });
 
   it('parks a mismatched signal instead of draining into the wrong conversation', async () => {

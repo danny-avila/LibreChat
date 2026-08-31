@@ -261,9 +261,7 @@ describe('useSteering', () => {
             stopGenerating: jest.fn(),
           }),
           queue: useQueue(CONVO_ID),
-          consumedPredecessors: useRecoilValue(
-            store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID),
-          ),
+          settledReceipts: useRecoilValue(store.settledQueuedTurnReceiptsByConvoId(CONVO_ID)),
         }),
         { wrapper },
       );
@@ -370,9 +368,103 @@ describe('useSteering', () => {
         await Promise.resolve();
       });
 
-      await waitFor(() => expect(result.current.consumedPredecessors).toEqual([41]));
+      await waitFor(() =>
+        expect(result.current.settledReceipts).toEqual([
+          {
+            clientRequestId: expect.stringMatching(UUID_V4_PATTERN),
+            status: 'admitted',
+            effectivePredecessorCreatedAt: 41,
+          },
+        ]),
+      );
       expect(result.current.queue).toEqual([
         expect.objectContaining({ id: 'unrelated-server-row', text: 'keep me' }),
+      ]);
+    });
+
+    it('keeps an old-server admitted receipt uncertain until its exact boundary is known', async () => {
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        options.onSuccess({
+          ...input,
+          queuedTurnId: 'legacy-admitted-replay',
+          status: 'admitted',
+          revision: 1,
+          createdAt: new Date(100).toISOString(),
+          updatedAt: new Date(200).toISOString(),
+        });
+      });
+      const { result } = setupServerQueue();
+
+      await act(async () => {
+        result.current.steering.queueFromComposer('await exact admission boundary');
+        await Promise.resolve();
+      });
+
+      await waitFor(() =>
+        expect(result.current.queue).toEqual([
+          expect.objectContaining({
+            text: 'await exact admission boundary',
+            clientRequestId: expect.stringMatching(UUID_V4_PATTERN),
+            server: expect.objectContaining({
+              id: 'legacy-admitted-replay',
+              status: 'uncertain',
+            }),
+          }),
+        ]),
+      );
+      expect(result.current.settledReceipts).toEqual([]);
+      expect(mockUseAgentQueuedTurns.mock.calls.at(-1)?.[2]).toEqual([
+        result.current.queue[0].clientRequestId,
+      ]);
+    });
+
+    it('does not let a stale queued POST response resurrect a terminal receipt', async () => {
+      let releaseQueuedPost = () => undefined;
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        releaseQueuedPost = () =>
+          options.onSuccess({
+            ...input,
+            queuedTurnId: 'server-stale-post',
+            status: 'queued',
+            revision: 1,
+            createdAt: new Date(100).toISOString(),
+            updatedAt: new Date(100).toISOString(),
+          });
+      });
+      const rendered = setupServerQueue();
+
+      await act(async () => {
+        rendered.result.current.steering.queueFromComposer('settle before POST returns');
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(mockEnqueueQueuedTurn).toHaveBeenCalledTimes(1));
+      const input = mockEnqueueQueuedTurn.mock.calls[0][0];
+      mockServerQueuedTurns = [
+        {
+          ...input,
+          queuedTurnId: 'server-terminal-get',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+          revision: 2,
+          createdAt: new Date(100).toISOString(),
+          updatedAt: new Date(200).toISOString(),
+        },
+      ];
+      rendered.rerender();
+
+      await waitFor(() => expect(rendered.result.current.queue).toEqual([]));
+      await act(async () => {
+        releaseQueuedPost();
+        await Promise.resolve();
+      });
+
+      expect(rendered.result.current.queue).toEqual([]);
+      expect(rendered.result.current.settledReceipts).toEqual([
+        {
+          clientRequestId: input.clientRequestId,
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+        },
       ]);
     });
 
@@ -551,11 +643,19 @@ describe('useSteering', () => {
       ];
       const { result } = setupServerQueue();
 
-      await waitFor(() => expect(result.current.consumedPredecessors).toEqual([42]));
+      await waitFor(() =>
+        expect(result.current.settledReceipts).toEqual([
+          {
+            clientRequestId: 'client-admitted-1',
+            status: 'admitted',
+            effectivePredecessorCreatedAt: 42,
+          },
+        ]),
+      );
       expect(result.current.queue).toEqual([]);
     });
 
-    it('does not release a local successor when admission precedes SSE attachment', async () => {
+    it('keeps the terminal boundary when an old-server admission lacks its exact fence', async () => {
       mockServerQueuedTurns = [
         {
           queuedTurnId: 'server-admitted-race',
@@ -617,8 +717,17 @@ describe('useSteering', () => {
         { wrapper },
       );
 
-      await waitFor(() => expect(result.current.runEnd).toBeNull());
-      expect(result.current.queue.map((item) => item.id)).toEqual(['local-successor']);
+      await waitFor(() =>
+        expect(result.current.queue[0]).toMatchObject({
+          id: 'client-admitted-race',
+          server: { id: 'server-admitted-race', status: 'uncertain' },
+        }),
+      );
+      expect(result.current.runEnd).not.toBeNull();
+      expect(result.current.queue.map((item) => item.id)).toEqual([
+        'client-admitted-race',
+        'local-successor',
+      ]);
       expect(ask).not.toHaveBeenCalled();
       expect(sendNow).not.toHaveBeenCalled();
     });

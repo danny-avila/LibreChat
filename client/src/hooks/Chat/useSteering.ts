@@ -14,7 +14,13 @@ import type {
   TConversation,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import type { RunEnd, PendingSteer, QueuedMessage, QueuedMessageOrigin } from '~/store/families';
+import type {
+  RunEnd,
+  PendingSteer,
+  QueuedMessage,
+  QueuedMessageOrigin,
+  SettledQueuedTurnReceipt,
+} from '~/store/families';
 import type { AgentQueuedTurnReceipt, GenerationProtocolVersion } from '~/data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
@@ -195,6 +201,7 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
 function reconcileServerQueuedTurns(
   previous: QueuedMessage[],
   receipts: AgentQueuedTurnReceipt[],
+  settledClientRequestIds: ReadonlySet<string>,
   authoritativeSnapshot = true,
 ): QueuedMessage[] {
   const previousByClientRequestId = new Map(
@@ -204,10 +211,17 @@ function reconcileServerQueuedTurns(
   );
   const observedClientRequestIds = new Set(receipts.map((receipt) => receipt.clientRequestId));
   const projected = receipts.flatMap((receipt): QueuedMessage[] => {
-    if (receipt.status === 'admitted' || receipt.status === 'cancelled') {
+    if (settledClientRequestIds.has(receipt.clientRequestId)) {
       return [];
     }
     const optimistic = previousByClientRequestId.get(receipt.clientRequestId);
+    const boundaryPending = receipt.status === 'admitted';
+    let status: NonNullable<QueuedMessage['server']>['status'] = receipt.status;
+    if (boundaryPending) {
+      status = 'uncertain';
+    } else if (receipt.status === 'dead') {
+      status = 'rejected';
+    }
     return [
       {
         id: optimistic?.id ?? receipt.clientRequestId,
@@ -227,8 +241,11 @@ function reconcileServerQueuedTurns(
         ...(receipt.priority === true && { priority: true }),
         server: {
           id: receipt.queuedTurnId,
-          status: receipt.status === 'dead' ? 'rejected' : receipt.status,
+          status,
           revision: receipt.revision,
+          ...(boundaryPending && {
+            uncertainSince: optimistic?.server?.uncertainSince ?? Date.now(),
+          }),
           ...(receipt.position != null && { position: receipt.position }),
           ...(receipt.failure?.code != null && { errorCode: receipt.failure.code }),
           ...(receipt.failure?.message != null && { errorMessage: receipt.failure.message }),
@@ -237,6 +254,9 @@ function reconcileServerQueuedTurns(
     ];
   });
   const retained = previous.filter((item) => {
+    if (item.clientRequestId != null && settledClientRequestIds.has(item.clientRequestId)) {
+      return false;
+    }
     if (item.server == null) {
       return true;
     }
@@ -368,31 +388,45 @@ export default function useSteering({
   );
 
   const applyQueuedTurnReceipts = useRecoilCallback(
-    ({ set }) =>
+    ({ snapshot, set }) =>
       (receipts: AgentQueuedTurnReceipt[], authoritativeSnapshot: boolean = true) => {
-        const consumedPredecessors: number[] = [];
+        const previousSettled = snapshot
+          .getLoadable(store.settledQueuedTurnReceiptsByConvoId(queueKey))
+          .getValue();
+        const settledByRequestId = new Map(
+          previousSettled.map((receipt) => [receipt.clientRequestId, receipt]),
+        );
         for (const receipt of receipts) {
-          if (receipt.status !== 'admitted') {
+          if (settledByRequestId.has(receipt.clientRequestId)) {
             continue;
           }
-          const effectivePredecessor =
-            receipt.effectivePredecessorCreatedAt ?? receipt.expectedPredecessorCreatedAt;
-          if (effectivePredecessor == null) {
+          let settled: SettledQueuedTurnReceipt | undefined;
+          if (receipt.status === 'admitted' && receipt.effectivePredecessorCreatedAt != null) {
+            settled = {
+              clientRequestId: receipt.clientRequestId,
+              status: 'admitted',
+              effectivePredecessorCreatedAt: receipt.effectivePredecessorCreatedAt,
+            };
+          } else if (receipt.status === 'cancelled') {
+            settled = { clientRequestId: receipt.clientRequestId, status: 'cancelled' };
+          }
+          if (settled == null) {
             continue;
           }
-          consumedPredecessors.push(effectivePredecessor);
+          settledByRequestId.set(receipt.clientRequestId, settled);
         }
-        if (consumedPredecessors.length > 0) {
-          set(store.consumedQueuedTurnPredecessorsByConvoId(queueKey), (previous) => {
-            const next = new Set(previous);
-            for (const predecessor of consumedPredecessors) {
-              next.add(predecessor);
-            }
-            return next.size === previous.length ? previous : [...next];
-          });
+        const nextSettled = [...settledByRequestId.values()];
+        const settledClientRequestIds = new Set(settledByRequestId.keys());
+        if (nextSettled.length !== previousSettled.length) {
+          set(store.settledQueuedTurnReceiptsByConvoId(queueKey), nextSettled);
         }
         set(store.queuedMessagesByConvoId(queueKey), (previous) =>
-          reconcileServerQueuedTurns(previous, receipts, authoritativeSnapshot),
+          reconcileServerQueuedTurns(
+            previous,
+            receipts,
+            settledClientRequestIds,
+            authoritativeSnapshot,
+          ),
         );
       },
     [queueKey],

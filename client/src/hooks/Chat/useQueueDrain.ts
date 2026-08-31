@@ -238,11 +238,17 @@ export default function useQueueDrain(
           : ownQueue;
 
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
-        const consumedPredecessors = snapshot
-          .getLoadable(store.consumedQueuedTurnPredecessorsByConvoId(conversationId))
+        const settledReceipts = snapshot
+          .getLoadable(store.settledQueuedTurnReceiptsByConvoId(conversationId))
           .getValue();
-        const consumedByServerAdmission =
-          end.generationCreatedAt != null && consumedPredecessors.includes(end.generationCreatedAt);
+        const consumedReceiptIndex = settledReceipts.findIndex(
+          (receipt) =>
+            receipt.status === 'admitted' &&
+            receipt.boundaryConsumed !== true &&
+            end.generationCreatedAt != null &&
+            receipt.effectivePredecessorCreatedAt === end.generationCreatedAt,
+        );
+        const consumedByServerAdmission = consumedReceiptIndex >= 0;
         const consumeEnd = () => {
           if (fromParked && activeConversationId) {
             set(store.pendingRunEndByConvoId(activeConversationId), null);
@@ -260,9 +266,21 @@ export default function useQueueDrain(
             set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), []);
             set(store.queuedMessagesByConvoId(conversationId), merged);
           }
-          set(store.consumedQueuedTurnPredecessorsByConvoId(conversationId), (previous) =>
-            previous.filter((predecessor) => predecessor !== end.generationCreatedAt),
-          );
+          set(store.settledQueuedTurnReceiptsByConvoId(conversationId), (previous) => {
+            let consumed = false;
+            return previous.map((receipt) => {
+              if (
+                !consumed &&
+                receipt.status === 'admitted' &&
+                receipt.boundaryConsumed !== true &&
+                receipt.effectivePredecessorCreatedAt === end.generationCreatedAt
+              ) {
+                consumed = true;
+                return { ...receipt, boundaryConsumed: true };
+              }
+              return receipt;
+            });
+          });
           consumeEnd();
           return null;
         }
