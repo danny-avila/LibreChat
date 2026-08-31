@@ -1,10 +1,18 @@
 import type { TDefaultLLMDeliveryPath, TDefaultLLMDeliveryPathConfig } from './file-config';
-import { isDocumentSupportedProvider } from './schemas';
+import { isDocumentSupportedProvider, isMediaSupportedProvider } from './schemas';
 
-/** Types the provider can only receive through the document/media encoders, which
- *  are limited to document-capable providers. Everything else (images) is handled
- *  by the broadly supported vision path. */
-const PROVIDER_ENCODED_MEDIA = /^(video\/|audio\/|application\/pdf$)/;
+/** Audio and video reach the model only through the media encoders, which support a
+ *  narrower provider set than documents. Images use the broadly supported vision
+ *  path and are never gated here. */
+const isProviderCapable = (mimeType: string, endpoint: string): boolean => {
+  if (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
+    return isMediaSupportedProvider(endpoint);
+  }
+  if (mimeType === 'application/pdf') {
+    return isDocumentSupportedProvider(endpoint);
+  }
+  return true;
+};
 
 export const SYSTEM_LLM_DELIVERY_DEFAULTS: Required<TDefaultLLMDeliveryPathConfig> = {
   fallback: 'text',
@@ -61,12 +69,7 @@ export function resolveDefaultLLMDeliveryPath(
   /** Only the system default is capability-gated: an explicit config above is the
    *  admin's decision. A known endpoint that cannot encode documents or media would
    *  otherwise accept the upload and hand the model nothing at all. */
-  if (
-    systemDefault === 'provider' &&
-    endpoint != null &&
-    PROVIDER_ENCODED_MEDIA.test(mimeType) &&
-    !isDocumentSupportedProvider(endpoint)
-  ) {
+  if (systemDefault === 'provider' && endpoint != null && !isProviderCapable(mimeType, endpoint)) {
     return 'text';
   }
 
