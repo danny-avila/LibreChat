@@ -1,10 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
+import {
+  TooltipAnchor,
+  Button,
+  NewChatIcon,
+  useMediaQuery,
+  HoverCard,
+  HoverCardPortal,
+  HoverCardContent,
+  HoverCardTrigger,
+  CircleHelpIcon,
+} from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
-import { FileSearch, FolderPlus, Info, RotateCcw, X } from 'lucide-react';
+import { FileSearch, FolderPlus, RotateCcw, X } from 'lucide-react';
 import type { ContextType } from '~/common';
+import { ESide } from '~/common';
 import { useDocumentTitle, useLocalize } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { OpenSidebar } from '~/components/Chat/Menus';
@@ -378,8 +389,12 @@ const DocumentSearch: React.FC = () => {
 };
 
 /**
- * 상한에서 잘렸을 때 건수 옆에 붙는 표식. 배너로 띄우면 결과보다 눈에 띄어
+ * 상한에서 잘렸을 때 건수 옆에 붙는 힌트. 배너로 띄우면 결과보다 눈에 띄어
  * 거슬리므로 호버로만 설명을 보여준다.
+ *
+ * 앱의 다른 인라인 설명(에이전트 설정 등)과 같은 HoverCard + CircleHelpIcon
+ * 조합을 쓴다. TooltipAnchor 는 Ariakit 기본 지연(~500ms)이 걸려 호버해도
+ * 한참 뒤에 떠서 이 용도에는 맞지 않는다.
  *
  * 문구는 표시 건수가 아니라 "조회 범위"를 말한다 — ACL 이 절단 이후에 돌아
  * 표시 건수가 더 줄어도 거짓이 되지 않아야 한다.
@@ -388,20 +403,23 @@ export const LimitNotice: React.FC<{ cap: number }> = ({ cap }) => {
   const localize = useLocalize();
   const message = localize('com_document_search_limit_notice', { 0: String(cap) });
   return (
-    <TooltipAnchor
-      description={message}
-      side="bottom"
-      render={
+    <HoverCard openDelay={50}>
+      <HoverCardTrigger asChild>
         <span
           role="note"
           tabIndex={0}
           aria-label={message}
-          className="inline-flex shrink-0 items-center text-text-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex shrink-0 cursor-help items-center text-text-tertiary hover:text-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+          <CircleHelpIcon className="h-4 w-4" aria-hidden="true" />
         </span>
-      }
-    />
+      </HoverCardTrigger>
+      <HoverCardPortal>
+        <HoverCardContent side={ESide.Bottom} className="w-80">
+          <p className="text-sm text-text-secondary">{message}</p>
+        </HoverCardContent>
+      </HoverCardPortal>
+    </HoverCard>
   );
 };
 
