@@ -2309,7 +2309,26 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             },
             {
               case: { $eq: [`${item}.type`, 'activity_label'] },
-              then: { $add: [{ $strLenBytes: `${item}.label` }, 512] },
+              then: {
+                $add: [
+                  { $strLenBytes: `${item}.label` },
+                  {
+                    $reduce: {
+                      input: {
+                        $concatArrays: [
+                          {
+                            $cond: [{ $isArray: `${item}.toolCallIds` }, `${item}.toolCallIds`, []],
+                          },
+                          { $cond: [{ $isArray: `${item}.agentIds` }, `${item}.agentIds`, []] },
+                        ],
+                      },
+                      initialValue: 0,
+                      in: { $add: ['$$value', { $strLenBytes: '$$this' }, 8] },
+                    },
+                  },
+                  512,
+                ],
+              },
             },
             {
               case: { $eq: [`${item}.type`, 'tool'] },

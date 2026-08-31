@@ -843,8 +843,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const effectiveHistoryCursor = historyCursorUsesLatest ? threadView?.nextCursor : historyCursor;
   const showUnavailableHistoryBoundary =
     historyBoundaryUnavailable ||
-    data?.historyUnavailable === true ||
-    (historyCursorUsesLatest && data?.historyTruncated === true && data.nextCursor == null);
+    threadView?.historyUnavailable === true ||
+    (historyCursorUsesLatest &&
+      threadView?.historyTruncated === true &&
+      threadView.nextCursor == null);
   /** During a rolling deployment an older API replica can omit `turns`. Keep
    * that response readable through the same deep activity renderer; every
    * current host otherwise enters the conversation-native rendering seam. */
