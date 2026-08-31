@@ -4,6 +4,7 @@ export const SYSTEM_LLM_DELIVERY_DEFAULTS: Required<TDefaultLLMDeliveryPathConfi
   fallback: 'text',
   overrides: {
     'image/*': 'provider',
+    'video/*': 'provider',
     'application/pdf': 'provider',
   },
 };
