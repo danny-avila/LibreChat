@@ -7,6 +7,7 @@ import {
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
+  CodeEnvReferenceSet,
   AgentBaseResource,
   CodeEnvRef,
   TFile,
@@ -50,7 +51,7 @@ export type TProvisionToCodeEnv = (params: {
   req: ServerRequest;
   file: TFile;
   entity_id?: string;
-}) => Promise<{ codeEnvRef: Record<string, unknown>; fileUpdate: TFileUpdate }>;
+}) => Promise<{ referenceSet: CodeEnvReferenceSet; fileUpdate: TFileUpdate }>;
 
 /**
  * Function type for provisioning a file to the vector DB for file_search.
