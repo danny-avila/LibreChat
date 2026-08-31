@@ -45,11 +45,18 @@ export const shouldShowElapsed = ({
  * so the tick never announces.
  */
 const Elapsed = memo(function Elapsed({ index }: { index: number }) {
+  const submissionStart = useRecoilValue(store.submissionStartFamily(index));
+  return <ElapsedTimer start={submissionStart ?? undefined} />;
+});
+
+/** The bare ticker behind `Elapsed`, for surfaces whose start time does not
+ *  come from the chat submission store (e.g. subagent turns started by their
+ *  trigger). Falls back to mount time when no start is known. */
+export const ElapsedTimer = memo(function ElapsedTimer({ start: startAt }: { start?: number }) {
   const localize = useLocalize();
   const { i18n } = useTranslation();
-  const submissionStart = useRecoilValue(store.submissionStartFamily(index));
   const [mountTime] = useState(() => Date.now());
-  const start = submissionStart ?? mountTime;
+  const start = startAt ?? mountTime;
   const [seconds, setSeconds] = useState(() => elapsedSeconds(start));
 
   useEffect(() => {

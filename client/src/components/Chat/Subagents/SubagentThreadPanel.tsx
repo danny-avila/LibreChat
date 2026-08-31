@@ -796,23 +796,26 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           return override == null ? selected : { ...selected, activity: override };
         });
       }
-      // The API keeps the exact selected activity even when its bounded
-      // chronological turn is the first item removed from the response.
-      // Preserve that selection ahead of the retained newer continuation.
-      const retained = [
-        {
-          taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
-          trigger: {
-            kind:
-              selection.event == null
-                ? ('parent_continuation' as const)
-                : ('external_event' as const),
-            summary: selection.prompt ?? activity.prompt ?? '',
-          },
-          activity,
+      /** A turn absent from the durable window is either the thread's newest
+       *  delivery whose fetch has not landed yet (place it at the END, where
+       *  it will settle — a new event must not appear at the top and then
+       *  jump to the bottom) or an older selection displaced from the bounded
+       *  window (keep it ahead of the retained newer continuation). */
+      const synthesizedTurn = {
+        taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+        trigger: {
+          kind:
+            selection.event == null
+              ? ('parent_continuation' as const)
+              : ('external_event' as const),
+          summary: selection.prompt ?? activity.prompt ?? '',
         },
-        ...durableTurns,
-      ];
+        activity,
+      };
+      const selectedIsNewestTask = byThreadId.get(threadId)?.latestTaskId === taskId;
+      const retained = selectedIsNewestTask
+        ? [...durableTurns, synthesizedTurn]
+        : [synthesizedTurn, ...durableTurns];
       return retained.map((turn) => {
         const override = turnDetailOverrides.get(turn.taskId);
         return override == null ? turn : { ...turn, activity: override };
@@ -831,12 +834,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     ];
   }, [
     activity,
+    byThreadId,
     latestConversationTurns,
     movingWindowTurns,
     olderTurns,
     postRebaseTurns,
     rebaseTurns,
     retainedTurnsValid,
+    threadId,
     selection,
     taskId,
     turnDetailOverrides,
