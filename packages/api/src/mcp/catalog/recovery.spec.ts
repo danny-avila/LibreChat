@@ -98,10 +98,10 @@ describe('recoverMCPServerCatalogs', () => {
       Array.from({ length: 4 }, () => loadMCPServerCatalogs({ user, servers }, deps)),
     );
 
-    expect(discoverServerTools).toHaveBeenCalledTimes(28);
+    expect(discoverServerTools).toHaveBeenCalledTimes(3);
     expect(maxActive).toBe(3);
     expect(results).toHaveLength(4);
-    expect(results.every((result) => result.serverTools.size === 7)).toBe(true);
+    expect(results.flatMap((result) => [...result.serverTools.keys()])).toHaveLength(3);
   });
 
   it('logs configuration-impossible discovery failures at debug, keeping error for the unexpected', async () => {

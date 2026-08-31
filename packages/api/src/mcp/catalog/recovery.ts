@@ -8,12 +8,12 @@ import { createConcurrencyLimiter } from '~/utils/promise';
 import { getServerCustomUserVars } from '../auth';
 
 /**
- * Bounds every catalog-related outbound operation in this runtime. Snapshot refreshes issue a
- * real `tools/list` just like passive discovery, so both paths must share this process-wide gate
- * rather than creating a request-local limiter that concurrent requests can multiply.
+ * Bounds passive cold-catalog discovery across this runtime. Admission is deliberately
+ * non-queueing: this best-effort path must not retain request state or delay a later request
+ * behind a large earlier batch while all slots are occupied.
  */
 const CATALOG_FANOUT_CONCURRENCY = 3;
-const catalogNetworkWork = createConcurrencyLimiter(CATALOG_FANOUT_CONCURRENCY);
+let activeCatalogDiscoveries = 0;
 /**
  * Bounds one server's discovery end to end — connect, `tools/list` pagination, and the
  * unauthenticated fallback all draw down this single budget, so a slot is held for at most this
@@ -114,6 +114,24 @@ async function discoverCandidate(
   }
 }
 
+async function discoverIfCapacity(
+  user: IUser,
+  candidate: RecoveryCandidate,
+  deps: MCPServerCatalogRecoveryDeps,
+): Promise<[string, LCAvailableTools | null]> {
+  if (activeCatalogDiscoveries >= CATALOG_FANOUT_CONCURRENCY) {
+    logger.debug(`[MCP catalog recovery] Skipping ${candidate.serverName}: discovery capacity reached`);
+    return [candidate.serverName, null];
+  }
+
+  activeCatalogDiscoveries += 1;
+  try {
+    return await discoverCandidate(user, candidate, deps);
+  } finally {
+    activeCatalogDiscoveries -= 1;
+  }
+}
+
 /**
  * Passively discovers cold MCP catalogs for one request.
  *
@@ -173,9 +191,7 @@ export async function recoverMCPServerCatalogs(
   }
 
   const results = await Promise.all(
-    authorized.map((candidate) =>
-      catalogNetworkWork(() => discoverCandidate(user, candidate, deps)),
-    ),
+    authorized.map((candidate) => discoverIfCapacity(user, candidate, deps)),
   );
 
   return new Map(results.filter((entry): entry is [string, LCAvailableTools] => entry[1] != null));
@@ -199,14 +215,15 @@ export async function loadMCPServerCatalogs(
     }),
   );
 
-  /** A snapshot is not a local read — both connection paths issue a fresh `tools/list` — so it
-   *  shares the process-wide catalog gate with passive discovery. */
+  /** A snapshot can wait for interactive OAuth recovery. Keep that wait request-local so it never
+   *  occupies the short global admission budget reserved for passive cold discovery. */
+  const refresh = createConcurrencyLimiter(CATALOG_FANOUT_CONCURRENCY);
   const snapshots = await Promise.all(
     cached.map((entry) => {
       if (entry.tools != null) {
         return entry;
       }
-      return catalogNetworkWork(async () => {
+      return refresh(async () => {
         try {
           const snapshot = await deps.getServerToolFunctionsSnapshot(
             user.id,
