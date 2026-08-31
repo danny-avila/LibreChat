@@ -47,6 +47,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     ownerScope?: FileOwnerScope,
   ) => Promise<IMongoFile[]>;
   getUserCodeFiles: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<IMongoFile[]>;
+  getDeferredProvisionFiles: (
+    fileIds: string[],
+    ownerScope: FileOwnerScope,
+  ) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
     filename: string;
     conversationId: string;
@@ -263,6 +267,57 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       return results ?? [];
     } catch (error) {
       logger.error('[getCodeGeneratedFiles] Error retrieving code generated files:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Retrieves conversation attachments that were accepted but never provisioned, so a
+   * later turn can still queue them.
+   *
+   * Lazy provisioning defers the upload to the sandbox or vector store until a tool
+   * actually runs. The other hydration queries only return files that already carry
+   * the result of that work: `getToolFilesByIds` matches `embedded: true` for
+   * file_search, and `getUserCodeFiles` requires an existing `codeEnvRef`. A file
+   * whose tool was never called on its upload turn therefore satisfies neither and
+   * disappears. This fills exactly that gap: attachments with no code reference and
+   * no embedding.
+   *
+   * Kept separate from delivery hydration deliberately. These records are candidates
+   * for provisioning only; feeding them back into the model's attachments would
+   * re-send earlier uploads on every subsequent turn.
+   *
+   * @param fileIds - Candidate file IDs from the current thread
+   * @param ownerScope - Authenticated owner scope
+   * @returns Attachments still awaiting provisioning
+   */
+  async function getDeferredProvisionFiles(
+    fileIds: string[],
+    ownerScope: FileOwnerScope,
+  ): Promise<IMongoFile[]> {
+    if (!fileIds || fileIds.length === 0) {
+      return [];
+    }
+
+    try {
+      const filter = withOwnerScope(
+        {
+          file_id: { $in: fileIds },
+          context: { $ne: FileContext.execute_code },
+          embedded: { $ne: true },
+          'metadata.codeEnvRef': { $exists: false },
+          'metadata.codeEnvRefs': { $exists: false },
+        },
+        ownerScope,
+      );
+
+      const selectFields: SelectProjection = { text: 0 };
+      const sortOptions = { createdAt: 1 as SortOrder };
+
+      const results = await getFiles(filter, sortOptions, selectFields);
+      return results ?? [];
+    } catch (error) {
+      logger.error('[getDeferredProvisionFiles] Error retrieving deferred files:', error);
       return [];
     }
   }
@@ -682,6 +737,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     getToolFilesByIds,
     getCodeGeneratedFiles,
     getUserCodeFiles,
+    getDeferredProvisionFiles,
     claimCodeFile,
     createFile,
     updateFile,

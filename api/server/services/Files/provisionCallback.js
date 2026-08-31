@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('@librechat/agents');
 const { EToolResources } = require('librechat-data-provider');
-const { isAgentScopedFile } = require('@librechat/api');
+const { isAgentScopedFile, CREATE_FILE_TOOL_NAME } = require('@librechat/api');
 const { provisionToCodeEnv, provisionToVectorDB } = require('~/server/services/Files/provision');
 const db = require('~/models');
 
@@ -13,11 +13,20 @@ const db = require('~/models');
  * @param {object} params
  * @param {object} params.req - Authenticated request, used for storage and Code API auth
  * @param {Map<string, object>} params.agentToolContexts - Per-agent contexts holding provisionState
+ * @param {() => string | undefined} [params.resolvePrimaryAgentId] - Primary agent id,
+ *   read lazily because callers may build this callback before that config resolves
  * @returns {(toolNames: string[], agentId?: string) => Promise<void>}
  */
-function createProvisionFilesCallback({ req, agentToolContexts }) {
+function createProvisionFilesCallback({ req, agentToolContexts, resolvePrimaryAgentId }) {
   return async function provisionFiles(toolNames, agentId) {
-    const ctx = agentToolContexts.get(agentId);
+    /* agentId is optional on this callback and a batch for the primary agent may omit
+     * it, so fall back the way the tool loaders do. Otherwise the queue is missed and
+     * the tool runs without its attachments. */
+    const primaryAgentId = resolvePrimaryAgentId?.();
+    const ctx =
+      (agentId != null ? agentToolContexts.get(agentId) : undefined) ??
+      (primaryAgentId != null ? agentToolContexts.get(primaryAgentId) : undefined) ??
+      (agentToolContexts.size === 1 ? agentToolContexts.values().next().value : undefined);
     if (!ctx?.provisionState) {
       return;
     }
@@ -34,6 +43,7 @@ function createProvisionFilesCallback({ req, agentToolContexts }) {
       toolNames.includes(Constants.READ_FILE) ||
       toolNames.includes(Constants.EDIT_FILE) ||
       toolNames.includes(Constants.WRITE_FILE) ||
+      toolNames.includes(CREATE_FILE_TOOL_NAME) ||
       toolNames.includes(Constants.BASH_PROGRAMMATIC_TOOL_CALLING);
     /** Programmatic tool calling orchestrates nested tools whose names never reach
      *  this predicate, so a file_search reachable only through PTC would otherwise

@@ -291,6 +291,26 @@ const categorizeFileForToolResources = ({
 const codeEnvRouteKey = (ref: CodeEnvRef): string =>
   ref.executionRouteKey ?? ref.executionProfile ?? 'default';
 
+/** Attachments plus any deferred candidates not already present, deduped by file_id.
+ *  Only the provisioning computation sees this: the delivery list stays untouched. */
+const withDeferredCandidates = (
+  attachments: Array<TFile>,
+  candidates?: Array<TFile>,
+): Array<TFile> => {
+  if (!candidates || candidates.length === 0) {
+    return attachments;
+  }
+  const seen = new Set(attachments.map((file) => file.file_id));
+  const merged = [...attachments];
+  for (const candidate of candidates) {
+    if (candidate?.file_id && !seen.has(candidate.file_id)) {
+      seen.add(candidate.file_id);
+      merged.push(candidate);
+    }
+  }
+  return merged;
+};
+
 /**
  * Lazy provisioning: instead of provisioning files now, compute which files need
  * provisioning. Actual provisioning happens at tool invocation time via the
@@ -443,6 +463,7 @@ export const primeResources = async ({
   enabledToolResources,
   checkSessionsAlive,
   loadCodeApiKey,
+  provisionCandidates,
 }: {
   req?: ServerRequest;
   principal?: Pick<IUser, 'id' | 'role'>;
@@ -459,6 +480,10 @@ export const primeResources = async ({
   checkSessionsAlive?: TCheckSessionsAlive;
   /** Optional callback to load CODE_API_KEY once per request */
   loadCodeApiKey?: TLoadCodeApiKey;
+  /** Attachments from earlier turns that were never provisioned. Considered for
+   *  provisioning only and never returned as attachments: re-delivering an earlier
+   *  upload to the model on every later turn is not the intent. */
+  provisionCandidates?: Array<TFile>;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   requestAttachments: Array<TFile | undefined> | undefined;
@@ -606,7 +631,7 @@ export const primeResources = async ({
        *  provisioning here too, so a turn with no new attachment still primes them. */
       const contextProvisionState = await computeProvisionState({
         req,
-        attachments,
+        attachments: withDeferredCandidates(attachments, provisionCandidates),
         resourcePrincipal,
         enabledToolResources,
         tool_resources,
@@ -660,7 +685,7 @@ export const primeResources = async ({
 
     const provisionState = await computeProvisionState({
       req,
-      attachments,
+      attachments: withDeferredCandidates(attachments, provisionCandidates),
       resourcePrincipal,
       enabledToolResources,
       tool_resources,

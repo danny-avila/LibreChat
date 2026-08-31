@@ -472,7 +472,11 @@ const initializeClient = async ({
       }
     },
     ...getSkillToolDeps(),
-    provisionFiles: createProvisionFilesCallback({ req, agentToolContexts }),
+    provisionFiles: createProvisionFilesCallback({
+      req,
+      agentToolContexts,
+      resolvePrimaryAgentId: () => primaryConfig?.id,
+    }),
   };
 
   const summarizationOptions =
@@ -629,6 +633,7 @@ const initializeClient = async ({
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
+      getDeferredProvisionFiles: db.getDeferredProvisionFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
@@ -717,6 +722,7 @@ const initializeClient = async ({
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,
+        getDeferredProvisionFiles: db.getDeferredProvisionFiles,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
@@ -1166,6 +1172,7 @@ const initializeClient = async ({
           updateFilesUsage: db.updateFilesUsage,
           getUserKeyValues: db.getUserKeyValues,
           getUserCodeFiles: db.getUserCodeFiles,
+          getDeferredProvisionFiles: db.getDeferredProvisionFiles,
           getToolFilesByIds: db.getToolFilesByIds,
           getCodeGeneratedFiles: db.getCodeGeneratedFiles,
           filterFilesByAgentAccess,

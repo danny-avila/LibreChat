@@ -686,6 +686,7 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   ) => Promise<unknown[]>;
   /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
   getUserCodeFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
+  getDeferredProvisionFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
   getMessages?: (
     filter: { conversationId: string },
@@ -1026,6 +1027,8 @@ export async function initializeAgent(
     ),
   ];
   const toolFileIds: string[] = [];
+  /** Earlier-turn attachments still awaiting provisioning; provisioning input only. */
+  let deferredProvisionFiles: IMongoFile[] = [];
 
   /** Build the set of tool resources the agent has enabled */
   const toolResourceSet = new Set<EToolResources>();
@@ -1112,6 +1115,22 @@ export async function initializeAgent(
         ? (db.getUserCodeFiles(threadFileIds, requestFileOwnerScope) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
     ]);
+
+    /* Attachments accepted on an earlier turn whose tool never ran are absent from
+     * every query above, since those match only files that already carry the result
+     * of provisioning. Fetched separately and kept out of the delivery set. */
+    const wantsProvisioning = wantsCodeFiles || toolResourceSet.has(EToolResources.file_search);
+    deferredProvisionFiles =
+      wantsProvisioning &&
+      db.getDeferredProvisionFiles &&
+      requestFileOwnerScope &&
+      threadFileIds &&
+      threadFileIds.length > 0
+        ? ((await db.getDeferredProvisionFiles(
+            threadFileIds,
+            requestFileOwnerScope,
+          )) as IMongoFile[])
+        : [];
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     const snapshotFileIds = new Set(requestFileIds);
@@ -1223,6 +1242,7 @@ export async function initializeAgent(
     enabledToolResources: toolResourceSet,
     checkSessionsAlive: db.checkSessionsAlive,
     loadCodeApiKey: db.loadCodeApiKey,
+    provisionCandidates: deferredProvisionFiles as unknown as TFile[],
   });
 
   /**

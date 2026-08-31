@@ -1103,7 +1103,11 @@ const executeResponse = async (envelope, { req, res }) => {
 
         // Create tool execute options for event-driven tool execution
         const toolExecuteOptions = {
-          provisionFiles: createProvisionFilesCallback({ req, agentToolContexts }),
+          provisionFiles: createProvisionFilesCallback({
+            req,
+            agentToolContexts,
+            resolvePrimaryAgentId: () => primaryConfig.id,
+          }),
           loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
             const ctx =
               agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
@@ -1318,7 +1322,11 @@ const executeResponse = async (envelope, { req, res }) => {
         });
 
         const toolExecuteOptions = {
-          provisionFiles: createProvisionFilesCallback({ req, agentToolContexts }),
+          provisionFiles: createProvisionFilesCallback({
+            req,
+            agentToolContexts,
+            resolvePrimaryAgentId: () => primaryConfig.id,
+          }),
           loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
             const ctx =
               agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
