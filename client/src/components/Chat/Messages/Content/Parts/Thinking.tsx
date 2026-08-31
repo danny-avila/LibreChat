@@ -98,12 +98,19 @@ export const ThinkingButton = memo(
               aria-hidden="true"
             />
           </span>
-          {/* The entrance and the shimmer both drive `animation-name`, so they
-              cannot share an element — and the nesting order is not a free
-              choice either. The clipped element paints the glyphs itself, so a
-              descendant's opacity cannot fade them: entrance outside and
-              shimmer inside fades correctly, while the reverse leaves the label
-              fully lit right through its own fade.
+          {/* The sweep rides the label row itself. That row is a flex item, so
+              `.shimmer`'s `inline-block` is blockified away and the text sits
+              exactly where the un-shimmered label sits — which matters, because
+              an `inline-block` carrying `truncate` takes its baseline from its
+              bottom margin edge, growing the line box and lifting the label off
+              the icon's axis.
+
+              Only the generated-label entrance forces a nested span: it and the
+              sweep both drive `animation-name`, so they cannot share an element.
+              There the entrance must stay outside — the clipped element paints
+              the glyphs itself, so a descendant's opacity cannot fade them — and
+              the inner span takes `align-top` to keep the baseline rule above
+              from reopening the same gap.
 
               `key` remounts the row so the entrance replays, and that restarts
               the sweep with it. Reasoning labels revise on a 3s default against
@@ -114,11 +121,16 @@ export const ThinkingButton = memo(
             key={animateLabel ? label : undefined}
             className={cn(
               'min-w-0 truncate text-left',
+              shimmerLabel && !animateLabel && 'shimmer',
               animateLabel &&
                 'duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none',
             )}
           >
-            {shimmerLabel ? <span className="shimmer max-w-full truncate">{label}</span> : label}
+            {shimmerLabel && animateLabel ? (
+              <span className="shimmer max-w-full truncate align-top">{label}</span>
+            ) : (
+              label
+            )}
           </span>
         </button>
         {content && showCopyButton && (
