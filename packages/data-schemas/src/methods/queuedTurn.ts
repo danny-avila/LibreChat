@@ -2166,6 +2166,7 @@ export function createAgentQueuedTurnMethods(
           expectedPredecessorCreatedAt: 1,
           admissionEffectivePredecessorCreatedAt: 1,
           admissionLineagePredecessorId: 1,
+          admissionProtocolVersion: 1,
         })
         .lean<IAgentQueuedTurn>();
       let effectivePredecessorCreatedAt = normalizePredecessor(
@@ -2204,8 +2205,10 @@ export function createAgentQueuedTurnMethods(
           lineagePredecessorId = resolvedPredecessor.lineagePredecessorId;
         }
       }
+      /** GenerationJob evidence predates the source-receipt protocol. For v2,
+       * only the exact late source callback may prove provider admission. */
       const reconciled =
-        lineagePredecessorId == null
+        admission?.admissionProtocolVersion === 2 || lineagePredecessorId == null
           ? null
           : await Turn()
               .findOneAndUpdate(

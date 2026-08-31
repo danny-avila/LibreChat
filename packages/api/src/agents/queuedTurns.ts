@@ -821,7 +821,10 @@ function createAgentQueuedTurnScheduler({
             }),
           );
         try {
-          if (turn.status === 'claimed') {
+          const isIndeterminate =
+            turn.terminalReceipt?.outcome === 'dead' &&
+            turn.terminalReceipt.failure?.code === 'ADMISSION_INDETERMINATE';
+          if (turn.status === 'claimed' && !isIndeterminate) {
             const result = await runAsSystem(() =>
               methods.deadLetterAgentQueuedTurn({
                 user: turn.user,

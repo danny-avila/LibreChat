@@ -130,6 +130,17 @@ queuedTurnSchema.index(
   },
 );
 queuedTurnSchema.index(
+  { tenantId: 1, user: 1, conversationId: 1, laneId: 1 },
+  {
+    name: 'agent_queued_turn_admission_started_lane',
+    unique: true,
+    /** `admissionStartedAt` is written by both legacy and current workers and
+     * survives legacy `dead/ADMISSION_INDETERMINATE` quarantine. This is the
+     * cross-version fence after a claim crosses the provider boundary. */
+    partialFilterExpression: { admissionStartedAt: { $exists: true } },
+  },
+);
+queuedTurnSchema.index(
   { tenantId: 1, user: 1, conversationId: 1, laneId: 1, admissionSlot: 1 },
   {
     name: 'agent_queued_turn_admission_slot',

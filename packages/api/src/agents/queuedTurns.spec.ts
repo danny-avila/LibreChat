@@ -820,10 +820,10 @@ describe('Agent queued-turn delivery scheduling', () => {
     );
   });
 
-  it('reconciles quarantined admission receipts during durable recovery', async () => {
+  it('reconciles a claimed indeterminate legacy admission during durable recovery', async () => {
     const turn = {
       ...queuedTurn('queued-turn-indeterminate', 1),
-      status: 'dead' as const,
+      status: 'claimed' as const,
       deliveryKey: 'delivery-indeterminate',
       deliveryState: 'published' as const,
       admissionId: 'delivery-indeterminate',
@@ -885,7 +885,7 @@ describe('Agent queued-turn delivery scheduling', () => {
   it('rotates source-fenced ambiguity without trusting transient job-store evidence', async () => {
     const turn = {
       ...queuedTurn('queued-turn-source-fenced', 1),
-      status: 'dead' as const,
+      status: 'claimed' as const,
       deliveryKey: 'delivery-source-fenced',
       deliveryState: 'published' as const,
       admissionId: 'delivery-source-fenced',
