@@ -3,7 +3,7 @@ import { useMessageContext } from '~/Providers';
 import { useOpenBklSource } from '~/components/Chat/BklPanel/useActiveBklSource';
 import { FileTypeIcon } from '~/utils';
 import { getFileExtension, stripDisplayExtension } from '~/utils/fileTypeIcon';
-import { notifyBklSourcesChanged } from '~/utils/bklSourcesEvent';
+import { BKL_SOURCES_EVENT, notifyBklSourcesChanged } from '~/utils/bklSourcesEvent';
 import { type BklSource } from './ChunkModal';
 
 type BklCitationProps = {
@@ -284,6 +284,7 @@ export default function BklCitation({ n }: BklCitationProps) {
   useEffect(() => {
     if (label) return;
     let cancelled = false;
+    let iv: ReturnType<typeof setInterval> | null = null;
 
     const check = () => {
       const l = getSourceLabel(messageId, n);
@@ -298,21 +299,42 @@ export default function BklCitation({ n }: BklCitationProps) {
 
     if (check()) return;
 
+    const stopPolling = () => {
+      if (iv !== null) {
+        clearInterval(iv);
+        iv = null;
+      }
+    };
+    const settle = () => {
+      if (!check()) return;
+      stopPolling();
+      window.removeEventListener(BKL_SOURCES_EVENT, settle);
+    };
+
     // 낡은 캐시면 강제 재조회가 필요하다 — 평소 경로는 캐시를 그대로 돌려준다.
-    // 아래 폴링이 갱신된 배열을 집어간다.
     if (!refreshStaleCache(messageId, n) && !_fetchInflight.has(messageId)) {
       _fetchInflight.add(messageId);
       fetchSourcesForMessage(messageId).catch(() => {});
     }
 
-    const iv = setInterval(() => {
-      if (check()) clearInterval(iv);
-    }, 400);
-    const to = setTimeout(() => clearInterval(iv), 20000);
+    // 캐시에 쓰는 모든 지점이 이 이벤트를 발행한다. 예전에는 20초 폴링만
+    // 있었는데, 스트리밍 중 출처는 `_pending_*` 키에 있어 messageId 로는
+    // 안 보이고 실제 배열은 스트림이 끝나야 옮겨진다. 전문 읽기가 붙은 답변은
+    // 60초를 넘기므로 그 전에 창이 닫혀, 인용이 파일명 없이 맨숫자로 남고
+    // 클릭해야 비로소 이름이 뜨는 문제가 있었다 (2026-08-31 사용자 보고).
+    window.addEventListener(BKL_SOURCES_EVENT, settle);
+
+    // 이벤트를 발행하지 않고 캐시를 채우는 경로가 남아 있을 때를 위한 안전망.
+    // 이벤트가 본줄이므로 느슨하게 돌리고, 오래된 메시지에서 타이머가 영원히
+    // 남지 않도록 끊는다 (리스너는 언마운트까지 유지된다).
+    iv = setInterval(settle, 1000);
+    const to = setTimeout(stopPolling, 120_000);
+
     return () => {
       cancelled = true;
-      clearInterval(iv);
+      stopPolling();
       clearTimeout(to);
+      window.removeEventListener(BKL_SOURCES_EVENT, settle);
     };
   }, [messageId, n, label]);
 
