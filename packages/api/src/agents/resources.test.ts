@@ -2131,10 +2131,14 @@ describe('primeResources', () => {
       expect(searchResource?.files?.map((f) => f.file_id) ?? []).not.toContain('embedded-context');
     });
 
-    it('keeps generated code outputs user-scoped, never agent-scoped', () => {
+    it('grants agent scope only to agent setup files', () => {
+      expect(isAgentScopedFile({ context: FileContext.agents })).toBe(true);
       expect(isAgentScopedFile({ context: FileContext.execute_code })).toBe(false);
       expect(isAgentScopedFile({ context: FileContext.message_attachment })).toBe(false);
-      expect(isAgentScopedFile({ context: FileContext.agents })).toBe(true);
+      expect(isAgentScopedFile({ context: FileContext.image_generation })).toBe(false);
+      expect(isAgentScopedFile({ context: FileContext.assistants_output })).toBe(false);
+      expect(isAgentScopedFile({ context: FileContext.unknown })).toBe(false);
+      expect(isAgentScopedFile({ context: undefined })).toBe(false);
     });
 
     it('rebuilds an embedded code output under files, not agent file_ids', async () => {
