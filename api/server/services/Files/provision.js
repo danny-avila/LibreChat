@@ -19,7 +19,11 @@ const { getStrategyFunctions } = require('./strategies');
 // TODO: check and potentially fix — direct mutation of shared file objects in provisionFiles callback
 // TODO: check and potentially fix — this file should be TypeScript in packages/api per CLAUDE.md rules
 
-const axios = createAxiosInstance();
+/* Created on first use rather than at module load: this module is pulled into the
+ * OpenAI-compatible controllers, whose tests partially mock @librechat/api, and a
+ * load-time call would throw before any provisioning is even requested. */
+let axiosInstance;
+const getAxios = () => (axiosInstance ??= createAxiosInstance());
 
 /* Sources whose `getDownloadStream` takes `(req, filepath)` and returns a readable.
  * Others diverge: `openai` takes `(file_id, client)` and `execute_code` takes
@@ -249,7 +253,7 @@ async function checkCodeEnvFileAlive({ file, apiKey, req }) {
 
   try {
     const baseURL = getCodeBaseURL();
-    const response = await axios({
+    const response = await getAxios()({
       method: 'get',
       url: `${baseURL}/files/${ref.storage_session_id}`,
       params: { detail: 'summary' },
@@ -320,7 +324,7 @@ async function checkSessionsAlive({ files, apiKey, req, staleSafeWindowMs = 6 * 
   const sessionChecks = Array.from(sessionGroups.entries()).map(
     async ([session_id, fileEntries]) => {
       try {
-        const response = await axios({
+        const response = await getAxios()({
           method: 'get',
           url: `${baseURL}/files/${session_id}`,
           params: { detail: 'summary' },
