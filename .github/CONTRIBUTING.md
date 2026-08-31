@@ -43,7 +43,9 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## 2. Development Notes
 
-1. Before starting work, make sure your `dev` branch has the latest commits with `npm run update`.
+1. Before starting work, sync `dev`: `git fetch origin && git checkout dev && git pull origin dev`.
+    - `npm run update` is the self-host deployment updater — it checks out `main` and rebuilds your
+      containers. Do not use it to refresh a development branch.
 2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
     - `npm install` sets the hooks up for you; set `HUSKY=0` to opt out.
     - The pre-commit hook runs the Static Checks CI job locally, scoped to the files in the commit. Run it by hand with `npm run static-checks`, against a base ref with `npm run static-checks -- --against origin/dev`, or with the slow gates (TypeScript, config migration tests, unused i18n keys, unused npm packages) via `npm run static-checks:full`.

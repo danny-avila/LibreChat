@@ -7,6 +7,7 @@ REPO="${REPO:?REPO is required (owner/name)}"
 RELEASE_BASE="${RELEASE_BASE:-main}"
 TARGET_BASE="${TARGET_BASE:-dev}"
 DRY_RUN="${DRY_RUN:-false}"
+EXPLAIN_MISSING="${EXPLAIN_MISSING:-false}"
 KEEP_LABEL="${KEEP_LABEL:-target: main}"
 THROTTLE_SECONDS="${THROTTLE_SECONDS:-0}"
 MARKER="<!-- librechat:auto-retarget -->"
@@ -17,11 +18,13 @@ if [ "$#" -eq 0 ]; then
 fi
 
 # Branches on the upstream repository that legitimately merge into the release branch.
+# Backport branches are deliberately absent: `main` is kept as a fast-forward of `dev`, so a
+# backport merged straight to `main` would break that invariant. Use the label to exempt one.
 keeps_release_base() {
   local head_repo="$1" head_ref="$2"
   [ "$head_repo" = "$REPO" ] || return 1
   case "$head_ref" in
-    "$TARGET_BASE" | release/* | hotfix/* | backport/* | *-"$RELEASE_BASE") return 0 ;;
+    "$TARGET_BASE" | release/* | hotfix/*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -52,9 +55,26 @@ Maintainers: apply the \`$KEEP_LABEL\` label and restore the base branch if this
 BODY
 }
 
-retargeted=0
+matched=0
 skipped=0
 failed=0
+unexplained=0
+
+# Posts the explanation unless one is already there. A failure is recorded rather than
+# swallowed: the base edit has already succeeded, so a later run would skip the pull
+# request and the contributor would never receive it.
+post_explanation() {
+  local number="$1"
+  if already_explained "$number"; then
+    echo "#$number: explanation already posted"
+    return 0
+  fi
+  if comment_body | gh pr comment "$number" --repo "$REPO" --body-file -; then
+    return 0
+  fi
+  echo "#$number: FAILED to post the explanation — re-run with EXPLAIN_MISSING=true $number"
+  unexplained=$((unexplained + 1))
+}
 
 for number in "$@"; do
   if ! pr="$(gh api "repos/$REPO/pulls/$number")"; then
@@ -70,6 +90,12 @@ for number in "$@"; do
   if [ "$state" != "open" ]; then
     echo "#$number: skipped — pull request is $state"
     skipped=$((skipped + 1))
+    continue
+  fi
+
+  if [ "$base_ref" = "$TARGET_BASE" ] && [ "$EXPLAIN_MISSING" = "true" ] && [ "$DRY_RUN" != "true" ]; then
+    echo "#$number: already on $TARGET_BASE — posting any missing explanation"
+    post_explanation "$number"
     continue
   fi
 
@@ -93,7 +119,7 @@ for number in "$@"; do
 
   if [ "$DRY_RUN" = "true" ]; then
     echo "#$number: would retarget $RELEASE_BASE -> $TARGET_BASE ($head_repo:$head_ref)"
-    retargeted=$((retargeted + 1))
+    matched=$((matched + 1))
     continue
   fi
 
@@ -103,18 +129,20 @@ for number in "$@"; do
     failed=$((failed + 1))
     continue
   fi
-  if already_explained "$number"; then
-    echo "#$number: explanation already posted"
-  else
-    comment_body | gh pr comment "$number" --repo "$REPO" --body-file - || echo "#$number: comment failed"
-  fi
-  retargeted=$((retargeted + 1))
+  post_explanation "$number"
+  matched=$((matched + 1))
   [ "$THROTTLE_SECONDS" = "0" ] || sleep "$THROTTLE_SECONDS"
 done
 
-echo "retargeted=$retargeted skipped=$skipped failed=$failed"
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  echo "Retargeted **$retargeted** pull request(s) onto \`$TARGET_BASE\`, skipped **$skipped**, failed **$failed**." >> "$GITHUB_STEP_SUMMARY"
+if [ "$DRY_RUN" = "true" ]; then
+  echo "DRY RUN — no pull request was modified. would_retarget=$matched skipped=$skipped failed=$failed"
+  summary="**Dry run — nothing was modified.** Would retarget **$matched**, skip **$skipped**, failed to read **$failed**."
+else
+  echo "retargeted=$matched skipped=$skipped failed=$failed unexplained=$unexplained"
+  summary="Retargeted **$matched** pull request(s) onto \`$TARGET_BASE\`, skipped **$skipped**, failed **$failed**, missing an explanation **$unexplained**."
 fi
 
-[ "$failed" -eq 0 ]
+echo "$summary"
+[ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "$summary" >> "$GITHUB_STEP_SUMMARY"
+
+[ "$failed" -eq 0 ] && [ "$unexplained" -eq 0 ]

@@ -66,7 +66,7 @@ jobs:
         run: |
           numbers="$PR_NUMBERS"
           if [ -z "$numbers" ]; then
-            numbers="$(gh pr list --repo "$REPO" --base main --state open --limit 500 --json number --jq '.[].number')"
+            numbers="$(gh api --paginate "repos/$REPO/pulls?base=main&state=open&per_page=100" --jq '.[].number')"
           fi
           if [ -z "$numbers" ]; then
             echo "No open pull requests based on main."

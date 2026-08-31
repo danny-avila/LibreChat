@@ -39,7 +39,8 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
   unless told otherwise — always pass `--base dev` explicitly.
 - Pull requests opened against `main` are retargeted to `dev` automatically by
   `.github/workflows/pr-retarget-dev.yml`. The `target: main` label exempts one, as do release-bound
-  upstream branches (`dev`, `release/*`, `hotfix/*`, `backport/*`, `*-main`).
+  upstream branches (`dev`, `release/*`, `hotfix/*`). Backport branches are deliberately not exempt —
+  a backport merged straight to `main` is what breaks the fast-forward invariant.
 - **`Fixes #N` does not close the issue.** GitHub honors closing keywords only when a pull request
   merges into the default branch (`main`). Merging to `dev` does not close anything, and the later
   fast-forward of `main` is not a merge event either — close linked issues by hand.
