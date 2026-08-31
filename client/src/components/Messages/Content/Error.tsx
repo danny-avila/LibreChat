@@ -1,12 +1,29 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
 import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
+import type { TranslationKeys } from '~/hooks';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';
-const langChainModelNotFoundUrl = /langchain\.com\/.*\/MODEL_NOT_FOUND(?:\/|\b)/i;
+
+/**
+ * LangChain classifies provider errors by appending a docs URL to the message. The server now
+ * converts the classified ones into typed payloads, but messages persisted before it did still
+ * carry the URL, so the code is read back out of the text to localize those the same way.
+ */
+const langChainErrorCodeUrl = /langchain\.com\/\S*\/errors\/([A-Za-z_]+)/i;
+
+const langChainErrorKeys: Record<string, TranslationKeys> = {
+  MODEL_NOT_FOUND: 'com_error_model_not_found',
+  MODEL_RATE_LIMIT: 'com_error_model_rate_limit',
+};
+
+function getLangChainErrorKey(text: string): TranslationKeys | undefined {
+  const code = text.match(langChainErrorCodeUrl)?.[1]?.toUpperCase();
+  return code == null ? undefined : langChainErrorKeys[code];
+}
 
 type TConcurrent = {
   limit: number;
@@ -79,6 +96,8 @@ const errorMessages = {
   [ErrorTypes.GOOGLE_VIDEO_UNPROCESSABLE]: 'com_error_google_video_unprocessable',
   [ErrorTypes.RESOURCE_RECOVERY_REQUIRED]: 'com_error_resource_recovery_required',
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
+  [ErrorTypes.MODEL_NOT_FOUND]: langChainErrorKeys.MODEL_NOT_FOUND,
+  [ErrorTypes.MODEL_RATE_LIMIT]: langChainErrorKeys.MODEL_RATE_LIMIT,
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {
@@ -137,8 +156,9 @@ const Error = ({ text }: { text: string }) => {
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
 
-  if (langChainModelNotFoundUrl.test(text)) {
-    return localize('com_error_model_not_found');
+  const langChainErrorKey = getLangChainErrorKey(text);
+  if (langChainErrorKey != null) {
+    return localize(langChainErrorKey);
   }
 
   if (!isJson(jsonString)) {

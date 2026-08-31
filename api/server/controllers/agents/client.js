@@ -117,6 +117,8 @@ const {
   hasYouTubeVideoParts,
   appendYouTubeVideoParts,
   resolveGoogleVideoError,
+  resolveLangChainError,
+  stripLangChainTroubleshootingUrl,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
@@ -234,6 +236,12 @@ function getLatestEventActorSummary(contentParts) {
   return undefined;
 }
 
+/**
+ * User-visible text for a failed run. LangChain classifies provider errors by mutating
+ * `error.message` with a docs URL, so a classified failure becomes typed copy the client localizes
+ * and everything else keeps the provider's own wording with that URL removed. The untouched error
+ * still reaches the logs through `getSafeErrorMetadata`.
+ */
 function getUserFacingRequestError(baseMessage, error, appConfig) {
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,
@@ -242,7 +250,15 @@ function getUserFacingRequestError(baseMessage, error, appConfig) {
   if (protectionEnabled || !error?.message) {
     return baseMessage;
   }
-  return `${baseMessage}: ${error.message}`;
+  const typedError = resolveLangChainError(error);
+  if (typedError != null) {
+    return typedError;
+  }
+  const message = stripLangChainTroubleshootingUrl(error.message);
+  if (!message) {
+    return baseMessage;
+  }
+  return `${baseMessage}: ${message}`;
 }
 
 class AgentClient extends BaseClient {
