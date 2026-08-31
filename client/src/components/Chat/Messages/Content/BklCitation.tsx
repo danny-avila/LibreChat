@@ -12,7 +12,31 @@ type BklCitationProps = {
 
 const BKL_API = '/bkl';
 
+/** 같은 메시지에 대해 여러 칩이 동시에 조회를 걸지 않게 막는다. */
 const _fetchInflight = new Set<string>();
+
+/**
+ * messageId 별 서버 조회 횟수.
+ *
+ * 예전에는 `_fetchInflight` 에 넣기만 하고 절대 지우지 않아, 스트리밍 중
+ * 첫 조회가 실패하면(메시지가 아직 저장 전이라 404) 그 메시지는 두 번 다시
+ * 조회되지 않았다. 그래서 이벤트를 놓치면 새로고침 말고는 방법이 없었다.
+ * 이제 조회가 끝나면 풀어주되, 영영 없는 출처를 무한히 두드리지 않도록
+ * 횟수로 막는다.
+ */
+const _fetchAttempts = new Map<string, number>();
+const _MAX_FETCH_ATTEMPTS = 6;
+
+function requestSources(messageId: string, { force = false } = {}): void {
+  if (_fetchInflight.has(messageId)) return;
+  const attempts = _fetchAttempts.get(messageId) ?? 0;
+  if (attempts >= _MAX_FETCH_ATTEMPTS) return;
+  _fetchInflight.add(messageId);
+  _fetchAttempts.set(messageId, attempts + 1);
+  void fetchSourcesForMessage(messageId, { forceRefresh: force })
+    .catch(() => {})
+    .finally(() => _fetchInflight.delete(messageId));
+}
 
 function extractFileName(metaName: string): string {
   const m = metaName.normalize('NFC').match(/^『(.+?)』/);
@@ -242,6 +266,22 @@ function refreshStaleCache(messageId: string, n: number): boolean {
   return true;
 }
 
+/**
+ * 탭에 돌아왔을 때처럼 "지금 상태가 어떻든 다시 확인" 이 필요한 순간에 쓴다.
+ *
+ * 캐시가 아예 없으면 평범하게 조회하고, 배열은 있는데 이 번호가 비었거나
+ * 빈 배열이면 캐시를 무시하고 다시 받는다. 평소 조회 경로는 캐시가 있으면
+ * 그대로 돌려주므로 `forceRefresh` 없이는 낫지 않는다.
+ *
+ * 새로고침이 이 문제를 고쳐주던 이유가 바로 서버 재조회다 — 돌아왔을 때도
+ * 같은 일을 해준다.
+ */
+function refetchSources(messageId: string, n: number): void {
+  const cached = loadSourcesFromStorage(messageId);
+  const unusable = Array.isArray(cached) && (cached.length === 0 || !cached[n - 1]);
+  requestSources(messageId, { force: unusable });
+}
+
 function getSourceLabel(messageId: string, n: number): string | null {
   const sources = loadSourcesFromStorage(messageId);
   if (!Array.isArray(sources) || !sources[n - 1]) return null;
@@ -305,16 +345,17 @@ export default function BklCitation({ n }: BklCitationProps) {
         iv = null;
       }
     };
+    /** 풀렸으면 대기 장치를 걷고 true. */
     const settle = () => {
-      if (!check()) return;
+      if (!check()) return false;
       stopPolling();
       window.removeEventListener(BKL_SOURCES_EVENT, settle);
+      return true;
     };
 
     // 낡은 캐시면 강제 재조회가 필요하다 — 평소 경로는 캐시를 그대로 돌려준다.
-    if (!refreshStaleCache(messageId, n) && !_fetchInflight.has(messageId)) {
-      _fetchInflight.add(messageId);
-      fetchSourcesForMessage(messageId).catch(() => {});
+    if (!refreshStaleCache(messageId, n)) {
+      requestSources(messageId);
     }
 
     // 캐시에 쓰는 모든 지점이 이 이벤트를 발행한다. 예전에는 20초 폴링만
@@ -323,6 +364,19 @@ export default function BklCitation({ n }: BklCitationProps) {
     // 60초를 넘기므로 그 전에 창이 닫혀, 인용이 파일명 없이 맨숫자로 남고
     // 클릭해야 비로소 이름이 뜨는 문제가 있었다 (2026-08-31 사용자 보고).
     window.addEventListener(BKL_SOURCES_EVENT, settle);
+
+    // 답변을 기다리다 다른 탭에 갔다 오면 파일명이 안 박혀 있고 새로고침해야만
+    // 보이는 문제가 있었다 (2026-08-31 사용자 보고). 배경 탭에서는 타이머가
+    // 크게 제한되고, 그 사이 스트림이 끝나면서 발행된 이벤트를 놓치면 다시
+    // 확인할 계기가 없었다. 돌아온 시점에 새로고침과 같은 일(서버 재조회)을
+    // 해준다.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || cancelled) return;
+      if (!settle()) {
+        refetchSources(messageId, n);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     // 이벤트를 발행하지 않고 캐시를 채우는 경로가 남아 있을 때를 위한 안전망.
     // 이벤트가 본줄이므로 느슨하게 돌리고, 오래된 메시지에서 타이머가 영원히
@@ -335,6 +389,7 @@ export default function BklCitation({ n }: BklCitationProps) {
       stopPolling();
       clearTimeout(to);
       window.removeEventListener(BKL_SOURCES_EVENT, settle);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [messageId, n, label]);
 
