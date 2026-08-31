@@ -4,6 +4,7 @@ import {
   EToolResources,
   AgentCapabilities,
   FileContext,
+  FileSources,
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
@@ -363,6 +364,13 @@ const computeProvisionState = async ({
 
   for (const file of attachments) {
     if (!file?.file_id) {
+      continue;
+    }
+
+    /** Text-source records keep their content in the database with no backing object
+     *  to stream, so provisioning them would fail and, for code, abort the turn.
+     *  Provisioning them from their stored text is tracked as follow-up work. */
+    if (file.source === FileSources.text) {
       continue;
     }
 
