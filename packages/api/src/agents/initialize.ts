@@ -1202,6 +1202,7 @@ export async function initializeAgent(
     provisionState,
     warnings: provisionWarnings,
   } = await primeResources({
+    req: params.req,
     principal: user,
     getFiles: db.getFiles as never,
     filterFiles: db.filterFilesByAgentAccess,
