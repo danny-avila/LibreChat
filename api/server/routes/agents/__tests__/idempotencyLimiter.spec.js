@@ -141,12 +141,9 @@ describe('start-generation idempotency before message limiters', () => {
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['an agent-trigger delivery', mockExemptAgentTrigger],
-    ['a scheduled delivery', mockExemptSchedule],
-  ])('keeps %s outside the human retry bucket', async (_label, exemption) => {
+  it('keeps an agent-trigger delivery outside the human retry bucket', async () => {
     mockHasGenerationClaim.mockResolvedValue(true);
-    exemption.mockReturnValue(true);
+    mockExemptAgentTrigger.mockReturnValue(true);
 
     const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-4' });
 
@@ -154,6 +151,20 @@ describe('start-generation idempotency before message limiters', () => {
     expect(mockRetryProbeLimiter).not.toHaveBeenCalled();
     expect(mockRetryLimiter).not.toHaveBeenCalled();
     expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it('keeps a scheduled delivery outside the user retry bucket', async () => {
+    mockHasGenerationClaim.mockResolvedValue(true);
+    mockExemptSchedule.mockReturnValue(true);
+
+    const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-4' });
+
+    expect(response.status).toBe(429);
+    expect(response.body).toEqual({ limited: 'ip' });
+    expect(mockRetryProbeLimiter).not.toHaveBeenCalled();
+    expect(mockRetryLimiter).not.toHaveBeenCalled();
+    expect(mockIpLimiter).toHaveBeenCalledTimes(1);
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 
