@@ -108,6 +108,45 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     expect(resolveDefaultLLMDeliveryPath('text/plain', undefined, undefined)).toBe('text');
   });
 
+  it('routes PDFs to text for a known endpoint without native document support', () => {
+    expect(
+      resolveDefaultLLMDeliveryPath('application/pdf', undefined, undefined, 'azureOpenAI'),
+    ).toBe('text');
+    expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'azureOpenAI')).toBe(
+      'text',
+    );
+    expect(resolveDefaultLLMDeliveryPath('video/mp4', undefined, undefined, 'azureOpenAI')).toBe(
+      'text',
+    );
+  });
+
+  it('keeps provider delivery for endpoints that do support documents', () => {
+    expect(resolveDefaultLLMDeliveryPath('application/pdf', undefined, undefined, 'google')).toBe(
+      'provider',
+    );
+  });
+
+  it('keeps images on the provider path regardless of document support', () => {
+    expect(resolveDefaultLLMDeliveryPath('image/png', undefined, undefined, 'azureOpenAI')).toBe(
+      'provider',
+    );
+  });
+
+  it('does not downgrade when the endpoint is unknown', () => {
+    expect(resolveDefaultLLMDeliveryPath('application/pdf')).toBe('provider');
+  });
+
+  it('lets explicit config override the capability gate', () => {
+    expect(
+      resolveDefaultLLMDeliveryPath(
+        'application/pdf',
+        { overrides: { 'application/pdf': 'provider' } },
+        undefined,
+        'azureOpenAI',
+      ),
+    ).toBe('provider');
+  });
+
   it('should export SYSTEM_LLM_DELIVERY_DEFAULTS with correct shape', () => {
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.fallback).toBe('text');
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.overrides).toEqual({
