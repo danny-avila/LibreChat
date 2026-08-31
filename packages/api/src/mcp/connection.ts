@@ -2228,12 +2228,7 @@ export class MCPConnection extends EventEmitter {
         return;
       }
 
-      const {
-        message: errorMessage,
-        code: errorCode,
-        isProxyHint,
-        isTransient,
-      } = extractSSEErrorMessage(error);
+      const { code: errorCode, isProxyHint, isTransient } = extractSSEErrorMessage(error);
 
       const hasSessionId =
         'sessionId' in transport &&
