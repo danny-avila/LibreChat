@@ -66,6 +66,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     data: Partial<IMongoFile> & { file_id: string },
     extraFilter?: FilterQuery<IMongoFile>,
   ) => Promise<IMongoFile | null>;
+  updateFileCodeEnvRef: (data: {
+    file_id: string;
+    routeKey: string;
+    ref: CodeEnvRef;
+    legacyRef?: CodeEnvRef;
+  }) => Promise<IMongoFile | null>;
   updateFileUsage: (data: {
     file_id: string;
     inc?: number;
