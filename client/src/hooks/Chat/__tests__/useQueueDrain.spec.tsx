@@ -29,6 +29,7 @@ function setup(
     setInterruptFlag?: (value: DrainAfterAbort | false) => void;
     queue?: QueuedMessage[];
     newConvoQueue?: QueuedMessage[];
+    consumedPredecessors?: number[];
     runEnd?: RunEnd | null;
   } = {};
 
@@ -42,6 +43,9 @@ function setup(
     setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
     setters.queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
     setters.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
+    setters.consumedPredecessors = useRecoilValue(
+      store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID),
+    );
     setters.runEnd = useRecoilValue(store.runEndByIndex(INDEX));
     useQueueDrain(INDEX, activeConversationId, ask);
     return null;
@@ -160,7 +164,7 @@ describe('useQueueDrain', () => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
         queuedMessage('q-local', 'must wait for the admitted run'),
       ]);
-      set(store.admittedQueuedTurnPredecessorByConvoId(CONVO_ID), 41);
+      set(store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID), [41]);
     });
 
     act(() => {
@@ -169,6 +173,7 @@ describe('useQueueDrain', () => {
 
     await waitFor(() => expect(setters.runEnd).toBeNull());
     expect(ask).not.toHaveBeenCalled();
+    expect(setters.consumedPredecessors).toEqual([]);
   });
 
   it('migrates the NEW_CONVO queue before discarding a consumed predecessor boundary', async () => {
@@ -177,7 +182,7 @@ describe('useQueueDrain', () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [queuedBeforeResolution]);
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedAfterResolution]);
-      set(store.admittedQueuedTurnPredecessorByConvoId(CONVO_ID), 41);
+      set(store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID), [41]);
     });
 
     act(() => {
@@ -200,7 +205,7 @@ describe('useQueueDrain', () => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
         queuedMessage('q-local', 'send after the admitted run'),
       ]);
-      set(store.admittedQueuedTurnPredecessorByConvoId(CONVO_ID), 41);
+      set(store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID), [41]);
     });
 
     act(() => {
@@ -209,6 +214,26 @@ describe('useQueueDrain', () => {
 
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith({ text: 'send after the admitted run' }, emptyOverrides);
+  });
+
+  it('does not interpret a consumed predecessor as a timestamp range', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        queuedMessage('q-local', 'send after the lower-clock successor'),
+      ]);
+      set(store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID), [42]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 41 }));
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith(
+      { text: 'send after the lower-clock successor' },
+      emptyOverrides,
+    );
+    expect(setters.consumedPredecessors).toEqual([42]);
   });
 
   it('parks a mismatched signal instead of draining into the wrong conversation', async () => {

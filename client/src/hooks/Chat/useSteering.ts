@@ -195,6 +195,7 @@ function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef
 function reconcileServerQueuedTurns(
   previous: QueuedMessage[],
   receipts: AgentQueuedTurnReceipt[],
+  authoritativeSnapshot = true,
 ): QueuedMessage[] {
   const previousByClientRequestId = new Map(
     previous.flatMap((item) =>
@@ -241,6 +242,9 @@ function reconcileServerQueuedTurns(
     }
     if (item.clientRequestId == null || observedClientRequestIds.has(item.clientRequestId)) {
       return false;
+    }
+    if (!authoritativeSnapshot) {
+      return true;
     }
     return (
       item.server.status === 'sending' ||
@@ -363,10 +367,10 @@ export default function useSteering({
     store.activeGenerationProtocolVersionByConvoId(queueKey),
   );
 
-  const reconcileQueuedTurns = useRecoilCallback(
+  const applyQueuedTurnReceipts = useRecoilCallback(
     ({ set }) =>
-      (receipts: AgentQueuedTurnReceipt[]) => {
-        let admittedPredecessor: number | undefined;
+      (receipts: AgentQueuedTurnReceipt[], authoritativeSnapshot: boolean = true) => {
+        const consumedPredecessors: number[] = [];
         for (const receipt of receipts) {
           if (receipt.status !== 'admitted') {
             continue;
@@ -376,18 +380,19 @@ export default function useSteering({
           if (effectivePredecessor == null) {
             continue;
           }
-          admittedPredecessor = Math.max(
-            admittedPredecessor ?? effectivePredecessor,
-            effectivePredecessor,
-          );
+          consumedPredecessors.push(effectivePredecessor);
         }
-        if (admittedPredecessor != null) {
-          set(store.admittedQueuedTurnPredecessorByConvoId(queueKey), (previous) =>
-            Math.max(previous ?? admittedPredecessor, admittedPredecessor),
-          );
+        if (consumedPredecessors.length > 0) {
+          set(store.consumedQueuedTurnPredecessorsByConvoId(queueKey), (previous) => {
+            const next = new Set(previous);
+            for (const predecessor of consumedPredecessors) {
+              next.add(predecessor);
+            }
+            return next.size === previous.length ? previous : [...next];
+          });
         }
         set(store.queuedMessagesByConvoId(queueKey), (previous) =>
-          reconcileServerQueuedTurns(previous, receipts),
+          reconcileServerQueuedTurns(previous, receipts, authoritativeSnapshot),
         );
       },
     [queueKey],
@@ -397,8 +402,8 @@ export default function useSteering({
     if (!serverQueueEnabled || serverQueuedTurns == null) {
       return;
     }
-    reconcileQueuedTurns(serverQueuedTurns);
-  }, [serverQueueEnabled, serverQueuedTurns, reconcileQueuedTurns]);
+    applyQueuedTurnReceipts(serverQueuedTurns);
+  }, [serverQueueEnabled, serverQueuedTurns, applyQueuedTurnReceipts]);
   useEffect(() => {
     if (!serverQueueEnabled || nextReconciliationExpiry == null) {
       return;
@@ -850,27 +855,7 @@ export default function useSteering({
             },
             {
               onSuccess: (receipt) => {
-                updateQueuedMessage(item.id, (current) => {
-                  if (receipt.status === 'admitted' || receipt.status === 'cancelled') {
-                    return null;
-                  }
-                  return {
-                    ...current,
-                    text: receipt.text,
-                    createdAt: queuedTurnCreatedAt(receipt),
-                    parentMessageId: receipt.parentMessageId,
-                    server: {
-                      id: receipt.queuedTurnId,
-                      status: receipt.status === 'dead' ? 'rejected' : receipt.status,
-                      revision: receipt.revision,
-                      ...(receipt.position != null && { position: receipt.position }),
-                      ...(receipt.failure?.code != null && { errorCode: receipt.failure.code }),
-                      ...(receipt.failure?.message != null && {
-                        errorMessage: receipt.failure.message,
-                      }),
-                    },
-                  };
-                });
+                applyQueuedTurnReceipts([receipt], false);
               },
               onError: (error) => {
                 updateQueuedMessage(item.id, (current) => {
@@ -921,6 +906,7 @@ export default function useSteering({
       markQueuedFilesUsage,
       activeGenerationCreatedAt,
       enqueueAgentQueuedTurn,
+      applyQueuedTurnReceipts,
       updateQueuedMessage,
     ],
   );

@@ -261,8 +261,8 @@ describe('useSteering', () => {
             stopGenerating: jest.fn(),
           }),
           queue: useQueue(CONVO_ID),
-          admittedPredecessor: useRecoilValue(
-            store.admittedQueuedTurnPredecessorByConvoId(CONVO_ID),
+          consumedPredecessors: useRecoilValue(
+            store.consumedQueuedTurnPredecessorsByConvoId(CONVO_ID),
           ),
         }),
         { wrapper },
@@ -337,6 +337,43 @@ describe('useSteering', () => {
           }),
         ]),
       );
+    });
+
+    it('applies an admitted POST replay to the consumed predecessor set', async () => {
+      mockEnqueueQueuedTurn.mockImplementation((input, options) => {
+        options.onSuccess({
+          ...input,
+          queuedTurnId: 'server-admitted-replay',
+          status: 'admitted',
+          effectivePredecessorCreatedAt: 41,
+          revision: 1,
+          createdAt: new Date(100).toISOString(),
+          updatedAt: new Date(200).toISOString(),
+        });
+      });
+      const { result } = setupServerQueue(
+        withActiveGeneration(({ set }) => {
+          set(store.queuedMessagesByConvoId(CONVO_ID), [
+            {
+              id: 'unrelated-server-row',
+              clientRequestId: 'unrelated-request',
+              text: 'keep me',
+              createdAt: 50,
+              server: { id: 'unrelated-server-id', status: 'queued', revision: 1 },
+            },
+          ]);
+        }),
+      );
+
+      await act(async () => {
+        result.current.steering.queueFromComposer('already admitted');
+        await Promise.resolve();
+      });
+
+      await waitFor(() => expect(result.current.consumedPredecessors).toEqual([41]));
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ id: 'unrelated-server-row', text: 'keep me' }),
+      ]);
     });
 
     it('anchors enqueue to the selected branch tail instead of a later hidden sibling', async () => {
@@ -514,7 +551,7 @@ describe('useSteering', () => {
       ];
       const { result } = setupServerQueue();
 
-      await waitFor(() => expect(result.current.admittedPredecessor).toBe(42));
+      await waitFor(() => expect(result.current.consumedPredecessors).toEqual([42]));
       expect(result.current.queue).toEqual([]);
     });
 

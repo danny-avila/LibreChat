@@ -459,12 +459,12 @@ const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   default: [],
 });
 
-/** Highest terminal generation whose queue boundary was consumed by a
- * server-admitted successor. Delayed UI terminal events at or below this
- * watermark are observations, not fresh permission to drain another turn. */
-const admittedQueuedTurnPredecessorByConvoId = atomFamily<number | null, string>({
-  key: 'admittedQueuedTurnPredecessorByConvoId',
-  default: null,
+/** Exact terminal generations whose queue boundary was consumed by a
+ * server-admitted successor. Each delayed UI terminal event consumes only
+ * its matching entry; replica clocks do not impose generation order. */
+const consumedQueuedTurnPredecessorsByConvoId = atomFamily<number[], string>({
+  key: 'consumedQueuedTurnPredecessorsByConvoId',
+  default: [],
 });
 
 /**
@@ -796,7 +796,7 @@ export default {
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
-  admittedQueuedTurnPredecessorByConvoId,
+  consumedQueuedTurnPredecessorsByConvoId,
   runEndByIndex,
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,

@@ -1002,6 +1002,52 @@ export function createAgentQueuedTurnMethods(
     return turns.map(toActiveRecord);
   }
 
+  async function ensureEffectiveAdmissionBoundary(
+    turn: IAgentQueuedTurn,
+  ): Promise<IAgentQueuedTurn> {
+    if (
+      turn._id == null ||
+      turn.sequence == null ||
+      turn.status !== 'admitted' ||
+      turn.terminalReceipt?.outcome !== 'admitted' ||
+      turn.terminalReceipt.effectivePredecessorCreatedAt != null
+    ) {
+      return turn;
+    }
+    const rootPredecessorCreatedAt = normalizePredecessor(turn.expectedPredecessorCreatedAt);
+    if (rootPredecessorCreatedAt == null) {
+      return turn;
+    }
+    const effectivePredecessorCreatedAt =
+      (await getEffectiveAgentQueuedTurnPredecessor({
+        user: turn.user,
+        ...(turn.tenantId != null && { tenantId: turn.tenantId }),
+        conversationId: turn.conversationId,
+        sequence: turn.sequence,
+        expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
+      })) ?? rootPredecessorCreatedAt;
+    await Turn().updateOne(
+      {
+        _id: turn._id,
+        status: 'admitted',
+        'terminalReceipt.outcome': 'admitted',
+        'terminalReceipt.effectivePredecessorCreatedAt': { $exists: false },
+      },
+      {
+        $set: {
+          'terminalReceipt.effectivePredecessorCreatedAt': effectivePredecessorCreatedAt,
+        },
+      },
+    );
+    return {
+      ...turn,
+      terminalReceipt: {
+        ...turn.terminalReceipt,
+        effectivePredecessorCreatedAt,
+      },
+    };
+  }
+
   async function listAgentQueuedTurnReceipts(
     input: AgentQueuedTurnConversationScope & { clientRequestIds?: readonly string[] },
   ): Promise<AgentQueuedTurnActiveRecord[]> {
@@ -1038,7 +1084,8 @@ export function createAgentQueuedTurnMethods(
         turns.set(turn._id.toString(), turn);
       }
     }
-    return [...turns.values()]
+    const repaired = await Promise.all([...turns.values()].map(ensureEffectiveAdmissionBoundary));
+    return repaired
       .filter((turn) => turn.sequence != null)
       .sort(
         (left, right) =>
@@ -1057,7 +1104,7 @@ export function createAgentQueuedTurnMethods(
         clientRequestId: requireBoundedString(input.clientRequestId, 128),
       })
       .lean<IAgentQueuedTurn>();
-    return turn == null ? null : toRecord(turn);
+    return turn == null ? null : toRecord(await ensureEffectiveAdmissionBoundary(turn));
   }
 
   async function cancelAgentQueuedTurn(
@@ -1850,67 +1897,89 @@ export function createAgentQueuedTurnMethods(
           admissionId: deliveryKey,
           admissionStartedAt: { $exists: true },
         })
-        .select({ admissionEffectivePredecessorCreatedAt: 1 })
+        .select({
+          sequence: 1,
+          expectedPredecessorCreatedAt: 1,
+          admissionEffectivePredecessorCreatedAt: 1,
+        })
         .lean<IAgentQueuedTurn>();
-      const effectivePredecessorCreatedAt = normalizePredecessor(
+      let effectivePredecessorCreatedAt = normalizePredecessor(
         admission?.admissionEffectivePredecessorCreatedAt,
       );
-      const reconciled = await Turn()
-        .findOneAndUpdate(
-          {
-            ...scope,
-            _id: input.queuedTurnId,
-            deliveryKey,
-            admissionId: deliveryKey,
-            admissionStartedAt: { $exists: true },
-            ...(input.reconciliationClaimId != null && {
-              reconciliationClaimId: requireBoundedString(input.reconciliationClaimId, 128),
+      if (effectivePredecessorCreatedAt == null && admission?.sequence != null) {
+        const rootPredecessorCreatedAt = normalizePredecessor(
+          admission.expectedPredecessorCreatedAt,
+        );
+        effectivePredecessorCreatedAt =
+          (await getEffectiveAgentQueuedTurnPredecessor({
+            user: input.user,
+            ...(input.tenantId != null && { tenantId: input.tenantId }),
+            conversationId: input.conversationId,
+            sequence: admission.sequence,
+            ...(rootPredecessorCreatedAt != null && {
+              expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
             }),
-            ...(input.reconciliationClaimBy != null && {
-              reconciliationClaimBy: requireBoundedString(input.reconciliationClaimBy, 256),
-            }),
-            $or: [
-              { status: 'claimed' },
-              {
-                status: 'dead',
-                'terminalReceipt.outcome': 'dead',
-                'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
-              },
-            ],
-          },
-          {
-            $set: {
-              status: 'admitted',
-              terminalReceipt: {
-                outcome: 'admitted',
-                settledAt: input.settledAt,
-                admissionId: deliveryKey,
-                admissionMode: 'ordinary',
-                ...(generationId != null && { generationId }),
-                generationCreatedAt,
-                ...(effectivePredecessorCreatedAt != null && {
-                  effectivePredecessorCreatedAt,
-                }),
-              },
-            },
-            $unset: {
-              activeSlot: 1,
-              claimId: 1,
-              claimBy: 1,
-              claimUntil: 1,
-              admissionId: 1,
-              admissionStartedAt: 1,
-              admissionEffectivePredecessorCreatedAt: 1,
-              admissionProtocolVersion: 1,
-              reconciliationAvailableAt: 1,
-              reconciliationClaimId: 1,
-              reconciliationClaimBy: 1,
-              reconciliationClaimUntil: 1,
-            },
-          },
-          { new: true },
-        )
-        .lean<IAgentQueuedTurn>();
+          })) ?? rootPredecessorCreatedAt;
+      }
+      const reconciled =
+        effectivePredecessorCreatedAt == null
+          ? null
+          : await Turn()
+              .findOneAndUpdate(
+                {
+                  ...scope,
+                  _id: input.queuedTurnId,
+                  deliveryKey,
+                  admissionId: deliveryKey,
+                  admissionStartedAt: { $exists: true },
+                  ...(input.reconciliationClaimId != null && {
+                    reconciliationClaimId: requireBoundedString(input.reconciliationClaimId, 128),
+                  }),
+                  ...(input.reconciliationClaimBy != null && {
+                    reconciliationClaimBy: requireBoundedString(input.reconciliationClaimBy, 256),
+                  }),
+                  $or: [
+                    { status: 'claimed' },
+                    {
+                      status: 'dead',
+                      'terminalReceipt.outcome': 'dead',
+                      'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+                    },
+                  ],
+                },
+                {
+                  $set: {
+                    status: 'admitted',
+                    terminalReceipt: {
+                      outcome: 'admitted',
+                      settledAt: input.settledAt,
+                      admissionId: deliveryKey,
+                      admissionMode: 'ordinary',
+                      ...(generationId != null && { generationId }),
+                      generationCreatedAt,
+                      ...(effectivePredecessorCreatedAt != null && {
+                        effectivePredecessorCreatedAt,
+                      }),
+                    },
+                  },
+                  $unset: {
+                    activeSlot: 1,
+                    claimId: 1,
+                    claimBy: 1,
+                    claimUntil: 1,
+                    admissionId: 1,
+                    admissionStartedAt: 1,
+                    admissionEffectivePredecessorCreatedAt: 1,
+                    admissionProtocolVersion: 1,
+                    reconciliationAvailableAt: 1,
+                    reconciliationClaimId: 1,
+                    reconciliationClaimBy: 1,
+                    reconciliationClaimUntil: 1,
+                  },
+                },
+                { new: true },
+              )
+              .lean<IAgentQueuedTurn>();
       if (reconciled != null) {
         return { outcome: 'admission_reconciled', turn: toRecord(reconciled) };
       }

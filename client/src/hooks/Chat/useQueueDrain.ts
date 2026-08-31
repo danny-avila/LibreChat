@@ -238,13 +238,11 @@ export default function useQueueDrain(
           : ownQueue;
 
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
-        const admittedPredecessor = snapshot
-          .getLoadable(store.admittedQueuedTurnPredecessorByConvoId(conversationId))
+        const consumedPredecessors = snapshot
+          .getLoadable(store.consumedQueuedTurnPredecessorsByConvoId(conversationId))
           .getValue();
-        const supersededByServerAdmission =
-          end.generationCreatedAt != null &&
-          admittedPredecessor != null &&
-          end.generationCreatedAt <= admittedPredecessor;
+        const consumedByServerAdmission =
+          end.generationCreatedAt != null && consumedPredecessors.includes(end.generationCreatedAt);
         const consumeEnd = () => {
           if (fromParked && activeConversationId) {
             set(store.pendingRunEndByConvoId(activeConversationId), null);
@@ -255,14 +253,17 @@ export default function useQueueDrain(
             set(store.drainAfterAbortByIndex(index), false);
           }
         };
-        if (supersededByServerAdmission) {
+        if (consumedByServerAdmission) {
           /** Admission consumed this terminal boundary on the server. A late
            * client terminal observation cannot authorize a second successor. */
-          consumeEnd();
           if (shouldMigrate && newConvoQueue.length > 0) {
             set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), []);
             set(store.queuedMessagesByConvoId(conversationId), merged);
           }
+          set(store.consumedQueuedTurnPredecessorsByConvoId(conversationId), (previous) =>
+            previous.filter((predecessor) => predecessor !== end.generationCreatedAt),
+          );
+          consumeEnd();
           return null;
         }
         /** A server-owned Agent row means the backend owns the next fresh-turn
