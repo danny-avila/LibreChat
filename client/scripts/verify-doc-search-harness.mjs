@@ -47,26 +47,38 @@ const markBox = await noticeMark.boundingBox();
 check('notice: 표식이 작다 (배너 아님)', markBox.width < 40 && markBox.height < 40,
   `${Math.round(markBox.width)}x${Math.round(markBox.height)}px`);
 
-// Ariakit 툴팁은 표시까지 지연이 있다 (실측 ~700ms).
+// 호버 즉시 떠야 한다. Ariakit TooltipAnchor 는 기본 지연이 ~500ms 라
+// 이 용도에 안 맞아서 앱 표준인 HoverCard(openDelay=50) 로 바꿨다.
+const hoverCard = page.locator('[data-radix-popper-content-wrapper]');
+const t0 = Date.now();
 await noticeMark.hover();
 let tooltipShown = false;
 try {
-  await page.locator('[role="tooltip"]').first().waitFor({ state: 'visible', timeout: 5000 });
+  await hoverCard.first().waitFor({ state: 'visible', timeout: 5000 });
   tooltipShown = true;
 } catch {
   tooltipShown = false;
 }
-check('notice: 호버하면 툴팁이 뜬다', tooltipShown);
+const openMs = Date.now() - t0;
+check('notice: 호버하면 설명이 뜬다', tooltipShown);
+check('notice: 지연 없이 즉시 뜬다 (<300ms)', tooltipShown && openMs < 300, `${openMs}ms`);
 check(
-  'notice: 툴팁 내용이 안내 문구다',
-  tooltipShown && (await page.locator('[role="tooltip"]').first().innerText()).includes('100건'),
+  'notice: 내용이 안내 문구다',
+  tooltipShown && (await hoverCard.first().innerText()).includes('100건'),
 );
 
+// 페이드인이 끝난 뒤 찍어야 실제 보이는 대비를 판단할 수 있다.
+await page.waitForTimeout(500);
 await page.screenshot({ path: `${OUT}/tooltip.png`, fullPage: true });
+check(
+  'notice: 페이드인 후 완전 불투명',
+  (await hoverCard.first().evaluate((el) => getComputedStyle(el.firstElementChild ?? el).opacity)) ===
+    '1',
+);
 
-// 툴팁을 걷어내야 이후 스크린샷·클릭에 안 걸린다.
+// 걷어내야 이후 스크린샷·클릭에 안 걸린다.
 await page.mouse.move(0, 0);
-await page.locator('[role="tooltip"]').first().waitFor({ state: 'detached' }).catch(() => {});
+await hoverCard.first().waitFor({ state: 'detached' }).catch(() => {});
 
 // ── 1b. 다중 검색어 하이라이트 ───────────────────────────────────────
 const marks = await page.locator('mark').allInnerTexts();

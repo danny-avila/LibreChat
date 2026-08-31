@@ -64,6 +64,13 @@ jest.mock('@librechat/client', () => ({
   Button: ({ children, ...p }: any) => <button {...p}>{children}</button>,
   NewChatIcon: () => <span />,
   useMediaQuery: () => false,
+  // HoverCard 는 Radix 라 열기 전엔 내용이 없다. 트리거 표식이 붙었는지만
+  // 보면 되므로 껍데기만 남기고 통과시킨다.
+  HoverCard: ({ children }: any) => <>{children}</>,
+  HoverCardTrigger: ({ children }: any) => <>{children}</>,
+  HoverCardPortal: () => null,
+  HoverCardContent: ({ children }: any) => <>{children}</>,
+  CircleHelpIcon: () => <span data-testid="circle-help-icon" />,
 }));
 
 jest.mock('~/components/Chat/Menus', () => ({
