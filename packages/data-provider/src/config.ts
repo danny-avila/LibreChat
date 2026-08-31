@@ -1937,6 +1937,7 @@ export type TStartupConfig = {
     buildDate?: string | null;
   };
   fileUploadSseEnabled?: boolean;
+  endpointsDropParamsMap?: Record<string, string[]>;
 };
 
 export type TSharedLinkStartupInterface = Pick<

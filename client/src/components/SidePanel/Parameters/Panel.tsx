@@ -10,17 +10,19 @@ import {
   SettingDefinition,
   tConvoUpdateSchema,
   applyModelAwareDefaults,
+  normalizeEndpointName,
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useChatContext, useLiveAnnouncer } from '~/Providers';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
-import { useGetEndpointsQuery } from '~/data-provider';
 import { componentMapping } from './components';
 import { logger, cn } from '~/utils';
 
 export default function Parameters() {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
   const { conversation, setConversation } = useChatContext();
   const { announcePolite } = useLiveAnnouncer();
   const { setOption } = useSetIndexOptions();
@@ -47,18 +49,22 @@ export default function Parameters() {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
+    const dropParamsMap = startupConfig?.endpointsDropParamsMap;
+    const dropParams =
+      dropParamsMap?.[provider] ?? dropParamsMap?.[normalizeEndpointName(provider)] ?? [];
+    const dropParamsSet = new Set(dropParams);
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     const modelAwareParams = applyModelAwareDefaults(
-      defaultParams.filter((param) => param != null),
+      defaultParams.filter((param) => param != null && !dropParamsSet.has(param.key)),
       overriddenEndpointKey,
       model,
     );
     return modelAwareParams.map(
       (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
     );
-  }, [endpointType, endpointsConfig, model, provider]);
+  }, [endpointType, endpointsConfig, model, provider, startupConfig]);
 
   useEffect(() => {
     if (!parameters) {
