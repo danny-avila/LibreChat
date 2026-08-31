@@ -29,11 +29,12 @@ keeps_release_base() {
   esac
 }
 
-# Collected before grepping: piping directly into `grep -q` lets SIGPIPE fail the
-# pipeline under `set -o pipefail` and report a false negative.
+# 0 = already explained, 1 = not explained, 2 = the lookup itself failed. The third status
+# matters: treating a failed read as "not explained" would post a duplicate. Bodies are collected
+# before grepping because piping into `grep -q` lets SIGPIPE fail the pipeline under `pipefail`.
 already_explained() {
   local bodies
-  bodies="$(gh api "repos/$REPO/issues/$1/comments" --paginate --jq '.[].body')" || return 1
+  bodies="$(gh api "repos/$REPO/issues/$1/comments" --paginate --jq '.[].body')" || return 2
   grep -qF "$MARKER" <<<"$bodies"
 }
 
@@ -64,9 +65,15 @@ unexplained=0
 # swallowed: the base edit has already succeeded, so a later run would skip the pull
 # request and the contributor would never receive it.
 post_explanation() {
-  local number="$1"
-  if already_explained "$number"; then
+  local number="$1" lookup=0
+  already_explained "$number" || lookup=$?
+  if [ "$lookup" -eq 0 ]; then
     echo "#$number: explanation already posted"
+    return 0
+  fi
+  if [ "$lookup" -eq 2 ]; then
+    echo "#$number: FAILED to read existing comments — not posting, to avoid a duplicate"
+    unexplained=$((unexplained + 1))
     return 0
   fi
   if comment_body | gh pr comment "$number" --repo "$REPO" --body-file -; then

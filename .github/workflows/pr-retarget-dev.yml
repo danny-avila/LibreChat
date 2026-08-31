@@ -2,7 +2,7 @@ name: Retarget PRs to dev
 
 on:
   pull_request_target:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -19,8 +19,11 @@ permissions:
   contents: read
   pull-requests: write
 
+# Per-pull-request for the hook so a burst of openings runs in parallel; GitHub keeps only one
+# pending job per group, so a single shared group would cancel queued retargets. Every sweep shares
+# one group so two of them cannot process the same pull request at once.
 concurrency:
-  group: pr-retarget-dev-${{ github.event.pull_request.number || github.run_id }}
+  group: pr-retarget-dev-${{ github.event.pull_request.number || 'sweep' }}
   cancel-in-progress: false
 
 jobs:

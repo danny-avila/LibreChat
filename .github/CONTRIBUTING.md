@@ -43,7 +43,10 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## 2. Development Notes
 
-1. Before starting work, sync `dev`: `git fetch origin && git checkout dev && git pull origin dev`.
+1. Before starting work, sync `dev` from this repository. You are working in a fork, so `origin` is
+   your fork — add the canonical remote once and sync from it:
+    - `git remote add upstream https://github.com/danny-avila/LibreChat.git`
+    - `git fetch upstream dev && git checkout -B dev upstream/dev`
     - `npm run update` is the self-host deployment updater — it checks out `main` and rebuilds your
       containers. Do not use it to refresh a development branch.
 2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.

@@ -32,7 +32,8 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
 
 - **Branch off `dev`, and target `dev` with every pull request.** All work lands on `dev` first.
 - **`main` is the released branch.** It is kept as a fast-forward of `dev` and synced as-is, so it
-  is always a strict ancestor of `dev`.
+  is always an ancestor of `dev` — equal to it right after a sync, behind it otherwise. It never
+  carries a commit that `dev` does not have.
 - **Never open a backport pull request to `main`.** Anything merged to `dev` reaches `main` at the
   next sync; a second pull request for the same change is redundant.
 - **The repository's default branch is `main`**, so `gh pr create` and the GitHub UI target it
