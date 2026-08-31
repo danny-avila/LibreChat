@@ -165,6 +165,26 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--shimmer-base')).toBe('');
   });
 
+  /** Legacy `themeRGB` themes predate the shimmer stops and this adapter applies
+   *  only the keys they name, so a stored theme would otherwise keep the stock
+   *  sweep while the rest of its palette moved — and in dark the CSS cannot
+   *  recover, since `.dark` declares a base that outranks the fallback. */
+  it('carries a legacy theme without shimmer keys onto its own text color', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-text-primary': '10 20 30' }, root);
+
+    expect(root.style.getPropertyValue('--shimmer-base')).toBe('10 20 30');
+  });
+
+  it('leaves a legacy theme that names its own shimmer base alone', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-text-primary': '10 20 30', 'rgb-shimmer-base': '90 80 70' }, root);
+
+    expect(root.style.getPropertyValue('--shimmer-base')).toBe('90 80 70');
+  });
+
   it('clears only properties owned by the theme module', () => {
     const root = document.documentElement;
     root.style.setProperty('--text-primary', '1 2 3');
