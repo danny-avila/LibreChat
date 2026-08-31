@@ -40,7 +40,14 @@ jest.mock('~/components/Chat/Messages/Content/Container', () => ({
 }));
 
 jest.mock('~/components/Chat/Messages/Content/Parts', () => ({
-  EmptyText: () => <div data-testid="thinking-cursor" />,
+  EmptyText: ({ underHeaderIcon }: { underHeaderIcon?: boolean }) => (
+    <div data-testid="thinking-cursor" data-under-header-icon={String(underHeaderIcon === true)} />
+  ),
+}));
+
+jest.mock('~/components/Chat/Messages/MessageIcon', () => ({
+  __esModule: true,
+  default: () => <span data-testid="message-icon" />,
 }));
 
 jest.mock('lucide-react', () => ({
@@ -114,7 +121,10 @@ describe('SubagentConversation', () => {
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_status_completed')).not.toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_status_running')).not.toBeInTheDocument();
-    expect(screen.getByTestId('thinking-cursor')).toBeInTheDocument();
+    /** Both halves of the main chat author column: the shared glyph, and the
+     *  streaming dot inset onto that glyph's axis the way main chat insets it. */
+    expect(screen.getAllByTestId('message-icon')).toHaveLength(2);
+    expect(screen.getByTestId('thinking-cursor')).toHaveAttribute('data-under-header-icon', 'true');
     expect(container.querySelectorAll('.message-render')).toHaveLength(4);
     expect(container.querySelectorAll('.user-turn')).toHaveLength(2);
     expect(container.querySelectorAll('.agent-turn')).toHaveLength(2);

@@ -15,6 +15,7 @@ import {
 } from '~/store/subagents';
 import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
 import SubagentThreadPanel from './SubagentThreadPanel';
+import { getDraft } from '~/utils';
 
 const mockUseSubagentThreadQuery = jest.fn();
 const mockUseSubagentActivityStream = jest.fn();
@@ -197,69 +198,110 @@ jest.mock('./SubagentConversation', () => ({
   ),
 }));
 
-jest.mock('@librechat/client', () => {
-  const mockReact = jest.requireActual<typeof import('react')>('react');
-  const MockSelectContext = mockReact.createContext((_value: string): void => {});
-  return {
-    Alert: ({ children, ...props }: React.ComponentProps<'div'>) => (
-      <div role="alert" {...props}>
-        {children}
-      </div>
-    ),
-    Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
-      <button {...props}>{children}</button>
-    ),
-    Select: ({
-      children,
-      onValueChange,
-    }: {
-      children: React.ReactNode;
-      onValueChange: (value: string) => void;
-    }) => <MockSelectContext.Provider value={onValueChange}>{children}</MockSelectContext.Provider>,
-    SelectTrigger: ({ children, ...props }: React.ComponentProps<'button'>) => (
-      <button role="combobox" aria-controls="mock-select-options" aria-expanded="true" {...props}>
-        {children}
+jest.mock('@librechat/client', () => ({
+  Alert: ({ children, ...props }: React.ComponentProps<'div'>) => (
+    <div role="alert" {...props}>
+      {children}
+    </div>
+  ),
+  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
+  Skeleton: () => null,
+  ControlCombobox: ({
+    items,
+    setValue,
+    ariaLabel,
+    displayValue,
+  }: {
+    items: { value: string; label: string }[];
+    setValue: (value: string) => void;
+    ariaLabel: string;
+    displayValue?: string;
+  }) => (
+    <div>
+      <button
+        type="button"
+        role="combobox"
+        aria-controls="mock-combobox-options"
+        aria-expanded="true"
+        aria-label={ariaLabel}
+      >
+        {displayValue}
       </button>
-    ),
-    SelectValue: () => null,
-    SelectContent: ({ children }: { children: React.ReactNode }) => (
-      <div id="mock-select-options">{children}</div>
-    ),
-    SelectItem: ({
-      value,
-      children,
-      ...props
-    }: React.ComponentProps<'button'> & { value: string }) => {
-      const onValueChange = mockReact.useContext(MockSelectContext);
-      return (
-        <button role="option" aria-selected="false" onClick={() => onValueChange(value)} {...props}>
-          {children}
-        </button>
-      );
-    },
-    composerSurfaceClasses: () => '',
-    composerSurfaceShadow: { focused: '', blurred: '', within: '' },
-    TextareaAutosize: ({
-      minRows: _minRows,
-      maxRows: _maxRows,
-      ...props
-    }: React.ComponentProps<'textarea'> & { minRows?: number; maxRows?: number }) => (
-      <textarea {...props} />
-    ),
-    useMediaQuery: () => mockIsMobile,
-    useToastContext: () => ({ showToast: mockShowToast }),
-  };
-});
+      <div id="mock-combobox-options">
+        {items.map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            role="option"
+            aria-selected="false"
+            onClick={() => setValue(item.value)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  ),
+  /** Mirrors the real composer's contract: one field, the caller's action row,
+   *  and a send control whose accessible name says what Enter will do. */
+  Composer: ({
+    value,
+    onChange,
+    onSubmit,
+    canSubmit,
+    submitLabel,
+    ariaLabel,
+    placeholder,
+    disabled,
+    actions,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    onSubmit: () => void;
+    canSubmit: boolean;
+    submitLabel: string;
+    ariaLabel: string;
+    placeholder?: string;
+    disabled?: boolean;
+    actions?: React.ReactNode;
+  }) => (
+    <div>
+      <textarea
+        aria-label={ariaLabel}
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' || event.shiftKey) return;
+          event.preventDefault();
+          if (canSubmit) onSubmit();
+        }}
+      />
+      {actions}
+      <button
+        type="button"
+        aria-label={submitLabel}
+        disabled={disabled === true || !canSubmit}
+        onClick={onSubmit}
+      >
+        {submitLabel}
+      </button>
+    </div>
+  ),
+  useMediaQuery: () => mockIsMobile,
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
 
 jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
-  Bot: () => null,
-  CornerDownRight: () => null,
   CornerUpLeft: () => null,
   CheckCircle2: () => null,
   Clock3: () => null,
+  Feather: () => null,
   ListEnd: () => null,
-  MessagesSquare: () => null,
   OctagonX: () => null,
   X: () => null,
   XCircle: () => null,
@@ -497,7 +539,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Check the primary source.' },
     });
     const queue = screen.getByRole('button', { name: 'com_ui_queue' });
@@ -553,7 +595,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Use the primary source.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
@@ -562,7 +604,7 @@ describe('SubagentThreadPanel', () => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
     });
 
-    expect(screen.getByLabelText('com_ui_subagent_control_message')).toBeDisabled();
+    expect(screen.getByLabelText('com_ui_message_input')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeDisabled();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
 
@@ -585,7 +627,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Blocked guidance.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
@@ -595,7 +637,7 @@ describe('SubagentThreadPanel', () => {
 
     expect(screen.getByText('com_ui_subagent_control_reason_invalid_command')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('com_ui_subagent_control_message')).toBeEnabled();
+    expect(screen.getByLabelText('com_ui_message_input')).toBeEnabled();
     expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeEnabled();
   });
 
@@ -623,7 +665,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Use the primary source.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
@@ -652,7 +694,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Keep the same invocation.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
@@ -696,7 +738,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Retry after closing.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
@@ -725,7 +767,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Use the primary source.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
@@ -749,7 +791,12 @@ describe('SubagentThreadPanel', () => {
       screen.getByText('com_ui_subagent_control_reason_owner_unavailable'),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
-    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    /** The settled child leaves the composer standing — Enter continues the
+     *  thread from here — but nothing in it still addresses the finished run. */
+    expect(screen.queryByRole('button', { name: 'com_ui_steer' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),
+    ).not.toBeInTheDocument();
   });
 
   it('preserves drafted guidance when withdrawing an accepted control', () => {
@@ -778,7 +825,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    const composer = screen.getByLabelText('com_ui_subagent_control_message');
+    const composer = screen.getByLabelText('com_ui_message_input');
     fireEvent.change(composer, { target: { value: 'Keep this draft.' } });
     fireEvent.click(screen.getByTestId('withdraw-control'));
     const command = mockControlMutate.mock.calls[0][0].command;
@@ -811,7 +858,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Use the primary source.' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
@@ -848,7 +895,7 @@ describe('SubagentThreadPanel', () => {
 
     expect(screen.getByText('applied')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('com_ui_subagent_control_message')).toHaveValue('');
+    expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('');
     expect(
       screen.queryByText('com_ui_subagent_control_reason_owner_unavailable'),
     ).not.toBeInTheDocument();
@@ -882,7 +929,7 @@ describe('SubagentThreadPanel', () => {
       });
     });
 
-    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_message_input')).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),
     ).not.toBeInTheDocument();
@@ -911,7 +958,7 @@ describe('SubagentThreadPanel', () => {
       screen.getByText('com_ui_subagent_control_reason_task_inaccessible'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_message_input')).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),
     ).not.toBeInTheDocument();
@@ -955,7 +1002,7 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('applied')).toBeInTheDocument();
     expect(screen.getByText('rejected')).toBeInTheDocument();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'running');
-    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_message_input')).not.toBeInTheDocument();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
   });
 
@@ -973,7 +1020,11 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_steer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_queue' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
   });
 
@@ -1008,7 +1059,9 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('Review this change.')).toBeInTheDocument();
     expect(screen.getByText('Review complete.')).toBeInTheDocument();
     expect(screen.getByTestId('subagent-conversation')).toHaveAttribute('data-state', 'ready');
-    expect(screen.queryByRole('button', { name: 'com_ui_continue_chat' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_continue_new_chat' }),
+    ).not.toBeInTheDocument();
   });
 
   it('continues a completed durable agent task as an ordinary conversation snapshot', () => {
@@ -1025,7 +1078,12 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_continue_chat' }));
+    /** The settled thread keeps ONE composer: Enter continues from it, and what
+     *  the reader typed rides along instead of being discarded with the panel. */
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Take this further.' },
+    });
+    fireEvent.keyDown(screen.getByLabelText('com_ui_message_input'), { key: 'Enter' });
     expect(mockForkMutate).toHaveBeenCalledWith(
       {
         conversationId: 'child-thread',
@@ -1039,6 +1097,29 @@ describe('SubagentThreadPanel', () => {
     const conversation = { conversationId: 'continued-chat', agent_id: 'agent-1' };
     act(() => mutationOptions.onSuccess({ conversation, messages: [] }));
     expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
+    expect(getDraft('continued-chat')).toBe('Take this further.');
+  });
+
+  it('continues with no draft when the reader asks for the chat without typing', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
+    const mutationOptions = mockForkMutate.mock.calls[0][1];
+    const conversation = { conversationId: 'empty-continuation', agent_id: 'agent-1' };
+    act(() => mutationOptions.onSuccess({ conversation, messages: [] }));
+    expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
+    expect(getDraft('empty-continuation')).toBe('');
   });
 
   it.each([
@@ -1059,7 +1140,9 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.queryByRole('button', { name: 'com_ui_continue_chat' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_subagent_continue_new_chat' }),
+    ).not.toBeInTheDocument();
   });
 
   it('reports continuation failures without closing the child panel', () => {
@@ -1076,13 +1159,20 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_continue_chat' }));
-    mockForkMutate.mock.calls[0][1].onError();
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Carry this over.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
+    expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('');
+    act(() => mockForkMutate.mock.calls[0][1].onError());
     expect(mockShowToast).toHaveBeenCalledWith({
       message: 'com_ui_continue_chat_error',
       status: 'error',
     });
     expect(screen.getByRole('region')).toBeInTheDocument();
+    /** The panel is still open on this path, so the draft that failed to travel
+     *  comes back rather than being lost with the request. */
+    expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('Carry this over.');
   });
 
   it('renders newer detached progress instead of a dispatch-time parent snapshot', () => {
