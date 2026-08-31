@@ -2,6 +2,7 @@ const mockCreateAgentTriggerService = jest.fn();
 const mockGenerationJobManager = {
   supportsDetachedAgentEventActions: true,
   getJob: jest.fn(),
+  getGenerationAdmissionEvidence: jest.fn(),
 };
 
 jest.mock('@librechat/api', () => ({

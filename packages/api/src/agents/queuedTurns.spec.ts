@@ -162,10 +162,9 @@ describe('Agent queued-turn continuation', () => {
     }));
     const settle = createAgentQueuedTurnDeadLetterSettlement({
       methods: { deadLetterAgentQueuedTurn },
-      getGenerationJob: async () => ({
-        streamId: 'generation-1',
-        createdAt: NOW + 1,
-        metadata: { idempotencyClientRequestId: deliveryKey },
+      getGenerationAdmissionEvidence: async () => ({
+        generationId: 'generation-1',
+        generationCreatedAt: NOW + 1,
       }),
       now: () => NOW,
     });
@@ -579,6 +578,7 @@ describe('Agent queued-turn delivery scheduling', () => {
         markQueuedTurnScheduled,
       } as unknown as AgentQueuedTurnMethods,
       enqueue,
+      getGenerationAdmissionEvidence: async () => null,
     });
 
     await scheduler.schedule(queuedTurn('queued-turn-2', 2));
@@ -600,6 +600,60 @@ describe('Agent queued-turn delivery scheduling', () => {
     );
     expect(reserveAgentQueuedTurnDelivery.mock.calls[0]?.[0].deliveryKey).toBe(
       getAgentTriggerIdempotencyKey(enqueue.mock.calls[0]?.[0] as AgentContinueTriggerEnvelope),
+    );
+  });
+
+  it('reconciles quarantined admission receipts during durable recovery', async () => {
+    const turn = {
+      ...queuedTurn('queued-turn-indeterminate', 1),
+      status: 'dead' as const,
+      deliveryKey: 'delivery-indeterminate',
+      deliveryState: 'published' as const,
+      admissionId: 'delivery-indeterminate',
+      admissionStartedAt: new Date(NOW - 1_000),
+      terminalReceipt: {
+        outcome: 'dead' as const,
+        settledAt: new Date(NOW),
+        failure: {
+          code: 'ADMISSION_INDETERMINATE',
+          message: 'The queued turn may have been admitted',
+        },
+      },
+    };
+    const deadLetterAgentQueuedTurn = jest.fn(async () => ({
+      outcome: 'admission_reconciled' as const,
+      turn: { ...turn, status: 'admitted' as const },
+    }));
+    const getGenerationAdmissionEvidence = jest.fn(async () => ({
+      generationId: 'conversation-1',
+      generationCreatedAt: NOW + 1,
+    }));
+    const scheduler = createAgentQueuedTurnScheduler({
+      methods: {
+        findQueuedTurnsNeedingDelivery: jest.fn(async () => []),
+        findQueuedTurnsNeedingAdmissionReconciliation: jest.fn(async () => [turn]),
+        deadLetterAgentQueuedTurn,
+      } as unknown as AgentQueuedTurnMethods,
+      enqueue: jest.fn(),
+      getGenerationAdmissionEvidence,
+    });
+
+    await expect(scheduler.recover()).resolves.toBe(1);
+    expect(getGenerationAdmissionEvidence).toHaveBeenCalledWith(
+      USER_ID,
+      'delivery-indeterminate',
+      'conversation-1',
+      'conversation-1',
+    );
+    expect(deadLetterAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-indeterminate',
+        deliveryKey: 'delivery-indeterminate',
+        admissionEvidence: {
+          generationId: 'conversation-1',
+          generationCreatedAt: NOW + 1,
+        },
+      }),
     );
   });
 });

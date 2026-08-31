@@ -809,6 +809,78 @@ describe('agent queued turn methods', () => {
     });
   });
 
+  it('reconciles a quarantined admission after exact evidence arrives and unblocks its successor', async () => {
+    const first = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'late-reconciled-admission' }),
+    );
+    const successor = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'late-reconciled-successor' }),
+    );
+    const deliveryKey = 'delivery-late-reconciled-admission';
+    await methods.reserveAgentQueuedTurnDelivery({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.turn.queuedTurnId,
+      deliveryKey,
+    });
+    await methods.markQueuedTurnScheduled({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.turn.queuedTurnId,
+      deliveryKey,
+      scheduledAt: START,
+    });
+    await methods.claimNextAgentQueuedTurn(
+      claimInput(first.turn.queuedTurnId, { claimId: deliveryKey }),
+    );
+    await methods.beginAgentQueuedTurnAdmission({
+      ...claimInput(first.turn.queuedTurnId, { claimId: deliveryKey }),
+      admissionId: deliveryKey,
+      startedAt: START,
+    });
+    await methods.deadLetterAgentQueuedTurn({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.turn.queuedTurnId,
+      deliveryKey,
+      settledAt: LATER,
+      failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'admission result unavailable' },
+    });
+
+    await expect(methods.findQueuedTurnsNeedingAdmissionReconciliation()).resolves.toMatchObject([
+      { queuedTurnId: first.turn.queuedTurnId },
+    ]);
+    await expect(
+      methods.claimNextAgentQueuedTurn(
+        claimInput(successor.turn.queuedTurnId, { claimId: 'successor-delivery' }),
+      ),
+    ).resolves.toMatchObject({ outcome: 'blocked' });
+    await expect(
+      methods.deadLetterAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: first.turn.queuedTurnId,
+        deliveryKey,
+        settledAt: LATER,
+        failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'admission result unavailable' },
+        admissionEvidence: {
+          generationId: 'generation-late-reconciled',
+          generationCreatedAt: 43,
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: 'admission_reconciled', turn: { status: 'admitted' } });
+    await expect(methods.findQueuedTurnsNeedingAdmissionReconciliation()).resolves.toEqual([]);
+    await expect(
+      methods.claimNextAgentQueuedTurn(
+        claimInput(successor.turn.queuedTurnId, { claimId: 'successor-delivery' }),
+      ),
+    ).resolves.toMatchObject({ outcome: 'acquired' });
+  });
+
   it('scopes effective predecessor epochs to one captured queue root', async () => {
     const first = await methods.enqueueAgentQueuedTurn(
       enqueueInput({ clientRequestId: 'root-a-1', expectedPredecessorCreatedAt: 10 }),

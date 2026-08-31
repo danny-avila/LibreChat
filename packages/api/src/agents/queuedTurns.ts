@@ -44,6 +44,18 @@ interface GenerationState {
   };
 }
 
+interface GenerationAdmissionEvidence {
+  generationId: string;
+  generationCreatedAt: number;
+}
+
+type GetGenerationAdmissionEvidence = (
+  userId: string,
+  clientRequestId: string,
+  streamId: string,
+  conversationId?: string,
+) => Promise<GenerationAdmissionEvidence | null>;
+
 type QueuedTurnResolverMethods = AgentQueuedTurnMethods &
   Pick<ConversationMethods, 'getConvo'> &
   Pick<MessageMethods, 'getMessages'>;
@@ -63,6 +75,7 @@ export type EnqueueAgentQueuedTurnDelivery = (
 export interface AgentQueuedTurnSchedulerDeps {
   methods: AgentQueuedTurnMethods;
   enqueue: EnqueueAgentQueuedTurnDelivery;
+  getGenerationAdmissionEvidence: GetGenerationAdmissionEvidence;
   recoveryIntervalMs?: number;
   recoveryLimit?: number;
 }
@@ -76,11 +89,11 @@ export interface AgentQueuedTurnScheduler {
 
 export function createAgentQueuedTurnDeadLetterSettlement({
   methods,
-  getGenerationJob,
+  getGenerationAdmissionEvidence,
   now = Date.now,
 }: {
   methods: Pick<AgentQueuedTurnMethods, 'deadLetterAgentQueuedTurn'>;
-  getGenerationJob?: (conversationId: string) => Promise<GenerationState | null>;
+  getGenerationAdmissionEvidence?: GetGenerationAdmissionEvidence;
   now?: () => number;
 }) {
   return async (rawEnvelope: unknown, failure: AgentTriggerDeliveryFailure): Promise<void> => {
@@ -101,23 +114,12 @@ export function createAgentQueuedTurnDeadLetterSettlement({
       return;
     }
     const deliveryKey = getAgentTriggerIdempotencyKey(envelope);
-    let admissionEvidence: { generationId?: string; generationCreatedAt: number } | undefined;
-    if (getGenerationJob != null) {
-      const generation = await getGenerationJob(envelope.target.conversationId);
-      if (
-        generation?.metadata?.idempotencyClientRequestId === deliveryKey &&
-        typeof generation.createdAt === 'number' &&
-        Number.isSafeInteger(generation.createdAt) &&
-        generation.createdAt >= 0
-      ) {
-        admissionEvidence = {
-          ...(typeof generation.streamId === 'string' && generation.streamId.length > 0
-            ? { generationId: generation.streamId }
-            : {}),
-          generationCreatedAt: generation.createdAt,
-        };
-      }
-    }
+    const admissionEvidence = await getGenerationAdmissionEvidence?.(
+      envelope.principal.userId,
+      deliveryKey,
+      envelope.target.conversationId,
+      envelope.target.conversationId,
+    );
     const settled = await methods.deadLetterAgentQueuedTurn({
       user: new Types.ObjectId(envelope.principal.userId),
       ...(envelope.principal.tenantId != null && { tenantId: envelope.principal.tenantId }),
@@ -541,6 +543,7 @@ function deliveryEnvelope(turn: AgentQueuedTurnRecord) {
 export function createAgentQueuedTurnScheduler({
   methods,
   enqueue,
+  getGenerationAdmissionEvidence,
   recoveryIntervalMs = DEFAULT_RECOVERY_INTERVAL_MS,
   recoveryLimit = DEFAULT_RECOVERY_LIMIT,
 }: AgentQueuedTurnSchedulerDeps): AgentQueuedTurnScheduler {
@@ -593,8 +596,52 @@ export function createAgentQueuedTurnScheduler({
       return recovery;
     }
     const task = (async () => {
-      const turns = await runAsSystem(() => methods.findQueuedTurnsNeedingDelivery(recoveryLimit));
+      const [turns, quarantined] = await Promise.all([
+        runAsSystem(() => methods.findQueuedTurnsNeedingDelivery(recoveryLimit)),
+        runAsSystem(() => methods.findQueuedTurnsNeedingAdmissionReconciliation(recoveryLimit)),
+      ]);
       let repaired = 0;
+      for (const turn of quarantined) {
+        const deliveryKey = turn.deliveryKey;
+        if (deliveryKey == null) {
+          continue;
+        }
+        try {
+          const admissionEvidence = await getGenerationAdmissionEvidence(
+            turn.user.toString(),
+            deliveryKey,
+            turn.conversationId,
+            turn.conversationId,
+          );
+          if (admissionEvidence == null) {
+            continue;
+          }
+          const settled = await runAsSystem(() =>
+            methods.deadLetterAgentQueuedTurn({
+              user: turn.user,
+              ...(turn.tenantId != null && { tenantId: turn.tenantId }),
+              conversationId: turn.conversationId,
+              queuedTurnId: turn.queuedTurnId,
+              deliveryKey,
+              settledAt: new Date(),
+              failure: turn.terminalReceipt?.failure ?? {
+                code: 'ADMISSION_INDETERMINATE',
+                message: 'The queued turn admission requires reconciliation',
+              },
+              admissionEvidence,
+            }),
+          );
+          if (settled.outcome === 'admission_reconciled') {
+            repaired += 1;
+          }
+        } catch (error) {
+          logger.warn(
+            `[agentQueuedTurns] Failed to reconcile admission ${turn.queuedTurnId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
       for (const turn of turns) {
         try {
           await schedule(turn);

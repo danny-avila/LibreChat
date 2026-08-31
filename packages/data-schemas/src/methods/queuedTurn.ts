@@ -164,6 +164,9 @@ export interface AgentQueuedTurnMethods {
     input: AgentQueuedTurnConversationScope & { clientRequestIds?: readonly string[] },
   ) => Promise<AgentQueuedTurnActiveRecord[]>;
   findQueuedTurnsNeedingDelivery: (limit?: number) => Promise<AgentQueuedTurnRecord[]>;
+  findQueuedTurnsNeedingAdmissionReconciliation: (
+    limit?: number,
+  ) => Promise<AgentQueuedTurnRecord[]>;
   reserveAgentQueuedTurnDelivery: (
     input: AgentQueuedTurnConversationScope & {
       queuedTurnId: string;
@@ -1139,6 +1142,27 @@ export function createAgentQueuedTurnMethods(
     return turns.map(toRecord);
   }
 
+  async function findQueuedTurnsNeedingAdmissionReconciliation(
+    limit = 100,
+  ): Promise<AgentQueuedTurnRecord[]> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 1000) {
+      throw new TypeError('Agent queued turn reconciliation limit must be between 1 and 1000');
+    }
+    const turns = await Turn()
+      .find({
+        status: 'dead',
+        admissionId: { $exists: true },
+        admissionStartedAt: { $exists: true },
+        deliveryKey: { $exists: true },
+        'terminalReceipt.outcome': 'dead',
+        'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+      })
+      .sort({ admissionStartedAt: 1, _id: 1 })
+      .limit(limit)
+      .lean<IAgentQueuedTurn[]>();
+    return turns.map(toRecord);
+  }
+
   async function reserveAgentQueuedTurnDelivery(
     input: AgentQueuedTurnConversationScope & {
       queuedTurnId: string;
@@ -1532,13 +1556,22 @@ export function createAgentQueuedTurnMethods(
         {
           ...conversationScope(input),
           _id: input.queuedTurnId,
-          status: 'claimed',
-          claimId: requireBoundedString(input.claimId, 128),
-          claimBy: requireBoundedString(input.claimBy, 256),
           deliveryKey: admissionId,
           deliveryState: 'published',
           admissionId,
           admissionStartedAt: { $exists: true },
+          $or: [
+            {
+              status: 'claimed',
+              claimId: requireBoundedString(input.claimId, 128),
+              claimBy: requireBoundedString(input.claimBy, 256),
+            },
+            {
+              status: 'dead',
+              'terminalReceipt.outcome': 'dead',
+              'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+            },
+          ],
         },
         {
           $set: {
@@ -1606,9 +1639,16 @@ export function createAgentQueuedTurnMethods(
             ...scope,
             _id: input.queuedTurnId,
             deliveryKey,
-            status: 'claimed',
             admissionId: deliveryKey,
             admissionStartedAt: { $exists: true },
+            $or: [
+              { status: 'claimed' },
+              {
+                status: 'dead',
+                'terminalReceipt.outcome': 'dead',
+                'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+              },
+            ],
           },
           {
             $set: {
@@ -2049,6 +2089,7 @@ export function createAgentQueuedTurnMethods(
     listActiveAgentQueuedTurns,
     listAgentQueuedTurnReceipts,
     findQueuedTurnsNeedingDelivery,
+    findQueuedTurnsNeedingAdmissionReconciliation,
     reserveAgentQueuedTurnDelivery,
     markQueuedTurnScheduled,
     cancelAgentQueuedTurn,

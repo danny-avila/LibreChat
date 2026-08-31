@@ -14,6 +14,14 @@ const {
 } = require('@librechat/api');
 const methods = require('~/models');
 
+const getGenerationAdmissionEvidence = (userId, clientRequestId, streamId, conversationId) =>
+  GenerationJobManager.getGenerationAdmissionEvidence(
+    userId,
+    clientRequestId,
+    streamId,
+    conversationId,
+  );
+
 const subagentCompletionAdapter = createSubagentCompletionWakeupResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
@@ -37,7 +45,7 @@ const service = createAgentTriggerService({
   supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
   settleSourceBeforeDeadLetter: createAgentQueuedTurnDeadLetterSettlement({
     methods,
-    getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+    getGenerationAdmissionEvidence,
   }),
   prepareContinue: createAgentContinuationResolver({
     eventActor: eventActorAdapter,
@@ -52,6 +60,7 @@ const service = createAgentTriggerService({
 const queuedTurnScheduler = createAgentQueuedTurnScheduler({
   methods,
   enqueue: service.enqueue,
+  getGenerationAdmissionEvidence,
 });
 
 const initializeAgentTriggerService = async (options) => {
