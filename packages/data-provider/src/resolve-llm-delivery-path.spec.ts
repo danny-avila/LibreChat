@@ -138,6 +138,11 @@ describe('resolveDefaultLLMDeliveryPath', () => {
       'application/x-tar',
       'application/epub+zip',
       'application/vnd.apache.parquet',
+      /* No built-in parser handles presentations or drawings, so without OCR they would
+       * reach the same raw-bytes fallback. */
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.oasis.opendocument.presentation',
+      'application/vnd.oasis.opendocument.graphics',
     ]) {
       expect(resolveDefaultLLMDeliveryPath(mimeType, undefined, undefined, 'openAI')).toBe('none');
     }
@@ -149,6 +154,8 @@ describe('resolveDefaultLLMDeliveryPath', () => {
       'text/csv',
       'application/json',
       'application/vnd.oasis.opendocument.text',
+      'application/vnd.oasis.opendocument.spreadsheet',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/vnd.ms-excel',
       'message/rfc822',
     ]) {
