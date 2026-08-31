@@ -12,7 +12,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 `;
-export const accordian = `import * as React from "react"
+export const accordion = `import * as React from "react"
 import * as AccordionPrimitive from "@radix-ui/react-accordion"
 import { ChevronDown } from "lucide-react"
 
@@ -3047,7 +3047,7 @@ export { useToast, toast }
 
 export const shadcnComponents = {
   utils: utils,
-  accordian: accordian,
+  accordion: accordion,
   alertDialog: alertDialog,
   alert: alert,
   avatar: avatar,
