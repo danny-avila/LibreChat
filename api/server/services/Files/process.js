@@ -459,7 +459,7 @@ const resolveUploadEndpoint = async ({ endpoint, agent_id }) => {
   return uploadAgent?.provider || endpoint;
 };
 
-const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig }) => {
+const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig, endpoint }) => {
   const isLegacyFileUploadUX = endpointConfig?.legacyFileUploadUX === true;
   if (isLegacyFileUploadUX) {
     return 'provider';
@@ -469,6 +469,7 @@ const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig 
     file.mimetype,
     endpointConfig?.defaultLLMDeliveryPath,
     fileConfig?.defaultLLMDeliveryPath,
+    endpoint,
   );
 };
 
@@ -493,7 +494,12 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
   const configEndpoint = await resolveUploadEndpoint({ endpoint, agent_id });
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint: configEndpoint });
-  const llmDeliveryPath = resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig });
+  const llmDeliveryPath = resolveDefaultUploadLLMDeliveryPath({
+    file,
+    endpointConfig,
+    fileConfig,
+    endpoint: configEndpoint,
+  });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
@@ -693,7 +699,13 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
-const resolveUploadLLMDeliveryPath = ({ tool_resource, file, endpointConfig, fileConfig }) => {
+const resolveUploadLLMDeliveryPath = ({
+  tool_resource,
+  file,
+  endpointConfig,
+  fileConfig,
+  endpoint,
+}) => {
   if (tool_resource === EToolResources.context || tool_resource === EToolResources.ocr) {
     return 'text';
   }
@@ -705,7 +717,7 @@ const resolveUploadLLMDeliveryPath = ({ tool_resource, file, endpointConfig, fil
     return 'none';
   }
 
-  return resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig });
+  return resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig, endpoint });
 };
 
 /**
@@ -746,6 +758,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     file,
     endpointConfig,
     fileConfig,
+    endpoint,
   });
 
   if (!tool_resource && llmDeliveryPath === 'text') {
