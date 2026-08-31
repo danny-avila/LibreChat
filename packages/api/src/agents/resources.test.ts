@@ -1854,7 +1854,7 @@ describe('primeResources', () => {
       expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('code-file');
     });
 
-    it('skips code provisioning when neither a legacy key nor JWT auth is configured', async () => {
+    it('still queues provisioning for an unauthenticated Code API deployment', async () => {
       delete process.env.CODEAPI_AUTH_PROVIDER;
       delete process.env.CODEAPI_JWT_ENABLED;
 
@@ -1871,7 +1871,7 @@ describe('primeResources', () => {
         loadCodeApiKey: jest.fn().mockResolvedValue(undefined),
       });
 
-      expect(result.provisionState).toBeUndefined();
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('code-file');
     });
 
     it('passes req through to checkSessionsAlive so JWT auth can mint tokens', async () => {
