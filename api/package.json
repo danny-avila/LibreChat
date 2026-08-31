@@ -104,7 +104,7 @@
     "module-alias": "^2.2.3",
     "mongodb": "^6.14.2",
     "mongoose": "^8.24.1",
-    "multer": "^2.2.0",
+    "multer": "^2.3.0",
     "nanoid": "^3.3.18",
     "node-fetch": "^2.7.0",
     "nodemailer": "^9.0.1",
