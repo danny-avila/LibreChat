@@ -3083,6 +3083,14 @@ export enum ErrorTypes {
    */
   AUTH_FAILED = 'auth_failed',
   /**
+   * Authentication rejected by a rate limiter
+   */
+  AUTH_RATE_LIMITED = 'auth_rate_limited',
+  /**
+   * Authentication rejected because the account or IP is banned
+   */
+  AUTH_BANNED = 'auth_banned',
+  /**
    * Model refused to respond (content policy violation)
    */
   REFUSAL = 'refusal',
