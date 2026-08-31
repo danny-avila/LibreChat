@@ -217,6 +217,11 @@ type ContentPartsProps = {
   nestedActivityPhase?: boolean;
   /** Internal signal that this segment renders inside a completed phase card. */
   withinActivityPhase?: boolean;
+  /** Internal signal that a phase card already carries this message's
+   *  streaming cursor. A solitary empty provider slot looks like the initial
+   *  waiting state from inside its own segment, so without this it renders a
+   *  second cursor beside the one already on screen. */
+  cursorOwnedElsewhere?: boolean;
   /** Internal signal that the parent already removed message-level workspace attachments. */
   workspaceAttachmentsPartitioned?: boolean;
   /** Absolute transcript index represented by `content[0]` in a phase slice. */
@@ -258,6 +263,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   createdAt,
   nestedActivityPhase = false,
   withinActivityPhase = false,
+  cursorOwnedElsewhere = false,
   workspaceAttachmentsPartitioned = false,
   contentIndexOffset = 0,
   contentIndices,
@@ -700,10 +706,32 @@ const ContentPartsBody = memo(function ContentPartsBody({
           return `${toolCallId}:${anchor}`;
         }
       }
-      /** No provider id in the span at all — reasoning-only, or children
-       *  compacted away. Nothing better to anchor to than its position. */
-      return `${segment.hasContent ? segmentKeyIndex(segment) : getPartKeyIndex(segment.labelPart, segment.labelIndex)}`;
+      /** No provider id in the span at all — id-less legacy calls,
+       *  reasoning-only, or children compacted away. A bare position cannot
+       *  separate two siblings whose cards start at the same index, so this
+       *  branch carries the message-change counter, exactly as
+       *  `getToolGroupId` does for its own id-less fallback. The tradeoff is
+       *  the same one accepted there: the counter also advances at settle, so
+       *  these cards remount then. */
+      const position = segment.hasContent
+        ? segmentKeyIndex(segment)
+        : getPartKeyIndex(segment.labelPart, segment.labelIndex);
+      return `fallback:${fallbackScope}:${position}`;
     };
+    /** Exactly one thing may hold the streaming cursor. A card carries it
+     *  below its own header whenever the tail of the run sits inside its
+     *  span, which puts every sibling segment out of the running. */
+    const cursorOwnedByCard =
+      isLast &&
+      effectiveIsSubmitting &&
+      phaseSegments.some((segment) => {
+        if (segment.type !== 'phase') {
+          return false;
+        }
+        return segment.synthesized === true
+          ? segment.contentIndices.map(absoluteIndexAt).includes(globalLastContentIdx)
+          : absoluteIndexAt(segment.labelIndex) === globalLastContentIdx;
+      });
     const renderSegment = (
       segmentContent: Array<TMessageContentParts | undefined>,
       segmentStartIndex: number,
@@ -728,6 +756,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
           withinActivityPhase={withinPhase}
+          cursorOwnedElsewhere={cursorOwnedByCard}
           workspaceAttachmentsPartitioned
           contentIndexOffset={segmentStartIndex}
           contentIndices={segmentIndices}
@@ -879,7 +908,10 @@ const ContentPartsBody = memo(function ContentPartsBody({
    *  flows share the gated header-axis nudge. Never solitary mid-stream, so
    *  empty TEXT after real parts keeps its flush in-flow cursor. */
   const solitaryEmptyText = safeContent.length === 1 && isEmptyTextPart(safeContent[0]);
-  const showEmptyCursor = (safeContent.length === 0 || solitaryEmptyText) && effectiveIsSubmitting;
+  const showEmptyCursor =
+    (safeContent.length === 0 || solitaryEmptyText) &&
+    effectiveIsSubmitting &&
+    !cursorOwnedElsewhere;
   /** Skips trailing blank label reservations and empty provider placeholders,
    * keeping the cursor attached to the last visible output. */
   const relativeLastContentIdx = lastCursorContentIdx(safeContent);

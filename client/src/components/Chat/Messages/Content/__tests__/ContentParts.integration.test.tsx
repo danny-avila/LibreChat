@@ -800,6 +800,20 @@ describe('ContentParts — synthesized activity folds', () => {
     expect(foldHeader()).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('shows exactly one streaming cursor when a placeholder trails the fold', () => {
+    /** Providers append an empty TEXT slot after visible output. The cursor
+     *  belongs to the card (the run's tail is inside its span), and that
+     *  trailing slot looks like the initial waiting state from inside its own
+     *  segment — so without the ownership signal both render one. */
+    renderContentParts({
+      ...baseProps,
+      isSubmitting: true,
+      content: [...labeledRun(), makeTextPart('')],
+    });
+
+    expect(screen.getAllByTestId('empty-text')).toHaveLength(1);
+  });
+
   it('leaves an unlabeled run rendering exactly as before', () => {
     renderContentParts({
       ...baseProps,
