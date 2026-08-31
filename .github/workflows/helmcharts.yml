@@ -18,6 +18,7 @@ jobs:
       contents: read
       packages: write
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       CHART_REPOSITORY: ${{ github.repository_owner }}/librechat-chart
     steps:

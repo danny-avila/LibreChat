@@ -12,6 +12,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       # checkout the repo
       - name: 'Checkout GitHub Action'
