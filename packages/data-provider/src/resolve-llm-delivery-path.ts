@@ -70,7 +70,12 @@ export function resolveDefaultLLMDeliveryPath(
   /** Only the system default is capability-gated: an explicit config above is the
    *  admin's decision. A known endpoint that cannot encode documents or media would
    *  otherwise accept the upload and hand the model nothing at all. */
-  if (systemDefault === 'provider' && endpoint != null && !isProviderCapable(mimeType, endpoint)) {
+  /** `agents` is a container, not a provider: it is what an upload reports when the
+   *  agent's real provider could not be resolved, as for ephemeral agents. Judging
+   *  capability from it would downgrade media the actual provider can deliver, so an
+   *  unresolved provider keeps the system default. */
+  const providerKnown = endpoint != null && endpoint !== EModelEndpoint.agents;
+  if (systemDefault === 'provider' && providerKnown && !isProviderCapable(mimeType, endpoint)) {
     return 'text';
   }
 
