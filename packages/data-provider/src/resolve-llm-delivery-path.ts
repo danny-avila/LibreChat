@@ -45,7 +45,7 @@ const TEXT_RECOVERABLE_MIME_TYPES: RegExp[] = [
   /^image\//,
   /^audio\//,
   /^application\/(json|xml|sql|yaml|csv|typescript|x-sh|vnd\.coffeescript)$/,
-  /^application\/(pdf|msword)$/,
+  /^application\/pdf$/,
   /* Only the formats the built-in document parser handles. Presentations and graphics
    * are absent from documentParserMimeTypes, so on a deployment without OCR they would
    * fall through to the permissive text matcher and be decoded as ZIP bytes. */
@@ -55,7 +55,7 @@ const TEXT_RECOVERABLE_MIME_TYPES: RegExp[] = [
   /^message\/rfc822$/,
 ];
 
-function hasTextExtractionPath(mimeType: string): boolean {
+export function hasTextExtractionPath(mimeType: string): boolean {
   return TEXT_RECOVERABLE_MIME_TYPES.some((pattern) => pattern.test(mimeType));
 }
 

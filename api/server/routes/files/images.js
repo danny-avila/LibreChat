@@ -55,8 +55,11 @@ router.post('/', async (req, res) => {
       agent_id: metadata.agent_id,
       req,
     });
-    /* Carried so processing routes under the same configuration validation used. */
+    /* Carried so processing routes under the same configuration validation used, and so
+     * it can tell whether any enabled tool could consume a file kept off the model path,
+     * both from the one agent read this request already made. */
     metadata.effectiveEndpoint = effectiveEndpoint;
+    metadata.agentTools = (await resolveUploadAgent(req, metadata.agent_id))?.tools ?? [];
     filterFile({ req, image: true, endpoint: effectiveEndpoint });
 
     /* A unified upload the config routes to text is processed as a context resource, so

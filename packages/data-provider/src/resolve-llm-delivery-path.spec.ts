@@ -143,6 +143,8 @@ describe('resolveDefaultLLMDeliveryPath', () => {
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'application/vnd.oasis.opendocument.presentation',
       'application/vnd.oasis.opendocument.graphics',
+      /* Legacy DOC is absent from documentParserMimeTypes, so it has no parser either. */
+      'application/msword',
     ]) {
       expect(resolveDefaultLLMDeliveryPath(mimeType, undefined, undefined, 'openAI')).toBe('none');
     }

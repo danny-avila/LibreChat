@@ -18,6 +18,7 @@ const {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   resolveUploadLLMDeliveryPath,
+  hasTextExtractionPath,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -720,6 +721,24 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   if (!tool_resource && llmDeliveryPath === 'text') {
     effectiveToolResource = EToolResources.context;
+  }
+
+  /* A type nothing can extract reaches the conversation only through a file tool.
+   * Accepting one for an agent with no such tool leaves it visible in the composer while
+   * nothing can read it, so the model answers as though it had the file. Refuse it with a
+   * reason instead. An admin who routes a readable type to none has chosen tool-only
+   * access deliberately and is warned about it at boot, so that case is left alone. */
+  if (!tool_resource && llmDeliveryPath === 'none' && !hasTextExtractionPath(file.mimetype)) {
+    /* Resolved by the route, which already read the agent for endpoint resolution. */
+    const agentTools = metadata.agentTools ?? [];
+    const hasFileTool =
+      agentTools.includes(EToolResources.execute_code) ||
+      agentTools.includes(EToolResources.file_search);
+    if (!hasFileTool) {
+      throw new Error(
+        `Files of type ${file.mimetype} are not sent to the model and can only be used by the code interpreter or file search. Enable one of those tools for this agent, or upload a supported file type.`,
+      );
+    }
   }
 
   if (effectiveToolResource === EToolResources.file_search && file.mimetype.startsWith('image')) {
