@@ -247,7 +247,8 @@ async function checkCodeEnvFileAlive({ file, apiKey, req }) {
  * @param {string} [params.apiKey] - Pre-loaded legacy CODE_API_KEY, when configured
  * @param {object} [params.req] - Request used to mint JWT code auth, when enabled
  * @param {number} [params.staleSafeWindowMs=21600000] - Skip the live check if the file was provisioned to the code env within this window (default 6h)
- * @returns {Promise<Set<string>>} Set of file_ids that are confirmed alive
+ * @returns {Promise<Set<string>>} file_ids that are not known to be expired: confirmed
+ *   alive, within the safe window, or unverifiable because the probe itself failed
  */
 async function checkSessionsAlive({ files, apiKey, req, staleSafeWindowMs = 6 * 60 * 60 * 1000 }) {
   const aliveFileIds = new Set();
@@ -308,7 +309,13 @@ async function checkSessionsAlive({ files, apiKey, req, staleSafeWindowMs = 6 * 
           message: `[checkSessionsAlive] Error checking session "${session_id}": ${error.message}`,
           error,
         });
-        // All files in this session treated as expired
+        /* A failed probe means unknown, not expired: a timeout or 5xx would otherwise
+         * clear a live ref and force a re-upload that the same outage will likely fail
+         * too, losing access to a working sandbox file. Only a successful response that
+         * omits the file marks it expired. */
+        for (const { file_id } of fileEntries) {
+          aliveFileIds.add(file_id);
+        }
       }
     },
   );
