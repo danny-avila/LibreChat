@@ -1310,11 +1310,14 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByRole('combobox', { name: 'com_ui_subagent_actor' })).toBeEnabled();
   });
 
-  /** The panel stays open after a failed continuation precisely so the reader
-   *  can retry with the same words. A newer task arriving for this actor must
-   *  not advance the selection out from under them and wipe the composer —
-   *  until the draft is gone, at which point there is nothing left to protect. */
-  it('holds the selection after a failed continuation while the draft survives', () => {
+  /** An advance changes the control identity, which empties the composer, so
+   *  unsent words hold the selection wherever they came from: typed and not yet
+   *  sent, or left behind by a continuation that failed and is waiting to be
+   *  retried. The hold lifts once the draft is gone. */
+  it.each([
+    ['a draft that was never submitted', false],
+    ['a draft left behind by a failed continuation', true],
+  ])('holds the selection for %s', (_label, submitAndFail) => {
     const actor: ParentSubagentSummary = {
       threadId: 'child-thread',
       parentMessageId: 'parent-message',
@@ -1366,13 +1369,16 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Try that again.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
+    if (submitAndFail) {
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
+    }
 
-    /** The newer task lands while the request is out, and the fork then fails. */
     mockParentChildrenByThread = new Map([[actor.threadId, withNewerTask]]);
     mockParentChildrenByMessage = new Map([['parent-message', [withNewerTask]]]);
     rerender(tree);
-    act(() => mockForkMutate.mock.calls[0][1].onError());
+    if (submitAndFail) {
+      act(() => mockForkMutate.mock.calls[0][1].onError());
+    }
     rerender(tree);
 
     expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('Try that again.');
@@ -1382,6 +1388,41 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), { target: { value: '' } });
     rerender(tree);
     expect((active as ActiveSubagentPanel | null)?.durable?.taskId).toBe('task-newer');
+  });
+
+  /** Emptying the field after asking to continue is the reader withdrawing the
+   *  words, not leaving them behind — the destination must not reinstate what
+   *  they deleted. */
+  it('hands over nothing when the draft is cleared before the fork lands', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    let handedOffText: string | undefined;
+    const Observer = () => {
+      handedOffText = useRecoilValue(store.pendingComposerTextByConvoId('continued-chat'));
+      return null;
+    };
+    render(
+      <RecoilRoot>
+        <Observer />
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'On second thought.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), { target: { value: '' } });
+
+    const conversation = { conversationId: 'continued-chat', agent_id: 'agent-1' };
+    act(() => mockForkMutate.mock.calls[0][1].onSuccess({ conversation, messages: [] }));
+
+    expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
+    expect(handedOffText).toBeUndefined();
   });
 
   it('continues with no draft when the reader asks for the chat without typing', () => {

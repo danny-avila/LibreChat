@@ -111,14 +111,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const enterToSend = useRecoilValue(store.enterToSend);
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
   const [actorPickerOpen, setActorPickerOpen] = useState(false);
-  /** A continuation is out, or one failed and its words are still in the box.
-   *  Declared here because the selection-advance effect below has to defer to
-   *  both, well before the mutation itself exists. */
+  /** A continuation is out. Declared here because the selection-advance effect
+   *  below has to defer to it, well before the mutation itself exists. */
   const [continuationPending, setContinuationPending] = useState(false);
-  const [continuationFailed, setContinuationFailed] = useState(false);
   const [controlMessage, setControlMessage] = useState('');
-  const selectionHeldForDraft =
-    continuationPending || (continuationFailed && controlMessage.trim() !== '');
+  /** Unsent words in the composer are enough on their own: whatever put them
+   *  there, an advance would change the control identity and wipe them. */
+  const selectionHeldForDraft = continuationPending || controlMessage.trim() !== '';
   const resetSelection = useResetRecoilState(activeSubagentPanel);
   const setSelection = useSetRecoilState(activeSubagentPanel);
   const agentsMap = useAgentsMapContext();
@@ -253,12 +252,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     if (
       selection.event == null ||
       selection.event.pinnedTask === true ||
-      /** A continuation in flight is about to take the reader elsewhere, and
-       *  its panel still holds the draft that travels with it. Advancing the
-       *  selection under it would swap that composer for another actor's — and
-       *  so would advancing the moment it FAILS, which is exactly when the
-       *  panel stays open for the reader to retry with those same words. The
-       *  hold releases itself once the draft is sent or cleared. */
+      /** An advance changes the control identity, which empties the composer.
+       *  Defer while anything unsent is in it — a draft not yet submitted, one
+       *  travelling with a continuation in flight, or one left behind by a
+       *  continuation that failed and is waiting to be retried. The hold
+       *  releases itself once the draft is sent or cleared. */
       selectionHeldForDraft ||
       eventSummary?.latestTaskId == null ||
       eventSummary.latestTaskId === taskId
@@ -303,10 +301,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       const continuation = continuationRef.current;
       continuationRef.current = null;
       setContinuationPending(false);
-      setContinuationFailed(false);
+      /** While the field still belongs to this continuation it IS the draft,
+       *  verbatim — including when the reader has emptied it since, which is
+       *  them withdrawing the words rather than leaving them behind. Only a
+       *  composer that has moved to another selection falls back to what was
+       *  captured at submission. */
       const stillItsOwnComposer = continuation?.identity === controlSelectionRef.current;
       const draft = stillItsOwnComposer
-        ? controlMessageRef.current.trim() || (continuation?.text ?? '')
+        ? controlMessageRef.current.trim()
         : (continuation?.text ?? '');
       if (continuedConversationId != null && draft !== '') {
         handOffComposerText(continuedConversationId, draft);
@@ -320,7 +322,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
        *  holds the words, so there is nothing to restore. */
       continuationRef.current = null;
       setContinuationPending(false);
-      setContinuationFailed(true);
       showToast({ message: localize('com_ui_continue_chat_error'), status: 'error' });
     },
   });
@@ -993,7 +994,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const continueAsChat = useCallback(() => {
     if (!canContinueAsChat || selection.durable == null || continueChat.isLoading) return;
     continuationRef.current = { identity: controlIdentity, text: controlMessage.trim() };
-    setContinuationFailed(false);
     setContinuationPending(true);
     continueChat.mutate({
       conversationId: selection.durable.threadId,
