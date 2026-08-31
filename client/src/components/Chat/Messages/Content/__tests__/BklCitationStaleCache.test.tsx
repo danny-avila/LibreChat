@@ -29,8 +29,14 @@ jest.mock('~/utils', () => ({
   FileTypeIcon: () => null,
 }));
 
+// 실제 구현대로 이벤트를 발행한다. 인용 칩은 이 이벤트로 캐시 갱신을 알아채므로
+// jest.fn() 껍데기로 두면 폴링 안전망에만 기대게 돼 실제 경로를 못 재현한다.
 jest.mock('~/utils/bklSourcesEvent', () => ({
-  notifyBklSourcesChanged: jest.fn(),
+  BKL_SOURCES_EVENT: 'bkl:sources-changed',
+  notifyBklSourcesChanged: jest.fn(() => {
+    // jest.mock 팩토리는 `window` 를 참조할 수 없다 — globalThis 로 우회.
+    setTimeout(() => globalThis.dispatchEvent(new Event('bkl:sources-changed')), 0);
+  }),
 }));
 
 import BklCitation from '../BklCitation';
