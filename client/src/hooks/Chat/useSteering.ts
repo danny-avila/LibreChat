@@ -363,12 +363,37 @@ export default function useSteering({
     store.activeGenerationProtocolVersionByConvoId(queueKey),
   );
 
+  const reconcileQueuedTurns = useRecoilCallback(
+    ({ set }) =>
+      (receipts: AgentQueuedTurnReceipt[]) => {
+        let admittedPredecessor: number | undefined;
+        for (const receipt of receipts) {
+          if (receipt.status !== 'admitted' || receipt.expectedPredecessorCreatedAt == null) {
+            continue;
+          }
+          admittedPredecessor = Math.max(
+            admittedPredecessor ?? receipt.expectedPredecessorCreatedAt,
+            receipt.expectedPredecessorCreatedAt,
+          );
+        }
+        if (admittedPredecessor != null) {
+          set(store.admittedQueuedTurnPredecessorByConvoId(queueKey), (previous) =>
+            Math.max(previous ?? admittedPredecessor, admittedPredecessor),
+          );
+        }
+        set(store.queuedMessagesByConvoId(queueKey), (previous) =>
+          reconcileServerQueuedTurns(previous, receipts),
+        );
+      },
+    [queueKey],
+  );
+
   useEffect(() => {
     if (!serverQueueEnabled || serverQueuedTurns == null) {
       return;
     }
-    setQueuedMessages((previous) => reconcileServerQueuedTurns(previous, serverQueuedTurns));
-  }, [serverQueueEnabled, serverQueuedTurns, setQueuedMessages]);
+    reconcileQueuedTurns(serverQueuedTurns);
+  }, [serverQueueEnabled, serverQueuedTurns, reconcileQueuedTurns]);
   useEffect(() => {
     if (!serverQueueEnabled || nextReconciliationExpiry == null) {
       return;

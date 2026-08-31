@@ -459,6 +459,14 @@ const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   default: [],
 });
 
+/** Highest terminal generation whose queue boundary was consumed by a
+ * server-admitted successor. Delayed UI terminal events at or below this
+ * watermark are observations, not fresh permission to drain another turn. */
+const admittedQueuedTurnPredecessorByConvoId = atomFamily<number | null, string>({
+  key: 'admittedQueuedTurnPredecessorByConvoId',
+  default: null,
+});
+
 /**
  * One-shot run-termination signal written by the SSE final/error handlers and
  * consumed (reset to null) by `useQueueDrain`. Keyed by chat index like
@@ -788,6 +796,7 @@ export default {
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
+  admittedQueuedTurnPredecessorByConvoId,
   runEndByIndex,
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,

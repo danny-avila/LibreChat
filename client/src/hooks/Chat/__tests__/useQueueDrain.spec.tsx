@@ -28,6 +28,7 @@ function setup(
     setNewConvoQueue?: (value: QueuedMessage[]) => void;
     setInterruptFlag?: (value: DrainAfterAbort | false) => void;
     queueRef?: { current: QueuedMessage[] };
+    runEnd?: RunEnd | null;
   } = {};
 
   function Harness() {
@@ -38,6 +39,7 @@ function setup(
       store.queuedMessagesByConvoId(Constants.NEW_CONVO),
     );
     setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
+    setters.runEnd = useRecoilValue(store.runEndByIndex(INDEX));
     useQueueDrain(INDEX, activeConversationId, ask);
     return null;
   }
@@ -148,6 +150,38 @@ describe('useQueueDrain', () => {
     });
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith({ text: 'legacy successor' }, emptyOverrides);
+  });
+
+  it('discards a predecessor boundary already consumed by server admission', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        queuedMessage('q-local', 'must wait for the admitted run'),
+      ]);
+      set(store.admittedQueuedTurnPredecessorByConvoId(CONVO_ID), 41);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 41 }));
+    });
+
+    await waitFor(() => expect(setters.runEnd).toBeNull());
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('lets the admitted successor terminal boundary release the next turn', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        queuedMessage('q-local', 'send after the admitted run'),
+      ]);
+      set(store.admittedQueuedTurnPredecessorByConvoId(CONVO_ID), 41);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 42 }));
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'send after the admitted run' }, emptyOverrides);
   });
 
   it('parks a mismatched signal instead of draining into the wrong conversation', async () => {

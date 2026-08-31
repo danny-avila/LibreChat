@@ -4,6 +4,7 @@ import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } f
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import useQueueDrain from '../useQueueDrain';
 import useSteering from '../useSteering';
 import store from '~/store';
 
@@ -260,6 +261,9 @@ describe('useSteering', () => {
             stopGenerating: jest.fn(),
           }),
           queue: useQueue(CONVO_ID),
+          admittedPredecessor: useRecoilValue(
+            store.admittedQueuedTurnPredecessorByConvoId(CONVO_ID),
+          ),
         }),
         { wrapper },
       );
@@ -490,6 +494,95 @@ describe('useSteering', () => {
         text: 'restored after reload',
         server: { id: 'server-snapshot-1', status: 'queued', revision: 3 },
       });
+    });
+
+    it('fences the predecessor boundary when the server receipt is admitted', async () => {
+      mockServerQueuedTurns = [
+        {
+          queuedTurnId: 'server-admitted-1',
+          clientRequestId: 'client-admitted-1',
+          conversationId: CONVO_ID,
+          parentMessageId: 'visible-assistant-tail',
+          text: 'already started by the server',
+          status: 'admitted',
+          revision: 4,
+          expectedPredecessorCreatedAt: 41,
+          createdAt: new Date(200).toISOString(),
+          updatedAt: new Date(300).toISOString(),
+        },
+      ];
+      const { result } = setupServerQueue();
+
+      await waitFor(() => expect(result.current.admittedPredecessor).toBe(41));
+      expect(result.current.queue).toEqual([]);
+    });
+
+    it('does not release a local successor when admission precedes SSE attachment', async () => {
+      mockServerQueuedTurns = [
+        {
+          queuedTurnId: 'server-admitted-race',
+          clientRequestId: 'client-admitted-race',
+          conversationId: CONVO_ID,
+          parentMessageId: 'visible-assistant-tail',
+          text: 'server-owned successor',
+          status: 'admitted',
+          revision: 4,
+          expectedPredecessorCreatedAt: 41,
+          createdAt: new Date(200).toISOString(),
+          updatedAt: new Date(300).toISOString(),
+        },
+      ];
+      const ask = jest.fn();
+      const sendNow = jest.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot
+          initializeState={withActiveGeneration(({ set }) => {
+            set(store.isSubmittingFamily(0), false);
+            set(store.runEndByIndex(0), {
+              conversationId: CONVO_ID,
+              outcome: 'completed',
+              endedAt: 200,
+              generationCreatedAt: 41,
+            });
+            set(store.queuedMessagesByConvoId(CONVO_ID), [
+              {
+                id: 'client-admitted-race',
+                clientRequestId: 'client-admitted-race',
+                text: 'server-owned successor',
+                createdAt: 100,
+                server: { id: 'server-admitted-race', status: 'claimed', revision: 3 },
+              },
+              { id: 'local-successor', text: 'must wait', createdAt: 101 },
+            ]);
+          })}
+        >
+          {children}
+        </RecoilRoot>
+      );
+      const { result } = renderHook(
+        () => {
+          useSteering({
+            index: 0,
+            conversationId: CONVO_ID,
+            conversation: agentsConversation,
+            isSubmitting: false,
+            answerModeActive: false,
+            sendNow,
+            stopGenerating: jest.fn(),
+          });
+          useQueueDrain(0, CONVO_ID, ask);
+          return {
+            queue: useQueue(CONVO_ID),
+            runEnd: useRecoilValue(store.runEndByIndex(0)),
+          };
+        },
+        { wrapper },
+      );
+
+      await waitFor(() => expect(result.current.runEnd).toBeNull());
+      expect(result.current.queue.map((item) => item.id)).toEqual(['local-successor']);
+      expect(ask).not.toHaveBeenCalled();
+      expect(sendNow).not.toHaveBeenCalled();
     });
 
     it('uses server sequence instead of Mongo timestamps for projected queue order', async () => {
