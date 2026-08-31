@@ -684,18 +684,25 @@ const ContentPartsBody = memo(function ContentPartsBody({
       }
       return absoluteIndexAt(segment.startIndex);
     };
-    /** Stable render identity for a phase card. See the key comment below. */
+    /** Stable render identity for a phase card. See the key comment below.
+     *
+     *  Anchored to the first TOOL CALL, not the span's first part, for the
+     *  reason `getToolGroupId` gives: an empty leading TEXT or THINK is
+     *  DROPPED by `preserveStreamedContentIdentity` at settle, which would
+     *  move a first-part anchor and remount the card exactly when the run
+     *  finishes. The tool calls themselves do not move. */
     const phaseCardKey = (segment: Extract<ActivityPhaseSegment, { type: 'phase' }>): string => {
-      const position = segment.hasContent
-        ? segmentKeyIndex(segment)
-        : getPartKeyIndex(segment.labelPart, segment.labelIndex);
-      for (const part of segment.content) {
+      for (let position = 0; position < segment.content.length; position += 1) {
+        const part = segment.content[position];
         const toolCallId = part == null ? '' : getToolCallId(part);
         if (toolCallId) {
-          return `${toolCallId}:${position}`;
+          const anchor = getPartKeyIndex(part, absoluteIndexAt(segment.contentIndices[position]));
+          return `${toolCallId}:${anchor}`;
         }
       }
-      return `${position}`;
+      /** No provider id in the span at all — reasoning-only, or children
+       *  compacted away. Nothing better to anchor to than its position. */
+      return `${segment.hasContent ? segmentKeyIndex(segment) : getPartKeyIndex(segment.labelPart, segment.labelIndex)}`;
     };
     const renderSegment = (
       segmentContent: Array<TMessageContentParts | undefined>,
@@ -760,8 +767,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  ticker keeps it open with no state to hand over. A phase with no
              *  children has no span to anchor to and keeps its marker key.
              *
-             *  The span's position carries it, paired with the first tool
-             *  call's provider id. No message identity goes into it, and none
+             *  The first tool call carries it — its provider id paired with
+             *  its own position. No message identity goes into it, and none
              *  can: `MultiMessage` reuses this instance across siblings, but
              *  `messageId` moves at settle (batched with
              *  `setIsSubmitting(false)`, so that commit is indistinguishable
@@ -786,6 +793,22 @@ const ContentPartsBody = memo(function ContentPartsBody({
             const hasPendingApproval = segment.content.some(
               (part) => part != null && hasPendingApprovalInPart(part),
             );
+            /** `ToolCallGroup` hoists `groupAttachments` OUTSIDE its own panel
+             *  precisely so a generated image or file survives collapsing the
+             *  group. Folding that group into a card puts the hoist back
+             *  inside a disclosure and the output vanishes — and these never
+             *  appear in `segment.content`, so the visible-part allowlist
+             *  cannot catch them. */
+            const hasSpanAttachments = segment.content.some(
+              (part) =>
+                part != null &&
+                (filterAttachmentsForPart(
+                  attachmentMap[getToolCallId(part)],
+                  getPartAgentId(part),
+                  getPartStepId(part),
+                  getSiblingStepIds(part, resolvedToolCallStepOwners),
+                )?.length ?? 0) > 0,
+            );
             /** A fold summarizes work that is DONE. An unresolved approval is
              *  the run asking the reader for something and blocking until it
              *  gets it — never put that behind a disclosure they have to find.
@@ -793,8 +816,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  resolves), but a subagent nested in an already-labeled group
              *  can raise one long after its parent's label filled. The span
              *  renders exactly as it would without the feature until it
-             *  clears, then folds. */
-            if (synthesized && hasPendingApproval) {
+             *  clears, then folds. The same escape covers hoisted tool output. */
+            if (synthesized && (hasPendingApproval || hasSpanAttachments)) {
               return renderSegment(
                 segment.content,
                 absoluteIndexAt(segment.startIndex),

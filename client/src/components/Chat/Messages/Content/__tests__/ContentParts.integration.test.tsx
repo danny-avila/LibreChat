@@ -684,18 +684,19 @@ describe('ContentParts — synthesized activity folds', () => {
     expect(screen.queryByRole('button', { name: FIRST })).toBeNull();
   });
 
-  it('animates a summary that claims content the fold had left outside', () => {
-    /** The server extends a phase back across short intermediate text; the
-     *  client treats that text as a boundary so a bare final answer can never
-     *  hide. The spans therefore differ, the card is genuinely a new one, and
-     *  it plays the entrance — which mounts open over the text the reader was
-     *  looking at and folds it in, rather than blinking it out of existence. */
+  it('keeps the toggle even when the summary claims more content than the fold', () => {
+    /** The server extends a phase back across short intermediate text that the
+     *  client treats as a boundary, so the two spans start in different
+     *  places. They still share their first tool call, which is what the card
+     *  is anchored to — so this is the same card gaining content, not a new
+     *  one, and the reader's choice rides through. */
     const preface = makeTextPart('Checking now.');
     const { rerender } = render(
       <RecoilRoot>
         <ContentParts {...baseProps} content={[preface, ...labeledRun()]} />
       </RecoilRoot>,
     );
+    fireEvent.click(foldHeader());
 
     rerender(
       <RecoilRoot>
@@ -710,6 +711,20 @@ describe('ContentParts — synthesized activity folds', () => {
       'aria-expanded',
       'true',
     );
+  });
+
+  it('refuses to fold a span whose tool output is hoisted outside its group', () => {
+    /** `ToolCallGroup` renders `groupAttachments` outside its own panel so a
+     *  generated image survives collapsing the group. A fold would put that
+     *  hoist back inside a disclosure. */
+    renderContentParts({
+      ...baseProps,
+      content: labeledRun(),
+      attachments: [imageAttachment('t2', 'chart.png')],
+    });
+
+    expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
+    expect(screen.getByRole('button', { name: FIRST })).toBeInTheDocument();
   });
 
   it('keeps the reader’s card open when the message takes its server id', () => {
