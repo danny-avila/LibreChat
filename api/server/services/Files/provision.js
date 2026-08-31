@@ -20,6 +20,34 @@ const { getStrategyFunctions } = require('./strategies');
 
 const axios = createAxiosInstance();
 
+/* Sources whose `getDownloadStream` takes `(req, filepath)` and returns a readable.
+ * Others diverge: `openai` takes `(file_id, client)` and `execute_code` takes
+ * `(fileIdentifier, identity, req)` returning an Axios response, so calling them
+ * through this contract fails. An allowlist keeps an unfamiliar source skipped
+ * rather than mis-invoked. */
+const STORAGE_STREAM_SOURCES = new Set([
+  FileSources.local,
+  FileSources.s3,
+  FileSources.cloudfront,
+  FileSources.azure_blob,
+  FileSources.firebase,
+]);
+
+/** Resolves a storage download stream, or null when the source uses a different contract. */
+async function getStorageStream(file, req) {
+  if (!STORAGE_STREAM_SOURCES.has(file.source)) {
+    logger.warn(
+      `[provision] Cannot stream "${file.filename}" (${file.file_id}) from source "${file.source}": unsupported download contract`,
+    );
+    return null;
+  }
+  const { getDownloadStream } = getStrategyFunctions(file.source);
+  if (!getDownloadStream) {
+    return null;
+  }
+  return await getDownloadStream(req, file.filepath);
+}
+
 /** Composes code-API auth: legacy X-API-Key when configured, plus JWT bearer when enabled. */
 async function buildCodeApiHeaders({ apiKey, req }) {
   return {
@@ -82,15 +110,13 @@ async function loadCodeApiKey(userId) {
  *   Merged pointers plus the deferred DB update
  */
 async function provisionToCodeEnv({ req, file, entity_id }) {
-  const { getDownloadStream } = getStrategyFunctions(file.source);
-  if (!getDownloadStream) {
+  const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
+  const stream = await getStorageStream(file, req);
+  if (!stream) {
     throw new Error(
       `Cannot provision file "${file.filename}" to code env: storage source "${file.source}" does not support download streams`,
     );
   }
-
-  const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
-  const stream = await getDownloadStream(req, file.filepath);
 
   const kind = entity_id ? 'agent' : 'user';
   const id = entity_id ?? req.user.id;
@@ -147,13 +173,12 @@ async function provisionToVectorDB({ req, file, entity_id, existingStream }) {
   try {
     let stream = existingStream;
     if (!stream) {
-      const { getDownloadStream } = getStrategyFunctions(file.source);
-      if (!getDownloadStream) {
+      stream = await getStorageStream(file, req);
+      if (!stream) {
         throw new Error(
           `Cannot provision file "${file.filename}" to vector DB: storage source "${file.source}" does not support download streams`,
         );
       }
-      stream = await getDownloadStream(req, file.filepath);
     }
 
     // uploadVectors expects a file-like object with a `path` property for fs.createReadStream.
