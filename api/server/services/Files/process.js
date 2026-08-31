@@ -17,6 +17,7 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  resolveUploadLLMDeliveryPath,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -52,10 +53,6 @@ const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
-const {
-  resolveUploadEndpoint,
-  resolveUploadLLMDeliveryPath,
-} = require('~/server/services/Files/routing');
 const db = require('~/models');
 
 /**
@@ -469,12 +466,14 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id, endpoint, agent_id } = metadata;
+  const { file_id, temp_file_id, endpoint } = metadata;
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const configEndpoint = await resolveUploadEndpoint({ endpoint, agent_id, req });
+  /* The route resolved the agent's provider before validating, so the same endpoint
+   * governs delivery routing here. */
+  const configEndpoint = metadata.effectiveEndpoint ?? endpoint;
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint: configEndpoint });
   const llmDeliveryPath = resolveUploadLLMDeliveryPath({
-    file,
+    mimeType: file.mimetype,
     endpointConfig,
     fileConfig,
     endpoint: configEndpoint,
@@ -702,7 +701,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     tool_resource === EToolResources.ocr ? EToolResources.context : tool_resource;
 
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const endpoint = await resolveUploadEndpoint({ endpoint: req.body?.endpoint, agent_id, req });
+  const endpoint = metadata.effectiveEndpoint ?? req.body?.endpoint;
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
 
   if (agent_id && !tool_resource && !messageAttachment) {
@@ -712,8 +711,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   }
 
   const llmDeliveryPath = resolveUploadLLMDeliveryPath({
-    tool_resource,
-    file,
+    toolResource: tool_resource,
+    mimeType: file.mimetype,
     endpointConfig,
     fileConfig,
     endpoint,

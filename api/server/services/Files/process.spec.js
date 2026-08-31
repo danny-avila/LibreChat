@@ -1565,9 +1565,10 @@ describe('processAgentFileUpload', () => {
       );
     });
 
-    test('resolves llmDeliveryPath from the agent provider config for agent uploads', async () => {
-      const { createFile, getAgent } = require('~/models');
-      getAgent.mockResolvedValueOnce({ provider: 'Custom Provider' });
+    test('routes under the provider endpoint the caller resolved', async () => {
+      /* The route resolves the agent's provider once, before validation, and hands it
+       * down so acceptance and routing use one configuration. */
+      const { createFile } = require('~/models');
       const storageUpload = jest.fn().mockResolvedValue({
         filepath: '/uploads/user-123/file-uuid-123__upload.bin',
         bytes: 128,
@@ -1591,10 +1592,10 @@ describe('processAgentFileUpload', () => {
           agent_id: 'agent-abc',
           message_file: 'true',
           file_id: 'file-uuid-123',
+          effectiveEndpoint: 'Custom Provider',
         },
       });
 
-      expect(getAgent).toHaveBeenCalledWith({ id: 'agent-abc' });
       expect(createFile).toHaveBeenCalledWith(
         expect.objectContaining({ llmDeliveryPath: 'none' }),
         true,
@@ -1845,9 +1846,8 @@ describe('processImageFile', () => {
     );
   });
 
-  test('resolves llmDeliveryPath from the agent provider config for agent image uploads', async () => {
-    const { createFile, getAgent } = require('~/models');
-    getAgent.mockResolvedValueOnce({ provider: 'Custom Provider' });
+  test('routes an agent image under the provider endpoint the caller resolved', async () => {
+    const { createFile } = require('~/models');
     const handleImageUpload = jest.fn().mockResolvedValue({
       filepath: '/images/user-123/image.webp',
       bytes: 256,
@@ -1870,10 +1870,12 @@ describe('processImageFile', () => {
         file_id: 'image-file-id',
         agent_id: 'agent-abc',
         endpoint: EModelEndpoint.agents,
+        effectiveEndpoint: 'Custom Provider',
       },
     });
 
-    expect(getAgent).toHaveBeenCalledWith({ id: 'agent-abc' });
+    /* Storage still keys off the request endpoint; only delivery routing follows the
+     * resolved provider. */
     expect(handleImageUpload).toHaveBeenCalledWith(
       expect.objectContaining({ endpoint: EModelEndpoint.agents }),
     );

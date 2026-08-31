@@ -115,9 +115,31 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'azureOpenAI')).toBe(
       'text',
     );
+  });
+
+  it('keeps unsupported video off the model path rather than parsing it as text', () => {
+    /* Nothing extracts text from video: speech-to-text covers audio only, and the default
+     * text matcher accepts any well-formed type, so a downgrade to text ends in raw bytes
+     * decoded as UTF-8. */
     expect(resolveDefaultLLMDeliveryPath('video/mp4', undefined, undefined, 'azureOpenAI')).toBe(
-      'text',
+      'none',
     );
+    expect(resolveDefaultLLMDeliveryPath('video/mp4', undefined, undefined, 'anthropic')).toBe(
+      'none',
+    );
+  });
+
+  it('still honors an explicit override for video', () => {
+    /* Capability gating applies to the system default only; an admin who configures a
+     * destination has made the decision. */
+    expect(
+      resolveDefaultLLMDeliveryPath(
+        'video/mp4',
+        { overrides: { 'video/*': 'text' } },
+        undefined,
+        'anthropic',
+      ),
+    ).toBe('text');
   });
 
   it('keeps provider delivery for endpoints that do support documents', () => {
@@ -126,11 +148,8 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     );
   });
 
-  it('routes media to text for document-capable providers without media encoders', () => {
+  it('routes transcribable media to text for providers without media encoders', () => {
     expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'openAI')).toBe(
-      'text',
-    );
-    expect(resolveDefaultLLMDeliveryPath('video/mp4', undefined, undefined, 'anthropic')).toBe(
       'text',
     );
     expect(resolveDefaultLLMDeliveryPath('application/pdf', undefined, undefined, 'openAI')).toBe(

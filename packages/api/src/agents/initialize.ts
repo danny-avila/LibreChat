@@ -1031,9 +1031,22 @@ export async function initializeAgent(
 
   /** Build the set of tool resources the agent has enabled */
   const toolResourceSet = new Set<EToolResources>();
-  for (const tool of agent.tools ?? []) {
+  const addToolResource = (tool: string): void => {
     if (EToolResources[tool as keyof typeof EToolResources]) {
       toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
+    }
+  };
+  for (const tool of agent.tools ?? []) {
+    addToolResource(tool);
+  }
+  /* A skill's allowed-tools can contribute file_search or execute_code that the agent
+   * itself does not list. Eligibility has to reflect the effective tool set, or invoking
+   * the skill's tool searches or runs code with nothing provisioned. The primes are
+   * resolved above, so this needs no reordering, and the MCP name heal applied to the
+   * union later never rewrites these plain resource names. */
+  for (const prime of [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])]) {
+    for (const tool of prime.allowedTools ?? []) {
+      addToolResource(tool);
     }
   }
 
