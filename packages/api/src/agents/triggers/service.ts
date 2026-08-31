@@ -348,11 +348,14 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       return purgeRecoveryPromise;
     }
     const methods = deps.methods;
-    /** Each maintenance operation fails alone: a rejection is logged and
-     * counted as zero progress instead of aborting the pass, so one broken
+    /** Independent maintenance operations fail alone: a rejection is logged
+     * and counted as zero progress instead of aborting the pass, so one broken
      * cleanup (e.g. an engine-specific query rejection) can never starve the
-     * others — lane reclamation in particular runs after these and used to be
-     * skipped whenever any of them threw. */
+     * others. Batch-receipt recovery is NOT independent: lane reclamation
+     * consumes the lane-cleanup markers, and running it against a
+     * half-recovered batch clears a request that a later successful recovery
+     * can no longer re-arm, retaining the lane permanently — so reclamation
+     * still waits for a batch-recovery pass that did not fail. */
     const isolated = (label: string, run: () => Promise<number>): Promise<number> =>
       run().catch((error) => {
         logger.error(
@@ -362,14 +365,21 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         return 0;
       });
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, recoveredBatches, expiredLegacyActorReceipts] =
+      const [purgedUsers, publishedLanes, batchRecovery, expiredLegacyActorReceipts] =
         await Promise.all([
           isolated('user purges', () => methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit)),
           isolated('lane publications', () =>
             methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
           ),
-          isolated('batch receipts', () =>
-            methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
+          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit).then(
+            (count) => ({ succeeded: true as const, count }),
+            (error) => {
+              logger.error(
+                '[agent-triggers] durable delivery maintenance step failed (batch receipts):',
+                error,
+              );
+              return { succeeded: false as const, count: 0 };
+            },
           ),
           isolated(
             'legacy actor receipts',
@@ -378,9 +388,12 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
               Promise.resolve(0),
           ),
         ]);
-      const reclaimedLanes = await isolated('lane reclamation', () =>
-        methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
-      );
+      const recoveredBatches = batchRecovery.count;
+      const reclaimedLanes = batchRecovery.succeeded
+        ? await isolated('lane reclamation', () =>
+            methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
+          )
+        : 0;
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }

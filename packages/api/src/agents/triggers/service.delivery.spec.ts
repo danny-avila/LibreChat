@@ -411,6 +411,31 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
+  it('holds lane reclamation while batch-receipt recovery fails', async () => {
+    /** Reclamation consumes the lane-cleanup markers; against a half-recovered
+     * batch it clears a request no later successful recovery can re-arm, so a
+     * failed batch pass must gate it — unlike the independent steps above. */
+    const recoverAgentTriggerBatchReceipts = jest
+      .fn()
+      .mockRejectedValue(new Error('transient settle failure'));
+    const reclaimInactiveAgentTriggerLanes = jest.fn(async () => 1);
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({
+        recoverAgentTriggerBatchReceipts,
+        reclaimInactiveAgentTriggerLanes,
+      }),
+      purgeRecoveryIntervalMs: 60_000,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(1);
+    expect(reclaimInactiveAgentTriggerLanes).not.toHaveBeenCalled();
+    await service.stop();
+  });
+
   it('settles interrupted batch receipts before reclaiming their lane', async () => {
     let finishBatchRecovery: ((count: number) => void) | undefined;
     const recoverAgentTriggerBatchReceipts = jest.fn(

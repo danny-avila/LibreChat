@@ -5652,12 +5652,12 @@ describe('Conversation Operations', () => {
           },
         ],
       });
-      const projections: Array<Record<string, unknown> | undefined> = [];
+      const projections: Array<Record<string, number> | undefined> = [];
       const originalFind = Conversation.collection.find.bind(Conversation.collection);
       const findSpy = jest
         .spyOn(Conversation.collection, 'find')
         .mockImplementation((filter, options) => {
-          projections.push(options?.projection as Record<string, unknown> | undefined);
+          projections.push(options?.projection);
           return originalFind(filter, options);
         });
       try {
@@ -5665,9 +5665,7 @@ describe('Conversation Operations', () => {
       } finally {
         findSpy.mockRestore();
       }
-      const candidateProjection = projections[0];
-      expect(candidateProjection).toBeDefined();
-      expect(Object.values(candidateProjection ?? {})).not.toContain(0);
+      expect(projections[0]).toEqual({ _id: 1, agentEventActorReconciliations: 1 });
     });
 
     it('retains an expired legacy receipt while its delivery handling is nonterminal', async () => {
