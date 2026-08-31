@@ -473,7 +473,13 @@ const initializeClient = async ({
         toolNames.includes(Constants.EDIT_FILE) ||
         toolNames.includes(Constants.WRITE_FILE) ||
         toolNames.includes(Constants.BASH_PROGRAMMATIC_TOOL_CALLING);
-      const needsSearch = toolNames.includes('file_search');
+      /** Programmatic tool calling orchestrates nested tools whose names never reach
+       *  this predicate, so a file_search reachable only through PTC would otherwise
+       *  run before its attachments were embedded. Provision when PTC is invoked. */
+      const needsSearch =
+        toolNames.includes('file_search') ||
+        toolNames.includes(Constants.PROGRAMMATIC_TOOL_CALLING) ||
+        toolNames.includes(Constants.BASH_PROGRAMMATIC_TOOL_CALLING);
 
       if (!needsCode && !needsSearch) {
         return;
