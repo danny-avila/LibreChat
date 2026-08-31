@@ -77,7 +77,10 @@ jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
-  useFocusTrap: jest.fn(),
+  /** The real trap: its Escape listener is native and sits on the panel, so it
+   *  runs before the panel's own React handler. Stubbing it made the panel's
+   *  Escape assertions pass in both directions. */
+  useFocusTrap: jest.requireActual('~/hooks/useFocusTrap').default,
   useLocalize: () => (key: string) => key,
   useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
 }));
@@ -226,12 +229,14 @@ jest.mock('@librechat/client', () => ({
     ariaLabel,
     displayValue,
     onOpenChange,
+    disabled,
   }: {
     items: { value: string; label: string }[];
     setValue: (value: string) => void;
     ariaLabel: string;
     displayValue?: string;
     onOpenChange?: (open: boolean) => void;
+    disabled?: boolean;
   }) => (
     <div>
       <button
@@ -240,6 +245,7 @@ jest.mock('@librechat/client', () => ({
         aria-controls="mock-combobox-options"
         aria-expanded="true"
         aria-label={ariaLabel}
+        disabled={disabled}
         onClick={() => onOpenChange?.(true)}
       >
         {displayValue}
@@ -251,6 +257,7 @@ jest.mock('@librechat/client', () => ({
             type="button"
             role="option"
             aria-selected="false"
+            disabled={disabled}
             onClick={() => setValue(item.value)}
           >
             {item.label}
@@ -273,6 +280,7 @@ jest.mock('@librechat/client', () => ({
     actions,
     submitOnEnter = true,
     resolveKeyVerdict,
+    maxLength,
   }: {
     value: string;
     onChange: (value: string) => void;
@@ -288,6 +296,7 @@ jest.mock('@librechat/client', () => ({
       event: React.KeyboardEvent<HTMLTextAreaElement>,
       isComposing: boolean,
     ) => 'submit' | 'block' | 'newline' | 'none';
+    maxLength?: number;
   }) => (
     <div>
       <textarea
@@ -295,6 +304,7 @@ jest.mock('@librechat/client', () => ({
         placeholder={placeholder}
         value={value}
         disabled={disabled}
+        maxLength={maxLength}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           const verdict =
@@ -1218,6 +1228,86 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByLabelText('com_ui_message_input')).toHaveValue(
       'A different question entirely.',
     );
+  });
+
+  /** The cap belongs to the bounded control command, not to ordinary chat text
+   *  bound for a composer that caps nothing. */
+  it.each([
+    ['a live run composes a bounded control command', 'running' as const, 4096],
+    ['a settled run composes an ordinary continuation', 'completed' as const, null],
+  ])('caps the field only while %s', (_label, status, expected) => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status, controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    const composer = screen.getByLabelText('com_ui_message_input');
+    expect(composer.getAttribute('maxlength')).toBe(expected == null ? null : String(expected));
+  });
+
+  /** The panel holds the draft that travels with a continuation, so nothing may
+   *  swap the composer for another actor's while that request is out. */
+  it('freezes the actor picker while a continuation is in flight', () => {
+    const first: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'First actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task',
+      tasks: [{ taskId: 'task', status: 'completed' }],
+      tasksTruncated: false,
+    };
+    const second: ParentSubagentSummary = {
+      ...first,
+      threadId: 'child-thread-2',
+      subagentType: 'agent-2',
+      agentId: 'agent-2',
+      title: 'Second actor',
+      actorId: 'actor-2',
+      latestTaskId: 'task-2',
+      tasks: [{ taskId: 'task-2', status: 'completed' }],
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [first, second]]]);
+    mockParentChildrenByThread = new Map([
+      [first.threadId, first],
+      [second.threadId, second],
+    ]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+    };
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('combobox', { name: 'com_ui_subagent_actor' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
+    expect(screen.getByRole('combobox', { name: 'com_ui_subagent_actor' })).toBeDisabled();
+
+    act(() => mockForkMutate.mock.calls[0][1].onError());
+    expect(screen.getByRole('combobox', { name: 'com_ui_subagent_actor' })).toBeEnabled();
   });
 
   it('continues with no draft when the reader asks for the chat without typing', () => {

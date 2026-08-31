@@ -111,6 +111,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const enterToSend = useRecoilValue(store.enterToSend);
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
   const [actorPickerOpen, setActorPickerOpen] = useState(false);
+  /** A continuation is out. Declared here because the selection-advance effect
+   *  below has to defer to it, well before the mutation itself exists. */
+  const [continuationPending, setContinuationPending] = useState(false);
   const resetSelection = useResetRecoilState(activeSubagentPanel);
   const setSelection = useSetRecoilState(activeSubagentPanel);
   const agentsMap = useAgentsMapContext();
@@ -245,6 +248,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     if (
       selection.event == null ||
       selection.event.pinnedTask === true ||
+      /** A continuation in flight is about to take the reader elsewhere, and
+       *  its panel still holds the draft that travels with it. Advancing the
+       *  selection under it would swap that composer for another actor's. */
+      continuationPending ||
       eventSummary?.latestTaskId == null ||
       eventSummary.latestTaskId === taskId
     ) {
@@ -256,7 +263,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       selection.event.siblingParentMessageIds,
     );
     if (nextSelection != null) setSelection(nextSelection);
-  }, [eventSummary, selection, setSelection, taskId]);
+  }, [continuationPending, eventSummary, selection, setSelection, taskId]);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&
@@ -288,6 +295,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
        *  be written to storage the reader may have asked not to use. */
       const continuation = continuationRef.current;
       continuationRef.current = null;
+      setContinuationPending(false);
       const stillItsOwnComposer = continuation?.identity === controlSelectionRef.current;
       const draft = stillItsOwnComposer
         ? controlMessageRef.current.trim() || (continuation?.text ?? '')
@@ -303,6 +311,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       /** The panel stays open on a failed continuation, and the composer still
        *  holds the words, so there is nothing to restore. */
       continuationRef.current = null;
+      setContinuationPending(false);
       showToast({ message: localize('com_ui_continue_chat_error'), status: 'error' });
     },
   });
@@ -975,6 +984,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const continueAsChat = useCallback(() => {
     if (!canContinueAsChat || selection.durable == null || continueChat.isLoading) return;
     continuationRef.current = { identity: controlIdentity, text: controlMessage.trim() };
+    setContinuationPending(true);
     continueChat.mutate({
       conversationId: selection.durable.threadId,
       messageId: `${selection.durable.taskId}:assistant`,
@@ -1229,6 +1239,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               ariaLabel={localize('com_ui_subagent_actor')}
               items={actorOptions}
               SelectIcon={selectedActorIcon}
+              disabled={continuationPending}
               /** In the panel, not in a portal: on mobile this `aside` is a
                   modal whose focus trap only knows its own descendants, so a
                   portaled search field would let Tab escape to the page
@@ -1313,7 +1324,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               placeholder={composerPlaceholder}
               submitOnEnter={enterToSend}
               resolveKeyVerdict={resolveKeyVerdict}
-              maxLength={4 * 1024}
+              /** The cap bounds a subagent CONTROL command's payload. A
+               *  continuation is ordinary chat text bound for an ordinary
+               *  composer, which caps nothing. */
+              maxLength={composerMode === 'control' ? 4 * 1024 : undefined}
               actions={
                 composerMode === 'control' ? (
                   <>
