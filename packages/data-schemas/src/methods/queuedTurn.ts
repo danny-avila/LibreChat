@@ -266,9 +266,9 @@ export interface AgentQueuedTurnMethods {
     input: AgentQueuedTurnConversationScope & {
       sequence: number;
       expectedPredecessorCreatedAt?: number;
-      admittedBefore?: Date;
+      allowLegacyPredecessorInference?: boolean;
     },
-  ) => Promise<number | undefined>;
+  ) => Promise<number | null | undefined>;
   drainAgentQueuedTurns: (
     input: AgentQueuedTurnOwnerScope & {
       conversationId?: string;
@@ -1019,15 +1019,17 @@ export function createAgentQueuedTurnMethods(
     if (rootPredecessorCreatedAt == null) {
       return turn;
     }
-    const effectivePredecessorCreatedAt =
-      (await getEffectiveAgentQueuedTurnPredecessor({
-        user: turn.user,
-        ...(turn.tenantId != null && { tenantId: turn.tenantId }),
-        conversationId: turn.conversationId,
-        sequence: turn.sequence,
-        expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
-        admittedBefore: turn.terminalReceipt.settledAt,
-      })) ?? rootPredecessorCreatedAt;
+    const resolvedPredecessorCreatedAt = await getEffectiveAgentQueuedTurnPredecessor({
+      user: turn.user,
+      ...(turn.tenantId != null && { tenantId: turn.tenantId }),
+      conversationId: turn.conversationId,
+      sequence: turn.sequence,
+      expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
+    });
+    if (resolvedPredecessorCreatedAt === null) {
+      return turn;
+    }
+    const effectivePredecessorCreatedAt = resolvedPredecessorCreatedAt ?? rootPredecessorCreatedAt;
     await Turn().updateOne(
       {
         _id: turn._id,
@@ -1912,16 +1914,20 @@ export function createAgentQueuedTurnMethods(
         const rootPredecessorCreatedAt = normalizePredecessor(
           admission.expectedPredecessorCreatedAt,
         );
+        const resolvedPredecessorCreatedAt = await getEffectiveAgentQueuedTurnPredecessor({
+          user: input.user,
+          ...(input.tenantId != null && { tenantId: input.tenantId }),
+          conversationId: input.conversationId,
+          sequence: admission.sequence,
+          ...(rootPredecessorCreatedAt != null && {
+            expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
+          }),
+          allowLegacyPredecessorInference: true,
+        });
         effectivePredecessorCreatedAt =
-          (await getEffectiveAgentQueuedTurnPredecessor({
-            user: input.user,
-            ...(input.tenantId != null && { tenantId: input.tenantId }),
-            conversationId: input.conversationId,
-            sequence: admission.sequence,
-            ...(rootPredecessorCreatedAt != null && {
-              expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
-            }),
-          })) ?? rootPredecessorCreatedAt;
+          resolvedPredecessorCreatedAt === null
+            ? undefined
+            : (resolvedPredecessorCreatedAt ?? rootPredecessorCreatedAt);
       }
       const reconciled =
         effectivePredecessorCreatedAt == null
@@ -2076,18 +2082,15 @@ export function createAgentQueuedTurnMethods(
     input: AgentQueuedTurnConversationScope & {
       sequence: number;
       expectedPredecessorCreatedAt?: number;
-      admittedBefore?: Date;
+      allowLegacyPredecessorInference?: boolean;
     },
-  ): Promise<number | undefined> {
+  ): Promise<number | null | undefined> {
     if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0) {
       throw new TypeError('Agent queued turn sequence must be a positive integer');
     }
     const rootEpoch = normalizePredecessor(input.expectedPredecessorCreatedAt);
     if (rootEpoch == null) {
       return undefined;
-    }
-    if (input.admittedBefore != null && !Number.isFinite(input.admittedBefore.getTime())) {
-      throw new TypeError('Agent queued turn admission cutoff is invalid');
     }
     const predecessors = await Turn()
       .find({
@@ -2097,42 +2100,66 @@ export function createAgentQueuedTurnMethods(
         status: 'admitted',
         'terminalReceipt.outcome': 'admitted',
         'terminalReceipt.generationCreatedAt': { $exists: true },
-        ...(input.admittedBefore != null && {
-          'terminalReceipt.settledAt': { $lte: input.admittedBefore },
-        }),
       })
-      .sort({ 'terminalReceipt.settledAt': 1, sequence: 1 })
       .select({ sequence: 1, terminalReceipt: 1 })
       .lean<IAgentQueuedTurn[]>();
-    let effectivePredecessorCreatedAt = rootEpoch;
-    let advanced = false;
-    const remaining = [...predecessors];
-    while (remaining.length > 0) {
-      /** Exact v2 lineage is authoritative and is independent of enqueue
-       * sequence (priority may overtake FIFO). Settled order is used only to
-       * bridge legacy admitted receipts that predate the stored edge. */
-      let nextIndex = remaining.findIndex(
-        (turn) =>
-          normalizePredecessor(turn.terminalReceipt?.effectivePredecessorCreatedAt) ===
-          effectivePredecessorCreatedAt,
-      );
-      if (nextIndex < 0) {
-        nextIndex = remaining.findIndex(
-          (turn) => turn.terminalReceipt?.effectivePredecessorCreatedAt == null,
-        );
-      }
-      if (nextIndex < 0) {
-        break;
-      }
-      const [next] = remaining.splice(nextIndex, 1);
-      const generationCreatedAt = normalizePredecessor(next.terminalReceipt?.generationCreatedAt);
+    /** Stored v2 edges define admission order without comparing clocks or
+     * enqueue sequence. A single legacy gap is inferable only while the
+     * caller still owns the lane head; every other incomplete/branched graph
+     * returns null so callers preserve explicit fail-closed evidence. */
+    const edges = new Map<number, number>();
+    const legacyOutputs: number[] = [];
+    for (const turn of predecessors) {
+      const generationCreatedAt = normalizePredecessor(turn.terminalReceipt?.generationCreatedAt);
       if (generationCreatedAt == null) {
         continue;
       }
-      effectivePredecessorCreatedAt = generationCreatedAt;
-      advanced = true;
+      const effectivePredecessorCreatedAt = normalizePredecessor(
+        turn.terminalReceipt?.effectivePredecessorCreatedAt,
+      );
+      if (effectivePredecessorCreatedAt == null) {
+        legacyOutputs.push(generationCreatedAt);
+        continue;
+      }
+      if (edges.has(effectivePredecessorCreatedAt)) {
+        return null;
+      }
+      edges.set(effectivePredecessorCreatedAt, generationCreatedAt);
     }
-    return advanced ? effectivePredecessorCreatedAt : undefined;
+    if (
+      legacyOutputs.length > 0 &&
+      (input.allowLegacyPredecessorInference !== true || legacyOutputs.length > 1)
+    ) {
+      return null;
+    }
+    let effectivePredecessorCreatedAt = rootEpoch;
+    let traversed = 0;
+    const visited = new Set<number>();
+    const advanceExactEdges = () => {
+      while (edges.has(effectivePredecessorCreatedAt)) {
+        if (visited.has(effectivePredecessorCreatedAt)) {
+          return false;
+        }
+        visited.add(effectivePredecessorCreatedAt);
+        effectivePredecessorCreatedAt = edges.get(effectivePredecessorCreatedAt) as number;
+        traversed += 1;
+      }
+      return true;
+    };
+    if (!advanceExactEdges()) {
+      return null;
+    }
+    if (legacyOutputs.length === 1) {
+      effectivePredecessorCreatedAt = legacyOutputs[0];
+      traversed += 1;
+      if (!advanceExactEdges()) {
+        return null;
+      }
+    }
+    if (traversed !== predecessors.length) {
+      return null;
+    }
+    return traversed > 0 ? effectivePredecessorCreatedAt : undefined;
   }
 
   async function drainAgentQueuedTurns(

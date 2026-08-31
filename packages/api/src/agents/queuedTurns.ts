@@ -598,16 +598,28 @@ function createAgentQueuedTurnResolver({
       return { status: 'settled' };
     }
 
+    const resolvedPredecessorCreatedAt = await methods.getEffectiveAgentQueuedTurnPredecessor({
+      user: claim.user,
+      ...(claim.tenantId != null && { tenantId: claim.tenantId }),
+      conversationId: claim.conversationId,
+      sequence: claim.sequence,
+      ...(claim.expectedPredecessorCreatedAt != null && {
+        expectedPredecessorCreatedAt: claim.expectedPredecessorCreatedAt,
+      }),
+      allowLegacyPredecessorInference: true,
+    });
+    if (resolvedPredecessorCreatedAt === null) {
+      await deadClaim(
+        methods,
+        envelope,
+        claim,
+        'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE',
+        'The queued turn admission order could not be reconstructed safely. Review this turn before sending it.',
+      );
+      return { status: 'settled' };
+    }
     const effectivePredecessorCreatedAt =
-      (await methods.getEffectiveAgentQueuedTurnPredecessor({
-        user: claim.user,
-        ...(claim.tenantId != null && { tenantId: claim.tenantId }),
-        conversationId: claim.conversationId,
-        sequence: claim.sequence,
-        ...(claim.expectedPredecessorCreatedAt != null && {
-          expectedPredecessorCreatedAt: claim.expectedPredecessorCreatedAt,
-        }),
-      })) ?? claim.expectedPredecessorCreatedAt;
+      resolvedPredecessorCreatedAt ?? claim.expectedPredecessorCreatedAt;
 
     const admission = await methods.beginAgentQueuedTurnAdmission({
       user: claim.user,

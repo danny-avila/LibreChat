@@ -107,7 +107,7 @@ function resolverMethods() {
     getEffectiveAgentQueuedTurnPredecessor: jest.fn(
       async (
         ..._args: Parameters<AgentQueuedTurnMethods['getEffectiveAgentQueuedTurnPredecessor']>
-      ): Promise<number | undefined> => undefined,
+      ): Promise<number | null | undefined> => undefined,
     ),
     markAgentQueuedTurnAdmitted: jest.fn(async () => ({
       outcome: 'admitted' as const,
@@ -494,7 +494,32 @@ describe('Agent queued-turn continuation', () => {
       conversationId: 'conversation-1',
       sequence: 1,
       expectedPredecessorCreatedAt: NOW,
+      allowLegacyPredecessorInference: true,
     });
+  });
+
+  it('dead-letters a legacy admission order that cannot be reconstructed safely', async () => {
+    const { methods, spies } = resolverMethods();
+    spies.getEffectiveAgentQueuedTurnPredecessor.mockResolvedValueOnce(null);
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toEqual({
+      status: 'settled',
+    });
+    expect(spies.releaseAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        disposition: 'dead',
+        failure: expect.objectContaining({
+          code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE',
+        }),
+      }),
+    );
+    expect(spies.beginAgentQueuedTurnAdmission).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -1173,12 +1173,14 @@ describe('agent queued turn methods', () => {
       ...claimInput(first.turn.queuedTurnId),
       admissionId: 'admission-root-a',
       startedAt: START,
+      effectivePredecessorCreatedAt: 10,
     });
     await methods.markAgentQueuedTurnAdmitted({
       ...claimInput(first.turn.queuedTurnId),
       admissionId: 'admission-root-a',
       admissionMode: 'ordinary',
       generationCreatedAt: 11,
+      effectivePredecessorCreatedAt: 10,
       settledAt: START,
     });
 
@@ -1303,8 +1305,13 @@ describe('agent queued turn methods', () => {
         conversationId: 'conversation-1',
         sequence: normal.turn.sequence,
         expectedPredecessorCreatedAt: 10,
+        allowLegacyPredecessorInference: true,
       }),
     ).resolves.toBe(11);
+    await Turn.updateOne(
+      { _id: priority.turn.queuedTurnId },
+      { $set: { 'terminalReceipt.effectivePredecessorCreatedAt': 10 } },
+    );
 
     const normalDelivery = 'admission-priority-normal';
     await methods.reserveAgentQueuedTurnDelivery({
@@ -1355,6 +1362,23 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({
       terminalReceipt: { effectivePredecessorCreatedAt: 11 },
     });
+
+    await Turn.updateMany(
+      { _id: { $in: [priority.turn.queuedTurnId, normal.turn.queuedTurnId] } },
+      { $unset: { 'terminalReceipt.effectivePredecessorCreatedAt': 1 } },
+    );
+    const ambiguous = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'priority-ambiguous', expectedPredecessorCreatedAt: 10 }),
+    );
+    await expect(
+      methods.getEffectiveAgentQueuedTurnPredecessor({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        sequence: ambiguous.turn.sequence,
+        expectedPredecessorCreatedAt: 10,
+      }),
+    ).resolves.toBeNull();
   });
 
   it('projects the newest failures when more than 100 dead receipts await dismissal', async () => {
