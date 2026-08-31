@@ -1050,15 +1050,22 @@ export async function initializeAgent(
    * in the conversation. Without this, file_search and execute_code tools
    * on handoff agents would fail to find previously attached files.
    */
-  if (conversationId != null && resendFiles) {
+  /* `resendFiles` governs whether earlier attachments are sent to the model again, so
+   * it gates the delivery queries below. Deferred provisioning candidates are already
+   * excluded from delivery, and a sandbox or search call still needs its inputs, so
+   * that lookup runs whichever way the setting is configured. */
+  const wantsCodeFiles = toolResourceSet.has(EToolResources.execute_code);
+  const wantsSearchFiles = toolResourceSet.has(EToolResources.file_search);
+  const wantsProvisioning = wantsCodeFiles || wantsSearchFiles;
+
+  if (conversationId != null && (resendFiles || wantsProvisioning)) {
     const getThreadMessages = db.getMessages;
     /** Falsy anchors cannot match a parent chain, so they get no walk. */
     const threadAnchor =
       parentMessageId && parentMessageId !== Constants.NO_PARENT ? parentMessageId : null;
-    const needsThreadWalk =
-      toolResourceSet.has(EToolResources.execute_code) &&
-      threadAnchor != null &&
-      getThreadMessages != null;
+    /* Either provisioning resource needs the anchor: deferred attachments for
+     * file_search are found by thread file ids just as code files are. */
+    const needsThreadWalk = wantsProvisioning && threadAnchor != null && getThreadMessages != null;
 
     /**
      * The conversation's file refs and the thread walk share no inputs, so they resolve
@@ -1099,25 +1106,24 @@ export async function initializeAgent(
      * both on `threadFileIds` reaches files regardless of which sibling first generated
      * them — see `getCodeGeneratedFiles` for the branched-conversation rationale.
      */
-    const wantsCodeFiles = toolResourceSet.has(EToolResources.execute_code);
     /* Attachments accepted on an earlier turn whose tool never ran are absent from the
      * three queries below, since those match only files that already carry the result
      * of provisioning. Fetched alongside them, not after: it is independent of all
      * three, and this runs on the agent initialization path. */
-    const wantsProvisioning = wantsCodeFiles || toolResourceSet.has(EToolResources.file_search);
     const [toolFiles, codeGeneratedFiles, userCodeFiles, deferredFiles] = await Promise.all([
-      requestFileOwnerScope
+      resendFiles && requestFileOwnerScope
         ? (db.getToolFilesByIds(fileIds, toolResourceSet, requestFileOwnerScope) as Promise<
             IMongoFile[]
           >)
         : ([] as IMongoFile[]),
-      wantsCodeFiles && db.getCodeGeneratedFiles && requestFileOwnerScope
+      resendFiles && wantsCodeFiles && db.getCodeGeneratedFiles && requestFileOwnerScope
         ? (db.getCodeGeneratedFiles(
             conversationId,
             threadFileIds,
             requestFileOwnerScope,
           ) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
+      resendFiles &&
       wantsCodeFiles &&
       db.getUserCodeFiles &&
       requestFileOwnerScope &&
@@ -1132,7 +1138,7 @@ export async function initializeAgent(
       threadFileIds.length > 0
         ? (db.getDeferredProvisionFiles(threadFileIds, requestFileOwnerScope, {
             code: wantsCodeFiles,
-            search: toolResourceSet.has(EToolResources.file_search),
+            search: wantsSearchFiles,
           }) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
     ]);

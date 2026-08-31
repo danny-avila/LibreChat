@@ -9,6 +9,7 @@ import {
   TerminalSquareIcon,
 } from 'lucide-react';
 import {
+  IconButton,
   FileUpload,
   TooltipAnchor,
   DropdownPopup,
@@ -348,19 +349,19 @@ const AttachFileMenu = ({
         >
           <TooltipAnchor
             render={
-              <button
+              <IconButton
                 type="button"
+                size="theme"
+                shape="theme"
                 disabled={isUploadDisabled}
                 id="attach-file-button"
                 aria-label={localize('com_sidepanel_attach_files')}
                 onClick={handleUnifiedUpload}
                 aria-keyshortcuts={uploadFileAriaKey}
-                className="flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50"
+                className="p-1 hover:bg-surface-composer-hover"
               >
-                <div className="flex w-full items-center justify-center gap-2">
-                  <AttachmentIcon />
-                </div>
-              </button>
+                <AttachmentIcon />
+              </IconButton>
             }
             id="attach-file-button"
             description={uploadFileTooltip}
