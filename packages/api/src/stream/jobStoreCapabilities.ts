@@ -10,6 +10,9 @@ import type { IJobStore, IJobStoreV2 } from './interfaces/IJobStore';
  */
 export const JOB_STORE_V2_REQUIRED_METHODS = [
   'acknowledgeReplacedJobs',
+  'markProviderExecutionDrained',
+  'beginProviderExecution',
+  'getCleanupBlockingJobIdsByUser',
   'finalizeTerminalPersistence',
   'transitionStatusAndDrainSteers',
   'takeoverIdempotencyKey',
@@ -19,6 +22,7 @@ export const JOB_STORE_V2_REQUIRED_METHODS = [
   'enqueueSteerWithReceipt',
   'getSteerReceipt',
   'restoreClaimedSteers',
+  'admitTerminalSteers',
   'peekClaimedSteers',
   'armSteer',
   'armSteerVersioned',

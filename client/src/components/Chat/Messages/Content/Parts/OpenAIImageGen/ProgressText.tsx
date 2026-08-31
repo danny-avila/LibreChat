@@ -5,11 +5,15 @@ import { cn } from '~/utils';
 export default function ProgressText({
   progress,
   error,
+  cancelled,
   toolName = '',
   intent,
 }: {
   progress: number;
   error?: boolean;
+  /** Stopped rather than failed — kept separate from `error` so a generation
+   *  the user cancelled is not labelled a failure. */
+  cancelled?: boolean;
   toolName?: string;
   /** Model-authored label; wins over the phase texts (error state excepted). */
   intent?: string;
@@ -17,8 +21,14 @@ export default function ProgressText({
   const localize = useLocalize();
 
   const getText = () => {
+    /** Failure outranks cancellation: the legacy inference folds errors into
+     *  its cancellation signal, so checking `cancelled` first would relabel a
+     *  genuine failure as a user stop. */
     if (error) {
       return localize('com_ui_image_gen_failed');
+    }
+    if (cancelled) {
+      return localize('com_ui_cancelled');
     }
     if (intent != null) {
       return intent;

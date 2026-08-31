@@ -10,6 +10,7 @@ import {
   groupConversationsByDate,
   updateConvoFieldsInfinite,
   addConvoToAllQueries,
+  collectPinnedConversations,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
@@ -208,6 +209,55 @@ describe('Conversation Utilities', () => {
         0,
       );
       expect(totalGroupedConversations).toBe(conversations.length);
+    });
+  });
+
+  describe('collectPinnedConversations', () => {
+    const dedicated = {
+      conversationId: 'old-pin',
+      title: 'Old pin',
+      pinned: true,
+    } as TConversation;
+    const newlyPinned = {
+      conversationId: 'new-pin',
+      title: 'Just pinned',
+      pinned: true,
+    } as TConversation;
+
+    it('keeps dedicated pins and adds a pin that only lives on the chats cache', () => {
+      const merged = collectPinnedConversations([dedicated], [newlyPinned]);
+      expect(merged.map((conversation) => conversation.conversationId)).toEqual([
+        'old-pin',
+        'new-pin',
+      ]);
+    });
+
+    it('falls back to chats pins when the dedicated list is missing', () => {
+      const merged = collectPinnedConversations(undefined, [newlyPinned]);
+      expect(merged).toEqual([newlyPinned]);
+    });
+
+    /** A chat pinned while the dedicated refetch is failing is the newest pin, so the
+     * server would return it first; appending it would bury it below the fold. */
+    it('orders a fallback row by its timestamp rather than after every dedicated pin', () => {
+      const older = {
+        conversationId: 'old-pin',
+        title: 'Old pin',
+        pinned: true,
+        updatedAt: '2026-03-01T12:00:00.000Z',
+      } as TConversation;
+      const newest = {
+        conversationId: 'new-pin',
+        title: 'Just pinned',
+        pinned: true,
+        updatedAt: '2026-08-16T12:00:00.000Z',
+      } as TConversation;
+
+      const merged = collectPinnedConversations([older], [newest]);
+      expect(merged.map((conversation) => conversation.conversationId)).toEqual([
+        'new-pin',
+        'old-pin',
+      ]);
     });
   });
 
@@ -608,6 +658,40 @@ describe('Conversation Utilities', () => {
         expect(data!.pages[0].conversations.filter((c) => c.conversationId === 'a').length).toBe(1);
       });
 
+      it('addConvoToAllQueries does not insert into a bookmark filter the chat does not match', () => {
+        queryClient.setQueryData(['allConversations', { tags: ['work'] }], {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        addConvoToAllQueries(queryClient, convoB);
+
+        const filtered = queryClient.getQueryData<InfiniteData<any>>([
+          'allConversations',
+          { tags: ['work'] },
+        ]);
+        expect(
+          filtered!.pages[0].conversations.map((c: TConversation) => c.conversationId),
+        ).toEqual(['a']);
+      });
+
+      it('addConvoToAllQueries does not insert into a cached search result', () => {
+        queryClient.setQueryData(['allConversations', { search: 'unrelated' }], {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        addConvoToAllQueries(queryClient, convoB);
+
+        const searched = queryClient.getQueryData<InfiniteData<any>>([
+          'allConversations',
+          { search: 'unrelated' },
+        ]);
+        expect(
+          searched!.pages[0].conversations.map((c: TConversation) => c.conversationId),
+        ).toEqual(['a']);
+      });
+
       it('upsertConvoInAllQueries adds missing conversations to the top', () => {
         upsertConvoInAllQueries(queryClient, convoB);
         const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
@@ -647,6 +731,40 @@ describe('Conversation Utilities', () => {
         ]);
 
         expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a', 'c']);
+      });
+
+      it('upsertConvoInAllQueries keeps temporary conversations out of the list', () => {
+        upsertConvoInAllQueries(queryClient, { ...convoB, isTemporary: true } as TConversation);
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a']);
+      });
+
+      it('upsertConvoInAllQueries keeps legacy expiring conversations out of the list', () => {
+        upsertConvoInAllQueries(queryClient, {
+          ...convoB,
+          expiredAt: '2099-01-01T00:00:00Z',
+        } as TConversation);
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a']);
+      });
+
+      it('upsertConvoInAllQueries still admits retained conversations that carry an expiry', () => {
+        upsertConvoInAllQueries(queryClient, {
+          ...convoB,
+          isTemporary: false,
+          expiredAt: '2099-01-01T00:00:00Z',
+        } as TConversation);
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['b', 'a']);
       });
 
       it('updateConvoInAllQueries updates correct convo', () => {

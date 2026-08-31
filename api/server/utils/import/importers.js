@@ -1,10 +1,78 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger, getTenantId } = require('@librechat/data-schemas');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const mongoose = require('mongoose');
+const {
+  logger,
+  getTenantId,
+  sanitizeUIResourceContent,
+  stripMessageUIResourceMarkers,
+} = require('@librechat/data-schemas');
+const { EModelEndpoint, Constants, Tools, openAISettings } = require('librechat-data-provider');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { resolveImportDefaultModel } = require('./defaults');
 const { cloneMessagesWithTimestamps } = require('./fork');
+
+const castImportedBoolean = mongoose.Schema.Types.Boolean.cast();
+const castImportedString = mongoose.Schema.Types.String.cast();
+
+function isImportedAssistantMessage(isCreatedByUser) {
+  if (isCreatedByUser === null) {
+    return false;
+  }
+  if (isCreatedByUser === undefined) {
+    return true;
+  }
+  try {
+    return castImportedBoolean(isCreatedByUser) !== true;
+  } catch {
+    return true;
+  }
+}
+
+function isImportedAssistantContent(isCreatedByUser) {
+  try {
+    return castImportedBoolean(isCreatedByUser) !== true;
+  } catch {
+    return true;
+  }
+}
+
+function castPersistedImportedText(text) {
+  try {
+    return castImportedString(text);
+  } catch {
+    return text;
+  }
+}
+
+function normalizeImportedArray(value) {
+  if (value == null) {
+    return null;
+  }
+  return Array.isArray(value) ? value : [value];
+}
+
+/** Removes executable legacy MCP-UI payloads from untrusted conversation imports. */
+function sanitizeImportedMessage(message) {
+  const sanitizeTextMarkers = isImportedAssistantMessage(message.isCreatedByUser);
+  const sanitizeContentMarkers = isImportedAssistantContent(message.isCreatedByUser);
+  const text = castPersistedImportedText(message.text);
+  const content = normalizeImportedArray(message.content);
+  const attachments = normalizeImportedArray(message.attachments);
+  return {
+    ...message,
+    isUserSubmitted: true,
+    ...(text !== message.text && { text }),
+    ...(sanitizeTextMarkers &&
+      typeof text === 'string' && { text: stripMessageUIResourceMarkers(text, false) }),
+    ...(content && {
+      content: sanitizeUIResourceContent(content, sanitizeContentMarkers),
+    }),
+    ...(attachments && {
+      attachments: attachments.filter((attachment) => attachment?.type !== Tools.ui_resources),
+    }),
+  };
+}
 
 /**
  * Returns the appropriate importer function based on the provided JSON data.
@@ -171,6 +239,7 @@ async function importClaudeConvo(
           text: textContent,
           sender: isCreatedByUser ? 'user' : 'Claude',
           isCreatedByUser,
+          isUserSubmitted: true,
           user: requestUserId,
           endpoint: EModelEndpoint.anthropic,
           createdAt,
@@ -268,6 +337,7 @@ async function importLibreChatConvo(
           const flatMessage = {
             ...message,
             parentMessageId: parentMessageId,
+            isUserSubmitted: true,
             children: undefined, // Remove children from flat structure
           };
           flatMessages.push(flatMessage);
@@ -283,10 +353,13 @@ async function importLibreChatConvo(
         return flatMessages;
       };
 
-      const flatMessages = flattenMessages(messagesToImport);
+      const flatMessages = flattenMessages(messagesToImport).map(sanitizeImportedMessage);
       cloneMessagesWithTimestamps(flatMessages, importBatchBuilder);
     } else if (messagesToImport) {
-      cloneMessagesWithTimestamps(messagesToImport, importBatchBuilder);
+      cloneMessagesWithTimestamps(
+        messagesToImport.map(sanitizeImportedMessage),
+        importBatchBuilder,
+      );
       for (const message of messagesToImport) {
         if (!firstMessageDate && message.createdAt) {
           firstMessageDate = new Date(message.createdAt);
@@ -507,6 +580,7 @@ function processConversation(conv, importBatchBuilder, requestUserId, defaultMod
       text: messageText,
       sender,
       isCreatedByUser,
+      isUserSubmitted: true,
       model,
       user: requestUserId,
       endpoint: EModelEndpoint.openAI,

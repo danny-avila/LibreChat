@@ -19,11 +19,15 @@ import type {
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
-import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
+
+export type MCPRuntimeRequestBody = Required<Pick<RequestBody, 'messageId' | 'conversationId'>> &
+  Pick<RequestBody, 'parentMessageId'>;
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -49,6 +53,9 @@ export interface MCPResource {
 export interface LCFunctionTool {
   type: 'function';
   ['function']: LCTool;
+  /** Raw upstream tool name when the model-facing key stripped a redundant
+   *  server-name prefix — tool calls must send THIS name to the server. */
+  serverToolName?: string;
 }
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
@@ -153,6 +160,11 @@ export type FormattedToolResponse = FormattedContentResult;
  * - `'yaml'`   — operator-defined in librechat.yaml, full trust, boot-time init
  * - `'config'` — admin-defined via Config override, full trust, lazy init
  * - `'user'`   — user-provided via UI, sandboxed (restricted placeholder resolution)
+ * - `'plugin'` — contributed by an Agent Plugins package, no placeholder resolution
+ *
+ * This tag is load-bearing, not descriptive: `processMCPEnv` reads it to decide
+ * which placeholders may resolve. Code that stores a config must carry the tag
+ * through rather than re-deriving it from the storage tier.
  */
 export type MCPServerSource = 'yaml' | 'config' | 'user' | 'plugin';
 
@@ -163,6 +175,13 @@ export type ParsedServerConfig = MCPOptions & {
   capabilities?: string;
   tools?: string;
   toolFunctions?: LCAvailableTools;
+  /**
+   * Instructions advertised by the server, fetched during inspection when
+   * `serverInstructions` is enabled. Held separately so `serverInstructions`
+   * always keeps the operator's declaration: overwriting it in place made a
+   * re-inspected config compare unequal to its own YAML entry.
+   */
+  resolvedInstructions?: string;
   initDuration?: number;
   updatedAt?: number;
   dbId?: string;
@@ -208,6 +227,13 @@ export interface UserConnectionContext {
   requestScopedConnections?: RequestScopedMCPConnectionStore;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Cancels the connection's SDK requests when the caller itself is cancelled; previously only
+   *  OAuth connections could carry a signal, leaving non-OAuth discovery uncancellable. */
+  signal?: AbortSignal;
+  /** Absolute epoch-ms bound on the whole connect-and-list operation. `connectionTimeout` bounds
+   *  only a single `connect()`, so a caller that must return within a fixed budget sets this to
+   *  cap every segment, including `tools/list` pagination and the unauthenticated fallback. */
+  deadlineMs?: number;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -232,6 +258,8 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
+  oboIdentityContext?: AuthIdentityContext;
 }
 
 /** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
@@ -248,6 +276,8 @@ export interface UserMCPConnectionOptions extends UserConnectionContext {
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
+  oboIdentityContext?: AuthIdentityContext;
 }
 
 export interface ToolDiscoveryOptions {
@@ -261,10 +291,14 @@ export interface ToolDiscoveryOptions {
   requestBody?: RequestBody;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Absolute epoch-ms bound on the whole discovery operation; see `UserConnectionContext`. */
+  deadlineMs?: number;
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
+  oboIdentityContext?: AuthIdentityContext;
 }
 
 export interface ToolDiscoveryResult {

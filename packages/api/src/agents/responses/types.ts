@@ -407,6 +407,12 @@ export interface OutputTokensDetails {
   reasoning_tokens: number;
 }
 
+export interface UsageTotals {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
 /** Token usage statistics */
 export interface Usage {
   input_tokens: number;
@@ -414,6 +420,10 @@ export interface Usage {
   total_tokens: number;
   input_tokens_details: InputTokensDetails;
   output_tokens_details: OutputTokensDetails;
+  /** LibreChat extension for parent, handoff, and summarization model calls. */
+  primary?: UsageTotals;
+  /** LibreChat extension for isolated subagent child model calls. */
+  subagent?: UsageTotals;
 }
 
 /** Incomplete details */

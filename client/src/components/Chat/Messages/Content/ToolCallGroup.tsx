@@ -10,8 +10,14 @@ import type {
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
+import {
+  cn,
+  getToolDisplayLabel,
+  hasPendingApprovalInPart,
+  getBatchActivityLabelPart,
+  getActivityLabelText,
+} from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
-import { cn, getToolDisplayLabel, getActivityLabelPart, getActivityLabelText } from '~/utils';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
@@ -23,27 +29,6 @@ interface ToolMeta {
   name: string;
   iconName: string;
   hasOutput: boolean;
-}
-
-type ToolCallWithNestedContent = Agents.ToolCall & {
-  subagent_content?: TMessageContentParts[];
-};
-
-function hasPendingApprovalInPart(part: TMessageContentParts): boolean {
-  if (part.type !== ContentTypes.TOOL_CALL) {
-    return false;
-  }
-  const toolCall = part[ContentTypes.TOOL_CALL] as ToolCallWithNestedContent | undefined;
-  if (!toolCall) {
-    return false;
-  }
-  if (toolCall.approval != null && (toolCall.output?.length ?? 0) === 0) {
-    return true;
-  }
-  return (
-    Array.isArray(toolCall.subagent_content) &&
-    toolCall.subagent_content.some(hasPendingApprovalInPart)
-  );
 }
 
 function getToolMeta(part: TMessageContentParts): ToolMeta | null {
@@ -111,6 +96,14 @@ interface ToolCallGroupProps {
   /** Activity-label part terminating this block; when it carries generated
    *  text the header shows that text instead of the default tool summary. */
   labelPart?: PartWithIndex;
+  /** True inside a completed phase card. The phase summary already speaks for
+   *  this activity, so the group defaults collapsed and never auto-expands —
+   *  a remount into the folding card must not toggle open and shut again
+   *  while the parent entrance is playing. A pending approval overrides the
+   *  suppression: a phase can resolve while an approval inside it still
+   *  blocks the run, and hiding that card behind a second collapsed
+   *  disclosure would bury the action the run is waiting on. */
+  withinActivityPhase?: boolean;
 }
 
 export type ToolCallGroupExpansionState = {
@@ -128,6 +121,7 @@ export default function ToolCallGroup({
   initialExpansionState,
   onExpansionChange,
   labelPart,
+  withinActivityPhase = false,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
@@ -152,7 +146,7 @@ export default function ToolCallGroup({
     () => parts.some(({ part }) => hasPendingApprovalInPart(part)),
     [parts],
   );
-  const activityLabel = getActivityLabelPart(labelPart?.part);
+  const activityLabel = getBatchActivityLabelPart(labelPart?.part);
   const activityLabelText = getActivityLabelText(activityLabel);
   const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
   /** A settled, filled label is itself a completion proof: the PostToolBatch
@@ -222,9 +216,10 @@ export default function ToolCallGroup({
    *  even at a single tool call — agent runs are full of one-call batches,
    *  and leaving those expanded defeats the grouping. */
   const autoCollapse = !autoExpand && allCompleted && (count >= 2 || activityLabelText.length > 0);
+  const suppressAutoExpand = withinActivityPhase && !hasPendingApproval;
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
-    initialState?.isExpanded ?? (autoExpand || !autoCollapse),
+    initialState?.isExpanded ?? (autoExpand || (!autoCollapse && !suppressAutoExpand)),
   );
   const [userOverride, setUserOverride] = useState(initialState != null);
   const [shouldRenderBody, setShouldRenderBody] = useState(isExpanded);
@@ -337,11 +332,11 @@ export default function ToolCallGroup({
   );
 
   useEffect(() => {
-    if (hasActiveToolCall && !userOverride) {
+    if (hasActiveToolCall && !userOverride && !suppressAutoExpand) {
       setShouldRenderBody(true);
       setIsExpanded(true);
     }
-  }, [hasActiveToolCall, userOverride]);
+  }, [hasActiveToolCall, userOverride, suppressAutoExpand]);
 
   return (
     <div className="mb-2 mt-1" ref={rootRef}>
@@ -379,7 +374,7 @@ export default function ToolCallGroup({
         <span
           className={cn(
             'tool-status-text min-w-0 truncate font-medium',
-            activityFailed && 'text-amber-600 dark:text-amber-400',
+            activityFailed && 'text-text-warning',
           )}
           role="status"
           title={groupLabel}

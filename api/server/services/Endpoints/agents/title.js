@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const { saveConvo } = require('~/models');
+const { resolveConversationTitle } = require('../titlePolicy');
 
 /**
  * Add title to conversation in a way that avoids memory retention.
@@ -105,7 +106,7 @@ const addTitle = async (
       return;
     }
 
-    const title = await titlePromise;
+    const generatedTitle = await titlePromise;
     if (!abortController.signal.aborted) {
       abortController.abort();
     }
@@ -113,8 +114,13 @@ const addTitle = async (
       clearTimeout(timeoutId);
     }
 
-    if (!title) {
+    if (!generatedTitle) {
       logger.debug(`[${key}] No title generated`);
+      return;
+    }
+
+    const title = resolveConversationTitle(req, generatedTitle);
+    if (title == null) {
       return;
     }
 

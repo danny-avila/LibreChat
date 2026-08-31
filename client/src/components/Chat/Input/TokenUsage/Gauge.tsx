@@ -1,7 +1,7 @@
 import { cn } from '~/utils';
 
-const SIZE = 28;
-const STROKE_WIDTH = 3.5;
+const SIZE = 20;
+const STROKE_WIDTH = 2.5;
 const RADIUS = (SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Button } from '@librechat/client';
-import { UIResourceRenderer } from '@mcp-ui/client';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { UIResource } from 'librechat-data-provider';
+import UIResourceRenderer, { isSupportedUIResource } from '~/components/MCPUIResource/Renderer';
 import { useOptionalMessagesOperations } from '~/Providers';
 import { handleUIAction } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -18,6 +18,10 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
   const [isContainerHovered, setIsContainerHovered] = useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const { ask } = useOptionalMessagesOperations();
+  const supportedUIResources = React.useMemo(
+    () => uiResources.filter(isSupportedUIResource),
+    [uiResources],
+  );
 
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -49,10 +53,22 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
       handleScroll();
       return () => container.removeEventListener('scroll', handleScroll);
     }
-  }, [handleScroll]);
+  }, [handleScroll, supportedUIResources.length]);
 
-  if (uiResources.length === 0) {
+  if (supportedUIResources.length === 0) {
     return null;
+  }
+
+  if (supportedUIResources.length === 1) {
+    return (
+      <UIResourceRenderer
+        resource={supportedUIResources[0]}
+        onUIAction={async (result) => handleUIAction(result, ask)}
+        htmlProps={{
+          autoResizeIframe: { width: true, height: true },
+        }}
+      />
+    );
   }
 
   return (
@@ -91,7 +107,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
         ref={scrollContainerRef}
         className="hide-scrollbar flex gap-4 overflow-x-auto scroll-smooth"
       >
-        {uiResources.map((uiResource, index) => {
+        {supportedUIResources.map((uiResource, index) => {
           const height = 360;
           const width = 230;
 

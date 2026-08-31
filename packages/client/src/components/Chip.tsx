@@ -7,11 +7,12 @@ import { cn } from '~/utils';
 
 type ChipVariantProps = {
   tone?: 'neutral' | 'info' | 'success' | 'warning' | 'error' | null;
-  size?: 'sm' | 'md' | null;
+  size?: 'sm' | 'md' | 'theme' | null;
+  shape?: 'round' | 'theme' | null;
 };
 
 const chipVariants: (props?: ChipVariantProps & ClassProp) => string = cva(
-  'inline-flex max-w-full items-center gap-1 rounded-full border text-xs font-medium transition-colors',
+  'inline-flex max-w-full items-center gap-1 border text-xs font-medium transition-colors duration-theme-fast',
   {
     variants: {
       tone: {
@@ -24,11 +25,17 @@ const chipVariants: (props?: ChipVariantProps & ClassProp) => string = cva(
       size: {
         sm: 'min-h-6 px-2 py-0.5',
         md: 'min-h-8 px-2.5 py-1',
+        theme: 'h-theme-control gap-theme-compact px-theme-normal',
+      },
+      shape: {
+        round: 'rounded-full',
+        theme: 'rounded-theme-control',
       },
     },
     defaultVariants: {
       tone: 'neutral',
       size: 'sm',
+      shape: 'round',
     },
   },
 );
@@ -52,6 +59,7 @@ const Chip: React.ForwardRefExoticComponent<ChipProps & React.RefAttributes<HTML
         leading,
         onRemove,
         removeLabel = 'Remove',
+        shape,
         size,
         tone,
         trailing,
@@ -59,7 +67,7 @@ const Chip: React.ForwardRefExoticComponent<ChipProps & React.RefAttributes<HTML
       },
       ref,
     ) => (
-      <span ref={ref} className={cn(chipVariants({ tone, size, className }))} {...props}>
+      <span ref={ref} className={cn(chipVariants({ tone, size, shape, className }))} {...props}>
         {leading}
         <span className="min-w-0 truncate">{children}</span>
         {trailing}
@@ -67,6 +75,7 @@ const Chip: React.ForwardRefExoticComponent<ChipProps & React.RefAttributes<HTML
           <IconButton
             label={removeLabel}
             size="xs"
+            shape={shape === 'theme' ? 'theme' : 'round'}
             className="-mr-1 text-current hover:bg-surface-hover/50"
             onClick={(event) => {
               event.stopPropagation();

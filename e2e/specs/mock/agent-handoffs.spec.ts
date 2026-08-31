@@ -9,7 +9,7 @@ import {
   getAccessToken,
   messagesView,
   requestJson,
-  sendMessage,
+  sendMessageAndWaitForCompletion,
 } from './helpers';
 
 const DESCRIPTION = 'Created by the mock end-to-end suite to verify agent handoffs.';
@@ -244,7 +244,7 @@ test.describe('agent handoffs', () => {
       await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
 
       const label = `scratch-bare-${Date.now()}`;
-      const response = await sendMessage(
+      const response = await sendMessageAndWaitForCompletion(
         page,
         handoffMarker(label, [
           {
@@ -714,7 +714,10 @@ test.describe('agent handoffs', () => {
 
       await selectAgentForChat(page, routerName);
       const noTransferLabel = `no-transfer-${Date.now()}`;
-      const noTransferResponse = await sendMessage(page, `E2E_REPLY:${noTransferLabel}`);
+      const noTransferResponse = await sendMessageAndWaitForCompletion(
+        page,
+        `E2E_REPLY:${noTransferLabel}`,
+      );
       expect(noTransferResponse.ok()).toBeTruthy();
       await expect(
         messagesView(page).getByText(`E2E reply ${noTransferLabel}`, { exact: true }),
@@ -723,7 +726,7 @@ test.describe('agent handoffs', () => {
         messagesView(page).getByRole('button', { name: /^Transferred to / }),
       ).toHaveCount(0);
 
-      const response = await sendMessage(
+      const response = await sendMessageAndWaitForCompletion(
         page,
         handoffMarker(label, [
           {
@@ -774,7 +777,7 @@ test.describe('agent handoffs', () => {
       await expect(transferCard).toBeVisible();
 
       const emptyLabel = `${label}-empty`;
-      const emptyResponse = await sendMessage(
+      const emptyResponse = await sendMessageAndWaitForCompletion(
         page,
         handoffMarker(emptyLabel, [
           {
@@ -839,7 +842,7 @@ test.describe('agent handoffs', () => {
       routerId = router.id;
 
       await selectAgentForChat(page, routerName);
-      const response = await sendMessage(
+      const response = await sendMessageAndWaitForCompletion(
         page,
         handoffMarker(label, [
           {
@@ -1000,7 +1003,7 @@ test.describe('agent handoffs', () => {
       routerId = router.id;
 
       await selectAgentForChat(page, routerName);
-      const response = await sendMessage(
+      const response = await sendMessageAndWaitForCompletion(
         page,
         handoffMarker(label, [
           {
@@ -1081,7 +1084,7 @@ test.describe('agent handoffs', () => {
       routerId = router.id;
 
       await selectAgentForChat(page, routerName);
-      const response = await sendMessage(
+      const response = await sendMessageAndWaitForCompletion(
         page,
         handoffMarker(label, [
           {

@@ -1,16 +1,19 @@
 import copy from 'copy-to-clipboard';
 import { MemoryRouter } from 'react-router-dom';
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import { render, act, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, act, cleanup, renderHook } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
 import useKeyboardShortcuts, {
   isOverridden,
   effectiveBinding,
+  useShortcutHint,
   getShortcutDisplay,
   getShortcutAriaKey,
+  useShortcutDisplay,
+  useShortcutAriaKey,
 } from './useKeyboardShortcuts';
 import store from '~/store';
 
@@ -345,6 +348,59 @@ describe('global shortcut dispatch', () => {
 
     expect(escalation.onClick).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(true);
+  });
+});
+
+describe('the keyboard shortcuts switch', () => {
+  it('ignores a matched chord and leaves the native event alone when off', () => {
+    window.localStorage.setItem('keyboardShortcutsEnabled', JSON.stringify(false));
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+
+    const event = dispatchKey({ key: 's', ctrlKey: true, shiftKey: true });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(getByTestId('sidebar').textContent).toBe(before);
+  });
+
+  it('still dispatches while on', () => {
+    window.localStorage.setItem('keyboardShortcutsEnabled', JSON.stringify(true));
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+
+    const event = dispatchKey({ key: 's', ctrlKey: true, shiftKey: true });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(getByTestId('sidebar').textContent).not.toBe(before);
+  });
+
+  it('defaults to on, so shortcuts work with nothing stored', () => {
+    expect(window.localStorage.getItem('keyboardShortcutsEnabled')).toBeNull();
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+
+    const event = dispatchKey({ key: 's', ctrlKey: true, shiftKey: true });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(getByTestId('sidebar').textContent).not.toBe(before);
+  });
+
+  it('stops advertising chords through the hint and aria hooks when off', () => {
+    window.localStorage.setItem('keyboardShortcutsEnabled', JSON.stringify(false));
+    const { result } = renderHook(
+      () => ({
+        display: useShortcutDisplay('newChat'),
+        ariaKey: useShortcutAriaKey('newChat'),
+        hint: useShortcutHint('newChat', 'New chat'),
+      }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => <RecoilRoot>{children}</RecoilRoot>,
+      },
+    );
+
+    expect(result.current.display).toBe('');
+    expect(result.current.ariaKey).toBeUndefined();
+    expect(result.current.hint).toBe('New chat');
   });
 });
 

@@ -13,7 +13,9 @@ import type {
   ModelContent,
   InputItem,
   Response,
+  Usage,
 } from './types';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   writeDone,
   emitResponseCompleted,
@@ -34,9 +36,36 @@ import {
   emitReasoningDone,
   emitReasoningContentPartDone,
   emitReasoningItemDone,
-  updateTrackerUsage,
   type StreamHandlerConfig,
 } from './handlers';
+import { aggregateCollectedUsage } from '../usage';
+
+interface ResponseUsageAccumulator {
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+}
+
+interface ModelUsageMetadata {
+  input_tokens?: number;
+  output_tokens?: number;
+  input_token_details?: {
+    cache_creation?: number;
+    cache_read?: number;
+  };
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+function accumulateResponseUsage(
+  target: ResponseUsageAccumulator,
+  usage: ModelUsageMetadata,
+): void {
+  target.inputTokens += usage.input_tokens ?? 0;
+  target.outputTokens += usage.output_tokens ?? 0;
+  target.cachedTokens +=
+    (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
+}
 
 /* =============================================================================
  * REQUEST VALIDATION
@@ -335,7 +364,7 @@ interface StreamState {
 export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   handlers: Record<string, { handle: (event: string, data: unknown) => void }>;
   state: StreamState;
-  finalizeStream: () => void;
+  finalizeStream: (usage?: Usage) => void;
 } {
   const state: StreamState = {
     messageStarted: false,
@@ -546,32 +575,13 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
       handle: (_event: string, data: unknown): void => {
         const endData = data as {
           output?: {
-            usage_metadata?: {
-              input_tokens?: number;
-              output_tokens?: number;
-              // OpenAI format
-              input_token_details?: {
-                cache_creation?: number;
-                cache_read?: number;
-              };
-              // Anthropic format
-              cache_creation_input_tokens?: number;
-              cache_read_input_tokens?: number;
-            };
+            usage_metadata?: ModelUsageMetadata;
           };
         };
 
         const usage = endData?.output?.usage_metadata;
         if (usage) {
-          // Extract cached tokens from either OpenAI or Anthropic format
-          const cachedTokens =
-            (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
-
-          updateTrackerUsage(config.tracker, {
-            promptTokens: usage.input_tokens,
-            completionTokens: usage.output_tokens,
-            cachedTokens,
-          });
+          accumulateResponseUsage(config.tracker.usage, usage);
         }
       },
     },
@@ -580,9 +590,9 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   /**
    * Finalize the stream - close open items and emit completed
    */
-  const finalizeStream = (): void => {
+  const finalizeStream = (usage?: Usage): void => {
     closeOpenStreams();
-    emitResponseCompleted(config);
+    emitResponseCompleted(config, usage);
     writeDone(config.res);
   };
 
@@ -654,6 +664,7 @@ export function createResponseAggregator(): ResponseAggregator {
 export function buildAggregatedResponse(
   context: ResponseContext,
   aggregator: ResponseAggregator,
+  usageOverride?: Usage,
 ): Response {
   const output: Response['output'] = [];
 
@@ -729,7 +740,7 @@ export function buildAggregatedResponse(
     top_logprobs: 0,
     reasoning: null,
     user: null,
-    usage: {
+    usage: usageOverride ?? {
       input_tokens: aggregator.usage.inputTokens,
       output_tokens: aggregator.usage.outputTokens,
       total_tokens: aggregator.usage.inputTokens + aggregator.usage.outputTokens,
@@ -744,6 +755,30 @@ export function buildAggregatedResponse(
     metadata: {},
     safety_identifier: null,
     prompt_cache_key: null,
+  };
+}
+
+/** Build provider-normalized Responses API usage from every billed call. */
+export function buildResponsesUsage(
+  collectedUsage: ReadonlyArray<UsageMetadata | null | undefined>,
+): Usage {
+  const { total, primary, subagent } = aggregateCollectedUsage(collectedUsage);
+  return {
+    input_tokens: total.inputTokens,
+    output_tokens: total.outputTokens,
+    total_tokens: total.totalTokens,
+    input_tokens_details: { cached_tokens: total.cacheReadTokens },
+    output_tokens_details: { reasoning_tokens: total.reasoningTokens },
+    primary: {
+      input_tokens: primary.inputTokens,
+      output_tokens: primary.outputTokens,
+      total_tokens: primary.totalTokens,
+    },
+    subagent: {
+      input_tokens: subagent.inputTokens,
+      output_tokens: subagent.outputTokens,
+      total_tokens: subagent.totalTokens,
+    },
   };
 }
 
@@ -857,29 +892,13 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
       handle: (_event: string, data: unknown): void => {
         const endData = data as {
           output?: {
-            usage_metadata?: {
-              input_tokens?: number;
-              output_tokens?: number;
-              // OpenAI format
-              input_token_details?: {
-                cache_creation?: number;
-                cache_read?: number;
-              };
-              // Anthropic format
-              cache_creation_input_tokens?: number;
-              cache_read_input_tokens?: number;
-            };
+            usage_metadata?: ModelUsageMetadata;
           };
         };
 
         const usage = endData?.output?.usage_metadata;
         if (usage) {
-          aggregator.usage.inputTokens = usage.input_tokens ?? 0;
-          aggregator.usage.outputTokens = usage.output_tokens ?? 0;
-
-          // Extract cached tokens from either OpenAI or Anthropic format
-          aggregator.usage.cachedTokens =
-            (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
+          accumulateResponseUsage(aggregator.usage, usage);
         }
       },
     },

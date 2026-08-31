@@ -3,8 +3,8 @@ import { Save } from 'lucide-react';
 import { Portal, Content } from '@radix-ui/react-popover';
 import { Button, CrossIcon, useOnClickOutside } from '@librechat/client';
 import type { ReactNode } from 'react';
-import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 type TOptionsPopoverProps = {
   children: ReactNode;
@@ -63,24 +63,25 @@ export default function OptionsPopover({
             <div className="flex w-full items-center bg-surface-tertiary px-2 py-2">
               {presetsDisabled ? null : (
                 <Button
+                  variant="default"
                   type="button"
-                  className="h-auto w-[150px] justify-start rounded-md border border-border-medium bg-transparent px-2 py-1 text-xs font-normal text-text-primary hover:bg-surface-hover focus-visible:ring-1 focus-visible:ring-ring-primary"
+                  className="h-8 w-[150px] justify-start rounded-md px-2 text-xs font-normal"
                   onClick={saveAsPreset}
                 >
-                  <Save className="mr-1 w-[14px]" />
+                  <Save className="mr-1 w-[14px]" aria-hidden="true" />
                   {localize('com_endpoint_save_as_preset')}
                 </Button>
               )}
               {PopoverButtons}
               <Button
+                variant="ghost"
+                size="icon"
                 type="button"
-                className={cn(
-                  'ml-auto h-auto bg-transparent px-3 py-2 text-xs font-normal text-text-primary hover:bg-surface-hover',
-                  removeFocusOutlines,
-                )}
+                className="ml-auto size-8 text-text-primary"
                 onClick={closePopover}
+                aria-label={localize('com_ui_close')}
               >
-                <CrossIcon />
+                <CrossIcon aria-hidden="true" />
               </Button>
             </div>
             <div>{children}</div>

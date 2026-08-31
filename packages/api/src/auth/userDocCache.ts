@@ -4,7 +4,7 @@ import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import { cacheConfig } from '~/cache/cacheConfig';
 
-const AUTH_USER_DOC_CACHE_VERSION = 1;
+const AUTH_USER_DOC_CACHE_VERSION = 2;
 export const AUTH_USER_DOC_CACHE_TTL_MS = 5000;
 
 export type AuthUserDocCacheMode = 'off' | 'on';
@@ -19,6 +19,8 @@ export interface AuthUserDocCacheKeyInput {
   strategy: string;
   subject?: string;
   issuer?: string;
+  tenantId?: string;
+  userId?: string;
   scope?: string;
 }
 
@@ -71,6 +73,10 @@ function normalizeKeyPart(value: string | undefined): string {
   return (value ?? '').trim().toLowerCase().replace(/\/+$/, '');
 }
 
+function normalizeExactKeyPart(value: string | undefined): string {
+  return (value ?? '').trim();
+}
+
 export function buildAuthUserDocCacheKey(input: AuthUserDocCacheKeyInput): string | undefined {
   const strategy = input.strategy.trim();
   const subject = input.subject?.trim();
@@ -84,6 +90,8 @@ export function buildAuthUserDocCacheKey(input: AuthUserDocCacheKeyInput): strin
         normalizeKeyPart(strategy),
         subject,
         normalizeKeyPart(input.issuer),
+        normalizeExactKeyPart(input.tenantId),
+        normalizeExactKeyPart(input.userId),
         normalizeKeyPart(input.scope),
       ].join('\0'),
     )

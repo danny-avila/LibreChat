@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { FileText } from 'lucide-react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
@@ -64,6 +64,8 @@ export function langFromPath(filePath: string): string {
 
 export default function ReadFileCall({
   isSubmitting,
+  runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
@@ -73,6 +75,8 @@ export default function ReadFileCall({
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -85,8 +89,14 @@ export default function ReadFileCall({
   const fileName = filePath.split('/').pop() || filePath;
   const lang = useMemo(() => langFromPath(filePath), [filePath]);
 
-  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!filePath, onExpand);
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
+    initialProgress,
+    isSubmitting,
+    output,
+    hasInput: !!filePath,
+    onExpand,
+    runStepStatus,
+  });
 
   const highlighted = useLazyHighlight(hasOutput ? output : undefined, lang);
 
@@ -94,27 +104,26 @@ export default function ReadFileCall({
     <>
       <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
-          progress={progress}
+          phase={phase}
           onClick={toggleCode}
           inProgressText={intent ?? localize('com_ui_reading_file', { 0: fileName })}
           finishedText={
-            cancelled
+            phase === 'cancelled'
               ? localize('com_ui_cancelled')
               : (intent ?? localize('com_ui_read_file', { 0: fileName }))
           }
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          durationMs={runStepDurationMs}
           icon={
             <FileText
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
-                progress < 1 && !cancelled && !hasError && 'animate-pulse',
+                phase === 'running' && 'animate-pulse',
               )}
               aria-hidden="true"
             />
           }
           hasInput={!!filePath || hasOutput}
           isExpanded={showCode}
-          error={cancelled}
         />
       </div>
       <div style={expandStyle}>

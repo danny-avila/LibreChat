@@ -71,6 +71,19 @@ jest.mock('@librechat/api', () => {
     recordRumProxyRequest: jest.fn(),
     getAuthFailureReasonCategory: actualApi.getAuthFailureReasonCategory,
     buildSafeAuthLogContext: actualApi.buildSafeAuthLogContext,
+    getValidOpenIdReuseUserId: (token) => {
+      if (!token || !process.env.JWT_REFRESH_SECRET) {
+        return null;
+      }
+      try {
+        const payload = require('jsonwebtoken').verify(token, process.env.JWT_REFRESH_SECRET);
+        return typeof payload === 'object' && payload != null && typeof payload.id === 'string'
+          ? payload.id
+          : null;
+      } catch {
+        return null;
+      }
+    },
     maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
       const context = {
@@ -238,6 +251,30 @@ describe('requireJwtAuth tenant context chaining', () => {
       }),
     );
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('preserves the typed account-deletion fence in an authentication rejection', () => {
+    const req = mockReq(undefined, {
+      _mockStrategies: {
+        jwt: {
+          user: false,
+          info: {
+            message: 'Account deletion is in progress',
+            code: 'ACCOUNT_DELETION_IN_PROGRESS',
+          },
+          status: 401,
+        },
+      },
+    });
+    const res = mockRes();
+
+    requireJwtAuth(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      message: 'Account deletion is in progress',
+      code: 'ACCOUNT_DELETION_IN_PROGRESS',
+    });
   });
 
   it('logs OpenID JWT expiry when JWT fallback succeeds', () => {

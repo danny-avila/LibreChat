@@ -39,6 +39,19 @@ export interface DeleteMemoryParams {
   agentId?: string;
 }
 
+export interface MemoryByIdParams {
+  userId: string | Types.ObjectId;
+  id: string;
+  agentId?: string;
+}
+
+export interface SetMemoryByIdParams extends MemoryByIdParams {
+  /** Omit to preserve the existing key. */
+  key?: string;
+  value: string;
+  tokenCount?: number;
+}
+
 export interface GetUserMemoriesParams {
   userId: string | Types.ObjectId;
   agentId?: string;
@@ -54,8 +67,14 @@ export interface MemoryResult {
   ok: boolean;
 }
 
+export interface SetMemoryByIdResult extends MemoryResult {
+  conflict?: boolean;
+  memory?: IMemoryEntryLean;
+}
+
 export interface FormattedMemoriesResult {
   withKeys: string;
   withoutKeys: string;
   totalTokens?: number;
+  tokenCountsByKey?: Map<string, number>;
 }

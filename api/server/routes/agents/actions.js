@@ -9,6 +9,7 @@ const {
   validateActionOAuthMetadata,
   ACTION_CREDENTIAL_REFRESH_MESSAGE,
   buildActionOAuthTokenDeleteQueries,
+  blockFilteredActionProjection,
 } = require('@librechat/api');
 const {
   Permissions,
@@ -20,7 +21,11 @@ const {
   validateActionDomain,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
+const {
+  decryptMetadata,
+  encryptMetadata,
+  domainParser,
+} = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
 const db = require('~/models');
@@ -67,6 +72,12 @@ router.get('/', async (req, res) => {
         ? await db.getActions({ agent_id: { $in: editableAgentIds } })
         : [];
 
+    for (const action of actions) {
+      if (blockFilteredActionProjection(req.config?.filters, res, action)) {
+        return;
+      }
+    }
+
     res.json(actions);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -97,6 +108,15 @@ router.post(
       const { functions, action_id: _action_id, metadata: _metadata } = req.body;
       if (!functions.length) {
         return res.status(400).json({ message: 'No functions provided' });
+      }
+
+      if (
+        blockFilteredActionProjection(req.config?.filters, res, {
+          functions,
+          metadata: _metadata,
+        })
+      ) {
+        return;
       }
 
       const metadata = await encryptMetadata(removeNullishValues(_metadata, true));
@@ -180,6 +200,15 @@ router.post(
         previousLegacyDomain: legacyActionDomainEncode(storedAction?.metadata?.domain),
         storedAction,
       });
+
+      if (
+        blockFilteredActionProjection(req.config?.filters, res, {
+          functions: plannedUpdate.tools.map((name) => ({ function: { name } })),
+          metadata: await decryptMetadata(plannedUpdate.metadata),
+        })
+      ) {
+        return;
+      }
 
       if (plannedUpdate.requiresCredentialRefresh) {
         return res.status(400).json({

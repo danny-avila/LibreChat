@@ -1,3 +1,4 @@
+import { Providers, isOpenAILike } from '@librechat/agents';
 import {
   EModelEndpoint,
   ReasoningEffort,
@@ -347,6 +348,76 @@ function applyOpenRouterReasoningConfig({
 
   modelKwargs.reasoning = { enabled: true };
   return true;
+}
+
+/**
+ * Translates a scalar `reasoning_effort` parameter into the reasoning fields an
+ * already-resolved OpenAI-compatible client honors, for callers that layer
+ * their own parameters on top of a client configuration built elsewhere
+ * (summarization reusing the agent's client options).
+ *
+ * The override has to land in *top-level* fields. A nested `modelKwargs`
+ * fragment would replace the inherited `modelKwargs` wholesale, and a scalar
+ * `reasoning_effort` is dropped outright: LangChain reads only `reasoning` from
+ * constructor fields — `reasoning_effort` is a call-time option. `reasoning` is
+ * the one shape every OpenAI-compatible client honors, since Chat Completions
+ * re-emits it as `reasoning_effort`, the Responses API sends it as-is, and
+ * `ChatOpenRouter` merges it over an inherited `modelKwargs.reasoning`.
+ *
+ * Mirrors {@link applyOpenRouterReasoningConfig} for OpenRouter's adaptive
+ * Anthropic models, where effort is expressed as `verbosity` rather than
+ * `reasoning.effort`. Non-OpenAI-compatible providers are left untouched:
+ * they have no `reasoning_effort` concept to translate into.
+ */
+export function resolveReasoningParams({
+  provider,
+  model,
+  parameters,
+}: {
+  provider?: string | null;
+  model?: string | null;
+  parameters?: Record<string, unknown>;
+}): Record<string, unknown> | undefined {
+  if (parameters == null || provider == null) {
+    return parameters;
+  }
+
+  const reasoningEffort = parameters.reasoning_effort;
+  if (typeof reasoningEffort !== 'string' || reasoningEffort === ReasoningEffort.unset) {
+    return parameters;
+  }
+
+  const isOpenRouter = provider.toLowerCase() === Providers.OPENROUTER;
+  if (!isOpenRouter && !isOpenAILike(provider as Providers)) {
+    return parameters;
+  }
+
+  const resolved = { ...parameters };
+  delete resolved.reasoning_effort;
+
+  if (isOpenRouter && isOpenRouterAnthropicAdaptiveModel(model)) {
+    /** Adaptive thinking is disabled through the object itself: the inherited
+     * `modelKwargs.reasoning` would otherwise keep it enabled, which the main
+     * flow's `include_reasoning: false` cannot undo. */
+    if (reasoningEffort === ReasoningEffort.none) {
+      resolved.reasoning = { enabled: false };
+      return resolved;
+    }
+    const adaptiveVerbosity = getOpenRouterAnthropicVerbosity(reasoningEffort, model);
+    if (adaptiveVerbosity != null && resolved.verbosity == null) {
+      resolved.verbosity = adaptiveVerbosity;
+    }
+    resolved.reasoning = { enabled: true };
+    return resolved;
+  }
+
+  const inherited = resolved.reasoning;
+  const base =
+    inherited != null && typeof inherited === 'object' && !Array.isArray(inherited)
+      ? (inherited as Record<string, unknown>)
+      : undefined;
+  resolved.reasoning = { ...base, effort: reasoningEffort };
+  return resolved;
 }
 
 function applyReasoningConfig({

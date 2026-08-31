@@ -37,6 +37,7 @@ describe('getThemeFromEnv', () => {
         REACT_APP_THEME_STATUS_WARNING_STRONG: '37 38 39',
         REACT_APP_THEME_STATUS_ERROR_STRONG: '40 41 42',
         REACT_APP_THEME_TEXT_ON_STATUS: '43 44 45',
+        REACT_APP_THEME_SURFACE_COMPOSER_HOVER: '46 47 48',
       }),
     ).toEqual({
       'rgb-status-error': '1 2 3',
@@ -54,6 +55,7 @@ describe('getThemeFromEnv', () => {
       'rgb-status-warning-strong': '37 38 39',
       'rgb-status-error-strong': '40 41 42',
       'rgb-text-on-status': '43 44 45',
+      'rgb-surface-composer-hover': '46 47 48',
     });
   });
 

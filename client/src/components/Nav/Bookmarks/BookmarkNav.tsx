@@ -1,8 +1,8 @@
 import { useState, useId, useMemo, useCallback, memo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CrossCircledIcon } from '@radix-ui/react-icons';
-import { DropdownPopup, TooltipAnchor } from '@librechat/client';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
+import { DropdownPopup, TooltipAnchor, buttonVariants } from '@librechat/client';
 import type { FC } from 'react';
 import type * as t from '~/common';
 import { useGetConversationTags } from '~/data-provider';
@@ -106,19 +106,18 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
               id="bookmark-nav-menu-button"
               aria-label={buttonAriaLabel}
               aria-pressed={tags.length > 0}
+              /** Matches the Projects heading's actions — it sits beside a section heading too. */
               className={cn(
-                'flex items-center justify-center',
-                'size-9 border-none text-text-primary hover:bg-surface-hover hover:text-text-primary',
-                'rounded-lg border-none p-2 hover:bg-surface-active-alt',
-                'outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
-                isMenuOpen ? 'bg-surface-hover' : '',
+                buttonVariants({ variant: 'section-action', size: 'icon-xs' }),
+                'shrink-0',
+                isMenuOpen && 'bg-surface-active-alt text-text-primary',
               )}
               data-testid="bookmark-menu"
             >
               {tags.length > 0 ? (
-                <BookmarkFilledIcon aria-hidden="true" className="icon-lg text-text-primary" />
+                <BookmarkFilledIcon aria-hidden="true" className="size-4" />
               ) : (
-                <BookmarkIcon aria-hidden="true" className="icon-lg text-text-primary" />
+                <BookmarkIcon aria-hidden="true" className="size-4" />
               )}
             </Ariakit.MenuButton>
           }

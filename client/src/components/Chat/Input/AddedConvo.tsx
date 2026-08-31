@@ -5,6 +5,7 @@ import type { SetterOrUpdater } from 'recoil';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { EndpointIcon } from '~/components/Endpoints';
 import { useAgentsMapContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 export default function AddedConvo({
   addedConvo,
@@ -15,13 +16,14 @@ export default function AddedConvo({
 }) {
   const agentsMap = useAgentsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const localize = useLocalize();
   const title = useMemo(() => {
     // Priority: agent name > modelDisplayLabel > modelLabel > model
-    if (isAgentsEndpoint(addedConvo?.endpoint) && addedConvo?.agent_id) {
-      const agent = agentsMap?.[addedConvo.agent_id];
-      if (agent?.name) {
-        return `+ ${agent.name}`;
-      }
+    if (isAgentsEndpoint(addedConvo?.endpoint)) {
+      const agent = addedConvo?.agent_id ? agentsMap?.[addedConvo.agent_id] : undefined;
+      /** Never fall into the model-label chain for agents — it would reveal the
+       *  underlying model an agent author may intend to keep private. */
+      return `+ ${agent?.name || localize('com_ui_agent')}`;
     }
 
     const endpointConfig = endpointsConfig?.[addedConvo?.endpoint ?? ''];
@@ -29,7 +31,7 @@ export default function AddedConvo({
       endpointConfig?.modelDisplayLabel || addedConvo?.modelLabel || addedConvo?.model || 'AI';
 
     return `+ ${displayLabel}`;
-  }, [addedConvo, agentsMap, endpointsConfig]);
+  }, [addedConvo, agentsMap, endpointsConfig, localize]);
 
   if (!addedConvo) {
     return null;

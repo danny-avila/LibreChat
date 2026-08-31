@@ -1,4 +1,5 @@
 const { Constants } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 
 const mockGetConnection = jest.fn();
 const mockDiscoverServerTools = jest.fn();
@@ -6,11 +7,25 @@ const mockGetGraphApiToken = jest.fn();
 const mockUpdateMCPServerTools = jest.fn();
 const mockGetMCPToolsCacheGeneration = jest.fn().mockResolvedValue('generation-current');
 const mockGetToolPublicationGeneration = jest.fn().mockReturnValue('generation-current');
+const mockLoadCatalogs = jest.fn();
+const mockGetUserMCPAuthMap = jest.fn();
+const mockFormatMCPServerTools = jest.fn();
+const mockGetMCPServerTools = jest.fn();
+const mockCacheMCPServerTools = jest.fn();
+const mockGetServerToolFunctionsSnapshot = jest.fn();
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  loadMCPServerCatalogs: (...args) => mockLoadCatalogs(...args),
+  getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
+  formatMCPServerTools: (...args) => mockFormatMCPServerTools(...args),
+}));
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
     getConnection: mockGetConnection,
     discoverServerTools: mockDiscoverServerTools,
+    getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
     getToolPublicationGeneration: mockGetToolPublicationGeneration,
   })),
   getMCPServersRegistry: jest.fn(() => ({ getServerConfig: jest.fn() })),
@@ -21,10 +36,13 @@ jest.mock('~/models', () => ({
   createToken: jest.fn(),
   updateToken: jest.fn(),
   deleteTokens: jest.fn(),
+  findPluginAuthsByKeys: jest.fn(),
 }));
 jest.mock('~/server/services/Config', () => ({
   updateMCPServerTools: mockUpdateMCPServerTools,
   getMCPToolsCacheGeneration: mockGetMCPToolsCacheGeneration,
+  getMCPServerTools: mockGetMCPServerTools,
+  cacheMCPServerTools: mockCacheMCPServerTools,
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: mockGetGraphApiToken,
@@ -33,7 +51,89 @@ jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
 }));
 
-const { reinitMCPServer } = require('./mcp');
+const { reinitMCPServer, loadMCPServerCatalogs } = require('./mcp');
+
+describe('loadMCPServerCatalogs', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('wires batched auth and passive discovery without opening a managed connection', async () => {
+    const user = { id: 'user-123' };
+    const servers = [
+      {
+        serverName: 'config-only',
+        serverConfig: { type: 'sse', url: 'https://config.example.com/sse' },
+      },
+      {
+        serverName: 'user-server',
+        serverConfig: { type: 'sse', url: 'https://user.example.com/sse' },
+      },
+    ];
+    mockGetUserMCPAuthMap.mockResolvedValue({});
+    mockDiscoverServerTools.mockResolvedValue({ tools: [] });
+    mockFormatMCPServerTools.mockReturnValue({});
+    mockLoadCatalogs.mockImplementation(async (params, deps) => {
+      await deps.loadUserMCPAuthMap(
+        user.id,
+        servers.map(({ serverName }) => serverName),
+      );
+      await deps.discoverServerTools({
+        user,
+        serverName: 'config-only',
+        configServers: { 'config-only': servers[0].serverConfig },
+      });
+      deps.formatServerTools('config-only', []);
+      await deps.getCachedServerTools(user.id, 'config-only', servers[0].serverConfig);
+      await deps.getServerToolFunctionsSnapshot(user.id, 'config-only', servers[0].serverConfig);
+      await deps.cacheServerTools({ serverName: 'config-only' });
+      return { serverTools: new Map([['config-only', {}]]), serversWithoutTools: [] };
+    });
+
+    const upstreamTokenProvider = jest.fn();
+    const oboIdentityContext = { appUserId: 'user-123' };
+    const result = await loadMCPServerCatalogs({
+      user,
+      servers,
+      upstreamTokenProvider,
+      oboIdentityContext,
+    });
+
+    expect(mockGetUserMCPAuthMap).toHaveBeenCalledTimes(1);
+    expect(mockGetUserMCPAuthMap).toHaveBeenCalledWith({
+      userId: user.id,
+      servers: ['config-only', 'user-server'],
+      findPluginAuthsByKeys: require('~/models').findPluginAuthsByKeys,
+    });
+    expect(mockDiscoverServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user,
+        serverName: 'config-only',
+        configServers: { 'config-only': servers[0].serverConfig },
+        flowManager: expect.any(Object),
+        tokenMethods: expect.any(Object),
+        upstreamTokenProvider,
+        oboIdentityContext,
+      }),
+    );
+    expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+      user.id,
+      'config-only',
+      servers[0].serverConfig,
+    );
+    expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledWith(
+      user.id,
+      'config-only',
+      servers[0].serverConfig,
+    );
+    expect(mockCacheMCPServerTools).toHaveBeenCalledWith({ serverName: 'config-only' });
+    expect(result).toEqual({
+      serverTools: new Map([['config-only', {}]]),
+      serversWithoutTools: [],
+    });
+  });
+});
 
 describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   const user = { id: 'user-123' };
@@ -125,6 +225,50 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     });
   });
 
+  /** An app-level catalog write is dropped unless it carries the ordering reserved before its
+   * own tools/list. When this path forwarded no revision, every publication was discarded and
+   * agents were told the server had no tools at all (#14857). */
+  it('publishes under the ordering its snapshot was fetched with', async () => {
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        complete: true,
+        publicationRevision: '7',
+      }),
+    });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName, publicationRevision: '7' }),
+    );
+  });
+
+  it('asks the connection to republish a catalog it could not order', async () => {
+    const refreshToolList = jest.fn().mockResolvedValue(undefined);
+    mockGetConnection.mockResolvedValue({
+      refreshToolList,
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        complete: true,
+        orderingUnavailable: true,
+      }),
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(refreshToolList).toHaveBeenCalledTimes(1);
+    expect(result.tools).toHaveLength(1);
+  });
+
   it('preserves cached tools when live recovery returns an incomplete snapshot', async () => {
     const fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
       tools: [{ name: 'partial', inputSchema: { type: 'object' } }],
@@ -203,6 +347,22 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
         requestBody,
         graphTokenResolver: mockGetGraphApiToken,
       }),
+    );
+  });
+
+  it('forwards the pre-built upstreamTokenProvider closure into connection creation', async () => {
+    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+    const upstreamTokenProvider = jest.fn().mockResolvedValue(null);
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      upstreamTokenProvider,
+    });
+
+    expect(mockGetConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ upstreamTokenProvider }),
     );
   });
 
@@ -410,5 +570,40 @@ describe('reinitMCPServer — OAuth attempt lifetime', () => {
       oauthUrl: 'https://oauth.example.com/authorize',
       oauthExpiresAt: expiresAt,
     });
+  });
+});
+
+describe('reinitMCPServer — log hygiene', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('keeps user-created server and connection details out of discovery logs', async () => {
+    const serverName = 'PRIVATE-MCP-SERVER-NAME';
+    const privateUrl = 'https://private.example.test/PRIVATE-CONFIG-PATH';
+    const privateError = `PRIVATE-CONNECTION-ERROR for ${privateUrl}`;
+    const logSpies = ['debug', 'info', 'warn', 'error'].map((level) =>
+      jest.spyOn(logger, level).mockImplementation(() => {}),
+    );
+    mockGetConnection.mockRejectedValue(new Error(privateError));
+
+    const result = await reinitMCPServer({
+      user: { id: 'user-123' },
+      serverName,
+      serverConfig: { type: 'streamable-http', url: privateUrl },
+      userMCPAuthMap: undefined,
+    });
+
+    const loggedText = logSpies
+      .flatMap((spy) => spy.mock.calls)
+      .flat()
+      .map((value) => String(value))
+      .join('\n');
+
+    expect(result.message).toContain(serverName);
+    expect(loggedText).not.toContain(serverName);
+    expect(loggedText).not.toContain(privateUrl);
+    expect(loggedText).not.toContain(privateError);
+    expect(logger.error).toHaveBeenCalledWith('[MCP Reinitialize] Error initializing MCP server');
   });
 });

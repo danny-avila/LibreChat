@@ -5,21 +5,24 @@ import type {
   PreemptBoundaryHookInput,
 } from '@librechat/agents';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import { STEER_ENQUEUE_NOT_RUNNING } from '~/stream/interfaces/IJobStore';
 
-/** Mirrors runtime.ts's local extension — the field predates the SDK pin bump. */
-type SteerDrainOutput = PostToolBatchHookOutput & {
-  injectedMessages?: Array<{ role: string; content: string; source: string }>;
-};
+/** The pinned SDK's hook output declares `injectedMessages` natively; a
+ *  narrower local re-declaration would no longer be assignable from it. */
+type SteerDrainOutput = PostToolBatchHookOutput;
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import {
   createSteerDrainHook,
   createSteerPreemptBoundaryHook,
+  createSteerTerminalContinuationHook,
   createSteerPreemptPoll,
   isSteeringSupported,
   isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
 } from '../runtime';
+import type { TerminalSteerHookInput } from '../runtime';
 
 jest.spyOn(console, 'log').mockImplementation();
 
@@ -49,6 +52,22 @@ function boundaryInput(
   };
 }
 
+function stopInput(
+  continuationBudgetRemaining: number,
+  stopReason?: string,
+  overrides: Partial<TerminalSteerHookInput> = {},
+): TerminalSteerHookInput {
+  return {
+    hook_event_name: 'StopFinalize',
+    runId: 'run-1',
+    continuationBudgetRemaining,
+    continuationPlanned: false,
+    continuationPrevented: stopReason != null,
+    ...(stopReason != null && { stopReason }),
+    ...overrides,
+  } as unknown as TerminalSteerHookInput;
+}
+
 describe('isSteeringSupported', () => {
   it('mirrors the installed SDK capability flag AND replay support', () => {
     // CI runs against the published SDK pin (possibly pre-injectedMessages);
@@ -65,6 +84,153 @@ describe('isSteeringSupported', () => {
     const capable =
       sdk.HOOK_INJECTED_MESSAGES_CAPABLE === true && sdk.ContentTypes?.STEER === 'steer';
     expect(isSteeringSupported()).toBe(capable);
+  });
+
+  it('gates terminal continuation on its separate SDK capability', () => {
+    const sdk = agentsSdk as { HOOK_STOP_CONTINUATION_CAPABLE?: boolean };
+    expect(isSteerTerminalContinuationSupported()).toBe(
+      isSteeringSupported() && sdk.HOOK_STOP_CONTINUATION_CAPABLE === true,
+    );
+  });
+});
+
+describe('createSteerTerminalContinuationHook', () => {
+  beforeEach(() => {
+    GenerationJobManager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    GenerationJobManager.initialize();
+  });
+
+  afterEach(async () => {
+    await GenerationJobManager.destroy();
+  });
+
+  it('claims queued steers and blocks Stop into the same warm Run', async () => {
+    const streamId = `terminal-claim-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    await GenerationJobManager.steering.enqueue(streamId, buildSteer('s1', 'keep going'));
+    const applied = jest.fn();
+    const hook = createSteerTerminalContinuationHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: applied,
+    });
+
+    await expect(hook(stopInput(1), abortSignal)).resolves.toEqual({
+      decision: 'block',
+      injectedMessages: [{ role: 'user', content: 'keep going', source: 'steer' }],
+    });
+    expect(applied).toHaveBeenCalledWith(expect.objectContaining({ steerId: 's1' }));
+    await expect(GenerationJobManager.steering.peek(streamId, job.createdAt)).resolves.toEqual([]);
+    await expect(
+      GenerationJobManager.steering.enqueue(
+        streamId,
+        buildSteer('s2', 'next continuation'),
+        job.createdAt,
+      ),
+    ).resolves.toBe(1);
+  });
+
+  it('never admits terminal steers inside a subagent scope', async () => {
+    const streamId = `terminal-subagent-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const queued = buildSteer('s1', 'keep for the parent');
+    await GenerationJobManager.steering.enqueue(streamId, queued);
+    const applySteer = jest.fn();
+    const hook = createSteerTerminalContinuationHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer,
+    });
+
+    await expect(
+      hook(stopInput(1, undefined, { agentId: 'child-agent' }), abortSignal),
+    ).resolves.toEqual({ decision: 'continue' });
+    expect(applySteer).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.steering.peek(streamId, job.createdAt)).resolves.toEqual([
+      queued,
+    ]);
+  });
+
+  it('seals admission when the continuation budget is exhausted without losing the queue', async () => {
+    const streamId = `terminal-budget-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const queued = buildSteer('s1', 'ordinary follow-up');
+    await GenerationJobManager.steering.enqueue(streamId, queued);
+    const hook = createSteerTerminalContinuationHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+    });
+
+    await expect(hook(stopInput(0), abortSignal)).resolves.toEqual({ decision: 'continue' });
+    await expect(
+      GenerationJobManager.steering.enqueue(streamId, buildSteer('s2', 'too late'), job.createdAt),
+    ).resolves.toBe(STEER_ENQUEUE_NOT_RUNNING);
+    await expect(
+      GenerationJobManager.steering.closeAndDrain(streamId, job.createdAt),
+    ).resolves.toEqual([queued]);
+  });
+
+  it('seals an empty terminal boundary so a later steer becomes a new turn', async () => {
+    const streamId = `terminal-empty-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const hook = createSteerTerminalContinuationHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+    });
+
+    await expect(hook(stopInput(1), abortSignal)).resolves.toEqual({ decision: 'continue' });
+    await expect(
+      GenerationJobManager.steering.enqueue(streamId, buildSteer('s1', 'new turn'), job.createdAt),
+    ).resolves.toBe(STEER_ENQUEUE_NOT_RUNNING);
+  });
+
+  it('keeps empty admission open when another Stop hook already planned a continuation', async () => {
+    const streamId = `terminal-other-hook-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const hook = createSteerTerminalContinuationHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+    });
+
+    await expect(
+      hook(stopInput(1, undefined, { continuationPlanned: true }), abortSignal),
+    ).resolves.toEqual({ decision: 'continue' });
+    await expect(
+      GenerationJobManager.steering.enqueue(
+        streamId,
+        buildSteer('s1', 'join the planned continuation'),
+        job.createdAt,
+      ),
+    ).resolves.toBe(1);
+  });
+
+  it('seals instead of claiming when the graph has a terminal halt reason', async () => {
+    const streamId = `terminal-halt-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const queued = buildSteer('s1', 'retry in a fresh turn');
+    await GenerationJobManager.steering.enqueue(streamId, queued, job.createdAt);
+    const applySteer = jest.fn();
+    const hook = createSteerTerminalContinuationHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer,
+    });
+
+    await expect(hook(stopInput(1, 'preempt_incomplete'), abortSignal)).resolves.toEqual({
+      decision: 'continue',
+    });
+    expect(applySteer).not.toHaveBeenCalled();
+    await expect(
+      GenerationJobManager.steering.closeAndDrain(streamId, job.createdAt),
+    ).resolves.toEqual([queued]);
   });
 });
 
@@ -98,7 +264,7 @@ describe('createSteerDrainHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     expect(applied).toEqual(['first', 'second']);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: 'first', source: 'steer' },
@@ -156,7 +322,7 @@ describe('createSteerDrainHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     expect(output).toEqual({});
     expect((await GenerationJobManager.steering.peek(streamId)).map((item) => item.text)).toEqual([
       'survives',
@@ -194,13 +360,61 @@ describe('createSteerDrainHook', () => {
       buildMedia,
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     // buildMedia is consulted only for items that carry files.
     expect(buildMedia).toHaveBeenCalledTimes(1);
     expect(calls).toEqual(['apply:s1', 'apply:s2', 'media:s1']);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: media.content, source: 'steer' },
       { role: 'user', content: 'text only', source: 'steer' },
+    ]);
+  });
+
+  it('merges quoted excerpts into text-only injections (media path merges its own)', async () => {
+    const streamId = `drain-quotes-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1', undefined, {
+      initialMetadata: { steerQuotesCapable: true },
+    });
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'what does this mean?'),
+      quotes: ['selected passage'],
+    });
+
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: '> selected passage\n\nwhat does this mean?', source: 'steer' },
+    ]);
+  });
+
+  it('keeps quotes in the injection when media encoding degrades to text', async () => {
+    const streamId = `drain-quotes-degrade-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1', undefined, {
+      initialMetadata: { steerQuotesCapable: true },
+    });
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'and the doc?'),
+      files: [{ file_id: 'f1', type: 'image/png' }],
+      quotes: ['quoted context'],
+    });
+
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+      buildMedia: jest.fn(async () => {
+        throw new Error('encode failed');
+      }),
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: '> quoted context\n\nand the doc?', source: 'steer' },
     ]);
   });
 
@@ -227,7 +441,7 @@ describe('createSteerDrainHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     expect(appliedBeforeEncode).toBe(true);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: 'must land first', source: 'steer' },
@@ -251,7 +465,7 @@ describe('createSteerDrainHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    const output = (await hook(batchInput(), abortSignal)) as SteerDrainOutput;
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: 'words survive', source: 'steer' },
     ]);
@@ -300,7 +514,7 @@ describe('createSteerPreemptBoundaryHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(boundaryInput(), abortSignal);
+    const output = (await hook(boundaryInput(), abortSignal)) as SteerDrainOutput;
     expect(applied).toEqual(['first', 'second']);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: 'first', source: 'steer' },
@@ -436,7 +650,7 @@ describe('createSteerPreemptBoundaryHook', () => {
       jobCreatedAt: job.createdAt,
       applySteer: jest.fn(),
     });
-    const output: SteerDrainOutput = await hook(boundaryInput(), abortSignal);
+    const output = (await hook(boundaryInput(), abortSignal)) as SteerDrainOutput;
 
     expect(output.injectedMessages).toHaveLength(1);
     /** Both the drained id and the stale snapshot id are spent. */
@@ -485,7 +699,7 @@ describe('createSteerPreemptBoundaryHook', () => {
       },
     });
 
-    const output: SteerDrainOutput = await hook(boundaryInput(), abortSignal);
+    const output = (await hook(boundaryInput(), abortSignal)) as SteerDrainOutput;
     expect(output).toEqual({});
     expect((await GenerationJobManager.steering.peek(streamId)).map((item) => item.text)).toEqual([
       'still injected',

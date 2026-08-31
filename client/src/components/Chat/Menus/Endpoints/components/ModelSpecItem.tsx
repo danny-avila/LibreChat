@@ -5,9 +5,9 @@ import type { TModelSpec } from 'librechat-data-provider';
 import { useFavorites, useLocalize, useIsActiveItem } from '~/hooks';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { cn, getSpecAgentAvatarURL } from '~/utils';
 import SpecDescription from './SpecDescription';
 import SpecIcon from './SpecIcon';
-import { cn } from '~/utils';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -19,9 +19,10 @@ interface ModelSpecItemProps {
 
 export function ModelSpecItem({ spec, isSelected, posInSet, setSize }: ModelSpecItemProps) {
   const localize = useLocalize();
-  const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
+  const { handleSelectSpec, endpointsConfig, agentsMap } = useModelSelectorContext();
   const { isFavoriteSpec, toggleFavoriteSpec } = useFavorites();
   const { showIconInMenu = true } = spec;
+  const agentAvatarURL = getSpecAgentAvatarURL(spec, agentsMap);
 
   const { ref: itemRef, isActive } = useIsActiveItem<HTMLDivElement>();
 
@@ -49,7 +50,11 @@ export function ModelSpecItem({ spec, isSelected, posInSet, setSize }: ModelSpec
       >
         {showIconInMenu && (
           <div className="flex-shrink-0">
-            <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />
+            <SpecIcon
+              currentSpec={spec}
+              endpointsConfig={endpointsConfig}
+              agentAvatarURL={agentAvatarURL}
+            />
           </div>
         )}
         <div className="flex min-w-0 flex-col gap-1">

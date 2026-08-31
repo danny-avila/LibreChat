@@ -3,6 +3,14 @@ import { atom, getDefaultStore } from 'jotai';
 import type { TMessage, TContextUsageEvent } from 'librechat-data-provider';
 import type { BranchTotals, BranchUsage } from '~/utils/tokens';
 import { EMPTY_BRANCH, EMPTY_USAGE } from '~/utils/tokens';
+import { createStorageAtom } from './jotai-utils';
+
+/** Sticky preference: does the context popover open with the breakdown showing?
+ *  The gauge alone is the default; a user who wants the detail sets it once. */
+export const contextBreakdownExpandedAtom = createStorageAtom<boolean>(
+  'contextBreakdownExpanded',
+  false,
+);
 
 /** Latest backend context snapshot, anchored to the run's user message for staleness checks */
 export interface ContextSnapshot extends TContextUsageEvent {

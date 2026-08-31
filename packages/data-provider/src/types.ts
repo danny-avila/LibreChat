@@ -10,13 +10,15 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
-import type { Agent, EToolResources } from './types/assistants';
+import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
+import type { ProviderId } from './providers';
 
 export * from './schemas';
+export * from './types/subagents';
 
 export type TMessages = TMessage[];
 
@@ -201,6 +203,8 @@ export type TSubmission = {
    * resumes for run steps and activity labels alike.
    */
   editPrefixLength?: number;
+  /** True once server index 0 text/reasoning actually merged into the retained tail. */
+  editPrefixFirstPartFolded?: boolean;
   /**
    * Set once a resume SYNC has replaced the response's retained prefix with
    * the server's completion-local snapshot. From that point the prefix is
@@ -291,9 +295,19 @@ export type TUser = {
   backupCodes?: TBackupCode[];
   personalization?: {
     memories?: boolean;
+    statefulCodeEnvironment?: StatefulCodeEnvironment;
   };
   createdAt: string;
   updatedAt: string;
+};
+
+export type TUpdateUserPreferencesRequest = {
+  statefulCodeEnvironment: StatefulCodeEnvironment;
+};
+
+export type TUpdateUserPreferencesResponse = {
+  updated: boolean;
+  preferences: TUpdateUserPreferencesRequest;
 };
 
 export type TGetConversationsResponse = {
@@ -417,6 +431,10 @@ export type TArchiveConversationRequest = {
 
 export type TArchiveConversationResponse = TConversation;
 
+export type TArchiveAllConversationsResponse = {
+  archivedCount: number;
+};
+
 export type TPinConversationRequest = {
   conversationId: string;
   pinned: boolean;
@@ -426,6 +444,7 @@ export type TPinConversationResponse = TConversation;
 
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
+  langfuseSessionUrl?: string;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
@@ -507,6 +526,14 @@ export type TSearchResults = {
   filter: object;
 };
 
+export type TPublicCodeEnvironment = {
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+  default?: boolean;
+  pairingAvailable?: boolean;
+};
+
 export type TConfig = {
   order: number;
   type?: EModelEndpoint;
@@ -517,6 +544,8 @@ export type TConfig = {
   plugins?: Record<string, string>;
   name?: string;
   iconURL?: string;
+  /** Canonical provider identity resolved at config load, used for branding. */
+  providerId?: ProviderId;
   version?: string;
   modelDisplayLabel?: string;
   userProvide?: boolean | null;
@@ -528,6 +557,12 @@ export type TConfig = {
   disableBuilder?: boolean;
   retrievalModels?: string[];
   capabilities?: string[];
+  statefulCodeSessions?: {
+    allowedEnvironments: StatefulCodeEnvironment[];
+    environments?: TPublicCodeEnvironment[];
+  };
+  /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
+  maxSubagents?: number;
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;
@@ -940,3 +975,7 @@ export type TLangfuseConnectionTestErrorCode =
 export type TLangfuseConnectionTestResponse =
   | { success: true }
   | { success: false; errorCode: TLangfuseConnectionTestErrorCode };
+
+export type TLangfuseSessionLinkResponse = {
+  url: string | null;
+};

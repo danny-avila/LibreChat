@@ -18,7 +18,6 @@ import {
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
-import ProjectLandingChip from './ProjectLandingChip';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
@@ -87,6 +86,12 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     });
   }, [conversation?.chatProjectId, newConversation, project?._id]);
 
+  const activeConversation =
+    chatHelpers.conversation?.conversationId === conversationId
+      ? chatHelpers.conversation
+      : undefined;
+  const activeSubagentThread = activeConversation?.subagentThread;
+
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
 
   // Auto-resume if navigating back to conversation with active job.
@@ -134,6 +139,11 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       : undefined;
   const pageHeading =
     isLandingPage || !conversationTitle ? localize('com_ui_new_chat') : conversationTitle;
+  const parentConversationId = activeSubagentThread?.parentConversationId;
+  /** Durable child threads are an execution record owned by their parent agent.
+   * Human continuation is a separate future fork/promotion flow, never an
+   * in-place mutation of this canonical child transcript. */
+  const isSubagentThreadReadOnly = activeSubagentThread != null;
 
   return (
     <ChatFormProvider {...methods}>
@@ -142,7 +152,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
               <h1 className="sr-only">{pageHeading}</h1>
-              <Header />
+              <Header
+                parentConversationId={parentConversationId}
+                readOnly={isSubagentThreadReadOnly}
+              />
               <>
                 <div
                   className={cn(
@@ -156,12 +169,25 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                   <div
                     className={cn(
                       'w-full',
+                      !isLandingPage && 'scrollbar-gutter-spacer',
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >
-                    {isProjectLandingPage && project && <ProjectLandingChip project={project} />}
                     {isLandingPage && <ConversationStarters />}
-                    <ChatForm index={index} placeholder={chatFormPlaceholder} />
+                    {isSubagentThreadReadOnly ? (
+                      <div
+                        className="mx-auto w-full max-w-3xl px-4 py-3 text-center text-sm text-text-secondary xl:max-w-4xl"
+                        role="note"
+                      >
+                        {localize('com_ui_subagent_thread_read_only')}
+                      </div>
+                    ) : (
+                      <ChatForm
+                        index={index}
+                        placeholder={chatFormPlaceholder}
+                        project={isProjectLandingPage ? project : undefined}
+                      />
+                    )}
                     {!isLandingPage && <Footer />}
                   </div>
                 </div>

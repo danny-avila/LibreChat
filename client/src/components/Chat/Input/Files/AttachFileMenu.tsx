@@ -307,8 +307,8 @@ const AttachFileMenu = ({
           aria-label="Attach File Options"
           aria-keyshortcuts={uploadFileAriaKey}
           className={cn(
-            'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
-            isPopoverActive && 'bg-surface-hover',
+            'flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
+            isPopoverActive && 'bg-surface-composer-hover',
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">
@@ -344,7 +344,8 @@ const AttachFileMenu = ({
           className="overflow-visible"
           isOpen={isPopoverActive}
           setIsOpen={setIsPopoverActive}
-          modal={true}
+          modal={false}
+          portal={true}
           unmountOnHide={true}
           trigger={menuTrigger}
           items={dropdownItems}
