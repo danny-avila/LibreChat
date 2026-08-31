@@ -740,13 +740,24 @@ describe('File Methods', () => {
       expect(results.map((file) => file.file_id)).toEqual([deferredId]);
     });
 
-    it('omits files already embedded or already provisioned to the sandbox', async () => {
+    it('omits a file that already carries every requested result', async () => {
       const ownerId = new mongoose.Types.ObjectId();
       const embeddedId = uuidv4();
       const provisionedId = uuidv4();
       const generatedId = uuidv4();
-      await makeFile(embeddedId, ownerId, { embedded: true });
+      await makeFile(embeddedId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'session',
+            file_id: embeddedId,
+          },
+        },
+      });
       await makeFile(provisionedId, ownerId, {
+        embedded: true,
         metadata: {
           codeEnvRef: {
             kind: 'user',
@@ -764,6 +775,55 @@ describe('File Methods', () => {
       );
 
       expect(results).toEqual([]);
+    });
+
+    it('returns a search-embedded file when the agent needs code provisioning', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const embeddedOnlyId = uuidv4();
+      await makeFile(embeddedOnlyId, ownerId, { embedded: true });
+
+      const forCode = await fileMethods.getDeferredProvisionFiles(
+        [embeddedOnlyId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true },
+      );
+      const forSearch = await fileMethods.getDeferredProvisionFiles(
+        [embeddedOnlyId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { search: true },
+      );
+
+      expect(forCode.map((file) => file.file_id)).toEqual([embeddedOnlyId]);
+      expect(forSearch).toEqual([]);
+    });
+
+    it('returns a code-provisioned file when the agent needs search provisioning', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const codeOnlyId = uuidv4();
+      await makeFile(codeOnlyId, ownerId, {
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'session',
+            file_id: codeOnlyId,
+          },
+        },
+      });
+
+      const forSearch = await fileMethods.getDeferredProvisionFiles(
+        [codeOnlyId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { search: true },
+      );
+      const forCode = await fileMethods.getDeferredProvisionFiles(
+        [codeOnlyId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true },
+      );
+
+      expect(forSearch.map((file) => file.file_id)).toEqual([codeOnlyId]);
+      expect(forCode).toEqual([]);
     });
 
     it('does not cross the authenticated owner scope', async () => {
