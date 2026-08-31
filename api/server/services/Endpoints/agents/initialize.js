@@ -509,6 +509,9 @@ const initializeClient = async ({
 
       /** @type {import('@librechat/api').TFileUpdate[]} */
       const pendingUpdates = [];
+      /** Code env updates tracked separately: primeCodeFiles reads the persisted record,
+       *  so an unpersisted code ref makes the file invisible to the tool it was uploaded for. */
+      const codeUpdateIds = new Set();
 
       if (needsCode && provisionState.codeEnvFiles.length > 0) {
         const results = await Promise.allSettled(
@@ -520,6 +523,7 @@ const initializeClient = async ({
             });
             file.metadata = { ...file.metadata, ...referenceSet };
             addProvisionedFile(file, EToolResources.execute_code);
+            codeUpdateIds.add(fileUpdate.file_id);
             pendingUpdates.push(fileUpdate);
           }),
         );
@@ -561,18 +565,32 @@ const initializeClient = async ({
       }
 
       if (pendingUpdates.length > 0) {
-        /* A rejected update leaves the DB record unprovisioned while the queue is
-         * cleared, so the next turn re-provisions the same file; surface it. */
-        const updateResults = await Promise.allSettled(
-          pendingUpdates.map((update) => db.updateFile(update)),
-        );
-        for (const result of updateResults) {
-          if (result.status === 'rejected') {
-            logger.error(
-              '[provisionFiles] Failed to persist provisioning result; file will re-provision next turn',
-              result.reason,
-            );
-          }
+        const persist = async (updates) => {
+          const results = await Promise.allSettled(updates.map((update) => db.updateFile(update)));
+          return updates.filter((_, index) => results[index].status === 'rejected');
+        };
+
+        /* One retry: a transient write failure otherwise leaves the record unprovisioned
+         * while the queue is cleared. */
+        let failed = await persist(pendingUpdates);
+        if (failed.length > 0) {
+          failed = await persist(failed);
+        }
+
+        for (const update of failed) {
+          logger.error(
+            `[provisionFiles] Failed to persist provisioning for file ${update.file_id}`,
+          );
+        }
+
+        /* primeCodeFiles re-reads the database and skips files without a persisted ref,
+         * so continuing here would run code against an attachment the tool cannot see.
+         * Fail the preflight instead of producing a silently incomplete result. */
+        const unpersistedCodeFiles = failed.filter((update) => codeUpdateIds.has(update.file_id));
+        if (unpersistedCodeFiles.length > 0) {
+          throw new Error(
+            `Failed to persist code environment references for ${unpersistedCodeFiles.length} file(s); aborting tool execution rather than running without them`,
+          );
         }
       }
     },
