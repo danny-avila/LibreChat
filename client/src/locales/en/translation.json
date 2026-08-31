@@ -2192,7 +2192,7 @@
   "com_ui_steer_failed": "Steering failed",
   "com_ui_steer_in_flight": "Steering",
   "com_ui_steer_in_flight_preempt": "Interrupting",
-  "com_ui_steer_interrupting_info": "Interrupt requested. The response will stop at the next safe point, then your message takes over.",
+  "com_ui_steer_interrupting_info": "Interrupt requested. The response will stop at the next safe point, then your message takes over. Reasoning is not interrupted. To interrupt reasoning, stop the response instead.",
   "com_ui_steer_interrupts_default": "Steering interrupts generation",
   "com_ui_steer_interrupts_default_info": "When on, Enter stops the response at the next safe point instead of waiting for the agent's next tool step. Either way the partial answer is kept and the response continues.",
   "com_ui_steer_interrupts_enable_info": "Switches the during-run default to steering and stops the response at the next safe point. The partial answer is kept and the response continues.",
