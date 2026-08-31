@@ -1087,7 +1087,12 @@ export async function initializeAgent(
      * them — see `getCodeGeneratedFiles` for the branched-conversation rationale.
      */
     const wantsCodeFiles = toolResourceSet.has(EToolResources.execute_code);
-    const [toolFiles, codeGeneratedFiles, userCodeFiles] = await Promise.all([
+    /* Attachments accepted on an earlier turn whose tool never ran are absent from the
+     * three queries below, since those match only files that already carry the result
+     * of provisioning. Fetched alongside them, not after: it is independent of all
+     * three, and this runs on the agent initialization path. */
+    const wantsProvisioning = wantsCodeFiles || toolResourceSet.has(EToolResources.file_search);
+    const [toolFiles, codeGeneratedFiles, userCodeFiles, deferredFiles] = await Promise.all([
       requestFileOwnerScope
         ? (db.getToolFilesByIds(fileIds, toolResourceSet, requestFileOwnerScope) as Promise<
             IMongoFile[]
@@ -1107,23 +1112,19 @@ export async function initializeAgent(
       threadFileIds.length > 0
         ? (db.getUserCodeFiles(threadFileIds, requestFileOwnerScope) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
-    ]);
-
-    /* Attachments accepted on an earlier turn whose tool never ran are absent from
-     * every query above, since those match only files that already carry the result
-     * of provisioning. Fetched separately and kept out of the delivery set. */
-    const wantsProvisioning = wantsCodeFiles || toolResourceSet.has(EToolResources.file_search);
-    deferredProvisionFiles =
       wantsProvisioning &&
       db.getDeferredProvisionFiles &&
       requestFileOwnerScope &&
       threadFileIds &&
       threadFileIds.length > 0
-        ? ((await db.getDeferredProvisionFiles(
-            threadFileIds,
-            requestFileOwnerScope,
-          )) as IMongoFile[])
-        : [];
+        ? (db.getDeferredProvisionFiles(threadFileIds, requestFileOwnerScope) as Promise<
+            IMongoFile[]
+          >)
+        : ([] as IMongoFile[]),
+    ]);
+
+    /* Kept out of the delivery set: these are provisioning candidates only. */
+    deferredProvisionFiles = deferredFiles;
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     const snapshotFileIds = new Set(requestFileIds);
