@@ -25,7 +25,9 @@ const LANE_WRITER_RETRY_MS = 5;
 const LANE_WRITER_RETRIES = LANE_WRITER_LEASE_MS / LANE_WRITER_RETRY_MS;
 const RETIRED_LANE_RETENTION_MS = 24 * 60 * 60_000;
 const ROOT_LINEAGE_PREDECESSOR_PREFIX = 'root:';
+const CLAIM_LANE_INDEX = 'agent_queued_turn_claim_lane';
 const ADMISSION_STARTED_LANE_INDEX = 'agent_queued_turn_admission_started_lane';
+const NAMESPACE_EXISTS = 48;
 
 interface DuplicateKeyError {
   code?: number;
@@ -705,7 +707,11 @@ export function createAgentQueuedTurnMethods(
    * unique fence so upgrades remain available without guessing at ordering. */
   async function quarantineDuplicateAdmissionLanes(): Promise<number> {
     const lanes = await Turn().aggregate<DuplicateAdmissionLane>([
-      { $match: { admissionStartedAt: { $exists: true } } },
+      {
+        $match: {
+          $or: [{ status: 'claimed' }, { admissionStartedAt: { $exists: true } }],
+        },
+      },
       {
         $group: {
           _id: {
@@ -787,12 +793,15 @@ export function createAgentQueuedTurnMethods(
   }
 
   async function ensureAgentQueuedTurnIndexes(): Promise<void> {
-    const admissionFenceExists = (
-      await Turn()
-        .listIndexes()
-        .catch(() => [])
-    ).some((index) => index.name === ADMISSION_STARTED_LANE_INDEX);
-    if (!admissionFenceExists) {
+    for (const model of [Turn(), Sequence()]) {
+      await model.createCollection().catch((error: unknown) => {
+        if ((error as DuplicateKeyError).code !== NAMESPACE_EXISTS) {
+          throw error;
+        }
+      });
+    }
+    const indexNames = new Set((await Turn().listIndexes()).map((index) => index.name));
+    if (!indexNames.has(CLAIM_LANE_INDEX) || !indexNames.has(ADMISSION_STARTED_LANE_INDEX)) {
       for (let attempt = 0; ; attempt++) {
         await quarantineDuplicateAdmissionLanes();
         try {
@@ -803,7 +812,7 @@ export function createAgentQueuedTurnMethods(
           if (
             attempt >= 4 ||
             (error as DuplicateKeyError).code !== DUPLICATE_KEY ||
-            !message.includes(ADMISSION_STARTED_LANE_INDEX)
+            (!message.includes(CLAIM_LANE_INDEX) && !message.includes(ADMISSION_STARTED_LANE_INDEX))
           ) {
             throw error;
           }

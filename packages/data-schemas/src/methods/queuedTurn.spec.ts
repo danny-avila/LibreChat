@@ -517,6 +517,19 @@ describe('agent queued turn methods', () => {
     const second = await methods.enqueueAgentQueuedTurn(
       enqueueInput({ clientRequestId: 'duplicate-admission-second' }),
     );
+    const third = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({
+        conversationId: 'conversation-2',
+        clientRequestId: 'duplicate-claim-first',
+      }),
+    );
+    const fourth = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({
+        conversationId: 'conversation-2',
+        clientRequestId: 'duplicate-claim-second',
+      }),
+    );
+    await Turn.collection.dropIndex('agent_queued_turn_claim_lane');
     await Turn.collection.dropIndex('agent_queued_turn_admission_started_lane');
     for (const [turn, deliveryKey, status] of [
       [first, 'legacy-duplicate-first', 'dead'],
@@ -545,16 +558,58 @@ describe('agent queued turn methods', () => {
         },
       );
     }
+    for (const [turn, deliveryKey] of [
+      [third, 'legacy-claim-first'],
+      [fourth, 'legacy-claim-second'],
+    ] as const) {
+      await Turn.updateOne(
+        { _id: turn.turn.queuedTurnId },
+        {
+          $set: {
+            status: 'claimed',
+            deliveryKey,
+            deliveryState: 'published',
+            claimId: deliveryKey,
+            claimBy: 'legacy-worker',
+            claimUntil: LATER,
+          },
+        },
+      );
+    }
 
     await expect(methods.ensureAgentQueuedTurnIndexes()).resolves.toBeUndefined();
     await expect(
       Sequence.findOne({ user, tenantId: 'tenant-1', conversationId: 'conversation-1' }).lean(),
     ).resolves.toMatchObject({ retiredAt: expect.any(Date) });
     await expect(
-      Turn.find({ _id: { $in: [first.turn.queuedTurnId, second.turn.queuedTurnId] } })
+      Sequence.findOne({ user, tenantId: 'tenant-1', conversationId: 'conversation-2' }).lean(),
+    ).resolves.toMatchObject({ retiredAt: expect.any(Date) });
+    await expect(
+      Turn.find({
+        _id: {
+          $in: [
+            first.turn.queuedTurnId,
+            second.turn.queuedTurnId,
+            third.turn.queuedTurnId,
+            fourth.turn.queuedTurnId,
+          ],
+        },
+      })
         .sort({ sequence: 1 })
         .lean(),
     ).resolves.toMatchObject([
+      {
+        status: 'dead',
+        terminalReceipt: {
+          failure: { code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE' },
+        },
+      },
+      {
+        status: 'dead',
+        terminalReceipt: {
+          failure: { code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE' },
+        },
+      },
       {
         status: 'dead',
         terminalReceipt: {
@@ -574,6 +629,15 @@ describe('agent queued turn methods', () => {
         enqueueInput({ clientRequestId: 'duplicate-admission-follow-up' }),
       ),
     ).rejects.toBeInstanceOf(AgentQueuedTurnLaneRetiredError);
+    await expect(
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({
+          conversationId: 'conversation-2',
+          clientRequestId: 'duplicate-claim-follow-up',
+        }),
+      ),
+    ).rejects.toBeInstanceOf(AgentQueuedTurnLaneRetiredError);
+    await expect(Turn.collection.indexExists('agent_queued_turn_claim_lane')).resolves.toBe(true);
     await expect(
       Turn.collection.indexExists('agent_queued_turn_admission_started_lane'),
     ).resolves.toBe(true);
