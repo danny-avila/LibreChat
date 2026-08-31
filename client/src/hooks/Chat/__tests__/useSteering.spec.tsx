@@ -1100,23 +1100,6 @@ describe('useSteering', () => {
         },
       });
       expect(rendered.result.current.settledReceipts).toEqual([]);
-
-      mockServerQueuedTurns = [
-        {
-          ...(mockServerQueuedTurns[0] as Record<string, unknown>),
-          status: 'queued',
-          revision: 3,
-          failure: undefined,
-        },
-      ];
-      rendered.rerender();
-
-      await waitFor(() =>
-        expect(rendered.result.current.queue[0].server).toMatchObject({
-          status: 'indeterminate',
-          revision: 4,
-        }),
-      );
     });
 
     it('cancels the durable copy before downgrading a row to local control', async () => {

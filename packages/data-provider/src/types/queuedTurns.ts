@@ -58,6 +58,7 @@ export const agentQueuedTurnReceiptSchema = enqueueAgentQueuedTurnSchema.extend(
   /** Explicitly proves that this admission consumed no predecessor boundary. */
   rootPredecessor: z.literal(true).optional(),
   position: z.number().int().nonnegative().optional(),
+  /** Immutable queue sequence retained as `revision` for wire compatibility. */
   revision: z.number().int().nonnegative(),
   failure: z
     .object({

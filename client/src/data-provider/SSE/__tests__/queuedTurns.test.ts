@@ -1,7 +1,10 @@
+import { renderHook, waitFor } from '@testing-library/react';
+
 const mockListAgentQueuedTurns = jest.fn();
 const mockEnqueueAgentQueuedTurn = jest.fn();
 const mockCancelAgentQueuedTurn = jest.fn();
-const mockUseQuery = jest.fn((options: unknown) => options);
+const mockRefetch = jest.fn();
+const mockUseQuery = jest.fn((options: unknown) => ({ options, refetch: mockRefetch }));
 
 jest.mock('@tanstack/react-query', () => ({
   useQuery: (options: unknown) => mockUseQuery(options),
@@ -140,12 +143,39 @@ describe('Agent queued-turn data adapter', () => {
   });
 
   it('refreshes stopped reconciliation work on every mount and focus', () => {
-    useAgentQueuedTurns('conversation/one', true);
+    renderHook(() => useAgentQueuedTurns('conversation/one', true));
 
     expect(mockUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         refetchOnMount: 'always',
         refetchOnWindowFocus: 'always',
+      }),
+    );
+  });
+
+  it('keeps one cache authority and refetches when known receipt ids change', async () => {
+    const rendered = renderHook(
+      ({ ids }: { ids: string[] }) => useAgentQueuedTurns('conversation/one', true, ids),
+      { initialProps: { ids: ['request-one'] } },
+    );
+
+    expect(mockUseQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        queryKey: ['agentQueuedTurns', 'conversation/one'],
+      }),
+    );
+    expect(mockRefetch).not.toHaveBeenCalled();
+
+    rendered.rerender({ ids: [] });
+
+    await waitFor(() =>
+      expect(mockRefetch).toHaveBeenCalledWith({
+        cancelRefetch: true,
+      }),
+    );
+    expect(mockUseQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        queryKey: ['agentQueuedTurns', 'conversation/one'],
       }),
     );
   });

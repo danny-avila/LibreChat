@@ -297,11 +297,6 @@ function reconcileServerQueuedTurns(
       return optimistic == null ? [] : [optimistic];
     }
     const boundaryPending = receipt.status === 'admitted';
-    /** Reordered requests may complete after a newer authoritative GET. The
-     * row revision is durable evidence; never regress its projection. */
-    if (optimistic?.server?.revision != null && optimistic.server.revision > receipt.revision) {
-      return [optimistic];
-    }
     let status: NonNullable<QueuedMessage['server']>['status'] = 'rejected';
     if (admissionIndeterminate) {
       status = 'indeterminate';

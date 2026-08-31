@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys } from 'librechat-data-provider';
 import type {
@@ -8,10 +9,12 @@ import type {
 export type AgentQueuedTurnReceipt = TAgentQueuedTurnReceipt;
 export type EnqueueAgentQueuedTurnRequest = TEnqueueAgentQueuedTurnRequest;
 
-export const agentQueuedTurnsQueryKey = (
-  conversationId: string,
-  clientRequestIds: readonly string[] = [],
-) => [QueryKeys.agentQueuedTurns, conversationId, ...clientRequestIds] as const;
+/** Keep one cache authority for a conversation. Known receipt ids change the
+ * server projection, not the identity of the durable queue. Giving every id
+ * set its own key can resurrect an older cached projection after an id is
+ * retired. */
+export const agentQueuedTurnsQueryKey = (conversationId: string) =>
+  [QueryKeys.agentQueuedTurns, conversationId] as const;
 
 function queuedTurnErrorResponse(error: unknown): { status?: number; code?: string } {
   const response = (
@@ -99,8 +102,10 @@ export function useAgentQueuedTurns(
   reconcileUntil?: number,
 ) {
   const knownIds = [...new Set(clientRequestIds)].sort();
-  return useQuery({
-    queryKey: agentQueuedTurnsQueryKey(conversationId, knownIds),
+  const knownIdsSignature = knownIds.join('\u0000');
+  const previousRequest = useRef({ conversationId, knownIdsSignature });
+  const query = useQuery({
+    queryKey: agentQueuedTurnsQueryKey(conversationId),
     queryFn: () => fetchAgentQueuedTurns(conversationId, knownIds),
     enabled: enabled && conversationId.length > 0,
     staleTime: 1_000,
@@ -113,6 +118,27 @@ export function useAgentQueuedTurns(
       shouldPollAgentQueuedTurns(receipts, reconcileUntil) ? 2_000 : false,
     retry: false,
   });
+  const { refetch } = query;
+
+  useEffect(() => {
+    const previous = previousRequest.current;
+    previousRequest.current = { conversationId, knownIdsSignature };
+    if (
+      !enabled ||
+      conversationId.length === 0 ||
+      previous.conversationId !== conversationId ||
+      previous.knownIdsSignature === knownIdsSignature
+    ) {
+      return;
+    }
+
+    /** The stable query key prevents old snapshots from becoming current
+     * again. Cancel/refetch also prevents an older in-flight projection from
+     * winning when receipt identities are added or retired. */
+    void refetch({ cancelRefetch: true });
+  }, [conversationId, enabled, knownIdsSignature, refetch]);
+
+  return query;
 }
 
 export function useEnqueueAgentQueuedTurnMutation() {
