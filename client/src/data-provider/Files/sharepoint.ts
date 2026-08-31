@@ -4,7 +4,10 @@ import type { UseMutationResult } from '@tanstack/react-query';
 const GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0';
 /** Page size for folder listings; Graph caps `$top` for driveItem children at 200. */
 const FOLDER_PAGE_SIZE = 200;
-/** Upper bound on folder listings per expansion, so a deep tree cannot fan out unbounded. */
+/**
+ * Upper bound on Graph requests per expansion, counting every page of every folder
+ * listing, so neither a deep tree nor one enormous folder can fan out unbounded.
+ */
 const MAX_FOLDER_REQUESTS = 100;
 
 /** The subset of a Graph driveItem the picker and download path rely on. */
@@ -41,7 +44,9 @@ export interface SharePointFolderExpansion {
   files: SharePointFile[];
   /** Folders whose contents could not be listed, by name. */
   unreadableFolders: string[];
-  /** Whether the file limit or the folder-request budget cut the walk short. */
+  /** Files skipped before download because they exceed the endpoint's size limit, by name. */
+  oversizedFiles: string[];
+  /** Whether the file limit or the request budget cut the walk short. */
   truncated: boolean;
 }
 
@@ -79,66 +84,71 @@ function toSharePointFile(item: SharePointDriveItem, driveId: string): SharePoin
   };
 }
 
+/** One outstanding folder listing request: the first page of a folder, or a continuation. */
+interface FolderPageRequest {
+  url: string;
+  folder: SharePointFile;
+}
+
+function folderKey(folder: SharePointFile): string {
+  return `${folder.driveId}:${folder.itemId}`;
+}
+
+function childrenUrl(driveId: string, itemId: string): string {
+  return `${GRAPH_API_BASE}/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(
+    itemId,
+  )}/children?$top=${FOLDER_PAGE_SIZE}`;
+}
+
 /**
- * Lists every child of a folder, following Graph's pagination to the end.
- * @throws {Error} If any page of the listing is rejected.
+ * Fetches a single page of a folder listing.
+ * @throws {Error} If Graph rejects the request.
  */
-async function listFolderChildren(
-  driveId: string,
-  itemId: string,
-  accessToken: string,
-): Promise<SharePointDriveItem[]> {
-  const children: SharePointDriveItem[] = [];
-  let nextUrl: string | undefined = `${GRAPH_API_BASE}/drives/${encodeURIComponent(
-    driveId,
-  )}/items/${encodeURIComponent(itemId)}/children?$top=${FOLDER_PAGE_SIZE}`;
+async function fetchChildrenPage(url: string, accessToken: string): Promise<DriveChildrenPage> {
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 
-  while (nextUrl) {
-    const response = await fetch(nextUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`);
-    }
-
-    const page: DriveChildrenPage = await response.json();
-    if (page.value) {
-      children.push(...page.value);
-    }
-    nextUrl = page['@odata.nextLink'];
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
   }
 
-  return children;
+  return response.json();
 }
 
 /**
  * Walks the folders in a picker selection breadth-first and returns the files inside
- * them, merged with the files that were selected directly. Stops at `maxFiles` and at
- * a fixed folder-request budget so a large SharePoint tree cannot stall the upload.
- * Folders the user cannot list are reported rather than failing the whole selection.
+ * them, merged with the files that were selected directly. One page of one folder
+ * listing is the unit of work, so `maxFiles` and the request budget are both applied
+ * as pages arrive rather than after a folder has been materialized in full. Files
+ * already over the endpoint's size limit are skipped before they are downloaded, and
+ * folders the user cannot list are reported instead of failing the whole selection.
  */
 export async function expandSharePointFolders({
   items,
   accessToken,
   maxFiles,
+  maxFileSize,
 }: {
   items: SharePointFile[];
   accessToken: string;
   maxFiles?: number;
+  maxFileSize?: number;
 }): Promise<SharePointFolderExpansion> {
-  const fileLimit = maxFiles != null && maxFiles > 0 ? maxFiles : Number.POSITIVE_INFINITY;
+  const fileLimit = maxFiles == null ? Number.POSITIVE_INFINITY : Math.max(maxFiles, 0);
   const files: SharePointFile[] = [];
   const unreadableFolders: string[] = [];
+  const oversizedFiles: string[] = [];
   const seenFiles = new Set<string>();
   const visitedFolders = new Set<string>();
-  const queue: SharePointFile[] = [];
+  const failedFolders = new Set<string>();
+  const pages: FolderPageRequest[] = [];
   let requests = 0;
   let truncated = false;
 
   /** @returns Whether there is room for more files. */
   const collect = (file: SharePointFile): boolean => {
-    const key = `${file.driveId}:${file.itemId}`;
+    const key = folderKey(file);
     if (seenFiles.has(key)) {
       return true;
     }
@@ -151,52 +161,73 @@ export async function expandSharePointFolders({
     return true;
   };
 
-  const enqueue = (folder: SharePointFile) => {
-    const key = `${folder.driveId}:${folder.itemId}`;
+  const enqueueFolder = (folder: SharePointFile) => {
+    const key = folderKey(folder);
     if (visitedFolders.has(key)) {
       return;
     }
     visitedFolders.add(key);
-    queue.push(folder);
+    pages.push({ url: childrenUrl(folder.driveId, folder.itemId), folder });
+  };
+
+  /** @returns Whether there is room for more files. */
+  const collectChild = (child: SharePointDriveItem, driveId: string): boolean => {
+    const childFile = toSharePointFile(child, driveId);
+    if (childFile.isFolder === true) {
+      enqueueFolder(childFile);
+      return true;
+    }
+    if (maxFileSize != null && childFile.size > maxFileSize) {
+      oversizedFiles.push(childFile.name);
+      return true;
+    }
+    return collect(childFile);
   };
 
   for (const item of items) {
     if (item.isFolder === true) {
-      enqueue(item);
+      enqueueFolder(item);
     } else if (!collect(item)) {
       break;
     }
   }
 
-  while (queue.length > 0 && !truncated) {
-    if (requests >= MAX_FOLDER_REQUESTS) {
+  while (pages.length > 0 && !truncated) {
+    /** Stop before spending a request on a page there is no room to keep. */
+    if (files.length >= fileLimit || requests >= MAX_FOLDER_REQUESTS) {
       truncated = true;
       break;
     }
 
-    const folder = queue.shift() as SharePointFile;
+    const { url, folder } = pages.shift() as FolderPageRequest;
+    if (failedFolders.has(folderKey(folder))) {
+      continue;
+    }
     requests++;
 
-    let children: SharePointDriveItem[];
+    let page: DriveChildrenPage;
     try {
-      children = await listFolderChildren(folder.driveId, folder.itemId, accessToken);
+      page = await fetchChildrenPage(url, accessToken);
     } catch (error) {
       console.error(`Failed to list SharePoint folder ${folder.name}:`, error);
+      failedFolders.add(folderKey(folder));
       unreadableFolders.push(folder.name);
       continue;
     }
 
-    for (const child of children) {
-      const childFile = toSharePointFile(child, folder.driveId);
-      if (childFile.isFolder === true) {
-        enqueue(childFile);
-      } else if (!collect(childFile)) {
+    const nextLink = page['@odata.nextLink'];
+    if (nextLink) {
+      pages.push({ url: nextLink, folder });
+    }
+
+    for (const child of page.value ?? []) {
+      if (!collectChild(child, folder.driveId)) {
         break;
       }
     }
   }
 
-  return { files, unreadableFolders, truncated };
+  return { files, unreadableFolders, oversizedFiles, truncated };
 }
 
 export const useSharePointFileDownload = (): UseMutationResult<

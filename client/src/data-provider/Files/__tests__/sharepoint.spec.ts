@@ -28,11 +28,11 @@ function pickedFolder(id: string): SharePointFile {
   });
 }
 
-function driveFile(id: string): SharePointDriveItem {
+function driveFile(id: string, size = 20): SharePointDriveItem {
   return {
     id,
     name: `${id}.txt`,
-    size: 20,
+    size,
     webUrl: `https://contoso.sharepoint.com/${id}`,
     '@microsoft.graph.downloadUrl': `https://download/${id}`,
     parentReference: { driveId: DRIVE_ID },
@@ -224,6 +224,119 @@ describe('expandSharePointFolders', () => {
       expect.stringContaining('/drives/drive-1/items/folder-1/children'),
       { headers: { Authorization: `Bearer ${ACCESS_TOKEN}` } },
     );
+  });
+
+  it('counts every page of one folder against the request budget', async () => {
+    /** A single folder that never stops paginating must not outrun the budget. */
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        value: [],
+        '@odata.nextLink': 'https://graph.microsoft.com/next-page',
+      }),
+    }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(100);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('stops paging a folder as soon as maxFiles is reached', async () => {
+    let page = 0;
+    const fetchMock = jest.fn(async () => {
+      page++;
+      return {
+        ok: true,
+        json: async () => ({
+          value: [driveFile(`p${page}-a`), driveFile(`p${page}-b`)],
+          '@odata.nextLink': 'https://graph.microsoft.com/next-page',
+        }),
+      };
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      maxFiles: 2,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['p1-a', 'p1-b']);
+    expect(result.truncated).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips folder contents above the size limit before downloading them', async () => {
+    mockGraph({
+      'folder-1': [driveFile('small', 100), driveFile('huge', 10_000), driveFile('also-small', 50)],
+    });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      maxFileSize: 1_000,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['small', 'also-small']);
+    expect(result.oversizedFiles).toEqual(['huge.txt']);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('does not spend a slot on an oversized file', async () => {
+    mockGraph({ 'folder-1': [driveFile('huge', 10_000), driveFile('small', 10)] });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      maxFiles: 1,
+      maxFileSize: 1_000,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['small']);
+  });
+
+  it('returns nothing when there are no attachment slots left', async () => {
+    const { fetchMock } = mockGraph({ 'folder-1': [driveFile('inner')] });
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+      maxFiles: 0,
+    });
+
+    expect(result.files).toEqual([]);
+    expect(result.truncated).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a folder that fails partway through its pages only once', async () => {
+    let call = 0;
+    global.fetch = jest.fn(async () => {
+      call++;
+      if (call === 1) {
+        return {
+          ok: true,
+          json: async () => ({
+            value: [driveFile('first-page')],
+            '@odata.nextLink': 'https://graph.microsoft.com/next-page',
+          }),
+        } as Response;
+      }
+      return { ok: false, status: 403, statusText: 'Forbidden' } as Response;
+    }) as unknown as typeof fetch;
+
+    const result = await expandSharePointFolders({
+      items: [pickedFolder('folder-1')],
+      accessToken: ACCESS_TOKEN,
+    });
+
+    expect(result.files.map((file) => file.id)).toEqual(['first-page']);
+    expect(result.unreadableFolders).toEqual(['folder-1-folder']);
   });
 
   it('stops walking once the folder-request budget is spent', async () => {

@@ -114,7 +114,11 @@ const AttachFileMenu = ({
   });
   const { handleSharePointFiles, isProcessing, downloadProgress } =
     useSharePointFileHandlingNoChatContext(
-      { toolResource: toolResourceRef.current, maxFiles: endpointFileConfig?.fileLimit },
+      {
+        toolResource: toolResourceRef.current,
+        maxFiles: endpointFileConfig?.fileLimit,
+        maxFileSize: endpointFileConfig?.fileSizeLimit,
+      },
       { files, setFiles, setFilesLoading, conversation },
     );
 

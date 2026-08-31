@@ -8,8 +8,10 @@ import useLocalize from '~/hooks/useLocalize';
 interface UseSharePointDownloadProps {
   onFilesDownloaded?: (files: File[]) => void | Promise<void>;
   onError?: (error: Error) => void;
-  /** Upper bound on files pulled out of selected folders; the endpoint's file limit. */
+  /** Remaining attachment slots, so folder contents cannot overrun the endpoint's file limit. */
   maxFiles?: number;
+  /** Endpoint per-file size limit, applied to folder contents before they are downloaded. */
+  maxFileSize?: number;
 }
 
 interface UseSharePointDownloadReturn {
@@ -23,11 +25,15 @@ export default function useSharePointDownload({
   onFilesDownloaded,
   onError,
   maxFiles,
+  maxFileSize,
 }: UseSharePointDownloadProps = {}): UseSharePointDownloadReturn {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [downloadProgress, setDownloadProgress] = useState<SharePointBatchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Token acquisition and folder expansion both run before the download mutation starts,
+   * so they need their own flag or the picker shows no busy state during them. */
+  const [isPreparing, setIsPreparing] = useState(false);
 
   const { token, refetch: refetchToken } = useSharePointToken({
     enabled: false,
@@ -43,6 +49,7 @@ export default function useSharePointDownload({
       }
 
       setError(null);
+      setIsPreparing(true);
       setDownloadProgress({ completed: 0, total: files.length, failed: [] });
 
       try {
@@ -70,7 +77,12 @@ export default function useSharePointDownload({
             duration: 2000,
           });
 
-          const expansion = await expandSharePointFolders({ items: files, accessToken, maxFiles });
+          const expansion = await expandSharePointFolders({
+            items: files,
+            accessToken,
+            maxFiles,
+            maxFileSize,
+          });
           filesToDownload = expansion.files;
 
           if (expansion.unreadableFolders.length > 0) {
@@ -83,6 +95,26 @@ export default function useSharePointDownload({
             });
           }
 
+          if (expansion.oversizedFiles.length > 0) {
+            showToast({
+              message: localize('com_files_sharepoint_folders_oversized', {
+                0: expansion.oversizedFiles.length,
+              }),
+              status: 'warning',
+              duration: 5000,
+            });
+          }
+
+          if (filesToDownload.length === 0) {
+            throw new Error(
+              localize(
+                expansion.truncated
+                  ? 'com_files_sharepoint_folder_no_room'
+                  : 'com_files_sharepoint_folders_empty',
+              ),
+            );
+          }
+
           if (expansion.truncated) {
             showToast({
               message: localize('com_files_sharepoint_folder_limit', {
@@ -93,13 +125,10 @@ export default function useSharePointDownload({
             });
           }
 
-          if (filesToDownload.length === 0) {
-            throw new Error(localize('com_files_sharepoint_folders_empty'));
-          }
-
           setDownloadProgress({ completed: 0, total: filesToDownload.length, failed: [] });
         }
 
+        setIsPreparing(false);
         showToast({
           message: `Downloading ${filesToDownload.length} file(s) from SharePoint...`,
           status: 'info',
@@ -158,6 +187,8 @@ export default function useSharePointDownload({
 
         setDownloadProgress(null);
         throw error;
+      } finally {
+        setIsPreparing(false);
       }
     },
     [
@@ -169,12 +200,13 @@ export default function useSharePointDownload({
       refetchToken,
       localize,
       maxFiles,
+      maxFileSize,
     ],
   );
 
   return {
     downloadSharePointFiles,
-    isDownloading: batchDownloadMutation.isLoading,
+    isDownloading: isPreparing || batchDownloadMutation.isLoading,
     downloadProgress,
     error,
   };

@@ -55,6 +55,7 @@ function FileSearch({
         endpointTypeOverride: endpointType,
         fileSetter: setFiles,
         maxFiles: endpointFileConfig?.fileLimit,
+        maxFileSize: endpointFileConfig?.fileSizeLimit,
       },
       fileHandlingState,
     );
