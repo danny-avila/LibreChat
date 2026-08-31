@@ -1310,6 +1310,80 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByRole('combobox', { name: 'com_ui_subagent_actor' })).toBeEnabled();
   });
 
+  /** The panel stays open after a failed continuation precisely so the reader
+   *  can retry with the same words. A newer task arriving for this actor must
+   *  not advance the selection out from under them and wipe the composer —
+   *  until the draft is gone, at which point there is nothing left to protect. */
+  it('holds the selection after a failed continuation while the draft survives', () => {
+    const actor: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'First actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task',
+      tasks: [{ taskId: 'task', status: 'completed' }],
+      tasksTruncated: false,
+    };
+    const withNewerTask: ParentSubagentSummary = {
+      ...actor,
+      latestTaskId: 'task-newer',
+      tasks: [
+        { taskId: 'task-newer', status: 'completed' },
+        { taskId: 'task', status: 'completed' },
+      ],
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [actor]]]);
+    mockParentChildrenByThread = new Map([[actor.threadId, actor]]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    let active: ActiveSubagentPanel | null = null;
+    const Observer = () => {
+      active = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+    };
+
+    const tree = (
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+        <Observer />
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>
+    );
+    const { rerender } = render(tree);
+
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Try that again.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
+
+    /** The newer task lands while the request is out, and the fork then fails. */
+    mockParentChildrenByThread = new Map([[actor.threadId, withNewerTask]]);
+    mockParentChildrenByMessage = new Map([['parent-message', [withNewerTask]]]);
+    rerender(tree);
+    act(() => mockForkMutate.mock.calls[0][1].onError());
+    rerender(tree);
+
+    expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('Try that again.');
+    expect((active as ActiveSubagentPanel | null)?.durable?.taskId).toBe('task');
+
+    /** Draft gone, nothing left to protect: the panel follows the actor again. */
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), { target: { value: '' } });
+    rerender(tree);
+    expect((active as ActiveSubagentPanel | null)?.durable?.taskId).toBe('task-newer');
+  });
+
   it('continues with no draft when the reader asks for the chat without typing', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: completedView,
