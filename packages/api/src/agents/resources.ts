@@ -16,7 +16,6 @@ import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { ServerRequest } from '~/types';
 
-import { isCodeApiJwtAuthEnabled } from '~/auth/codeapi';
 import { TOOL_RESOURCE_KEYS } from './orphans';
 
 /** Removes runtime-only file records before persisted Agent resources enter tool initialization. */
@@ -304,7 +303,6 @@ const computeProvisionState = async ({
   enabledToolResources,
   tool_resources,
   processedResourceFiles,
-  warnings,
   checkSessionsAlive,
   loadCodeApiKey,
 }: {
@@ -314,7 +312,6 @@ const computeProvisionState = async ({
   enabledToolResources?: Set<EToolResources>;
   tool_resources: AgentToolResources;
   processedResourceFiles: Set<string>;
-  warnings: string[];
   checkSessionsAlive?: TCheckSessionsAlive;
   loadCodeApiKey?: TLoadCodeApiKey;
 }): Promise<ProvisionState | undefined> => {
@@ -328,28 +325,24 @@ const computeProvisionState = async ({
     return undefined;
   }
 
-  const jwtCodeAuth = isCodeApiJwtAuthEnabled();
+  /** Code API auth is optional: deployments may use a legacy key, JWT bearer minting,
+   *  or no auth at all, and the upload path handles each. Credentials therefore gate
+   *  only the liveness probe, never whether files are queued for provisioning. */
   let codeApiKey: string | undefined;
   if (needsCodeEnv && loadCodeApiKey && resourcePrincipal?.id) {
     try {
       codeApiKey = await loadCodeApiKey(resourcePrincipal.id);
     } catch (error) {
       logger.error('[primeResources] Failed to load CODE_API_KEY', error);
-      if (!jwtCodeAuth) {
-        warnings.push('Code execution file provisioning unavailable');
-      }
     }
   }
-  /** JWT-mode deployments mint bearer tokens per request, so a legacy
-   *  LIBRECHAT_CODE_API_KEY is not required for code-env provisioning. */
-  const codeAuthAvailable = codeApiKey != null || jwtCodeAuth;
 
   /** Batch staleness check: identify which code env files are still alive.
    *  Requires credentials the callback can actually send: a legacy key, or a
    *  req to mint JWT bearer auth from. Without either, skip the check so an
    *  unauthorized 401 cannot mark live sandbox files as expired. */
   let aliveFileIds: Set<string> | undefined;
-  if (needsCodeEnv && codeAuthAvailable && checkSessionsAlive && (codeApiKey != null || req)) {
+  if (needsCodeEnv && checkSessionsAlive && (codeApiKey != null || req)) {
     const filesWithIdentifiers = attachments.filter(
       (f) =>
         f?.metadata?.codeEnvRef &&
@@ -373,7 +366,7 @@ const computeProvisionState = async ({
       continue;
     }
 
-    if (needsCodeEnv && codeAuthAvailable) {
+    if (needsCodeEnv) {
       const legacyRef = file.metadata?.codeEnvRef;
       const isDefaultRoute = legacyRef != null && codeEnvRouteKey(legacyRef) === 'default';
       const isStale = isDefaultRoute && aliveFileIds != null && !aliveFileIds.has(file.file_id);
@@ -610,7 +603,6 @@ export const primeResources = async ({
         enabledToolResources,
         tool_resources,
         processedResourceFiles,
-        warnings,
         checkSessionsAlive,
         loadCodeApiKey,
       });
@@ -665,7 +657,6 @@ export const primeResources = async ({
       enabledToolResources,
       tool_resources,
       processedResourceFiles,
-      warnings,
       checkSessionsAlive,
       loadCodeApiKey,
     });
