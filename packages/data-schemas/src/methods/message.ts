@@ -2298,6 +2298,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           null,
         ],
       };
+      /** Mixed-typed content metadata must be type-gated before projection, or a
+       *  malformed part could tunnel arbitrarily large values past the byte cap
+       *  through a passthrough field. `$type`-based checks stay DocumentDB-safe. */
+      const boundedNumber = (path: string) => ({
+        $cond: [{ $in: [{ $type: path }, ['int', 'long', 'double', 'decimal']] }, path, null],
+      });
+      const boundedBoolean = (path: string) => ({
+        $cond: [{ $eq: [{ $type: path }, 'bool'] }, path, null],
+      });
+      const boundedEnum = (path: string, allowed: string[]) => ({
+        $cond: [{ $in: [path, allowed] }, path, null],
+      });
       /** Estimated serialized bytes for one already-clipped activity item; the
        *  constants cover the non-string JSON envelope per item type. */
       const activityItemBytes = (item: string) => ({
@@ -2355,23 +2367,32 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               fitted: {
                 $reduce: {
                   input: { $reverseArray: clipped },
-                  initialValue: { items: [] as never[], bytes: 0 },
+                  initialValue: { items: [] as never[], bytes: 0, done: false },
                   in: {
                     $let: {
                       vars: { size: activityItemBytes('$$this') },
                       in: {
                         $cond: [
                           {
-                            $lte: [
-                              { $add: ['$$value.bytes', '$$size'] },
-                              SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT,
+                            $or: [
+                              '$$value.done',
+                              {
+                                $gt: [
+                                  { $add: ['$$value.bytes', '$$size'] },
+                                  SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT,
+                                ],
+                              },
                             ],
                           },
+                          /* The retained timeline must be a contiguous newest
+                             suffix: once one entry does not fit, older entries
+                             are not allowed to fill the gap around it. */
+                          { items: '$$value.items', bytes: '$$value.bytes', done: true },
                           {
                             items: { $concatArrays: ['$$value.items', ['$$this']] },
                             bytes: { $add: ['$$value.bytes', '$$size'] },
+                            done: false,
                           },
-                          '$$value',
                         ],
                       },
                     },
@@ -2435,14 +2456,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                           '$$part.activity_label',
                           SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
                         ),
-                        labelType: '$$part.activity_label_type',
+                        labelType: boundedEnum('$$part.activity_label_type', ['phase']),
                         toolCallIds: boundedStringArray('$$part.tool_call_ids'),
-                        activityStartIndex: '$$part.activity_start_index',
-                        activityEndIndex: '$$part.activity_end_index',
-                        activityCount: '$$part.activity_count',
+                        activityStartIndex: boundedNumber('$$part.activity_start_index'),
+                        activityEndIndex: boundedNumber('$$part.activity_end_index'),
+                        activityCount: boundedNumber('$$part.activity_count'),
                         agentIds: boundedStringArray('$$part.agent_ids'),
-                        status: '$$part.status',
-                        pending: '$$part.pending',
+                        status: boundedEnum('$$part.status', ['ok', 'partial', 'failed']),
+                        pending: boundedBoolean('$$part.pending'),
                         labelTruncated: {
                           $or: [
                             stringProjectionTruncated(
@@ -2501,9 +2522,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                           '$$part.tool_call.output',
                           SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT,
                         ),
-                        progress: '$$part.tool_call.progress',
-                        runStepStatus: '$$part.tool_call.runStepStatus',
-                        inputValidationError: '$$part.tool_call.inputValidationError',
+                        progress: boundedNumber('$$part.tool_call.progress'),
+                        runStepStatus: boundedEnum('$$part.tool_call.runStepStatus', [
+                          'running',
+                          'completed',
+                          'failed',
+                          'cancelled',
+                        ]),
+                        inputValidationError: boundedBoolean(
+                          '$$part.tool_call.inputValidationError',
+                        ),
                         inputTruncated: stringProjectionTruncated(
                           '$$part.tool_call.args',
                           SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT,

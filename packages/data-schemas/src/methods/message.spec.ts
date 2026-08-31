@@ -1932,6 +1932,41 @@ describe('Message Operations', () => {
       );
     });
 
+    it('keeps the budgeted timeline a contiguous newest suffix past an oversized entry', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-suffix:assistant',
+        conversationId,
+        text: '',
+        user: 'user123',
+        content: [
+          ...Array.from({ length: 5 }, (_, index) => ({
+            type: 'text',
+            text: `older-${index}`,
+          })),
+          ...Array.from({ length: 8 }, (_, index) => ({
+            type: 'text',
+            text: `newest-${index}-${'b'.repeat(8_400)}`,
+          })),
+        ],
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      const activity = messages[0].subagentActivity as Array<{ type: string; text: string }>;
+      expect(activity.length).toBeGreaterThan(0);
+      expect(activity.length).toBeLessThan(8);
+      expect(activity.every((item) => item.text.startsWith('newest-'))).toBe(true);
+      expect(activity[activity.length - 1].text).toContain('newest-7-');
+      expect(JSON.stringify(activity)).not.toContain('older-');
+      expect(messages[0].subagentActivityProjectionTruncated).toBe(true);
+    });
+
     it('fits ordinary persisted child activity into the aggregate byte budget, newest first', async () => {
       const conversationId = uuidv4();
       await saveMessage(mockCtx, {
