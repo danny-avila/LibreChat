@@ -21,6 +21,7 @@ import {
 } from '~/methods/mcpAuthority';
 import type { MCPOptions } from 'librechat-data-provider';
 import { tenantStorage } from '~/config/tenantContext';
+import type { AllMethods } from '~/methods';
 import { createMethods } from '~/methods';
 import { createModels } from '~/models';
 
@@ -560,7 +561,36 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
         `\n  TOTAL ${rows.length} | rejected ${rejected.length} | not-driven ${notDriven.length}\n`,
     );
     if (REPORT_PATH) {
-      fs.writeFileSync(REPORT_PATH, JSON.stringify({ runId, baseline: BASELINE, rows }, null, 2));
+      /** `rows` is the canonical cross-engine payload: run-specific values are
+       * normalized out (this run's id, generated ObjectIds/UUIDs, and the
+       * hex/uuid fragments that synthesized arguments embed in error text), so
+       * `diff <(jq .rows a.json) <(jq .rows b.json)` shows engine behavior
+       * only. Run metadata stays outside it. */
+      const normalize = (text?: string): string | undefined =>
+        text
+          ?.split(runId)
+          .join('<run>')
+          .replace(/[0-9a-f]{24}/gi, '<oid>')
+          .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>');
+      fs.writeFileSync(
+        REPORT_PATH,
+        JSON.stringify(
+          {
+            meta: { runId, baseline: BASELINE },
+            rows: rows
+              .map((row) => ({
+                name: row.name,
+                queries: row.queries,
+                outcome: row.outcome,
+                engineError: normalize(row.engineError),
+                detail: normalize(row.detail),
+              }))
+              .sort((left, right) => left.name.localeCompare(right.name)),
+          },
+          null,
+          2,
+        ),
+      );
     }
     if (STRICT) {
       /** Enforced against the FINALIZED rows: the per-test assertion has
@@ -573,7 +603,11 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
   it.each(methodNames)(
     '%s',
     async (name) => {
-      const fn = methodMap[name];
+      /** A fresh bundle per case: factory-local caches (e.g. the session
+       * methods' `sessionIndexesPromise`) otherwise leak across alphabetically
+       * ordered rows, so a later method returns a settled promise without
+       * issuing its own queries and is misreported as `no-queries`. */
+      const fn = createMethods(mongoose)[name as keyof AllMethods] as SweepFn;
       const sweepCase: SweepCase = (await ARG_OVERRIDES[name]?.()) ?? {
         args: synthesizeArgs(fn),
       };

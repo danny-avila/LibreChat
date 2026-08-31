@@ -262,11 +262,13 @@ matrices (`SWEEP_REPORT_PATH`).
 
 Corrected-harness baseline (replica-set MongoDB, real ACL cascades, index DDL
 and transaction-lifecycle instrumentation, per-invocation async attribution,
-seeded authority-transaction case, constructor exports excluded): **369 of 509
-methods issue at least one query; zero rejections on MongoDB**. The remaining
-140 issue none (validation
+seeded authority-transaction case, constructor exports excluded, a fresh
+method bundle per case): **370 of 509 methods issue at least one query; zero
+rejections on MongoDB**. The remaining 139 issue none (validation
 rejected the synthesized arguments, or a guard short-circuited); they are
-listed in the matrix and shrink by adding `ARG_OVERRIDES` entries.
+listed in the matrix and shrink by adding `ARG_OVERRIDES` entries. The report's `rows` payload is normalized for
+cross-engine diffing (`diff <(jq .rows a.json) <(jq .rows b.json)`); run
+metadata lives outside it.
 
 The first live DocumentDB 5.0.0 run (2026-08-31, pre-correction harness:
 363 driven) found **zero engine rejections and zero divergences from its
