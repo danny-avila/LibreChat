@@ -705,6 +705,82 @@ describe('File Methods', () => {
     });
   });
 
+  describe('getDeferredProvisionFiles', () => {
+    const makeFile = (
+      fileId: string,
+      ownerId: mongoose.Types.ObjectId,
+      overrides: Record<string, unknown> = {},
+    ) =>
+      runAsSystem(() =>
+        fileMethods.createFile({
+          file_id: fileId,
+          user: ownerId,
+          tenantId: 'tenant-a',
+          conversationId: 'conversation-a',
+          filename: `${fileId}.csv`,
+          filepath: `/uploads/${fileId}.csv`,
+          source: 'local',
+          type: 'text/csv',
+          bytes: 100,
+          context: FileContext.message_attachment,
+          ...overrides,
+        }),
+      );
+
+    it('returns attachments that carry neither an embedding nor a code reference', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const deferredId = uuidv4();
+      await makeFile(deferredId, ownerId);
+
+      const results = await fileMethods.getDeferredProvisionFiles([deferredId], {
+        userId: ownerId.toString(),
+        tenantId: 'tenant-a',
+      });
+
+      expect(results.map((file) => file.file_id)).toEqual([deferredId]);
+    });
+
+    it('omits files already embedded or already provisioned to the sandbox', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const embeddedId = uuidv4();
+      const provisionedId = uuidv4();
+      const generatedId = uuidv4();
+      await makeFile(embeddedId, ownerId, { embedded: true });
+      await makeFile(provisionedId, ownerId, {
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'session',
+            file_id: provisionedId,
+          },
+        },
+      });
+      await makeFile(generatedId, ownerId, { context: FileContext.execute_code });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [embeddedId, provisionedId, generatedId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('does not cross the authenticated owner scope', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const victimId = new mongoose.Types.ObjectId();
+      const victimFileId = uuidv4();
+      await makeFile(victimFileId, victimId);
+
+      const results = await fileMethods.getDeferredProvisionFiles([victimFileId], {
+        userId: ownerId.toString(),
+        tenantId: 'tenant-a',
+      });
+
+      expect(results).toEqual([]);
+    });
+  });
+
   describe('getUserCodeFiles', () => {
     it('returns only authenticated owner code-env uploads', async () => {
       const ownerId = new mongoose.Types.ObjectId();

@@ -2131,6 +2131,50 @@ describe('primeResources', () => {
       expect(searchResource?.files?.map((f) => f.file_id) ?? []).not.toContain('embedded-context');
     });
 
+    it('queues a deferred candidate for provisioning without delivering it again', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const deferred = makeCodeFile({ file_id: 'deferred-file' });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+        provisionCandidates: [deferred],
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('deferred-file');
+      expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toContain('deferred-file');
+      /* The point of the separation: it must not become an attachment again. */
+      expect(result.attachments?.map((f) => f?.file_id) ?? []).not.toContain('deferred-file');
+    });
+
+    it('does not double-queue a candidate that is already an attachment', async () => {
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const file = makeCodeFile({ file_id: 'shared-file' });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([file]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        provisionCandidates: [{ ...file }],
+      });
+
+      const queued = result.provisionState?.codeEnvFiles.filter((f) => f.file_id === 'shared-file');
+      expect(queued).toHaveLength(1);
+    });
+
     it('never queues a text-source record, which has no streamable backing', async () => {
       process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
       const textFile = makeCodeFile({ file_id: 'text-record', source: FileSources.text });
