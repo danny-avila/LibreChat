@@ -1,5 +1,6 @@
 import type { TDefaultLLMDeliveryPath, TDefaultLLMDeliveryPathConfig } from './file-config';
-import { isDocumentSupportedProvider, isMediaSupportedProvider } from './schemas';
+import { EModelEndpoint, isDocumentSupportedProvider, isMediaSupportedProvider } from './schemas';
+import { isBedrockDocumentType } from './file-config';
 
 /** Audio and video reach the model only through the media encoders, which support a
  *  narrower provider set than documents. Images use the broadly supported vision
@@ -71,6 +72,17 @@ export function resolveDefaultLLMDeliveryPath(
    *  otherwise accept the upload and hand the model nothing at all. */
   if (systemDefault === 'provider' && endpoint != null && !isProviderCapable(mimeType, endpoint)) {
     return 'text';
+  }
+
+  /** Bedrock's Converse document path natively accepts more than PDF, so on that
+   *  endpoint its document types belong on the provider path rather than being
+   *  extracted, which would drop non-text content and layout. */
+  if (
+    systemDefault !== 'provider' &&
+    endpoint === EModelEndpoint.bedrock &&
+    isBedrockDocumentType(mimeType)
+  ) {
+    return 'provider';
   }
 
   return systemDefault;

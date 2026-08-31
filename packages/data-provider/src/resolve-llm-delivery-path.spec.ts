@@ -168,6 +168,27 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     ).toBe('provider');
   });
 
+  it('routes Bedrock document types through the provider on bedrock', () => {
+    const docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    expect(resolveDefaultLLMDeliveryPath(docx, undefined, undefined, 'bedrock')).toBe('provider');
+    expect(
+      resolveDefaultLLMDeliveryPath('application/msword', undefined, undefined, 'bedrock'),
+    ).toBe('provider');
+  });
+
+  it('keeps Bedrock document types on text for other endpoints', () => {
+    const docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    expect(resolveDefaultLLMDeliveryPath(docx, undefined, undefined, 'openAI')).toBe('text');
+    expect(resolveDefaultLLMDeliveryPath(docx)).toBe('text');
+  });
+
+  it('lets explicit config override the Bedrock document default', () => {
+    const docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    expect(resolveDefaultLLMDeliveryPath(docx, { fallback: 'text' }, undefined, 'bedrock')).toBe(
+      'text',
+    );
+  });
+
   it('should export SYSTEM_LLM_DELIVERY_DEFAULTS with correct shape', () => {
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.fallback).toBe('text');
     expect(SYSTEM_LLM_DELIVERY_DEFAULTS.overrides).toEqual({
