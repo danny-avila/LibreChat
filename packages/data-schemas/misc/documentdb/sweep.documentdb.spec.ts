@@ -1,10 +1,25 @@
 import mongoose from 'mongoose';
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import fs from 'fs';
 import type { Collection } from 'mongodb';
 import type { ConnectOptions } from 'mongoose';
+import {
+  Permissions,
+  PermissionBits,
+  ResourceType,
+  PrincipalType,
+  PrincipalModel,
+  PermissionTypes,
+} from 'librechat-data-provider';
+import {
+  createMCPAuthorityBootRevision,
+  createMCPAuthorityCredentialRevision,
+  createMCPAuthorityDatabaseSourceRevision,
+} from '~/methods/mcpAuthority';
+import type { MCPOptions } from 'librechat-data-provider';
+import { tenantStorage } from '~/config/tenantContext';
 import { createMethods } from '~/methods';
 import { createModels } from '~/models';
 
@@ -62,6 +77,7 @@ interface MethodVerdict {
 }
 
 const verdicts: Record<string, MethodVerdict> = {};
+const stragglers: Array<Promise<unknown>> = [];
 /** Attribution rides the method's own async context: a straggler that
  * outlives its timeout keeps issuing queries under ITS label instead of
  * corrupting whichever row the sweep has moved on to. */
@@ -280,13 +296,112 @@ function adaptArgs(args: unknown[], error: unknown): unknown[] | null {
   return null;
 }
 
-/** Per-method arguments where name-pattern synthesis cannot produce a shape
- * that reaches the database (validation rejects it, or a guard early-returns).
- * Grow this list whenever the matrix reports `not-driven`. */
-const ARG_OVERRIDES: Record<string, () => unknown[]> = {
+interface SweepCase {
+  args: unknown[];
+  /** Optional execution wrapper, e.g. to run the call in tenant context. */
+  within?: <T>(run: () => Promise<T>) => Promise<T>;
+}
+
+/** Per-method cases where name-pattern synthesis cannot produce a shape that
+ * reaches the database (validation rejects it, a guard early-returns, or the
+ * interesting path needs seeded prerequisite records). Grow this whenever the
+ * matrix reports `not-driven` for a path worth adjudicating. */
+const ARG_OVERRIDES: Record<string, () => SweepCase | Promise<SweepCase>> = {
   /** Positional (searchParameter, id): a synthesized string for the first
    * parameter lands inside a `$match` and malforms it on both engines. */
-  getAgentWithVersionCount: () => [{ id: `agent-sweep-${runId}` }],
+  getAgentWithVersionCount: () => ({ args: [{ id: `agent-sweep-${runId}` }] }),
+  /** The bounded authority snapshot is the one production path that COMMITS a
+   * transaction; generic synthesis dies on target validation before a session
+   * ever starts, which would leave the session instrumentation exercising
+   * nothing. Seeds the full fixture (ported from compat.documentdb.spec.ts)
+   * and runs the call in the same tenant context. */
+  resolveMCPAuthorityProof: async () => {
+    const tenantId = `sweep-authority-${runId}`;
+    const roleName = `SWEEP_AUTHORITY_${runId}`;
+    const serverName = `sweep-authority-server-${runId}`;
+    const models = mongoose.models;
+    const userId = new mongoose.Types.ObjectId();
+    const serverId = new mongoose.Types.ObjectId();
+    const context = { tenantId, userId: userId.toHexString() };
+    await tenantStorage.run(context, async () => {
+      await models.User.create({
+        _id: userId,
+        name: 'Sweep authority probe',
+        email: `sweep-authority-${runId}@sweep.test`,
+        provider: 'local',
+        role: roleName,
+      });
+      await models.Role.create({
+        name: roleName,
+        permissions: { [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true } },
+      });
+      await models.MCPServer.create({
+        _id: serverId,
+        serverName,
+        config: { type: 'sse', url: `https://${serverName}.example/mcp` },
+        author: userId,
+      });
+      await models.Agent.create({
+        id: `sweep-authority-agent-${runId}`,
+        name: 'Sweep authority probe agent',
+        provider: 'openAI',
+        model: 'probe-model',
+        author: userId,
+        mcpServerNames: [serverName],
+      });
+      await models.AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: serverId,
+        permBits: PermissionBits.VIEW,
+        grantedBy: userId,
+      });
+    });
+    const server = await tenantStorage.run(context, () =>
+      models.MCPServer.findById(serverId).lean<{
+        _id: mongoose.Types.ObjectId;
+        serverName: string;
+        author: mongoose.Types.ObjectId;
+        config: MCPOptions;
+        createdAt: Date;
+        updatedAt: Date;
+      }>(),
+    );
+    if (server == null) {
+      throw new Error('sweep authority fixture server was not created');
+    }
+    const sourceRevision = createMCPAuthorityDatabaseSourceRevision({
+      databaseId: server._id.toHexString(),
+      serverName: server.serverName,
+      author: server.author.toString(),
+      config: server.config,
+      createdAt: server.createdAt,
+      updatedAt: server.updatedAt,
+    });
+    return {
+      args: [
+        {
+          userId: userId.toHexString(),
+          tenantId,
+          boot: createMCPAuthorityBootRevision(`sweep-${runId}`, { mcpServers: {} }),
+          targets: [
+            {
+              serverName,
+              source: 'database',
+              databaseId: serverId.toHexString(),
+              sourceRevision,
+              expectedCredentialRevision: createMCPAuthorityCredentialRevision([], []),
+              expectedOAuthGrantGeneration: null,
+              resolvedConfig: server.config,
+            },
+          ],
+        },
+      ],
+      within: (run) => tenantStorage.run(context, run),
+    };
+  },
 };
 
 /** Parses the function source just enough to synthesize a plausible call:
@@ -343,13 +458,23 @@ const methodMap: Record<string, SweepFn> = Object.fromEntries(
 );
 const methodNames = Object.keys(methodMap).sort();
 
-let memoryServer: MongoMemoryServer | undefined;
+let memoryServer: MongoMemoryReplSet | undefined;
 
 describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'DocumentDB'})`, () => {
   beforeAll(async () => {
     if (BASELINE) {
-      memoryServer = await MongoMemoryServer.create();
-      await mongoose.connect(memoryServer.getUri(), { dbName: `librechat_sweep_${runId}` });
+      /** A single-node replica set, not a standalone: driven methods start
+       * real transactions, and a standalone baseline would reject them for
+       * topology reasons and manufacture a false matrix divergence. The
+       * connection options mirror the live branch exactly — model collections
+       * and indexes must not be pre-created outside instrumentation in one
+       * mode and absent in the other. */
+      memoryServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+      await mongoose.connect(memoryServer.getUri(), {
+        autoIndex: false,
+        autoCreate: false,
+        dbName: `librechat_sweep_${runId}`,
+      });
     } else {
       const options: ConnectOptions = { autoIndex: false, autoCreate: false };
       if (process.env.DOCUMENTDB_TLS_CA_FILE) {
@@ -378,8 +503,15 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
     }
     await memoryServer?.stop();
 
-    /** A straggler may have recorded its engine error after its row was
-     * classified; the report must reflect it. */
+    /** Settle timed-out invocations (bounded) so their late engine errors are
+     * recorded, then reclassify: a straggler's rejection must both appear in
+     * the report and count against STRICT. */
+    if (stragglers.length > 0) {
+      await Promise.race([
+        Promise.allSettled(stragglers),
+        new Promise((resolve) => setTimeout(resolve, 15_000).unref()),
+      ]);
+    }
     for (const verdict of Object.values(verdicts)) {
       if (verdict.engineError != null) {
         verdict.outcome = 'engine-rejected';
@@ -409,13 +541,23 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
     if (REPORT_PATH) {
       fs.writeFileSync(REPORT_PATH, JSON.stringify({ runId, baseline: BASELINE, rows }, null, 2));
     }
+    if (STRICT) {
+      /** Enforced against the FINALIZED rows: the per-test assertion has
+       * already passed for a row that timed out and only later recorded its
+       * engine rejection. */
+      expect(rejected.map((row) => `${row.name}: ${row.engineError}`)).toEqual([]);
+    }
   }, 120_000);
 
   it.each(methodNames)(
     '%s',
     async (name) => {
       const fn = methodMap[name];
-      const args = ARG_OVERRIDES[name]?.() ?? synthesizeArgs(fn);
+      const sweepCase: SweepCase = (await ARG_OVERRIDES[name]?.()) ?? {
+        args: synthesizeArgs(fn),
+      };
+      const args = sweepCase.args;
+      const within = sweepCase.within ?? (<T>(run: () => Promise<T>) => run());
       const verdict = (verdicts[name] ??= { queries: 0, outcome: 'ok' });
       let callArgs = args;
       const deadline = Date.now() + METHOD_TIMEOUT_MS - 5_000;
@@ -428,13 +570,22 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
               break;
             }
             let raceTimer: NodeJS.Timeout | undefined;
+            const invocation = Promise.resolve(within(() => Promise.resolve(fn(...callArgs))));
             try {
               await Promise.race([
-                Promise.resolve(fn(...callArgs)),
+                invocation,
                 new Promise((_, reject) => {
                   raceTimer = setTimeout(() => reject(new Error('sweep-timeout')), remaining);
                 }),
               ]);
+            } catch (raceError) {
+              if ((raceError as Error)?.message === 'sweep-timeout') {
+                /** The abandoned invocation keeps running under ITS OWN async
+                 * context; the finalization pass awaits it so a late engine
+                 * rejection still lands on this row before STRICT is enforced. */
+                stragglers.push(invocation.catch(() => undefined));
+              }
+              throw raceError;
             } finally {
               clearTimeout(raceTimer);
             }
