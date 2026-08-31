@@ -354,7 +354,8 @@ const AttachFileMenu = ({
                 id="attach-file-button"
                 aria-label={localize('com_sidepanel_attach_files')}
                 onClick={handleUnifiedUpload}
-                className="focus-visible:ring-primary flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-opacity-50"
+                aria-keyshortcuts={uploadFileAriaKey}
+                className="flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50"
               >
                 <div className="flex w-full items-center justify-center gap-2">
                   <AttachmentIcon />
@@ -362,7 +363,7 @@ const AttachFileMenu = ({
               </button>
             }
             id="attach-file-button"
-            description={localize('com_sidepanel_attach_files')}
+            description={uploadFileTooltip}
             disabled={isUploadDisabled}
           />
         </FileUpload>
