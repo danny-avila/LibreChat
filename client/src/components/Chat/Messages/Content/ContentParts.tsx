@@ -327,20 +327,32 @@ const ContentPartsBody = memo(function ContentPartsBody({
     const indices = new Set<number>();
     const labels = new Map<string, number>();
     const ordinals = new Map<number, number>();
+    /** Content already sitting behind a synthesized card. A server marker that
+     *  later claims this span must NOT play the entrance: that animation
+     *  mounts a card open and folds it shut, which would flash every
+     *  sub-group back onto a fold the reader already watched happen. */
+    const folded = new Set<number>();
     for (const segment of phaseSegments ?? []) {
-      /** Synthesized cards are deliberately excluded: their header key moves
-       *  with the ticker, and a moving key reads here as a re-key — which
-       *  would suppress the entrance fold on every real marker after it. */
-      if (segment.type === 'phase' && segment.synthesized !== true) {
-        const text = getActivityLabelText(segment.labelPart);
-        const occurrence = (labels.get(text) ?? 0) + 1;
-        indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
-        labels.set(text, occurrence);
-        ordinals.set(getPartKeyIndex(segment.labelPart, segment.labelIndex), occurrence);
+      if (segment.type !== 'phase') {
+        continue;
       }
+      if (segment.synthesized === true) {
+        for (const index of segment.contentIndices) {
+          folded.add(absoluteIndexAt(index));
+        }
+        /** Excluded from the key sets below: a synthesized header key moves
+         *  with the ticker, and a moving key reads as a re-key — which would
+         *  suppress the entrance fold on every real marker after it. */
+        continue;
+      }
+      const text = getActivityLabelText(segment.labelPart);
+      const occurrence = (labels.get(text) ?? 0) + 1;
+      indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
+      labels.set(text, occurrence);
+      ordinals.set(getPartKeyIndex(segment.labelPart, segment.labelIndex), occurrence);
     }
-    return { indices, labels, ordinals };
-  }, [phaseSegments]);
+    return { indices, labels, ordinals, folded };
+  }, [phaseSegments, absoluteIndexAt]);
   /** A phase label can finish after the root text stream settles, so
    *  `isSubmitting` is not a reliable entrance signal. Compare committed
    *  phase markers instead: a marker that appears after this renderer has
@@ -371,6 +383,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
     messageId: string;
     indices: Set<number>;
     labels: Map<string, number>;
+    folded: Set<number>;
   } | null>(null);
   const previousPhases =
     previousPhaseRef.current?.messageId === messageId ? previousPhaseRef.current : null;
@@ -390,6 +403,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       messageId,
       indices: completedPhaseKeys.indices,
       labels: completedPhaseKeys.labels,
+      folded: completedPhaseKeys.folded,
     };
   }, [messageId, completedPhaseKeys]);
 
@@ -756,6 +770,13 @@ const ContentPartsBody = memo(function ContentPartsBody({
               isLast &&
               effectiveIsSubmitting &&
               segmentIndices.includes(globalLastContentIdx);
+            /** This span was already behind a synthesized card on the previous
+             *  commit, so the marker replacing it is a header swap, not an
+             *  arrival — see `completedPhaseKeys.folded`. */
+            const replacesFold =
+              !synthesized &&
+              previousPhases != null &&
+              segmentIndices.some((index) => previousPhases.folded.has(index));
             return (
               <ActivityPhaseGroup
                 key={`activity-${synthesized ? 'fold' : 'phase'}-${messageId}-${phaseKeyIndex}`}
@@ -769,7 +790,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 animateEntrance={
                   synthesized
                     ? effectiveIsSubmitting
-                    : previousPhases != null &&
+                    : !replacesFold &&
+                      previousPhases != null &&
                       !previousPhases.indices.has(phaseKeyIndex) &&
                       (!hasPhaseRekey ||
                         (completedPhaseKeys.ordinals.get(phaseKeyIndex) ?? 1) >

@@ -593,6 +593,32 @@ describe('ContentParts — synthesized activity folds', () => {
     );
   });
 
+  it('does not replay the entrance fold when the summary replaces the ticker', () => {
+    const streaming = { ...baseProps, isSubmitting: true };
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...streaming} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...streaming}
+          content={[...labeledRun(), makePhasePart(0, 4, 'Reviewed the release paths')]}
+        />
+      </RecoilRoot>,
+    );
+
+    /** The entrance mounts a card OPEN and folds it shut over the next two
+     *  painted frames. Playing it here would flash every sub-group back open
+     *  on top of a card the reader already watched fold. */
+    expect(screen.getByRole('button', { name: 'Reviewed the release paths' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
   it('leaves an unlabeled run rendering exactly as before', () => {
     renderContentParts({
       ...baseProps,
