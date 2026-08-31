@@ -455,7 +455,10 @@ describe('Agent queued-turn continuation', () => {
     const claimed = claim();
     claimed.expectedPredecessorCreatedAt = NOW;
     spies.claimNextAgentQueuedTurn.mockResolvedValueOnce({ outcome: 'acquired', claim: claimed });
-    spies.getEffectiveAgentQueuedTurnPredecessor.mockResolvedValueOnce(NOW + 250);
+    spies.beginAgentQueuedTurnAdmission.mockResolvedValueOnce({
+      outcome: 'started',
+      turn: { ...claimed, admissionEffectivePredecessorCreatedAt: NOW + 250 },
+    });
     const resolve = createAgentQueuedTurnResolver({
       methods,
       getGenerationJob: async () => null,
@@ -469,9 +472,7 @@ describe('Agent queued-turn continuation', () => {
       expectedPredecessorCreatedAt: NOW + 250,
       admissionSource: { effectivePredecessorCreatedAt: NOW + 250 },
     });
-    expect(spies.beginAgentQueuedTurnAdmission).toHaveBeenCalledWith(
-      expect.objectContaining({ effectivePredecessorCreatedAt: NOW + 250 }),
-    );
+    expect(spies.beginAgentQueuedTurnAdmission).toHaveBeenCalledTimes(1);
     if (prepared?.status !== 'ready') {
       throw new Error('Expected a ready queued turn');
     }
@@ -488,19 +489,14 @@ describe('Agent queued-turn continuation', () => {
         effectivePredecessorCreatedAt: NOW + 250,
       }),
     );
-    expect(spies.getEffectiveAgentQueuedTurnPredecessor).toHaveBeenCalledWith({
-      user: new Types.ObjectId(USER_ID),
-      tenantId: 'tenant-1',
-      conversationId: 'conversation-1',
-      sequence: 1,
-      expectedPredecessorCreatedAt: NOW,
-      allowLegacyPredecessorInference: true,
-    });
   });
 
   it('dead-letters a legacy admission order that cannot be reconstructed safely', async () => {
     const { methods, spies } = resolverMethods();
-    spies.getEffectiveAgentQueuedTurnPredecessor.mockResolvedValueOnce(null);
+    spies.beginAgentQueuedTurnAdmission.mockResolvedValueOnce({
+      outcome: 'order_unavailable',
+      turn: { ...claim(), status: 'dead' },
+    });
     const resolve = createAgentQueuedTurnResolver({
       methods,
       getGenerationJob: async () => null,
@@ -511,15 +507,8 @@ describe('Agent queued-turn continuation', () => {
     await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toEqual({
       status: 'settled',
     });
-    expect(spies.releaseAgentQueuedTurn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        disposition: 'dead',
-        failure: expect.objectContaining({
-          code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE',
-        }),
-      }),
-    );
-    expect(spies.beginAgentQueuedTurnAdmission).not.toHaveBeenCalled();
+    expect(spies.releaseAgentQueuedTurn).not.toHaveBeenCalled();
+    expect(spies.beginAgentQueuedTurnAdmission).toHaveBeenCalledTimes(1);
   });
 
   it.each([

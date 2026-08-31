@@ -141,7 +141,10 @@ export type ClaimAgentQueuedTurnResult =
   | { outcome: 'missing'; claim: null };
 
 export type BeginAgentQueuedTurnAdmissionResult =
-  | { outcome: 'started' | 'already_started' | 'retired'; turn: AgentQueuedTurnRecord }
+  | {
+      outcome: 'started' | 'already_started' | 'retired' | 'order_unavailable';
+      turn: AgentQueuedTurnRecord;
+    }
   | { outcome: 'conflict'; turn: AgentQueuedTurnRecord | null };
 
 export interface AgentQueuedTurnAdmissionEvidence {
@@ -228,7 +231,6 @@ export interface AgentQueuedTurnMethods {
     input: AgentQueuedTurnClaimFence & {
       admissionId: string;
       startedAt: Date;
-      effectivePredecessorCreatedAt?: number;
       admissionProtocolVersion?: 2;
     },
   ) => Promise<BeginAgentQueuedTurnAdmissionResult>;
@@ -267,6 +269,7 @@ export interface AgentQueuedTurnMethods {
       sequence: number;
       expectedPredecessorCreatedAt?: number;
       allowLegacyPredecessorInference?: boolean;
+      targetGenerationCreatedAt?: number;
     },
   ) => Promise<number | null | undefined>;
   drainAgentQueuedTurns: (
@@ -1025,6 +1028,9 @@ export function createAgentQueuedTurnMethods(
       conversationId: turn.conversationId,
       sequence: turn.sequence,
       expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
+      ...(turn.terminalReceipt.generationCreatedAt != null && {
+        targetGenerationCreatedAt: turn.terminalReceipt.generationCreatedAt,
+      }),
     });
     if (resolvedPredecessorCreatedAt === null) {
       return turn;
@@ -1457,96 +1463,130 @@ export function createAgentQueuedTurnMethods(
       throw new TypeError('Agent queued turn lease must end after claim time');
     }
     const scope = conversationScope(input);
-    const replay = await Turn()
-      .findOne({
-        ...scope,
-        _id: input.queuedTurnId,
-        status: 'claimed',
-        claimId,
-        claimBy,
-        claimUntil: { $gt: input.now },
-      })
-      .lean<IAgentQueuedTurn>();
-    const replayedClaim = requireClaim(replay);
-    if (replayedClaim != null) {
-      return { outcome: 'replayed', claim: replayedClaim };
-    }
-
-    const expected = await Turn()
-      .findOne({ ...scope, _id: input.queuedTurnId })
-      .lean<IAgentQueuedTurn>();
-    if (expected == null || (expected.status !== 'queued' && expected.status !== 'claimed')) {
-      return { outcome: 'missing', claim: null };
-    }
-
-    const unfinishedReservation = await Turn().exists({ ...scope, status: 'reserving' });
-    if (unfinishedReservation != null) {
-      return { outcome: 'blocked', claim: null };
-    }
-
-    const head = await Turn()
-      .findOne({ ...scope, status: { $in: ['queued', 'claimed', 'dead'] } })
-      .sort({ priority: -1, sequence: 1 })
-      .lean<IAgentQueuedTurn>();
-    if (head == null) {
-      return { outcome: 'blocked', claim: null };
-    }
-    if (
-      head._id?.toString() !== input.queuedTurnId ||
-      head.availableAt.getTime() > input.now.getTime() ||
-      (head.status === 'claimed' &&
-        head.claimUntil != null &&
-        head.claimUntil.getTime() > input.now.getTime())
-    ) {
-      return { outcome: 'blocked', claim: null };
-    }
-
-    const turn = await Turn()
-      .findOneAndUpdate(
-        {
-          ...scope,
-          _id: input.queuedTurnId,
-          availableAt: { $lte: input.now },
-          $or: [
-            { status: 'queued' },
-            {
-              status: 'claimed',
-              claimUntil: { $lte: input.now },
-              admissionStartedAt: { $exists: false },
-            },
-          ],
-        },
-        {
-          $set: {
+    return serializeLocalLane(input, async () => {
+      let writer: AgentQueuedTurnLaneWriter;
+      try {
+        writer = await acquireLaneWriter(input, false);
+      } catch (error) {
+        if (
+          error instanceof AgentQueuedTurnLaneRetiredError ||
+          error instanceof AgentQueuedTurnLaneMissingError
+        ) {
+          return { outcome: 'missing', claim: null };
+        }
+        throw error;
+      }
+      try {
+        const laneScope = { ...scope, laneId: writer.laneId };
+        const serializedReplay = await Turn()
+          .findOne({
+            ...laneScope,
+            _id: input.queuedTurnId,
             status: 'claimed',
             claimId,
             claimBy,
-            claimUntil: input.leaseUntil,
-          },
-          $inc: { attempts: 1 },
-          $unset: { terminalReceipt: 1 },
-        },
-        { new: true, sort: { priority: -1, sequence: 1 } },
-      )
-      .lean<IAgentQueuedTurn>();
-    const acquired = requireClaim(turn);
-    if (acquired != null) {
-      return { outcome: 'acquired', claim: acquired };
-    }
-    const racedReplay = await Turn()
-      .findOne({
-        ...scope,
-        _id: input.queuedTurnId,
-        status: 'claimed',
-        claimId,
-        claimBy,
-        claimUntil: { $gt: input.now },
-      })
-      .lean<IAgentQueuedTurn>();
-    const racedClaim = requireClaim(racedReplay);
-    return racedClaim == null
-      ? { outcome: 'blocked', claim: null }
-      : { outcome: 'replayed', claim: racedClaim };
+            claimUntil: { $gt: input.now },
+          })
+          .lean<IAgentQueuedTurn>();
+        const serializedClaim = requireClaim(serializedReplay);
+        if (serializedClaim != null) {
+          return { outcome: 'replayed', claim: serializedClaim };
+        }
+
+        const expected = await Turn()
+          .findOne({ ...laneScope, _id: input.queuedTurnId })
+          .lean<IAgentQueuedTurn>();
+        if (expected == null || (expected.status !== 'queued' && expected.status !== 'claimed')) {
+          return { outcome: 'missing', claim: null };
+        }
+
+        const unfinishedReservation = await Turn().exists({
+          ...laneScope,
+          status: 'reserving',
+        });
+        if (unfinishedReservation != null) {
+          return { outcome: 'blocked', claim: null };
+        }
+
+        const competingClaim = await Turn().exists({
+          ...laneScope,
+          _id: { $ne: input.queuedTurnId },
+          status: 'claimed',
+        });
+        if (competingClaim != null) {
+          return { outcome: 'blocked', claim: null };
+        }
+
+        const head =
+          expected.status === 'claimed'
+            ? expected
+            : await Turn()
+                .findOne({ ...laneScope, status: { $in: ['queued', 'dead'] } })
+                .sort({ priority: -1, sequence: 1 })
+                .lean<IAgentQueuedTurn>();
+        if (head == null) {
+          return { outcome: 'blocked', claim: null };
+        }
+        if (
+          head._id?.toString() !== input.queuedTurnId ||
+          head.availableAt.getTime() > input.now.getTime() ||
+          (head.status === 'claimed' &&
+            head.claimUntil != null &&
+            head.claimUntil.getTime() > input.now.getTime())
+        ) {
+          return { outcome: 'blocked', claim: null };
+        }
+
+        const turn = await Turn()
+          .findOneAndUpdate(
+            {
+              ...laneScope,
+              _id: input.queuedTurnId,
+              availableAt: { $lte: input.now },
+              $or: [
+                { status: 'queued' },
+                {
+                  status: 'claimed',
+                  claimUntil: { $lte: input.now },
+                  admissionStartedAt: { $exists: false },
+                },
+              ],
+            },
+            {
+              $set: {
+                status: 'claimed',
+                claimId,
+                claimBy,
+                claimUntil: input.leaseUntil,
+              },
+              $inc: { attempts: 1 },
+              $unset: { terminalReceipt: 1 },
+            },
+            { new: true, sort: { priority: -1, sequence: 1 } },
+          )
+          .lean<IAgentQueuedTurn>();
+        const acquired = requireClaim(turn);
+        if (acquired != null) {
+          return { outcome: 'acquired', claim: acquired };
+        }
+        const racedReplay = await Turn()
+          .findOne({
+            ...laneScope,
+            _id: input.queuedTurnId,
+            status: 'claimed',
+            claimId,
+            claimBy,
+            claimUntil: { $gt: input.now },
+          })
+          .lean<IAgentQueuedTurn>();
+        const racedClaim = requireClaim(racedReplay);
+        return racedClaim == null
+          ? { outcome: 'blocked', claim: null }
+          : { outcome: 'replayed', claim: racedClaim };
+      } finally {
+        await releaseLaneWriter(input, writer.writerId);
+      }
+    });
   }
 
   async function releaseAgentQueuedTurn(
@@ -1623,12 +1663,10 @@ export function createAgentQueuedTurnMethods(
     input: AgentQueuedTurnClaimFence & {
       admissionId: string;
       startedAt: Date;
-      effectivePredecessorCreatedAt?: number;
       admissionProtocolVersion?: 2;
     },
   ): Promise<BeginAgentQueuedTurnAdmissionResult> {
     const admissionId = requireBoundedString(input.admissionId, 128);
-    const effectivePredecessorCreatedAt = normalizePredecessor(input.effectivePredecessorCreatedAt);
     if (!Number.isFinite(input.startedAt.getTime())) {
       throw new TypeError('Agent queued turn admission start is invalid');
     }
@@ -1686,6 +1724,105 @@ export function createAgentQueuedTurnMethods(
         throw error;
       }
       try {
+        const current = await Turn()
+          .findOne({ ...conversationScope(input), _id: input.queuedTurnId })
+          .lean<IAgentQueuedTurn>();
+        if (
+          current?.status === 'claimed' &&
+          current.claimId === input.claimId &&
+          current.claimBy === input.claimBy &&
+          current.deliveryKey === admissionId &&
+          current.deliveryState === 'published' &&
+          current.laneId === writer.laneId &&
+          current.admissionId === admissionId &&
+          current.admissionStartedAt != null
+        ) {
+          return { outcome: 'already_started', turn: toRecord(current) };
+        }
+        if (
+          current?.status === 'claimed' &&
+          current.claimId === input.claimId &&
+          current.claimBy === input.claimBy &&
+          current.admissionStartedAt == null &&
+          current.laneId !== writer.laneId
+        ) {
+          const retired = await retireObsoleteClaim();
+          if (retired != null) {
+            return { outcome: 'retired', turn: retired };
+          }
+        }
+        if (
+          current?.status !== 'claimed' ||
+          current.claimId !== input.claimId ||
+          current.claimBy !== input.claimBy ||
+          current.deliveryKey !== admissionId ||
+          current.deliveryState !== 'published' ||
+          current.laneId !== writer.laneId ||
+          current.admissionId != null ||
+          current.sequence == null
+        ) {
+          return {
+            outcome: 'conflict',
+            turn: current == null ? null : toRecord(current),
+          };
+        }
+
+        const rootPredecessorCreatedAt = normalizePredecessor(current.expectedPredecessorCreatedAt);
+        const resolvedPredecessorCreatedAt = await getEffectiveAgentQueuedTurnPredecessor({
+          user: current.user,
+          ...(current.tenantId != null && { tenantId: current.tenantId }),
+          conversationId: current.conversationId,
+          sequence: current.sequence,
+          ...(rootPredecessorCreatedAt != null && {
+            expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
+          }),
+          allowLegacyPredecessorInference: true,
+        });
+        if (resolvedPredecessorCreatedAt === null) {
+          const dead = await Turn()
+            .findOneAndUpdate(
+              {
+                ...conversationScope(input),
+                _id: input.queuedTurnId,
+                status: 'claimed',
+                claimId: requireBoundedString(input.claimId, 128),
+                claimBy: requireBoundedString(input.claimBy, 256),
+                deliveryKey: admissionId,
+                deliveryState: 'published',
+                laneId: writer.laneId,
+                admissionId: { $exists: false },
+              },
+              {
+                $set: {
+                  status: 'dead',
+                  terminalReceipt: {
+                    outcome: 'dead',
+                    settledAt: input.startedAt,
+                    failure: {
+                      code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE',
+                      message:
+                        'The queued turn admission order could not be reconstructed safely. Review this turn before sending it.',
+                    },
+                  },
+                },
+                $unset: { activeSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+              },
+              { new: true },
+            )
+            .lean<IAgentQueuedTurn>();
+          if (dead != null) {
+            return { outcome: 'order_unavailable', turn: toRecord(dead) };
+          }
+          const conflicted = await Turn()
+            .findOne({ ...conversationScope(input), _id: input.queuedTurnId })
+            .lean<IAgentQueuedTurn>();
+          return {
+            outcome: 'conflict',
+            turn: conflicted == null ? null : toRecord(conflicted),
+          };
+        }
+        const effectivePredecessorCreatedAt =
+          resolvedPredecessorCreatedAt ?? rootPredecessorCreatedAt;
         const turn = await Turn()
           .findOneAndUpdate(
             {
@@ -1717,37 +1854,25 @@ export function createAgentQueuedTurnMethods(
         if (turn != null) {
           return { outcome: 'started', turn: toRecord(turn) };
         }
-        const current = await Turn()
+        const raced = await Turn()
           .findOne({ ...conversationScope(input), _id: input.queuedTurnId })
           .lean<IAgentQueuedTurn>();
         if (
-          current?.status === 'claimed' &&
-          current.claimId === input.claimId &&
-          current.claimBy === input.claimBy &&
-          current.admissionStartedAt == null &&
-          current.laneId !== writer.laneId
+          raced?.status === 'claimed' &&
+          raced.claimId === input.claimId &&
+          raced.claimBy === input.claimBy &&
+          raced.deliveryKey === admissionId &&
+          raced.deliveryState === 'published' &&
+          raced.laneId === writer.laneId &&
+          raced.admissionId === admissionId &&
+          raced.admissionStartedAt != null &&
+          raced.admissionEffectivePredecessorCreatedAt === effectivePredecessorCreatedAt
         ) {
-          const retired = await retireObsoleteClaim();
-          if (retired != null) {
-            return { outcome: 'retired', turn: retired };
-          }
-        }
-        if (
-          current?.status === 'claimed' &&
-          current.claimId === input.claimId &&
-          current.claimBy === input.claimBy &&
-          current.deliveryKey === admissionId &&
-          current.deliveryState === 'published' &&
-          current.laneId === writer.laneId &&
-          current.admissionId === admissionId &&
-          current.admissionStartedAt != null &&
-          current.admissionEffectivePredecessorCreatedAt === effectivePredecessorCreatedAt
-        ) {
-          return { outcome: 'already_started', turn: toRecord(current) };
+          return { outcome: 'already_started', turn: toRecord(raced) };
         }
         return {
           outcome: 'conflict',
-          turn: current == null ? null : toRecord(current),
+          turn: raced == null ? null : toRecord(raced),
         };
       } finally {
         await releaseLaneWriter(input, writer.writerId);
@@ -1923,6 +2048,7 @@ export function createAgentQueuedTurnMethods(
             expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
           }),
           allowLegacyPredecessorInference: true,
+          targetGenerationCreatedAt: generationCreatedAt,
         });
         effectivePredecessorCreatedAt =
           resolvedPredecessorCreatedAt === null
@@ -2083,12 +2209,14 @@ export function createAgentQueuedTurnMethods(
       sequence: number;
       expectedPredecessorCreatedAt?: number;
       allowLegacyPredecessorInference?: boolean;
+      targetGenerationCreatedAt?: number;
     },
   ): Promise<number | null | undefined> {
     if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0) {
       throw new TypeError('Agent queued turn sequence must be a positive integer');
     }
     const rootEpoch = normalizePredecessor(input.expectedPredecessorCreatedAt);
+    const targetGenerationCreatedAt = normalizePredecessor(input.targetGenerationCreatedAt);
     if (rootEpoch == null) {
       return undefined;
     }
@@ -2137,6 +2265,9 @@ export function createAgentQueuedTurnMethods(
     const visited = new Set<number>();
     const advanceExactEdges = () => {
       while (edges.has(effectivePredecessorCreatedAt)) {
+        if (effectivePredecessorCreatedAt === targetGenerationCreatedAt) {
+          return false;
+        }
         if (visited.has(effectivePredecessorCreatedAt)) {
           return false;
         }
@@ -2150,7 +2281,15 @@ export function createAgentQueuedTurnMethods(
       return null;
     }
     if (legacyOutputs.length === 1) {
-      effectivePredecessorCreatedAt = legacyOutputs[0];
+      const legacyOutput = legacyOutputs[0];
+      if (
+        legacyOutput === effectivePredecessorCreatedAt ||
+        visited.has(legacyOutput) ||
+        legacyOutput === targetGenerationCreatedAt
+      ) {
+        return null;
+      }
+      effectivePredecessorCreatedAt = legacyOutput;
       traversed += 1;
       if (!advanceExactEdges()) {
         return null;
