@@ -373,6 +373,9 @@ export type InitializedAgent = Agent & {
   baseContextTokens?: number;
   useLegacyContent: boolean;
   resendFiles: boolean;
+  /** Detail level LibreChat encodes image content blocks with, from the agent's
+   * model parameters. Absent when the agent does not configure one. */
+  imageDetail?: string;
   tool_resources?: AgentToolResources;
   userMCPAuthMap?: Record<string, Record<string, string>>;
   /** Tool map for ToolNode to use when executing tools (required for PTC) */
@@ -950,7 +953,7 @@ export async function initializeAgent(
     ),
   );
 
-  const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(
+  const { resendFiles, maxContextTokens, imageDetail, modelOptions } = extractLibreChatParams(
     _modelOptions as Record<string, unknown>,
   );
 
@@ -1776,6 +1779,7 @@ export async function initializeAgent(
   const initializedAgent: InitializedAgent = {
     ...agent,
     resendFiles,
+    imageDetail,
     toolRegistry,
     mcpAvailableTools,
     requestScopedConnections,

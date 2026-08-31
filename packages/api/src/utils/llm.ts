@@ -10,6 +10,7 @@ type LibreChatParams = {
   maxContextTokens?: number;
   fileTokenLimit?: number;
   modelLabel?: string | null;
+  imageDetail?: string;
 };
 
 /**
@@ -35,6 +36,7 @@ export function extractLibreChatParams(
   const maxContextTokens = (delete modelOptions.maxContextTokens, options.maxContextTokens);
   const fileTokenLimit = (delete modelOptions.fileTokenLimit, options.fileTokenLimit);
   const modelLabel = (delete modelOptions.modelLabel, options.modelLabel);
+  const imageDetail = (delete modelOptions.imageDetail, options.imageDetail);
 
   return {
     modelOptions: modelOptions as Omit<
@@ -46,5 +48,6 @@ export function extractLibreChatParams(
     promptPrefix,
     resendFiles,
     modelLabel,
+    imageDetail,
   };
 }
