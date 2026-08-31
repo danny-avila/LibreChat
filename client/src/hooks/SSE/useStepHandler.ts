@@ -666,6 +666,7 @@ export default function useStepHandler({
         id,
         name,
         args,
+        stepId: getNonEmptyValue([contentPart.tool_call.stepId, existingToolCall?.stepId]),
         type: ToolCallTypes.TOOL_CALL,
         auth: contentPart.tool_call.auth,
         expires_at: contentPart.tool_call.expires_at,
@@ -986,6 +987,7 @@ export default function useStepHandler({
                 name: toolCall.name ?? '',
                 args: toolCall.args,
                 id: toolCallId,
+                stepId: runStep.id,
               },
             };
 
@@ -1249,6 +1251,7 @@ export default function useStepHandler({
                 name: toolCallDelta.name ?? '',
                 args: toolCallDelta.args ?? '',
                 id: toolCallId,
+                stepId: runStepDelta.id,
               },
             };
 
@@ -1303,7 +1306,7 @@ export default function useStepHandler({
 
           const contentPart: Agents.MessageContentComplex = {
             type: ContentTypes.TOOL_CALL,
-            tool_call: result.tool_call,
+            tool_call: { ...result.tool_call, stepId },
           };
 
           // Use server's index, offset by the retained edit prefix

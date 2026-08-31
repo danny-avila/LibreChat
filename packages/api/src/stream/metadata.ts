@@ -39,6 +39,20 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.agentEventDeliveryKey) {
     patch.agentEventDeliveryKey = metadata.agentEventDeliveryKey;
   }
+  if (metadata.agentEventInvocationKey) {
+    patch.agentEventInvocationKey = metadata.agentEventInvocationKey;
+  }
+  if (metadata.agentEventInvocationGenerationCreatedAt !== undefined) {
+    patch.agentEventInvocationGenerationCreatedAt =
+      metadata.agentEventInvocationGenerationCreatedAt;
+  }
+  if (metadata.agentEventDetachedActionProducerRequired !== undefined) {
+    patch.agentEventDetachedActionProducerRequired =
+      metadata.agentEventDetachedActionProducerRequired;
+  }
+  if (metadata.agentEventDetachedTerminalEvidence) {
+    patch.agentEventDetachedTerminalEvidence = metadata.agentEventDetachedTerminalEvidence;
+  }
   if (metadata.agentEventBindingId) {
     patch.agentEventBindingId = metadata.agentEventBindingId;
   }
@@ -89,6 +103,9 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   }
   if (metadata.activityPhaseSnapshot) {
     patch.activityPhaseSnapshot = metadata.activityPhaseSnapshot;
+  }
+  if (metadata.compactionSemanticIndex) {
+    patch.compactionSemanticIndex = metadata.compactionSemanticIndex;
   }
   return patch;
 }

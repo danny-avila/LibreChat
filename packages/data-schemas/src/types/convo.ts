@@ -1,5 +1,6 @@
 import type { TSubagentThreadLineage } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
+import type { ICompactionSemanticIndexProjection } from './compaction';
 
 export const MAX_AGENT_EVENT_ACTOR_SKILLS = 64;
 export const MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS = 128;
@@ -62,6 +63,8 @@ export interface IAgentEventActorState {
   summary?: IAgentEventActorSummary;
   /** Pruner calibration carried by ordinary turns on the parent response message. */
   contextMeta?: IAgentEventActorContextMeta;
+  /** Bounded advisory guidance replayed without reading durable message history. */
+  compactionSemanticIndex?: ICompactionSemanticIndexProjection;
   previousCheckpoint?: IAgentEventActorCheckpoint;
   /** Forces the next qualifying event to rebuild from durable message history. */
   requiresColdStart?: boolean;
@@ -146,6 +149,15 @@ export interface IAgentEventActorSuspensionEvidence {
  */
 export interface IAgentEventActorSuspension {
   suspension: IAgentEventActorSuspensionEvidence;
+  /** Host-side reason for suspension. Missing legacy values are human decisions. */
+  kind?: 'human_decision' | 'internal_completion';
+  /** Expected-action evidence already applied before a later re-pause. */
+  appliedAction?: {
+    toolName: string;
+    toolCallId?: string;
+  };
+  /** Original delivery-handling generation retained across resumed generations. */
+  handlingGenerationCreatedAt?: number;
   actionId: string;
   jobCreatedAt: number;
   status: 'pending' | 'claimed' | 'closed';

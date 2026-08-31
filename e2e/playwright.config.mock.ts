@@ -136,6 +136,9 @@ const baseEnv = {
   ASSISTANTS_API_KEY: 'e2e-mock-assistants-key',
   ASSISTANTS_BASE_URL: `http://127.0.0.1:${ASSISTANTS_PORT}/v1`,
   ASSISTANTS_MODELS: 'gpt-4o-mini',
+  ...(process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
+    ? { E2E_CODE_BRIDGE_ADMIN_TOKEN: process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN }
+    : {}),
   ...vanillaOverrides,
 };
 
@@ -209,6 +212,32 @@ function writeRuntimeMockConfig() {
     .replace('# __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__', dynamicMcpConfig.allowedDomain)
     .replace('# __E2E_DYNAMIC_MCP_STDIO_ENV__', dynamicMcpConfig.stdioEnv)
     .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers);
+  const codeBridgeURL = process.env.E2E_CODE_BRIDGE_URL;
+  const codeBridgePairing = process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
+    ? [
+        '      owner: deployment',
+        '      pairing:',
+        '        workerId: e2e-vm',
+        '        tokenEnv: E2E_CODE_BRIDGE_ADMIN_TOKEN',
+      ]
+    : [];
+  config = config.replace(
+    '# __E2E_CODE_BRIDGE_CONFIG__',
+    codeBridgeURL
+      ? [
+          '  - stateful_code_sessions',
+          'statefulCodeSessions:',
+          '  allowedEnvironments: ["conversation"]',
+          '  environments:',
+          '    - id: e2e-vm',
+          '      name: E2E attached VM',
+          '      type: attached',
+          `      baseURL: ${JSON.stringify(codeBridgeURL)}`,
+          '      default: true',
+          ...codeBridgePairing,
+        ].join('\n    ')
+      : '# __E2E_CODE_BRIDGE_CONFIG__',
+  );
   /** Keep the generated config in lockstep with the overridable label-server
    *  port: the template hard-codes 8889, so an `E2E_LABEL_PORT` override that
    *  moved only the server and its health check would report ready while

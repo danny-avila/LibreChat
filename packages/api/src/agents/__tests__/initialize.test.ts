@@ -96,6 +96,7 @@ jest.mock('~/endpoints', () => ({
 
 jest.mock('~/files', () => ({
   filterFilesByEndpointConfig: jest.fn(() => []),
+  filterFilesByEndpointRuntimeConfig: jest.fn(() => []),
 }));
 
 jest.mock('~/prompts', () => ({
@@ -257,6 +258,67 @@ function countUrlContextTools(tools: unknown[] | undefined): number {
       .length ?? 0
   );
 }
+
+describe('initializeAgent — execution context', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('initializes without Express request or response objects', async () => {
+    const { agent, loadTools, db } = createMocks();
+    const previousReqDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'req');
+    Object.defineProperty(globalThis, 'req', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'request-free-stateful',
+                name: 'Request-free stateful',
+                type: 'attached',
+                baseURL: 'https://stateful.example.com/v1',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    try {
+      await expect(
+        initializeAgent(
+          {
+            runtime: {
+              user: { id: 'user-1' } as never,
+              appConfig: appConfig as never,
+              requestBody: { timezone: 'America/New_York' },
+            },
+            agent,
+            loadTools,
+            endpointOption: { endpoint: EModelEndpoint.agents },
+            allowedProviders: new Set([Providers.OPENAI]),
+            isInitialAgent: true,
+          },
+          db,
+        ),
+      ).resolves.toBeDefined();
+    } finally {
+      if (previousReqDescriptor == null) {
+        delete (globalThis as typeof globalThis & { req?: unknown }).req;
+      } else {
+        Object.defineProperty(globalThis, 'req', previousReqDescriptor);
+      }
+    }
+
+    expect(loadTools).toHaveBeenCalledWith(expect.not.objectContaining({ req: expect.anything() }));
+    expect(loadTools).toHaveBeenCalledWith(expect.not.objectContaining({ res: expect.anything() }));
+  });
+});
 
 describe('initializeAgent — current content policy preflight', () => {
   beforeEach(() => {
@@ -1272,8 +1334,8 @@ describe('initializeAgent — attachment scoping', () => {
     const { primeResources } = jest.requireMock('../resources') as {
       primeResources: jest.Mock;
     };
-    const { filterFilesByEndpointConfig } = jest.requireMock('~/files') as {
-      filterFilesByEndpointConfig: jest.Mock;
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
     };
     const requestFile = { file_id: 'request-file', filename: 'request.txt' } as IMongoFile;
     const toolFile = { file_id: 'tool-file', filename: 'tool.txt' } as IMongoFile;
@@ -1291,7 +1353,7 @@ describe('initializeAgent — attachment scoping', () => {
     (db.updateFilesUsage as jest.Mock)
       .mockResolvedValueOnce([{ ...requestFile, filename: 'post-mutation-request.txt' }])
       .mockResolvedValueOnce([{ ...toolFile, filename: 'post-mutation-tool.txt' }]);
-    filterFilesByEndpointConfig.mockImplementationOnce(
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
       (_req: ServerRequest, { files }: { files: IMongoFile[] }) => files,
     );
 
@@ -1341,8 +1403,8 @@ describe('initializeAgent — attachment scoping', () => {
     const { primeResources } = jest.requireMock('../resources') as {
       primeResources: jest.Mock;
     };
-    const { filterFilesByEndpointConfig } = jest.requireMock('~/files') as {
-      filterFilesByEndpointConfig: jest.Mock;
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
     };
     const blockedFile = {
       file_id: 'blocked-file',
@@ -1376,7 +1438,7 @@ describe('initializeAgent — attachment scoping', () => {
     (db.getConvoFiles as jest.Mock).mockResolvedValueOnce([blockedFile.file_id]);
     (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce([blockedFile]);
     (db.getFiles as jest.Mock).mockResolvedValueOnce([blockedFile]);
-    filterFilesByEndpointConfig.mockImplementationOnce(
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
       (_req: ServerRequest, { files }: { files: IMongoFile[] }) => files,
     );
 

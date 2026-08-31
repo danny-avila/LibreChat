@@ -2,7 +2,7 @@ import { memo, useMemo, useState, useCallback, useRef, useId } from 'react';
 import { useAtomValue } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent } from 'react';
-import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking';
+import { ThinkingContent, ThinkingButton, ThinkingLabel, FloatingThinkingBar } from './Thinking';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { showThinkingAtom } from '~/store/showThinking';
@@ -37,6 +37,17 @@ type ReasoningProps = {
  *
  * For legacy text-based messages, see Thinking.tsx component.
  */
+/** Reasoning that happened but whose text this view cannot show — detached
+ *  subagent projections keep only a marker. Renders the shared reasoning
+ *  header row without a disclosure. */
+export const ReasoningMarker = memo(({ label }: { label?: string }) => {
+  const localize = useLocalize();
+  const display = label?.trim() || localize('com_ui_thoughts');
+  return <ThinkingLabel label={display} title={localize('com_ui_thoughts_unavailable')} />;
+});
+
+ReasoningMarker.displayName = 'ReasoningMarker';
+
 const Reasoning = memo((props: ReasoningProps) => {
   const { reasoning, isLast, reasoningLabel } = props;
   const contentId = useId();

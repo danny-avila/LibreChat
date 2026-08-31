@@ -2,6 +2,8 @@ const mockRegistry = {
   ensureConfigServers: jest.fn(),
   getAllServerConfigs: jest.fn(),
 };
+const mockUpstreamTokenProvider = jest.fn().mockResolvedValue(null);
+const mockCreateOpenIDSessionTokenProvider = jest.fn(() => mockUpstreamTokenProvider);
 
 jest.mock('~/config', () => ({
   getMCPServersRegistry: jest.fn(() => mockRegistry),
@@ -34,6 +36,12 @@ jest.mock('@librechat/api', () => ({
   GenerationJobManager: { emitChunk: jest.fn(), getJob: jest.fn() },
   buildOAuthToolCallName: jest.fn((name) => name),
   getUserMCPAuthMap: jest.fn(),
+  createAuthIdentityContext: ({ user, tenantId }) => ({
+    appUserId: user?._id?.toString?.() ?? user?.id,
+    openidSubject: user?.openidId,
+    tenantId: tenantId ?? user?.tenantId,
+    openidIssuer: user?.openidIssuer,
+  }),
   /** Mirrors the real resolver so these tests still exercise the wrapper's own
    *  plumbing - loading the request config and degrading on failure - rather than
    *  the resolution logic, which is unit-tested in packages/api. Like the real
@@ -65,6 +73,9 @@ jest.mock('~/server/services/OboTokenService', () => ({
 }));
 jest.mock('~/server/services/OboPolicyService', () => ({
   createOboTrustChecker: jest.fn(() => async () => true),
+}));
+jest.mock('~/server/services/OpenIDSessionRefresh', () => ({
+  createOpenIDSessionTokenProvider: (...args) => mockCreateOpenIDSessionTokenProvider(...args),
 }));
 jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
@@ -163,10 +174,11 @@ describe('getAssistantToolDefinitions', () => {
     const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({ tools: null });
     require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
     const userMCPAuthMap = { 'mcp_app-server': { API_KEY: 'saved' } };
+    const res = { cookie: jest.fn() };
     getUserMCPAuthMap.mockResolvedValue(userMCPAuthMap);
     reinitMCPServer.mockResolvedValue({ availableTools: { [toolKey]: mcpDefinition } });
 
-    await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
+    await expect(getAssistantToolDefinitions({ req, res, tools: [toolKey] })).resolves.toEqual({
       toolDefinitions: { [toolKey]: mcpDefinition },
       accessibleServerNames: ['app-server'],
     });
@@ -175,6 +187,25 @@ describe('getAssistantToolDefinitions', () => {
       serverName: 'app-server',
       serverConfig,
       userMCPAuthMap,
+      upstreamTokenProvider: mockUpstreamTokenProvider,
+      oboIdentityContext: {
+        appUserId: 'u1',
+        openidSubject: undefined,
+        tenantId: 'tenant-1',
+        openidIssuer: undefined,
+      },
+    });
+    expect(mockCreateOpenIDSessionTokenProvider).toHaveBeenCalledWith({
+      req,
+      res,
+      user: req.user,
+      identityContext: {
+        appUserId: 'u1',
+        openidSubject: undefined,
+        tenantId: 'tenant-1',
+        openidIssuer: undefined,
+      },
+      tokenPreference: 'access_token',
     });
     expect(getUserMCPAuthMap).toHaveBeenCalledWith({
       userId: 'u1',

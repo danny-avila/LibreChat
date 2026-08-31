@@ -82,6 +82,7 @@ describe('event actor host adapter', () => {
         discoveredToolNames,
         summary,
         contextMeta,
+        compactionSemanticIndex,
       }) => {
         if (
           expectedEpoch !== epoch ||
@@ -95,6 +96,8 @@ describe('event actor host adapter', () => {
                 JSON.stringify(state.discoveredToolNames) ||
               JSON.stringify(expected.summary) !== JSON.stringify(state.summary) ||
               JSON.stringify(expected.contextMeta) !== JSON.stringify(state.contextMeta) ||
+              JSON.stringify(expected.compactionSemanticIndex) !==
+                JSON.stringify(state.compactionSemanticIndex) ||
               (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
         ) {
           return { status: 'stale' as const, ...(state == null ? {} : { state }) };
@@ -108,6 +111,7 @@ describe('event actor host adapter', () => {
           ...(discoveredToolNames == null ? {} : { discoveredToolNames }),
           ...(summary == null ? {} : { summary }),
           ...(contextMeta == null ? {} : { contextMeta }),
+          ...(compactionSemanticIndex == null ? {} : { compactionSemanticIndex }),
           ...(previous == null ? {} : { previousCheckpoint: previous }),
         };
         return { status: 'committed' as const, state };
@@ -495,6 +499,114 @@ describe('event actor host adapter', () => {
     expect(dependencies.commitState).not.toHaveBeenCalled();
   });
 
+  it('carries applied expected-action evidence across a later re-pause', async () => {
+    let storedSuspension: IAgentEventActorSuspension | undefined;
+    let pendingPause:
+      | {
+          actionId: string;
+          jobCreatedAt: number;
+          interrupt: EventActorInterrupt;
+        }
+      | undefined;
+    let observedAction: { toolName: string; toolCallId?: string } | undefined;
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async (input) => {
+        storedSuspension = {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          appliedAction: input.appliedAction,
+          status: 'pending',
+          observedAt: new Date(),
+        };
+        return { status: 'stored' as const };
+      }),
+      claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        if (storedSuspension == null) {
+          throw new Error('test suspension was not stored');
+        }
+        storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
+        return { status: 'claimed' as const };
+      }),
+      settleSuspension: jest.fn(async () => ({ status: 'settled' as const })),
+    };
+    dependencies.getSnapshot.mockImplementation(async () => ({
+      state,
+      reconciliations: [],
+      legacyTurn: null,
+      suspension: storedSuspension ?? null,
+      epoch,
+    }));
+    const initial = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-action-repause',
+        event: { id: 'event-action-repause' },
+        signal: new AbortController().signal,
+        invoke: async () => 'initial-pause',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'detached-task',
+          jobCreatedAt: 801,
+          interrupt: { id: 'detached-task', payload: { type: 'detached' } },
+        }),
+      },
+      dependencies,
+    );
+    if (initial.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
+    observedAction = { toolName: 'submit_move', toolCallId: 'call-detached' };
+    pendingPause = {
+      actionId: 'ask-user',
+      jobCreatedAt: 802,
+      interrupt: { id: 'ask-user', payload: { type: 'ask_user_question' } },
+    };
+    const repaused = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: initial.execution.suspension,
+        resumeAttemptId: 'resume-detached',
+        resumeValue: { status: 'succeeded' },
+        signal: new AbortController().signal,
+        resume: async () => 'asks-user',
+        readAppliedAction: () => observedAction,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(repaused.execution.status).toBe('suspended');
+    expect(dependencies.storeSuspension).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appliedAction: observedAction }),
+    );
+    if (repaused.execution.status !== 'suspended') {
+      throw new Error('test setup did not re-pause');
+    }
+    observedAction = undefined;
+    pendingPause = undefined;
+    const completed = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: repaused.execution.suspension,
+        resumeAttemptId: 'resume-human',
+        resumeValue: { answer: 'continue' },
+        signal: new AbortController().signal,
+        resume: async () => 'completed',
+        readAppliedAction: () => observedAction,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(completed.execution).toMatchObject({
+      status: 'applied',
+      result: { action: { toolName: 'submit_move', toolCallId: 'call-detached' } },
+    });
+  });
+
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
     const dependencies = deps();
     const invocations: Array<{ continuation: string; checkpointId?: string }> = [];
@@ -577,6 +689,19 @@ describe('event actor host adapter', () => {
     const current = createAgentContextFingerprint({ agents: [{ id: 'agent-1', version: 2 }] });
     const storedSkill = { id: 'skill-1', name: 'analysis', version: 3 };
     const invokedSkill = { id: 'skill-2', name: 'reporting', version: 1 };
+    const storedCompactionSemanticIndex = {
+      version: 1 as const,
+      entries: [
+        {
+          type: 'activity_phase' as const,
+          sourceMessageId: 'assistant-history',
+          sourceContentIndex: 1,
+          revision: 1,
+          status: 'committed' as const,
+          text: 'Verified the release state',
+        },
+      ],
+    };
     state = {
       generation: 1,
       checkpoint: {
@@ -589,6 +714,7 @@ describe('event actor host adapter', () => {
       discoveredToolNames: ['deferred_lookup'],
       summary: { text: 'Earlier compacted context.', tokenCount: 12 },
       contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex: storedCompactionSemanticIndex,
     };
     let continuation: 'warm' | 'cold' | undefined;
     const checkpointMessageOverlay = { source: 'skill', messages: [] };
@@ -606,6 +732,7 @@ describe('event actor host adapter', () => {
           discoveredToolNames: observed.discoveredToolNames ?? [],
           summary: observed.summary,
           contextMeta: observed.contextMeta,
+          compactionSemanticIndex: observed.compactionSemanticIndex,
           checkpointMessageOverlay,
         }),
         readResultContext: async () => ({
@@ -614,6 +741,7 @@ describe('event actor host adapter', () => {
           discoveredToolNames: ['deferred_lookup', 'deferred_write'],
           summary: { text: 'Updated compacted context.', tokenCount: 15 },
           contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+          compactionSemanticIndex: storedCompactionSemanticIndex,
         }),
         invoke: async (context) => {
           continuation = context.continuation;
@@ -629,6 +757,7 @@ describe('event actor host adapter', () => {
     expect(state?.discoveredToolNames).toEqual(['deferred_lookup', 'deferred_write']);
     expect(state?.summary).toEqual({ text: 'Updated compacted context.', tokenCount: 15 });
     expect(state?.contextMeta).toEqual({ calibrationRatio: 1.3, encoding: 'o200k_base' });
+    expect(state?.compactionSemanticIndex).toEqual(storedCompactionSemanticIndex);
     expect(mockedFork).toHaveBeenCalledWith(
       expect.anything(),
       expect.any(String),

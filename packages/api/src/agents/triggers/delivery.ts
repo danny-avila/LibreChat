@@ -21,6 +21,11 @@ export interface AgentTriggerEnqueueOptions {
   /** Opt-in only for observational bound-child continuations. Actionable,
    *  fenced, approval, HITL, and control deliveries must remain individual. */
   coalesce?: AgentTriggerCoalesceOptions;
+  /** Server-owned capability fence. Deliveries carrying this marker remain
+   * invisible to older workers during a rolling deployment. */
+  requiredWorkerCapability?: string;
+  /** Private liveness lease for process-owned work behind a capability fence. */
+  producerLeaseUntil?: Date;
 }
 
 export interface PreparedAgentTriggerDelivery {
@@ -38,6 +43,8 @@ export interface PreparedAgentTriggerDelivery {
   /** Persisted rollout marker: keep this bound actor lane queued until the
    *  admitted child turn records an authoritative terminal outcome. */
   awaitTerminalHandling?: boolean;
+  requiredWorkerCapability?: string;
+  producerLeaseUntil?: Date;
 }
 
 export class AgentTriggerDeliveryError extends TypeError {
@@ -74,6 +81,16 @@ function requireAvailableAt(value: Date | undefined): Date {
     throw new AgentTriggerDeliveryError('availableAt must be a valid Date');
   }
   return new Date(availableAt);
+}
+
+function optionalDate(value: Date | undefined, field: string): Date | undefined {
+  if (value == null) {
+    return;
+  }
+  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+    throw new AgentTriggerDeliveryError(`${field} must be a valid Date`);
+  }
+  return new Date(value);
 }
 
 function coalescingIdentity(
@@ -156,6 +173,10 @@ export function prepareAgentTriggerDelivery(
   // a fresh request trace without weakening content-conflict detection.
   const { requestId: _requestId, receivedAt: _receivedAt, ...durableIdentity } = envelope;
   const requestedAvailableAt = requireAvailableAt(options.availableAt);
+  const producerLeaseUntil = optionalDate(options.producerLeaseUntil, 'producerLeaseUntil');
+  if (producerLeaseUntil != null && options.requiredWorkerCapability == null) {
+    throw new AgentTriggerDeliveryError('producerLeaseUntil requires a capability-fenced delivery');
+  }
   if (
     envelope.expectedAction != null &&
     (envelope.mode !== 'continue' ||
@@ -188,6 +209,10 @@ export function prepareAgentTriggerDelivery(
     ...(envelope.principal.tenantId != null && { tenantId: envelope.principal.tenantId }),
     availableAt: coalesceUntil ?? requestedAvailableAt,
     envelopeBytes: bytes,
+    ...(options.requiredWorkerCapability == null
+      ? {}
+      : { requiredWorkerCapability: options.requiredWorkerCapability }),
+    ...(producerLeaseUntil == null ? {} : { producerLeaseUntil }),
     ...(coalesceKey != null &&
       coalesceUntil != null && {
         coalesceKey,

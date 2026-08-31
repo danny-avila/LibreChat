@@ -186,7 +186,18 @@ describe('createEndpointsConfigService', () => {
           appConfig({
             endpoints: {
               [EModelEndpoint.agents]: {
-                statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
+                statefulCodeSessions: {
+                  allowedEnvironments: ['user', 'agent-user'],
+                  environments: [
+                    {
+                      id: 'attached-vm',
+                      name: 'Attached VM',
+                      type: 'attached',
+                      baseURL: 'https://internal-code.example.com/v1',
+                      default: true,
+                    },
+                  ],
+                },
               },
             },
           }),
@@ -198,6 +209,14 @@ describe('createEndpointsConfigService', () => {
 
       expect(result?.[EModelEndpoint.agents]?.statefulCodeSessions).toEqual({
         allowedEnvironments: ['user', 'agent-user'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            default: true,
+          },
+        ],
       });
     });
 

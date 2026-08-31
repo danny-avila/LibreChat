@@ -229,6 +229,7 @@ const prepareCodeOutputForInspection = async ({
  * @param {string} params.messageId - The current message ID.
  * @param {number} params.expiresAt - Expiration timestamp (24 hours from creation).
  * @param {'default'|'stateful'} [params.executionProfile] - Code API route for later fallback download.
+ * @param {string} [params.executionRouteKey] - Deployment-local route identity.
  * @returns {Object} Fallback response with download URL.
  */
 const createDownloadFallback = ({
@@ -241,12 +242,20 @@ const createDownloadFallback = ({
   toolCallId,
   conversationId,
   executionProfile,
+  executionRouteKey,
 }) => {
   const basePath = getBasePath();
-  const profileQuery = executionProfile === 'stateful' ? '?execution_profile=stateful' : '';
+  const query = new URLSearchParams();
+  if (executionProfile === 'stateful') {
+    query.set('execution_profile', 'stateful');
+  }
+  if (executionRouteKey && executionRouteKey !== executionProfile) {
+    query.set('execution_route_key', executionRouteKey);
+  }
+  const routeQuery = query.size > 0 ? `?${query.toString()}` : '';
   return {
     filename: name,
-    filepath: `${basePath}/api/files/code/download/${session_id}/${id}${profileQuery}`,
+    filepath: `${basePath}/api/files/code/download/${session_id}/${id}${routeQuery}`,
     expiresAt,
     conversationId,
     toolCallId,
@@ -494,6 +503,7 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
  * @param {string} params.messageId - The current message ID.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
  * @param {Buffer} [params.preparedBuffer] - Bytes downloaded during a
  *   no-write content inspection preflight.
  * @param {boolean} [params.downloadFallback] - Return the bounded download
@@ -512,6 +522,7 @@ const processCodeOutput = async ({
   freshClaimAfter,
   codeApiBaseUrl,
   executionProfile = 'default',
+  executionRouteKey = executionProfile,
   preparedBuffer,
   downloadFallback,
 }) => {
@@ -535,6 +546,7 @@ const processCodeOutput = async ({
           session_id,
           conversationId,
           executionProfile,
+          executionRouteKey,
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
@@ -565,6 +577,7 @@ const processCodeOutput = async ({
           session_id,
           conversationId,
           executionProfile,
+          executionRouteKey,
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
@@ -579,6 +592,7 @@ const processCodeOutput = async ({
       storage_session_id: session_id,
       file_id: id,
       executionProfile,
+      ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
     };
 
     /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
@@ -752,6 +766,7 @@ const processCodeOutput = async ({
           session_id,
           conversationId,
           executionProfile,
+          executionRouteKey,
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
@@ -935,6 +950,7 @@ const processCodeOutput = async ({
         session_id,
         conversationId,
         executionProfile,
+        executionRouteKey,
         expiresAt: currentDate.getTime() + 86400000,
       }),
     };
@@ -1102,6 +1118,7 @@ const primeFiles = async (options) => {
     agentResourceType,
     codeApiBaseUrl,
     executionProfile = 'default',
+    executionRouteKey = executionProfile,
   } = options;
   const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
@@ -1160,7 +1177,7 @@ const primeFiles = async (options) => {
       continue;
     }
 
-    const ref = getCodeEnvRefForProfile(file.metadata, executionProfile);
+    const ref = getCodeEnvRefForProfile(file.metadata, executionRouteKey);
     const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
     if (!sourceRef) {
       skippedNoRef += 1;
@@ -1250,6 +1267,7 @@ const primeFiles = async (options) => {
           storage_session_id: uploaded.storage_session_id,
           file_id: uploaded.file_id,
           executionProfile,
+          ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
         };
 
@@ -1258,7 +1276,7 @@ const primeFiles = async (options) => {
         await updateFile({
           file_id: file.file_id,
           'metadata.codeEnvRef': updatedRefs.codeEnvRef,
-          [`metadata.codeEnvRefs.${executionProfile}`]: newRef,
+          [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
         });
         sessions.set(newRef.storage_session_id, true);
         pushFile(newRef.storage_session_id, newRef.file_id);

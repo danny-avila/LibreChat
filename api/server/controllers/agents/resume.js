@@ -41,7 +41,9 @@ const {
   getSafeErrorMetadata,
   isAgentEventRetentionActive,
   resumeAgentEventActor,
+  settleAgentEventActorHistoryTurn,
   createAgentEventActionRecorder,
+  createAgentEventActorDetachedActionLifecycle,
   findAgentEventAppliedAction,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
@@ -60,6 +62,7 @@ const {
   getActions,
   getUserMemories,
   getRoleByName,
+  getAgentTriggerDelivery,
   isSubagentOwnerAdmissible,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
@@ -68,6 +71,9 @@ const {
   settleAgentEventActorSuspension,
   recordAgentEventActorReconciliation,
   completeAgentEventActorLegacyTurn,
+  reserveAgentEventActorDetachedAction,
+  markAgentEventActorDetachedActionRunning,
+  settleAgentEventActorDetachedAction,
 } = require('~/models');
 const {
   acquireEventChildGenerationLease,
@@ -149,12 +155,15 @@ async function sealResumedLegacyEventActorTurn({ userId, conversationId, metadat
     return;
   }
   try {
-    const sealed = await completeAgentEventActorLegacyTurn({
-      user: userId,
-      conversationId,
-      ...(metadata?.tenantId == null ? {} : { tenantId: metadata.tenantId }),
-      token,
-    });
+    const sealed = await settleAgentEventActorHistoryTurn(
+      {
+        user: userId,
+        conversationId,
+        ...(metadata?.tenantId == null ? {} : { tenantId: metadata.tenantId }),
+        token,
+      },
+      completeAgentEventActorLegacyTurn,
+    );
     if (!sealed) {
       logger.error(
         `[event-actor] Resumed legacy turn fence ${token} was not sealed; forks stay blocked until bounded reclaim`,
@@ -686,7 +695,7 @@ async function finalizeResumedTurn({
  */
 const ResumeAgentController = async (req, res, next, initializeClient, addTitle) => {
   const userId = req.user.id;
-  let generationProtocolVersion = negotiateNewGenerationProtocol(req, GenerationJobManager);
+  let generationProtocolVersion = negotiateNewGenerationProtocol(req);
   const { conversationId, actionId, generationCreatedAt } = req.body;
   const streamId = conversationId;
 
@@ -1196,6 +1205,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let releaseEventChildLease;
   let eventLeaseTransferredToRun = false;
   let durableEventActorSuspension;
+  let durableEventActorHandlingGenerationCreatedAt;
+  let durableEventActorRequiresDetachedProducer = false;
   let eventActorResumePromise;
   let eventActorStartGate;
   let eventActorContinuationStarted = false;
@@ -1330,6 +1341,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           suspensionRecord.suspension.attempt === suspensionProjection.attempt
         ) {
           durableEventActorSuspension = suspensionRecord.suspension;
+          durableEventActorHandlingGenerationCreatedAt =
+            suspensionRecord.handlingGenerationCreatedAt;
+          durableEventActorRequiresDetachedProducer =
+            job.metadata.agentEventDetachedActionProducerRequired === true ||
+            (suspensionRecord.handlingGenerationCreatedAt != null &&
+              job.metadata.agentEventExpectedAction != null) ||
+            job.metadata.agentEventInvocationKey != null ||
+            suspensionRecord.kind === 'internal_completion';
           const signedExpectedAction = getSuspendedEventActorExpectedAction(
             durableEventActorSuspension,
           );
@@ -1367,6 +1386,26 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           );
         }
       }
+      if (
+        durableEventActorSuspension != null &&
+        durableEventActorRequiresDetachedProducer &&
+        !GenerationJobManager.supportsDetachedAgentEventActions
+      ) {
+        const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+        await rollbackUnconsumedScheduleClaim(currentJob);
+        await releaseScheduleFence();
+        await decrementPendingRequest(userId);
+        res.set('Retry-After', '1');
+        return sendGenerationJson(
+          res,
+          503,
+          {
+            code: 'EVENT_ACTOR_RESUME_CAPABILITY_UNAVAILABLE',
+            error: 'A compatible Event Actor resume worker is temporarily unavailable',
+          },
+          generationProtocolVersion,
+        );
+      }
     }
 
     // Atomically claim the resume. The single winner drives the run; a racing second
@@ -1401,6 +1440,64 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         const claimGate = deferred();
         eventActorStartGate = deferred();
         const expectedAction = getSuspendedEventActorExpectedAction(durableEventActorSuspension);
+        const actorInvocationId =
+          job.metadata.agentEventInvocationKey ?? job.metadata.agentEventDeliveryKey;
+        let actorInvocationGenerationCreatedAt =
+          job.metadata.agentEventInvocationGenerationCreatedAt ??
+          durableEventActorHandlingGenerationCreatedAt ??
+          (job.metadata.agentEventInvocationKey == null ? job.createdAt : undefined);
+        if (
+          actorInvocationGenerationCreatedAt == null &&
+          job.metadata.agentEventInvocationKey != null
+        ) {
+          const originalDelivery = await getAgentTriggerDelivery(
+            job.metadata.agentEventInvocationKey,
+          );
+          actorInvocationGenerationCreatedAt = originalDelivery?.handling?.generationCreatedAt;
+        }
+        if (
+          durableEventActorRequiresDetachedProducer &&
+          actorInvocationId != null &&
+          Number.isSafeInteger(actorInvocationGenerationCreatedAt) &&
+          req._agentEventBindingId != null
+        ) {
+          req._agentEventDetachedActionLifecycle = createAgentEventActorDetachedActionLifecycle(
+            {
+              user: userId,
+              ...(req._agentEventBindingTenantId == null
+                ? {}
+                : { tenantId: req._agentEventBindingTenantId }),
+              bindingId: req._agentEventBindingId,
+              conversationId,
+              generationCreatedAt: actorInvocationGenerationCreatedAt,
+              turnCreatedAt: job.createdAt,
+              invocationId: actorInvocationId,
+              expectedAction,
+            },
+            {
+              reserveAgentEventActorDetachedAction,
+              markAgentEventActorDetachedActionRunning,
+              settleAgentEventActorDetachedAction,
+              storeMode: () => GenerationJobManager.detachedAgentEventActionStoreMode,
+              persistTerminalEvidence: async (evidence) => {
+                const persisted =
+                  await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(
+                    streamId,
+                    job.createdAt,
+                    evidence,
+                  );
+                if (!persisted) {
+                  throw new Error(
+                    'Detached Event Actor terminal retry evidence could not be staged',
+                  );
+                }
+              },
+              onTerminal: async () => {
+                await GenerationJobManager.retryTerminalHostAction(streamId, job.createdAt);
+              },
+            },
+          );
+        }
         eventActorActionRecorder = createAgentEventActionRecorder(expectedAction);
         req._agentEventActionObserver = eventActorActionRecorder.observeToolEnd;
         eventActorResumePromise = resumeAgentEventActor(
@@ -1454,7 +1551,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
                 client?.contentParts ?? [],
                 { userSubmittedMessageFieldPaths },
               ),
-            readSuspension: () => client?.readEventActorSuspension(),
+            readSuspension: () =>
+              req._agentEventDetachedActionLifecycle?.readSuspension() ??
+              client?.readEventActorSuspension(),
             readResultContext: () => client?.getEventActorContext(),
           },
           {
@@ -1724,6 +1823,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         // graph passes `messages: []`, so without these the model would lose their schemas.
         discoveredToolNames: job.metadata?.discoveredTools,
         activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
+        compactionSemanticIndex: job.metadata?.compactionSemanticIndex,
       });
     if (
       !(await GenerationJobManager.beginProviderExecution(
@@ -1749,7 +1849,20 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       });
       const actorResult = await eventActorResumePromise;
       if (actorResult.execution.status === 'suspended') {
-        if (!(await client.publishStagedApproval(actorResult.execution.suspension))) {
+        const suspensionKind = req._agentEventDetachedActionLifecycle?.readSuspension()?.kind;
+        if (suspensionKind === 'internal_completion') {
+          await GenerationJobManager.updateMetadata(
+            streamId,
+            {
+              agentEventSuspension: {
+                version: actorResult.execution.suspension.version,
+                suspensionId: actorResult.execution.suspension.suspensionId,
+                attempt: actorResult.execution.suspension.attempt,
+              },
+            },
+            job.createdAt,
+          );
+        } else if (!(await client.publishStagedApproval(actorResult.execution.suspension))) {
           throw new Error('Re-paused event actor suspension could not be projected to its job');
         }
       } else if (actorResult.execution.status === 'applied') {

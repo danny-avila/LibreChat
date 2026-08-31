@@ -22,3 +22,17 @@ export interface AgentEventAppliedAction {
   toolName: string;
   toolCallId?: string;
 }
+
+/** Job-store outbox record for terminal detached-action evidence that has not
+ * necessarily reached the authoritative delivery row yet. */
+export interface AgentEventDetachedTerminalEvidence {
+  version: 1;
+  deliveryKey: string;
+  generationCreatedAt: number;
+  taskId: string;
+  idempotencyKey: string;
+  status: 'succeeded' | 'failed' | 'cancelled';
+  result?: string;
+  error?: string;
+  observedAt: number;
+}

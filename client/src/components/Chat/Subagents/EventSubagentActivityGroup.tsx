@@ -4,7 +4,7 @@ import { Bot, ChevronDown } from 'lucide-react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
 import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRow';
-import { subagentStatusIcon, subagentStatusLabelKey } from './status';
+import { subagentStatusDotClass, subagentStatusLabelKey } from './status';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import { eventSubagentSelection } from './eventSelection';
 import { activeSubagentPanel } from '~/store/subagents';
@@ -185,7 +185,6 @@ function EventSubagentRows({
         className="divide-y divide-border-light border-t border-border-light"
       >
         {eventChildren.map((child) => {
-          const StatusIcon = subagentStatusIcon(child.status);
           const agent = child.agentId == null ? undefined : agentsMap?.[child.agentId];
           const label = agent?.name || child.actorId || child.title;
           const canOpen = child.latestTaskId != null;
@@ -218,13 +217,18 @@ function EventSubagentRows({
                   </span>
                 ) : null}
               </span>
-              <span className="flex items-center gap-1 text-xs text-text-secondary">
-                <StatusIcon
-                  size={14}
-                  className={child.status === 'running' ? 'animate-spin' : undefined}
+              {/* Fixed-width slot: the dot gives at-a-glance color, the text
+                  keeps a non-color cue, and neither can shift the row as
+                  statuses change length. */}
+              <span className="flex w-24 shrink-0 items-center justify-end gap-1.5 text-xs text-text-secondary">
+                <span
+                  className={cn(
+                    'h-2 w-2 shrink-0 rounded-full border border-border-heavy/40',
+                    subagentStatusDotClass(child.status),
+                  )}
                   aria-hidden="true"
                 />
-                {localize(subagentStatusLabelKey(child.status))}
+                <span className="truncate">{localize(subagentStatusLabelKey(child.status))}</span>
               </span>
             </button>
           );

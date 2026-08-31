@@ -203,6 +203,20 @@ function resolveDocumentPath(source: Record<string, unknown>, path: string): unk
   return current;
 }
 
+/** Removes a dotted operator path from an in-memory version projection. */
+function deleteDocumentPath(source: Record<string, unknown>, path: string): void {
+  const segments = path.split('.');
+  const leaf = segments.pop();
+  if (leaf == null) return;
+  let current: Record<string, unknown> = source;
+  for (const segment of segments) {
+    const next = current[segment];
+    if (typeof next !== 'object' || next === null || next instanceof Map) return;
+    current = next as Record<string, unknown>;
+  }
+  delete current[leaf];
+}
+
 /** The values an `$addToSet` specification would add, flattening the `$each` form. */
 function addToSetCandidates(spec: unknown): unknown[] {
   if (
@@ -228,9 +242,16 @@ function operatorsMutateDocument(
   $push: unknown,
   $pull: unknown,
   $addToSet: unknown,
+  $unset: unknown,
 ): boolean {
   if (hasOperatorKeys($push) || hasOperatorKeys($pull)) {
     return true;
+  }
+
+  if (hasOperatorKeys($unset)) {
+    for (const path of Object.keys($unset as Record<string, unknown>)) {
+      if (resolveDocumentPath(currentObject, path) !== undefined) return true;
+    }
   }
 
   if (!hasOperatorKeys($addToSet)) {
@@ -280,13 +301,24 @@ function isDuplicateVersion(
     'actionsHash',
   ];
 
-  const { $push: _$push, $pull: _$pull, $addToSet: _$addToSet, ...directUpdates } = updateData;
+  const {
+    $push: _$push,
+    $pull: _$pull,
+    $addToSet: _$addToSet,
+    $unset,
+    ...directUpdates
+  } = updateData;
 
-  if (Object.keys(directUpdates).length === 0 && !actionsHash) {
+  if (Object.keys(directUpdates).length === 0 && !hasOperatorKeys($unset) && !actionsHash) {
     return null;
   }
 
   const wouldBeVersion = { ...currentData, ...directUpdates } as Record<string, unknown>;
+  if (hasOperatorKeys($unset)) {
+    for (const path of Object.keys($unset as Record<string, unknown>)) {
+      deleteDocumentPath(wouldBeVersion, path);
+    }
+  }
   const lastVersion = versions[versions.length - 1] as Record<string, unknown>;
 
   if (actionsHash && lastVersion.actionsHash !== actionsHash) {
@@ -656,7 +688,7 @@ export function createAgentMethods(
     if (currentAgent) {
       const currentObject = currentAgent.toObject() as unknown as Record<string, unknown>;
       const { __v, _id, id: __id, versions, author: _author, ...versionData } = currentObject;
-      const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+      const { $push, $pull, $addToSet, $unset, ...directUpdates } = updateData;
 
       /** Self-heal: drop allowlist ids whose skill no longer exists in the
        *  database or the external registry.
@@ -725,7 +757,12 @@ export function createAgentMethods(
 
       const shouldCreateVersion =
         !skipVersioning &&
-        (forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet);
+        (forceVersion ||
+          Object.keys(directUpdates).length > 0 ||
+          $push ||
+          $pull ||
+          $addToSet ||
+          $unset);
 
       if (shouldCreateVersion) {
         const duplicateVersion = isDuplicateVersion(
@@ -746,6 +783,7 @@ export function createAgentMethods(
           $push,
           $pull,
           $addToSet,
+          $unset,
         );
         if (duplicateVersion && !forceVersion && !mutatesOutsideSnapshot) {
           suppressedVersionEntry = true;
@@ -759,6 +797,7 @@ export function createAgentMethods(
           delete updateData.$addToSet;
           delete updateData.$push;
           delete updateData.$pull;
+          delete updateData.$unset;
         }
       }
 
@@ -767,6 +806,11 @@ export function createAgentMethods(
         ...directUpdates,
         updatedAt: new Date(),
       };
+      if (hasOperatorKeys($unset)) {
+        for (const path of Object.keys($unset as Record<string, unknown>)) {
+          deleteDocumentPath(versionEntry, path);
+        }
+      }
 
       if (actionsHash) {
         versionEntry.actionsHash = actionsHash;
@@ -1200,7 +1244,14 @@ export function createAgentMethods(
       }
     }
 
-    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
+    const restoresDeploymentDefault = !Object.prototype.hasOwnProperty.call(
+      revertToVersion,
+      'code_environment_id',
+    );
+    const revertUpdate = restoresDeploymentDefault
+      ? { $set: revertToVersion, $unset: { code_environment_id: 1 } }
+      : { $set: revertToVersion };
+    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
       new: true,
     }).lean<IAgent>();
     if (!revertedAgent) {

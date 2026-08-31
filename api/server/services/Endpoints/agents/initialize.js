@@ -21,8 +21,10 @@ const {
   buildAgentContextAttachmentsByAgentId,
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
+  resolveCodeExecutionContext,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
+  backgroundCompletionWakeupsEnabled,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -65,6 +67,11 @@ const { checkPermission, findAccessibleResources } = require('~/server/services/
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const subagentThreadTaskStore = require('./subagentThreadStore');
+const {
+  preregisterBackgroundToolCompletion,
+  createBackgroundToolResultPersistence,
+  createDeadBackgroundToolClaimRecovery,
+} = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -72,17 +79,24 @@ const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
 /**
  * Creates a tool loader function for the agent.
+ * @param {ServerRequest} req - Request-backed tool adapter input
+ * @param {ServerResponse} res - Response-backed tool adapter input
  * @param {AbortSignal} signal - The abort signal
  * @param {string | null} [streamId] - The stream ID for resumable mode
  * @param {boolean} [definitionsOnly=false] - When true, returns only serializable
  *   tool definitions without creating full tool instances (for event-driven mode)
  * @param {number} [jobCreatedAt] - The generation epoch that owns emitted tool events
  */
-function createToolLoader(signal, streamId = null, definitionsOnly = false, jobCreatedAt) {
+function createToolLoader(
+  req,
+  res,
+  signal,
+  streamId = null,
+  definitionsOnly = false,
+  jobCreatedAt,
+) {
   /**
    * @param {object} params
-   * @param {ServerRequest} params.req
-   * @param {ServerResponse} params.res
    * @param {string} params.agentId
    * @param {string[]} params.tools
    * @param {string} params.provider
@@ -97,8 +111,6 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
    * } | undefined>}
    */
   return async function loadTools({
-    req,
-    res,
     tools,
     model,
     agentId,
@@ -157,6 +169,9 @@ const initializeClient = async ({
     throw new Error('Endpoint option not provided');
   }
   const appConfig = req.config;
+  const completionWakeupsEnabled = backgroundCompletionWakeupsEnabled(
+    appConfig?.endpoints?.[EModelEndpoint.agents],
+  );
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
@@ -388,10 +403,41 @@ const initializeClient = async ({
       });
     },
     toolEndCallback,
+    /** Bound later by request.js once the authenticated Event Actor owner and
+     * generation fence are known. Ordinary background calls remain unchanged. */
+    eventActorDetachedAction: {
+      reserve: (input) =>
+        req._agentEventDetachedActionLifecycle?.reserve(input) ??
+        Promise.resolve({ status: 'ignored' }),
+      markRunning: (input) =>
+        req._agentEventDetachedActionLifecycle?.markRunning(input) ?? Promise.resolve(false),
+      settle: (input) =>
+        req._agentEventDetachedActionLifecycle?.settle(input) ?? Promise.resolve(false),
+      wake: (input) => req._agentEventDetachedActionLifecycle?.wake(input) ?? Promise.resolve(),
+    },
     persistBackgroundCodeResult: createBackgroundCodeResultHandler({
       req,
       updateToolCallResult: db.updateToolCallResult,
     }),
+    backgroundToolCompletion: {
+      ...(completionWakeupsEnabled ? { preregister: preregisterBackgroundToolCompletion } : {}),
+      persist: createBackgroundToolResultPersistence({
+        req,
+        updateToolCallResult: db.updateToolCallResult,
+      }),
+      claim: db.claimBackgroundToolResults,
+      recoverDeadClaim: createDeadBackgroundToolClaimRecovery(
+        db.releaseBackgroundToolResultClaims,
+        (conversationId) => GenerationJobManager.getJob(conversationId),
+        ({ userId, conversationId, claimId }) =>
+          GenerationJobManager.fenceGenerationClaimForRecovery(
+            userId,
+            claimId,
+            conversationId,
+            conversationId,
+          ),
+      ),
+    },
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),
     onSkillResolved: (skill, { agentId }) => {
@@ -458,7 +504,7 @@ const initializeClient = async ({
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   /** Event-driven mode: only load tool definitions, not full instances */
-  const loadTools = createToolLoader(signal, streamId, true, jobCreatedAt);
+  const loadTools = createToolLoader(req, res, signal, streamId, true, jobCreatedAt);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string | undefined} */
@@ -881,9 +927,11 @@ const initializeClient = async ({
   };
 
   const toLazySubagentMetadata = async (agent) => {
+    const lazyCodeEnvAvailable =
+      codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true;
     const statefulCodeSessions =
       statefulSessionsAvailable === true &&
-      codeEnvAvailable === true &&
+      lazyCodeEnvAvailable &&
       agent.stateful_code_sessions === true &&
       agent.tools?.includes(Tools.execute_code) === true;
     const statefulCodeEnvironment = agent.stateful_code_environment ?? 'user';
@@ -893,6 +941,23 @@ const initializeClient = async ({
     ) {
       throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
     }
+    const configuredCodeEnvironments =
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const hasConfiguredCodeEnvironment =
+      agent.code_environment_id != null ||
+      configuredCodeEnvironments?.some((environment) => environment.default === true) === true;
+    const codeExecutionContext =
+      lazyCodeEnvAvailable && (!statefulCodeSessions || hasConfiguredCodeEnvironment)
+        ? resolveCodeExecutionContext({
+            statefulSessions: statefulCodeSessions,
+            environment: statefulCodeEnvironment,
+            environmentId: agent.code_environment_id,
+            environments: configuredCodeEnvironments,
+            userId,
+            agentId: agent.id,
+            conversationId,
+          })
+        : undefined;
     return {
       id: agent.id,
       name: agent.name,
@@ -906,10 +971,11 @@ const initializeClient = async ({
         memoryAvailable === true && agent.tools?.includes(Tools.memory) === true,
       subagents: agent.subagents,
       configId: getLazySubagentConfigId(agent),
-      codeEnvAvailable:
-        codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true,
+      codeEnvAvailable: lazyCodeEnvAvailable,
       statefulCodeSessions,
       statefulCodeEnvironment,
+      codeExecutionContext,
+      codeSessionKey: codeExecutionContext?.codeSessionKey,
       includeReasoningHistory: getIncludeReasoningHistory(agent),
       alwaysApplySkillPrimes: await resolveLazyAlwaysApplySkillPrimes(agent),
     };
@@ -1013,7 +1079,7 @@ const initializeClient = async ({
           req,
           res,
           agent,
-          loadTools: createToolLoader(context.signal, streamId, true, jobCreatedAt),
+          loadTools: createToolLoader(req, res, context.signal, streamId, true, jobCreatedAt),
           requestFiles,
           conversationId,
           parentMessageId,
@@ -1142,6 +1208,8 @@ const initializeClient = async ({
         codeEnvAvailable: metadata.codeEnvAvailable,
         statefulCodeSessions: metadata.statefulCodeSessions,
         statefulCodeEnvironment: metadata.statefulCodeEnvironment,
+        codeExecutionContext: metadata.codeExecutionContext,
+        codeSessionKey: metadata.codeSessionKey,
         includeReasoningHistory: metadata.includeReasoningHistory,
         alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
         lazySubagentConfigs: lazyChildren,
@@ -1318,13 +1386,13 @@ const initializeClient = async ({
               ? { tenantId: req.user.tenantId }
               : {}),
           },
-          { completionWakeups: true },
+          { completionWakeups: completionWakeupsEnabled },
         )
       : undefined;
   let hasExistingSubagentTask = false;
   if (trustedSubagentTasks != null && !(subagentsAvailableForRun && hasSpawnableSubagent)) {
     try {
-      hasExistingSubagentTask = await subagentThreadTaskStore.hasTasks(
+      hasExistingSubagentTask = await trustedSubagentTasks.store.hasTasks(
         trustedSubagentTasks.scopeId,
       );
     } catch (error) {

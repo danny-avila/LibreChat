@@ -1,7 +1,11 @@
 import { Constants } from '@librechat/agents';
 import type { FileRefs, CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
-import { resolveCodeExecutionContext, type CodeExecutionContext } from './execution';
+import {
+  getCodeExecutionRouteKey,
+  resolveCodeExecutionContext,
+  type CodeExecutionContext,
+} from './execution';
 
 /**
  * Minimal shape for an agent that may contribute primed code files to its
@@ -54,7 +58,7 @@ export function collectCodeExecutionProfileRoutes(
   scope?: { userId: string; conversationId?: string | null },
 ): CodeExecutionProfileRoute[] {
   const routes = new Map<
-    CodeExecutionContext['executionProfile'],
+    string,
     { codeExecutionContext: CodeExecutionContext; codeSessionKeys: Set<string> }
   >();
   const visited = new Set<CodeFilesAgent>();
@@ -78,12 +82,13 @@ export function collectCodeExecutionProfileRoutes(
           })
         : undefined);
     if (agent.codeEnvAvailable === true && context) {
-      const route = routes.get(context.executionProfile) ?? {
+      const routeKey = getCodeExecutionRouteKey(context);
+      const route = routes.get(routeKey) ?? {
         codeExecutionContext: context,
         codeSessionKeys: new Set<string>(),
       };
       route.codeSessionKeys.add(agent.codeSessionKey ?? context.codeSessionKey);
-      routes.set(context.executionProfile, route);
+      routes.set(routeKey, route);
     }
     enqueueCodeFilesChildren(agent, queue, visited);
   }

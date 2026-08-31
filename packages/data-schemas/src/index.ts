@@ -35,6 +35,9 @@ export {
   MAX_AUDIT_VERIFY_ROWS,
   MAX_TOOL_FAVORITES,
   AgentTriggerDeliveryConflictError,
+  AgentQueuedTurnCapacityError,
+  AgentQueuedTurnConflictError,
+  AgentQueuedTurnLaneRetiredError,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
   MCPAuthorityProofError,
@@ -53,6 +56,19 @@ export {
   MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
   MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
 } from './types/convo';
+export {
+  COMPACTION_SEMANTIC_INDEX_PROJECTION_VERSION,
+  MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES,
+  MAX_COMPACTION_SEMANTIC_INDEX_IDENTITY_LENGTH,
+  MAX_COMPACTION_SEMANTIC_INDEX_SOURCE_CONTENT_INDEX,
+  MAX_COMPACTION_SEMANTIC_INDEX_TEXT_LENGTH,
+  isCompactionSemanticIndexProjection,
+} from './types/compaction';
+export {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+} from './types/triggerDelivery';
 export type * from './types';
 export type * from './methods';
 export {

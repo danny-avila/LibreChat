@@ -34,6 +34,7 @@ import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
+import { isCompactionSemanticIndexProjection } from '~/types/compaction';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -314,6 +315,7 @@ export interface ConversationMethods {
     discoveredToolNames?: IAgentEventActorState['discoveredToolNames'];
     summary?: IAgentEventActorState['summary'];
     contextMeta?: IAgentEventActorState['contextMeta'];
+    compactionSemanticIndex?: IAgentEventActorState['compactionSemanticIndex'];
     settlementAuthority?: AgentEventActorSettlementAuthority;
   }): Promise<AgentEventActorCommitResult>;
   storeAgentEventActorSuspension(input: {
@@ -321,6 +323,9 @@ export interface ConversationMethods {
     conversationId: string;
     tenantId?: string;
     suspension: IAgentEventActorSuspensionEvidence;
+    kind?: 'human_decision' | 'internal_completion';
+    appliedAction?: { toolName: string; toolCallId?: string };
+    handlingGenerationCreatedAt?: number;
     actionId: string;
     jobCreatedAt: number;
     /** The segment applied its expected action before publishing this successor pause. */
@@ -453,22 +458,33 @@ export interface ConversationMethods {
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
-    options?: { beforeDelete?: (conversationIds: string[]) => Promise<void> },
+    options?: {
+      beforeDelete?: (conversationIds: string[]) => Promise<void>;
+      allowEmpty?: boolean;
+    },
   ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
   archiveAllConvos(user: string): Promise<{ archivedCount: number }>;
 }
 
+export interface ConversationMethodDeps
+  extends Pick<MessageMethods, 'getMessages' | 'deleteMessages'> {
+  deleteAgentQueuedTurns?: (
+    user: string,
+    conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
+  ) => Promise<void>;
+}
+
 export function createConversationMethods(
   mongoose: typeof import('mongoose'),
-  messageMethods?: Pick<MessageMethods, 'getMessages' | 'deleteMessages'>,
+  deps?: ConversationMethodDeps,
 ): ConversationMethods {
   let legacyReceiptExpiryCursor: Types.ObjectId | undefined;
 
   function getMessageMethods() {
-    if (!messageMethods) {
+    if (!deps) {
       throw new Error('Message methods not injected into conversation methods');
     }
-    return messageMethods;
+    return deps;
   }
 
   function getVisibleConversationRetentionFilter(): FilterQuery<IConversation> {
@@ -642,6 +658,9 @@ export function createConversationMethods(
     conversationId: string;
     tenantId?: string;
     suspension: IAgentEventActorSuspensionEvidence;
+    kind?: 'human_decision' | 'internal_completion';
+    appliedAction?: { toolName: string; toolCallId?: string };
+    handlingGenerationCreatedAt?: number;
     actionId: string;
     jobCreatedAt: number;
     invalidateHead?: boolean;
@@ -684,15 +703,19 @@ export function createConversationMethods(
       ...activeExpirationFilter<IConversation>(),
       ...predecessor,
     };
+    const suspension = {
+      suspension: input.suspension,
+      kind: input.kind ?? 'human_decision',
+      ...(input.appliedAction == null ? {} : { appliedAction: input.appliedAction }),
+      handlingGenerationCreatedAt: input.handlingGenerationCreatedAt ?? input.jobCreatedAt,
+      actionId: input.actionId,
+      jobCreatedAt: input.jobCreatedAt,
+      status: 'pending' as const,
+      observedAt: new Date(),
+    };
     const storeUpdate = {
       $set: {
-        agentEventActorSuspension: {
-          suspension: input.suspension,
-          actionId: input.actionId,
-          jobCreatedAt: input.jobCreatedAt,
-          status: 'pending' as const,
-          observedAt: new Date(),
-        },
+        agentEventActorSuspension: suspension,
         ...(input.invalidateHead === true ? { 'agentEventActor.requiresColdStart': true } : {}),
       },
     };
@@ -713,13 +736,7 @@ export function createConversationMethods(
         { ...ownership, agentEventActor: { $exists: false } },
         {
           $set: {
-            agentEventActorSuspension: {
-              suspension: input.suspension,
-              actionId: input.actionId,
-              jobCreatedAt: input.jobCreatedAt,
-              status: 'pending',
-              observedAt: new Date(),
-            },
+            agentEventActorSuspension: suspension,
           },
         },
         { new: false, timestamps: false },
@@ -943,6 +960,7 @@ export function createConversationMethods(
     discoveredToolNames?: IAgentEventActorState['discoveredToolNames'];
     summary?: IAgentEventActorState['summary'];
     contextMeta?: IAgentEventActorState['contextMeta'];
+    compactionSemanticIndex?: IAgentEventActorState['compactionSemanticIndex'];
     settlementAuthority?: AgentEventActorSettlementAuthority;
   }): Promise<AgentEventActorCommitResult> {
     if (input.checkpoint.threadId !== input.conversationId) {
@@ -978,6 +996,12 @@ export function createConversationMethods(
             input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)))
     ) {
       throw new RangeError('Event actor context calibration is invalid');
+    }
+    if (
+      input.compactionSemanticIndex != null &&
+      !isCompactionSemanticIndexProjection(input.compactionSemanticIndex)
+    ) {
+      throw new RangeError('Event actor compaction semantic index is invalid');
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     /** A legacy turn against a headless or already cold-marked actor leaves
@@ -1019,6 +1043,11 @@ export function createConversationMethods(
             ...(input.expected.contextMeta == null
               ? { 'agentEventActor.contextMeta': { $exists: false } }
               : { 'agentEventActor.contextMeta': input.expected.contextMeta }),
+            ...(input.expected.compactionSemanticIndex == null
+              ? { 'agentEventActor.compactionSemanticIndex': { $exists: false } }
+              : {
+                  'agentEventActor.compactionSemanticIndex': input.expected.compactionSemanticIndex,
+                }),
             'agentEventActor.requiresColdStart':
               input.expected.requiresColdStart === true ? true : { $ne: true },
           }),
@@ -1043,6 +1072,9 @@ export function createConversationMethods(
         : { discoveredToolNames: input.discoveredToolNames }),
       ...(input.summary == null ? {} : { summary: input.summary }),
       ...(input.contextMeta == null ? {} : { contextMeta: input.contextMeta }),
+      ...(input.compactionSemanticIndex == null
+        ? {}
+        : { compactionSemanticIndex: input.compactionSemanticIndex }),
       ...(input.expected == null ? {} : { previousCheckpoint: input.expected.checkpoint }),
     };
     const previous = await Conversation.findOneAndUpdate(
@@ -1690,7 +1722,16 @@ export function createConversationMethods(
     const candidates = await Conversation.find({
       ...(legacyReceiptExpiryCursor == null ? {} : { _id: { $gt: legacyReceiptExpiryCursor } }),
     })
-      .select('_id +agentEventActorReconciliations')
+      /** Pure inclusion, as an object. The string form
+       * `'_id +agentEventActorReconciliations'` compiles to `{ _id: 1 }` plus a
+       * `: 0` exclusion for every OTHER `select: false` sibling — the `+` token
+       * only un-hides its field and `_id` alone does not make the projection
+       * inclusive. MongoDB tolerates that mixed shape via the `_id` exception;
+       * Amazon DocumentDB rejects it, which failed this sweep on every pass and
+       * took the sequenced lane reclamation down with it. An explicit `1` for a
+       * `select: false` path overrides the schema default, so nothing hidden
+       * leaks and nothing extra is fetched. */
+      .select({ _id: 1, agentEventActorReconciliations: 1 })
       .sort({ _id: 1 })
       .limit(boundedLimit)
       .lean<
@@ -2830,13 +2871,21 @@ export function createConversationMethods(
   async function deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
-    options?: { beforeDelete?: (conversationIds: string[]) => Promise<void> },
+    options?: {
+      beforeDelete?: (conversationIds: string[]) => Promise<void>;
+      /** Idempotent destructive-recovery mode. An empty selection is success, while
+       * query, cascade, reconciliation, and deletion failures still propagate. */
+      allowEmpty?: boolean;
+    },
   ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const { deleteMessages, getMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
-      type DeletionConversation = Pick<IConversation, 'conversationId' | 'chatProjectId' | 'tags'>;
+      type DeletionConversation = Pick<
+        IConversation,
+        'conversationId' | 'tenantId' | 'chatProjectId' | 'tags'
+      >;
       const retryCascadeOperation = async <T>(operation: () => PromiseLike<T> | T): Promise<T> => {
         let lastError: unknown;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -2852,7 +2901,7 @@ export function createConversationMethods(
         throw lastError;
       };
       let conversations = await Conversation.find(userFilter)
-        .select('conversationId chatProjectId tags')
+        .select('conversationId tenantId chatProjectId tags')
         .lean<DeletionConversation[]>();
       const recoveryConversationIds: string[] = [];
       if (!conversations.length && typeof filter.conversationId === 'string') {
@@ -2866,7 +2915,7 @@ export function createConversationMethods(
               user,
               'subagentThread.rootConversationId': filter.conversationId,
             })
-              .select('conversationId chatProjectId tags')
+              .select('conversationId tenantId chatProjectId tags')
               .lean<DeletionConversation[]>(),
           ),
           getMessages({ user, conversationId: filter.conversationId }, '_id', { limit: 1 }),
@@ -2877,6 +2926,14 @@ export function createConversationMethods(
         conversations = descendants;
         recoveryConversationIds.push(filter.conversationId);
       } else if (!conversations.length) {
+        if (options?.allowEmpty === true) {
+          return {
+            acknowledged: true,
+            deletedCount: 0,
+            messages: { acknowledged: true, deletedCount: 0 },
+            conversationIds: [],
+          };
+        }
         throw new Error('Conversation not found or already deleted.');
       }
 
@@ -2933,6 +2990,13 @@ export function createConversationMethods(
           break;
         }
         const waveIds = wave.map((conversation) => conversation.conversationId);
+        await deps?.deleteAgentQueuedTurns?.(
+          user,
+          wave.map((conversation) => ({
+            conversationId: conversation.conversationId,
+            ...(conversation.tenantId != null && { tenantId: conversation.tenantId }),
+          })),
+        );
         await options?.beforeDelete?.(waveIds);
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
         acknowledged &&= result.acknowledged;
@@ -2947,7 +3011,7 @@ export function createConversationMethods(
             user,
             'subagentThread.parentConversationId': { $in: waveIds },
           })
-            .select('conversationId chatProjectId tags')
+            .select('conversationId tenantId chatProjectId tags')
             .lean<DeletionConversation[]>(),
         );
       }
@@ -2956,6 +3020,16 @@ export function createConversationMethods(
         ...recoveryConversationIds,
         ...deletedConversations.map((conversation) => conversation.conversationId),
       ];
+
+      if (recoveryConversationIds.length > 0) {
+        await deps?.deleteAgentQueuedTurns?.(
+          user,
+          recoveryConversationIds.map((conversationId) => ({
+            conversationId,
+            allTenants: true,
+          })),
+        );
+      }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
 

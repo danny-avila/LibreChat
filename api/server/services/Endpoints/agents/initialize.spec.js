@@ -1204,6 +1204,60 @@ describe('initializeClient — subagent loading', () => {
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
   });
 
+  it('retains a configured Code API route on lazy subagent descriptors', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Attached Stateful Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+      stateful_code_sessions: true,
+      stateful_code_environment: 'agent-user',
+      code_environment_id: 'attached-vm',
+    });
+    await grantView(subAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
+    req.config.endpoints.agents.statefulCodeSessions = {
+      allowedEnvironments: ['agent-user'],
+      environments: [
+        {
+          id: 'attached-vm',
+          name: 'Attached VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example.com/v1/',
+          default: true,
+        },
+      ],
+    };
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.agent.lazySubagentConfigs[0]).toEqual(
+      expect.objectContaining({
+        codeSessionKey: expect.stringMatching(/^execute_code:stateful:[a-f0-9]{32}:v3:/),
+        codeExecutionContext: expect.objectContaining({
+          baseUrl: 'https://bridge.example.com/v1',
+          environmentId: 'attached-vm',
+          environmentType: 'attached',
+          executionProfile: 'stateful',
+          executionRouteKey: expect.stringMatching(/^stateful:[a-f0-9]{32}$/),
+        }),
+      }),
+    );
+  });
+
   it('omits a descriptor when its metadata lookup fails without aborting the primary run', async () => {
     const primaryConfig = makePrimaryConfig({
       subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },

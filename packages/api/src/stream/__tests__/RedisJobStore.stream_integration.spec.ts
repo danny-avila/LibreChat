@@ -52,10 +52,6 @@ describe('RedisJobStore Integration Tests', () => {
     process.env.REDIS_KEY_PREFIX = testPrefix;
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
-    // This suite exercises the receipt-safe current behavior. Rollout-specific
-    // v1 defaults and mixed-client downgrade paths live in protocolRollout.
-    process.env.GENERATION_PROTOCOL_VERSION = '2';
-
     jest.resetModules();
 
     // Import Redis client
@@ -1181,6 +1177,80 @@ describe('RedisJobStore Integration Tests', () => {
       await expect(store.getJob(streamId)).resolves.toMatchObject({ providerDrained: true });
 
       await store.clearTerminalHostAction(streamId, job.createdAt);
+      await store.destroy();
+    });
+
+    test('isolates detached Event Actor completion recovery from the legacy terminal lane', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `terminal-detached-event-${Date.now()}`;
+      const invocationKey = 'event-invocation-original';
+      const completionDeliveryKey = 'event-completion-delivery';
+      const invocationGenerationCreatedAt = Date.now() - 1_000;
+      const job = await store.createJob(streamId, 'user-1', streamId, undefined, {
+        agentEventDeliveryKey: completionDeliveryKey,
+        agentEventInvocationKey: invocationKey,
+        agentEventInvocationGenerationCreatedAt: invocationGenerationCreatedAt,
+      });
+      const member = JSON.stringify([streamId, job.createdAt]);
+
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'complete',
+          expectCreatedAt: job.createdAt,
+          patch: { completedAt: Date.now(), terminalHostActionPending: true },
+        }),
+      ).resolves.toBe(true);
+
+      // A pre-detached replica scans only this legacy key. The completion must
+      // never become visible there, because it would deserialize only the
+      // completion delivery and lose the original invocation identity.
+      await expect(ioredisClient.sismember('stream:terminal_host_action', member)).resolves.toBe(0);
+      await expect(ioredisClient.hgetall(`stream:{${streamId}}:job`)).resolves.toMatchObject({
+        status: 'detached_terminal_pending_v1',
+        detachedAgentEventTerminalStatus: 'complete',
+        detachedAgentEventTerminalHostActionPending: '1',
+      });
+      await expect(store.getJob(streamId)).resolves.toMatchObject({
+        status: 'complete',
+        terminalHostActionPending: true,
+      });
+      await expect(store.getTerminalHostActionJobs()).resolves.not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ streamId })]),
+      );
+      await expect(store.getDetachedAgentEventTerminalHostActionJobs()).resolves.toEqual([
+        expect.objectContaining({
+          streamId,
+          agentEventDeliveryKey: completionDeliveryKey,
+          agentEventInvocationKey: invocationKey,
+          agentEventInvocationGenerationCreatedAt: invocationGenerationCreatedAt,
+        }),
+      ]);
+
+      // The current creator reports an ordinary predecessor conflict, while a
+      // pre-detached creator rejects the raw versioned status as corrupt. Both
+      // outcomes fence replacement even when its caller permits active replacement.
+      await expect(store.createJob(streamId, 'user-1', streamId)).rejects.toMatchObject({
+        name: 'JobPredecessorMismatchError',
+      });
+
+      await store.clearTerminalHostAction(streamId, job.createdAt);
+      await expect(ioredisClient.hgetall(`stream:{${streamId}}:job`)).resolves.toMatchObject({
+        status: 'complete',
+      });
+      await expect(
+        ioredisClient.hget(`stream:{${streamId}}:job`, 'detachedAgentEventTerminalStatus'),
+      ).resolves.toBeNull();
+      await expect(
+        ioredisClient.sismember('stream:agent_event_detached:terminal_host_action:v1', member),
+      ).resolves.toBe(0);
       await store.destroy();
     });
 
@@ -3039,6 +3109,92 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('terminal claim-or-seal atomically assigns the final steer race', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { STEER_ENQUEUE_NOT_RUNNING } = await import('../interfaces/IJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const claimStream = `steer-terminal-claim-${Date.now()}`;
+      const claimJob = await store.createJob(claimStream, 'steer-user', claimStream);
+      const first = buildSteer('terminal-first', 'first');
+      const second = buildSteer('terminal-second', 'second');
+      await store.enqueueSteer(claimStream, first, claimJob.createdAt);
+      await store.enqueueSteer(claimStream, second, claimJob.createdAt);
+
+      await expect(
+        store.admitTerminalSteers(
+          claimStream,
+          { allowClaim: true, keepOpenWhenEmpty: false },
+          claimJob.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'claimed', items: [first, second] });
+      await expect(store.peekClaimedSteers(claimStream, claimJob.createdAt)).resolves.toEqual([
+        first,
+        second,
+      ]);
+      await expect(
+        store.enqueueSteer(claimStream, buildSteer('terminal-later', 'later'), claimJob.createdAt),
+      ).resolves.toBe(1);
+
+      const openStream = `steer-terminal-open-${Date.now()}`;
+      const openJob = await store.createJob(openStream, 'steer-user', openStream);
+      await expect(
+        store.admitTerminalSteers(
+          openStream,
+          { allowClaim: true, keepOpenWhenEmpty: true },
+          openJob.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'open' });
+      await expect(
+        store.enqueueSteer(
+          openStream,
+          buildSteer('terminal-planned', 'planned'),
+          openJob.createdAt,
+        ),
+      ).resolves.toBe(1);
+
+      const sealStream = `steer-terminal-seal-${Date.now()}`;
+      const sealJob = await store.createJob(sealStream, 'steer-user', sealStream);
+      const queued = buildSteer('terminal-queued', 'ordinary follow-up');
+      await store.enqueueSteer(sealStream, queued, sealJob.createdAt);
+      await expect(
+        store.admitTerminalSteers(
+          sealStream,
+          { allowClaim: false, keepOpenWhenEmpty: false },
+          sealJob.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'sealed' });
+      await expect(
+        store.enqueueSteer(sealStream, buildSteer('terminal-raced', 'raced'), sealJob.createdAt),
+      ).resolves.toBe(STEER_ENQUEUE_NOT_RUNNING);
+      await expect(store.closeAndDrainSteers(sealStream, sealJob.createdAt)).resolves.toEqual([
+        queued,
+      ]);
+
+      const replacement = await store.createJob(sealStream, 'steer-user', sealStream);
+      await expect(
+        store.admitTerminalSteers(
+          sealStream,
+          { allowClaim: true, keepOpenWhenEmpty: false },
+          sealJob.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'unavailable' });
+      await expect(
+        store.enqueueSteer(
+          sealStream,
+          buildSteer('terminal-replacement', 'replacement'),
+          replacement.createdAt,
+        ),
+      ).resolves.toBe(1);
+
+      await store.destroy();
+    });
+
     test('terminal CAS atomically returns and parks claimed plus queued steers', async () => {
       if (!ioredisClient) {
         return;
@@ -4155,6 +4311,26 @@ describe('RedisJobStore Integration Tests', () => {
         claimed: false,
         existing: { streamId: 's1', conversationId: 'c1' },
       });
+
+      await store.destroy();
+    });
+
+    test('probes claim existence without creating a missing key', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const key = `user-1:req-probe-${Date.now()}`;
+      await expect(store.hasIdempotencyKey(key)).resolves.toBe(false);
+
+      await store.claimIdempotencyKey(key, { streamId: 's1', conversationId: 'c1' }, 1200);
+      await expect(store.hasIdempotencyKey(key)).resolves.toBe(true);
+
+      await store.releaseIdempotencyKey(key);
+      await expect(store.hasIdempotencyKey(key)).resolves.toBe(false);
 
       await store.destroy();
     });

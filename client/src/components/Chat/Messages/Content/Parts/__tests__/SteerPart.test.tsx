@@ -1,5 +1,5 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
+import { RecoilRoot, useRecoilValue } from 'recoil';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { TMessage } from 'librechat-data-provider';
 import SteerPart from '../SteerPart';
@@ -103,21 +103,21 @@ describe('SteerPart author label', () => {
     expect(screen.getByText('com_user_message')).toBeInTheDocument();
   });
 
-  it('shows a subtle info affordance explaining the mid-run message', () => {
+  it('shows the applied receipt with its explanation as the accessible label', () => {
     renderPart();
-    // The "?" InfoHoverCard clarifies why a user message appears inside the
-    // assistant response (its text is the trigger's accessible label).
-    expect(screen.getByLabelText('com_ui_steered_info')).toBeInTheDocument();
+    // The ✓✓ receipt replaces the old hover-only "?" affordance; the info text
+    // is the trigger's accessible label so the marks never read as bare glyphs.
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'applied');
+    expect(screen.getByLabelText('com_ui_steer_applied_info')).toBeInTheDocument();
   });
 
-  it('reveals on hover/focus on hover-capable pointers but stays visible on touch', () => {
+  it('keeps the receipt visible at rest instead of gating it behind hover', () => {
     renderPart();
-    // Like the hover buttons: hidden-at-rest ONLY on hover-capable pointers
-    // ([@media(hover:hover)]:opacity-0), so touch devices keep it visible.
-    const wrapper = screen.getByTestId('steer-info-affordance');
-    expect(wrapper.className).toContain('[@media(hover:hover)]:opacity-0');
-    expect(wrapper.className).toContain('group-hover:opacity-100');
-    expect(wrapper.className).toContain('focus-within:opacity-100');
+    // The whole point of the receipt is that "it landed" is visible without
+    // hunting: no hover-capable-pointer opacity gate like the old "?" had.
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt.className).not.toContain('opacity-0');
   });
 });
 
@@ -185,5 +185,100 @@ describe('SteerPart presentation', () => {
   it('renders no quote block when the steer carried none', () => {
     renderPart();
     expect(screen.queryByTestId('message-quotes')).toBeNull();
+  });
+});
+
+describe('SteerPart live receipt draw-in', () => {
+  function LiveIdsProbe() {
+    const ids = useRecoilValue(store.liveAppliedSteerIds);
+    return <div data-testid="live-ids">{ids.join(',')}</div>;
+  }
+
+  function renderLive(liveIds: string[]) {
+    return render(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.user, SEEDED_USER as never);
+          set(store.liveAppliedSteerIds, liveIds);
+        }}
+      >
+        <SteerPart steer="steered words" steerId="s1" createdAt={1} />
+        <LiveIdsProbe />
+      </RecoilRoot>,
+    );
+  }
+
+  const appliedChecks = () =>
+    screen.getByLabelText('com_ui_steer_applied_info').querySelector('svg');
+
+  it('animates the checks once when its applied event landed this session, then consumes the id', () => {
+    renderLive(['s1', 'other']);
+    expect(appliedChecks()).toHaveClass('animate-in');
+    // Consumed on mount so a remount (revisit, reload) renders without motion;
+    // unrelated ids survive for their own parts.
+    expect(screen.getByTestId('live-ids')).toHaveTextContent('other');
+  });
+
+  it('renders the settled checks without the draw-in when not applied live', () => {
+    renderLive([]);
+    expect(appliedChecks()).not.toHaveClass('animate-in');
+  });
+
+  it('re-derives and consumes per identity when a slot is overwritten with another steer', () => {
+    // ContentParts keys by content index, and applySteerPart permits a
+    // different steer to overwrite that index — React reuses this component.
+    const partFor = (steerId: string) => (
+      <>
+        <SteerPart steer="steered words" steerId={steerId} createdAt={1} />
+        <LiveIdsProbe />
+      </>
+    );
+    const { rerender } = render(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.user, SEEDED_USER as never);
+          set(store.liveAppliedSteerIds, ['s2']);
+        }}
+      >
+        {partFor('s1')}
+      </RecoilRoot>,
+    );
+    expect(appliedChecks()).not.toHaveClass('animate-in');
+    expect(screen.getByTestId('live-ids')).toHaveTextContent('s2');
+
+    rerender(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.user, SEEDED_USER as never);
+          set(store.liveAppliedSteerIds, ['s2']);
+        }}
+      >
+        {partFor('s2')}
+      </RecoilRoot>,
+    );
+    expect(appliedChecks()).toHaveClass('animate-in');
+    expect(screen.getByTestId('live-ids').textContent).toBe('');
+  });
+});
+
+describe('SteerPart receipt settling', () => {
+  const checks = () => screen.getByLabelText('com_ui_steer_applied_info').querySelector('svg');
+
+  it('keeps the amber identity while the owning response is still generating', () => {
+    render(
+      <RecoilRoot initializeState={({ set }) => set(store.user, SEEDED_USER as never)}>
+        <SteerPart steer="steered words" steerId="s1" createdAt={1} isSubmitting />
+      </RecoilRoot>,
+    );
+    expect(checks()).toHaveClass('dark:text-amber-500');
+    expect(checks()).not.toHaveClass('text-text-secondary');
+  });
+
+  it('settles to timestamp gray once the response is done, and on reload/share', () => {
+    // The default (no isSubmitting) is the settled, reload, share, and search
+    // rendering: still a double check, no longer lit.
+    renderPart();
+    expect(checks()).toHaveClass('text-text-secondary');
+    expect(checks()).not.toHaveClass('dark:text-amber-500');
   });
 });

@@ -1767,6 +1767,59 @@ describe('Conversation Operations', () => {
   });
 
   describe('deleteConvos', () => {
+    it('retires queued-turn work before each conversation deletion wave', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        tenantId: 'tenant-1',
+        endpoint: EModelEndpoint.agents,
+      });
+      const transitions: string[] = [];
+      const deleteAgentQueuedTurns = jest.fn(async () => {
+        transitions.push('queue-retired');
+      });
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        deleteAgentQueuedTurns,
+      });
+
+      await scopedMethods.deleteConvos(
+        'user123',
+        { conversationId },
+        {
+          beforeDelete: async () => {
+            transitions.push('generation-drained');
+          },
+        },
+      );
+
+      expect(deleteAgentQueuedTurns).toHaveBeenCalledWith('user123', [
+        { conversationId, tenantId: 'tenant-1' },
+      ]);
+      expect(transitions).toEqual(['queue-retired', 'generation-drained']);
+    });
+
+    it('fails closed before deleting a conversation when queued-turn retirement fails', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+      });
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        deleteAgentQueuedTurns: async () => Promise.reject(new Error('retirement unavailable')),
+      });
+
+      await expect(scopedMethods.deleteConvos('user123', { conversationId })).rejects.toThrow(
+        'retirement unavailable',
+      );
+      expect(await Conversation.findOne({ conversationId })).not.toBeNull();
+    });
+
     it('should delete conversations and associated messages', async () => {
       await Conversation.create({
         conversationId: mockConversationData.conversationId,
@@ -1961,6 +2014,29 @@ describe('Conversation Operations', () => {
       await expect(deleteConvos('user123', { conversationId: 'non-existent' })).rejects.toThrow(
         'Conversation not found or already deleted.',
       );
+    });
+
+    it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {
+      await expect(
+        deleteConvos(
+          'user123',
+          { conversationId: { $in: ['already-absent'] } },
+          { allowEmpty: true },
+        ),
+      ).resolves.toEqual({
+        acknowledged: true,
+        deletedCount: 0,
+        messages: { acknowledged: true, deletedCount: 0 },
+        conversationIds: [],
+      });
+
+      const find = jest.spyOn(Conversation, 'find').mockImplementationOnce(() => {
+        throw new Error('database unavailable');
+      });
+      await expect(deleteConvos('user123', {}, { allowEmpty: true })).rejects.toThrow(
+        'database unavailable',
+      );
+      find.mockRestore();
     });
 
     it('should decrement tag counts for a deleted bookmarked conversation', async () => {
@@ -4027,6 +4103,9 @@ describe('Conversation Operations', () => {
           jobCreatedAt: 123,
         }),
       ).resolves.toEqual({ status: 'stored' });
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        suspension: { kind: 'human_decision' },
+      });
       await expect(
         methods.storeAgentEventActorSuspension({
           ...owner,
@@ -4056,6 +4135,7 @@ describe('Conversation Operations', () => {
         methods.storeAgentEventActorSuspension({
           ...owner,
           suspension: second,
+          kind: 'internal_completion',
           actionId: 'action-second',
           jobCreatedAt: 123,
           previous: {
@@ -4065,6 +4145,12 @@ describe('Conversation Operations', () => {
           },
         }),
       ).resolves.toEqual({ status: 'stored' });
+      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+        suspension: {
+          kind: 'internal_completion',
+          suspension: { suspensionId: second.suspensionId },
+        },
+      });
       await expect(
         methods.claimAgentEventActorSuspension({
           ...owner,
@@ -4645,6 +4731,20 @@ describe('Conversation Operations', () => {
       const discoveredToolNames = ['deferred_lookup', 'deferred_write'];
       const summary = { text: 'Earlier compacted context.', tokenCount: 12 };
       const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base' };
+      const compactionSemanticIndex = {
+        version: 1 as const,
+        providedEntryCount: 9,
+        entries: [
+          {
+            type: 'activity_phase' as const,
+            sourceMessageId: 'assistant-history',
+            sourceContentIndex: 1,
+            revision: 1,
+            status: 'committed' as const,
+            text: 'Verified the release state',
+          },
+        ],
+      };
       await Conversation.create({
         conversationId,
         user: 'actor-context-user',
@@ -4690,6 +4790,7 @@ describe('Conversation Operations', () => {
         discoveredToolNames,
         summary,
         contextMeta,
+        compactionSemanticIndex,
       });
 
       expect(committed).toMatchObject({
@@ -4702,6 +4803,7 @@ describe('Conversation Operations', () => {
           discoveredToolNames,
           summary,
           contextMeta,
+          compactionSemanticIndex,
         },
       });
       await expect(
@@ -4713,6 +4815,7 @@ describe('Conversation Operations', () => {
           discoveredToolNames,
           summary,
           contextMeta,
+          compactionSemanticIndex,
         },
       });
 
@@ -4767,6 +4870,37 @@ describe('Conversation Operations', () => {
           contextMeta: { calibrationRatio: 9, encoding: 'o200k_base' },
         }),
       ).rejects.toThrow('Event actor context calibration is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-compaction-index',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          compactionSemanticIndex: {
+            version: 1,
+            entries: [{ ...compactionSemanticIndex.entries[0], sourceContentIndex: -1 }],
+          },
+        }),
+      ).rejects.toThrow('Event actor compaction semantic index is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-compaction-count',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          compactionSemanticIndex: {
+            version: 1,
+            entries: compactionSemanticIndex.entries,
+            providedEntryCount: 0,
+          },
+        }),
+      ).rejects.toThrow('Event actor compaction semantic index is invalid');
     });
 
     it('retains exact legacy settled receipts until delivery-ledger migration', async () => {
@@ -5490,6 +5624,48 @@ describe('Conversation Operations', () => {
       ).resolves.toMatchObject({
         agentEventActorReconciliations: [expect.objectContaining({ invocationId: 'recent' })],
       });
+    });
+
+    it('sends a pure inclusion projection for the candidate read', async () => {
+      /** The string form `'_id +field'` compiles to `{ _id: 1 }` plus a `: 0`
+       * exclusion for every other `select: false` sibling — a mixed projection
+       * MongoDB tolerates but Amazon DocumentDB rejects, which failed this
+       * sweep on every maintenance pass. The candidate read must stay a pure
+       * inclusion AND still return the hidden reconciliations field. */
+      const conversationId = uuidv4();
+      const now = new Date();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-projection-user',
+        endpoint: EModelEndpoint.agents,
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'projection-probe',
+            status: 'settled',
+            resolution: 'action_compensated',
+            checkpoint: {
+              threadId: conversationId,
+              checkpointNs: 'event-actor/projection-probe',
+            },
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(now.getTime() - 91 * 24 * 60 * 60_000),
+          },
+        ],
+      });
+      const projections: Array<Record<string, number> | undefined> = [];
+      const originalFind = Conversation.collection.find.bind(Conversation.collection);
+      const findSpy = jest
+        .spyOn(Conversation.collection, 'find')
+        .mockImplementation((filter, options) => {
+          projections.push(options?.projection);
+          return originalFind(filter, options);
+        });
+      try {
+        await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(1);
+      } finally {
+        findSpy.mockRestore();
+      }
+      expect(projections[0]).toEqual({ _id: 1, agentEventActorReconciliations: 1 });
     });
 
     it('retains an expired legacy receipt while its delivery handling is nonterminal', async () => {

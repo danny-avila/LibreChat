@@ -349,6 +349,7 @@ export const defaultAgentFormValues = {
   [Tools.web_search]: false,
   [Tools.memory]: false,
   stateful_code_environment: 'user' as const,
+  code_environment_id: undefined as string | null | undefined,
   category: 'general',
   support_contact: {
     name: '',
@@ -957,6 +958,10 @@ export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  /** Saved-agent owner when provider tool-call ids repeat across handoffs. */
+  agentId?: string;
+  /** Host run-step owner when one agent repeats a provider tool-call id. */
+  stepId?: string;
   workspaceChange?: WorkspaceChange;
   [Tools.memory]?: MemoryArtifact;
   [Tools.ui_resources]?: UIResource[];

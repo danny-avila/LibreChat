@@ -568,10 +568,32 @@ endpoints:
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:
   #     allowedEnvironments: ["user", "agent-user", "conversation"]
+  #     # Route an agent to an operator-managed Code API or to a Code API whose
+  #     # `remote-bridge` backend leases work to an outbound @librechat/code worker.
+  #     environments:
+  #       - id: managed-default
+  #         name: Managed Code API
+  #         type: managed
+  #         baseURL: https://code.example.com/v1
+  #         default: true
+  #       - id: engineering-vm
+  #         name: Engineering VM
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Enables the admin pairing API without placing the administrator
+  #         # secret in YAML or returning its environment-variable name to users.
+  #         owner: deployment
+  #         pairing:
+  #           workerId: engineering-vm
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
   #   # (optional) Trusted origin for internal event delivery. By default, LibreChat
   #   # uses its own bound listener; override only for an internal TLS/front-door route.
   #   eventDriven:
   #     # selfUrl: 'https://librechat.internal'
+  #   # (optional) Automatic conversational delivery for supported completed background tasks.
+  #   # Enabled by default; set false to keep background tools and subagents poll-only.
+  #   backgroundTasks:
+  #     completionWakeups: true
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.

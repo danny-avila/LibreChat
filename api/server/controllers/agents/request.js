@@ -30,7 +30,11 @@ const {
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
   isAgentEventRetentionActive,
-  executeAgentEventActor,
+  createAgentEventActorTurn,
+  createAgentEventActorDetachedActionLifecycle,
+  parseAgentEventActorDetachedCompletion,
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
   findAgentEventAppliedAction,
   createAgentEventActionRecorder,
   isHITLEnabled,
@@ -61,6 +65,12 @@ const {
   releaseAgentEventActorAction,
   hasAgentEventActorActionAdmission,
   getAgentEventActorReceipt,
+  getAgentEventActorDetachedAction,
+  reserveAgentEventActorDetachedAction,
+  markAgentEventActorDetachedActionRunning,
+  settleAgentEventActorDetachedAction,
+  claimAgentEventActorSuspension,
+  settleAgentEventActorSuspension,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -513,20 +523,30 @@ function sendSettledGeneration(
   conversationId,
   startupTelemetry,
   generationProtocolVersion,
+  generationCreatedAt,
 ) {
   startupTelemetry?.end('deduplicated');
   if (generationProtocolVersion < GENERATION_PROTOCOL_V2) {
     return sendGenerationJson(
       res,
       200,
-      { streamId, conversationId, status: 'resumed' },
+      {
+        streamId,
+        conversationId,
+        ...(generationCreatedAt != null && { generationCreatedAt }),
+        status: 'resumed',
+      },
       generationProtocolVersion,
     );
   }
   return sendGenerationJson(
     res,
     200,
-    { conversationId, status: 'settled' },
+    {
+      conversationId,
+      ...(generationCreatedAt != null && { generationCreatedAt }),
+      status: 'settled',
+    },
     generationProtocolVersion,
   );
 }
@@ -562,7 +582,7 @@ function rejectMissingTriggerParentMessageId(res, generationProtocolVersion) {
  */
 const ResumableAgentController = async (req, res, next, initializeClient, addTitle) => {
   const startupTelemetry = getAgentStartupTelemetry(req);
-  let generationProtocolVersion = negotiateNewGenerationProtocol(req, GenerationJobManager);
+  let generationProtocolVersion = negotiateNewGenerationProtocol(req);
   const {
     text,
     isRegenerate,
@@ -743,6 +763,55 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     req._isAgentTrigger === true &&
     !isNewConvo &&
     (parentMessageId !== Constants.NO_PARENT || isBoundEventContinuation);
+  const queuedTurnAdmissionSource = isTriggerContinuation
+    ? req.body?.agentContinuationAdmission
+    : undefined;
+  const hasQueuedTurnAdmissionSource = queuedTurnAdmissionSource != null;
+  const verifyQueuedTurnAdmission = async (generationId, generationCreatedAt) => {
+    if (!hasQueuedTurnAdmissionSource) {
+      return true;
+    }
+    if (
+      typeof clientRequestId !== 'string' ||
+      !Number.isSafeInteger(generationCreatedAt) ||
+      generationCreatedAt < 0
+    ) {
+      return false;
+    }
+    try {
+      const {
+        verifyAgentQueuedTurnExecutionAdmission,
+      } = require('~/server/services/Agents/triggers');
+      const confirmed = await verifyAgentQueuedTurnExecutionAdmission(queuedTurnAdmissionSource, {
+        userId,
+        ...(tenantId != null && { tenantId }),
+        conversationId,
+        clientRequestId,
+        generationId,
+        generationCreatedAt,
+      });
+      return confirmed === true;
+    } catch (error) {
+      logger.warn(
+        '[ResumableAgentController] Deduplicated queued-turn admission is not confirmed',
+        error,
+      );
+      return false;
+    }
+  };
+  const rejectUnconfirmedQueuedTurnAdmission = () => {
+    res.set('Retry-After', '1');
+    startupTelemetry?.end('deduplicated');
+    return sendGenerationJson(
+      res,
+      503,
+      {
+        code: 'SERVER_NOT_READY',
+        error: 'Queued turn execution is still being confirmed. Please retry shortly.',
+      },
+      generationProtocolVersion,
+    );
+  };
 
   if (
     await isUnpersistedPreliminaryParent({
@@ -932,6 +1001,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               ? GENERATION_PROTOCOL_V2
               : 1,
           );
+          if (
+            !(await verifyQueuedTurnAdmission(
+              existingLiveGeneration.streamId,
+              existingLiveGeneration.startedAt,
+            ))
+          ) {
+            return rejectUnconfirmedQueuedTurnAdmission();
+          }
           startupTelemetry?.end('deduplicated');
           return sendGenerationJson(
             res,
@@ -996,12 +1073,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // generation (usually fast completion + cleanup), never an abandoned
         // pre-create lease that may be taken over and billed again. There is no
         // attachable stream; the settled response refetches persisted history.
+        if (!(await verifyQueuedTurnAdmission(existingStreamId, claim.existing.startedAt))) {
+          return rejectUnconfirmedQueuedTurnAdmission();
+        }
         return sendSettledGeneration(
           res,
           existingStreamId,
           claim.existing.conversationId,
           startupTelemetry,
           generationProtocolVersion,
+          claim.existing.startedAt,
         );
       }
       if (!liveJob && isLegacyTokenlessClaim && claimAgeMs >= IDEMPOTENCY_STARTUP_GRACE_MS) {
@@ -1010,6 +1091,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
          * attach/refetch path: this covers fast completion without starting a
          * second billed generation, while an abandoned pre-create claim ages
          * out under the old server's bounded TTL. */
+        if (!(await verifyQueuedTurnAdmission(existingStreamId, claim.existing.startedAt))) {
+          return rejectUnconfirmedQueuedTurnAdmission();
+        }
         return sendSettledGeneration(
           res,
           existingStreamId,
@@ -1098,6 +1182,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           (startedAt != null && liveJob.createdAt !== startedAt) ||
           (liveClientRequestId != null && liveClientRequestId !== clientRequestId);
         if (replacedGeneration) {
+          if (!(await verifyQueuedTurnAdmission(existingStreamId, startedAt))) {
+            return rejectUnconfirmedQueuedTurnAdmission();
+          }
           // streamId === conversationId, so a later turn reuses the same route.
           // Never pair this stale POST's optimistic submission with that newer
           // job's SSE snapshot. If the replacement is still active, distinguish
@@ -1131,6 +1218,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             claim.existing.conversationId,
             startupTelemetry,
             generationProtocolVersion,
+            claim.existing.startedAt,
           );
         }
         if (liveClientRequestId == null && !isLegacyTokenlessClaim) {
@@ -1154,6 +1242,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           clientRequestId,
           streamId: existingStreamId,
         });
+        if (!(await verifyQueuedTurnAdmission(existingStreamId, liveJob.createdAt))) {
+          return rejectUnconfirmedQueuedTurnAdmission();
+        }
         startupTelemetry?.end('deduplicated');
         return sendGenerationJson(
           res,
@@ -1310,12 +1401,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
    * idempotency key that owns generation admission. Ignore mismatched or
    * direct-chat metadata rather than letting callers relabel another run. */
   const rawAgentEventDelivery = req.body?.agentEventDelivery;
+  const internalDetachedCompletion = parseAgentEventActorDetachedCompletion(
+    rawAgentEventDelivery?.internalCompletion,
+  );
+  const isInternalDetachedCompletion =
+    internalDetachedCompletion != null &&
+    rawAgentEventDelivery?.deliveryKey === clientRequestId &&
+    rawAgentEventDelivery?.event?.type === EVENT_ACTOR_DETACHED_COMPLETION_TYPE &&
+    rawAgentEventDelivery?.event?.source?.type === 'internal' &&
+    rawAgentEventDelivery?.event?.source?.id === EVENT_ACTOR_DETACHED_COMPLETION_SOURCE;
   const agentEventDelivery =
     isTriggerContinuation &&
     isBoundEventContinuation &&
     rawAgentEventDelivery != null &&
     typeof rawAgentEventDelivery === 'object' &&
-    rawAgentEventDelivery.deliveryKey === clientRequestId
+    (rawAgentEventDelivery.deliveryKey === clientRequestId || isInternalDetachedCompletion)
       ? rawAgentEventDelivery
       : undefined;
   req._agentEventTriggerProjection = getAgentEventTriggerProjection(agentEventDelivery);
@@ -1367,9 +1467,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
+          ...(internalDetachedCompletion == null
+            ? {}
+            : {
+                agentEventInvocationKey: internalDetachedCompletion.invocationId,
+                agentEventInvocationGenerationCreatedAt:
+                  internalDetachedCompletion.generationCreatedAt,
+              }),
           agentEventBindingId: boundEventBindingId,
           ...(agentEventDelivery.expectedAction != null && {
             agentEventExpectedAction: agentEventDelivery.expectedAction,
+            ...(GenerationJobManager.isRedis && {
+              agentEventDetachedActionProducerRequired: true,
+            }),
           }),
         }),
         ...(isRegenerate && { isRegenerate: true }),
@@ -1489,7 +1599,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         status: 409,
       });
     }
-
     acceptAgentStartupTelemetry(req, streamId);
     startupTelemetry?.mark('metadata_persisted');
     req._resumableStreamId = streamId;
@@ -1514,14 +1623,29 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       recoveredSteerCommitted = true;
     };
 
-    // Send JSON response IMMEDIATELY so client can connect to SSE stream
-    // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
-    sendGenerationJson(
-      res,
-      200,
-      { streamId, conversationId, generationCreatedAt: jobCreatedAt, status: 'started' },
-      generationProtocolVersion,
-    );
+    // Ordinary clients receive the stream id immediately so they can attach
+    // before tool loading emits events. Source-owned loopback work delays only
+    // until its provider invocation and Mongo receipt exist.
+    let generationStartResponseSent = false;
+    const sendGenerationStarted = () => {
+      if (generationStartResponseSent || res.headersSent) {
+        return;
+      }
+      generationStartResponseSent = true;
+      sendGenerationJson(
+        res,
+        200,
+        { streamId, conversationId, generationCreatedAt: jobCreatedAt, status: 'started' },
+        generationProtocolVersion,
+      );
+    };
+    /** Ordinary clients need the stream id before tool discovery. A queued
+     * source instead keeps its local loopback response open until the provider
+     * invocation exists, so an accepted HTTP result can never retire text that
+     * died between job creation and provider startup. */
+    if (!hasQueuedTurnAdmissionSource) {
+      sendGenerationStarted();
+    }
 
     await attachConversationCreatedAt(req, conversationId, conversationAnchorPromise).then(() =>
       startupTelemetry?.mark('conversation_resolved'),
@@ -1691,15 +1815,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const eventActorMayPause =
       isHITLEnabled(agentsConfig?.toolApproval) ||
       eventActorAgents.some(agentRequestsAskUserQuestion);
-    const expectedActionToolName = agentEventDelivery?.expectedAction?.toolName;
-    const eventActorActionMayDetach =
-      typeof expectedActionToolName === 'string' &&
-      eventActorAgents.some((agent) =>
-        (agent.backgroundToolNames ?? []).some(
-          (name) =>
-            name === expectedActionToolName || name.startsWith(`${expectedActionToolName}_mcp_`),
-        ),
-      );
     const turnExecutionPlan = resolveAgentTurnExecutionPlan({
       conversationId,
       parentMessageId,
@@ -1726,12 +1841,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
           : undefined,
       canPause: eventActorMayPause,
-      /** Protocol v2 is the existing homogeneous-fleet cutover. Keeping
-       * pause-capable producers on the legacy path under v1 prevents an old
-       * `/resume` replica from consuming a signed suspension it cannot claim. */
+      /** Old trusted producers can coexist during a direct rolling upgrade.
+       * Their immutable v1 request keeps pause-capable turns on the history
+       * adapter until every consumer understands durable suspensions. */
       durableEventActorSuspensions: generationProtocolVersion >= GENERATION_PROTOCOL_V2,
       checkpointerType: agentsConfig?.checkpointer?.type,
-      expectedActionMayDetach: eventActorActionMayDetach,
     });
 
     // Resolve title timing from the public agents endpoint first, then fall
@@ -1903,36 +2017,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const eventActorTenantId = req._agentEventBindingTenantId;
       let appliedEventActor;
       let eventActorPersistenceComplete = false;
-      let legacyEventActorTurnToken;
-      /** Closes the durable legacy-turn fence once this turn's history is
-       * persisted, clearing the token and advancing the epoch in one write. A
-       * failure here leaves the token SET, which keeps blocking forks until an
-       * explicit reconciliation proves the ambiguous turn safe to release. */
-      const sealLegacyEventActorTurn = async () => {
-        if (legacyEventActorTurnToken == null) {
-          return;
-        }
-        const token = legacyEventActorTurnToken;
-        legacyEventActorTurnToken = undefined;
-        try {
-          const sealed = await completeAgentEventActorLegacyTurn({
-            user: userId,
-            conversationId,
-            ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
-            token,
-          });
-          if (!sealed) {
-            logger.error(
-              `[event-actor] Legacy turn fence ${token} was not sealed; forks stay blocked pending reconciliation`,
-            );
-          }
-        } catch (sealError) {
-          logger.error(
-            `[event-actor] Failed to seal legacy turn fence ${token}; forks stay blocked pending reconciliation`,
-            sealError,
-          );
-        }
-      };
+      let eventActorTurn;
       const recordEventActorPersistenceFailure = async (error) => {
         if (appliedEventActor == null || eventActorPersistenceComplete) {
           return;
@@ -2061,108 +2146,267 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const eventActorActionRecorder = usesCheckpointStrategy
           ? createAgentEventActionRecorder(turnExecutionPlan.expectedAction)
           : undefined;
+        const actorInvocationId = internalDetachedCompletion?.invocationId ?? eventTaskId;
+        const eventActorDetachedAction =
+          usesCheckpointStrategy &&
+          turnExecutionPlan.expectedAction != null &&
+          turnExecutionPlan.binding != null
+            ? createAgentEventActorDetachedActionLifecycle(
+                {
+                  user: userId,
+                  ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+                  bindingId: turnExecutionPlan.binding.bindingId,
+                  conversationId,
+                  generationCreatedAt:
+                    internalDetachedCompletion?.generationCreatedAt ?? jobCreatedAt,
+                  turnCreatedAt: jobCreatedAt,
+                  invocationId: actorInvocationId,
+                  expectedAction: turnExecutionPlan.expectedAction,
+                },
+                {
+                  reserveAgentEventActorDetachedAction,
+                  markAgentEventActorDetachedActionRunning,
+                  settleAgentEventActorDetachedAction,
+                  storeMode: () => GenerationJobManager.detachedAgentEventActionStoreMode,
+                  persistTerminalEvidence: async (evidence) => {
+                    const persisted =
+                      await GenerationJobManager.persistAgentEventDetachedTerminalEvidence(
+                        streamId,
+                        jobCreatedAt,
+                        evidence,
+                      );
+                    if (!persisted) {
+                      throw new Error(
+                        'Detached Event Actor terminal retry evidence could not be staged',
+                      );
+                    }
+                  },
+                  /** Retry immediately when the generation already reached its
+                   * terminal host-action fence. The same durable marker is
+                   * recovered across replicas and restarts by the existing
+                   * GenerationJobManager sweep. */
+                  onTerminal: async () => {
+                    await GenerationJobManager.retryTerminalHostAction(streamId, jobCreatedAt);
+                  },
+                },
+              )
+            : undefined;
+        req._agentEventDetachedActionLifecycle = eventActorDetachedAction;
         if (eventActorActionRecorder != null) {
           req._agentEventActionObserver = eventActorActionRecorder.observeToolEnd;
         }
-        const sendPromise = usesCheckpointStrategy
-          ? executeAgentEventActor(
+        let internalDetachedAction;
+        let internalDetachedSuspension;
+        if (usesCheckpointStrategy && isInternalDetachedCompletion) {
+          const snapshot = await getAgentEventActorSnapshot({
+            user: userId,
+            conversationId,
+            ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+          });
+          internalDetachedSuspension = snapshot?.suspension;
+          internalDetachedAction = await getAgentEventActorDetachedAction({
+            deliveryKey: internalDetachedCompletion.invocationId,
+            user: userId,
+            ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+            bindingId: turnExecutionPlan.binding.bindingId,
+            conversationId,
+            generationCreatedAt: internalDetachedCompletion.generationCreatedAt,
+          });
+          if (
+            internalDetachedSuspension?.kind !== 'internal_completion' ||
+            internalDetachedSuspension.status !== 'pending' ||
+            internalDetachedSuspension.actionId !== internalDetachedCompletion.taskId ||
+            internalDetachedSuspension.suspension.invocation.invocationId !==
+              internalDetachedCompletion.invocationId ||
+            internalDetachedAction == null ||
+            internalDetachedAction.taskId !== internalDetachedCompletion.taskId ||
+            internalDetachedAction.idempotencyKey !== internalDetachedCompletion.idempotencyKey ||
+            !['succeeded', 'failed', 'cancelled'].includes(internalDetachedAction.status)
+          ) {
+            throw Object.assign(
+              new Error('The detached Event Actor completion is no longer current'),
+              { code: 'EVENT_ACTOR_NOT_READY', status: 409 },
+            );
+          }
+        }
+        const readAppliedEventAction = () =>
+          eventActorActionRecorder.read() ??
+          (internalDetachedAction?.status === 'succeeded'
+            ? {
+                toolName: internalDetachedAction.toolName,
+                toolCallId: internalDetachedAction.toolCallId,
+              }
+            : undefined) ??
+          findAgentEventAppliedAction(
+            turnExecutionPlan.expectedAction,
+            client?.run?.getRunSteps?.() ?? [],
+            client?.contentParts ?? [],
+          );
+        const actorDependencies = {
+          getSnapshot: getAgentEventActorSnapshot,
+          commitState: commitAgentEventActorState,
+          storeSuspension: storeAgentEventActorSuspension,
+          claimSuspension: claimAgentEventActorSuspension,
+          settleSuspension: settleAgentEventActorSuspension,
+          recordReconciliation: recordAgentEventActorReconciliation,
+          resolveReconciliation: resolveAgentEventActorReconciliation,
+          admitAction: admitAgentEventActorAction,
+          releaseAction: releaseAgentEventActorAction,
+          hasActionAdmission: hasAgentEventActorActionAdmission,
+          getReceipt: getAgentEventActorReceipt,
+          clearReconciliation: clearAgentEventActorReconciliation,
+        };
+        let checkpointTurn;
+        if (usesCheckpointStrategy && isInternalDetachedCompletion) {
+          checkpointTurn = {
+            kind: 'resume',
+            input: {
+              user: userId,
+              ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+              conversationId,
+              bindingId: turnExecutionPlan.binding.bindingId,
+              suspension: internalDetachedSuspension.suspension,
+              resumeAttemptId: clientRequestId,
+              resumeValue: {
+                type: EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+                taskId: internalDetachedAction.taskId,
+                status: internalDetachedAction.status,
+                ...(internalDetachedAction.result == null
+                  ? {}
+                  : { result: internalDetachedAction.result }),
+                ...(internalDetachedAction.error == null
+                  ? {}
+                  : { error: internalDetachedAction.error }),
+              },
+              signal: job.abortController.signal,
+              checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+              expectedAction: turnExecutionPlan.expectedAction,
+              resume: async (actorContext) => {
+                client.checkpointNamespace = actorContext.checkpointNamespace;
+                client.eventActorCheckpointId = actorContext.checkpointId;
+                client.eventActorInvocationId = actorContext.invocationId;
+                client.eventActorContinuation = actorContext.continuation;
+                return client.sendMessage(text, messageOptions);
+              },
+              readAppliedAction: readAppliedEventAction,
+              readSuspension: () =>
+                eventActorDetachedAction?.readSuspension() ?? client.readEventActorSuspension(),
+              readResultContext: () => client.getEventActorContext(),
+            },
+          };
+        } else if (usesCheckpointStrategy) {
+          checkpointTurn = {
+            kind: 'execute',
+            input: {
+              user: userId,
+              ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+              conversationId,
+              bindingId: turnExecutionPlan.binding.bindingId,
+              invocationId: actorInvocationId,
+              event: agentEventDelivery.event,
+              expectedAction: turnExecutionPlan.expectedAction,
+              signal: job.abortController.signal,
+              checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+              resolveContext: (state) => client.prepareEventActorContext(state),
+              readResultContext: () => client.getEventActorContext(),
+              invoke: async (actorContext) => {
+                client.checkpointNamespace = actorContext.checkpointNamespace;
+                client.eventActorCheckpointId = actorContext.checkpointId;
+                client.eventActorInvocationId = actorContext.invocationId;
+                client.eventActorContinuation = actorContext.continuation;
+                return client.sendMessage(text, messageOptions);
+              },
+              readAppliedAction: readAppliedEventAction,
+              readSuspension: () =>
+                eventActorDetachedAction?.readSuspension() ?? client.readEventActorSuspension(),
+            },
+          };
+        }
+        const isBoundEventActor =
+          agentEventDelivery?.event != null && req._agentEventBindingParentConversationId != null;
+        eventActorTurn = isBoundEventActor
+          ? createAgentEventActorTurn(
               {
-                user: userId,
-                ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
-                conversationId,
-                bindingId: turnExecutionPlan.binding.bindingId,
-                invocationId: eventTaskId,
-                event: agentEventDelivery.event,
-                expectedAction: turnExecutionPlan.expectedAction,
-                signal: job.abortController.signal,
-                checkpointer: req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
-                resolveContext: (state) => client.prepareEventActorContext(state),
-                readResultContext: () => client.getEventActorContext(),
-                invoke: async (actorContext) => {
-                  client.checkpointNamespace = actorContext.checkpointNamespace;
-                  client.eventActorCheckpointId = actorContext.checkpointId;
-                  client.eventActorInvocationId = actorContext.invocationId;
-                  client.eventActorContinuation = actorContext.continuation;
-                  return client.sendMessage(text, messageOptions);
+                strategy: turnExecutionPlan.strategy,
+                ...(checkpointTurn == null ? {} : { checkpoint: checkpointTurn }),
+                history: {
+                  owner: {
+                    user: userId,
+                    conversationId,
+                    ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
+                  },
+                  persistToken: (token) =>
+                    GenerationJobManager.updateMetadata(
+                      streamId,
+                      { agentEventLegacyTurnToken: token },
+                      jobCreatedAt,
+                    ),
+                  invoke: () => client.sendMessage(text, messageOptions),
                 },
-                readAppliedAction: () =>
-                  eventActorActionRecorder.read() ??
-                  findAgentEventAppliedAction(
-                    turnExecutionPlan.expectedAction,
-                    client?.run?.getRunSteps?.() ?? [],
-                    client?.contentParts ?? [],
-                  ),
-                readSuspension: () => client.readEventActorSuspension(),
               },
               {
-                getSnapshot: getAgentEventActorSnapshot,
-                commitState: commitAgentEventActorState,
-                storeSuspension: storeAgentEventActorSuspension,
-                recordReconciliation: recordAgentEventActorReconciliation,
-                resolveReconciliation: resolveAgentEventActorReconciliation,
-                admitAction: admitAgentEventActorAction,
-                releaseAction: releaseAgentEventActorAction,
-                hasActionAdmission: hasAgentEventActorActionAdmission,
-                getReceipt: getAgentEventActorReceipt,
-                clearReconciliation: clearAgentEventActorReconciliation,
+                actor: actorDependencies,
+                history: {
+                  begin: beginAgentEventActorLegacyTurn,
+                  complete: completeAgentEventActorLegacyTurn,
+                },
               },
-            ).then(async ({ value, execution }) => {
+            )
+          : undefined;
+        const sendPromise = eventActorTurn
+          ? eventActorTurn.run().then(async ({ adapter, value, execution }) => {
+              if (adapter !== 'checkpoint') {
+                return value;
+              }
               if (execution.status === 'applied') {
                 appliedEventActor = {
-                  invocationId: eventTaskId,
+                  invocationId: actorInvocationId,
                   actionAdmitted: typeof admitAgentEventActorAction === 'function',
                   checkpoint: execution.head.checkpoint,
                   action: execution.result.action,
                 };
               } else if (execution.status === 'suspended') {
-                if (!(await client.publishStagedApproval(execution.suspension))) {
+                const suspensionKind = eventActorDetachedAction?.readSuspension()?.kind;
+                if (suspensionKind === 'internal_completion') {
+                  await GenerationJobManager.updateMetadata(
+                    streamId,
+                    {
+                      agentEventSuspension: {
+                        version: execution.suspension.version,
+                        suspensionId: execution.suspension.suspensionId,
+                        attempt: execution.suspension.attempt,
+                      },
+                    },
+                    jobCreatedAt,
+                  );
+                } else if (!(await client.publishStagedApproval(execution.suspension))) {
                   throw new Error('Event actor suspension could not be projected to its job');
                 }
               }
               logger.info('[event-actor] Bound child event completed', {
                 conversationId,
-                invocationId: eventTaskId,
+                invocationId: actorInvocationId,
                 status: execution.status,
                 continuation: execution.continuation,
               });
               return value;
             })
-          : (async () => {
-              if (
-                agentEventDelivery?.event != null &&
-                req._agentEventBindingParentConversationId != null
-              ) {
-                const token = crypto.randomUUID();
-                /** Open the fence BEFORE execution so a fork can neither run
-                 * nor commit while this turn's messages are not yet durable. */
-                const legacyTurnOwner = {
-                  user: userId,
-                  conversationId,
-                  ...(eventActorTenantId == null ? {} : { tenantId: eventActorTenantId }),
-                };
-                const acquiredLegacyTurn = await beginAgentEventActorLegacyTurn({
-                  ...legacyTurnOwner,
-                  token,
-                });
-                if (!acquiredLegacyTurn) {
-                  throw Object.assign(new Error('The event actor is temporarily unavailable'), {
-                    code: 'EVENT_ACTOR_NOT_READY',
-                    status: 409,
-                  });
-                }
-                /** The same exact token must survive a HITL pause. Retain local
-                 * ownership before the Redis write so a metadata failure can
-                 * still seal this token after its durable error turn is saved;
-                 * provider execution starts only after metadata persists. */
-                legacyEventActorTurnToken = token;
-                await GenerationJobManager.updateMetadata(
-                  streamId,
-                  { agentEventLegacyTurnToken: token },
-                  jobCreatedAt,
-                );
-              }
-              return client.sendMessage(text, messageOptions);
-            })();
+          : client.sendMessage(text, messageOptions);
+
+        if (hasQueuedTurnAdmissionSource) {
+          const {
+            settleAgentQueuedTurnExecutionAdmission,
+          } = require('~/server/services/Agents/triggers');
+          await settleAgentQueuedTurnExecutionAdmission(queuedTurnAdmissionSource, {
+            userId,
+            ...(tenantId != null && { tenantId }),
+            conversationId,
+            clientRequestId,
+            generationId: streamId,
+            generationCreatedAt: jobCreatedAt,
+          });
+          sendGenerationStarted();
+        }
 
         if (titleEligible && titleTiming === 'immediate') {
           immediateTitlePromise = addTitle(req, {
@@ -2506,7 +2750,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             throw new Error('Applied event actor history barrier could not be durably recorded');
           }
         }
-        await sealLegacyEventActorTurn();
+        await eventActorTurn?.historyPersisted();
         eventActorPersistenceComplete = true;
 
         // If the user stopped this turn — or an empty preempt boundary truncated
@@ -2646,6 +2890,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
         acceptsTitleEvents = false;
         resolveConvoReady();
+        if (!res.headersSent) {
+          sendGenerationJson(
+            res,
+            500,
+            { error: error.message || 'Failed to start generation' },
+            generationProtocolVersion,
+          );
+        }
         try {
           await recordEventActorPersistenceFailure(error);
         } catch (reconciliationError) {
@@ -2736,7 +2988,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
          * fails. Time cannot prove whether an external action occurred, so an
          * ambiguous fence remains fail-closed pending explicit reconciliation. */
         if (legacyEventActorErrorHistoryDurable) {
-          await sealLegacyEventActorTurn();
+          await eventActorTurn?.historyPersisted();
         }
 
         if (ownsScheduledFailure && !scheduleTerminalOutcomeRecorded) {
@@ -2765,6 +3017,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
         );
         startupTelemetry?.end('error', err);
+        if (!res.headersSent) {
+          sendGenerationJson(
+            res,
+            500,
+            { error: err.message || 'Failed to start generation' },
+            generationProtocolVersion,
+          );
+        }
         let errorFinalized = false;
         if (!pausePersistenceFailed) {
           errorFinalized =
