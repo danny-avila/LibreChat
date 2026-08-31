@@ -46,7 +46,11 @@ const TEXT_RECOVERABLE_MIME_TYPES: RegExp[] = [
   /^audio\//,
   /^application\/(json|xml|sql|yaml|csv|typescript|x-sh|vnd\.coffeescript)$/,
   /^application\/(pdf|msword)$/,
-  /^application\/vnd\.(openxmlformats-officedocument|oasis\.opendocument)\./,
+  /* Only the formats the built-in document parser handles. Presentations and graphics
+   * are absent from documentParserMimeTypes, so on a deployment without OCR they would
+   * fall through to the permissive text matcher and be decoded as ZIP bytes. */
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet)$/,
+  /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet)$/,
   /^application\/(vnd\.ms-excel|x-msexcel|msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls)$/,
   /^message\/rfc822$/,
 ];
