@@ -50,6 +50,10 @@ jest.mock('@librechat/api', () => {
     }),
     logAxiosError: jest.fn(({ message }) => message),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    getCodeExecutionBaseUrl: jest.fn((profile) =>
+      profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
+    ),
+    CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     createAxiosInstance: jest.fn(() => mockAxios),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
@@ -60,6 +64,7 @@ const {
   codeServerHttpAgent,
   codeServerHttpsAgent,
   getCodeApiAuthHeaders,
+  getCodeExecutionBaseUrl,
 } = require('@librechat/api');
 const { deleteCodeEnvFile, getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./crud');
 
@@ -105,6 +110,22 @@ describe('Code CRUD', () => {
       );
       expect(callConfig.responseType).toBe('stream');
       expect(callConfig.timeout).toBe(15000);
+    });
+
+    it('uses the trusted stateful route and fail-closed profile header', async () => {
+      mockAxios.mockResolvedValue({ data: Readable.from(['chunk']) });
+
+      await getCodeOutputDownloadStream('session-1/file-1', userIdentity, undefined, {
+        baseUrl: 'https://code-stateful.example.com',
+        executionProfile: 'stateful',
+      });
+
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://code-stateful.example.com/download/session-1/file-1?kind=user&id=user-123',
+          headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+        }),
+      );
     });
 
     it('forwards Code API auth headers when a request is provided', async () => {
@@ -188,6 +209,102 @@ describe('Code CRUD', () => {
           timeout: 15000,
         }),
       );
+    });
+
+    it('deletes a stateful artifact from its originating profile', async () => {
+      mockAxios.mockResolvedValue({ status: 204 });
+      const statefulFile = {
+        metadata: {
+          codeEnvRef: {
+            ...file.metadata.codeEnvRef,
+            executionProfile: 'stateful',
+          },
+        },
+      };
+
+      await deleteCodeEnvFile(req, statefulFile);
+
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://code-stateful.example.com/sessions/session-1/objects/file-1?kind=agent&id=agent-abc',
+          headers: expect.objectContaining({
+            'X-CodeAPI-Expected-Profile': 'stateful',
+          }),
+        }),
+      );
+    });
+
+    it('deletes every profile-local object retained for a shared file record', async () => {
+      mockAxios.mockResolvedValue({ status: 204 });
+      const dualProfileFile = {
+        metadata: {
+          codeEnvRef: file.metadata.codeEnvRef,
+          codeEnvRefs: {
+            default: file.metadata.codeEnvRef,
+            stateful: {
+              ...file.metadata.codeEnvRef,
+              storage_session_id: 'stateful-session',
+              file_id: 'stateful-file',
+              executionProfile: 'stateful',
+            },
+          },
+        },
+      };
+
+      await deleteCodeEnvFile(req, dualProfileFile);
+
+      expect(mockAxios).toHaveBeenCalledTimes(2);
+      expect(mockAxios).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          url: expect.stringContaining('/sessions/session-1/objects/file-1'),
+          headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'default' }),
+        }),
+      );
+      expect(mockAxios).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          url: expect.stringContaining('/sessions/stateful-session/objects/stateful-file'),
+          headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+        }),
+      );
+    });
+
+    it('skips remote cleanup instead of falling back when a historical route is unmapped', async () => {
+      const historicalRoute = 'stateful:0123456789abcdef0123456789abcdef';
+      const historicalFile = {
+        metadata: {
+          codeEnvRefs: {
+            [historicalRoute]: {
+              ...file.metadata.codeEnvRef,
+              executionProfile: 'stateful',
+              executionRouteKey: historicalRoute,
+            },
+          },
+        },
+      };
+
+      await expect(deleteCodeEnvFile(req, historicalFile)).resolves.toBeUndefined();
+
+      expect(mockAxios).not.toHaveBeenCalled();
+    });
+
+    it('skips legacy stateful cleanup after its endpoint is retired', async () => {
+      getCodeExecutionBaseUrl.mockImplementationOnce(() => {
+        throw new Error('LIBRECHAT_CODE_BASEURL_STATEFUL is not configured');
+      });
+      const legacyStatefulFile = {
+        metadata: {
+          codeEnvRef: {
+            ...file.metadata.codeEnvRef,
+            executionProfile: 'stateful',
+          },
+        },
+      };
+
+      await expect(deleteCodeEnvFile(req, legacyStatefulFile)).resolves.toBeUndefined();
+
+      expect(mockAxios).not.toHaveBeenCalled();
     });
 
     it.each([404, 405])(
@@ -315,6 +432,26 @@ describe('Code CRUD', () => {
       const callConfig = mockAxios.post.mock.calls[0][2];
       expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(baseUploadParams.req);
       expect(callConfig.headers.Authorization).toBe('Bearer codeapi-token');
+    });
+
+    it('routes uploads through the trusted stateful endpoint and profile header', async () => {
+      mockAxios.post.mockResolvedValue({
+        data: {
+          message: 'success',
+          storage_session_id: 'sess-1',
+          files: [{ fileId: 'fid-1', filename: 'data.csv' }],
+        },
+      });
+
+      await uploadCodeEnvFile({
+        ...baseUploadParams,
+        codeApiBaseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      });
+
+      const [url, , callConfig] = mockAxios.post.mock.calls[0];
+      expect(url).toBe('https://stateful-code.example.com/upload');
+      expect(callConfig.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
     });
 
     /* Phase C / option α (codeapi #1455): the upload wire carries the

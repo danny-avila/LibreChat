@@ -23,13 +23,18 @@ import type {
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
+import {
+  extractSSEErrorMessage,
+  isOAuthAuthenticationError,
+  isStandaloneSseConflict,
+} from './errors';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { reserveMCPToolsChangedRevision } from './toolsChanged';
-import { isOAuthServer, sanitizeUrlForLogging } from './utils';
-import { isOAuthAuthenticationError } from './errors';
 import { runOutsideTracing } from '~/utils/tracing';
+import { mediaTypeEssence } from '~/utils/headers';
 import { isAddressAllowed } from '~/auth/domain';
 import { withTimeout } from '~/utils/promise';
+import { isOAuthServer } from './utils';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
@@ -312,7 +317,7 @@ async function guardMCPStreamableHTTPResponse(
   }
 
   const contentType = response.headers.get('content-type') ?? '';
-  const isEventStream = contentType.toLowerCase().includes('text/event-stream');
+  const isEventStream = mediaTypeEssence(contentType) === 'text/event-stream';
   const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits();
   const canEmitFallbackSSEError = isEventStream && maxLineBytes > 0;
   if (!isEventStream && maxResponseBytes === 0) {
@@ -339,9 +344,7 @@ async function guardMCPStreamableHTTPResponse(
     });
     logger.warn(`${context.logPrefix} MCP streamable HTTP response blocked: ${reason}`, {
       method: context.method,
-      url: sanitizeUrlForLogging(context.url),
       status: response.status,
-      contentType,
       maxResponseBytes,
       maxLineBytes,
       totalBytes,
@@ -965,6 +968,7 @@ const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
  */
 const SDK_SSE_STREAM_DISCONNECTED = 'SSE stream disconnected';
 const SDK_SSE_RECONNECT_FAILED = 'Failed to reconnect SSE stream';
+const SDK_SSE_RETRIES_EXHAUSTED = 'Maximum reconnection attempts';
 
 /**
  * Headers for SSE connections.
@@ -979,144 +983,6 @@ const SDK_SSE_RECONNECT_FAILED = 'Failed to reconnect SSE stream';
 const SSE_REQUEST_HEADERS = {
   'Cache-Control': 'no-cache',
 };
-
-/**
- * Extracts a meaningful error message from SSE transport errors.
- * The MCP SDK's SSEClientTransport can produce "SSE error: undefined" when the
- * underlying eventsource library encounters connection issues without a specific message.
- *
- * @returns Object containing:
- *   - message: Human-readable error description
- *   - code: HTTP status code if available
- *   - isProxyHint: Whether this error suggests proxy misconfiguration
- *   - isTransient: Whether this is likely a transient error that will auto-reconnect
- */
-function extractSSEErrorMessage(error: unknown): {
-  message: string;
-  code?: number;
-  isProxyHint: boolean;
-  isTransient: boolean;
-} {
-  if (!error || typeof error !== 'object') {
-    return {
-      message: 'Unknown SSE transport error',
-      isProxyHint: true,
-      isTransient: true,
-    };
-  }
-
-  const errorObj = error as { message?: string; code?: number; event?: unknown };
-  const rawMessage = errorObj.message ?? '';
-  const code = errorObj.code;
-
-  /**
-   * Handle the common "SSE error: undefined" case.
-   * This typically occurs when:
-   * 1. A reverse proxy buffers the SSE stream (proxy issue)
-   * 2. The server closes an idle connection (normal SSE behavior)
-   * 3. Network interruption without specific error details
-   *
-   * In all cases, the eventsource library will attempt to reconnect automatically.
-   */
-  if (rawMessage === 'SSE error: undefined' || rawMessage === 'undefined' || !rawMessage) {
-    return {
-      message:
-        'SSE connection closed. This can occur due to: (1) idle connection timeout (normal), ' +
-        '(2) reverse proxy buffering (check proxy_buffering config), or (3) network interruption.',
-      code,
-      isProxyHint: true,
-      isTransient: true,
-    };
-  }
-
-  /**
-   * Check for timeout patterns. Use case-insensitive matching for common timeout error codes:
-   * - ETIMEDOUT: TCP connection timeout
-   * - ESOCKETTIMEDOUT: Socket timeout
-   * - "timed out" / "timeout": Generic timeout messages
-   */
-  const lowerMessage = rawMessage.toLowerCase();
-  if (
-    rawMessage.includes('ETIMEDOUT') ||
-    rawMessage.includes('ESOCKETTIMEDOUT') ||
-    lowerMessage.includes('timed out') ||
-    lowerMessage.includes('timeout after') ||
-    lowerMessage.includes('request timeout')
-  ) {
-    return {
-      message: `SSE connection timed out: ${rawMessage}. If behind a reverse proxy, increase proxy_read_timeout.`,
-      code,
-      isProxyHint: true,
-      isTransient: true,
-    };
-  }
-
-  // Connection reset is often transient (server restart, proxy reload)
-  if (rawMessage.includes('ECONNRESET')) {
-    return {
-      message: `SSE connection reset: ${rawMessage}. The server or proxy may have restarted.`,
-      code,
-      isProxyHint: false,
-      isTransient: true,
-    };
-  }
-
-  // Connection refused is more serious - server may be down
-  if (rawMessage.includes('ECONNREFUSED')) {
-    return {
-      message: `SSE connection refused: ${rawMessage}. Verify the MCP server is running and accessible.`,
-      code,
-      isProxyHint: false,
-      isTransient: false,
-    };
-  }
-
-  // DNS failure is usually a configuration issue, not transient
-  if (rawMessage.includes('ENOTFOUND') || rawMessage.includes('getaddrinfo')) {
-    return {
-      message: `SSE DNS resolution failed: ${rawMessage}. Check the server URL is correct.`,
-      code,
-      isProxyHint: false,
-      isTransient: false,
-    };
-  }
-
-  // Check for HTTP status codes in the message
-  const statusMatch = rawMessage.match(/\b(4\d{2}|5\d{2})\b/);
-  if (statusMatch) {
-    const statusCode = parseInt(statusMatch[1], 10);
-    // 5xx errors are often transient, 4xx are usually not
-    const isServerError = statusCode >= 500 && statusCode < 600;
-    return {
-      message: rawMessage,
-      code: statusCode,
-      isProxyHint: statusCode === 502 || statusCode === 503 || statusCode === 504,
-      isTransient: isServerError,
-    };
-  }
-
-  /**
-   * "fetch failed" is a generic undici TypeError that occurs when an in-flight HTTP request
-   * is aborted (e.g. after an MCP protocol-level timeout fires). The transport itself is still
-   * functional — only the individual request was lost — so treat this as transient.
-   */
-  if (rawMessage === 'fetch failed') {
-    return {
-      message:
-        'fetch failed (request aborted, likely after a timeout — connection may still be usable)',
-      code,
-      isProxyHint: false,
-      isTransient: true,
-    };
-  }
-
-  return {
-    message: rawMessage,
-    code,
-    isProxyHint: false,
-    isTransient: false,
-  };
-}
 
 interface MCPConnectionParams {
   serverName: string;
@@ -1134,6 +1000,11 @@ type MCPListToolsResult = Awaited<ReturnType<Client['listTools']>>;
 export interface MCPToolsSnapshot {
   tools: MCPListToolsResult['tools'];
   complete: boolean;
+  /** Ordering ticket reserved before this snapshot's `tools/list`; app scope only. */
+  publicationRevision?: string;
+  /** Set when reserving that ticket failed, which is retryable — unlike a scope that simply
+   * has no ordering to reserve, where the ticket is absent because none was ever needed. */
+  orderingUnavailable?: boolean;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -1148,6 +1019,8 @@ export class MCPConnection extends EventEmitter {
   private isReconnecting = false;
   private isInitializing = false;
   private reconnectAttempts = 0;
+  /** Set once per transport, so only the first of a conflict's repeat reports escalates. */
+  private reportedStandaloneSseConflict = false;
   private agents: Dispatcher[] = [];
   private readonly userId?: string;
   private lastPingTime: number;
@@ -1172,6 +1045,7 @@ export class MCPConnection extends EventEmitter {
     epoch: number;
     generation: number;
     tools: MCPListToolsResult['tools'];
+    publicationRevision?: string;
   } | null = null;
 
   private hasConnected = false;
@@ -1191,7 +1065,7 @@ export class MCPConnection extends EventEmitter {
 
   public static clearCooldown(serverName: string): void {
     MCPConnection.circuitBreakers.delete(serverName);
-    logger.debug(`[MCP][${serverName}] Circuit breaker state cleared`);
+    logger.debug('[MCP] Circuit breaker state cleared');
   }
 
   private getCircuitBreaker(): CircuitBreakerState {
@@ -1317,7 +1191,7 @@ export class MCPConnection extends EventEmitter {
   /** Helper to generate consistent log prefixes */
   private getLogPrefix(): string {
     const userPart = this.userId ? `[User: ${this.userId}]` : '';
-    return `[MCP]${userPart}[${this.serverName}]`;
+    return `[MCP]${userPart}`;
   }
 
   /**
@@ -1496,9 +1370,7 @@ export class MCPConnection extends EventEmitter {
          * an SSRF amplification primitive.
          */
         if (isSSRFTarget(targetUrl.hostname) || (await resolveHostnameSSRF(targetUrl.hostname))) {
-          logger.warn(
-            `[MCP] Blocked redirect to private/reserved address: ${sanitizeUrlForLogging(targetUrl)}`,
-          );
+          logger.warn('[MCP] Blocked redirect to private or reserved address');
           return response;
         }
 
@@ -1551,9 +1423,8 @@ export class MCPConnection extends EventEmitter {
     };
   }
 
-  private emitError(error: unknown, errorContext: string): void {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`${this.getLogPrefix()} ${errorContext}: ${errorMessage}`);
+  private emitError(_error: unknown, errorContext: string): void {
+    logger.error(`${this.getLogPrefix()} ${errorContext}`);
   }
 
   private async constructTransport(options: t.MCPOptions): Promise<Transport> {
@@ -1623,9 +1494,7 @@ export class MCPConnection extends EventEmitter {
           }
           this.url = options.url;
           const url = new URL(options.url);
-          logger.info(
-            `${this.getLogPrefix()} Creating SSE transport: ${sanitizeUrlForLogging(url)}`,
-          );
+          logger.info(`${this.getLogPrefix()} Creating SSE transport`);
           const abortController = new AbortController();
 
           /** Add OAuth token to headers if available */
@@ -1726,9 +1595,7 @@ export class MCPConnection extends EventEmitter {
           }
           this.url = options.url;
           const url = new URL(options.url);
-          logger.info(
-            `${this.getLogPrefix()} Creating streamable-http transport: ${sanitizeUrlForLogging(url)}`,
-          );
+          logger.info(`${this.getLogPrefix()} Creating streamable-http transport`);
           const abortController = new AbortController();
 
           /** Add OAuth token to headers if available */
@@ -1819,8 +1686,8 @@ export class MCPConnection extends EventEmitter {
       }
 
       if (state === 'error' && !this.isReconnecting && !this.isInitializing) {
-        this.handleReconnection().catch((error) => {
-          logger.error(`${this.getLogPrefix()} Reconnection handler failed:`, error);
+        this.handleReconnection().catch(() => {
+          logger.error(`${this.getLogPrefix()} Reconnection handler failed`);
         });
       }
     });
@@ -1868,7 +1735,7 @@ export class MCPConnection extends EventEmitter {
           this.reconnectAttempts = 0;
           return;
         } catch (error) {
-          logger.error(`${this.getLogPrefix()} Reconnection attempt failed:`, error);
+          logger.error(`${this.getLogPrefix()} Reconnection attempt failed`);
 
           // Stop immediately if rate limited - retrying will only make it worse
           if (this.isRateLimitError(error)) {
@@ -1983,25 +1850,9 @@ export class MCPConnection extends EventEmitter {
     const refreshEpoch = this.toolListRefreshEpoch;
     while (this.handledToolListChangeGeneration < this.toolListChangeGeneration) {
       const targetGeneration = this.toolListChangeGeneration;
-      let publicationRevision: string | undefined;
-      try {
-        publicationRevision = await reserveMCPToolsChangedRevision({
-          serverName: this.serverName,
-          serverConfig: this.options,
-          userId: this.userId,
-        });
-      } catch (error) {
-        this.toolListRefreshFailures++;
-        logger.error(
-          `${this.getLogPrefix()} Failed to reserve tool-list publication order:`,
-          error,
-        );
-        this.scheduleToolListRefreshRetry();
-        return;
-      }
-      const snapshot =
+      const snapshot: MCPToolsSnapshot =
         this.client.getServerCapabilities()?.tools == null
-          ? { tools: [], complete: true }
+          ? { tools: [], complete: true, ...(await this.reserveToolsPublicationRevision()) }
           : await this.fetchToolsSnapshot();
       if (
         this.toolListRefreshEpoch !== refreshEpoch ||
@@ -2010,7 +1861,8 @@ export class MCPConnection extends EventEmitter {
       ) {
         return;
       }
-      if (!snapshot.complete) {
+      /** Publishing unordered would drop this catalog silently; retry until it can be ordered. */
+      if (!snapshot.complete || snapshot.orderingUnavailable) {
         this.toolListRefreshFailures++;
         this.scheduleToolListRefreshRetry();
         return;
@@ -2022,8 +1874,9 @@ export class MCPConnection extends EventEmitter {
         epoch: refreshEpoch,
         generation: targetGeneration,
         tools: snapshot.tools,
+        publicationRevision: snapshot.publicationRevision,
       };
-      this.dispatchToolsChanged(snapshot.tools, publicationRevision);
+      this.dispatchToolsChanged(snapshot.tools, snapshot.publicationRevision);
     }
   }
 
@@ -2065,14 +1918,20 @@ export class MCPConnection extends EventEmitter {
           try {
             await this.terminateStreamableSession();
             await this.client.close();
-          } catch (error) {
-            logger.warn(`${this.getLogPrefix()} Error closing connection:`, error);
+          } catch {
+            logger.warn(`${this.getLogPrefix()} Error closing connection`);
           }
           this.transport = null;
           await this.closeAgents();
         }
 
         this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
+        /** `dispose()` can land while the transport is still being constructed — it finds nothing
+         *  to close and returns, so without this check the attempt would go on to connect and
+         *  leave a live connection on a disposed object. Ownership of teardown is ours here. */
+        if (await this.abandonIfDisposed()) {
+          return;
+        }
         this.patchTransportSend();
 
         const connectTimeout = this.options.initTimeout ?? DEFAULT_INIT_TIMEOUT;
@@ -2084,6 +1943,9 @@ export class MCPConnection extends EventEmitter {
           ),
         );
 
+        if (await this.abandonIfDisposed()) {
+          return;
+        }
         this.setupTransportOnMessageHandler();
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
@@ -2121,9 +1983,9 @@ export class MCPConnection extends EventEmitter {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
           this.oauthRequired = true;
           const serverUrl = this.url;
-          logger.debug(
-            `${this.getLogPrefix()} Server URL for OAuth: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
-          );
+          logger.debug(`${this.getLogPrefix()} OAuth server URL state`, {
+            hasServerUrl: Boolean(serverUrl),
+          });
 
           const oauthTimeout = mcpConfig.OAUTH_HANDLING_TIMEOUT;
           /** Promise that will resolve when OAuth is handled */
@@ -2185,10 +2047,10 @@ export class MCPConnection extends EventEmitter {
               `${this.getLogPrefix()} OAuth handled successfully, connection will be retried`,
             );
             return;
-          } catch (oauthError) {
+          } catch {
             // OAuth failed or timed out
             this.oauthRequired = false;
-            logger.error(`${this.getLogPrefix()} OAuth handling failed:`, oauthError);
+            logger.error(`${this.getLogPrefix()} OAuth handling failed`);
             // Re-throw the original authentication error
             throw error;
           }
@@ -2204,6 +2066,33 @@ export class MCPConnection extends EventEmitter {
     })();
 
     return this.connectPromise;
+  }
+
+  /**
+   * Tears down a transport this attempt created after the connection was already disposed.
+   * Returns whether the caller should abandon the rest of the connect sequence.
+   */
+  private async abandonIfDisposed(): Promise<boolean> {
+    if (!this.isDisposed) {
+      return false;
+    }
+    logger.debug(`${this.getLogPrefix()} Disposed mid-connect; discarding the transport it opened`);
+    const transport = this.transport;
+    this.transport = null;
+    /** Closing the client only closes a transport the client has already adopted, which it has
+     *  not when disposal beat `client.connect()`. Close the transport itself first, or the
+     *  session this attempt opened outlives the connection that owned it. */
+    try {
+      await transport?.close();
+    } catch {
+      // Ignore cleanup errors
+    }
+    try {
+      await this.client.close();
+    } catch {
+      // Ignore cleanup errors
+    }
+    return true;
   }
 
   private patchTransportSend(): void {
@@ -2258,12 +2147,14 @@ export class MCPConnection extends EventEmitter {
         throw new Error('Connection not established');
       }
     } catch (error) {
-      logger.error(`${this.getLogPrefix()} Connection failed:`, error);
+      logger.error(`${this.getLogPrefix()} Connection failed`);
       throw error;
     }
   }
 
   private setupTransportErrorHandlers(transport: Transport): void {
+    this.reportedStandaloneSseConflict = false;
+
     transport.onerror = (error) => {
       const rawMessage =
         error && typeof error === 'object' ? ((error as { message?: string }).message ?? '') : '';
@@ -2281,7 +2172,42 @@ export class MCPConnection extends EventEmitter {
         rawMessage.startsWith(SDK_SSE_STREAM_DISCONNECTED) ||
         rawMessage.startsWith(SDK_SSE_RECONNECT_FAILED)
       ) {
-        logger.debug(`${this.getLogPrefix()} SDK SSE stream recovery in progress: ${rawMessage}`);
+        logger.debug(`${this.getLogPrefix()} SDK SSE stream recovery in progress`);
+        return;
+      }
+
+      /**
+       * A stale server-side stream can only be cleared by rebuilding the session, so escalate
+       * on the first report and treat the rest as the echo they are: the SDK keeps retrying the
+       * `GET` on its own schedule, and each of those retries conflicts for the same reason while
+       * the rebuild triggered here is already running.
+       */
+      if (isStandaloneSseConflict(error)) {
+        if (this.reportedStandaloneSseConflict) {
+          logger.debug(
+            `${this.getLogPrefix()} SSE stream still conflicting; session rebuild already underway`,
+          );
+          return;
+        }
+
+        this.reportedStandaloneSseConflict = true;
+        logger.warn(
+          `${this.getLogPrefix()} SSE stream conflicted with a stale server-side stream for this ` +
+            `session (409). Rebuilding the session; no action needed.`,
+        );
+        this.emit('connectionChange', 'error');
+        return;
+      }
+
+      /**
+       * The SDK announcing it is out of retries normally has to fall through so our reconnection
+       * takes over, but adds nothing once a conflict rebuild is already running — that rebuild is
+       * what exhausted the retries, and it is the recovery.
+       */
+      if (this.reportedStandaloneSseConflict && rawMessage.startsWith(SDK_SSE_RETRIES_EXHAUSTED)) {
+        logger.debug(
+          `${this.getLogPrefix()} SDK reconnection budget exhausted; session rebuild already underway`,
+        );
         return;
       }
 
@@ -2340,31 +2266,11 @@ export class MCPConnection extends EventEmitter {
         errorContext.hint = 'Check Nginx/proxy configuration for SSE endpoints';
       }
 
-      // Extract additional debug info from SseError if available
-      if (error && typeof error === 'object') {
-        const sseError = error as { event?: unknown; stack?: string };
-
-        // Include the original eventsource event for debugging
-        if (sseError.event && typeof sseError.event === 'object') {
-          const event = sseError.event as { code?: number; message?: string; type?: string };
-          errorContext.eventDetails = {
-            type: event.type,
-            code: event.code,
-            message: event.message,
-          };
-        }
-
-        // Include stack trace if available
-        if (sseError.stack) {
-          errorContext.stack = sseError.stack;
-        }
-      }
-
       const errorLabel = isTransient
         ? 'Transport error (transient, will reconnect)'
         : 'Transport error (may require manual intervention)';
 
-      logger.error(`${this.getLogPrefix()} ${errorLabel}: ${errorMessage}`, errorContext);
+      logger.error(`${this.getLogPrefix()} ${errorLabel}`, errorContext);
 
       this.emit('connectionChange', 'error');
     };
@@ -2373,8 +2279,8 @@ export class MCPConnection extends EventEmitter {
   private async closeAgents(force = false): Promise<void> {
     const logPrefix = this.getLogPrefix();
     const closing = this.agents.map((agent) =>
-      (force ? agent.destroy() : agent.close()).catch((err: unknown) => {
-        logger.debug(`${logPrefix} Agent close error (non-fatal):`, err);
+      (force ? agent.destroy() : agent.close()).catch(() => {
+        logger.debug(`${logPrefix} Agent close error (non-fatal)`);
       }),
     );
     this.agents = [];
@@ -2412,8 +2318,8 @@ export class MCPConnection extends EventEmitter {
         SESSION_TERMINATION_TIMEOUT,
         `Streamable HTTP session termination timed out after ${SESSION_TERMINATION_TIMEOUT}ms`,
       );
-    } catch (error) {
-      logger.debug(`${this.getLogPrefix()} Error terminating streamable HTTP session:`, error);
+    } catch {
+      logger.debug(`${this.getLogPrefix()} Error terminating streamable HTTP session`);
     }
   }
 
@@ -2478,16 +2384,41 @@ export class MCPConnection extends EventEmitter {
    * Fetches a bounded tool snapshot while preserving whether every requested page succeeded.
    * Notification refreshes use `complete` to avoid replacing a known-good cache with an empty or
    * partial list after a transient `tools/list` failure.
+   *
+   * @param deadlineMs Absolute epoch-ms cap for a caller working to a fixed budget. Pagination
+   * stops at whichever comes first, this or `TOOLS_LIST_TIMEOUT_MS`, and the partial result is
+   * returned as incomplete so it is never published as an authoritative catalog.
+   * @param signal Cancels the in-flight `tools/list` request itself, not just the wait for it —
+   * the SDK raises an abort from `request()` and the failed page ends pagination gracefully.
    */
-  public async fetchToolsSnapshot(): Promise<MCPToolsSnapshot> {
+  public async fetchToolsSnapshot(
+    deadlineMs?: number,
+    signal?: AbortSignal,
+  ): Promise<MCPToolsSnapshot> {
     const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
     const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
     const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;
-    const deadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
+    /** A spent budget ends the fetch before the reservation below spends cache round trips on an
+     *  ordering this incomplete result can never publish under. */
+    if ((deadlineMs != null && Date.now() >= deadlineMs) || signal?.aborted === true) {
+      this.warnToolsListBudgetExceeded('time', 0);
+      return { tools: [], complete: false };
+    }
+    /** Reserved before the first page so the resulting catalog can never outrank one published
+     * from a `tools/list` that started later. Every app-level publisher reads its ordering off
+     * the snapshot it received, which is the only way to know when the data was actually read. */
+    const ordering = await this.reserveToolsPublicationRevision();
+    const budgetDeadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
+    const deadline = deadlineMs != null ? Math.min(budgetDeadline, deadlineMs) : budgetDeadline;
     const allTools: MCPListToolsResult['tools'] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     let totalBytes = 0;
+    const snapshot = (complete: boolean): MCPToolsSnapshot => ({
+      tools: allTools,
+      complete,
+      ...ordering,
+    });
 
     for (let page = 1; page <= maxPages; page++) {
       const exhaustedBudget = getToolsListBudgetExceededReason(
@@ -2498,31 +2429,31 @@ export class MCPConnection extends EventEmitter {
       );
       if (exhaustedBudget != null) {
         this.warnToolsListBudgetExceeded(exhaustedBudget, allTools.length);
-        return { tools: allTools, complete: true };
+        return snapshot(true);
       }
 
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) {
         this.warnToolsListBudgetExceeded('time', allTools.length);
-        return { tools: allTools, complete: false };
+        return snapshot(false);
       }
 
-      const result = await this.listToolsPage(cursor, remainingMs);
+      const result = await this.listToolsPage(cursor, remainingMs, signal);
       if (result == null) {
         /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
-        return { tools: allTools, complete: false };
+        return snapshot(false);
       }
 
       for (const tool of result.tools) {
         if (allTools.length >= maxTools) {
           this.warnToolsListBudgetExceeded('tool count', allTools.length);
-          return { tools: allTools, complete: true };
+          return snapshot(true);
         }
 
         const toolBytes = getApproximateToolBytes(tool);
         if (totalBytes + toolBytes > maxBytes) {
           this.warnToolsListBudgetExceeded('size', allTools.length);
-          return { tools: allTools, complete: true };
+          return snapshot(true);
         }
 
         allTools.push(tool);
@@ -2531,7 +2462,7 @@ export class MCPConnection extends EventEmitter {
 
       const { nextCursor } = result;
       if (nextCursor == null) {
-        return { tools: allTools, complete: true };
+        return snapshot(true);
       }
 
       const nextPageBudget = getToolsListBudgetExceededReason(
@@ -2542,14 +2473,14 @@ export class MCPConnection extends EventEmitter {
       );
       if (nextPageBudget != null) {
         this.warnToolsListBudgetExceeded(nextPageBudget, allTools.length);
-        return { tools: allTools, complete: true };
+        return snapshot(true);
       }
 
       if (seenCursors.has(nextCursor)) {
         logger.warn(
           `${this.getLogPrefix()} MCP server returned a repeated tools/list cursor; stopping pagination after ${page} page(s).`,
         );
-        return { tools: allTools, complete: false };
+        return snapshot(false);
       }
 
       seenCursors.add(nextCursor);
@@ -2559,18 +2490,48 @@ export class MCPConnection extends EventEmitter {
     logger.warn(
       `${this.getLogPrefix()} Reached the tools/list pagination limit of ${maxPages} page(s); some tools may be omitted. Set MCP_TOOLS_LIST_MAX_PAGES higher if this server legitimately exposes more.`,
     );
-    return { tools: allTools, complete: true };
+    return snapshot(true);
+  }
+
+  /**
+   * Allocates app-catalog ordering. A reservation failure must not fail the request that asked
+   * for the tools, so it is reported on the snapshot for publishers to retry on instead.
+   */
+  public async reserveToolsPublicationRevision(): Promise<{
+    publicationRevision?: string;
+    orderingUnavailable?: boolean;
+  }> {
+    try {
+      return {
+        publicationRevision: await reserveMCPToolsChangedRevision({
+          serverName: this.serverName,
+          serverConfig: this.options,
+          userId: this.userId,
+        }),
+      };
+    } catch (error) {
+      logger.warn(`${this.getLogPrefix()} Failed to reserve tool-list publication order:`, error);
+      return { orderingUnavailable: true };
+    }
   }
 
   /**
    * Returns a complete snapshot that cannot precede a concurrent `list_changed` refresh.
    * If the notification refresh cannot complete, the caller receives an incomplete snapshot
    * instead of publishing a request result that may already be stale.
+   *
+   * @param deadlineMs Absolute epoch-ms cap; see `fetchToolsSnapshot`. It also bounds the wait
+   * for a concurrent refresh, so a caller on a budget is never held by another caller's fetch.
+   * @param signal Cancels this caller's own `tools/list` requests; see `fetchToolsSnapshot`. A
+   * concurrent refresh is shared work and is never aborted on one caller's behalf.
    */
-  public async fetchOrderedToolsSnapshot(): Promise<MCPToolsSnapshot> {
+  public async fetchOrderedToolsSnapshot(
+    deadlineMs?: number,
+    signal?: AbortSignal,
+  ): Promise<MCPToolsSnapshot> {
     const startEpoch = this.toolListRefreshEpoch;
     const startGeneration = this.toolListChangeGeneration;
-    const snapshot = await this.fetchToolsSnapshot();
+    const snapshot = await this.fetchToolsSnapshot(deadlineMs, signal);
 
     if (
       startEpoch === this.toolListRefreshEpoch &&
@@ -2583,12 +2544,24 @@ export class MCPConnection extends EventEmitter {
       startEpoch === this.toolListRefreshEpoch &&
       this.handledToolListChangeGeneration < this.toolListChangeGeneration
     ) {
+      if ((deadlineMs != null && Date.now() >= deadlineMs) || signal?.aborted === true) {
+        break;
+      }
       this.startToolListRefresh();
       const refresh = this.toolListRefreshPromise;
       if (!refresh) {
         break;
       }
-      await refresh;
+      /** The refresh runs on the connection's own budget, not the caller's, so a refresh already
+       *  in flight can outlast this deadline — and a cancelled caller must stop waiting even
+       *  though the shared refresh itself is never aborted on one caller's behalf. Stop waiting
+       *  rather than adopting its budget; it keeps running for whoever else wants it and this
+       *  caller reports an incomplete read. */
+      if (deadlineMs == null && signal == null) {
+        await refresh;
+      } else if (!(await this.settlesBefore(refresh, deadlineMs, signal))) {
+        break;
+      }
       if (this.toolListRefreshRetryTimer) {
         break;
       }
@@ -2600,10 +2573,47 @@ export class MCPConnection extends EventEmitter {
       published.generation === this.toolListChangeGeneration &&
       this.handledToolListChangeGeneration === this.toolListChangeGeneration
     ) {
-      return { tools: published.tools, complete: true };
+      /** Ordering travels with the data: this is the refresh's catalog, so it must publish under
+       * the refresh's revision rather than the one reserved for the superseded fetch above. */
+      return {
+        tools: published.tools,
+        complete: true,
+        publicationRevision: published.publicationRevision,
+      };
     }
 
     return { tools: [], complete: false };
+  }
+
+  /** Waits for `promise` only until `deadlineMs` or an abort, reporting whether it settled first. */
+  private async settlesBefore(
+    promise: Promise<unknown>,
+    deadlineMs?: number,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (signal?.aborted === true) {
+      return false;
+    }
+    let timer: NodeJS.Timeout | undefined;
+    let onAbort: (() => void) | undefined;
+    const interrupted = new Promise<false>((resolve) => {
+      if (deadlineMs != null) {
+        timer = setTimeout(() => resolve(false), Math.max(0, deadlineMs - Date.now()));
+        timer.unref?.();
+      }
+      if (signal != null) {
+        onAbort = () => resolve(false);
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+    try {
+      return await Promise.race([promise.then(() => true), interrupted]);
+    } finally {
+      clearTimeout(timer);
+      if (onAbort != null) {
+        signal?.removeEventListener('abort', onAbort);
+      }
+    }
   }
 
   private warnToolsListBudgetExceeded(reason: string, toolCount: number): void {
@@ -2616,11 +2626,13 @@ export class MCPConnection extends EventEmitter {
   private async listToolsPage(
     cursor: string | undefined,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<MCPListToolsResult | null> {
     try {
       return await this.client.listTools(cursor != null ? { cursor } : undefined, {
         timeout: timeoutMs,
         maxTotalTimeout: timeoutMs,
+        signal,
       });
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
@@ -2638,7 +2650,12 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  public async isConnected(): Promise<boolean> {
+  /**
+   * @param signal Aborts the in-flight verification request (ping or its fallback) so a caller on
+   * a budget is not held for the probe's own SDK timeout. An aborted probe reports `false` for
+   * this caller only; it never mutates connection state, so a shared connection stays usable.
+   */
+  public async isConnected(signal?: AbortSignal): Promise<boolean> {
     // First check if we're in a connected state
     if (this.connectionState !== 'connected') {
       return false;
@@ -2649,14 +2666,26 @@ export class MCPConnection extends EventEmitter {
     if (now - this.lastConnectionCheckAt < mcpConfig.CONNECTION_CHECK_TTL) {
       return true;
     }
+    const previousCheckAt = this.lastConnectionCheckAt;
     this.lastConnectionCheckAt = now;
     this.lastConnectionCheckError = undefined;
+    /** An aborted probe answered nothing: restore the TTL stamp so the next caller probes for
+     *  real, instead of a dead shared connection reading as healthy for the whole TTL window. */
+    const probeAborted = (): boolean => signal?.aborted === true;
+    const abandonProbe = (): false => {
+      this.lastConnectionCheckAt = previousCheckAt;
+      logger.debug(`${this.getLogPrefix()} Health probe aborted by caller signal`);
+      return false;
+    };
 
     try {
       // Try ping first as it's the lightest check
-      await this.client.ping();
+      await this.client.ping({ signal });
       return this.connectionState === 'connected';
     } catch (error) {
+      if (probeAborted()) {
+        return abandonProbe();
+      }
       // Check if the error is because ping is not supported (method not found)
       const pingUnsupported =
         error instanceof Error &&
@@ -2668,7 +2697,7 @@ export class MCPConnection extends EventEmitter {
 
       if (!pingUnsupported) {
         this.lastConnectionCheckError = error;
-        logger.error(`${this.getLogPrefix()} Ping failed:`, error);
+        logger.error(`${this.getLogPrefix()} Ping failed`);
         return false;
       }
 
@@ -2683,13 +2712,13 @@ export class MCPConnection extends EventEmitter {
 
         // If we have capabilities, try calling a supported method to verify connection
         if (capabilities?.tools) {
-          await this.client.listTools();
+          await this.client.listTools(undefined, { signal });
           return this.connectionState === 'connected';
         } else if (capabilities?.resources) {
-          await this.client.listResources();
+          await this.client.listResources(undefined, { signal });
           return this.connectionState === 'connected';
         } else if (capabilities?.prompts) {
-          await this.client.listPrompts();
+          await this.client.listPrompts(undefined, { signal });
           return this.connectionState === 'connected';
         } else {
           // No capabilities to test, but we're in connected state and initialization succeeded
@@ -2699,9 +2728,12 @@ export class MCPConnection extends EventEmitter {
           return this.connectionState === 'connected';
         }
       } catch (capabilityError) {
+        if (probeAborted()) {
+          return abandonProbe();
+        }
         // If capability check fails, the connection is likely broken
         this.lastConnectionCheckError = capabilityError;
-        logger.error(`${this.getLogPrefix()} Connection verification failed:`, capabilityError);
+        logger.error(`${this.getLogPrefix()} Connection verification failed`);
         return false;
       }
     }

@@ -14,12 +14,14 @@ import { useLocalize, useExportConversation } from '~/hooks';
 import { normalizeExportFilename } from '~/utils';
 
 const TYPE_OPTIONS = [
-  { value: 'screenshot', label: 'screenshot (.png)' },
-  { value: 'text', label: 'text (.txt)' },
   { value: 'markdown', label: 'markdown (.md)' },
+  { value: 'text', label: 'text (.txt)' },
   { value: 'json', label: 'json (.json)' },
   { value: 'csv', label: 'csv (.csv)' },
+  { value: 'screenshot', label: 'screenshot (.png)' },
 ];
+
+const DEFAULT_TYPE = 'markdown';
 
 export default function ExportModal({
   open,
@@ -37,7 +39,7 @@ export default function ExportModal({
   const localize = useLocalize();
 
   const [filename, setFileName] = useState('');
-  const [type, setType] = useState<string>('screenshot');
+  const [type, setType] = useState<string>(DEFAULT_TYPE);
 
   const [includeOptions, setIncludeOptions] = useState<boolean | 'indeterminate'>(true);
   const [exportBranches, setExportBranches] = useState<boolean | 'indeterminate'>(false);
@@ -51,24 +53,21 @@ export default function ExportModal({
 
   useEffect(() => {
     setFileName(filenamify(String(conversation?.title ?? 'file')));
-    setType('screenshot');
+    setType(DEFAULT_TYPE);
     setIncludeOptions(true);
     setExportBranches(false);
     setRecursive(true);
   }, [conversation?.title, open]);
 
   const handleTypeChange = useCallback((newType: string) => {
-    const branches = newType === 'json' || newType === 'csv' || newType === 'webpage';
+    const branches = newType === 'json' || newType === 'csv';
     const options = newType !== 'csv' && newType !== 'screenshot';
     setExportBranches(branches);
     setIncludeOptions(options);
     setType(newType);
   }, []);
 
-  const exportBranchesSupport = useMemo(
-    () => type === 'json' || type === 'csv' || type === 'webpage',
-    [type],
-  );
+  const exportBranchesSupport = useMemo(() => type === 'json' || type === 'csv', [type]);
   const exportOptionsSupport = useMemo(() => type !== 'csv' && type !== 'screenshot', [type]);
 
   const { exportConversation } = useExportConversation({
@@ -108,6 +107,7 @@ export default function ExportModal({
                   value={type}
                   onChange={handleTypeChange}
                   options={TYPE_OPTIONS}
+                  sizeClasses="z-50"
                   className="z-50"
                   portal={false}
                 />

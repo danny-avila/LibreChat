@@ -7,12 +7,10 @@ import { RedisJobStore } from '../implementations/RedisJobStore';
 
 describe('Redis generation protocol rollout bridge', () => {
   const keyPrefix = `Protocol-Rollout-${process.pid}-${Date.now()}:`;
-  const originalProtocol = process.env.GENERATION_PROTOCOL_VERSION;
   let redis: RedisTestClient;
   let store: RedisJobStore;
 
   beforeAll(async () => {
-    delete process.env.GENERATION_PROTOCOL_VERSION;
     redis = createRedisTestClient(keyPrefix);
     await redis.connect();
     store = new RedisJobStore(redis);
@@ -26,17 +24,12 @@ describe('Redis generation protocol rollout bridge', () => {
   afterAll(async () => {
     await store.destroy();
     await redis.quit();
-    if (originalProtocol == null) {
-      delete process.env.GENERATION_PROTOCOL_VERSION;
-    } else {
-      process.env.GENERATION_PROTOCOL_VERSION = originalProtocol;
-    }
   });
 
-  test('Redis defaults legacy jobs to v1 and isolates checkpoints only for v2', async () => {
-    const legacy = await store.createJob('redis-protocol-v1', 'user-1');
-    const current = await store.createJob('redis-protocol-v2', 'user-1', undefined, undefined, {
-      generationProtocolVersion: 2,
+  test('Redis defaults new jobs to v2 while explicit v1 remains compatible', async () => {
+    const current = await store.createJob('redis-protocol-v2', 'user-1');
+    const legacy = await store.createJob('redis-protocol-v1', 'user-1', undefined, undefined, {
+      generationProtocolVersion: 1,
     });
 
     expect(legacy.generationProtocolVersion).toBe(1);
@@ -135,7 +128,7 @@ describe('Redis generation protocol rollout bridge', () => {
       undefined,
       undefined,
       undefined,
-      { text: leased.text, fileIds: [] },
+      { text: leased.text, fileIds: [], quotes: [] },
     );
 
     const downgraded = await store.claimParkedSteersDetailed(streamId, 'user-1', undefined, 1);
@@ -191,7 +184,7 @@ describe('Redis generation protocol rollout bridge', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'legacy words', fileIds: [] },
+        { text: 'legacy words', fileIds: [], quotes: [] },
       ),
     ).rejects.toMatchObject({ code: 'RECOVERY_PAYLOAD_MISMATCH' });
   });

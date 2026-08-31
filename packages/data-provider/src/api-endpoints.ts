@@ -42,6 +42,7 @@ const buildQuery = (params: Record<string, unknown>): string => {
 
 export const health = () => `${BASE_URL}/health`;
 export const user = () => `${BASE_URL}/api/user`;
+export const userPreferences = () => `${user()}/preferences`;
 
 export const balance = () => `${BASE_URL}/api/balance`;
 
@@ -115,12 +116,30 @@ export const conversations = (params: q.ConversationListParams) => {
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
+export const parentSubagents = (parentConversationId: string) =>
+  `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents`;
+
+export const subagentThread = (
+  parentConversationId: string,
+  threadId: string,
+  taskId?: string,
+  cursor?: string,
+) => {
+  const endpoint = `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}`;
+  if (taskId != null) return `${endpoint}?taskId=${encodeURIComponent(taskId)}`;
+  return cursor == null ? endpoint : `${endpoint}?cursor=${encodeURIComponent(cursor)}`;
+};
+
+export const subagentControl = (parentConversationId: string, threadId: string) =>
+  `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}/control`;
+
 export const genTitle = (conversationId: string) =>
   `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
 
 export const updateConversation = () => `${conversationsRoot}/update`;
 
 export const archiveConversation = () => `${conversationsRoot}/archive`;
+export const archiveAllConversations = () => `${conversationsRoot}/archive/all`;
 export const pinConversation = () => `${conversationsRoot}/pin`;
 
 export const deleteConversation = () => `${conversationsRoot}`;
@@ -294,6 +313,22 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
 
 export const activeJobs = () => `${BASE_URL}/api/agents/chat/active`;
 
+const agentQueuedTurnsRoot = `${BASE_URL}/api/agents/chat/queued-turns`;
+export const agentQueuedTurns = () => agentQueuedTurnsRoot;
+export const agentQueuedTurnsByConversation = (
+  conversationId: string,
+  clientRequestIds: string[] = [],
+) => {
+  const uniqueIds = Array.from(new Set(clientRequestIds)).slice(0, 100);
+  const knownIds =
+    uniqueIds.length > 0
+      ? `&${uniqueIds.map((id) => `clientRequestIds=${encodeURIComponent(id)}`).join('&')}`
+      : '';
+  return `${agentQueuedTurnsRoot}?conversationId=${encodeURIComponent(conversationId)}${knownIds}`;
+};
+export const agentQueuedTurn = (queuedTurnId: string) =>
+  `${agentQueuedTurnsRoot}/${encodeURIComponent(queuedTurnId)}`;
+
 export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,
   servers: `${BASE_URL}/api/mcp/servers`,
@@ -390,6 +425,11 @@ export const getCategories = () => `${BASE_URL}/api/categories`;
 
 export const getAllPromptGroups = () => `${prompts()}/all`;
 
+/* Scheduled chats */
+export const schedules = () => `${BASE_URL}/api/schedules`;
+export const schedule = (id: string) => `${schedules()}/${encodeURIComponent(id)}`;
+export const runSchedule = (id: string) => `${schedule(id)}/run`;
+
 /* Skills */
 export const skills = () => `${BASE_URL}/api/skills`;
 export const importSkill = () => `${skills()}/import`;
@@ -418,6 +458,9 @@ export const skillFiles = (id: string) => `${getSkill(id)}/files`;
 export const skillFile = (id: string, relativePath: string) =>
   `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
 
+export const insights = () => `${BASE_URL}/api/admin/insights`;
+export const insightsAccess = () => `${insights()}/access`;
+
 export const adminSkillsSync = () => `${BASE_URL}/api/admin/skills/sync`;
 export const adminSkillsSyncStatus = () => `${adminSkillsSync()}/status`;
 export const adminSkillsSyncRun = () => `${adminSkillsSync()}/run`;
@@ -443,6 +486,8 @@ export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
 /* Langfuse connection (admin) */
 export const adminLangfuseConnection = () => `${BASE_URL}/api/admin/langfuse/connection`;
 export const adminLangfuseConnectionTest = () => `${adminLangfuseConnection()}/test`;
+export const adminLangfuseSessionLink = (conversationId: string) =>
+  `${adminLangfuseConnection()}/session/${encodeURIComponent(conversationId)}`;
 
 /* Tool favorites (starred marketplace items) */
 export const toolFavorites = () => `${BASE_URL}/api/user/settings/favorites/tools`;
@@ -498,6 +543,8 @@ export const verifyTwoFactorTemp = () => `${BASE_URL}/api/auth/2fa/verify-temp`;
 export const memories = () => `${BASE_URL}/api/memories`;
 export const memory = (key: string, agentId?: string) =>
   `${memories()}/${encodeURIComponent(key)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
+export const memoryById = (id: string, agentId?: string) =>
+  `${memories()}/id/${encodeURIComponent(id)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {

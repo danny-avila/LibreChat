@@ -35,8 +35,14 @@ jest.mock('../../Endpoints', () => ({
   useGetStartupConfig: jest.fn(() => ({ data: undefined })),
 }));
 
+import { useQuery } from '@tanstack/react-query';
 import { request } from 'librechat-data-provider';
-import { fetchStreamStatus, genTitleQueryKey, queueTitleGeneration } from '../queries';
+import {
+  fetchStreamStatus,
+  genTitleQueryKey,
+  queueTitleGeneration,
+  useActiveJobs,
+} from '../queries';
 
 describe('fetchStreamStatus generation protocol advertisement', () => {
   it('sends v2 in both the query and header', async () => {
@@ -60,6 +66,34 @@ function makeAxiosError(status: number): Error {
   err.response = { status };
   return err;
 }
+
+describe('useActiveJobs focus behaviour', () => {
+  it('refetches on focus unconditionally rather than only when stale', () => {
+    (useQuery as jest.Mock).mockClear();
+
+    useActiveJobs();
+
+    const options = (useQuery as jest.Mock).mock.calls[0][0];
+    /**
+     * A run another client starts inside the `staleTime` window is invisible to
+     * a plain `true`, which only refetches stale queries — and the interval is
+     * off while nothing is listed, so nothing else would come back for it.
+     * Returning to a tab is exactly when a pane needs to know its history moved.
+     */
+    expect(options.refetchOnWindowFocus).toBe('always');
+    expect(options.staleTime).toBe(5_000);
+  });
+
+  it('polls only while something is listed', () => {
+    (useQuery as jest.Mock).mockClear();
+
+    useActiveJobs();
+
+    const options = (useQuery as jest.Mock).mock.calls[0][0];
+    expect(options.refetchInterval({ activeJobIds: ['convo-1'] })).toBe(5_000);
+    expect(options.refetchInterval({ activeJobIds: [] })).toBe(false);
+  });
+});
 
 describe('genTitleQueryKey', () => {
   it('returns a two-element tuple with the conversationId', () => {

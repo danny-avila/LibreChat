@@ -4,12 +4,15 @@ import type { TMessageProps } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-type TSiblingSwitchProps = Pick<TMessageProps, 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'>;
+type TSiblingSwitchProps = Pick<TMessageProps, 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'> & {
+  className?: string;
+};
 
 export default function SiblingSwitch({
   siblingIdx,
   siblingCount,
   setSiblingIdx,
+  className,
 }: TSiblingSwitchProps) {
   const localize = useLocalize();
 
@@ -30,13 +33,16 @@ export default function SiblingSwitch({
   const buttonStyle = cn(
     'hover-button h-auto rounded-lg p-1.5 text-text-secondary-alt',
     'hover:text-text-primary hover:bg-surface-hover',
-    'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
+    'group-hover:visible group-focus-visible:visible group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:visible group-[.final-completion]:visible',
     'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
   );
 
   return siblingCount > 1 ? (
     <nav
-      className="visible flex items-center justify-center gap-2 self-center pt-0 text-xs"
+      className={cn(
+        'visible flex items-center justify-center gap-2 self-center pt-0 text-xs',
+        className,
+      )}
       aria-label={localize('com_ui_sibling_navigation')}
     >
       <Button

@@ -1,6 +1,6 @@
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { ServerRequest } from '~/types';
 import type { TokenCountFn } from '~/utils/text';
+import type { ServerRequest } from '~/types';
 import { countTokens } from '~/utils/tokenizer';
 import { extractFileContext } from '~/files';
 
@@ -11,6 +11,10 @@ type FileWithId = {
 export type AgentContextAttachmentCarrier<TFile extends FileWithId = IMongoFile> = {
   id?: string | null;
   agentContextAttachments?: TFile[] | null;
+  subagentAgentConfigs?: AgentContextAttachmentCarrier<TFile>[] | null;
+  subagentGraphConfigs?: Array<{
+    memberConfigs?: AgentContextAttachmentCarrier<TFile>[] | null;
+  }> | null;
 };
 
 export type AgentContextAttachmentsByAgentId<TFile extends FileWithId = IMongoFile> =
@@ -35,15 +39,22 @@ export function buildAgentContextAttachmentsByAgentId<TFile extends FileWithId>(
   configs: Iterable<AgentContextAttachmentCarrier<TFile> | null | undefined>,
 ): Map<string, TFile[]> {
   const attachmentsByAgentId = new Map<string, TFile[]>();
+  const visited = new Set<string>();
+  const pending = [...configs];
 
-  for (const config of configs) {
-    if (!config?.id || !Array.isArray(config.agentContextAttachments)) {
+  for (let index = 0; index < pending.length; index++) {
+    const config = pending[index];
+    if (!config?.id || visited.has(config.id)) {
       continue;
     }
-    if (config.agentContextAttachments.length === 0) {
-      continue;
+    visited.add(config.id);
+    if (config.agentContextAttachments?.length) {
+      attachmentsByAgentId.set(config.id, config.agentContextAttachments);
     }
-    attachmentsByAgentId.set(config.id, config.agentContextAttachments);
+    pending.push(...(config.subagentAgentConfigs ?? []));
+    for (const graph of config.subagentGraphConfigs ?? []) {
+      pending.push(...(graph.memberConfigs ?? []));
+    }
   }
 
   return attachmentsByAgentId;

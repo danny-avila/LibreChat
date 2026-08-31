@@ -1,11 +1,18 @@
 export {
   createSteerDrainHook,
   createSteerPreemptBoundaryHook,
+  createSteerTerminalContinuationHook,
   createSteerPreemptPoll,
   isSteeringSupported,
   isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
 } from './runtime';
-export type { SteerDrainHookOptions, SteerMediaResult } from './runtime';
+export type {
+  SteerDrainHookOptions,
+  SteerMediaResult,
+  TerminalSteerHook,
+  TerminalSteerHookInput,
+} from './runtime';
 export {
   handleSteerRequest,
   handleSteerCancel,
@@ -21,8 +28,8 @@ export type {
   SteerFileFetcher,
   SteerRequestResult,
 } from './request';
-export { buildSteerMedia, stampSteerPartMedia } from './media';
-export type { SteerMediaClient, StampedSteerMedia } from './media';
+export { buildSteerMedia, collectSteerStampTargets, stampSteerPartMedia } from './media';
+export type { SteerMediaClient, SteerStampTarget, StampedSteerMedia } from './media';
 export { createSteerIndexOffsetHandlers } from './offset';
 export type { SteerOffsetState } from './offset';
 export { toSteerFileRef } from './refs';

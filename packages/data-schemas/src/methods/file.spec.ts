@@ -86,6 +86,38 @@ describe('File Methods', () => {
       expect(file?.file_id).toBe(fileId);
       expect(file?.expiresAt).toBeUndefined();
     });
+
+    it('persists independent Code API pointers for both execution profiles', async () => {
+      const defaultRef = {
+        kind: 'user' as const,
+        id: 'user-1',
+        storage_session_id: 'default-session',
+        file_id: 'default-file',
+        executionProfile: 'default' as const,
+      };
+      const statefulRef = {
+        ...defaultRef,
+        storage_session_id: 'stateful-session',
+        file_id: 'stateful-file',
+        executionProfile: 'stateful' as const,
+      };
+
+      const file = await fileMethods.createFile({
+        file_id: uuidv4(),
+        user: new mongoose.Types.ObjectId(),
+        filename: 'dual-profile.txt',
+        filepath: '/uploads/dual-profile.txt',
+        type: 'text/plain',
+        bytes: 10,
+        metadata: {
+          codeEnvRef: defaultRef,
+          codeEnvRefs: { default: defaultRef, stateful: statefulRef },
+        },
+      });
+
+      expect(file?.metadata?.codeEnvRefs?.default?.file_id).toBe('default-file');
+      expect(file?.metadata?.codeEnvRefs?.stateful?.file_id).toBe('stateful-file');
+    });
   });
 
   describe('claimCodeFile', () => {

@@ -957,7 +957,7 @@ describe('userGroup methods', () => {
       expect(groupPrincipalIds(await parkedRead)).toEqual([]);
     });
 
-    it('defers invalidation for transactional writes until the session ends', async () => {
+    it('defers invalidation for transactional writes until the session commits', async () => {
       const user = await createTestUser({ idOnTheSource: 'txn-ext-1' });
       const group = await Group.create({
         name: 'Transactional Team',
@@ -984,13 +984,12 @@ describe('userGroup methods', () => {
       expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
 
       await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(cache.delete).toHaveBeenCalledWith('txn-ext-1');
       expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
         group._id.toString(),
       ]);
+      await session.endSession();
     });
 
     it('caches and invalidates under tenant-scoped keys within a tenant context', async () => {
@@ -1043,13 +1042,12 @@ describe('userGroup methods', () => {
       });
       expect(cache.delete).not.toHaveBeenCalled();
 
-      /** Session ends outside the tenant context; the snapshot must preserve it */
+      /** Commit runs outside the tenant context; the snapshot must preserve it */
       await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1:tenant-b');
       expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1');
+      await session.endSession();
     });
 
     it('runs a delayed second invalidation to evict cross-process stale rewrites', async () => {

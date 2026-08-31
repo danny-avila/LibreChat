@@ -1,4 +1,9 @@
 import {
+  REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+  REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
+} from '~/stream/internal/timing';
+import {
   JobCreationSupersededError,
   type CreatedJobData,
   type IEventTransport,
@@ -44,6 +49,47 @@ describe('InMemoryJobStore.claimIdempotencyKey', () => {
       1200,
     );
     expect(second).toEqual({ claimed: false, existing: { streamId: 's1', conversationId: 'c1' } });
+  });
+
+  it('probes an existing claim without creating a missing key', async () => {
+    await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
+
+    await store.claimIdempotencyKey(
+      'user:existing',
+      { streamId: 's1', conversationId: 'c1' },
+      1200,
+    );
+
+    await expect(store.hasIdempotencyKey('user:existing')).resolves.toBe(true);
+    await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
+  });
+
+  it('reads an idempotency receipt without creating a missing claim', async () => {
+    const receipt = {
+      streamId: 's1',
+      conversationId: 'c1',
+      claimToken: 'token-1',
+      claimedAt: 1,
+      startedAt: 2,
+    };
+    await expect(store.getIdempotencyClaim('user:missing')).resolves.toBeNull();
+    await store.claimIdempotencyKey('user:existing', receipt, 1200);
+    await expect(store.getIdempotencyClaim('user:existing')).resolves.toEqual(receipt);
+    await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
+  });
+
+  it('does not report an expired claim as existing', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date('2026-08-29T00:00:00Z'));
+      await store.claimIdempotencyKey('user:expired', { streamId: 's1', conversationId: 'c1' }, 1);
+      await expect(store.hasIdempotencyKey('user:expired')).resolves.toBe(true);
+
+      jest.setSystemTime(new Date('2026-08-29T00:00:02Z'));
+      await expect(store.hasIdempotencyKey('user:expired')).resolves.toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('lets a released key be claimed again', async () => {
@@ -192,6 +238,37 @@ describe('GenerationJobManager start-generation claim', () => {
     expect(typeof retry.existing?.claimedAt).toBe('number');
   });
 
+  it('detects only an already-claimed submission for pre-limiter retry admission', async () => {
+    await expect(manager.hasGenerationClaim('user-1', 'req-1')).resolves.toBe(false);
+
+    await manager.claimGeneration('user-1', 'req-1', 'stream-a', 'convo-a');
+
+    await expect(manager.hasGenerationClaim('user-1', 'req-1')).resolves.toBe(true);
+    await expect(manager.hasGenerationClaim('user-1', 'req-2')).resolves.toBe(false);
+    await expect(manager.hasGenerationClaim('user-2', 'req-1')).resolves.toBe(false);
+  });
+
+  it('reads durable admission evidence after the live job is gone', async () => {
+    await store.claimIdempotencyKey(
+      '{stream-a}:user-1:req-1',
+      {
+        streamId: 'stream-a',
+        conversationId: 'convo-a',
+        claimToken: 'claim-token',
+        claimedAt: 1,
+        startedAt: 42,
+      },
+      1200,
+    );
+
+    await expect(
+      manager.getGenerationAdmissionEvidence('user-1', 'req-1', 'stream-a', 'convo-a'),
+    ).resolves.toEqual({ generationId: 'stream-a', generationCreatedAt: 42 });
+    await expect(
+      manager.getGenerationAdmissionEvidence('user-1', 'req-2', 'stream-a', 'convo-a'),
+    ).resolves.toBeNull();
+  });
+
   it('claims the exact legacy key before the same-slot primary with staggered TTLs', async () => {
     const claimSpy = jest.spyOn(store, 'claimIdempotencyKey');
     const result = await manager.claimGeneration(
@@ -297,6 +374,75 @@ describe('GenerationJobManager start-generation claim', () => {
         },
       });
     }
+  });
+
+  it('fences a missing continuation claim as a settled recovery tombstone', async () => {
+    await expect(
+      manager.fenceGenerationClaimForRecovery(
+        'user-1',
+        'req-recovered',
+        'stream-recovered',
+        'stream-recovered',
+      ),
+    ).resolves.toBe('fenced');
+
+    await expect(
+      manager.claimGeneration('user-1', 'req-recovered', 'stream-recovered', 'stream-recovered'),
+    ).resolves.toMatchObject({
+      claimed: false,
+      existing: { startedAt: expect.any(Number) },
+    });
+  });
+
+  it('invalidates an unpublished continuation creator before manual recovery', async () => {
+    const original = await manager.claimGeneration(
+      'user-1',
+      'req-recovery-race',
+      'stream-recovery-race',
+      'stream-recovery-race',
+      2,
+    );
+
+    await expect(
+      manager.fenceGenerationClaimForRecovery(
+        'user-1',
+        'req-recovery-race',
+        'stream-recovery-race',
+        'stream-recovery-race',
+      ),
+    ).resolves.toBe('fenced');
+    await expect(
+      manager.createJob('stream-recovery-race', 'user-1', 'stream-recovery-race', {
+        idempotencyClientRequestId: 'req-recovery-race',
+        idempotencyClaimToken: original.existing!.claimToken,
+        initialMetadata: { generationProtocolVersion: 2 },
+      }),
+    ).rejects.toThrow('Generation idempotency claim was taken over before job creation');
+    await expect(store.getJob('stream-recovery-race')).resolves.toBeNull();
+  });
+
+  it('reports started when generation creation wins the recovery fence', async () => {
+    const claim = await manager.claimGeneration(
+      'user-1',
+      'req-created-first',
+      'stream-created-first',
+      'stream-created-first',
+      2,
+    );
+    await manager.createJob('stream-created-first', 'user-1', 'stream-created-first', {
+      idempotencyClientRequestId: 'req-created-first',
+      idempotencyClaimToken: claim.existing!.claimToken,
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+
+    await expect(
+      manager.fenceGenerationClaimForRecovery(
+        'user-1',
+        'req-created-first',
+        'stream-created-first',
+        'stream-created-first',
+      ),
+    ).resolves.toBe('started');
   });
 
   it('accepts an exact legacy started mark whose committed reply was lost', async () => {
@@ -760,19 +906,33 @@ describe('GenerationJobManager start-generation claim', () => {
       'remote-replacement-attempt',
     );
 
-    await manager.emitChunk(streamId, {
-      event: 'on_message_delta',
-      data: { delta: 'stale provider output' },
-    });
-    await Promise.resolve();
+    jest.useFakeTimers();
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: 'stale provider output' },
+      });
+      await Promise.resolve();
 
-    expect(predecessor.abortController.signal.aborted).toBe(true);
-    expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
-    expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
-    expect(await store.getJob(streamId)).toMatchObject({
-      createdAt: replacement.createdAt,
-      status: 'running',
-    });
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS);
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      expect(await store.getJob(streamId)).toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'running',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('self-fences an ordinary provider when its Redis append rejects', async () => {
@@ -794,16 +954,25 @@ describe('GenerationJobManager start-generation claim', () => {
     expect(await manager.subscribe(streamId, jest.fn(), jest.fn(), onError)).not.toBeNull();
     jest.spyOn(store, 'appendChunk').mockRejectedValueOnce(new Error('simulated Redis outage'));
 
-    await manager.emitChunk(streamId, {
-      event: 'on_message_delta',
-      data: { delta: 'uncoordinated provider output' },
-    });
-    await Promise.resolve();
-    await Promise.resolve();
+    jest.useFakeTimers();
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: 'uncoordinated provider output' },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
 
-    expect(job.abortController.signal.aborted).toBe(true);
-    expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
-    expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('self-fences when a chunk append wins but its active-only publication is fenced', async () => {
@@ -822,14 +991,23 @@ describe('GenerationJobManager start-generation claim', () => {
     expect(await manager.subscribe(streamId, jest.fn(), jest.fn(), onError)).not.toBeNull();
     registerChunkPublicationCapability(transport, async () => false);
 
-    await manager.emitChunk(streamId, {
-      event: 'on_message_delta',
-      data: { delta: 'publication lost its active-generation CAS' },
-    });
+    jest.useFakeTimers();
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: 'publication lost its active-generation CAS' },
+      });
 
-    expect(job.abortController.signal.aborted).toBe(true);
-    expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
-    expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('does not let a late stale-append result retire a newer local runtime', async () => {

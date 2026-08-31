@@ -70,13 +70,28 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
     }
 
     if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
-      const { disableBuilder, capabilities, allowedProviders } =
+      const { disableBuilder, capabilities, allowedProviders, statefulCodeSessions, maxSubagents } =
         appConfig.endpoints[EModelEndpoint.agents];
+      const clientStatefulCodeSessions = statefulCodeSessions
+        ? {
+            allowedEnvironments: statefulCodeSessions.allowedEnvironments,
+            environments: statefulCodeSessions.environments?.map(
+              ({ id, name, type, default: isDefault }) => ({
+                id,
+                name,
+                type,
+                default: isDefault,
+              }),
+            ),
+          }
+        : undefined;
       mergedConfig[EModelEndpoint.agents] = {
         ...mergedConfig[EModelEndpoint.agents],
         allowedProviders,
         disableBuilder,
         capabilities,
+        statefulCodeSessions: clientStatefulCodeSessions,
+        maxSubagents,
       };
     }
 

@@ -5,6 +5,14 @@ import MemoryInfo from './MemoryInfo';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
+/** Layout-gate predicate for callers that arrange around this component
+ * (e.g. the thinking-dot nudge). Must stay in agreement with the memo's
+ * collection condition inside the component — both key on
+ * `attachment[Tools.memory]`. The component itself guards on its memoized
+ * list instead, avoiding a second pass per render. */
+export const hasMemoryArtifacts = (attachments?: TAttachment[]): boolean =>
+  attachments?.some((attachment) => attachment?.[Tools.memory] != null) ?? false;
+
 export default function MemoryArtifacts({ attachments }: { attachments?: TAttachment[] }) {
   const localize = useLocalize();
   const [showInfo, setShowInfo] = useState(false);
@@ -77,7 +85,7 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
     };
   }, [showInfo, isAnimating]);
 
-  if (!memoryArtifacts || memoryArtifacts.length === 0) {
+  if (memoryArtifacts.length === 0) {
     return null;
   }
 

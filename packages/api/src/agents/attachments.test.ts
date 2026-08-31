@@ -42,6 +42,22 @@ describe('agent attachment helpers', () => {
     expect(attachmentsByAgentId.get('agent-a')).toEqual([file]);
   });
 
+  it('collects attachments from nested graph members', () => {
+    const memberFile = makeTextFile('member-file', 'member.txt', 'member context');
+    const attachmentsByAgentId = buildAgentContextAttachmentsByAgentId([
+      {
+        id: 'parent',
+        subagentGraphConfigs: [
+          {
+            memberConfigs: [{ id: 'graph-member', agentContextAttachments: [memberFile] }],
+          },
+        ],
+      },
+    ]);
+
+    expect(attachmentsByAgentId.get('graph-member')).toEqual([memberFile]);
+  });
+
   it('filters shared request files out of scoped context attachments', () => {
     const shared = makeTextFile('shared-file', 'shared.txt', 'shared');
     const scoped = makeTextFile('scoped-file', 'scoped.txt', 'scoped');

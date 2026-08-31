@@ -1,6 +1,5 @@
 import { useRef, useMemo, useCallback } from 'react';
 import { useDrop } from 'react-dnd';
-import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { NativeTypes } from 'react-dnd-html5-backend';
 import { useQueryClient } from '@tanstack/react-query';
@@ -13,17 +12,17 @@ import {
 } from 'librechat-data-provider';
 import type { DropTargetMonitor } from 'react-dnd';
 import type * as t from 'librechat-data-provider';
+import { useChatContext } from '~/Providers/ChatContext';
 import useFileUploadRouter from './useFileUploadRouter';
 import { useUploadModalContext } from '~/Providers';
 import useUploadOptions from './useUploadOptions';
 import useLocalize from '../useLocalize';
-import store from '~/store';
 
 export default function useDragHelpers() {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const localize = useLocalize();
-  const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
+  const { conversation } = useChatContext();
 
   const isAssistants = useMemo(
     () => isAssistantsEndpoint(conversation?.endpoint),

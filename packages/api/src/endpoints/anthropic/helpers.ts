@@ -1,16 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
-  EModelEndpoint,
   ThinkingDisplay,
   AnthropicEffort,
   anthropicSettings,
-  isMythosClassModel,
   resolveThinkingDisplay,
   supportsAdaptiveThinking,
+  supportsPromptCache,
   requiresExplicitThinkingDisabled,
 } from 'librechat-data-provider';
-import { matchModelName } from '~/utils/tokens';
 
 const FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
 
@@ -37,23 +35,7 @@ function appendAnthropicBetaHeader(
  * @returns {boolean}
  */
 function checkPromptCacheSupport(modelName: string): boolean {
-  const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic) ?? '';
-  if (
-    modelMatch.includes('claude-3-5-sonnet-latest') ||
-    modelMatch.includes('claude-3.5-sonnet-latest')
-  ) {
-    return false;
-  }
-
-  return (
-    /claude-3[-.]7/.test(modelMatch) ||
-    /claude-3[-.]5-(?:sonnet|haiku)/.test(modelMatch) ||
-    /claude-3-(?:sonnet|haiku|opus)?/.test(modelMatch) ||
-    /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelMatch) ||
-    /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(modelMatch) ||
-    /claude-4(?:-(?:sonnet|opus|haiku))?/.test(modelMatch) ||
-    isMythosClassModel(modelMatch)
-  );
+  return supportsPromptCache(modelName);
 }
 
 /**

@@ -19,4 +19,17 @@ describe('IconButton', () => {
     const button = screen.getByRole('button', { name: 'Delete' });
     expect(button).toHaveClass('bg-surface-destructive', 'size-8', 'custom-class');
   });
+
+  it('exposes theme-owned shape and control sizing', () => {
+    render(
+      <IconButton label="Theme control" size="theme" shape="theme">
+        menu
+      </IconButton>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Theme control' })).toHaveClass(
+      'size-theme-control',
+      'rounded-theme-control-round',
+    );
+  });
 });

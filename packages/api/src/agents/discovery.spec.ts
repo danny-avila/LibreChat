@@ -1,6 +1,7 @@
-import { ErrorTypes, EModelEndpoint } from 'librechat-data-provider';
+import { ErrorTypes, EModelEndpoint, MAX_SUBAGENT_GRAPH_NODES } from 'librechat-data-provider';
 import type { Agent, GraphEdge } from 'librechat-data-provider';
 import type { Response } from 'express';
+import type { GraphSubagentHostConfig } from './discovery';
 import type { InitializedAgent } from './initialize';
 import type { ServerRequest } from '~/types';
 
@@ -23,7 +24,7 @@ jest.mock('./validation', () => ({
   validateAgentModel: (...args: unknown[]) => mockValidateAgentModel(...args),
 }));
 
-import { discoverConnectedAgents } from './discovery';
+import { discoverConnectedAgents, resolveSubagentGraphs } from './discovery';
 
 const makeReq = (userId = 'u1', role = 'USER'): ServerRequest =>
   ({
@@ -272,6 +273,40 @@ describe('discoverConnectedAgents', () => {
     );
   });
 
+  it('forwards normalized request metadata to every handoff initializeAgent call', async () => {
+    const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
+    const getAgent = jest.fn(async () => makeAgent('B', []));
+    const checkPermission = jest.fn().mockResolvedValue(true);
+    const requestBody = {
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'parent-1',
+    };
+
+    await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        requestBody,
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ requestBody }),
+      expect.anything(),
+    );
+  });
+
   it('forwards codeEnvAvailable=false verbatim so handoff agents respect disabled capability', async () => {
     /* Symmetric to the "true" case: when the primary resolved
        `codeEnvAvailable = false`, handoffs must NOT accidentally
@@ -423,7 +458,7 @@ describe('discoverConnectedAgents', () => {
     expect(result.edges[0].to).toBe('C');
   });
 
-  it('advances through a multi-source edge on ANY reachable source (SDK OR semantics)', async () => {
+  it('reduces a multi-source barrier to its surviving reachable sources', async () => {
     // Primary A has a single edge `{from: ['A','B'], to: 'C'}`. B loads
     // successfully but has no incoming path from A. The agents SDK adds
     // one LangGraph edge per `from` source (see
@@ -1130,5 +1165,329 @@ describe('discoverConnectedAgents', () => {
     expect(checkPermission).not.toHaveBeenCalled();
     expect(result.skippedAgentIds.has('B')).toBe(true);
     expect(result.edges).toHaveLength(0);
+  });
+});
+
+describe('resolveSubagentGraphs', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockValidateAgentModel.mockResolvedValue({ isValid: true });
+    mockInitializeAgent.mockImplementation(async ({ agent }: { agent: Agent }) =>
+      makeConfig(agent.id),
+    );
+  });
+
+  it('resolves a complete graph team while reusing the primary config', async () => {
+    const primaryConfig = makeConfig('A') as GraphSubagentHostConfig;
+    primaryConfig.userMCPAuthMap = { primary: { token: 'primary-token' } };
+    primaryConfig.subagents = {
+      enabled: true,
+      graphs: [
+        {
+          type: 'team',
+          name: 'Team',
+          description: 'A remote graph team',
+          agent_ids: ['A', 'B'],
+          edges: [{ from: 'A', to: 'B', edgeType: 'direct' }],
+          entry_agent_id: 'A',
+          result_agent_id: 'B',
+        },
+      ],
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => makeAgent(id));
+    const onAgentInitialized = jest.fn();
+    mockInitializeAgent.mockImplementationOnce(async ({ agent }: { agent: Agent }) => ({
+      ...makeConfig(agent.id),
+      userMCPAuthMap: { graph: { token: 'graph-token' } },
+    }));
+
+    const userMCPAuthMap = await resolveSubagentGraphs(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        rootConfigs: [primaryConfig],
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resourceType: 'remote_agent',
+        statefulSessionsAvailable: true,
+        allowedStatefulCodeEnvironments: ['user'],
+      },
+      {
+        getAgent,
+        checkPermission: jest.fn().mockResolvedValue(true),
+        logViolation: jest.fn(),
+        db: {} as never,
+        onAgentInitialized,
+      },
+    );
+
+    expect(getAgent).toHaveBeenCalledTimes(1);
+    expect(getAgent).toHaveBeenCalledWith({ id: 'B' });
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statefulSessionsAvailable: true,
+        allowedStatefulCodeEnvironments: ['user'],
+      }),
+      expect.anything(),
+    );
+    expect(onAgentInitialized).toHaveBeenCalledWith('B', expect.anything(), expect.anything());
+    expect(primaryConfig.subagentGraphConfigs).toEqual([
+      expect.objectContaining({
+        memberConfigs: [primaryConfig, expect.objectContaining({ id: 'B' })],
+      }),
+    ]);
+    expect(userMCPAuthMap).toEqual({
+      primary: { token: 'primary-token' },
+      graph: { token: 'graph-token' },
+    });
+  });
+
+  it('does not charge initialized root members against the graph load budget', async () => {
+    const rootConfigs = Array.from({ length: MAX_SUBAGENT_GRAPH_NODES }, (_, index) => {
+      const config = makeConfig(`root_${index}`) as GraphSubagentHostConfig;
+      config.subagents = {
+        enabled: true,
+        graphs: [
+          {
+            type: `self_team_${index}`,
+            name: `Self team ${index}`,
+            description: 'Reuses an initialized root',
+            agent_ids: [config.id],
+            edges: [],
+            entry_agent_id: config.id,
+            result_agent_id: config.id,
+          },
+        ],
+      };
+      return config;
+    });
+    const finalRoot = rootConfigs[rootConfigs.length - 1];
+    finalRoot.subagents?.graphs?.push({
+      type: 'external_team',
+      name: 'External team',
+      description: 'Still has room for a real member load',
+      agent_ids: ['external_member'],
+      edges: [],
+      entry_agent_id: 'external_member',
+      result_agent_id: 'external_member',
+    });
+    const getAgent = jest.fn(async ({ id }: { id: string }) => makeAgent(id));
+
+    await resolveSubagentGraphs(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig: rootConfigs[0],
+        rootConfigs,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resourceType: 'remote_agent',
+      },
+      {
+        getAgent,
+        checkPermission: jest.fn().mockResolvedValue(true),
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(getAgent).toHaveBeenCalledTimes(1);
+    expect(getAgent).toHaveBeenCalledWith({ id: 'external_member' });
+    expect(finalRoot.subagentGraphConfigs).toHaveLength(2);
+  });
+
+  it('omits the whole graph when a member lacks remote VIEW access', async () => {
+    const primaryConfig = makeConfig('A') as GraphSubagentHostConfig;
+    primaryConfig.subagents = {
+      enabled: true,
+      graphs: [
+        {
+          type: 'team',
+          name: 'Team',
+          description: 'A remote graph team',
+          agent_ids: ['A', 'B'],
+          edges: [{ from: 'A', to: 'B', edgeType: 'direct' }],
+          entry_agent_id: 'A',
+          result_agent_id: 'B',
+        },
+      ],
+    };
+
+    await resolveSubagentGraphs(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        rootConfigs: [primaryConfig],
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resourceType: 'remote_agent',
+      },
+      {
+        getAgent: jest.fn(async ({ id }: { id: string }) => makeAgent(id)),
+        checkPermission: jest.fn().mockResolvedValue(false),
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(primaryConfig.subagentGraphConfigs).toEqual([]);
+    expect(mockInitializeAgent).not.toHaveBeenCalled();
+  });
+
+  it('caches successful members from an incomplete team for later teams', async () => {
+    const primaryConfig = makeConfig('A') as GraphSubagentHostConfig;
+    primaryConfig.subagents = {
+      enabled: true,
+      graphs: [
+        {
+          type: 'incomplete',
+          name: 'Incomplete team',
+          description: 'Contains a missing member',
+          agent_ids: ['B', 'missing'],
+          edges: [{ from: 'B', to: 'missing', edgeType: 'direct' }],
+          entry_agent_id: 'B',
+          result_agent_id: 'missing',
+        },
+        {
+          type: 'complete',
+          name: 'Complete team',
+          description: 'Reuses the successful member',
+          agent_ids: ['B'],
+          edges: [],
+          entry_agent_id: 'B',
+          result_agent_id: 'B',
+        },
+      ],
+    };
+    const getAgent = jest.fn(async ({ id }: { id: string }) =>
+      id === 'missing' ? null : makeAgent(id),
+    );
+    const onAgentInitialized = jest.fn();
+
+    await resolveSubagentGraphs(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        rootConfigs: [primaryConfig],
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resourceType: 'remote_agent',
+      },
+      {
+        getAgent,
+        checkPermission: jest.fn().mockResolvedValue(true),
+        logViolation: jest.fn(),
+        db: {} as never,
+        onAgentInitialized,
+      },
+    );
+
+    expect(getAgent).toHaveBeenCalledTimes(2);
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    expect(onAgentInitialized).toHaveBeenCalledTimes(1);
+    expect(primaryConfig.subagentGraphConfigs).toEqual([
+      expect.objectContaining({ memberConfigs: [expect.objectContaining({ id: 'B' })] }),
+    ]);
+  });
+
+  it('caches failed members across incomplete teams', async () => {
+    const primaryConfig = makeConfig('A') as GraphSubagentHostConfig;
+    primaryConfig.subagents = {
+      enabled: true,
+      graphs: ['first', 'second'].map((suffix) => ({
+        type: `incomplete_${suffix}`,
+        name: `Incomplete ${suffix}`,
+        description: 'Reuses the same missing member',
+        agent_ids: ['missing'],
+        edges: [],
+        entry_agent_id: 'missing',
+        result_agent_id: 'missing',
+      })),
+    };
+    const getAgent = jest.fn().mockResolvedValue(null);
+    const onAgentSkipped = jest.fn();
+
+    await resolveSubagentGraphs(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        rootConfigs: [primaryConfig],
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resourceType: 'remote_agent',
+      },
+      {
+        getAgent,
+        checkPermission: jest.fn(),
+        logViolation: jest.fn(),
+        db: {} as never,
+        onAgentSkipped,
+      },
+    );
+
+    expect(getAgent).toHaveBeenCalledTimes(1);
+    expect(onAgentSkipped).toHaveBeenCalledTimes(1);
+    expect(primaryConfig.subagentGraphConfigs).toEqual([]);
+  });
+
+  it('counts distinct failed attempts against the request-wide member limit', async () => {
+    const firstMemberIds = Array.from({ length: 32 }, (_, index) => `missing_first_${index}`);
+    const overflowMemberIds = Array.from({ length: 20 }, (_, index) => `missing_overflow_${index}`);
+    const primaryConfig = makeConfig('A') as GraphSubagentHostConfig;
+    primaryConfig.subagents = {
+      enabled: true,
+      graphs: [
+        {
+          type: 'first_missing_team',
+          name: 'First missing team',
+          description: 'Consumes the attempted-member budget',
+          agent_ids: firstMemberIds,
+          edges: [],
+          entry_agent_id: firstMemberIds[0],
+          result_agent_id: firstMemberIds[firstMemberIds.length - 1],
+        },
+        {
+          type: 'overflow_missing_team',
+          name: 'Overflow missing team',
+          description: 'Must be skipped before member lookup',
+          agent_ids: overflowMemberIds,
+          edges: [],
+          entry_agent_id: overflowMemberIds[0],
+          result_agent_id: overflowMemberIds[overflowMemberIds.length - 1],
+        },
+      ],
+    };
+    const getAgent = jest.fn().mockResolvedValue(null);
+
+    await resolveSubagentGraphs(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        rootConfigs: [primaryConfig],
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resourceType: 'remote_agent',
+      },
+      {
+        getAgent,
+        checkPermission: jest.fn(),
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(getAgent).toHaveBeenCalledTimes(firstMemberIds.length);
+    expect(primaryConfig.subagentGraphConfigs).toEqual([]);
   });
 });

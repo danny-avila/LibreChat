@@ -1,4 +1,4 @@
-const { Tools } = require('librechat-data-provider');
+const { Tools, StepEvents } = require('librechat-data-provider');
 
 // Mock all dependencies before requiring the module
 jest.mock('nanoid', () => ({
@@ -7,6 +7,7 @@ jest.mock('nanoid', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  writeAttachmentEvent: jest.fn(),
   GenerationJobManager: {
     emitChunk: jest.fn(),
   },
@@ -69,6 +70,17 @@ jest.mock('~/server/services/Files/Code/process', () => ({
   },
 }));
 
+jest.mock('~/server/services/Files/Code/preflight', () => ({
+  preflightCodeOutputBatch: jest.fn(async ({ artifact }) =>
+    (artifact.files ?? [])
+      .filter((file) => file.inherited !== true)
+      .map((file) => ({
+        file,
+        sessionId: file.storage_session_id ?? artifact.session_id,
+      })),
+  ),
+}));
+
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn(),
 }));
@@ -112,6 +124,76 @@ describe('resumable event generation fencing', () => {
     );
   });
 
+  it('publishes root event-child progress through the child activity transport', async () => {
+    const { nanoid } = require('nanoid');
+    nanoid.mockReturnValueOnce('invocation-1').mockReturnValueOnce('invocation-2');
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const publish = jest.fn().mockResolvedValue(undefined);
+    const data = {
+      id: 'step-1',
+      index: 0,
+      stepDetails: { type: 'message_creation' },
+    };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'event-thread',
+      jobCreatedAt: 1234,
+      eventChildActivity: {
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        subagentType: 'agent-1',
+        subagentAgentId: 'agent-1',
+        parentAgentId: 'director',
+        publish,
+      },
+    });
+
+    await handlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const firstUpdate = publish.mock.calls[0][0];
+    expect(firstUpdate).toEqual(
+      expect.objectContaining({
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        phase: 'run_step',
+        activityEventId: expect.stringMatching(/^delivery-1:.+:0$/),
+        data,
+      }),
+    );
+    expect(firstUpdate).not.toHaveProperty('activitySequence');
+
+    const resumedPublish = jest.fn().mockResolvedValue(undefined);
+    const resumedHandlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'event-thread',
+      jobCreatedAt: 1234,
+      eventChildActivity: {
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        subagentType: 'agent-1',
+        subagentAgentId: 'agent-1',
+        parentAgentId: 'director',
+        publish: resumedPublish,
+      },
+    });
+    await resumedHandlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(resumedPublish.mock.calls[0][0].activityEventId).not.toBe(firstUpdate.activityEventId);
+  });
+
   it('forwards the originating job epoch with deferred attachments', () => {
     const { GenerationJobManager } = require('@librechat/api');
     const { createAttachmentEmitter } = require('../callbacks');
@@ -129,6 +211,82 @@ describe('resumable event generation fencing', () => {
       { event: 'attachment', data: attachment },
       { expectedCreatedAt: 1234 },
     );
+  });
+});
+
+describe('createPtcProgressEmitter', () => {
+  const ptcEvent = {
+    tool_call_id: 'call_ptc',
+    call_id: 'call_ptc:0',
+    name: 'read_file',
+    status: 'running',
+    args: 'path=a.ts',
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('emits the inner tool-call event on the resumable job stream', () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn() },
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    emit(ptcEvent);
+
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'conversation-1',
+      { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent },
+      { expectedCreatedAt: 1234 },
+    );
+  });
+
+  it('writes to the live response when no stream id is in play', () => {
+    const { sendEvent } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const res = { write: jest.fn(), headersSent: true, writableEnded: false };
+    const emit = createPtcProgressEmitter({ res });
+
+    emit(ptcEvent);
+
+    expect(sendEvent).toHaveBeenCalledWith(res, {
+      event: StepEvents.ON_PTC_TOOL_CALL,
+      data: ptcEvent,
+    });
+  });
+
+  it('absorbs a rejected resumable emit instead of leaving an unhandled rejection', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    GenerationJobManager.emitChunk.mockRejectedValueOnce(new Error('transport down'));
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn() },
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    expect(() => emit(ptcEvent)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    process.off('unhandledRejection', unhandled);
+
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('drops the event once the response has closed', () => {
+    const { sendEvent } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn(), headersSent: true, writableEnded: true },
+    });
+
+    emit(ptcEvent);
+
+    expect(sendEvent).not.toHaveBeenCalled();
   });
 });
 
@@ -435,6 +593,7 @@ describe('createToolEndCallback', () => {
      * message slot, leaving the current turn's pending chip stuck. */
 
     const { processCodeOutput } = require('~/server/services/Files/Code/process');
+    const { preflightCodeOutputBatch } = require('~/server/services/Files/Code/preflight');
 
     function makeCodeExecutionEvent({
       runId,
@@ -444,6 +603,8 @@ describe('createToolEndCallback', () => {
       name,
       toolName = 'execute_code',
       hostFileAuthoring = false,
+      created,
+      codeExecutionContext,
     }) {
       return {
         output: {
@@ -451,11 +612,13 @@ describe('createToolEndCallback', () => {
           tool_call_id: toolCallId,
           artifact: {
             ...(hostFileAuthoring ? { __librechat_file_authoring: true } : {}),
+            ...(created === undefined ? {} : { created }),
+            path: name,
             session_id: 'sess-1',
             files: [{ id: fileId, name, session_id: 'sess-1' }],
           },
         },
-        metadata: { run_id: runId, thread_id: threadId },
+        metadata: { run_id: runId, thread_id: threadId, codeExecutionContext },
       };
     }
 
@@ -666,8 +829,17 @@ describe('createToolEndCallback', () => {
           conversationId: 'thread789',
           messageId: 'run-create',
           toolCallId: 'tool-create',
-          status: 'ready',
+          status: 'pending',
         },
+        finalize: jest.fn().mockResolvedValue({
+          file_id: 'fid-created',
+          filename: 'created.txt',
+          filepath: '/uploads/created.txt',
+          type: 'text/plain',
+          conversationId: 'thread789',
+          messageId: 'run-create',
+          status: 'ready',
+        }),
       });
 
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
@@ -679,9 +851,16 @@ describe('createToolEndCallback', () => {
         name: 'created.txt',
         toolName: 'create_file',
         hostFileAuthoring: true,
+        created: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+          executionRouteKey: `stateful:${'a'.repeat(32)}`,
+        },
       });
       await toolEndCallback({ output: event.output }, event.metadata);
       await Promise.all(artifactPromises);
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(processCodeOutput).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -690,9 +869,144 @@ describe('createToolEndCallback', () => {
           messageId: 'run-create',
           toolCallId: 'tool-create',
           conversationId: 'thread789',
+          codeApiBaseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+          executionRouteKey: `stateful:${'a'.repeat(32)}`,
         }),
       );
+      expect(res.write).toHaveBeenCalledTimes(2);
+      expect(parseSseAttachment(res.write.mock.calls[0]).workspaceChange).toEqual({
+        profile: 'stateful',
+        operation: 'created',
+        path: 'created.txt',
+      });
+      expect(parseSseAttachment(res.write.mock.calls[1]).workspaceChange).toEqual({
+        profile: 'stateful',
+        operation: 'created',
+        path: 'created.txt',
+      });
+      await expect(artifactPromises[0]).resolves.toEqual(
+        expect.objectContaining({
+          workspaceChange: {
+            profile: 'stateful',
+            operation: 'created',
+            path: 'created.txt',
+          },
+        }),
+      );
+    });
+
+    it('does not mark stateless file authoring outputs as stateful workspace changes', async () => {
+      res.headersSent = true;
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-default',
+          filename: 'default.txt',
+          filepath: '/uploads/default.txt',
+          type: 'text/plain',
+          conversationId: 'thread789',
+          messageId: 'run-default',
+          toolCallId: 'tool-default',
+          status: 'ready',
+        },
+      });
+
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-default',
+        threadId: 'thread789',
+        toolCallId: 'tool-default',
+        fileId: 'fid-default',
+        name: 'default.txt',
+        toolName: 'create_file',
+        hostFileAuthoring: true,
+        created: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code-default.example.com',
+          executionProfile: 'default',
+        },
+      });
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+
       expect(res.write).toHaveBeenCalledTimes(1);
+      expect(parseSseAttachment(res.write.mock.calls[0]).workspaceChange).toBeUndefined();
+    });
+
+    it('preserves stateful workspace changes in Open Responses attachment events', async () => {
+      const { writeAttachmentEvent } = require('@librechat/api');
+      const { createResponsesToolEndCallback } = require('../callbacks');
+      res.headersSent = true;
+      res.writableEnded = false;
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-responses',
+          filename: 'summary.csv',
+          filepath: '/uploads/summary.csv',
+          type: 'text/csv',
+          conversationId: 'thread789',
+          messageId: 'run-responses',
+          toolCallId: 'tool-responses',
+          status: 'pending',
+        },
+        finalize: jest.fn().mockResolvedValue({
+          file_id: 'fid-responses',
+          filename: 'summary.csv',
+          filepath: '/uploads/summary.csv',
+          type: 'text/csv',
+          conversationId: 'thread789',
+          messageId: 'run-responses',
+          status: 'ready',
+        }),
+      });
+
+      const tracker = { nextSequence: jest.fn().mockReturnValueOnce(1).mockReturnValueOnce(2) };
+      const toolEndCallback = createResponsesToolEndCallback({
+        req,
+        res,
+        tracker,
+        artifactPromises,
+      });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-responses',
+        threadId: 'thread789',
+        toolCallId: 'tool-responses',
+        fileId: 'fid-responses',
+        name: 'summary.csv',
+        toolName: 'edit_file',
+        hostFileAuthoring: true,
+        created: false,
+        codeExecutionContext: {
+          baseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+        },
+      });
+      event.output.artifact.path = 'reports/summary.csv';
+
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(writeAttachmentEvent).toHaveBeenCalledTimes(2);
+      expect(writeAttachmentEvent.mock.calls[0][2].workspaceChange).toEqual({
+        profile: 'stateful',
+        operation: 'updated',
+        path: 'reports/summary.csv',
+      });
+      expect(writeAttachmentEvent.mock.calls[1][2].workspaceChange).toEqual({
+        profile: 'stateful',
+        operation: 'updated',
+        path: 'reports/summary.csv',
+      });
+      await expect(artifactPromises[0]).resolves.toEqual(
+        expect.objectContaining({
+          workspaceChange: {
+            profile: 'stateful',
+            operation: 'updated',
+            path: 'reports/summary.csv',
+          },
+        }),
+      );
     });
 
     it('does not process arbitrary user tool artifacts named create_file as code outputs', async () => {
@@ -711,6 +1025,50 @@ describe('createToolEndCallback', () => {
       await Promise.all(artifactPromises);
 
       expect(processCodeOutput).not.toHaveBeenCalled();
+      expect(res.write).not.toHaveBeenCalled();
+    });
+
+    it('rejects blocked generated bytes before queuing any persistence', async () => {
+      const blocked = new Error('Generated file content blocked');
+      preflightCodeOutputBatch.mockRejectedValueOnce(blocked);
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-blocked',
+        threadId: 'thread-1',
+        toolCallId: 'tool-blocked',
+        fileId: 'fid-blocked',
+        name: 'blocked.txt',
+      });
+
+      await expect(toolEndCallback({ output: event.output }, event.metadata)).rejects.toBe(blocked);
+
+      expect(processCodeOutput).not.toHaveBeenCalled();
+      expect(artifactPromises).toHaveLength(0);
+      expect(res.write).not.toHaveBeenCalled();
+    });
+
+    it('rejects blocked generated bytes in the Responses callback before persistence', async () => {
+      const blocked = new Error('Generated file content blocked');
+      preflightCodeOutputBatch.mockRejectedValueOnce(blocked);
+      const { createResponsesToolEndCallback } = require('../callbacks');
+      const callback = createResponsesToolEndCallback({
+        req,
+        res,
+        tracker: { nextSequence: jest.fn(() => 1) },
+        artifactPromises,
+      });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-responses-blocked',
+        threadId: 'thread-1',
+        toolCallId: 'tool-responses-blocked',
+        fileId: 'fid-responses-blocked',
+        name: 'blocked.txt',
+      });
+
+      await expect(callback({ output: event.output }, event.metadata)).rejects.toBe(blocked);
+
+      expect(processCodeOutput).not.toHaveBeenCalled();
+      expect(artifactPromises).toHaveLength(0);
       expect(res.write).not.toHaveBeenCalled();
     });
   });
@@ -767,6 +1125,7 @@ describe('tool input validation marker', () => {
 
     expect(data.result.tool_call.inputValidationError).toBe(true);
     expect(contentParts[0].tool_call.inputValidationError).toBe(true);
+    expect(contentParts[0].tool_call.stepId).toBe('step-1');
     expect(toolInputValidationErrors.size).toBe(0);
   });
 
@@ -815,6 +1174,7 @@ describe('tool input validation marker', () => {
 
     expect(data.result.tool_call).not.toHaveProperty('inputValidationError');
     expect(contentParts[0].tool_call).not.toHaveProperty('inputValidationError');
+    expect(contentParts[0].tool_call.stepId).toBe('step-1');
   });
 });
 

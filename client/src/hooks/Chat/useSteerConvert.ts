@@ -64,8 +64,10 @@ export default function useSteerConvert() {
             .getLoadable(store.activeGenerationProtocolVersionByConvoId(conversationId))
             .getValue();
         const bindRecoverySource = negotiatedVersion === 2;
-        // Quotes/skill picks never ride the server steer; restore them from
-        // the local chip (matched by id) before the chips are dropped below.
+        // Restore quotes/skill picks from the local chip (matched by id)
+        // before the chips are dropped below: the chip is the only carrier of
+        // skill picks, and of quotes accepted by an older server whose queue
+        // items did not persist them yet.
         const localChips = snapshot
           .getLoadable(store.pendingSteersByConvoId(conversationId))
           .getValue();

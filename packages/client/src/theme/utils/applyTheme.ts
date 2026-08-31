@@ -1,132 +1,86 @@
-import { IThemeRGB, IThemeVariables } from '../types';
+import type { IThemeAppearance, IThemeBrands, IThemeRGB, ResolvedThemeDefinition } from '../types';
+import { themeAppearanceProperties, themeBrandTokens, themeColorTokens } from '../registry';
 
-/**
- * Validates RGB string format (e.g., "255 255 255")
- */
+const colorProperty = (token: keyof IThemeRGB): `--${string}` => `--${token.slice(4)}`;
+const brandProperty = (token: keyof IThemeBrands): `--${string}` => `--${token}`;
+
+export const themeOwnedProperties: readonly string[] = Object.freeze([
+  ...themeColorTokens.map(colorProperty),
+  ...Object.values(themeAppearanceProperties),
+  ...themeBrandTokens.map(brandProperty),
+]);
+
+const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
+
 function validateRGB(rgb: string): boolean {
-  if (!rgb) return true;
-  const rgbRegex = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
-  const match = rgb.match(rgbRegex);
-
-  if (!match) return false;
-
-  // Check that each value is between 0-255
-  const [, r, g, b] = match;
-  return [r, g, b].every((val) => {
-    const num = parseInt(val, 10);
-    return num >= 0 && num <= 255;
-  });
+  const match = rgb.match(rgbPattern);
+  return match !== null && match.slice(1).every((channel) => Number(channel) <= 255);
 }
 
-/**
- * Maps theme RGB values to CSS variables
- */
-function mapTheme(rgb: IThemeRGB): Partial<IThemeVariables> {
-  const variables: Partial<IThemeVariables> = {};
-
-  // Map each RGB value to its corresponding CSS variable
-  const mappings: Record<keyof IThemeRGB, keyof IThemeVariables> = {
-    'rgb-text-primary': '--text-primary',
-    'rgb-text-secondary': '--text-secondary',
-    'rgb-text-secondary-alt': '--text-secondary-alt',
-    'rgb-text-tertiary': '--text-tertiary',
-    'rgb-text-warning': '--text-warning',
-    'rgb-text-destructive': '--text-destructive',
-    'rgb-link': '--link',
-    'rgb-link-hover': '--link-hover',
-    'rgb-link-visited': '--link-visited',
-    'rgb-accent-primary': '--accent-primary',
-    'rgb-accent-primary-hover': '--accent-primary-hover',
-    'rgb-ring-primary': '--ring-primary',
-    'rgb-header-primary': '--header-primary',
-    'rgb-header-hover': '--header-hover',
-    'rgb-header-button-hover': '--header-button-hover',
-    'rgb-surface-active': '--surface-active',
-    'rgb-surface-active-alt': '--surface-active-alt',
-    'rgb-surface-hover': '--surface-hover',
-    'rgb-surface-hover-alt': '--surface-hover-alt',
-    'rgb-surface-primary': '--surface-primary',
-    'rgb-surface-primary-alt': '--surface-primary-alt',
-    'rgb-surface-primary-contrast': '--surface-primary-contrast',
-    'rgb-surface-secondary': '--surface-secondary',
-    'rgb-surface-secondary-alt': '--surface-secondary-alt',
-    'rgb-surface-tertiary': '--surface-tertiary',
-    'rgb-surface-tertiary-alt': '--surface-tertiary-alt',
-    'rgb-surface-dialog': '--surface-dialog',
-    'rgb-surface-overlay': '--surface-overlay',
-    'rgb-surface-submit': '--surface-submit',
-    'rgb-surface-submit-hover': '--surface-submit-hover',
-    'rgb-surface-destructive': '--surface-destructive',
-    'rgb-surface-destructive-hover': '--surface-destructive-hover',
-    'rgb-surface-chat': '--surface-chat',
-    'rgb-surface-inverted': '--surface-inverted',
-    'rgb-surface-inverted-hover': '--surface-inverted-hover',
-    'rgb-text-inverted': '--text-inverted',
-    'rgb-surface-fixed': '--surface-fixed',
-    'rgb-surface-fixed-hover': '--surface-fixed-hover',
-    'rgb-text-fixed': '--text-fixed',
-    'rgb-border-light': '--border-light',
-    'rgb-border-medium': '--border-medium',
-    'rgb-border-medium-alt': '--border-medium-alt',
-    'rgb-border-heavy': '--border-heavy',
-    'rgb-border-xheavy': '--border-xheavy',
-    'rgb-border-destructive': '--border-destructive',
-    'rgb-status-success': '--status-success',
-    'rgb-status-success-subtle': '--status-success-subtle',
-    'rgb-status-success-border': '--status-success-border',
-    'rgb-status-success-strong': '--status-success-strong',
-    'rgb-status-info': '--status-info',
-    'rgb-status-info-subtle': '--status-info-subtle',
-    'rgb-status-info-border': '--status-info-border',
-    'rgb-status-info-strong': '--status-info-strong',
-    'rgb-status-warning': '--status-warning',
-    'rgb-status-warning-subtle': '--status-warning-subtle',
-    'rgb-status-warning-border': '--status-warning-border',
-    'rgb-status-warning-strong': '--status-warning-strong',
-    'rgb-status-error': '--status-error',
-    'rgb-status-error-subtle': '--status-error-subtle',
-    'rgb-status-error-border': '--status-error-border',
-    'rgb-status-error-strong': '--status-error-strong',
-    'rgb-status-neutral': '--status-neutral',
-    'rgb-status-neutral-subtle': '--status-neutral-subtle',
-    'rgb-status-neutral-border': '--status-neutral-border',
-    'rgb-text-on-status': '--text-on-status',
-    'rgb-brand-purple': '--brand-purple',
-    'rgb-presentation': '--presentation',
-  };
-
-  Object.entries(mappings).forEach(([rgbKey, cssVar]) => {
-    const value = rgb[rgbKey as keyof IThemeRGB];
-    if (value) {
-      variables[cssVar] = value;
+function mapColors(colors: IThemeRGB): Array<[string, string]> {
+  const variables = themeColorTokens.reduce<Array<[string, string]>>((result, token) => {
+    const value = colors[token];
+    if (value !== undefined) {
+      result.push([colorProperty(token), value]);
     }
-  });
+    return result;
+  }, []);
+
+  if (
+    colors['rgb-surface-composer-hover'] === undefined &&
+    colors['rgb-surface-hover'] !== undefined
+  ) {
+    variables.push(['--surface-composer-hover', colors['rgb-surface-hover']]);
+  }
 
   return variables;
 }
 
+function mapAppearance(appearance: IThemeAppearance): Array<[string, string]> {
+  return Object.entries(themeAppearanceProperties).map(([key, property]) => [
+    property,
+    appearance[key as keyof IThemeAppearance],
+  ]);
+}
+
+export function clearAppliedTheme(root: HTMLElement = document.documentElement): void {
+  themeOwnedProperties.forEach((property) => root.style.removeProperty(property));
+  root.removeAttribute('data-theme');
+}
+
+export function applyResolvedTheme(
+  theme: ResolvedThemeDefinition,
+  root: HTMLElement = document.documentElement,
+): void {
+  const variables = [
+    ...mapColors(theme.colors),
+    ...mapAppearance(theme.appearance),
+    ...themeBrandTokens.map(
+      (token) => [brandProperty(token), theme.brands[token]] as [string, string],
+    ),
+  ];
+
+  variables.forEach(([property, value]) => root.style.setProperty(property, value));
+  root.dataset.theme = theme.name;
+}
+
 /**
- * Applies theme to the document root
- * Sets CSS variables as rgb() values for compatibility with existing CSS
+ * Backward-compatible adapter for the original partial RGB theme interface.
+ * New theme implementations should resolve a ThemeDefinition and use applyResolvedTheme.
  */
-export default function applyTheme(themeRGB?: IThemeRGB): void {
-  if (!themeRGB) return;
+export default function applyTheme(
+  themeRGB?: IThemeRGB,
+  root: HTMLElement = document.documentElement,
+): void {
+  if (!themeRGB) {
+    return;
+  }
 
-  const themeObject = mapTheme(themeRGB);
-  const root = document.documentElement;
-
-  Object.entries(themeObject).forEach(([cssVar, value]) => {
-    if (!value) return;
-
-    const validation = validateRGB(value);
-    if (!validation) {
-      console.error(`Invalid RGB value for ${cssVar}: ${value}`);
+  mapColors(themeRGB).forEach(([property, value]) => {
+    if (!validateRGB(value)) {
+      console.error(`Invalid RGB value for ${property}: ${value}`);
       return;
     }
-
-    // Store the bare `R G B` channel triplet. The Tailwind color map wraps these
-    // as `rgb(var(--x) / <alpha-value>)`, so storing raw channels is what enables
-    // opacity modifiers and matches the style.css defaults.
-    root.style.setProperty(cssVar, value);
+    root.style.setProperty(property, value);
   });
 }
