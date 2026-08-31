@@ -161,18 +161,16 @@ export const addFileToResource = ({
   }
 };
 
-/** Contexts whose files belong to the requesting user, never to the shared agent
- *  sandbox. Code outputs are recorded with `kind: 'user'` at generation time, so
- *  re-provisioning them under the agent would expose one user's artifacts to every
- *  user of a shared agent. */
-const USER_SCOPED_FILE_CONTEXTS = new Set<string>([
-  FileContext.message_attachment,
-  FileContext.execute_code,
-]);
+/** Contexts that positively identify an agent's own setup files. Everything else,
+ *  including generated images, code outputs, and unknown contexts, belongs to the
+ *  requesting user: provisioning those under a shared agent would copy one user's
+ *  private file into a sandbox every other user of that agent can read. An allowlist
+ *  fails safe, since an unrecognized context provisions per user rather than leaking. */
+const AGENT_SCOPED_FILE_CONTEXTS = new Set<string>([FileContext.agents]);
 
 /** Whether a file's tool provisioning is scoped to the agent rather than the user. */
 export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
-  !USER_SCOPED_FILE_CONTEXTS.has(file.context as string);
+  AGENT_SCOPED_FILE_CONTEXTS.has(file.context as string);
 
 /** Mirrors the lazy provisioning writer: agent-scoped search files live in
  *  `file_ids`, which is the only shape fileSearch treats as agent-owned. */
