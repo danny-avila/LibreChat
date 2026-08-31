@@ -1241,7 +1241,7 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(JSON.stringify(response.body)).not.toContain(rawProviderDetail);
     });
 
-    it('should allow file upload with agent_id but no tool_resource (message attachment)', async () => {
+    it('should deny a permanent agent upload with no tool_resource from a user without permission', async () => {
       // Create an agent owned by authorId
       await createAgent({
         id: agentCustomId,
@@ -1253,15 +1253,17 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       const testApp = createAppWithUser(otherUserId);
 
+      /* Unified mode accepts an upload with no tool_resource and promotes it to a
+       * context resource, so the permission check has to apply here: otherwise any
+       * user could attach persistent context to an agent they cannot edit. */
       const response = await request(testApp).post('/files').send({
         endpoint: 'agents',
         agent_id: agentCustomId,
         file_id: uuidv4(),
-        // No tool_resource - permission check should not apply
       });
 
-      expect(response.status).toBe(200);
-      expect(processAgentFileUpload).toHaveBeenCalled();
+      expect(response.status).toBe(403);
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
     });
 
     it('should allow message_file attachment to agent even without EDIT permission', async () => {
