@@ -1,5 +1,13 @@
 See CLAUDE.md.
 
+## Branching and pull requests
+
+Branch off `dev` and target `dev` with every pull request; `gh pr create` defaults to `main`, so
+pass `--base dev` explicitly. `main` is the released branch, kept as a fast-forward of `dev` and
+synced as-is — never open a backport pull request to `main`, because anything merged to `dev`
+reaches it at the next sync. Pull requests opened against `main` are retargeted automatically. See
+the detailed policy in `CLAUDE.md` under "Branching and Pull Requests".
+
 ## Frontend theming and styling
 
 For frontend work, compose existing `@librechat/client` primitives and variants before adding
