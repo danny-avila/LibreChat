@@ -1502,6 +1502,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     startupTelemetry?.mark('job_created');
     generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
     jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+    req.turnStartedAt = jobCreatedAt;
     providerExecutionId = job.metadata?.providerExecutionId;
 
     /** Authentication can precede a slow admission path. Recheck the durable

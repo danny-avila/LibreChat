@@ -1351,6 +1351,15 @@ describe('OpenAIChatCompletionController', () => {
       expect(mockCreateAgentRunEnvelope.mock.invocationCallOrder[0]).toBeLessThan(
         initializeAgent.mock.invocationCallOrder[0],
       );
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtime: expect.objectContaining({
+            turnStartedAt: mockCreateAgentRunEnvelope.mock.results[0].value.receivedAt,
+          }),
+        }),
+        expect.anything(),
+      );
+      expect(req.turnStartedAt).toBe(mockCreateAgentRunEnvelope.mock.results[0].value.receivedAt);
       expect(req.body).not.toBe(requestBody);
       expect(req.body).toEqual(requestBody);
       expect(JSON.stringify(mockCreateAgentRunEnvelope.mock.results[0].value)).not.toContain(
