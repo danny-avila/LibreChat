@@ -43,7 +43,7 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 ## 2. Development Notes
 
-1. Before starting work, make sure your main branch has the latest commits with `npm run update`.
+1. Before starting work, make sure your `dev` branch has the latest commits with `npm run update`.
 2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
     - `npm install` sets the hooks up for you; set `HUSKY=0` to opt out.
     - The pre-commit hook runs the Static Checks CI job locally, scoped to the files in the commit. Run it by hand with `npm run static-checks`, against a base ref with `npm run static-checks -- --against origin/dev`, or with the slow gates (TypeScript, config migration tests, unused i18n keys, unused npm packages) via `npm run static-checks:full`.
@@ -60,11 +60,11 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 We utilize a GitFlow workflow to manage changes to this project's codebase. Follow these general steps when contributing code:
 
-1. Fork the repository and create a new branch with a descriptive slash-based name (e.g., `new/feature/x`).
+1. Fork the repository and branch off `dev` with a descriptive slash-based name (e.g., `new/feature/x`). All contributions target `dev`; `main` only moves at release time, and pull requests opened against it are retargeted automatically.
 2. Implement your changes and ensure that all tests pass.
 3. Commit your changes using conventional commit messages with GitFlow flags. Begin the commit message with a tag indicating the change type, such as "feat" (new feature), "fix" (bug fix), "docs" (documentation), or "refactor" (code refactoring), followed by a brief summary of the changes (e.g., `feat: Add new feature X to the project`).
-4. Submit a pull request with a clear and concise description of your changes and the reasons behind them.
-5. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the main branch.
+4. Submit a pull request against `dev` with a clear and concise description of your changes and the reasons behind them.
+5. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the `dev` branch.
 
 ## 4. Commit Message Format
 
