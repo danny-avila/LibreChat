@@ -327,22 +327,14 @@ const ContentPartsBody = memo(function ContentPartsBody({
     const indices = new Set<number>();
     const labels = new Map<string, number>();
     const ordinals = new Map<number, number>();
-    /** Content already sitting behind a synthesized card. A server marker that
-     *  later claims this span must NOT play the entrance: that animation
-     *  mounts a card open and folds it shut, which would flash every
-     *  sub-group back onto a fold the reader already watched happen. */
-    const folded = new Set<number>();
     for (const segment of phaseSegments ?? []) {
       if (segment.type !== 'phase') {
         continue;
       }
+      /** Synthesized cards are excluded: their header key moves with the
+       *  ticker, and a moving key reads here as a re-key — which would
+       *  suppress the entrance fold on every real marker after it. */
       if (segment.synthesized === true) {
-        for (const index of segment.contentIndices) {
-          folded.add(absoluteIndexAt(index));
-        }
-        /** Excluded from the key sets below: a synthesized header key moves
-         *  with the ticker, and a moving key reads as a re-key — which would
-         *  suppress the entrance fold on every real marker after it. */
         continue;
       }
       const text = getActivityLabelText(segment.labelPart);
@@ -351,8 +343,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
       labels.set(text, occurrence);
       ordinals.set(getPartKeyIndex(segment.labelPart, segment.labelIndex), occurrence);
     }
-    return { indices, labels, ordinals, folded };
-  }, [phaseSegments, absoluteIndexAt]);
+    return { indices, labels, ordinals };
+  }, [phaseSegments]);
   /** A phase label can finish after the root text stream settles, so
    *  `isSubmitting` is not a reliable entrance signal. Compare committed
    *  phase markers instead: a marker that appears after this renderer has
@@ -383,7 +375,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
     messageId: string;
     indices: Set<number>;
     labels: Map<string, number>;
-    folded: Set<number>;
   } | null>(null);
   const previousPhases =
     previousPhaseRef.current?.messageId === messageId ? previousPhaseRef.current : null;
@@ -403,7 +394,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
       messageId,
       indices: completedPhaseKeys.indices,
       labels: completedPhaseKeys.labels,
-      folded: completedPhaseKeys.folded,
     };
   }, [messageId, completedPhaseKeys]);
 
@@ -754,7 +744,13 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  lands, a card keyed the same way as the fold it replaces is
              *  RECONCILED rather than remounted, so a reader who opened the
              *  ticker keeps it open with no state to hand over. A phase with no
-             *  children has no span to anchor to and keeps its marker key. */
+             *  children has no span to anchor to and keeps its marker key.
+             *
+             *  `messageId` is deliberately absent. The assistant streams under
+             *  a synthetic `${userMessage.messageId}_` for the WHOLE run and
+             *  only takes its server id at `finalHandler`, so a key carrying it
+             *  remounts every card at settle and drops whatever the reader had
+             *  open. `ToolCallGroup` keys the same way for the same reason. */
             const cardKeyIndex = segment.hasContent ? segmentKeyIndex(segment) : phaseKeyIndex;
             const labelText = getActivityLabelText(segment.labelPart);
             const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
@@ -766,13 +762,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
               isLast &&
               effectiveIsSubmitting &&
               segmentIndices.includes(globalLastContentIdx);
-            /** This span was already behind a synthesized card on the previous
-             *  commit, so the marker replacing it is a header swap, not an
-             *  arrival — see `completedPhaseKeys.folded`. */
-            const replacesFold =
-              !synthesized &&
-              previousPhases != null &&
-              segmentIndices.some((index) => previousPhases.folded.has(index));
             const hasPendingApproval = segment.content.some(
               (part) => part != null && hasPendingApprovalInPart(part),
             );
@@ -794,7 +783,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
             }
             return (
               <ActivityPhaseGroup
-                key={`activity-phase-${messageId}-${cardKeyIndex}`}
+                key={`activity-phase-${cardKeyIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
                 hasPendingApproval={hasPendingApproval}
@@ -808,7 +797,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
                    *  already unanimated, so formation matching it is the
                    *  consistent behavior, not a downgrade. */
                   !synthesized &&
-                  !replacesFold &&
                   previousPhases != null &&
                   !previousPhases.indices.has(phaseKeyIndex) &&
                   (!hasPhaseRekey ||

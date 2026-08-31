@@ -684,20 +684,18 @@ describe('ContentParts — synthesized activity folds', () => {
     expect(screen.queryByRole('button', { name: FIRST })).toBeNull();
   });
 
-  it('starts a fresh card when the summary claims more content than the fold did', () => {
+  it('animates a summary that claims content the fold had left outside', () => {
     /** The server extends a phase back across short intermediate text; the
      *  client treats that text as a boundary so a bare final answer can never
-     *  hide, and the two spans therefore start in different places. A card
-     *  covering different content IS a different card — it is keyed and
-     *  mounted as one, and the toggle does not carry. Documented, not desired:
-     *  the same-span case above keeps it, which is the common one. */
+     *  hide. The spans therefore differ, the card is genuinely a new one, and
+     *  it plays the entrance — which mounts open over the text the reader was
+     *  looking at and folds it in, rather than blinking it out of existence. */
     const preface = makeTextPart('Checking now.');
     const { rerender } = render(
       <RecoilRoot>
         <ContentParts {...baseProps} content={[preface, ...labeledRun()]} />
       </RecoilRoot>,
     );
-    fireEvent.click(foldHeader());
 
     rerender(
       <RecoilRoot>
@@ -710,8 +708,28 @@ describe('ContentParts — synthesized activity folds', () => {
 
     expect(screen.getByRole('button', { name: 'Reviewed the release paths' })).toHaveAttribute(
       'aria-expanded',
-      'false',
+      'true',
     );
+  });
+
+  it('keeps the reader’s card open when the message takes its server id', () => {
+    /** The assistant streams under a synthetic `<userId>_` for the whole run
+     *  and only takes its real id at finalize. A key carrying `messageId`
+     *  would remount every card at that moment and drop the toggle. */
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="server-id" content={labeledRun()} />
+      </RecoilRoot>,
+    );
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('leaves an unlabeled run rendering exactly as before', () => {
