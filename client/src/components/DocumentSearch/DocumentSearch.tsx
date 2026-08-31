@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -24,8 +24,9 @@ import FilterBar, {
   type DocumentSearchFilterState,
 } from './FilterBar';
 
-const DEFAULT_TOP_K = 50;
+const DEFAULT_TOP_K = 100;
 const DEFAULT_CHUNKS_PER_DOC = 1000;
+const PAGE_SIZE = 10;
 const DEFAULT_APP_TITLE = 'BKL DB AI';
 
 function getAppTitle(): string {
@@ -56,6 +57,9 @@ const DocumentSearch: React.FC = () => {
   const [filters, setFilters] = useState<DocumentSearchFilterState>(EMPTY_DOC_FILTERS);
   // BKL: 다중 선택(프로젝트에 담기) — 현재 결과에서 체크된 doc_id 집합
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
+  const [currentPage, setCurrentPage] = useState(1);
+  // 페이지 이동 시 목록 위로 되돌린다. 스크롤은 window 가 아니라 이 컨테이너다.
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useDocumentTitle(`${localize('com_nav_document_search')} | ${getAppTitle()}`);
 
@@ -66,6 +70,7 @@ const DocumentSearch: React.FC = () => {
       setQuery(q);
       setSubmittedQuery(q);
       setSelectedDocIds(new Set());
+      setCurrentPage(1);
       const next = new URLSearchParams(searchParams);
       if (q) next.set('q', q);
       else next.delete('q');
@@ -92,7 +97,9 @@ const DocumentSearch: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const documents = search.data?.documents ?? [];
+  // `?? []` 를 그냥 두면 매 렌더 새 배열이 나와 아래 useMemo 들이 전부
+  // 무효화된다. 응답이 바뀔 때만 새 참조가 되도록 고정한다.
+  const documents = useMemo(() => search.data?.documents ?? [], [search.data?.documents]);
   const hasQuery = !!submittedQuery;
   const hasResults = documents.length > 0;
   const isSearching = search.isLoading;
@@ -130,6 +137,36 @@ const DocumentSearch: React.FC = () => {
       }));
   }, [documents, selectedDocIds]);
 
+  const totalPages = Math.max(1, Math.ceil(documents.length / PAGE_SIZE));
+  // 필터 변경 등으로 결과가 줄면 currentPage 가 범위를 벗어날 수 있다.
+  // 렌더 중 clamp 해서 빈 페이지가 그려지지 않게 한다.
+  const page = Math.min(currentPage, totalPages);
+  const pagedDocuments = useMemo(
+    () => documents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [documents, page],
+  );
+
+  const goToPage = useCallback((next: number) => {
+    setCurrentPage(next);
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    // 위로 되돌리는 건 부가 기능이다. scrollTo 가 없는 환경에서 던져
+    // 페이지 이동 자체를 막으면 안 된다.
+    if (typeof el.scrollTo === 'function') {
+      el.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      el.scrollTop = 0;
+    }
+  }, []);
+
+  // 상한에서 잘렸을 때만 안내한다. total_hit_count 는 서버측 필터·ACL 이전
+  // 근사값이라 그것만 보면 실제로는 다 보여준 경우에도 안내가 뜬다.
+  const showLimitNotice =
+    hasResults &&
+    (search.data?.truncated === true || (search.data?.total_hit_count ?? 0) > DEFAULT_TOP_K);
+
   const resultHeading = useMemo(() => {
     if (!hasQuery) return null;
     if (isSearching) return localize('com_document_search_searching');
@@ -164,6 +201,7 @@ const DocumentSearch: React.FC = () => {
     setSubmittedQuery('');
     setFilters(EMPTY_DOC_FILTERS);
     setSelectedDocIds(new Set());
+    setCurrentPage(1);
     setSearchParams(new URLSearchParams(), { replace: true });
     search.reset();
   }, [search, setSearchParams]);
@@ -192,7 +230,7 @@ const DocumentSearch: React.FC = () => {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-4xl px-6 py-8 sm:px-10 sm:py-10 md:px-12 md:py-12">
             {/* Header */}
             <div className="mb-6 flex items-center gap-2 text-text-primary">
@@ -243,7 +281,8 @@ const DocumentSearch: React.FC = () => {
                     }
                     className="shrink-0 text-xs text-text-secondary underline-offset-2 hover:text-text-primary hover:underline"
                   >
-                    {allSelected ? '전체 해제' : '전체 선택'}
+                    {/* 현재 페이지가 아니라 결과 전체가 대상이라 건수를 붙인다. */}
+                    {allSelected ? '전체 해제' : `전체 선택 (${selectableDocIds.length}건)`}
                   </button>
                 )}
               </div>
@@ -275,24 +314,30 @@ const DocumentSearch: React.FC = () => {
                 />
               )}
 
+              {showLimitNotice && <LimitNotice cap={DEFAULT_TOP_K} />}
+
               {hasResults && (
-                <ul className="flex flex-col">
-                  {documents.map((hit) => {
-                    const key = hit.doc_id || hit.file_name;
-                    return (
-                      <li key={key}>
-                        <ResultCard
-                          hit={hit}
-                          query={submittedQuery}
-                          isSelected={!!hit.doc_id && selectedDocIds.has(hit.doc_id)}
-                          onToggleSelect={
-                            hit.doc_id ? () => toggleDocSelection(hit.doc_id) : undefined
-                          }
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
+                <>
+                  <ul className="flex flex-col">
+                    {pagedDocuments.map((hit) => {
+                      const key = hit.doc_id || hit.file_name;
+                      return (
+                        <li key={key}>
+                          <ResultCard
+                            hit={hit}
+                            query={submittedQuery}
+                            isSelected={!!hit.doc_id && selectedDocIds.has(hit.doc_id)}
+                            onToggleSelect={
+                              hit.doc_id ? () => toggleDocSelection(hit.doc_id) : undefined
+                            }
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  <Pagination page={page} totalPages={totalPages} onChange={goToPage} />
+                </>
               )}
             </div>
           </div>
@@ -302,9 +347,7 @@ const DocumentSearch: React.FC = () => {
         {selectedProjectDocs.length > 0 && (
           <div className="pointer-events-none absolute bottom-6 left-0 right-0 z-30 flex justify-center px-4">
             <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-border-medium bg-surface-primary py-2 pl-4 pr-2 shadow-lg">
-              <span className="text-sm text-text-primary">
-                {selectedProjectDocs.length}건 선택
-              </span>
+              <span className="text-sm text-text-primary">{selectedProjectDocs.length}건 선택</span>
               <AddToProjectPopover
                 documents={selectedProjectDocs}
                 align="center"
@@ -331,6 +374,70 @@ const DocumentSearch: React.FC = () => {
         )}
       </main>
     </div>
+  );
+};
+
+/** 상한에서 잘렸을 때 뜨는 안내. 표시 건수가 아니라 "조회 범위"를 말한다 —
+ * ACL 로 표시 건수가 더 줄어도 문구가 거짓이 되지 않아야 한다. */
+export const LimitNotice: React.FC<{ cap: number }> = ({ cap }) => {
+  const localize = useLocalize();
+  return (
+    <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+      {localize('com_document_search_limit_notice', { 0: String(cap) })}
+    </div>
+  );
+};
+
+export const Pagination: React.FC<{
+  page: number;
+  totalPages: number;
+  onChange: (next: number) => void;
+}> = ({ page, totalPages, onChange }) => {
+  const localize = useLocalize();
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  const btn =
+    'inline-flex h-8 min-w-8 items-center justify-center rounded-md border border-border-light px-2.5 text-xs text-text-secondary transition hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
+
+  return (
+    <nav
+      aria-label={localize('com_document_search_page_nav')}
+      className="mt-6 flex items-center justify-center gap-1.5 border-t border-border-light pt-5"
+    >
+      <button
+        type="button"
+        className={btn}
+        disabled={page === 1}
+        onClick={() => onChange(page - 1)}
+      >
+        {localize('com_document_search_page_prev')}
+      </button>
+      {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+        <button
+          key={n}
+          type="button"
+          aria-current={n === page ? 'page' : undefined}
+          className={
+            n === page
+              ? 'inline-flex h-8 min-w-8 items-center justify-center rounded-md bg-surface-submit px-2.5 text-xs font-medium text-white'
+              : btn
+          }
+          onClick={() => onChange(n)}
+        >
+          {n}
+        </button>
+      ))}
+      <button
+        type="button"
+        className={btn}
+        disabled={page === totalPages}
+        onClick={() => onChange(page + 1)}
+      >
+        {localize('com_document_search_page_next')}
+      </button>
+    </nav>
   );
 };
 

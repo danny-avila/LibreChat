@@ -78,7 +78,15 @@ export interface SearchFacets {
 
 export interface KeywordSearchResponse {
   query: string;
+  /** 실제 반환된 문서 수 (ACL 통과 후). */
   total: number;
+  /**
+   * OpenSearch 가 센 문서 단위 매칭 총계 (근사). 서버측 필터·ACL 이전 값이라
+   * total 보다 클 수 있다. "결과가 더 있다" 안내에만 쓸 것.
+   */
+  total_hit_count?: number;
+  /** top_k 상한에서 실제로 잘렸는지. total_hit_count 와 달리 정확하다. */
+  truncated?: boolean;
   documents: DocumentHit[];
   facets?: SearchFacets;
 }
