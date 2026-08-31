@@ -93,7 +93,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLButtonElement, ArtifactsSubMenuPro
               shift={24}
               flip="left bottom-end top-end"
               className={cn(
-                'animate-popover-left z-40 flex min-w-[250px] max-w-[calc(100vw-1rem)] flex-col rounded-xl',
+                'animate-popover-left z-40 flex min-w-[min(250px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] flex-col rounded-xl',
                 'border border-border-light bg-surface-secondary shadow-lg',
               )}
             >
