@@ -517,13 +517,20 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
       serverName: `server-${index}`,
       serverConfig: serverConfig(`server-${index}`),
     }));
-    const getServerToolFunctionsSnapshot = jest.fn(async () => {
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      active -= 1;
-      return { tools: null };
-    });
+    const getServerToolFunctionsSnapshot = jest.fn(
+      async (
+        _userId: string,
+        _serverName: string,
+        _serverConfig: ParsedServerConfig,
+        _options?: { deadlineMs?: number; signal?: AbortSignal },
+      ) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        active -= 1;
+        return { tools: null };
+      },
+    );
 
     await loadMCPServerCatalogs(
       { user, servers },
