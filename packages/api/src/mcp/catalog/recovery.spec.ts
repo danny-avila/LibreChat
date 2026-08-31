@@ -71,7 +71,7 @@ describe('recoverMCPServerCatalogs', () => {
     expect(result.size).toBe(2);
   });
 
-  it('limits passive discovery to three concurrent servers', async () => {
+  it('limits passive discovery to three concurrent servers across simultaneous catalog loads', async () => {
     const servers = Array.from({ length: 7 }, (_, index) => ({
       serverName: `server-${index}`,
       serverConfig: serverConfig(`server-${index}`),
@@ -86,18 +86,22 @@ describe('recoverMCPServerCatalogs', () => {
       return { tools: [] };
     });
 
-    const result = await recoverMCPServerCatalogs(
-      { user, servers },
-      {
-        loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
-        discoverServerTools,
-        formatServerTools: jest.fn().mockReturnValue({}),
-      },
+    const deps = {
+      getCachedServerTools: jest.fn().mockResolvedValue(null),
+      getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({ tools: null }),
+      cacheServerTools: jest.fn(),
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue({}),
+    };
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => loadMCPServerCatalogs({ user, servers }, deps)),
     );
 
-    expect(discoverServerTools).toHaveBeenCalledTimes(7);
+    expect(discoverServerTools).toHaveBeenCalledTimes(28);
     expect(maxActive).toBe(3);
-    expect(result.size).toBe(7);
+    expect(results).toHaveLength(4);
+    expect(results.every((result) => result.serverTools.size === 7)).toBe(true);
   });
 
   it('logs configuration-impossible discovery failures at debug, keeping error for the unexpected', async () => {

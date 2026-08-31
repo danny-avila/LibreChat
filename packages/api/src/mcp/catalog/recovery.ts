@@ -7,9 +7,13 @@ import { hasCustomUserVars, getMissingCustomUserVars } from '../utils';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { getServerCustomUserVars } from '../auth';
 
-/** Bounds outbound MCP fan-out from one catalog request: snapshot refreshes issue a real
- *  `tools/list`, so they burst as readily as passive discovery does. */
+/**
+ * Bounds every catalog-related outbound operation in this runtime. Snapshot refreshes issue a
+ * real `tools/list` just like passive discovery, so both paths must share this process-wide gate
+ * rather than creating a request-local limiter that concurrent requests can multiply.
+ */
 const CATALOG_FANOUT_CONCURRENCY = 3;
+const catalogNetworkWork = createConcurrencyLimiter(CATALOG_FANOUT_CONCURRENCY);
 /**
  * Bounds one server's discovery end to end — connect, `tools/list` pagination, and the
  * unauthenticated fallback all draw down this single budget, so a slot is held for at most this
@@ -168,9 +172,10 @@ export async function recoverMCPServerCatalogs(
     return new Map();
   }
 
-  const recover = createConcurrencyLimiter(CATALOG_FANOUT_CONCURRENCY);
   const results = await Promise.all(
-    authorized.map((candidate) => recover(() => discoverCandidate(user, candidate, deps))),
+    authorized.map((candidate) =>
+      catalogNetworkWork(() => discoverCandidate(user, candidate, deps)),
+    ),
   );
 
   return new Map(results.filter((entry): entry is [string, LCAvailableTools] => entry[1] != null));
@@ -194,15 +199,14 @@ export async function loadMCPServerCatalogs(
     }),
   );
 
-  /** A snapshot is not a local read — both connection paths issue a fresh `tools/list` — so a
-   *  cache reset across many servers would otherwise burst unbounded outbound requests. */
-  const refresh = createConcurrencyLimiter(CATALOG_FANOUT_CONCURRENCY);
+  /** A snapshot is not a local read — both connection paths issue a fresh `tools/list` — so it
+   *  shares the process-wide catalog gate with passive discovery. */
   const snapshots = await Promise.all(
     cached.map((entry) => {
       if (entry.tools != null) {
         return entry;
       }
-      return refresh(async () => {
+      return catalogNetworkWork(async () => {
         try {
           const snapshot = await deps.getServerToolFunctionsSnapshot(
             user.id,
