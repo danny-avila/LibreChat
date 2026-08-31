@@ -427,12 +427,14 @@ async function executePrimeSkillFiles(
    * previous prime. Check freshness against codeapi for every distinct
    * storage session; if all are still active, reuse without
    * re-uploading. The skill version is part of the ref — when the
-   * skill is edited, the upsert clears the ref and forces a fresh
-   * upload on the next prime. */
+   * skill version has been bumped (e.g. by a SKILL.md edit), stale
+   * refs are treated as cache misses and the files are re-uploaded
+   * under the new version's session key. */
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
-    const allHaveRefs = skillFiles.every(
-      (sf) => getCodeEnvRefForProfile(sf, executionRouteKey) !== undefined,
-    );
+    const allHaveRefs = skillFiles.every((sf) => {
+      const ref = getCodeEnvRefForProfile(sf, executionRouteKey);
+      return ref !== undefined && ref.version === skill.version;
+    });
     if (allHaveRefs) {
       const refsBySession = new Map<string, CodeEnvRef>();
       for (const sf of skillFiles) {
