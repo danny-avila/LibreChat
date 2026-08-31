@@ -839,6 +839,7 @@ describe('agent queued turn methods', () => {
       ...claimInput(first.turn.queuedTurnId, { claimId: deliveryKey }),
       admissionId: deliveryKey,
       startedAt: START,
+      admissionProtocolVersion: 2,
     });
     await methods.deadLetterAgentQueuedTurn({
       user,
@@ -850,9 +851,14 @@ describe('agent queued turn methods', () => {
       failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'admission result unavailable' },
     });
 
-    await expect(methods.findQueuedTurnsNeedingAdmissionReconciliation()).resolves.toMatchObject([
-      { queuedTurnId: first.turn.queuedTurnId },
-    ]);
+    await expect(
+      methods.claimQueuedTurnsForAdmissionReconciliation({
+        claimId: 'reconciliation-1',
+        claimBy: 'reconciler-1',
+        now: new Date(LATER.getTime() + 1),
+        leaseUntil: new Date(LATER.getTime() + 60_001),
+      }),
+    ).resolves.toMatchObject([{ queuedTurnId: first.turn.queuedTurnId }]);
     await expect(
       methods.claimNextAgentQueuedTurn(
         claimInput(successor.turn.queuedTurnId, { claimId: 'successor-delivery' }),
@@ -873,12 +879,115 @@ describe('agent queued turn methods', () => {
         },
       }),
     ).resolves.toMatchObject({ outcome: 'admission_reconciled', turn: { status: 'admitted' } });
-    await expect(methods.findQueuedTurnsNeedingAdmissionReconciliation()).resolves.toEqual([]);
+    await expect(
+      methods.claimQueuedTurnsForAdmissionReconciliation({
+        claimId: 'reconciliation-2',
+        claimBy: 'reconciler-1',
+        now: new Date(LATER.getTime() + 1),
+        leaseUntil: new Date(LATER.getTime() + 60_001),
+      }),
+    ).resolves.toEqual([]);
     await expect(
       methods.claimNextAgentQueuedTurn(
         claimInput(successor.turn.queuedTurnId, { claimId: 'successor-delivery' }),
       ),
     ).resolves.toMatchObject({ outcome: 'acquired' });
+  });
+
+  it('leases reconciliation work fairly and terminalizes confirmed non-admission', async () => {
+    const quarantine = async (conversationId: string, clientRequestId: string) => {
+      const queued = await methods.enqueueAgentQueuedTurn(
+        enqueueInput({ conversationId, clientRequestId }),
+      );
+      const deliveryKey = `delivery-${clientRequestId}`;
+      const scope = { user, tenantId: 'tenant-1', conversationId };
+      await methods.reserveAgentQueuedTurnDelivery({
+        ...scope,
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey,
+      });
+      await methods.markQueuedTurnScheduled({
+        ...scope,
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey,
+        scheduledAt: START,
+      });
+      const claim = {
+        ...scope,
+        queuedTurnId: queued.turn.queuedTurnId,
+        claimId: deliveryKey,
+        claimBy: 'worker-1',
+        now: START,
+        leaseUntil: LATER,
+      };
+      await methods.claimNextAgentQueuedTurn(claim);
+      await methods.beginAgentQueuedTurnAdmission({
+        ...claim,
+        admissionId: deliveryKey,
+        startedAt: START,
+        admissionProtocolVersion: 2,
+      });
+      await methods.deadLetterAgentQueuedTurn({
+        ...scope,
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey,
+        settledAt: LATER,
+        failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'admission result unavailable' },
+      });
+      return { queued, deliveryKey, claim };
+    };
+    const first = await quarantine('conversation-1', 'reconciliation-fair-1');
+    const second = await quarantine('conversation-2', 'reconciliation-fair-2');
+    const claimNow = new Date(LATER.getTime() + 1);
+    const firstBatch = await methods.claimQueuedTurnsForAdmissionReconciliation({
+      claimId: 'reconciliation-fair-claim-1',
+      claimBy: 'reconciler-1',
+      now: claimNow,
+      leaseUntil: new Date(claimNow.getTime() + 60_000),
+      limit: 1,
+    });
+    expect(firstBatch).toMatchObject([{ queuedTurnId: first.queued.turn.queuedTurnId }]);
+    await methods.deferAgentQueuedTurnAdmissionReconciliation({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.queued.turn.queuedTurnId,
+      deliveryKey: first.deliveryKey,
+      claimId: 'reconciliation-fair-claim-1',
+      claimBy: 'reconciler-1',
+      availableAt: new Date(claimNow.getTime() + 60_000),
+    });
+
+    const secondBatch = await methods.claimQueuedTurnsForAdmissionReconciliation({
+      claimId: 'reconciliation-fair-claim-2',
+      claimBy: 'reconciler-1',
+      now: claimNow,
+      leaseUntil: new Date(claimNow.getTime() + 60_000),
+      limit: 1,
+    });
+    expect(secondBatch).toMatchObject([{ queuedTurnId: second.queued.turn.queuedTurnId }]);
+    await expect(
+      methods.settleAgentQueuedTurnAdmissionWithoutEvidence({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-2',
+        queuedTurnId: second.queued.turn.queuedTurnId,
+        deliveryKey: second.deliveryKey,
+        claimId: 'reconciliation-fair-claim-2',
+        claimBy: 'reconciler-1',
+        settledAt: claimNow,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.markAgentQueuedTurnAdmitted({
+        ...second.claim,
+        admissionId: second.deliveryKey,
+        admissionMode: 'ordinary',
+        generationId: 'generation-late-proof',
+        generationCreatedAt: 44,
+        settledAt: new Date(claimNow.getTime() + 1),
+      }),
+    ).resolves.toMatchObject({ outcome: 'conflict', turn: { status: 'dead' } });
   });
 
   it('scopes effective predecessor epochs to one captured queue root', async () => {

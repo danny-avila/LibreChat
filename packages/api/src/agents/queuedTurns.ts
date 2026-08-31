@@ -13,9 +13,12 @@ import type {
   IMessage,
   MessageMethods,
 } from '@librechat/data-schemas';
+import type {
+  AgentContinuationAdmissionSource,
+  AgentTriggerExecutionHostDeps,
+} from './triggers/host';
 import type { AgentContinueTriggerEnvelope, AgentTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
-import type { AgentTriggerExecutionHostDeps } from './triggers/host';
 import type { AgentTriggerDeliveryFailure } from './triggers/engine';
 import { getAgentTriggerIdempotencyKey, parseAgentTriggerEnvelope } from './triggers/envelope';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
@@ -25,6 +28,9 @@ export const AGENT_QUEUED_TURN_SOURCE = 'agent-queued-turn';
 const AGENT_QUEUED_TURN_EVENT = 'agent.queued-turn';
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt unfinished error';
 const CLAIM_LEASE_MS = 2 * 60 * 1000;
+const RECONCILIATION_LEASE_MS = 2 * 60 * 1000;
+const RECONCILIATION_BACKOFF_BASE_MS = 5_000;
+const RECONCILIATION_BACKOFF_MAX_MS = 5 * 60 * 1000;
 const DEFAULT_RECOVERY_INTERVAL_MS = 30_000;
 const DEFAULT_RECOVERY_LIMIT = 100;
 const MAX_FAILURE_CODE_LENGTH = 128;
@@ -87,7 +93,112 @@ export interface AgentQueuedTurnScheduler {
   recover: () => Promise<number>;
 }
 
-export function createAgentQueuedTurnDeadLetterSettlement({
+export interface AgentQueuedTurnLifecycle {
+  prepareContinue: NonNullable<AgentTriggerExecutionHostDeps['prepareContinue']>;
+  settleBeforeDeadLetter: (
+    rawEnvelope: unknown,
+    failure: AgentTriggerDeliveryFailure,
+  ) => Promise<void>;
+  recordExecutionAdmission: (
+    rawSource: unknown,
+    input: AgentQueuedTurnExecutionAdmission,
+  ) => Promise<boolean>;
+  initialize: () => Promise<void>;
+  stop: () => Promise<void>;
+  schedule: (turn: AgentQueuedTurnRecord) => Promise<string>;
+  cancel: (
+    input: Parameters<AgentQueuedTurnMethods['cancelAgentQueuedTurn']>[0],
+  ) => ReturnType<AgentQueuedTurnMethods['cancelAgentQueuedTurn']>;
+  recover: () => Promise<number>;
+}
+
+export interface AgentQueuedTurnLifecycleDeps {
+  methods: QueuedTurnResolverMethods;
+  getGenerationJob: AgentQueuedTurnResolverDeps['getGenerationJob'];
+  getGenerationAdmissionEvidence: GetGenerationAdmissionEvidence;
+  enqueue: EnqueueAgentQueuedTurnDelivery;
+  retireDelivery?: (
+    deliveryKey: string,
+    sourceId: string,
+    reason: string,
+    options?: { onlyIfDead?: boolean },
+  ) => Promise<boolean>;
+  getDelivery?: (deliveryKey: string) => Promise<unknown | null>;
+  now?: () => number;
+  claimBy?: string;
+  recoveryIntervalMs?: number;
+  recoveryLimit?: number;
+}
+
+export interface AgentQueuedTurnExecutionAdmission {
+  userId: string;
+  tenantId?: string;
+  conversationId: string;
+  clientRequestId: string;
+  generationId: string;
+  generationCreatedAt: number;
+}
+
+function parseQueuedTurnAdmissionSource(raw: unknown): AgentContinuationAdmissionSource | null {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  if (!('source' in raw) || raw.source !== AGENT_QUEUED_TURN_SOURCE) {
+    return null;
+  }
+  const sourceId = 'sourceId' in raw ? raw.sourceId : undefined;
+  const claimId = 'claimId' in raw ? raw.claimId : undefined;
+  const claimBy = 'claimBy' in raw ? raw.claimBy : undefined;
+  if (
+    typeof sourceId !== 'string' ||
+    sourceId.length === 0 ||
+    sourceId.length > 128 ||
+    typeof claimId !== 'string' ||
+    claimId.length === 0 ||
+    claimId.length > 128 ||
+    typeof claimBy !== 'string' ||
+    claimBy.length === 0 ||
+    claimBy.length > 256
+  ) {
+    throw new TypeError('Agent queued turn admission source is invalid');
+  }
+  return { source: AGENT_QUEUED_TURN_SOURCE, sourceId, claimId, claimBy };
+}
+
+/** Commits the source-owned admission receipt after execution enrollment wins
+ * its start fence but before the provider implementation can be invoked. */
+async function settleAgentQueuedTurnExecutionAdmission(
+  rawSource: unknown,
+  input: AgentQueuedTurnExecutionAdmission,
+  methods: Pick<AgentQueuedTurnMethods, 'markAgentQueuedTurnAdmitted'>,
+): Promise<boolean> {
+  const source = parseQueuedTurnAdmissionSource(rawSource);
+  if (source == null) {
+    return false;
+  }
+  if (!Types.ObjectId.isValid(input.userId)) {
+    throw new TypeError('Agent queued turn admission principal is invalid');
+  }
+  const settled = await methods.markAgentQueuedTurnAdmitted({
+    user: new Types.ObjectId(input.userId),
+    ...(input.tenantId != null && { tenantId: input.tenantId }),
+    conversationId: input.conversationId,
+    queuedTurnId: source.sourceId,
+    claimId: source.claimId,
+    claimBy: source.claimBy,
+    admissionId: input.clientRequestId,
+    admissionMode: 'ordinary',
+    generationId: input.generationId,
+    generationCreatedAt: input.generationCreatedAt,
+    settledAt: new Date(),
+  });
+  if (settled.outcome === 'conflict') {
+    throw new Error('The queued turn execution admission could not be committed');
+  }
+  return true;
+}
+
+function createAgentQueuedTurnDeadLetterSettlement({
   methods,
   getGenerationAdmissionEvidence,
   now = Date.now,
@@ -224,6 +335,11 @@ function normalizeFailure(code: string, message: string): { code: string; messag
   };
 }
 
+function reconciliationBackoff(attempts: number | undefined): number {
+  const exponent = Math.max(0, Math.min((attempts ?? 1) - 1, 6));
+  return Math.min(RECONCILIATION_BACKOFF_BASE_MS * 2 ** exponent, RECONCILIATION_BACKOFF_MAX_MS);
+}
+
 function payloadQueuedTurnId(envelope: AgentContinueTriggerEnvelope): string | null | undefined {
   if (
     envelope.event.source.type !== 'internal' ||
@@ -278,7 +394,7 @@ function deadClaim(
 
 /** Resolves one queued message into a fresh ordinary Agent turn. The durable
  * claim remains owned by the queue record until generation admission is known. */
-export function createAgentQueuedTurnResolver({
+function createAgentQueuedTurnResolver({
   methods,
   getGenerationJob,
   now = Date.now,
@@ -447,6 +563,7 @@ export function createAgentQueuedTurnResolver({
       claimBy: claim.claimBy,
       admissionId: context.idempotencyKey,
       startedAt: new Date(now()),
+      admissionProtocolVersion: 2,
     });
     if (admission.outcome === 'conflict') {
       throw executionError('The queued turn admission fence is no longer owned.', {
@@ -469,6 +586,12 @@ export function createAgentQueuedTurnResolver({
       ...(claim.files != null && { files: claim.files }),
       ...(claim.quotes != null && { quotes: claim.quotes }),
       ...(claim.manualSkills != null && { manualSkills: claim.manualSkills }),
+      admissionSource: {
+        source: AGENT_QUEUED_TURN_SOURCE,
+        sourceId: claim.queuedTurnId,
+        claimId: claim.claimId,
+        claimBy: claim.claimBy,
+      },
       releaseOnDefiniteFailure: async (error) => {
         if (
           error?.retryable === false ||
@@ -540,7 +663,7 @@ function deliveryEnvelope(turn: AgentQueuedTurnRecord) {
 
 /** Repairs the intentional record-first outbox seam by replaying a stable
  * delivery identity until the queue row records the scheduling receipt. */
-export function createAgentQueuedTurnScheduler({
+function createAgentQueuedTurnScheduler({
   methods,
   enqueue,
   getGenerationAdmissionEvidence,
@@ -596,17 +719,64 @@ export function createAgentQueuedTurnScheduler({
       return recovery;
     }
     const task = (async () => {
+      const reconciliationNow = new Date();
+      const reconciliationClaimId = randomUUID();
       const [turns, quarantined] = await Promise.all([
         runAsSystem(() => methods.findQueuedTurnsNeedingDelivery(recoveryLimit)),
-        runAsSystem(() => methods.findQueuedTurnsNeedingAdmissionReconciliation(recoveryLimit)),
+        runAsSystem(() =>
+          methods.claimQueuedTurnsForAdmissionReconciliation({
+            claimId: reconciliationClaimId,
+            claimBy: PROCESS_CLAIM_OWNER,
+            now: reconciliationNow,
+            leaseUntil: new Date(reconciliationNow.getTime() + RECONCILIATION_LEASE_MS),
+            limit: recoveryLimit,
+          }),
+        ),
       ]);
       let repaired = 0;
       for (const turn of quarantined) {
         const deliveryKey = turn.deliveryKey;
-        if (deliveryKey == null) {
+        if (
+          deliveryKey == null ||
+          turn.reconciliationClaimId !== reconciliationClaimId ||
+          turn.reconciliationClaimBy !== PROCESS_CLAIM_OWNER
+        ) {
           continue;
         }
+        const defer = () =>
+          runAsSystem(() =>
+            methods.deferAgentQueuedTurnAdmissionReconciliation({
+              user: turn.user,
+              ...(turn.tenantId != null && { tenantId: turn.tenantId }),
+              conversationId: turn.conversationId,
+              queuedTurnId: turn.queuedTurnId,
+              deliveryKey,
+              claimId: reconciliationClaimId,
+              claimBy: PROCESS_CLAIM_OWNER,
+              availableAt: new Date(
+                Date.now() + reconciliationBackoff(turn.reconciliationAttempts),
+              ),
+            }),
+          );
         try {
+          if (turn.admissionProtocolVersion === 2) {
+            const settled = await runAsSystem(() =>
+              methods.settleAgentQueuedTurnAdmissionWithoutEvidence({
+                user: turn.user,
+                ...(turn.tenantId != null && { tenantId: turn.tenantId }),
+                conversationId: turn.conversationId,
+                queuedTurnId: turn.queuedTurnId,
+                deliveryKey,
+                claimId: reconciliationClaimId,
+                claimBy: PROCESS_CLAIM_OWNER,
+                settledAt: new Date(),
+              }),
+            );
+            if (settled) {
+              repaired += 1;
+            }
+            continue;
+          }
           const admissionEvidence = await getGenerationAdmissionEvidence(
             turn.user.toString(),
             deliveryKey,
@@ -614,6 +784,7 @@ export function createAgentQueuedTurnScheduler({
             turn.conversationId,
           );
           if (admissionEvidence == null) {
+            await defer();
             continue;
           }
           const settled = await runAsSystem(() =>
@@ -629,12 +800,15 @@ export function createAgentQueuedTurnScheduler({
                 message: 'The queued turn admission requires reconciliation',
               },
               admissionEvidence,
+              reconciliationClaimId,
+              reconciliationClaimBy: PROCESS_CLAIM_OWNER,
             }),
           );
           if (settled.outcome === 'admission_reconciled') {
             repaired += 1;
           }
         } catch (error) {
+          await defer().catch(() => undefined);
           logger.warn(
             `[agentQueuedTurns] Failed to reconcile admission ${turn.queuedTurnId}: ${
               error instanceof Error ? error.message : String(error)
@@ -694,5 +868,93 @@ export function createAgentQueuedTurnScheduler({
       }
       await recovery;
     },
+  };
+}
+
+async function cancelAgentQueuedTurn(
+  input: Parameters<AgentQueuedTurnMethods['cancelAgentQueuedTurn']>[0],
+  deps: Pick<AgentQueuedTurnLifecycleDeps, 'methods' | 'retireDelivery' | 'getDelivery'>,
+): ReturnType<AgentQueuedTurnMethods['cancelAgentQueuedTurn']> {
+  const cancelled = await deps.methods.cancelAgentQueuedTurn(input);
+  if (
+    (cancelled.outcome !== 'cancelled' && cancelled.outcome !== 'already_cancelled') ||
+    cancelled.turn.deliveryKey == null ||
+    deps.retireDelivery == null
+  ) {
+    return cancelled;
+  }
+  const deliveryKey = cancelled.turn.deliveryKey;
+  let retired = await deps.retireDelivery(
+    deliveryKey,
+    AGENT_QUEUED_TURN_SOURCE,
+    'queued_turn_cancelled',
+  );
+  if (!retired) {
+    retired = await deps.retireDelivery(
+      deliveryKey,
+      AGENT_QUEUED_TURN_SOURCE,
+      'queued_turn_cancelled',
+      { onlyIfDead: true },
+    );
+  }
+  if (!retired && deps.getDelivery != null) {
+    const fenced = await deps.methods.beginAgentQueuedTurnMissingDeliveryRetirement({
+      deliveryKey,
+    });
+    if (fenced && (await deps.getDelivery(deliveryKey)) == null) {
+      retired = await deps.methods.markAgentQueuedTurnMissingDeliveryRetired({ deliveryKey });
+    }
+  }
+  if (retired) {
+    await deps.methods.markAgentQueuedTurnDeliveryRetired({ deliveryKey });
+  }
+  return cancelled;
+}
+
+/** Owns the complete backend Agent queued-turn lifecycle while retaining
+ * Mongo, trigger delivery, and generation execution as internal adapters. */
+export function createAgentQueuedTurnLifecycle({
+  methods,
+  getGenerationJob,
+  getGenerationAdmissionEvidence,
+  enqueue,
+  retireDelivery,
+  getDelivery,
+  now,
+  claimBy,
+  recoveryIntervalMs,
+  recoveryLimit,
+}: AgentQueuedTurnLifecycleDeps): AgentQueuedTurnLifecycle {
+  const scheduler = createAgentQueuedTurnScheduler({
+    methods,
+    enqueue,
+    getGenerationAdmissionEvidence,
+    ...(recoveryIntervalMs != null && { recoveryIntervalMs }),
+    ...(recoveryLimit != null && { recoveryLimit }),
+  });
+  return {
+    prepareContinue: createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob,
+      ...(now != null && { now }),
+      ...(claimBy != null && { claimBy }),
+    }),
+    settleBeforeDeadLetter: createAgentQueuedTurnDeadLetterSettlement({
+      methods,
+      getGenerationAdmissionEvidence,
+      ...(now != null && { now }),
+    }),
+    recordExecutionAdmission: (rawSource, input) =>
+      settleAgentQueuedTurnExecutionAdmission(rawSource, input, methods),
+    initialize: scheduler.initialize,
+    stop: scheduler.stop,
+    schedule: scheduler.schedule,
+    cancel: (input) =>
+      cancelAgentQueuedTurn(input, {
+        methods,
+        ...(retireDelivery != null && { retireDelivery }),
+        ...(getDelivery != null && { getDelivery }),
+      }),
+    recover: scheduler.recover,
   };
 }

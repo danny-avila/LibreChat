@@ -7,13 +7,9 @@ import type {
   IMessage,
   MessageMethods,
 } from '@librechat/data-schemas';
+import type { AgentQueuedTurnResolverDeps, AgentQueuedTurnSchedulerDeps } from './queuedTurns';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
-import {
-  AGENT_QUEUED_TURN_SOURCE,
-  createAgentQueuedTurnDeadLetterSettlement,
-  createAgentQueuedTurnResolver,
-  createAgentQueuedTurnScheduler,
-} from './queuedTurns';
+import { AGENT_QUEUED_TURN_SOURCE, createAgentQueuedTurnLifecycle } from './queuedTurns';
 import { getAgentTriggerIdempotencyKey } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 
@@ -126,6 +122,42 @@ function resolverMethods() {
   };
 }
 
+function createAgentQueuedTurnResolver(deps: AgentQueuedTurnResolverDeps) {
+  return createAgentQueuedTurnLifecycle({
+    ...deps,
+    getGenerationAdmissionEvidence: async () => null,
+    enqueue: async () => ({ deliveryKey: 'unused-delivery' }),
+  }).prepareContinue;
+}
+
+function createAgentQueuedTurnDeadLetterSettlement({
+  methods,
+  getGenerationAdmissionEvidence = async () => null,
+  now,
+}: {
+  methods: Pick<AgentQueuedTurnMethods, 'deadLetterAgentQueuedTurn'>;
+  getGenerationAdmissionEvidence?: AgentQueuedTurnSchedulerDeps['getGenerationAdmissionEvidence'];
+  now?: () => number;
+}) {
+  return createAgentQueuedTurnLifecycle({
+    methods: methods as AgentQueuedTurnSchedulerDeps['methods'] &
+      AgentQueuedTurnResolverDeps['methods'],
+    getGenerationJob: async () => null,
+    getGenerationAdmissionEvidence,
+    enqueue: async () => ({ deliveryKey: 'unused-delivery' }),
+    ...(now != null && { now }),
+  }).settleBeforeDeadLetter;
+}
+
+function createAgentQueuedTurnScheduler(deps: AgentQueuedTurnSchedulerDeps) {
+  return createAgentQueuedTurnLifecycle({
+    ...deps,
+    methods: deps.methods as AgentQueuedTurnSchedulerDeps['methods'] &
+      AgentQueuedTurnResolverDeps['methods'],
+    getGenerationJob: async () => null,
+  });
+}
+
 describe('Agent queued-turn continuation', () => {
   it('dead-letters a delivery while preserving an admission-indeterminate source', async () => {
     const deadLetterAgentQueuedTurn = jest.fn(async () => ({
@@ -221,6 +253,12 @@ describe('Agent queued-turn continuation', () => {
       files: [{ file_id: 'file-1' }],
       quotes: ['quote'],
       manualSkills: ['skill-1'],
+      admissionSource: {
+        source: AGENT_QUEUED_TURN_SOURCE,
+        sourceId: 'queued-turn-1',
+        claimId: 'trigger-1',
+        claimBy: 'worker-1',
+      },
     });
     if (prepared?.status !== 'ready') {
       throw new Error('Expected a ready queued turn');
@@ -230,6 +268,7 @@ describe('Agent queued-turn continuation', () => {
       expect.objectContaining({
         queuedTurnId: 'queued-turn-1',
         admissionId: 'trigger-1',
+        admissionProtocolVersion: 2,
       }),
     );
     await prepared.settleOnAdmission?.({
@@ -248,6 +287,99 @@ describe('Agent queued-turn continuation', () => {
         generationCreatedAt: NOW + 1,
       }),
     );
+  });
+
+  it('records execution admission through the source-owned lifecycle seam', async () => {
+    const { methods, spies } = resolverMethods();
+    const lifecycle = createAgentQueuedTurnLifecycle({
+      methods,
+      getGenerationJob: async () => null,
+      getGenerationAdmissionEvidence: async () => null,
+      enqueue: async () => ({ deliveryKey: 'queued-delivery-1' }),
+    });
+
+    await expect(
+      lifecycle.recordExecutionAdmission(
+        {
+          source: AGENT_QUEUED_TURN_SOURCE,
+          sourceId: 'queued-turn-1',
+          claimId: 'trigger-1',
+          claimBy: 'worker-1',
+        },
+        {
+          userId: USER_ID,
+          tenantId: 'tenant-1',
+          conversationId: 'conversation-1',
+          clientRequestId: 'trigger-1',
+          generationId: 'conversation-1',
+          generationCreatedAt: NOW + 1,
+        },
+      ),
+    ).resolves.toBe(true);
+    expect(spies.markAgentQueuedTurnAdmitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-1',
+        claimId: 'trigger-1',
+        claimBy: 'worker-1',
+        admissionId: 'trigger-1',
+        generationId: 'conversation-1',
+        generationCreatedAt: NOW + 1,
+      }),
+    );
+  });
+
+  it('retires cancellation through the same lifecycle interface', async () => {
+    const { methods: resolver } = resolverMethods();
+    const cancelled = {
+      ...claim(),
+      status: 'cancelled' as const,
+      deliveryKey: 'delivery-cancelled',
+      terminalReceipt: {
+        outcome: 'cancelled' as const,
+        settledAt: new Date(NOW),
+      },
+    };
+    const cancelAgentQueuedTurn = jest.fn(async () => ({
+      outcome: 'cancelled' as const,
+      turn: cancelled,
+    }));
+    const markAgentQueuedTurnDeliveryRetired = jest.fn(async () => true);
+    const retireDelivery = jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const lifecycle = createAgentQueuedTurnLifecycle({
+      methods: {
+        ...resolver,
+        cancelAgentQueuedTurn,
+        markAgentQueuedTurnDeliveryRetired,
+      },
+      getGenerationJob: async () => null,
+      getGenerationAdmissionEvidence: async () => null,
+      enqueue: async () => ({ deliveryKey: 'unused-delivery' }),
+      retireDelivery,
+    });
+
+    await expect(
+      lifecycle.cancel({
+        user: new Types.ObjectId(USER_ID),
+        tenantId: 'tenant-1',
+        queuedTurnId: 'queued-turn-1',
+      }),
+    ).resolves.toMatchObject({ outcome: 'cancelled' });
+    expect(retireDelivery).toHaveBeenNthCalledWith(
+      1,
+      'delivery-cancelled',
+      AGENT_QUEUED_TURN_SOURCE,
+      'queued_turn_cancelled',
+    );
+    expect(retireDelivery).toHaveBeenNthCalledWith(
+      2,
+      'delivery-cancelled',
+      AGENT_QUEUED_TURN_SOURCE,
+      'queued_turn_cancelled',
+      { onlyIfDead: true },
+    );
+    expect(markAgentQueuedTurnDeliveryRetired).toHaveBeenCalledWith({
+      deliveryKey: 'delivery-cancelled',
+    });
   });
 
   it('settles an obsolete-lane delivery without crossing ordinary admission', async () => {
@@ -611,6 +743,8 @@ describe('Agent queued-turn delivery scheduling', () => {
       deliveryState: 'published' as const,
       admissionId: 'delivery-indeterminate',
       admissionStartedAt: new Date(NOW - 1_000),
+      reconciliationClaimId: 'reconciliation-claim',
+      reconciliationClaimBy: 'reconciler-1',
       terminalReceipt: {
         outcome: 'dead' as const,
         settledAt: new Date(NOW),
@@ -631,7 +765,13 @@ describe('Agent queued-turn delivery scheduling', () => {
     const scheduler = createAgentQueuedTurnScheduler({
       methods: {
         findQueuedTurnsNeedingDelivery: jest.fn(async () => []),
-        findQueuedTurnsNeedingAdmissionReconciliation: jest.fn(async () => [turn]),
+        claimQueuedTurnsForAdmissionReconciliation: jest.fn(async (input) => [
+          {
+            ...turn,
+            reconciliationClaimId: input.claimId,
+            reconciliationClaimBy: input.claimBy,
+          },
+        ]),
         deadLetterAgentQueuedTurn,
       } as unknown as AgentQueuedTurnMethods,
       enqueue: jest.fn(),
@@ -653,6 +793,55 @@ describe('Agent queued-turn delivery scheduling', () => {
           generationId: 'conversation-1',
           generationCreatedAt: NOW + 1,
         },
+      }),
+    );
+  });
+
+  it('settles source-fenced non-admission without transient job-store evidence', async () => {
+    const turn = {
+      ...queuedTurn('queued-turn-source-fenced', 1),
+      status: 'dead' as const,
+      deliveryKey: 'delivery-source-fenced',
+      deliveryState: 'published' as const,
+      admissionId: 'delivery-source-fenced',
+      admissionStartedAt: new Date(NOW - 1_000),
+      admissionProtocolVersion: 2 as const,
+      terminalReceipt: {
+        outcome: 'dead' as const,
+        settledAt: new Date(NOW),
+        failure: {
+          code: 'ADMISSION_INDETERMINATE',
+          message: 'The queued turn may have been admitted',
+        },
+      },
+    };
+    const settleAgentQueuedTurnAdmissionWithoutEvidence = jest.fn(async () => true);
+    const getGenerationAdmissionEvidence = jest.fn(async () => ({
+      generationId: 'stale-generation',
+      generationCreatedAt: NOW,
+    }));
+    const scheduler = createAgentQueuedTurnScheduler({
+      methods: {
+        findQueuedTurnsNeedingDelivery: jest.fn(async () => []),
+        claimQueuedTurnsForAdmissionReconciliation: jest.fn(async (input) => [
+          {
+            ...turn,
+            reconciliationClaimId: input.claimId,
+            reconciliationClaimBy: input.claimBy,
+          },
+        ]),
+        settleAgentQueuedTurnAdmissionWithoutEvidence,
+      } as unknown as AgentQueuedTurnMethods,
+      enqueue: jest.fn(),
+      getGenerationAdmissionEvidence,
+    });
+
+    await expect(scheduler.recover()).resolves.toBe(1);
+    expect(getGenerationAdmissionEvidence).not.toHaveBeenCalled();
+    expect(settleAgentQueuedTurnAdmissionWithoutEvidence).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-source-fenced',
+        deliveryKey: 'delivery-source-fenced',
       }),
     );
   });

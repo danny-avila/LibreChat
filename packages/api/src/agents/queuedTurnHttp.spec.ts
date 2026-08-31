@@ -51,7 +51,7 @@ describe('Agent queued-turn HTTP admission receipts', () => {
       methods: methods as unknown as AgentQueuedTurnMethods & {
         getConvo: typeof methods.getConvo;
       },
-      scheduler: { schedule: jest.fn() },
+      lifecycle: { schedule: jest.fn(), cancel: jest.fn() },
       checkAgentAccess: jest.fn(async () => true),
     } satisfies AgentQueuedTurnHttpDeps;
 
@@ -85,7 +85,7 @@ describe('Agent queued-turn HTTP admission receipts', () => {
       methods: methods as unknown as AgentQueuedTurnMethods & {
         getConvo: typeof methods.getConvo;
       },
-      scheduler: { schedule },
+      lifecycle: { schedule, cancel: jest.fn() },
       checkAgentAccess: jest.fn(async () => true),
     } satisfies AgentQueuedTurnHttpDeps;
 
@@ -139,27 +139,14 @@ describe('Agent queued-turn HTTP admission receipts', () => {
     const methods = {
       getConvo: jest.fn(async () => ({ agent_id: 'agent_1', endpoint: 'agents' })),
       listAgentQueuedTurnReceipts: jest.fn(async () => [dead]),
-      cancelAgentQueuedTurn: jest.fn(async () => ({
-        outcome: 'cancelled' as const,
-        turn: cancelled,
-      })),
-      markAgentQueuedTurnDeliveryRetired: jest.fn(async () => true),
     };
-    const retireDelivery = jest.fn(
-      async (
-        _deliveryKey: string,
-        _sourceId: string,
-        _reason: string,
-        options?: { onlyIfDead?: boolean },
-      ) => options?.onlyIfDead === true,
-    );
+    const cancel = jest.fn(async () => ({ outcome: 'cancelled' as const, turn: cancelled }));
     const deps = {
       methods: methods as unknown as AgentQueuedTurnMethods & {
         getConvo: typeof methods.getConvo;
       },
-      scheduler: { schedule: jest.fn() },
+      lifecycle: { schedule: jest.fn(), cancel },
       checkAgentAccess: jest.fn(async () => true),
-      retireDelivery,
     } satisfies AgentQueuedTurnHttpDeps;
 
     await expect(
@@ -182,20 +169,7 @@ describe('Agent queued-turn HTTP admission receipts', () => {
       status: 200,
       body: { receipt: { queuedTurnId: 'queued-turn-1', status: 'cancelled' } },
     });
-    expect(retireDelivery).toHaveBeenCalledWith(
-      'delivery-1',
-      'agent-queued-turn',
-      'queued_turn_cancelled',
-    );
-    expect(retireDelivery).toHaveBeenLastCalledWith(
-      'delivery-1',
-      'agent-queued-turn',
-      'queued_turn_cancelled',
-      { onlyIfDead: true },
-    );
-    expect(methods.markAgentQueuedTurnDeliveryRetired).toHaveBeenCalledWith({
-      deliveryKey: 'delivery-1',
-    });
+    expect(cancel).toHaveBeenCalledWith(expect.objectContaining({ queuedTurnId: 'queued-turn-1' }));
   });
 
   it('retires a cancelled source after its published delivery receipt expires', async () => {
@@ -210,28 +184,21 @@ describe('Agent queued-turn HTTP admission receipts', () => {
     };
     const methods = {
       getConvo: jest.fn(async () => ({ agent_id: 'agent_1', endpoint: 'agents' })),
-      cancelAgentQueuedTurn: jest.fn(async () => ({
-        outcome: 'already_cancelled' as const,
-        turn: cancelled,
-      })),
-      beginAgentQueuedTurnMissingDeliveryRetirement: jest.fn(async () => true),
-      markAgentQueuedTurnMissingDeliveryRetired: jest.fn(async () => true),
-      markAgentQueuedTurnDeliveryRetired: jest.fn(async () => true),
     };
+    const cancel = jest.fn(async () => ({
+      outcome: 'already_cancelled' as const,
+      turn: cancelled,
+    }));
     const deps = {
       methods: methods as unknown as AgentQueuedTurnMethods & {
         getConvo: typeof methods.getConvo;
       },
-      scheduler: { schedule: jest.fn() },
-      retireDelivery: jest.fn(async () => false),
-      getDelivery: jest.fn(async () => null),
+      lifecycle: { schedule: jest.fn(), cancel },
     } satisfies AgentQueuedTurnHttpDeps;
 
     await expect(
       handleAgentQueuedTurnCancel({ id: USER_ID }, 'queued-turn-1', deps),
     ).resolves.toMatchObject({ status: 200 });
-    expect(methods.markAgentQueuedTurnMissingDeliveryRetired).toHaveBeenCalledWith({
-      deliveryKey: 'delivery-expired',
-    });
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 });

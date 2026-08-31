@@ -84,6 +84,12 @@ const queuedTurnSchema: Schema<IAgentQueuedTurnDocument> = new Schema(
     claimUntil: { type: Date },
     admissionStartedAt: { type: Date },
     admissionId: { type: String, maxlength: 128 },
+    admissionProtocolVersion: { type: Number, enum: [2] },
+    reconciliationAvailableAt: { type: Date },
+    reconciliationClaimId: { type: String, maxlength: 128 },
+    reconciliationClaimBy: { type: String, maxlength: 256 },
+    reconciliationClaimUntil: { type: Date },
+    reconciliationAttempts: { type: Number, min: 0 },
     terminalReceipt: { type: terminalReceiptSchema },
   },
   { timestamps: true },
@@ -134,6 +140,12 @@ queuedTurnSchema.index(
 );
 queuedTurnSchema.index({ tenantId: 1, user: 1, status: 1, claimUntil: 1 });
 queuedTurnSchema.index({ status: 1, createdAt: 1, _id: 1 });
+queuedTurnSchema.index({
+  status: 1,
+  reconciliationAvailableAt: 1,
+  reconciliationClaimUntil: 1,
+  _id: 1,
+});
 queuedTurnSchema.index({
   status: 1,
   scheduledAt: 1,

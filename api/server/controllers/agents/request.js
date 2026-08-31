@@ -1530,6 +1530,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         status: 409,
       });
     }
+    if (isTriggerContinuation && req.body?.agentContinuationAdmission != null) {
+      const {
+        settleAgentQueuedTurnExecutionAdmission,
+      } = require('~/server/services/Agents/triggers');
+      await settleAgentQueuedTurnExecutionAdmission(req.body.agentContinuationAdmission, {
+        userId,
+        ...(tenantId != null && { tenantId }),
+        conversationId,
+        clientRequestId,
+        generationId: streamId,
+        generationCreatedAt: jobCreatedAt,
+      });
+    }
 
     acceptAgentStartupTelemetry(req, streamId);
     startupTelemetry?.mark('metadata_persisted');

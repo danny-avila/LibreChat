@@ -6,9 +6,7 @@ const {
   SUBAGENT_COMPLETION_SOURCE,
   createBackgroundToolCompletionWakeupResolver,
   BACKGROUND_TOOL_COMPLETION_SOURCE,
-  createAgentQueuedTurnResolver,
-  createAgentQueuedTurnDeadLetterSettlement,
-  createAgentQueuedTurnScheduler,
+  createAgentQueuedTurnLifecycle,
   AGENT_QUEUED_TURN_SOURCE,
   GenerationJobManager,
 } = require('@librechat/api');
@@ -34,42 +32,38 @@ const eventActorAdapter = createAgentEventContinueResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
 });
-const queuedTurnAdapter = createAgentQueuedTurnResolver({
+let service;
+const queuedTurnLifecycle = createAgentQueuedTurnLifecycle({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+  getGenerationAdmissionEvidence,
+  enqueue: (...args) => service.enqueue(...args),
+  retireDelivery: (...args) => service.retire(...args),
+  getDelivery: (...args) => service.getDelivery(...args),
 });
 
-const service = createAgentTriggerService({
+service = createAgentTriggerService({
   methods,
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
   supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
-  settleSourceBeforeDeadLetter: createAgentQueuedTurnDeadLetterSettlement({
-    methods,
-    getGenerationAdmissionEvidence,
-  }),
+  settleSourceBeforeDeadLetter: queuedTurnLifecycle.settleBeforeDeadLetter,
   prepareContinue: createAgentContinuationResolver({
     eventActor: eventActorAdapter,
     internalSources: new Map([
       [SUBAGENT_COMPLETION_SOURCE, subagentCompletionAdapter],
       [BACKGROUND_TOOL_COMPLETION_SOURCE, backgroundToolCompletionAdapter],
-      [AGENT_QUEUED_TURN_SOURCE, queuedTurnAdapter],
+      [AGENT_QUEUED_TURN_SOURCE, queuedTurnLifecycle.prepareContinue],
     ]),
   }),
 });
 
-const queuedTurnScheduler = createAgentQueuedTurnScheduler({
-  methods,
-  enqueue: service.enqueue,
-  getGenerationAdmissionEvidence,
-});
-
 const initializeAgentTriggerService = async (options) => {
   await service.initialize(options);
-  await queuedTurnScheduler.initialize();
+  await queuedTurnLifecycle.initialize();
 };
 
 const stopAgentTriggerService = async () => {
-  await queuedTurnScheduler.stop();
+  await queuedTurnLifecycle.stop();
   await service.stop();
 };
 
@@ -92,5 +86,7 @@ module.exports = {
   prepareAgentTriggerUserPurge: service.prepareUserPurge,
   cancelAgentTriggerUserPurge: service.cancelUserPurge,
   purgeAgentTriggerDeliveriesForUser,
-  scheduleAgentQueuedTurn: queuedTurnScheduler.schedule,
+  scheduleAgentQueuedTurn: queuedTurnLifecycle.schedule,
+  cancelAgentQueuedTurn: queuedTurnLifecycle.cancel,
+  settleAgentQueuedTurnExecutionAdmission: queuedTurnLifecycle.recordExecutionAdmission,
 };

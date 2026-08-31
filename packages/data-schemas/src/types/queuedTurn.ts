@@ -75,6 +75,13 @@ export interface IAgentQueuedTurn {
   /** Durable proof that ordinary admission may have crossed the HTTP boundary. */
   admissionStartedAt?: Date;
   admissionId?: string;
+  /** Version 2 fences provider execution behind the source-owned admission receipt. */
+  admissionProtocolVersion?: 2;
+  reconciliationAvailableAt?: Date;
+  reconciliationClaimId?: string;
+  reconciliationClaimBy?: string;
+  reconciliationClaimUntil?: Date;
+  reconciliationAttempts?: number;
   terminalReceipt?: AgentQueuedTurnTerminalReceipt;
   createdAt?: Date;
   updatedAt?: Date;

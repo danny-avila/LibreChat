@@ -2,7 +2,6 @@ const {
   handleAgentQueuedTurnEnqueue,
   handleAgentQueuedTurnList,
   handleAgentQueuedTurnCancel,
-  AGENT_QUEUED_TURN_SOURCE,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const db = require('~/models');
@@ -12,19 +11,18 @@ const dependencies = (req) => {
    * middleware probes does not initialize or require the worker graph. */
   const {
     scheduleAgentQueuedTurn,
-    getAgentTriggerDelivery,
-    retireAgentTrigger,
+    cancelAgentQueuedTurn,
   } = require('~/server/services/Agents/triggers');
   return {
     methods: db,
-    scheduler: { schedule: scheduleAgentQueuedTurn },
+    lifecycle: {
+      schedule: scheduleAgentQueuedTurn,
+      cancel: cancelAgentQueuedTurn,
+    },
     getFiles: db.getFiles,
     updateFilesUsage: db.updateFilesUsage,
     checkAgentAccess: createAgentAccessCheck(req),
     isPrincipalActive: db.isAgentTriggerPrincipalActive,
-    retireDelivery: (deliveryKey, _sourceId, reason, options) =>
-      retireAgentTrigger(deliveryKey, AGENT_QUEUED_TURN_SOURCE, reason, options),
-    getDelivery: getAgentTriggerDelivery,
   };
 };
 

@@ -76,6 +76,7 @@ const mockExemptFromConcurrencyLimiter = jest.fn();
 const mockRecordScheduleOutcome = jest.fn();
 const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
+const mockSettleAgentQueuedTurnExecutionAdmission = jest.fn();
 const mockExecuteAgentEventActor = jest.fn();
 const mockResumeAgentEventActor = jest.fn();
 const mockCreateAgentEventActorTurn = jest.fn((input, dependencies) => {
@@ -379,6 +380,11 @@ jest.mock('~/server/services/Schedules', () => ({
   isScheduleLive: (...args) => mockIsScheduleLive(...args),
 }));
 
+jest.mock('~/server/services/Agents/triggers', () => ({
+  settleAgentQueuedTurnExecutionAdmission: (...args) =>
+    mockSettleAgentQueuedTurnExecutionAdmission(...args),
+}));
+
 const AgentController = require('../request');
 const { ErrorTypes } = require('librechat-data-provider');
 const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
@@ -485,6 +491,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockSaveMessage.mockResolvedValue({});
     mockSaveConvo.mockResolvedValue({});
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
+    mockSettleAgentQueuedTurnExecutionAdmission.mockResolvedValue(true);
     mockGetAgentEventActorSnapshot.mockResolvedValue({ state: null, reconciliations: [] });
     mockCommitAgentEventActorState.mockResolvedValue({ status: 'stale' });
     mockBeginAgentEventActorLegacyTurn.mockResolvedValue(true);
@@ -1126,6 +1133,88 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
       expect.stringContaining('Generation stopped before provider startup'),
+      1000,
+    );
+    expect(mockGenerationJobManager.markProviderExecutionDrained).toHaveBeenCalledWith(
+      'conversation-123',
+      1000,
+      'provider-segment-1',
+    );
+  });
+
+  it('commits a queued-turn admission receipt before invoking provider execution', async () => {
+    mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);
+    const admissionSource = {
+      source: 'agent-queued-turn',
+      sourceId: 'queued-turn-1',
+      claimId: 'queued-delivery-1',
+      claimBy: 'queued-worker-1',
+    };
+    const req = {
+      _isAgentTrigger: true,
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Run the queued turn.',
+        messageId: 'queued-user-message',
+        parentMessageId: 'persisted-response_',
+        conversationId: 'conversation-123',
+        clientRequestId: 'queued-delivery-1',
+        agentContinuationAdmission: admissionSource,
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after admission'));
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    expect(mockSettleAgentQueuedTurnExecutionAdmission).toHaveBeenCalledWith(admissionSource, {
+      userId: 'user-123',
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-123',
+      clientRequestId: 'queued-delivery-1',
+      generationId: 'conversation-123',
+      generationCreatedAt: 1000,
+    });
+    expect(
+      mockGenerationJobManager.beginProviderExecution.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockSettleAgentQueuedTurnExecutionAdmission.mock.invocationCallOrder[0]);
+    expect(mockSettleAgentQueuedTurnExecutionAdmission.mock.invocationCallOrder[0]).toBeLessThan(
+      initializeClient.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('never invokes the provider when the queued-turn admission receipt is unavailable', async () => {
+    mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);
+    mockSettleAgentQueuedTurnExecutionAdmission.mockRejectedValue(new Error('mongo unavailable'));
+    const req = {
+      _isAgentTrigger: true,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run the queued turn.',
+        messageId: 'queued-user-message',
+        parentMessageId: 'persisted-response_',
+        conversationId: 'conversation-123',
+        clientRequestId: 'queued-delivery-1',
+        agentContinuationAdmission: {
+          source: 'agent-queued-turn',
+          sourceId: 'queued-turn-1',
+          claimId: 'queued-delivery-1',
+          claimBy: 'queued-worker-1',
+        },
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const initializeClient = jest.fn();
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.beginProviderExecution).toHaveBeenCalledTimes(1);
+    expect(initializeClient).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      'mongo unavailable',
       1000,
     );
     expect(mockGenerationJobManager.markProviderExecutionDrained).toHaveBeenCalledWith(

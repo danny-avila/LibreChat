@@ -598,6 +598,13 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       status: 'started' as const,
     };
     const settleOnAdmission = jest.fn(async () => undefined);
+    const getBaseUrl = jest.fn(() => 'http://127.0.0.1:3080');
+    const admissionSource = {
+      source: 'agent-queued-turn',
+      sourceId: 'queued-turn-1',
+      claimId: 'queued-delivery-1',
+      claimBy: 'queued-worker-1',
+    };
     const prepareContinue = jest.fn(async () => ({
       status: 'ready' as const,
       input: 'queued user turn',
@@ -606,12 +613,14 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       files: [{ file_id: 'file-1' }],
       quotes: ['quoted context'],
       manualSkills: ['research'],
+      admissionSource,
       settleOnAdmission,
     }));
     const fetcher = fetchMock(async () => response(admitted));
     const host = createAgentTriggerExecutionHost(
       deps(fetcher, {
         prepareContinue,
+        getBaseUrl,
       }),
     );
 
@@ -625,7 +634,9 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       files: [{ file_id: 'file-1' }],
       quotes: ['quoted context'],
       manualSkills: ['research'],
+      agentContinuationAdmission: admissionSource,
     });
+    expect(getBaseUrl).toHaveBeenCalledWith({ localOnly: true });
     expect(prepareContinue).toHaveBeenCalledWith(envelope, {
       idempotencyKey: getAgentTriggerIdempotencyKey(envelope),
       attempt: 3,

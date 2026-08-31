@@ -20,7 +20,7 @@ import type {
   TAgentQueuedTurnReceipt,
   TFile,
 } from 'librechat-data-provider';
-import type { AgentQueuedTurnScheduler } from './queuedTurns';
+import type { AgentQueuedTurnLifecycle } from './queuedTurns';
 import type { SteerFileFetcher } from './steering/request';
 import type { SteerRequestUser } from './steering/refs';
 import { buildOwnerFilter, collectFileIds, toSteerFileRef } from './steering/refs';
@@ -42,7 +42,7 @@ interface QueuedTurnHttpMethods extends AgentQueuedTurnMethods {
 
 export interface AgentQueuedTurnHttpDeps {
   methods: QueuedTurnHttpMethods;
-  scheduler: Pick<AgentQueuedTurnScheduler, 'schedule'>;
+  lifecycle: Pick<AgentQueuedTurnLifecycle, 'schedule' | 'cancel'>;
   getFiles?: SteerFileFetcher;
   updateFilesUsage?: (
     files: Array<{ file_id: string }>,
@@ -51,13 +51,6 @@ export interface AgentQueuedTurnHttpDeps {
   ) => Promise<unknown[]>;
   checkAgentAccess?: (run: { agentId?: string; endpoint?: string }) => Promise<boolean>;
   isPrincipalActive?: (userId: string) => boolean | Promise<boolean>;
-  retireDelivery?: (
-    deliveryKey: string,
-    sourceId: string,
-    reason: string,
-    options?: { onlyIfDead?: boolean },
-  ) => Promise<boolean>;
-  getDelivery?: (deliveryKey: string) => Promise<unknown | null>;
 }
 
 export interface AgentQueuedTurnHttpResult {
@@ -303,7 +296,7 @@ export async function handleAgentQueuedTurnEnqueue(
       };
     }
     try {
-      await deps.scheduler.schedule(existing);
+      await deps.lifecycle.schedule(existing);
     } catch {
       return { status: 503, body: { code: 'QUEUED_TURN_SCHEDULING_PENDING' } };
     }
@@ -354,7 +347,7 @@ export async function handleAgentQueuedTurnEnqueue(
       };
     }
     try {
-      await deps.scheduler.schedule(queued.turn);
+      await deps.lifecycle.schedule(queued.turn);
     } catch {
       /** The row is the outbox source of truth; periodic recovery repairs the
        * record-to-delivery seam. A retry with the same clientRequestId replays. */
@@ -444,7 +437,7 @@ export async function handleAgentQueuedTurnCancel(
   if (scope == null) {
     return { status: 401, body: { code: 'UNAUTHORIZED' } };
   }
-  const cancelled = await deps.methods.cancelAgentQueuedTurn({
+  const cancelled = await deps.lifecycle.cancel({
     ...scope,
     queuedTurnId,
     settledAt: new Date(),
@@ -454,36 +447,6 @@ export async function handleAgentQueuedTurnCancel(
   }
   if (cancelled.outcome === 'not_cancellable') {
     return { status: 409, body: { code: 'QUEUED_TURN_ALREADY_ADMITTING' } };
-  }
-  if (cancelled.turn.deliveryKey != null && deps.retireDelivery != null) {
-    let retired = await deps.retireDelivery(
-      cancelled.turn.deliveryKey,
-      'agent-queued-turn',
-      'queued_turn_cancelled',
-    );
-    if (!retired) {
-      retired = await deps.retireDelivery(
-        cancelled.turn.deliveryKey,
-        'agent-queued-turn',
-        'queued_turn_cancelled',
-        { onlyIfDead: true },
-      );
-    }
-    if (!retired && deps.getDelivery != null) {
-      const fenced = await deps.methods.beginAgentQueuedTurnMissingDeliveryRetirement({
-        deliveryKey: cancelled.turn.deliveryKey,
-      });
-      if (fenced && (await deps.getDelivery(cancelled.turn.deliveryKey)) == null) {
-        retired = await deps.methods.markAgentQueuedTurnMissingDeliveryRetired({
-          deliveryKey: cancelled.turn.deliveryKey,
-        });
-      }
-    }
-    if (retired) {
-      await deps.methods.markAgentQueuedTurnDeliveryRetired({
-        deliveryKey: cancelled.turn.deliveryKey,
-      });
-    }
   }
   return { status: 200, body: { receipt: receipt(cancelled.turn) } };
 }

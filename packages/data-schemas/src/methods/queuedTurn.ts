@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { Model, Types } from 'mongoose';
+import type { FilterQuery, Model, Types } from 'mongoose';
 import type {
   AgentQueuedTurnActiveRecord,
   AgentQueuedTurnClaim,
@@ -149,6 +149,14 @@ export interface AgentQueuedTurnAdmissionEvidence {
   generationCreatedAt: number;
 }
 
+export interface ClaimAgentQueuedTurnReconciliationInput {
+  claimId: string;
+  claimBy: string;
+  now: Date;
+  leaseUntil: Date;
+  limit?: number;
+}
+
 export interface AgentQueuedTurnMethods {
   ensureAgentQueuedTurnIndexes: () => Promise<void>;
   enqueueAgentQueuedTurn: (
@@ -164,9 +172,27 @@ export interface AgentQueuedTurnMethods {
     input: AgentQueuedTurnConversationScope & { clientRequestIds?: readonly string[] },
   ) => Promise<AgentQueuedTurnActiveRecord[]>;
   findQueuedTurnsNeedingDelivery: (limit?: number) => Promise<AgentQueuedTurnRecord[]>;
-  findQueuedTurnsNeedingAdmissionReconciliation: (
-    limit?: number,
+  claimQueuedTurnsForAdmissionReconciliation: (
+    input: ClaimAgentQueuedTurnReconciliationInput,
   ) => Promise<AgentQueuedTurnRecord[]>;
+  deferAgentQueuedTurnAdmissionReconciliation: (
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      deliveryKey: string;
+      claimId: string;
+      claimBy: string;
+      availableAt: Date;
+    },
+  ) => Promise<boolean>;
+  settleAgentQueuedTurnAdmissionWithoutEvidence: (
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      deliveryKey: string;
+      claimId: string;
+      claimBy: string;
+      settledAt: Date;
+    },
+  ) => Promise<boolean>;
   reserveAgentQueuedTurnDelivery: (
     input: AgentQueuedTurnConversationScope & {
       queuedTurnId: string;
@@ -208,7 +234,11 @@ export interface AgentQueuedTurnMethods {
       ),
   ) => Promise<ReleaseAgentQueuedTurnResult>;
   beginAgentQueuedTurnAdmission: (
-    input: AgentQueuedTurnClaimFence & { admissionId: string; startedAt: Date },
+    input: AgentQueuedTurnClaimFence & {
+      admissionId: string;
+      startedAt: Date;
+      admissionProtocolVersion?: 2;
+    },
   ) => Promise<BeginAgentQueuedTurnAdmissionResult>;
   markAgentQueuedTurnAdmitted: (
     input: AgentQueuedTurnClaimFence & {
@@ -226,6 +256,8 @@ export interface AgentQueuedTurnMethods {
       settledAt: Date;
       failure: AgentQueuedTurnFailure;
       admissionEvidence?: AgentQueuedTurnAdmissionEvidence;
+      reconciliationClaimId?: string;
+      reconciliationClaimBy?: string;
     },
   ) => Promise<DeadLetterAgentQueuedTurnResult>;
   getEffectiveAgentQueuedTurnPredecessor: (
@@ -524,6 +556,24 @@ function toRecord(turn: IAgentQueuedTurn): AgentQueuedTurnRecord {
     ...(turn.claimUntil != null && { claimUntil: turn.claimUntil }),
     ...(turn.admissionId != null && { admissionId: turn.admissionId }),
     ...(turn.admissionStartedAt != null && { admissionStartedAt: turn.admissionStartedAt }),
+    ...(turn.admissionProtocolVersion != null && {
+      admissionProtocolVersion: turn.admissionProtocolVersion,
+    }),
+    ...(turn.reconciliationAvailableAt != null && {
+      reconciliationAvailableAt: turn.reconciliationAvailableAt,
+    }),
+    ...(turn.reconciliationClaimId != null && {
+      reconciliationClaimId: turn.reconciliationClaimId,
+    }),
+    ...(turn.reconciliationClaimBy != null && {
+      reconciliationClaimBy: turn.reconciliationClaimBy,
+    }),
+    ...(turn.reconciliationClaimUntil != null && {
+      reconciliationClaimUntil: turn.reconciliationClaimUntil,
+    }),
+    ...(turn.reconciliationAttempts != null && {
+      reconciliationAttempts: turn.reconciliationAttempts,
+    }),
     ...(turn.terminalReceipt != null && {
       terminalReceipt: turn.terminalReceipt,
     }),
@@ -1142,25 +1192,160 @@ export function createAgentQueuedTurnMethods(
     return turns.map(toRecord);
   }
 
-  async function findQueuedTurnsNeedingAdmissionReconciliation(
-    limit = 100,
+  async function claimQueuedTurnsForAdmissionReconciliation(
+    input: ClaimAgentQueuedTurnReconciliationInput,
   ): Promise<AgentQueuedTurnRecord[]> {
+    const limit = input.limit ?? 100;
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 1000) {
       throw new TypeError('Agent queued turn reconciliation limit must be between 1 and 1000');
     }
-    const turns = await Turn()
+    const claimId = requireBoundedString(input.claimId, 128);
+    const claimBy = requireBoundedString(input.claimBy, 256);
+    if (
+      !Number.isFinite(input.now.getTime()) ||
+      !Number.isFinite(input.leaseUntil.getTime()) ||
+      input.leaseUntil <= input.now
+    ) {
+      throw new TypeError('Agent queued turn reconciliation lease is invalid');
+    }
+    const eligible: FilterQuery<IAgentQueuedTurnDocument> = {
+      status: 'dead',
+      admissionId: { $exists: true },
+      admissionStartedAt: { $exists: true },
+      deliveryKey: { $exists: true },
+      'terminalReceipt.outcome': 'dead',
+      'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+      $and: [
+        {
+          $or: [
+            { reconciliationAvailableAt: { $lte: input.now } },
+            { reconciliationAvailableAt: { $exists: false } },
+          ],
+        },
+        {
+          $or: [
+            { reconciliationClaimUntil: { $lte: input.now } },
+            { reconciliationClaimUntil: { $exists: false } },
+          ],
+        },
+      ],
+    };
+    const candidates = await Turn()
       .find({
-        status: 'dead',
-        admissionId: { $exists: true },
-        admissionStartedAt: { $exists: true },
-        deliveryKey: { $exists: true },
-        'terminalReceipt.outcome': 'dead',
-        'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+        ...eligible,
       })
-      .sort({ admissionStartedAt: 1, _id: 1 })
+      .sort({ reconciliationAvailableAt: 1, admissionStartedAt: 1, _id: 1 })
       .limit(limit)
+      .select('_id')
+      .lean<IAgentQueuedTurn[]>();
+    if (candidates.length === 0) {
+      return [];
+    }
+    await Turn().updateMany(
+      {
+        ...eligible,
+        _id: { $in: candidates.flatMap((turn) => (turn._id == null ? [] : [turn._id])) },
+      },
+      {
+        $set: {
+          reconciliationClaimId: claimId,
+          reconciliationClaimBy: claimBy,
+          reconciliationClaimUntil: input.leaseUntil,
+        },
+        $inc: { reconciliationAttempts: 1 },
+      },
+    );
+    const turns = await Turn()
+      .find({ reconciliationClaimId: claimId, reconciliationClaimBy: claimBy })
+      .sort({ reconciliationAvailableAt: 1, admissionStartedAt: 1, _id: 1 })
       .lean<IAgentQueuedTurn[]>();
     return turns.map(toRecord);
+  }
+
+  async function deferAgentQueuedTurnAdmissionReconciliation(
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      deliveryKey: string;
+      claimId: string;
+      claimBy: string;
+      availableAt: Date;
+    },
+  ): Promise<boolean> {
+    if (!Number.isFinite(input.availableAt.getTime())) {
+      throw new TypeError('Agent queued turn reconciliation availability is invalid');
+    }
+    const result = await Turn().updateOne(
+      {
+        ...conversationScope(input),
+        _id: input.queuedTurnId,
+        deliveryKey: requireBoundedString(input.deliveryKey, 128),
+        status: 'dead',
+        'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+        reconciliationClaimId: requireBoundedString(input.claimId, 128),
+        reconciliationClaimBy: requireBoundedString(input.claimBy, 256),
+      },
+      {
+        $set: { reconciliationAvailableAt: input.availableAt },
+        $unset: {
+          reconciliationClaimId: 1,
+          reconciliationClaimBy: 1,
+          reconciliationClaimUntil: 1,
+        },
+      },
+    );
+    return result.modifiedCount === 1;
+  }
+
+  async function settleAgentQueuedTurnAdmissionWithoutEvidence(
+    input: AgentQueuedTurnConversationScope & {
+      queuedTurnId: string;
+      deliveryKey: string;
+      claimId: string;
+      claimBy: string;
+      settledAt: Date;
+    },
+  ): Promise<boolean> {
+    if (!Number.isFinite(input.settledAt.getTime())) {
+      throw new TypeError('Agent queued turn reconciliation settlement is invalid');
+    }
+    const result = await Turn().updateOne(
+      {
+        ...conversationScope(input),
+        _id: input.queuedTurnId,
+        deliveryKey: requireBoundedString(input.deliveryKey, 128),
+        status: 'dead',
+        admissionProtocolVersion: 2,
+        'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+        reconciliationClaimId: requireBoundedString(input.claimId, 128),
+        reconciliationClaimBy: requireBoundedString(input.claimBy, 256),
+      },
+      {
+        $set: {
+          terminalReceipt: {
+            outcome: 'dead',
+            settledAt: input.settledAt,
+            failure: {
+              code: 'ADMISSION_NOT_CONFIRMED',
+              message: 'The queued turn did not cross source-owned generation admission',
+            },
+          },
+        },
+        $unset: {
+          activeSlot: 1,
+          claimId: 1,
+          claimBy: 1,
+          claimUntil: 1,
+          admissionId: 1,
+          admissionStartedAt: 1,
+          admissionProtocolVersion: 1,
+          reconciliationAvailableAt: 1,
+          reconciliationClaimId: 1,
+          reconciliationClaimBy: 1,
+          reconciliationClaimUntil: 1,
+        },
+      },
+    );
+    return result.modifiedCount === 1;
   }
 
   async function reserveAgentQueuedTurnDelivery(
@@ -1417,7 +1602,11 @@ export function createAgentQueuedTurnMethods(
   }
 
   async function beginAgentQueuedTurnAdmission(
-    input: AgentQueuedTurnClaimFence & { admissionId: string; startedAt: Date },
+    input: AgentQueuedTurnClaimFence & {
+      admissionId: string;
+      startedAt: Date;
+      admissionProtocolVersion?: 2;
+    },
   ): Promise<BeginAgentQueuedTurnAdmissionResult> {
     const admissionId = requireBoundedString(input.admissionId, 128);
     if (!Number.isFinite(input.startedAt.getTime())) {
@@ -1494,6 +1683,9 @@ export function createAgentQueuedTurnMethods(
               $set: {
                 admissionId,
                 admissionStartedAt: input.startedAt,
+                ...(input.admissionProtocolVersion != null && {
+                  admissionProtocolVersion: input.admissionProtocolVersion,
+                }),
               },
             },
             { new: true },
@@ -1592,6 +1784,11 @@ export function createAgentQueuedTurnMethods(
             claimUntil: 1,
             admissionId: 1,
             admissionStartedAt: 1,
+            admissionProtocolVersion: 1,
+            reconciliationAvailableAt: 1,
+            reconciliationClaimId: 1,
+            reconciliationClaimBy: 1,
+            reconciliationClaimUntil: 1,
           },
         },
         { new: true },
@@ -1623,6 +1820,8 @@ export function createAgentQueuedTurnMethods(
       settledAt: Date;
       failure: AgentQueuedTurnFailure;
       admissionEvidence?: AgentQueuedTurnAdmissionEvidence;
+      reconciliationClaimId?: string;
+      reconciliationClaimBy?: string;
     },
   ): Promise<DeadLetterAgentQueuedTurnResult> {
     const scope = conversationScope(input);
@@ -1641,6 +1840,12 @@ export function createAgentQueuedTurnMethods(
             deliveryKey,
             admissionId: deliveryKey,
             admissionStartedAt: { $exists: true },
+            ...(input.reconciliationClaimId != null && {
+              reconciliationClaimId: requireBoundedString(input.reconciliationClaimId, 128),
+            }),
+            ...(input.reconciliationClaimBy != null && {
+              reconciliationClaimBy: requireBoundedString(input.reconciliationClaimBy, 256),
+            }),
             $or: [
               { status: 'claimed' },
               {
@@ -1669,6 +1874,11 @@ export function createAgentQueuedTurnMethods(
               claimUntil: 1,
               admissionId: 1,
               admissionStartedAt: 1,
+              admissionProtocolVersion: 1,
+              reconciliationAvailableAt: 1,
+              reconciliationClaimId: 1,
+              reconciliationClaimBy: 1,
+              reconciliationClaimUntil: 1,
             },
           },
           { new: true },
@@ -1731,6 +1941,8 @@ export function createAgentQueuedTurnMethods(
           {
             $set: {
               status: 'dead',
+              reconciliationAvailableAt: input.settledAt,
+              reconciliationAttempts: 0,
               terminalReceipt: {
                 outcome: 'dead',
                 settledAt: input.settledAt,
@@ -1740,7 +1952,14 @@ export function createAgentQueuedTurnMethods(
                 },
               },
             },
-            $unset: { claimId: 1, claimBy: 1, claimUntil: 1 },
+            $unset: {
+              claimId: 1,
+              claimBy: 1,
+              claimUntil: 1,
+              reconciliationClaimId: 1,
+              reconciliationClaimBy: 1,
+              reconciliationClaimUntil: 1,
+            },
           },
           { new: true },
         )
@@ -2089,7 +2308,9 @@ export function createAgentQueuedTurnMethods(
     listActiveAgentQueuedTurns,
     listAgentQueuedTurnReceipts,
     findQueuedTurnsNeedingDelivery,
-    findQueuedTurnsNeedingAdmissionReconciliation,
+    claimQueuedTurnsForAdmissionReconciliation,
+    deferAgentQueuedTurnAdmissionReconciliation,
+    settleAgentQueuedTurnAdmissionWithoutEvidence,
     reserveAgentQueuedTurnDelivery,
     markQueuedTurnScheduled,
     cancelAgentQueuedTurn,

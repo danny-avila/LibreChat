@@ -38,6 +38,13 @@ type FireStatus = 'started' | 'resumed' | 'replaced' | 'settled';
 
 export type AgentTriggerFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+export interface AgentContinuationAdmissionSource {
+  source: string;
+  sourceId: string;
+  claimId: string;
+  claimBy: string;
+}
+
 export type AgentTriggerContinuePreparation =
   | {
       status: 'ready';
@@ -49,6 +56,9 @@ export type AgentTriggerContinuePreparation =
       files?: Partial<TFile>[];
       quotes?: string[];
       manualSkills?: string[];
+      /** Trusted source identity committed by execution enrollment before the
+       * provider-start fence opens. */
+      admissionSource?: AgentContinuationAdmissionSource;
       /** Compensates a durable pre-admission claim only when the host knows
        * that no generation was admitted. Ambiguous outcomes retain the claim. */
       releaseOnDefiniteFailure?: (error?: AgentTriggerExecutionError) => MaybePromise<void>;
@@ -601,7 +611,12 @@ async function startRun(
         context.signal,
       ),
       setupValue(
-        () => deps.getBaseUrl(detachedCompletion == null ? undefined : { localOnly: true }),
+        () =>
+          deps.getBaseUrl(
+            detachedCompletion == null && readyPreparation?.admissionSource == null
+              ? undefined
+              : { localOnly: true },
+          ),
         mode,
         scope,
         context.signal,
@@ -658,6 +673,9 @@ async function startRun(
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
           generationProtocolVersion: 2,
+          ...(readyPreparation?.admissionSource != null && {
+            agentContinuationAdmission: readyPreparation.admissionSource,
+          }),
           ...(envelope.mode === 'continue' &&
             envelope.target.bindingId != null && {
               agentEventDelivery: {
