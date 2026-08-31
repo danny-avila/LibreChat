@@ -1327,12 +1327,41 @@ export async function initializeAgent(
     loadCodeApiKey: db.loadCodeApiKey,
     provisionCandidates: deferredProvisionFiles as unknown as TFile[],
     legacyFileUploadUX,
-    filterByEndpointPolicy: (files) =>
-      filterFilesByEndpointRuntimeConfig(appConfig, {
+    screenPersistentFiles: (files) => {
+      /* Persistent agent files are read inside primeResources, so they miss both checks
+       * the caller already applied to this turn's other files. They face the same
+       * endpoint policy under the remainder of the one total-size allowance the current
+       * and deferred sets have already drawn on, and the same content policy, which can
+       * have changed since the file was attached. */
+      const committedBytes =
+        (currentFiles ?? []).reduce((sum, file) => sum + (file.bytes ?? 0), 0) +
+        deferredProvisionFiles.reduce((sum, file) => sum + (file.bytes ?? 0), 0);
+      const withinPolicy = filterFilesByEndpointRuntimeConfig(appConfig, {
         files: files as unknown as IMongoFile[],
         endpoint: agent.endpoint ?? '',
         endpointType: endpointFileType,
-      }) as unknown as TFile[],
+        consumedBytes: committedBytes,
+      }) as unknown as TFile[];
+
+      /* Dropped rather than fatal, matching the deferred candidates: these were not
+       * attached by this request, so refusing the conversation over a historical record
+       * would be harsher than leaving it out. */
+      return withinPolicy.filter((file) => {
+        try {
+          assertModelBoundContent({
+            filters: appConfig?.filters,
+            files: [file] as unknown as IMongoFile[],
+          });
+          return true;
+        } catch (error) {
+          logger.warn(
+            `[initializeAgent] Skipping persistent agent file "${file.filename}" (${file.file_id}): content policy`,
+            error,
+          );
+          return false;
+        }
+      });
+    },
   });
 
   /**

@@ -111,6 +111,20 @@ jest.mock('../resources', () => ({
   }),
 }));
 
+jest.mock('../../middleware/modelBoundContent', () => {
+  const actual = jest.requireActual('../../middleware/modelBoundContent');
+  /* Real by default; a single test overrides it to stand in for a policy that started
+   * refusing a file after it was attached. */
+  return {
+    ...actual,
+    assertModelBoundContent: jest.fn((...args: unknown[]) =>
+      (actual as { assertModelBoundContent: (...a: unknown[]) => void }).assertModelBoundContent(
+        ...args,
+      ),
+    ),
+  };
+});
+
 import { initializeAgent } from '../initialize';
 import { isFatalAgentInitializationError } from '../errors';
 
@@ -2958,6 +2972,88 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */
     expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+
+  it('screens persistent agent files under the remaining size allowance and content policy', async () => {
+    /* These are read inside primeResources, so the caller never sees them. Both checks it
+     * applied to this turn's other files have to reach them through the callback. */
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const screen = primeResources.mock.calls[0][0].screenPersistentFiles as (
+      files: unknown[],
+    ) => unknown[];
+    expect(typeof screen).toBe('function');
+
+    filterFilesByEndpointRuntimeConfig.mockClear();
+    const persistent = [{ file_id: 'persistent-1', filename: 'notes.csv', bytes: 10 }];
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce(persistent);
+
+    expect(screen(persistent)).toEqual(persistent);
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ consumedBytes: expect.any(Number) }),
+    );
+  });
+
+  it('drops a persistent agent file the content policy now refuses', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const { assertModelBoundContent } = jest.requireMock('../../middleware/modelBoundContent') as {
+      assertModelBoundContent: jest.Mock;
+    };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const screen = primeResources.mock.calls[0][0].screenPersistentFiles as (
+      files: unknown[],
+    ) => unknown[];
+    const persistent = [
+      {
+        file_id: 'blocked-1',
+        filename: 'secrets.bin',
+        bytes: 10,
+        type: 'application/octet-stream',
+      },
+    ];
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce(persistent);
+    assertModelBoundContent.mockImplementationOnce(() => {
+      throw new Error('content policy');
+    });
+
+    expect(screen(persistent)).toEqual([]);
   });
 
   it('finds deferred files from the conversation when no anchor is supplied', async () => {
