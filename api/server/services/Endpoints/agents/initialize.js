@@ -37,6 +37,8 @@ const {
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_SUBAGENT_RUN_CONFIGS,
   isEphemeralAgentId,
+  resolveSpecUserToggle,
+  resolveSpecSkillsEnabled,
   resolveAllowedStatefulCodeEnvironments,
 } = require('librechat-data-provider');
 const {
@@ -530,10 +532,13 @@ const initializeClient = async ({
     selectedModelSpec &&
     Object.hasOwn(selectedModelSpec, 'skills')
   ) {
-    if (selectedModelSpec.skills === true) {
-      primaryAgent.skills_enabled = true;
-      delete primaryAgent.skills;
-    } else if (selectedModelSpec.skills === false) {
+    /** The spec's `skills` config is the default the badge is seeded from; the
+     *  request's explicit toggle decides (`skills: false` stays a hard opt-out). */
+    const specSkillsEnabled = resolveSpecSkillsEnabled(
+      resolveSpecUserToggle(req.body?.ephemeralAgent?.skills, selectedModelSpec, 'skills'),
+      selectedModelSpec.skills,
+    );
+    if (!specSkillsEnabled) {
       primaryAgent.skills_enabled = false;
       primaryAgent.skills = [];
     } else if (Array.isArray(selectedModelSpec.skills)) {
@@ -544,6 +549,9 @@ const initializeClient = async ({
       });
       primaryAgent.skills_enabled = true;
       primaryAgent.skills = resolvedSkillIds.map((id) => id.toString());
+    } else {
+      primaryAgent.skills_enabled = true;
+      delete primaryAgent.skills;
     }
   }
 

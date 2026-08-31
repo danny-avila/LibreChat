@@ -160,6 +160,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  resolveSpecUserToggles,
   DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
@@ -2402,7 +2403,20 @@ class AgentClient extends BaseClient {
      * NOTE: This intentionally mutates agent objects in place. The agentConfigs Map
      * holds references to config objects that will be passed to the graph runtime.
      */
-    const ephemeralAgent = this.options.req.body.ephemeralAgent;
+    /** Apply the same authority the loaders applied when equipping tools: for a
+     *  spec that hides the badge row, its own MCP servers decide. Without this
+     *  the model can be primed with instructions for servers it was not given
+     *  and left without instructions for the servers it was. */
+    const requestModelSpecs = this.options.req.config?.modelSpecs?.list;
+    const requestSpecName = this.options.req.body?.spec;
+    const selectedModelSpec =
+      requestSpecName && Array.isArray(requestModelSpecs)
+        ? requestModelSpecs.find((modelSpec) => modelSpec.name === requestSpecName)
+        : null;
+    const ephemeralAgent = resolveSpecUserToggles(
+      this.options.req.body.ephemeralAgent,
+      selectedModelSpec,
+    );
     const mcpManager = getMCPManager();
 
     const prepareRuntimeAgent = async (
