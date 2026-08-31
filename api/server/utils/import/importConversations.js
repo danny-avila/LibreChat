@@ -9,6 +9,7 @@ const maxFileSize = resolveImportMaxFileSize();
 /**
  * Job definition for importing a conversation.
  * @param {{ filepath: string, requestUserId: string, userRole?: string, interfaceConfig?: object, filters?: object, legacyPii?: object }} job
+ * @returns {Promise<{ imported: number, failed: number }>} Counts of imported and skipped conversations.
  */
 const importConversations = async (job) => {
   const { filepath, requestUserId, userRole, interfaceConfig, filters, legacyPii } = job;
@@ -25,7 +26,7 @@ const importConversations = async (job) => {
     const fileData = await fs.readFile(filepath, 'utf8');
     const jsonData = JSON.parse(fileData);
     const importer = getImporter(jsonData);
-    await importer(
+    const summary = await importer(
       jsonData,
       requestUserId,
       (userId) =>
@@ -35,6 +36,7 @@ const importConversations = async (job) => {
       userRole,
     );
     logger.debug(`user: ${requestUserId} | Finished importing conversations`);
+    return { imported: summary?.imported ?? 1, failed: summary?.failed ?? 0 };
   } catch (error) {
     logger.error(`user: ${requestUserId} | Failed to import conversation: `, error);
     throw error; // throw error all the way up so request does not return success

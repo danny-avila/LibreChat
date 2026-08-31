@@ -891,3 +891,39 @@ describe('ImportBatchBuilder content filtering', () => {
     expect(error.body).not.toHaveProperty('fragmentPath');
   });
 });
+
+describe('ImportBatchBuilder checkpoint/rollback', () => {
+  it('discards only what was staged after the checkpoint', () => {
+    const builder = new ImportBatchBuilder('user-123');
+
+    builder.startConversation(EModelEndpoint.openAI);
+    builder.addUserMessage('kept question');
+    builder.addGptMessage('kept answer', 'gpt-4o');
+    builder.finishConversation('Kept', new Date());
+
+    const checkpoint = builder.checkpoint();
+
+    builder.startConversation(EModelEndpoint.openAI);
+    builder.addUserMessage('discarded question');
+    builder.rollback(checkpoint);
+
+    expect(builder.conversations).toHaveLength(1);
+    expect(builder.conversations[0].title).toBe('Kept');
+    expect(builder.messages).toHaveLength(2);
+    expect(builder.messages.map((msg) => msg.text)).toEqual(['kept question', 'kept answer']);
+  });
+
+  it('is a no-op when nothing was staged after the checkpoint', () => {
+    const builder = new ImportBatchBuilder('user-123');
+
+    builder.startConversation(EModelEndpoint.openAI);
+    builder.addUserMessage('only message');
+    builder.finishConversation('Only', new Date());
+
+    const checkpoint = builder.checkpoint();
+    builder.rollback(checkpoint);
+
+    expect(builder.conversations).toHaveLength(1);
+    expect(builder.messages).toHaveLength(1);
+  });
+});
