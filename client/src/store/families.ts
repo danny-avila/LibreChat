@@ -463,6 +463,7 @@ export type SettledQueuedTurnReceipt = {
   clientRequestId: string;
   status: 'admitted' | 'admitted_pending_boundary' | 'cancelled' | 'dead';
   effectivePredecessorCreatedAt?: number;
+  rootPredecessor?: true;
   boundaryConsumed?: boolean;
 };
 

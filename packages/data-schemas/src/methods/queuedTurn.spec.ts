@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { Model } from 'mongoose';
@@ -78,6 +79,10 @@ function claimInput(
     leaseUntil: LATER,
     ...overrides,
   };
+}
+
+function rootLineageId(parentMessageId = 'parent-1') {
+  return `root:${createHash('sha256').update(parentMessageId).digest('base64url')}`;
 }
 
 describe('agent queued turn methods', () => {
@@ -470,6 +475,41 @@ describe('agent queued turn methods', () => {
     await expect(Turn.countDocuments({ admissionSlot: true })).resolves.toBe(1);
   });
 
+  it('rejects a pre-slot replica claim through the legacy-written status shell', async () => {
+    const first = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'cross-version-first' }),
+    );
+    const second = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'cross-version-second', priority: true }),
+    );
+    await Turn.updateOne(
+      { _id: first.turn.queuedTurnId },
+      {
+        $set: {
+          status: 'claimed',
+          admissionSlot: true,
+          claimId: 'new-replica-claim',
+          claimBy: 'new-replica',
+          claimUntil: LATER,
+        },
+      },
+    );
+
+    await expect(
+      Turn.updateOne(
+        { _id: second.turn.queuedTurnId },
+        {
+          $set: {
+            status: 'claimed',
+            claimId: 'legacy-replica-claim',
+            claimBy: 'legacy-replica',
+            claimUntil: LATER,
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 11000 });
+  });
+
   it('reclaims an expired exact lease but never replays a different claim identity', async () => {
     const queued = await methods.enqueueAgentQueuedTurn(enqueueInput());
     const first = await methods.claimNextAgentQueuedTurn(
@@ -745,7 +785,7 @@ describe('agent queued turn methods', () => {
       generationId: 'generation-1',
       generationCreatedAt: 84,
       effectivePredecessorCreatedAt: 83,
-      lineagePredecessorId: 'root',
+      lineagePredecessorId: rootLineageId(),
       settledAt: START,
     };
     await expect(
@@ -921,7 +961,7 @@ describe('agent queued turn methods', () => {
           terminalReceipt: {
             outcome: 'admitted',
             settledAt: START,
-            lineagePredecessorId: 'root',
+            lineagePredecessorId: rootLineageId(),
           },
         },
         $unset: { activeSlot: 1 },
@@ -971,12 +1011,23 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({
       outcome: 'admission_indeterminate',
       turn: {
-        status: 'dead',
+        status: 'claimed',
         admissionId: 'delivery-ambiguous-admission',
         deliveryState: 'published',
         terminalReceipt: { failure: { code: 'ADMISSION_INDETERMINATE' } },
       },
     });
+    await expect(
+      methods.deadLetterAgentQueuedTurn({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: queued.turn.queuedTurnId,
+        deliveryKey: 'delivery-ambiguous-admission',
+        settledAt: new Date(LATER.getTime() + 1),
+        failure: { code: 'ATTEMPTS_EXHAUSTED', message: 'duplicate terminal callback' },
+      }),
+    ).resolves.toMatchObject({ outcome: 'already_terminal' });
     const priority = await methods.enqueueAgentQueuedTurn(
       enqueueInput({ clientRequestId: 'priority-behind-indeterminate', priority: true }),
     );
@@ -994,6 +1045,19 @@ describe('agent queued turn methods', () => {
       admissionSlot: true,
     });
     await expect(
+      Turn.updateOne(
+        { _id: priority.turn.queuedTurnId },
+        {
+          $set: {
+            status: 'claimed',
+            claimId: 'legacy-priority-claim',
+            claimBy: 'legacy-worker',
+            claimUntil: new Date(LATER.getTime() + 60_000),
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 11000 });
+    await expect(
       methods.cancelAgentQueuedTurn({
         user,
         tenantId: 'tenant-1',
@@ -1009,7 +1073,7 @@ describe('agent queued turn methods', () => {
           leaseUntil: new Date(LATER.getTime() + 60_000),
         }),
       ),
-    ).resolves.toMatchObject({ outcome: 'missing' });
+    ).resolves.toMatchObject({ outcome: 'blocked' });
     await expect(
       methods.prepareAgentQueuedTurnConversationDeletion({
         user,
@@ -1048,7 +1112,7 @@ describe('agent queued turn methods', () => {
       }),
     ).resolves.toMatchObject({
       outcome: 'started',
-      turn: { admissionLineagePredecessorId: 'root' },
+      turn: { admissionLineagePredecessorId: rootLineageId() },
     });
     await expect(
       methods.deadLetterAgentQueuedTurn({
@@ -1068,7 +1132,8 @@ describe('agent queued turn methods', () => {
         terminalReceipt: {
           generationId: 'root-generation',
           generationCreatedAt: 42,
-          lineagePredecessorId: 'root',
+          lineagePredecessorId: rootLineageId(),
+          rootPredecessor: true,
         },
       },
     });
@@ -1115,7 +1180,7 @@ describe('agent queued turn methods', () => {
       generationId: 'generation-predecessor',
       generationCreatedAt: 41,
       effectivePredecessorCreatedAt: 40,
-      lineagePredecessorId: 'root',
+      lineagePredecessorId: rootLineageId(),
       settledAt: START,
     });
     await methods.reserveAgentQueuedTurnDelivery({
@@ -1360,7 +1425,7 @@ describe('agent queued turn methods', () => {
         admissionMode: 'ordinary',
         generationId: 'generation-late-proof',
         generationCreatedAt: 44,
-        lineagePredecessorId: 'root',
+        lineagePredecessorId: rootLineageId(),
         settledAt: new Date(claimNow.getTime() + 1),
       }),
     ).resolves.toMatchObject({ outcome: 'admitted', turn: { status: 'admitted' } });
@@ -1374,7 +1439,11 @@ describe('agent queued turn methods', () => {
       enqueueInput({ clientRequestId: 'root-a-2', expectedPredecessorCreatedAt: 10 }),
     );
     const laterRoot = await methods.enqueueAgentQueuedTurn(
-      enqueueInput({ clientRequestId: 'root-b-1', expectedPredecessorCreatedAt: 20 }),
+      enqueueInput({
+        clientRequestId: 'root-b-1',
+        parentMessageId: 'parent-2',
+        expectedPredecessorCreatedAt: 10,
+      }),
     );
     await methods.reserveAgentQueuedTurnDelivery({
       user,
@@ -1403,7 +1472,7 @@ describe('agent queued turn methods', () => {
       admissionMode: 'ordinary',
       generationCreatedAt: 11,
       effectivePredecessorCreatedAt: 10,
-      lineagePredecessorId: 'root',
+      lineagePredecessorId: rootLineageId(),
       settledAt: START,
     });
 
@@ -1413,6 +1482,7 @@ describe('agent queued turn methods', () => {
         tenantId: 'tenant-1',
         conversationId: 'conversation-1',
         sequence: sameRoot.turn.sequence,
+        rootParentMessageId: 'parent-1',
         expectedPredecessorCreatedAt: 10,
       }),
     ).resolves.toEqual({
@@ -1425,11 +1495,12 @@ describe('agent queued turn methods', () => {
         tenantId: 'tenant-1',
         conversationId: 'conversation-1',
         sequence: laterRoot.turn.sequence,
-        expectedPredecessorCreatedAt: 20,
+        rootParentMessageId: 'parent-2',
+        expectedPredecessorCreatedAt: 10,
       }),
     ).resolves.toEqual({
-      effectivePredecessorCreatedAt: 20,
-      lineagePredecessorId: 'root',
+      effectivePredecessorCreatedAt: 10,
+      lineagePredecessorId: rootLineageId('parent-2'),
     });
 
     await methods.reserveAgentQueuedTurnDelivery({
@@ -1513,7 +1584,7 @@ describe('agent queued turn methods', () => {
       admissionMode: 'ordinary',
       generationCreatedAt: 10,
       effectivePredecessorCreatedAt: 10,
-      lineagePredecessorId: 'root',
+      lineagePredecessorId: rootLineageId(),
       settledAt: START,
     });
 
@@ -1573,7 +1644,7 @@ describe('agent queued turn methods', () => {
             outcome: 'admitted',
             settledAt: START,
             effectivePredecessorCreatedAt: 10,
-            lineagePredecessorId: 'root',
+            lineagePredecessorId: rootLineageId(),
           },
         },
         $unset: { activeSlot: 1 },
@@ -1658,7 +1729,7 @@ describe('agent queued turn methods', () => {
       admissionMode: 'ordinary',
       generationCreatedAt: 11,
       effectivePredecessorCreatedAt: 10,
-      lineagePredecessorId: 'root',
+      lineagePredecessorId: rootLineageId(),
       settledAt: START,
     });
 
@@ -1677,6 +1748,7 @@ describe('agent queued turn methods', () => {
         tenantId: 'tenant-1',
         conversationId: 'conversation-1',
         sequence: normal.turn.sequence,
+        rootParentMessageId: 'parent-1',
         expectedPredecessorCreatedAt: 10,
         allowLegacyPredecessorInference: true,
       }),
@@ -1689,7 +1761,7 @@ describe('agent queued turn methods', () => {
       {
         $set: {
           'terminalReceipt.effectivePredecessorCreatedAt': 10,
-          'terminalReceipt.lineagePredecessorId': 'root',
+          'terminalReceipt.lineagePredecessorId': rootLineageId(),
         },
       },
     );
@@ -1762,6 +1834,7 @@ describe('agent queued turn methods', () => {
         tenantId: 'tenant-1',
         conversationId: 'conversation-1',
         sequence: ambiguous.turn.sequence,
+        rootParentMessageId: 'parent-1',
         expectedPredecessorCreatedAt: 10,
       }),
     ).resolves.toBeNull();
@@ -1813,6 +1886,7 @@ describe('agent queued turn methods', () => {
         tenantId: 'tenant-1',
         conversationId: 'conversation-1',
         sequence: target.turn.sequence,
+        rootParentMessageId: 'parent-1',
         expectedPredecessorCreatedAt: 10,
         allowLegacyPredecessorInference: true,
       }),
@@ -1919,7 +1993,7 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({
       outcome: 'admission_indeterminate',
       turn: {
-        status: 'dead',
+        status: 'claimed',
         terminalReceipt: {
           failure: { code: 'ADMISSION_INDETERMINATE' },
         },
@@ -2218,7 +2292,7 @@ describe('agent queued turn methods', () => {
       admissionId: 'delivery-admission-during-delete',
       admissionMode: 'ordinary',
       generationCreatedAt: 42,
-      lineagePredecessorId: 'root',
+      lineagePredecessorId: rootLineageId(),
       settledAt: LATER,
     });
     await expect(

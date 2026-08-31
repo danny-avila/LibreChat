@@ -36,6 +36,7 @@ const terminalReceiptSchema = new Schema(
     generationCreatedAt: { type: Number, min: 0 },
     effectivePredecessorCreatedAt: { type: Number, min: 0 },
     lineagePredecessorId: { type: String, maxlength: 128 },
+    rootPredecessor: { type: Boolean, enum: [true] },
     failure: { type: failureSchema },
   },
   { _id: false },
@@ -118,6 +119,14 @@ queuedTurnSchema.index(
     name: 'agent_queued_turn_active_capacity',
     unique: true,
     partialFilterExpression: { activeSlot: { $exists: true } },
+  },
+);
+queuedTurnSchema.index(
+  { tenantId: 1, user: 1, conversationId: 1, laneId: 1, status: 1 },
+  {
+    name: 'agent_queued_turn_claim_lane',
+    unique: true,
+    partialFilterExpression: { status: 'claimed' },
   },
 );
 queuedTurnSchema.index(

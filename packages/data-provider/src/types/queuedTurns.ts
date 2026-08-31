@@ -55,6 +55,8 @@ export const agentQueuedTurnReceiptSchema = enqueueAgentQueuedTurnSchema.extend(
   /** Effective generation boundary consumed by an admitted turn. This can
    * advance beyond the originally captured root as queued turns chain. */
   effectivePredecessorCreatedAt: z.number().int().nonnegative().optional(),
+  /** Explicitly proves that this admission consumed no predecessor boundary. */
+  rootPredecessor: z.literal(true).optional(),
   position: z.number().int().nonnegative().optional(),
   revision: z.number().int().nonnegative(),
   failure: z

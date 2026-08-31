@@ -838,6 +838,27 @@ describe('useSteering', () => {
       expect(result.current.queue).toEqual([]);
     });
 
+    it('settles an explicit root admission without waiting for a timestamp boundary', async () => {
+      mockServerQueuedTurns = [
+        {
+          queuedTurnId: 'server-root-admitted',
+          clientRequestId: 'client-root-admitted',
+          conversationId: CONVO_ID,
+          parentMessageId: 'visible-assistant-tail',
+          text: 'started from the conversation root',
+          status: 'admitted',
+          revision: 4,
+          rootPredecessor: true,
+          createdAt: new Date(200).toISOString(),
+          updatedAt: new Date(300).toISOString(),
+        },
+      ];
+      const { result } = setupServerQueue();
+
+      await waitFor(() => expect(result.current.queue).toEqual([]));
+      expect(result.current.settledReceipts).toEqual([]);
+    });
+
     it('keeps the terminal boundary when an old-server admission lacks its exact fence', async () => {
       mockServerQueuedTurns = [
         {

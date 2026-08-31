@@ -184,6 +184,47 @@ describe('Agent queued-turn HTTP admission receipts', () => {
     expect(cancel).toHaveBeenCalledWith(expect.objectContaining({ queuedTurnId: 'queued-turn-1' }));
   });
 
+  it('projects an explicit root admission without a timestamp boundary', async () => {
+    const admitted = {
+      ...turn('admitted'),
+      terminalReceipt: {
+        outcome: 'admitted' as const,
+        settledAt: new Date('2026-08-30T12:01:00Z'),
+        admissionId: 'client-request-1',
+        generationId: 'generation-root',
+        generationCreatedAt: 43,
+        lineagePredecessorId: 'root:message-identity',
+        rootPredecessor: true as const,
+      },
+    };
+    const methods = {
+      getConvo: jest.fn(async () => ({ agent_id: 'agent_1', endpoint: 'agents' })),
+      listAgentQueuedTurnReceipts: jest.fn(async () => [admitted]),
+    };
+    const deps = {
+      methods: methods as unknown as AgentQueuedTurnMethods & {
+        getConvo: typeof methods.getConvo;
+      },
+      lifecycle: { schedule: jest.fn(), cancel: jest.fn() },
+      checkAgentAccess: jest.fn(async () => true),
+    } satisfies AgentQueuedTurnHttpDeps;
+
+    await expect(
+      handleAgentQueuedTurnList({ id: USER_ID }, 'conversation-1', deps),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: {
+        queuedTurns: [
+          {
+            queuedTurnId: 'queued-turn-1',
+            status: 'admitted',
+            rootPredecessor: true,
+          },
+        ],
+      },
+    });
+  });
+
   it('retires a cancelled source after its published delivery receipt expires', async () => {
     const cancelled = {
       ...turn('cancelled'),

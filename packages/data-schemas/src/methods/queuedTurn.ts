@@ -24,7 +24,7 @@ const LANE_WRITER_LEASE_MS = 30_000;
 const LANE_WRITER_RETRY_MS = 5;
 const LANE_WRITER_RETRIES = LANE_WRITER_LEASE_MS / LANE_WRITER_RETRY_MS;
 const RETIRED_LANE_RETENTION_MS = 24 * 60 * 60_000;
-const ROOT_LINEAGE_PREDECESSOR_ID = 'root';
+const ROOT_LINEAGE_PREDECESSOR_PREFIX = 'root:';
 
 interface DuplicateKeyError {
   code?: number;
@@ -158,6 +158,16 @@ export interface AgentQueuedTurnPredecessor {
   effectivePredecessorCreatedAt?: number;
 }
 
+function getRootLineagePredecessorId(parentMessageId: string): string {
+  return `${ROOT_LINEAGE_PREDECESSOR_PREFIX}${createHash('sha256')
+    .update(requireBoundedString(parentMessageId, 256))
+    .digest('base64url')}`;
+}
+
+function isRootLineagePredecessorId(lineagePredecessorId: string): boolean {
+  return lineagePredecessorId.startsWith(ROOT_LINEAGE_PREDECESSOR_PREFIX);
+}
+
 export interface ClaimAgentQueuedTurnReconciliationInput {
   claimId: string;
   claimBy: string;
@@ -275,6 +285,7 @@ export interface AgentQueuedTurnMethods {
   getEffectiveAgentQueuedTurnPredecessor: (
     input: AgentQueuedTurnConversationScope & {
       sequence: number;
+      rootParentMessageId: string;
       expectedPredecessorCreatedAt?: number;
       allowLegacyPredecessorInference?: boolean;
     },
@@ -1032,8 +1043,9 @@ export function createAgentQueuedTurnMethods(
     const rootPredecessorCreatedAt = normalizePredecessor(turn.expectedPredecessorCreatedAt);
     if (
       turn.terminalReceipt.lineagePredecessorId != null &&
-      (rootPredecessorCreatedAt == null ||
-        turn.terminalReceipt.effectivePredecessorCreatedAt != null)
+      (turn.terminalReceipt.effectivePredecessorCreatedAt != null ||
+        (isRootLineagePredecessorId(turn.terminalReceipt.lineagePredecessorId) &&
+          turn.terminalReceipt.rootPredecessor === true))
     ) {
       return turn;
     }
@@ -1042,6 +1054,7 @@ export function createAgentQueuedTurnMethods(
       ...(turn.tenantId != null && { tenantId: turn.tenantId }),
       conversationId: turn.conversationId,
       sequence: turn.sequence,
+      rootParentMessageId: turn.parentMessageId,
       ...(rootPredecessorCreatedAt != null && {
         expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
       }),
@@ -1058,6 +1071,7 @@ export function createAgentQueuedTurnMethods(
         $or: [
           { 'terminalReceipt.effectivePredecessorCreatedAt': { $exists: false } },
           { 'terminalReceipt.lineagePredecessorId': { $exists: false } },
+          { 'terminalReceipt.rootPredecessor': { $exists: false } },
         ],
       },
       {
@@ -1066,6 +1080,10 @@ export function createAgentQueuedTurnMethods(
             'terminalReceipt.effectivePredecessorCreatedAt': effectivePredecessorCreatedAt,
           }),
           'terminalReceipt.lineagePredecessorId': resolvedPredecessor.lineagePredecessorId,
+          ...(effectivePredecessorCreatedAt == null &&
+            isRootLineagePredecessorId(resolvedPredecessor.lineagePredecessorId) && {
+              'terminalReceipt.rootPredecessor': true,
+            }),
         },
       },
     );
@@ -1075,6 +1093,10 @@ export function createAgentQueuedTurnMethods(
         ...turn.terminalReceipt,
         ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
         lineagePredecessorId: resolvedPredecessor.lineagePredecessorId,
+        ...(effectivePredecessorCreatedAt == null &&
+          isRootLineagePredecessorId(resolvedPredecessor.lineagePredecessorId) && {
+            rootPredecessor: true as const,
+          }),
       },
     };
   }
@@ -1309,6 +1331,11 @@ export function createAgentQueuedTurnMethods(
               'terminalReceipt.outcome': 'dead',
               'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
             },
+            {
+              status: 'claimed',
+              'terminalReceipt.outcome': 'dead',
+              'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+            },
             { status: 'claimed', claimUntil: { $lte: input.now } },
           ],
         },
@@ -1375,7 +1402,7 @@ export function createAgentQueuedTurnMethods(
         ...conversationScope(input),
         _id: input.queuedTurnId,
         deliveryKey: requireBoundedString(input.deliveryKey, 128),
-        status: 'dead',
+        status: { $in: ['claimed', 'dead'] },
         'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
         reconciliationClaimId: requireBoundedString(input.claimId, 128),
         reconciliationClaimBy: requireBoundedString(input.claimBy, 256),
@@ -1845,6 +1872,7 @@ export function createAgentQueuedTurnMethods(
           ...(current.tenantId != null && { tenantId: current.tenantId }),
           conversationId: current.conversationId,
           sequence: current.sequence,
+          rootParentMessageId: current.parentMessageId,
           ...(rootPredecessorCreatedAt != null && {
             expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
           }),
@@ -2005,6 +2033,11 @@ export function createAgentQueuedTurnMethods(
               'terminalReceipt.outcome': 'dead',
               'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
             },
+            {
+              status: 'claimed',
+              'terminalReceipt.outcome': 'dead',
+              'terminalReceipt.failure.code': 'ADMISSION_INDETERMINATE',
+            },
           ],
         },
         {
@@ -2019,6 +2052,11 @@ export function createAgentQueuedTurnMethods(
               ...(generationCreatedAt != null && { generationCreatedAt }),
               ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
               ...(lineagePredecessorId != null && { lineagePredecessorId }),
+              ...(effectivePredecessorCreatedAt == null &&
+                lineagePredecessorId != null &&
+                isRootLineagePredecessorId(lineagePredecessorId) && {
+                  rootPredecessor: true,
+                }),
             },
           },
           $unset: {
@@ -2124,6 +2162,7 @@ export function createAgentQueuedTurnMethods(
         })
         .select({
           sequence: 1,
+          parentMessageId: 1,
           expectedPredecessorCreatedAt: 1,
           admissionEffectivePredecessorCreatedAt: 1,
           admissionLineagePredecessorId: 1,
@@ -2145,6 +2184,7 @@ export function createAgentQueuedTurnMethods(
           ...(input.tenantId != null && { tenantId: input.tenantId }),
           conversationId: input.conversationId,
           sequence: admission.sequence,
+          rootParentMessageId: admission.parentMessageId,
           ...(rootPredecessorCreatedAt != null && {
             expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
           }),
@@ -2204,6 +2244,10 @@ export function createAgentQueuedTurnMethods(
                         effectivePredecessorCreatedAt,
                       }),
                       lineagePredecessorId,
+                      ...(effectivePredecessorCreatedAt == null &&
+                        isRootLineagePredecessorId(lineagePredecessorId) && {
+                          rootPredecessor: true,
+                        }),
                     },
                   },
                   $unset: {
@@ -2274,7 +2318,8 @@ export function createAgentQueuedTurnMethods(
     if (
       current.status === 'claimed' &&
       current.deliveryKey === deliveryKey &&
-      current.admissionStartedAt != null
+      current.admissionStartedAt != null &&
+      current.terminalReceipt?.failure?.code !== 'ADMISSION_INDETERMINATE'
     ) {
       const quarantined = await Turn()
         .findOneAndUpdate(
@@ -2288,7 +2333,7 @@ export function createAgentQueuedTurnMethods(
           },
           {
             $set: {
-              status: 'dead',
+              status: 'claimed',
               reconciliationAvailableAt: input.settledAt,
               reconciliationAttempts: 0,
               terminalReceipt: {
@@ -2316,7 +2361,12 @@ export function createAgentQueuedTurnMethods(
         return { outcome: 'admission_indeterminate', turn: toRecord(quarantined) };
       }
     }
-    if (['admitted', 'cancelled', 'dead'].includes(current.status)) {
+    if (
+      ['admitted', 'cancelled', 'dead'].includes(current.status) ||
+      (current.status === 'claimed' &&
+        current.terminalReceipt?.outcome === 'dead' &&
+        current.terminalReceipt.failure?.code === 'ADMISSION_INDETERMINATE')
+    ) {
       return { outcome: 'already_terminal', turn: toRecord(current) };
     }
     return { outcome: 'conflict', turn: toRecord(current) };
@@ -2325,6 +2375,7 @@ export function createAgentQueuedTurnMethods(
   async function getEffectiveAgentQueuedTurnPredecessor(
     input: AgentQueuedTurnConversationScope & {
       sequence: number;
+      rootParentMessageId: string;
       expectedPredecessorCreatedAt?: number;
       allowLegacyPredecessorInference?: boolean;
     },
@@ -2333,6 +2384,8 @@ export function createAgentQueuedTurnMethods(
       throw new TypeError('Agent queued turn sequence must be a positive integer');
     }
     const rootEpoch = normalizePredecessor(input.expectedPredecessorCreatedAt);
+    const rootParentMessageId = requireBoundedString(input.rootParentMessageId, 256);
+    const rootLineagePredecessorId = getRootLineagePredecessorId(rootParentMessageId);
     const predecessors = await Turn()
       .find({
         ...conversationScope(input),
@@ -2340,6 +2393,7 @@ export function createAgentQueuedTurnMethods(
         ...(rootEpoch == null
           ? { expectedPredecessorCreatedAt: { $exists: false } }
           : { expectedPredecessorCreatedAt: rootEpoch }),
+        parentMessageId: rootParentMessageId,
         status: 'admitted',
         'terminalReceipt.outcome': 'admitted',
       })
@@ -2376,7 +2430,7 @@ export function createAgentQueuedTurnMethods(
     ) {
       return null;
     }
-    let lineagePredecessorId = ROOT_LINEAGE_PREDECESSOR_ID;
+    let lineagePredecessorId = rootLineagePredecessorId;
     let effectivePredecessorCreatedAt = rootEpoch;
     let traversed = 0;
     const visited = new Set<string>();

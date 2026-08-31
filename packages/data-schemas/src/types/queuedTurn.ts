@@ -39,8 +39,10 @@ export interface AgentQueuedTurnTerminalReceipt {
   generationCreatedAt?: number;
   /** Effective predecessor consumed by this admission after queued-turn chaining. */
   effectivePredecessorCreatedAt?: number;
-  /** Durable lineage node: `root` or the predecessor queued-turn identity. */
+  /** Durable lineage node: the root-message identity or predecessor queued-turn identity. */
   lineagePredecessorId?: string;
+  /** This admission consumed no predecessor generation boundary. */
+  rootPredecessor?: true;
   failure?: AgentQueuedTurnFailure;
 }
 

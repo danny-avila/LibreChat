@@ -426,17 +426,23 @@ export default function useSteering({
             !(
               existing.status === 'admitted_pending_boundary' &&
               receipt.status === 'admitted' &&
-              receipt.effectivePredecessorCreatedAt != null
+              (receipt.effectivePredecessorCreatedAt != null || receipt.rootPredecessor === true)
             )
           ) {
             continue;
           }
           let settled: SettledQueuedTurnReceipt | undefined;
-          if (receipt.status === 'admitted' && receipt.effectivePredecessorCreatedAt != null) {
+          if (
+            receipt.status === 'admitted' &&
+            (receipt.effectivePredecessorCreatedAt != null || receipt.rootPredecessor === true)
+          ) {
             settled = {
               clientRequestId: receipt.clientRequestId,
               status: 'admitted',
-              effectivePredecessorCreatedAt: receipt.effectivePredecessorCreatedAt,
+              ...(receipt.effectivePredecessorCreatedAt != null && {
+                effectivePredecessorCreatedAt: receipt.effectivePredecessorCreatedAt,
+              }),
+              ...(receipt.rootPredecessor === true && { rootPredecessor: true }),
             };
           } else if (receipt.status === 'admitted') {
             settled = {
@@ -460,7 +466,9 @@ export default function useSteering({
         const pendingRequestIds = new Set(nextPending);
         const nextSettled = [...settledByRequestId.values()].filter(
           (receipt) =>
-            (receipt.status === 'admitted' && receipt.boundaryConsumed !== true) ||
+            (receipt.status === 'admitted' &&
+              receipt.rootPredecessor !== true &&
+              receipt.boundaryConsumed !== true) ||
             pendingRequestIds.has(receipt.clientRequestId),
         );
         if (source === 'enqueue') {
