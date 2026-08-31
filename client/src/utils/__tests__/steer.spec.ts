@@ -1,4 +1,4 @@
-import { Constants, ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes, ReasoningEffort } from 'librechat-data-provider';
 import type { TMessage, TSteerAppliedEvent } from 'librechat-data-provider';
 import {
   getSteerPart,
@@ -11,6 +11,7 @@ import {
   insertQueuedOrigin,
   mergeRestagedQuotes,
   collectDroppedSteerQuotes,
+  carriedSteerContext,
 } from '../steer';
 
 const buildEvent = (overrides: Partial<TSteerAppliedEvent> = {}): TSteerAppliedEvent => ({
@@ -36,6 +37,22 @@ const assistantMessage = (overrides: Partial<TMessage> = {}): TMessage =>
     ],
     ...overrides,
   }) as TMessage;
+
+describe('carriedSteerContext', () => {
+  it('preserves request-scoped reasoning through restore and recovery paths', () => {
+    expect(
+      carriedSteerContext({
+        quotes: ['excerpt'],
+        manualSkills: ['writer'],
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+      }),
+    ).toEqual({
+      quotes: ['excerpt'],
+      manualSkills: ['writer'],
+      reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+    });
+  });
+});
 
 describe('applySteerPart', () => {
   it('places the part at its absolute index on a new message object', () => {

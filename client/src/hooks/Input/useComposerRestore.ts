@@ -1,9 +1,11 @@
 import { useRef, useEffect, useCallback } from 'react';
+import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { ExtendedFile, FileSetter } from '~/common';
 import type { useChatFormContext } from '~/Providers';
+import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import store from '~/store';
 
 export interface ComposerRestore {
@@ -53,12 +55,13 @@ export default function useComposerRestore({
   textAreaRef,
   answerModeActive,
 }: UseComposerRestoreParams): ComposerRestore {
-  /** Chip "Edit message" restore: quote chips + skill picks merge back into
-   *  their compose-time atoms (the chips above the textarea re-render them). */
+  const reasoningStore = useStore();
+  /** Chip "Edit message" restore: quote chips, skill picks, and the reasoning
+   *  override merge back into their compose-time atoms. */
   const restoreComposerContext = useRecoilCallback(
     ({ set }) =>
       (context?: QueuedMessageContext) => {
-        const { quotes, manualSkills } = context ?? {};
+        const { quotes, manualSkills, reasoningOverride } = context ?? {};
         if (quotes != null && quotes.length > 0) {
           set(store.pendingQuotesByConvoId(conversationId), (prev) => [
             ...new Set([...prev, ...quotes]),
@@ -69,8 +72,11 @@ export default function useComposerRestore({
             ...new Set([...prev, ...manualSkills]),
           ]);
         }
+        if (reasoningOverride != null) {
+          reasoningStore.set(pendingReasoningOverrideFamily(conversationId), reasoningOverride);
+        }
       },
-    [conversationId],
+    [conversationId, reasoningStore],
   );
 
   /** Read at call time rather than captured, so both the synchronous edit below
@@ -152,8 +158,9 @@ export default function useComposerRestore({
     ({ snapshot }) =>
       (convoId: string) =>
         snapshot.getLoadable(store.pendingQuotesByConvoId(convoId)).getValue().length > 0 ||
-        snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId)).getValue().length > 0,
-    [],
+        snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId)).getValue().length > 0 ||
+        reasoningStore.get(pendingReasoningOverrideFamily(convoId)) != null,
+    [reasoningStore],
   );
 
   /**

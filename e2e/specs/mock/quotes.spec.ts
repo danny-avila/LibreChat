@@ -380,7 +380,7 @@ test.describe('quote references', () => {
       const button = addToChat(page);
       await expect(button).toBeVisible({ timeout: 3000 });
       await button.click();
-      await expect(pendingChips(page)).toHaveAttribute('data-quote-count', '1');
+      await expect(pendingChips(page)).toHaveCount(1);
     }).toPass({ timeout: 30000 });
 
     // The excerpt is the closing paragraph itself, not the overhang.
@@ -625,7 +625,11 @@ test.describe('quote references on touch devices', () => {
 
   /** Long-press equivalent: touch the text, then select it without any mouse event. */
   async function touchSelect(page: Page, needle: string) {
-    await messagesView(page).getByText(needle).scrollIntoViewIfNeeded();
+    await messagesView(page)
+      .locator('.message-render')
+      .filter({ hasText: needle })
+      .last()
+      .scrollIntoViewIfNeeded();
     const point = await measureNeedle(page, needle);
     /** Drop any earlier selection *before* the press. Chromium answers a
      *  synthetic tap with compatibility mouse events, and a leftover selection
@@ -661,9 +665,9 @@ test.describe('quote references on touch devices', () => {
     expect(popup!.height).toBeGreaterThanOrEqual(44);
 
     // Tapping has to commit before the tap dismisses the selection out from
-    // under the click — the second reason this was unusable on a phone.
+    // under the click, the second reason this was unusable on a phone.
     await addToChat(page).tap();
-    await expect(pendingChips(page)).toHaveAttribute('data-quote-count', '1');
+    await expect(pendingChips(page)).toHaveCount(1);
     await expect(pendingChips(page)).toContainText(CLOSING_PARAGRAPH);
   });
 
@@ -681,7 +685,7 @@ test.describe('quote references on touch devices', () => {
       const button = addToChat(page);
       await expect(button).toBeVisible({ timeout: 5000 });
       await button.tap();
-      await expect(pendingChips(page)).toHaveAttribute('data-quote-count', '1');
+      await expect(pendingChips(page)).toHaveCount(1);
     }).toPass({ timeout: 30000 });
 
     // End to end from a finger: the mock model confirms the blockquote arrived.

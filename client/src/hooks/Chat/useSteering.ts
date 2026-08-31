@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useAtomValue, useStore } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
@@ -14,6 +15,7 @@ import type {
   TConversation,
   TMessageContentParts,
 } from 'librechat-data-provider';
+import type { CallbackInterface } from 'recoil';
 import type {
   RunEnd,
   PendingSteer,
@@ -22,7 +24,6 @@ import type {
   SettledQueuedTurnReceipt,
 } from '~/store/families';
 import type { AgentQueuedTurnReceipt, GenerationProtocolVersion } from '~/data-provider';
-import type { CallbackInterface } from 'recoil';
 import type { QueueSendLock } from '~/utils/queueIntent';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
@@ -46,6 +47,7 @@ import {
   mergeRestagedQuotes,
 } from '~/utils';
 import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '~/utils/queueIntent';
+import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import { markComposerFilesTaken } from '~/utils/composerFiles';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useLatestMessage } from '~/hooks/Messages';
@@ -61,6 +63,7 @@ export type DuringRunAction = 'steer' | 'queue';
 export interface QueuedMessageContext {
   quotes?: string[];
   manualSkills?: string[];
+  reasoningOverride?: TMessage['reasoningOverride'];
   clientRequestId?: string;
   recoverySteerId?: string;
   expectedPredecessorCreatedAt?: number;
@@ -420,6 +423,9 @@ function reconcileServerQueuedTurns(
           receipt.manualSkills.length > 0 && {
             manualSkills: receipt.manualSkills,
           }),
+        ...(receipt.reasoningOverride != null && {
+          reasoningOverride: receipt.reasoningOverride,
+        }),
         ...(receipt.priority === true && { priority: true }),
         server: {
           id: receipt.queuedTurnId,
@@ -521,6 +527,7 @@ export default function useSteering({
   stopGenerating,
 }: UseSteeringParams) {
   const localize = useLocalize();
+  const reasoningStore = useStore();
   const { showToast } = useToastContext();
   const setFilesToDelete = useSetFilesToDelete();
   const convertSteersToQueued = useSteerConvert();
@@ -544,6 +551,7 @@ export default function useSteering({
   const enabled = steerable && index === 0;
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
   const queuedMessages = useRecoilValue(store.queuedMessagesByConvoId(queueKey));
+  const pendingReasoningOverride = useAtomValue(pendingReasoningOverrideFamily(queueKey));
   const setQueuedMessages = useSetRecoilState(store.queuedMessagesByConvoId(queueKey));
   const knownClientRequestIds = useMemo(
     () =>
@@ -1011,6 +1019,7 @@ export default function useSteering({
           files?: TMessage['files'];
           quotes?: string[];
           manualSkills?: string[];
+          reasoningOverride?: TMessage['reasoningOverride'];
           /** Set when the files were ALREADY queued/steered: their TTL was
            *  held when they first entered the queue (or at the steer 202). */
           skipUsageMark?: boolean;
@@ -1051,6 +1060,9 @@ export default function useSteering({
             options.manualSkills.length > 0 && {
               manualSkills: options.manualSkills,
             }),
+          ...(options?.reasoningOverride != null && {
+            reasoningOverride: options.reasoningOverride,
+          }),
           ...(options?.front && { priority: true }),
         };
         set(store.queuedMessagesByConvoId(queueKey), (prev) => insertQueuedMessage(prev, item));
@@ -1080,6 +1092,9 @@ export default function useSteering({
                 item.manualSkills.length > 0 && {
                   manualSkills: item.manualSkills,
                 }),
+              ...(item.reasoningOverride != null && {
+                reasoningOverride: item.reasoningOverride,
+              }),
               ...(item.priority === true && { priority: true }),
               ...(item.expectedPredecessorCreatedAt != null && {
                 expectedPredecessorCreatedAt: item.expectedPredecessorCreatedAt,
@@ -1198,18 +1213,25 @@ export default function useSteering({
         const manualSkills = snapshot
           .getLoadable(store.pendingManualSkillsByConvoId(conversationId))
           .getValue();
+        const reasoningOverride = reasoningStore.get(
+          pendingReasoningOverrideFamily(conversationId),
+        );
         if (quotes.length > 0) {
           reset(store.pendingQuotesByConvoId(conversationId));
         }
         if (manualSkills.length > 0) {
           reset(store.pendingManualSkillsByConvoId(conversationId));
         }
+        if (reasoningOverride != null) {
+          reasoningStore.set(pendingReasoningOverrideFamily(conversationId), undefined);
+        }
         return {
           ...(quotes.length > 0 && { quotes }),
           ...(manualSkills.length > 0 && { manualSkills }),
+          ...(reasoningOverride != null && { reasoningOverride }),
         };
       },
-    [conversationId],
+    [conversationId, reasoningStore],
   );
 
   /** Quotes-only drain for composer-origin steers: the excerpts ride the steer
@@ -1989,6 +2011,16 @@ export default function useSteering({
       if (trimmed.length === 0 || filesLoading || !canSteer) {
         return false;
       }
+      /** A live steer cannot change the provider request already in flight.
+       * Preserve a staged reasoning choice as a full queued turn. */
+      if (pendingReasoningOverride != null) {
+        enqueue(trimmed, {
+          files: takeComposerFiles(),
+          ...takeComposerContext(),
+        });
+        takeComposerDraft();
+        return true;
+      }
       const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
         preempt,
       });
@@ -1997,7 +2029,17 @@ export default function useSteering({
       }
       return consumed;
     },
-    [filesLoading, canSteer, takeComposerFiles, takeComposerQuotes, takeComposerDraft, submitSteer],
+    [
+      filesLoading,
+      canSteer,
+      pendingReasoningOverride,
+      enqueue,
+      takeComposerFiles,
+      takeComposerContext,
+      takeComposerQuotes,
+      takeComposerDraft,
+      submitSteer,
+    ],
   );
 
   /** Composer-originated queue: carries the composer's attachments, quote
@@ -2122,6 +2164,11 @@ export default function useSteering({
       if (isSubmitting && (!duringRunActive || !canSteer || item.recoverySteerId != null)) {
         return;
       }
+      /** Keep request-scoped reasoning on a new generation; injecting this
+       * item into the active run would silently ignore the selection. */
+      if (duringRunActive && item.reasoningOverride != null) {
+        return;
+      }
       /* No fallback to the captured item: the only way it is missing is that
          something else already took it, likely the run-end drain moments before
          this click landed. Re-sending it would send the same words twice. */
@@ -2165,6 +2212,7 @@ export default function useSteering({
           accepted = sendNow(taken.text, taken.files ?? [], {
             quotes: taken.quotes,
             manualSkills: taken.manualSkills,
+            reasoningOverride: taken.reasoningOverride,
             clientRequestId: taken.clientRequestId,
             recoverySteerId: taken.recoverySteerId,
             expectedPredecessorCreatedAt: taken.expectedPredecessorCreatedAt,
@@ -2205,6 +2253,12 @@ export default function useSteering({
   const queuedActionClaimsRef = useRef(new Set<string>());
   const sendQueuedNow = useCallback(
     (item: QueuedMessage, opts?: { preempt?: boolean }) => {
+      /* A reasoning override belongs to the next provider request and cannot
+         be injected into the one already running. Refuse before cancelling a
+         durable server row, so it keeps its crash-safe ownership. */
+      if (duringRunActive && item.reasoningOverride != null) {
+        return;
+      }
       if (item.server == null) {
         sendLocalQueuedNow(item, opts);
         return;
@@ -2223,7 +2277,7 @@ export default function useSteering({
           queuedActionClaimsRef.current.delete(item.id);
         });
     },
-    [discardQueued, sendLocalQueuedNow],
+    [duringRunActive, discardQueued, sendLocalQueuedNow],
   );
 
   /** Abort the current run and auto-send this text once the abort settles. */
@@ -2283,6 +2337,9 @@ export default function useSteering({
       if (!hasRealConvoId) {
         return interruptAndSend(trimmed);
       }
+      if (pendingReasoningOverride != null) {
+        return interruptAndSend(trimmed);
+      }
       const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
         preempt: true,
       });
@@ -2296,6 +2353,7 @@ export default function useSteering({
       pausedOnApproval,
       canControlGeneration,
       hasRealConvoId,
+      pendingReasoningOverride,
       interruptAndSend,
       takeComposerFiles,
       takeComposerQuotes,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useStore } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -44,6 +45,7 @@ import {
   queueTitleGeneration,
   markTitleGenerationProcessed,
 } from '~/data-provider';
+import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
@@ -341,6 +343,7 @@ export default function useEventHandlers({
   setShowStopButton,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
+  const reasoningStore = useStore();
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
@@ -352,17 +355,20 @@ export default function useEventHandlers({
   const navigate = useNavigate();
   const location = useLocation();
 
-  /** Re-queue the turn's quoted excerpts when an early abort restores the draft,
-   *  so retrying the restored message still sends the references — the pending
-   *  queue was already drained on submit. */
-  const restorePendingQuotes = useRecoilCallback(
+  /** Re-stage request context when an early abort restores the draft, so a
+   *  retry keeps the references and one-shot reasoning selection already
+   *  drained from the composer on submit. */
+  const restorePendingContext = useRecoilCallback(
     ({ set }) =>
-      (convoId: string, quotes?: string[]) => {
+      (convoId: string, quotes?: string[], reasoningOverride?: TMessage['reasoningOverride']) => {
         if (Array.isArray(quotes) && quotes.length > 0) {
           set(store.pendingQuotesByConvoId(convoId), quotes);
         }
+        if (reasoningOverride != null) {
+          reasoningStore.set(pendingReasoningOverrideFamily(convoId), reasoningOverride);
+        }
       },
-    [],
+    [reasoningStore],
   );
 
   const lastAnnouncementTimeRef = useRef(Date.now());
@@ -769,7 +775,11 @@ export default function useEventHandlers({
               abortMessages,
             );
             setDraft({ id: currentConvoId, value: requestMessage?.text });
-            restorePendingQuotes(currentConvoId, requestMessage?.quotes);
+            restorePendingContext(
+              currentConvoId,
+              requestMessage?.quotes,
+              requestMessage?.reasoningOverride,
+            );
             return;
           }
 
@@ -784,7 +794,11 @@ export default function useEventHandlers({
             id: getConversationDraftId(runIndex, Constants.NEW_CONVO),
             value: requestMessage?.text,
           });
-          restorePendingQuotes(String(Constants.NEW_CONVO), requestMessage?.quotes);
+          restorePendingContext(
+            String(Constants.NEW_CONVO),
+            requestMessage?.quotes,
+            requestMessage?.reasoningOverride,
+          );
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
@@ -852,7 +866,11 @@ export default function useEventHandlers({
             id: getConversationDraftId(runIndex, currentConvoId),
             value: requestMessage?.text,
           });
-          restorePendingQuotes(currentConvoId, requestMessage?.quotes);
+          restorePendingContext(
+            currentConvoId,
+            requestMessage?.quotes,
+            requestMessage?.reasoningOverride,
+          );
           if (isNewChat) {
             requestChatFocus();
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
@@ -996,7 +1014,7 @@ export default function useEventHandlers({
       applyAgentTemplate,
       attachmentHandler,
       setSubmissionStart,
-      restorePendingQuotes,
+      restorePendingContext,
     ],
   );
 

@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useStore } from 'jotai';
 import { cloneDeep } from 'lodash';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -37,6 +38,7 @@ import {
   getRouteChatProjectId,
   stripStreamedIndexStamps,
 } from '~/utils';
+import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -214,6 +216,7 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
 }) {
   const navigate = useNavigate();
+  const reasoningStore = useStore();
   const getSender = useGetSender();
   const { user } = useAuthContext();
   const queryClient = useQueryClient();
@@ -288,6 +291,18 @@ export default function useChatFunctions({
     [],
   );
 
+  const drainPendingReasoning = useCallback(
+    (convoId: string): TMessage['reasoningOverride'] => {
+      const reasoningAtom = pendingReasoningOverrideFamily(convoId);
+      const reasoningOverride = reasoningStore.get(reasoningAtom);
+      if (reasoningOverride != null) {
+        reasoningStore.set(reasoningAtom, undefined);
+      }
+      return reasoningOverride;
+    },
+    [reasoningStore],
+  );
+
   const ask: TAskFunction = (
     {
       text,
@@ -308,6 +323,7 @@ export default function useChatFunctions({
       targetResponseMessageId,
       overrideManualSkills,
       overrideQuotes,
+      overrideReasoning,
       addedConvo,
       overrideClientRequestId,
       overrideRecoverySteerId,
@@ -430,6 +446,10 @@ export default function useChatFunctions({
       } else if (!isRegenerate && !isContinued && !isEdited) {
         quotes = drainPendingQuotes(conversationId ?? Constants.NEW_CONVO);
       }
+    }
+    let reasoningOverride = overrideReasoning ?? undefined;
+    if (overrideReasoning === undefined && !isRegenerate && !isContinued && !isEdited) {
+      reasoningOverride = drainPendingReasoning(conversationId ?? Constants.NEW_CONVO);
     }
     const isEditOrContinue = isEdited || isContinued;
 
@@ -560,6 +580,7 @@ export default function useChatFunctions({
        * also merges these into the model-facing user text at request time.
        */
       quotes: quotes.length > 0 ? quotes : undefined,
+      reasoningOverride,
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
@@ -788,6 +809,8 @@ export default function useChatFunctions({
           /** Carry the original user message's quoted excerpts forward so the
            *  regenerated response is sent the same referenced context. */
           overrideQuotes: parentMessage.quotes,
+          /** Replay the exact request-scoped reasoning selection used by this turn. */
+          overrideReasoning: parentMessage.reasoningOverride ?? null,
         },
       );
     } else {

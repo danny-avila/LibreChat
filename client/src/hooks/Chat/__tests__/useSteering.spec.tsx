@@ -1,10 +1,18 @@
 import React from 'react';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
+import { Provider as JotaiProvider, createStore, useAtomValue } from 'jotai';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
-import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
+import {
+  Constants,
+  ContentTypes,
+  EModelEndpoint,
+  LocalStorageKeys,
+  ReasoningEffort,
+} from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import type { ExtendedFile } from '~/common';
+import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import { claimQueuedIntent, releaseQueuedIntent } from '~/utils/queueIntent';
 import useUpdateFiles from '~/hooks/Files/useUpdateFiles';
 import useQueueDrain from '../useQueueDrain';
@@ -3356,11 +3364,16 @@ describe('useSteering', () => {
     function setupWithContext(
       params: HookParams = {},
       initialize?: (snapshot: MutableSnapshot) => void,
+      initialReasoning?: TMessage['reasoningOverride'],
     ) {
       const sendNow = jest.fn();
       const stopGenerating = jest.fn();
+      const reasoningStore = createStore();
+      reasoningStore.set(pendingReasoningOverrideFamily(CONVO_ID), initialReasoning);
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot initializeState={withActiveGeneration(initialize)}>{children}</RecoilRoot>
+        <JotaiProvider store={reasoningStore}>
+          <RecoilRoot initializeState={withActiveGeneration(initialize)}>{children}</RecoilRoot>
+        </JotaiProvider>
       );
       const rendered = renderHook(
         () => ({
@@ -3379,6 +3392,7 @@ describe('useSteering', () => {
           chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
           pendingQuotes: useRecoilValue(store.pendingQuotesByConvoId(CONVO_ID)),
           pendingSkills: useRecoilValue(store.pendingManualSkillsByConvoId(CONVO_ID)),
+          pendingReasoning: useAtomValue(pendingReasoningOverrideFamily(CONVO_ID)),
           markApplied: useSetRecoilState(store.appliedSteerIdsByConvoId(CONVO_ID)),
         }),
         { wrapper },
@@ -3390,6 +3404,24 @@ describe('useSteering', () => {
       set(store.pendingQuotesByConvoId(CONVO_ID), ['quoted excerpt']);
       set(store.pendingManualSkillsByConvoId(CONVO_ID), ['skill-1']);
     };
+
+    it('queues rather than steering when reasoning is staged for a new generation', () => {
+      const { result } = setupWithContext({}, undefined, {
+        key: 'reasoning_effort',
+        value: ReasoningEffort.high,
+      });
+
+      act(() => {
+        result.current.steering.steerFromComposer('reason about this');
+      });
+
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(result.current.queue[0]).toMatchObject({
+        text: 'reason about this',
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+      });
+      expect(result.current.pendingReasoning).toBeUndefined();
+    });
 
     it('queueFromComposer consumes staged quotes + skills into the queued item', () => {
       const { result } = setupWithContext({}, stageContext);
@@ -3485,6 +3517,29 @@ describe('useSteering', () => {
       );
     });
 
+    it('keeps a durable reasoning row untouched during a live run', () => {
+      const item: QueuedMessage = {
+        id: 'q-reasoning-live',
+        text: 'reason about this next',
+        createdAt: 1_000,
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+        server: { id: 'server-reasoning-live', status: 'queued', revision: 3 },
+      };
+      const { result, sendNow } = setupWithContext({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
+      });
+
+      act(() => {
+        result.current.steering.sendQueuedNow(item);
+      });
+
+      expect(mockCancelQueuedTurn).not.toHaveBeenCalled();
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(sendNow).not.toHaveBeenCalled();
+      expect(result.current.queue).toEqual([item]);
+      expect(result.current.queue[0].server).toEqual(item.server);
+    });
+
     it('queues without quotes/skills fields when nothing is staged', () => {
       const { result } = setupWithContext();
       act(() => {
@@ -3503,11 +3558,13 @@ describe('useSteering', () => {
           createdAt: Date.now(),
           quotes: ['carried quote'],
           manualSkills: ['carried-skill'],
+          reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
         });
       });
       expect(sendNow).toHaveBeenCalledWith('context send', [], {
         quotes: ['carried quote'],
         manualSkills: ['carried-skill'],
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
         clientRequestId: undefined,
         recoverySteerId: undefined,
         expectedPredecessorCreatedAt: undefined,
@@ -3518,6 +3575,7 @@ describe('useSteering', () => {
             createdAt: expect.any(Number),
             quotes: ['carried quote'],
             manualSkills: ['carried-skill'],
+            reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
           },
           beforeIds: [],
           afterIds: [],

@@ -1,8 +1,12 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
+import { ReasoningEffort } from 'librechat-data-provider';
+import { Provider as JotaiProvider, createStore } from 'jotai';
+import type { TMessage } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ExtendedFile } from '~/common';
+import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import useComposerRestore from '../useComposerRestore';
 import store from '~/store';
 
@@ -24,12 +28,14 @@ function setup({
   draft = '',
   files = new Map<string, ExtendedFile>(),
   answerModeActive = false,
+  reasoningOverride,
   initialize,
 }: {
   conversationId?: string;
   draft?: string;
   files?: Map<string, ExtendedFile>;
   answerModeActive?: boolean;
+  reasoningOverride?: TMessage['reasoningOverride'];
   initialize?: (snapshot: MutableSnapshot) => void;
 } = {}) {
   let text = draft;
@@ -41,8 +47,12 @@ function setup({
     getValues: jest.fn(() => text),
   };
   const textAreaRef = { current: { focus: jest.fn() } };
+  const reasoningStore = createStore();
+  reasoningStore.set(pendingReasoningOverrideFamily(conversationId), reasoningOverride);
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot initializeState={initialize}>{children}</RecoilRoot>
+    <JotaiProvider store={reasoningStore}>
+      <RecoilRoot initializeState={initialize}>{children}</RecoilRoot>
+    </JotaiProvider>
   );
   const view = renderHook(
     (props: { conversationId: string; answerModeActive: boolean }) =>
@@ -56,7 +66,7 @@ function setup({
       }),
     { wrapper, initialProps: { conversationId, answerModeActive } },
   );
-  return { ...view, methods, setFiles, textAreaRef, currentText: () => text };
+  return { ...view, methods, setFiles, textAreaRef, reasoningStore, currentText: () => text };
 }
 
 const reclaim = (result: { current: ReturnType<typeof useComposerRestore> }, origin = CONVO_ID) =>
@@ -120,6 +130,17 @@ describe('useComposerRestore', () => {
       ],
     ])('refuses when %s is staged', (_label, initialize) => {
       const { result } = setup({ initialize });
+      let taken = true;
+      act(() => {
+        taken = reclaim(result);
+      });
+      expect(taken).toBe(false);
+    });
+
+    it('refuses when a reasoning override is staged', () => {
+      const { result } = setup({
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+      });
       let taken = true;
       act(() => {
         taken = reclaim(result);
@@ -231,6 +252,19 @@ describe('useComposerRestore', () => {
       expect(next.get('f9')).toEqual(
         expect.objectContaining({ file_id: 'f9', progress: 1, attached: true }),
       );
+    });
+
+    it('restores the request-scoped reasoning override', () => {
+      const { result, reasoningStore } = setup();
+      act(() => {
+        result.current.editToComposer('reason about this', undefined, {
+          reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+        });
+      });
+      expect(reasoningStore.get(pendingReasoningOverrideFamily(CONVO_ID))).toEqual({
+        key: 'reasoning_effort',
+        value: ReasoningEffort.high,
+      });
     });
 
     /* Skipped rather than stored under `undefined`, which would put an

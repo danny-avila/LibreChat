@@ -253,9 +253,12 @@ function QueueRow({
   /* A recovered item is consumed atomically only when it starts a normal
      generation. Escalating it would leave or duplicate the parked source. */
   const isRecovered = message.recoverySteerId != null;
+  const reasoningRequiresNewGeneration =
+    steering.duringRunActive && message.reasoningOverride != null;
   const sendDisabled =
     actionPending ||
     !serverActionable ||
+    reasoningRequiresNewGeneration ||
     !steering.canSendQueuedNow ||
     (isRecovered && steering.duringRunActive);
   /** Shown for the whole run, disabled whenever steering cannot reach it:
@@ -347,7 +350,11 @@ function QueueRow({
         size="sm"
         disabled={sendDisabled}
         aria-disabled={sendDisabled}
-        title={!steering.canSendQueuedNow ? localize('com_ui_send_now_paused') : undefined}
+        title={
+          !steering.canSendQueuedNow || reasoningRequiresNewGeneration
+            ? localize('com_ui_send_now_paused')
+            : undefined
+        }
         onClick={() => steering.sendQueuedNow(message)}
         className="h-auto shrink-0 px-2 py-0.5 text-text-primary disabled:pointer-events-auto disabled:cursor-not-allowed"
       >
@@ -357,7 +364,13 @@ function QueueRow({
         <EscalateNowButton
           surface="queued"
           messageText={message.text}
-          disabled={!steering.canSteer || interruptPending || actionPending || !serverActionable}
+          disabled={
+            !steering.canSteer ||
+            interruptPending ||
+            actionPending ||
+            reasoningRequiresNewGeneration ||
+            !serverActionable
+          }
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
       )}

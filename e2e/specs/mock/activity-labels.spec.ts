@@ -55,7 +55,9 @@ async function getLabelRequestsFor(
 /** Select the MCP server whose `remember_fact` tool creates the batch boundary. */
 async function selectEphemeralMCP(page: Page) {
   await page.getByRole('button', { name: 'Attach and tools' }).click();
-  const serverItem = page.getByRole('button', { name: new RegExp(MCP_SERVER_TITLE) });
+  const serverItem = page
+    .getByRole('dialog', { name: 'Attach and tools' })
+    .getByRole('button', { name: new RegExp(`^${MCP_SERVER_TITLE}\\b`) });
   await expect(serverItem).toBeVisible();
   await serverItem.click();
   await expect(serverItem).toHaveAttribute('aria-pressed', 'true');

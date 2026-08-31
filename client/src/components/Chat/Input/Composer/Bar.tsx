@@ -220,6 +220,7 @@ interface BarProps {
   isSubmitting: boolean;
   showSpeech: boolean;
   speechDisabled: boolean;
+  hasAddedConversation: boolean;
   /** Send, stop or the during-run split button, decided by the caller. */
   actionSlot: React.ReactNode;
   /** Owned by `ChatForm`, which also paints the trace over the textarea. */
@@ -251,6 +252,7 @@ function Bar({
   isSubmitting,
   showSpeech,
   speechDisabled,
+  hasAddedConversation,
   actionSlot,
   dictation,
 }: BarProps) {
@@ -500,7 +502,11 @@ function Bar({
                   : 'translate-y-0 opacity-100',
               )}
             >
-              <Thinking />
+              <Thinking
+                index={index}
+                disabled={disabled}
+                hasAddedConversation={hasAddedConversation}
+              />
               <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
             </div>
             {/* Arrives and leaves in depth. The elapsed time is not one of the

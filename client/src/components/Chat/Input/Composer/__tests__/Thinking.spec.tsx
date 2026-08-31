@@ -1,13 +1,23 @@
 import React, { createRef } from 'react';
-import userEvent from '@testing-library/user-event';
-import { render, screen } from '@testing-library/react';
-import type { SettingDefinition, TConversation } from 'librechat-data-provider';
+import { ReasoningEffort } from 'librechat-data-provider';
+import { fireEvent, render, screen } from '@testing-library/react';
+import type { SettingDefinition, TConversation, TReasoningOverride } from 'librechat-data-provider';
 import Thinking from '../Thinking';
 
 const mockSetValue = jest.fn();
-const mockSetOption = jest.fn(() => mockSetValue);
+type ReasoningControlMockProps = {
+  setting: SettingDefinition;
+  value?: TReasoningOverride;
+  disabled?: boolean;
+  onChange: (value: TReasoningOverride) => void;
+};
+const mockReasoningControl = jest.fn((_props: ReasoningControlMockProps) => (
+  <div data-testid="numeric-reasoning-control" />
+));
+let mockPendingOverride: TReasoningOverride | undefined;
 let mockSetting = {
   key: 'reasoning_effort',
+  type: 'enum',
   default: 'low',
   options: ['auto', 'low', 'high'],
 } as SettingDefinition;
@@ -19,9 +29,18 @@ const mockChatContext = React.createContext<{ conversation: TConversation | null
   conversation: mockConversation,
 });
 
-jest.mock('~/hooks/Input/useThinkingSetting', () => ({
-  __esModule: true,
-  default: () => mockSetting,
+jest.mock('../../Reasoning', () => ({
+  ReasoningControl: (props: ReasoningControlMockProps) => mockReasoningControl(props),
+  useComposerReasoning: () => ({
+    setting: mockSetting,
+    value:
+      mockPendingOverride ??
+      ({
+        key: mockSetting.key,
+        value: mockConversation[mockSetting.key as keyof TConversation] ?? mockSetting.default,
+      } as TReasoningOverride),
+    setValue: mockSetValue,
+  }),
 }));
 
 jest.mock('~/hooks/Generic/useReducedMotion', () => ({
@@ -46,7 +65,6 @@ jest.mock('~/hooks', () => ({
       )[key] ?? key
     );
   },
-  useSetIndexOptions: () => ({ setOption: mockSetOption }),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -58,14 +76,14 @@ jest.mock('~/Providers', () => ({
     jest.requireActual<typeof import('react')>('react').useContext(mockChatContext),
 }));
 
-function renderInComposer() {
+function renderInComposer({ disabled = false }: { disabled?: boolean } = {}) {
   const textareaRef = createRef<HTMLTextAreaElement>();
   const onComposerClick = jest.fn(() => textareaRef.current?.focus());
   const tree = () => (
     <mockChatContext.Provider value={{ conversation: mockConversation }}>
       <div onClick={onComposerClick}>
         <textarea ref={textareaRef} aria-label="Message input" />
-        <Thinking />
+        <Thinking index={0} disabled={disabled} hasAddedConversation={false} />
       </div>
     </mockChatContext.Provider>
   );
@@ -76,8 +94,10 @@ function renderInComposer() {
 describe('Thinking', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPendingOverride = undefined;
     mockSetting = {
       key: 'reasoning_effort',
+      type: 'enum',
       default: 'low',
       options: ['auto', 'low', 'high'],
     } as unknown as SettingDefinition;
@@ -87,44 +107,81 @@ describe('Thinking', () => {
     } as unknown as TConversation;
   });
 
-  it('keeps keyboard activation inside the control and moves focus into the effort radios', async () => {
-    const user = userEvent.setup();
+  it('forwards the composer disabled state to the enum control', () => {
+    renderInComposer({ disabled: true });
+    const disclosure = screen.getByTestId('composer-thinking-button');
+
+    expect(disclosure).toBeDisabled();
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+  });
+
+  it('routes numeric budgets through the shared reasoning control', () => {
+    mockSetting = {
+      key: 'thinkingBudget',
+      type: 'number',
+      range: { min: -1, positiveMin: 128, max: 32768, step: 128 },
+    } as SettingDefinition;
+    renderInComposer();
+
+    expect(screen.queryByTestId('composer-thinking-button')).not.toBeInTheDocument();
+    expect(screen.getByTestId('numeric-reasoning-control')).toBeInTheDocument();
+    expect(mockReasoningControl.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ setting: mockSetting, disabled: false, onChange: mockSetValue }),
+    );
+  });
+
+  it('shows staged one-shot effort without mutating the conversation', () => {
+    mockPendingOverride = { key: 'reasoning_effort', value: ReasoningEffort.high };
+    renderInComposer();
+
+    expect(screen.getByTestId('composer-thinking-button')).toHaveAccessibleName(
+      'com_ui_composer_thinking_value:High',
+    );
+    fireEvent.click(screen.getByTestId('composer-thinking-button'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Low' }));
+
+    expect(mockSetValue).toHaveBeenCalledWith({ key: 'reasoning_effort', value: 'low' });
+    expect(mockConversation.reasoning_effort).toBe('low');
+  });
+
+  it('keeps activation inside the control and supports arrow-key navigation', () => {
     const { onComposerClick } = renderInComposer();
     const disclosure = screen.getByTestId('composer-thinking-button');
 
     disclosure.focus();
-    await user.keyboard('{Enter}');
+    fireEvent.click(disclosure);
 
     expect(onComposerClick).not.toHaveBeenCalled();
     expect(screen.getByRole('radiogroup')).toBeVisible();
-    expect(screen.getByRole('radio', { name: 'Low' })).toHaveFocus();
+    const low = screen.getByRole('radio', { name: 'Low' });
+    low.focus();
+    expect(low).toHaveFocus();
 
-    await user.keyboard('{ArrowRight}');
+    fireEvent.keyDown(low, { key: 'ArrowRight' });
     expect(screen.getByRole('radio', { name: 'High' })).toHaveFocus();
   });
 
-  it('keeps effort selection clicks from reaching the composer focus handler', async () => {
-    const user = userEvent.setup();
+  it('keeps effort selection clicks from reaching the composer focus handler', () => {
     const { onComposerClick } = renderInComposer();
 
-    await user.click(screen.getByTestId('composer-thinking-button'));
+    fireEvent.click(screen.getByTestId('composer-thinking-button'));
     onComposerClick.mockClear();
-    await user.click(screen.getByRole('radio', { name: 'High' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'High' }));
 
-    expect(mockSetValue).toHaveBeenCalledWith('high');
+    expect(mockSetValue).toHaveBeenCalledWith({ key: 'reasoning_effort', value: 'high' });
     expect(onComposerClick).not.toHaveBeenCalled();
   });
 
-  it('aligns three radio hit areas with the visual stop midpoints', async () => {
+  it('aligns three radio hit areas with the visual stop midpoints', () => {
     mockSetting = {
       key: 'reasoning_effort',
+      type: 'enum',
       default: 'low',
       options: ['auto', 'low', 'medium', 'high'],
     } as unknown as SettingDefinition;
-    const user = userEvent.setup();
     renderInComposer();
 
-    await user.click(screen.getByTestId('composer-thinking-button'));
+    fireEvent.click(screen.getByTestId('composer-thinking-button'));
     const [low, medium, high] = screen.getAllByRole('radio');
 
     expect(low.style.left).toBe('0px');
@@ -135,9 +192,10 @@ describe('Thinking', () => {
     expect(high.style.right).toBe('0px');
   });
 
-  it('uses the provider mapping for an unset Bedrock effort', async () => {
+  it('uses the provider mapping for an unset Bedrock effort', () => {
     mockSetting = {
       key: 'reasoning_effort',
+      type: 'enum',
       default: 'unset',
       options: ['unset', 'low', 'medium', 'high'],
       enumMappings: {
@@ -151,31 +209,29 @@ describe('Thinking', () => {
       conversationId: 'convo-1',
       reasoning_effort: 'unset',
     } as unknown as TConversation;
-    const user = userEvent.setup();
     renderInComposer();
 
     expect(screen.getByTestId('composer-thinking-button')).toHaveAccessibleName(
       'com_ui_composer_thinking_value:Off',
     );
 
-    await user.click(screen.getByTestId('composer-thinking-button'));
+    fireEvent.click(screen.getByTestId('composer-thinking-button'));
     const off = screen.getByRole('button', { name: 'Off' });
     expect(off).toHaveAttribute('aria-pressed', 'true');
-    await user.click(off);
-    expect(mockSetValue).toHaveBeenCalledWith('low');
+    fireEvent.click(off);
+    expect(mockSetValue).toHaveBeenCalledWith({ key: 'reasoning_effort', value: 'low' });
   });
 
-  it('does not carry a remembered level across model settings', async () => {
+  it('does not carry a remembered level across model settings', () => {
     mockConversation = {
       conversationId: 'convo-1',
       endpoint: 'openAI',
       model: 'model-a',
       reasoning_effort: 'high',
     } as unknown as TConversation;
-    const user = userEvent.setup();
     const { rerenderConversation } = renderInComposer();
 
-    await user.click(screen.getByTestId('composer-thinking-button'));
+    fireEvent.click(screen.getByTestId('composer-thinking-button'));
     expect(screen.getByRole('radio', { name: 'High' })).toHaveAttribute('tabindex', '0');
 
     mockConversation = {
