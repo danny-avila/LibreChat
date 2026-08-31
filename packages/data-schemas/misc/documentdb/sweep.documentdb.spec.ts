@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import fs from 'fs';
+import { MongoServerError } from 'mongodb';
 import type { Collection } from 'mongodb';
 import type { ConnectOptions } from 'mongoose';
 import {
@@ -115,7 +116,11 @@ const BENIGN_SERVER_CODES = new Set([11000, 11001]);
 function recordEngineError(label: string | null, error: unknown): void {
   if (label == null) return;
   const err = error as { name?: string; message?: string; code?: number };
-  if (err?.name !== 'MongoServerError' && err?.name !== 'MongoBulkWriteError') return;
+  /** `instanceof` covers the driver's server-error subclasses
+   * (MongoWriteConcernError, MongoBulkWriteError, ...) whose `name` differs
+   * from the base class — a write-concern rejection at commit must not slip
+   * through as a mere domain throw. */
+  if (!(error instanceof MongoServerError)) return;
   if (err.code != null && BENIGN_SERVER_CODES.has(err.code)) return;
   if (/E11000/.test(String(err.message))) return;
   const verdict = (verdicts[label] ??= { queries: 0, outcome: 'ok' });
@@ -358,6 +363,14 @@ const ARG_OVERRIDES: Record<string, () => SweepCase | Promise<SweepCase>> = {
         permBits: PermissionBits.VIEW,
         grantedBy: userId,
       });
+      /** The proof transaction READS PluginAuth and Token; with
+       * `autoCreate: false` on a fresh run-scoped database those collections
+       * do not exist, and DocumentDB rejects any statement in a transaction
+       * that touches a non-existent collection — surfacing as
+       * `proof_unavailable` before the commit is ever reached. Materialize
+       * every transaction-read collection outside the transaction. */
+      await models.PluginAuth.createCollection();
+      await models.Token.createCollection();
     });
     const server = await tenantStorage.run(context, () =>
       models.MCPServer.findById(serverId).lean<{
@@ -497,21 +510,22 @@ describeSweep(`data-schemas method sweep (${BASELINE ? 'MongoDB baseline' : 'Doc
   }, 120_000);
 
   afterAll(async () => {
-    if (mongoose.connection.readyState === 1) {
-      await mongoose.connection.db?.dropDatabase().catch(() => undefined);
-      await mongoose.disconnect();
-    }
-    await memoryServer?.stop();
-
-    /** Settle timed-out invocations (bounded) so their late engine errors are
-     * recorded, then reclassify: a straggler's rejection must both appear in
-     * the report and count against STRICT. */
+    /** Settle timed-out invocations (bounded) BEFORE tearing the engine down:
+     * dropping the database or closing the client would abort their
+     * outstanding work with closed-client errors that are not engine verdicts,
+     * leaving the row unadjudicated while STRICT passes. */
     if (stragglers.length > 0) {
       await Promise.race([
         Promise.allSettled(stragglers),
         new Promise((resolve) => setTimeout(resolve, 15_000).unref()),
       ]);
     }
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.db?.dropDatabase().catch(() => undefined);
+      await mongoose.disconnect();
+    }
+    await memoryServer?.stop();
+
     for (const verdict of Object.values(verdicts)) {
       if (verdict.engineError != null) {
         verdict.outcome = 'engine-rejected';
