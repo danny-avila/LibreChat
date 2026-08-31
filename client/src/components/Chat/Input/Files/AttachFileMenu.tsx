@@ -18,7 +18,6 @@ import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { BKL_ALLOWED_UPLOAD_ACCEPT, cn } from '~/utils';
-import ExistingFilesImportModal from './ExistingFilesImportModal';
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -36,7 +35,6 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const { handleFileChange } = useFileHandling();
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
     toolResource,
@@ -54,7 +52,7 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const handleUploadClick = () => {
+  const openFilePicker = () => {
     if (!inputRef.current) {
       return;
     }
@@ -63,69 +61,57 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
     inputRef.current.click();
   };
 
+  /** 업로드 대상은 항상 context 다. 파일 선택 전에 미리 잡아둔다. */
+  const markContextUpload = () => {
+    setToolResource(EToolResources.context);
+    setEphemeralAgent((prev) => ({
+      ...prev,
+      [EToolResources.context]: true,
+    }));
+  };
+
+  const handleUploadClick = () => {
+    markContextUpload();
+    openFilePicker();
+  };
+
+  // SharePoint 가 꺼져 있으면 고를 게 하나뿐이라 메뉴를 띄우지 않고 바로
+  // 파일 선택창을 연다. 켜져 있을 때만 드롭다운이 필요하다.
   const dropdownItems = useMemo(() => {
-    const createMenuItems = (onAction: () => void, includeImport = true) => {
-      const items: MenuItemProps[] = [];
-
-      if (capabilities.contextEnabled) {
-        items.push({
-          label: '새파일 업로드',
-          onClick: () => {
-            setToolResource(EToolResources.context);
-            setEphemeralAgent((prev) => ({
-              ...prev,
-              [EToolResources.context]: true,
-            }));
-            onAction();
-          },
-          icon: <FileType2Icon className="icon-md" />,
-        });
-
-        if (includeImport) {
-          items.push({
-            label: '기존파일 임포트',
-            onClick: () => {
-              setToolResource(EToolResources.context);
-              setEphemeralAgent((prev) => ({
-                ...prev,
-                [EToolResources.context]: true,
-              }));
-              setIsImportModalOpen(true);
-            },
-            icon: <FileType2Icon className="icon-md" />,
-          });
-        }
-      }
-
-      return items;
-    };
-
-    const localItems = createMenuItems(handleUploadClick);
-
-    if (sharePointEnabled) {
-      const sharePointItems = createMenuItems(() => {
-        setIsSharePointDialogOpen(true);
-        // Note: toolResource will be set by the specific item clicked
-      }, false);
-      localItems.push({
+    if (!sharePointEnabled || !capabilities.contextEnabled) {
+      return [] as MenuItemProps[];
+    }
+    return [
+      {
+        label: '새파일 업로드',
+        onClick: handleUploadClick,
+        icon: <FileType2Icon className="icon-md" />,
+      },
+      {
         label: localize('com_files_upload_sharepoint'),
         onClick: () => {},
         icon: <SharePointIcon className="icon-md" />,
-        subItems: sharePointItems,
-      });
-      return localItems;
-    }
+        subItems: [
+          {
+            label: '새파일 업로드',
+            onClick: () => {
+              markContextUpload();
+              setIsSharePointDialogOpen(true);
+            },
+            icon: <FileType2Icon className="icon-md" />,
+          },
+        ],
+      },
+    ] as MenuItemProps[];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localize, capabilities.contextEnabled, sharePointEnabled]);
 
-    return localItems;
-  }, [
-    localize,
-    capabilities,
-    setToolResource,
-    setEphemeralAgent,
-    sharePointEnabled,
-    setIsSharePointDialogOpen,
-    setIsImportModalOpen,
-  ]);
+  const useDropdown = dropdownItems.length > 0;
+
+  const triggerClassName = cn(
+    'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+    isPopoverActive && 'bg-surface-hover',
+  );
 
   const menuTrigger = (
     <TooltipAnchor
@@ -134,15 +120,34 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
           disabled={isUploadDisabled}
           id="attach-file-menu-button"
           aria-label="Attach File Options"
-          className={cn(
-            'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
-            isPopoverActive && 'bg-surface-hover',
-          )}
+          className={triggerClassName}
         >
           <div className="flex w-full items-center justify-center gap-2">
             <AttachmentIcon />
           </div>
         </Ariakit.MenuButton>
+      }
+      id="attach-file-menu-button"
+      description={localize('com_sidepanel_attach_files')}
+      disabled={isUploadDisabled}
+    />
+  );
+
+  const directTrigger = (
+    <TooltipAnchor
+      render={
+        <button
+          type="button"
+          disabled={isUploadDisabled}
+          id="attach-file-menu-button"
+          aria-label="Attach File Options"
+          className={triggerClassName}
+          onClick={handleUploadClick}
+        >
+          <div className="flex w-full items-center justify-center gap-2">
+            <AttachmentIcon />
+          </div>
+        </button>
       }
       id="attach-file-menu-button"
       description={localize('com_sidepanel_attach_files')}
@@ -166,17 +171,21 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
           handleFileChange(e, toolResource);
         }}
       >
-        <DropdownPopup
-          menuId="attach-file-menu"
-          className="overflow-visible"
-          isOpen={isPopoverActive}
-          setIsOpen={setIsPopoverActive}
-          modal={true}
-          unmountOnHide={true}
-          trigger={menuTrigger}
-          items={dropdownItems}
-          iconClassName="mr-0"
-        />
+        {useDropdown ? (
+          <DropdownPopup
+            menuId="attach-file-menu"
+            className="overflow-visible"
+            isOpen={isPopoverActive}
+            setIsOpen={setIsPopoverActive}
+            modal={true}
+            unmountOnHide={true}
+            trigger={menuTrigger}
+            items={dropdownItems}
+            iconClassName="mr-0"
+          />
+        ) : (
+          directTrigger
+        )}
       </FileUpload>
       <SharePointPickerDialog
         isOpen={isSharePointDialogOpen}
@@ -186,7 +195,6 @@ const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: Attach
         downloadProgress={downloadProgress}
         maxSelectionCount={endpointFileConfig?.fileLimit}
       />
-      <ExistingFilesImportModal open={isImportModalOpen} onOpenChange={setIsImportModalOpen} />
     </>
   );
 };
