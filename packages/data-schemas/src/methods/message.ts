@@ -361,6 +361,7 @@ const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 4096;
 const SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT = 128;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT = 512;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT = 8;
+const SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT = 64 * 1024;
 const SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT = 32;
 const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
 
@@ -2297,7 +2298,85 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           null,
         ],
       };
-      const boundedActivityContent = {
+      /** Estimated serialized bytes for one already-clipped activity item; the
+       *  constants cover the non-string JSON envelope per item type. */
+      const activityItemBytes = (item: string) => ({
+        $switch: {
+          branches: [
+            {
+              case: { $eq: [`${item}.type`, 'writing'] },
+              then: { $add: [{ $strLenBytes: `${item}.text` }, 64] },
+            },
+            {
+              case: { $eq: [`${item}.type`, 'activity_label'] },
+              then: { $add: [{ $strLenBytes: `${item}.label` }, 512] },
+            },
+            {
+              case: { $eq: [`${item}.type`, 'tool'] },
+              then: {
+                $add: [
+                  { $strLenBytes: `${item}.input` },
+                  { $strLenBytes: `${item}.output` },
+                  { $strLenBytes: `${item}.name` },
+                  { $strLenBytes: `${item}.toolCallId` },
+                  192,
+                ],
+              },
+            },
+          ],
+          default: 32,
+        },
+      });
+      /** Newest-first fit into the aggregate budget, so raising per-item limits
+       *  cannot multiply into megabytes per row before the API's own trims run. */
+      const budgetedActivity = (clipped: Record<string, unknown>) => ({
+        $reverseArray: {
+          $let: {
+            vars: {
+              fitted: {
+                $reduce: {
+                  input: { $reverseArray: clipped },
+                  initialValue: { items: [] as never[], bytes: 0 },
+                  in: {
+                    $let: {
+                      vars: { size: activityItemBytes('$$this') },
+                      in: {
+                        $cond: [
+                          {
+                            $lte: [
+                              { $add: ['$$value.bytes', '$$size'] },
+                              SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT,
+                            ],
+                          },
+                          {
+                            items: { $concatArrays: ['$$value.items', ['$$this']] },
+                            bytes: { $add: ['$$value.bytes', '$$size'] },
+                          },
+                          '$$value',
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            in: '$$fitted.items',
+          },
+        },
+      });
+      const activityBytesOverBudget = (clipped: Record<string, unknown>) => ({
+        $gt: [
+          {
+            $reduce: {
+              input: clipped,
+              initialValue: 0,
+              in: { $add: ['$$value', activityItemBytes('$$this')] },
+            },
+          },
+          SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT,
+        ],
+      });
+      const clippedActivityContent = {
         $filter: {
           input: {
             $map: {
@@ -2426,6 +2505,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           cond: { $ne: ['$$activity', null] },
         },
       };
+      const boundedActivityContent = budgetedActivity(clippedActivityContent);
       type ActivitySourceProjection = WithNullSentinels<
         Pick<
           SubagentThreadViewMessageRecord,
@@ -2457,11 +2537,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         },
         subagentActivity: boundedActivityContent,
         subagentActivityProjectionTruncated: {
-          $gt: [
+          $or: [
             {
-              $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+              $gt: [
+                {
+                  $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+                },
+                SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+              ],
             },
-            SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+            activityBytesOverBudget(clippedActivityContent),
           ],
         },
         subagentTask: boundedSubagentTask,

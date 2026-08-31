@@ -1932,6 +1932,36 @@ describe('Message Operations', () => {
       );
     });
 
+    it('fits ordinary persisted child activity into the aggregate byte budget, newest first', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-budget:assistant',
+        conversationId,
+        text: '',
+        user: 'user123',
+        content: Array.from({ length: 12 }, (_, index) => ({
+          type: 'text',
+          text: `chunk-${index}-${'z'.repeat(8_000)}`,
+        })),
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      const activity = messages[0].subagentActivity as Array<{ type: string; text: string }>;
+      expect(activity.length).toBeGreaterThan(0);
+      expect(activity.length).toBeLessThan(12);
+      expect(activity[activity.length - 1].text).toContain('chunk-11-');
+      expect(activity[0].text).toContain(`chunk-${12 - activity.length}-`);
+      const totalBytes = activity.reduce((sum, item) => sum + item.text.length, 0);
+      expect(totalBytes).toBeLessThanOrEqual(64 * 1024);
+      expect(messages[0].subagentActivityProjectionTruncated).toBe(true);
+    });
+
     it('bounds ordinary persisted child activity before returning it to the API', async () => {
       const conversationId = uuidv4();
       await saveMessage(mockCtx, {
