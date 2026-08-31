@@ -1932,6 +1932,71 @@ describe('Message Operations', () => {
       );
     });
 
+    it('keeps the budgeted timeline a contiguous newest suffix past an oversized entry', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-suffix:assistant',
+        conversationId,
+        text: '',
+        user: 'user123',
+        content: [
+          ...Array.from({ length: 5 }, (_, index) => ({
+            type: 'text',
+            text: `older-${index}`,
+          })),
+          ...Array.from({ length: 8 }, (_, index) => ({
+            type: 'text',
+            text: `newest-${index}-${'b'.repeat(8_400)}`,
+          })),
+        ],
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      const activity = messages[0].subagentActivity as Array<{ type: string; text: string }>;
+      expect(activity.length).toBeGreaterThan(0);
+      expect(activity.length).toBeLessThan(8);
+      expect(activity.every((item) => item.text.startsWith('newest-'))).toBe(true);
+      expect(activity[activity.length - 1].text).toContain('newest-7-');
+      expect(JSON.stringify(activity)).not.toContain('older-');
+      expect(messages[0].subagentActivityProjectionTruncated).toBe(true);
+    });
+
+    it('fits ordinary persisted child activity into the aggregate byte budget, newest first', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-budget:assistant',
+        conversationId,
+        text: '',
+        user: 'user123',
+        content: Array.from({ length: 12 }, (_, index) => ({
+          type: 'text',
+          text: `chunk-${index}-${'z'.repeat(8_000)}`,
+        })),
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      const activity = messages[0].subagentActivity as Array<{ type: string; text: string }>;
+      expect(activity.length).toBeGreaterThan(0);
+      expect(activity.length).toBeLessThan(12);
+      expect(activity[activity.length - 1].text).toContain('chunk-11-');
+      expect(activity[0].text).toContain(`chunk-${12 - activity.length}-`);
+      const totalBytes = activity.reduce((sum, item) => sum + item.text.length, 0);
+      expect(totalBytes).toBeLessThanOrEqual(64 * 1024);
+      expect(messages[0].subagentActivityProjectionTruncated).toBe(true);
+    });
+
     it('bounds ordinary persisted child activity before returning it to the API', async () => {
       const conversationId = uuidv4();
       await saveMessage(mockCtx, {
@@ -1949,8 +2014,8 @@ describe('Message Operations', () => {
             tool_call: {
               id: 'move-1',
               name: 'submit_move',
-              args: 'x'.repeat(2_000),
-              output: 'y'.repeat(4_000),
+              args: 'x'.repeat(3_000),
+              output: 'y'.repeat(5_000),
               progress: 1,
               inputValidationError: true,
             },
@@ -1990,8 +2055,8 @@ describe('Message Operations', () => {
           outputTruncated: true,
         }),
       );
-      expect(retainedTool.input.length).toBeLessThan(2_000);
-      expect(retainedTool.output.length).toBeLessThan(4_000);
+      expect(retainedTool.input.length).toBeLessThan(3_000);
+      expect(retainedTool.output.length).toBeLessThan(5_000);
       const retainedLabel = messages[0].subagentActivity?.find(
         (activity) => (activity as { type?: string }).type === 'activity_label',
       ) as { agentIds: string[]; labelTruncated: boolean; toolCallIds: string[] };
@@ -1999,8 +2064,8 @@ describe('Message Operations', () => {
       expect(retainedLabel.agentIds).toHaveLength(8);
       expect(retainedLabel.labelTruncated).toBe(true);
       expect(JSON.stringify(messages[0])).not.toContain('activity-0');
-      expect(JSON.stringify(messages[0])).not.toContain('x'.repeat(1_000));
-      expect(JSON.stringify(messages[0])).not.toContain('y'.repeat(2_000));
+      expect(JSON.stringify(messages[0])).not.toContain('x'.repeat(2_049));
+      expect(JSON.stringify(messages[0])).not.toContain('y'.repeat(4_097));
     });
 
     it('bounds public control receipts before materializing the message page', async () => {
