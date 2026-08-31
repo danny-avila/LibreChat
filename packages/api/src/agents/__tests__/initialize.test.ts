@@ -2959,6 +2959,71 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     expect(getUserCodeFiles).not.toHaveBeenCalled();
   });
 
+  it('finds deferred files from the conversation when no anchor is supplied', async () => {
+    /* The Responses API always continues via `previous_response_id` and passes a null
+     * parentMessageId, and chat completions may omit it. Without an anchor there is no
+     * thread walk, so the conversation's own file refs are the only available scope. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['convo-file-1']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: null,
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(getDeferredProvisionFiles).toHaveBeenCalledWith(
+      ['convo-file-1'],
+      expect.anything(),
+      expect.objectContaining({ code: true }),
+    );
+  });
+
+  it('prefers the thread scope for deferred files when an anchor is supplied', async () => {
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([{ messageId: 'm1' }]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['convo-file-1']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+    mockGetThreadData.mockReturnValueOnce({ fileIds: ['thread-file-1'] });
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'parent-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getDeferredProvisionFiles).toHaveBeenCalledWith(
+      ['thread-file-1'],
+      expect.anything(),
+      expect.objectContaining({ code: true }),
+    );
+  });
+
   it('skips the thread walk when parentMessageId is an empty string', async () => {
     /* An empty anchor can never match a parent chain, so walking the
      * conversation only buys an unbounded read whose result is discarded.

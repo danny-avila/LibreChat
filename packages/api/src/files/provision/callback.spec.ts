@@ -45,7 +45,11 @@ function buildHarness({
     codeImpl ??
     jest.fn(async ({ file }: { file: TFile }) => ({
       referenceSet: { codeEnvRefs: { default: { file_id: 'remote-1' } } },
-      fileUpdate: { file_id: file.file_id, metadata: { codeEnvRefs: {} } },
+      refUpdate: {
+        file_id: file.file_id,
+        routeKey: 'default',
+        ref: { kind: 'user', id: 'u1', file_id: 'remote-1' },
+      },
     }));
   const provisionToVectorDB =
     vectorImpl ??
@@ -54,12 +58,14 @@ function buildHarness({
       fileUpdate: { file_id: file.file_id, embedded: true },
     }));
   const updateFile = jest.fn(async () => ({}));
+  const updateCodeEnvRef = jest.fn(async () => ({}));
   const agentToolContexts = new Map<string, ProvisionToolContext>(contexts);
 
   return {
     provisionToCodeEnv,
     provisionToVectorDB,
     updateFile,
+    updateCodeEnvRef,
     agentToolContexts,
     provisionFiles: createProvisionFilesCallback({
       req,
@@ -67,6 +73,7 @@ function buildHarness({
       provisionToCodeEnv: provisionToCodeEnv as never,
       provisionToVectorDB: provisionToVectorDB as never,
       updateFile,
+      updateCodeEnvRef,
     }),
   };
 }
@@ -98,7 +105,7 @@ describe('createProvisionFilesCallback', () => {
 
   it('persists the shared provisioning result once', async () => {
     const shared = makeFile();
-    const { provisionFiles, updateFile } = buildHarness({
+    const { provisionFiles, updateCodeEnvRef } = buildHarness({
       contexts: [
         ['agent-a', { provisionState: state([{ ...shared }], []) }],
         ['agent-b', { provisionState: state([{ ...shared }], []) }],
@@ -108,7 +115,58 @@ describe('createProvisionFilesCallback', () => {
     await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
     await provisionFiles([Constants.EXECUTE_CODE], 'agent-b');
 
-    expect(updateFile).toHaveBeenCalledTimes(1);
+    expect(updateCodeEnvRef).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds every waiter until the shared reference is persisted', async () => {
+    let releaseWrite: () => void = () => undefined;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const shared = makeFile();
+    const harness = buildHarness({
+      contexts: [
+        ['agent-a', { provisionState: state([{ ...shared }], []) }],
+        ['agent-b', { provisionState: state([{ ...shared }], []) }],
+      ],
+    });
+    const events: string[] = [];
+    harness.updateCodeEnvRef.mockImplementation(async () => {
+      await writeGate;
+      events.push('write');
+      return {};
+    });
+
+    const waiterA = harness
+      .provisionFiles([Constants.EXECUTE_CODE], 'agent-a')
+      .then(() => events.push('a'));
+    const waiterB = harness
+      .provisionFiles([Constants.EXECUTE_CODE], 'agent-b')
+      .then(() => events.push('b'));
+
+    /* Drains every pending microtask, so anything that could return without the write
+     * already has by the time this resolves. */
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(events).toEqual([]);
+
+    releaseWrite();
+    await Promise.all([waiterA, waiterB]);
+
+    expect(events[0]).toBe('write');
+    expect(events).toHaveLength(3);
+    expect(harness.updateCodeEnvRef).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts the turn when the reference cannot be persisted', async () => {
+    const harness = buildHarness({
+      contexts: [['agent-a', { provisionState: state([makeFile()], []) }]],
+    });
+    harness.updateCodeEnvRef.mockRejectedValue(new Error('mongo down'));
+
+    await expect(harness.provisionFiles([Constants.EXECUTE_CODE], 'agent-a')).rejects.toThrow(
+      /aborting tool execution rather than running without them/,
+    );
+    expect(harness.updateCodeEnvRef).toHaveBeenCalledTimes(2);
   });
 
   it('uploads separately when the agents resolve different code deployments', async () => {
@@ -159,7 +217,11 @@ describe('createProvisionFilesCallback', () => {
       }
       return {
         referenceSet: { codeEnvRefs: { default: { file_id: 'remote-1' } } },
-        fileUpdate: { file_id: file.file_id, metadata: {} },
+        refUpdate: {
+          file_id: file.file_id,
+          routeKey: 'default',
+          ref: { kind: 'user', id: 'u1', file_id: 'remote-1' },
+        },
       };
     });
     const { provisionFiles, agentToolContexts } = buildHarness({

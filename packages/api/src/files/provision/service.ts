@@ -52,6 +52,14 @@ export interface ProvisionFileUpdate {
   embedded?: boolean;
 }
 
+/** One route pointer, written on its own so concurrent routes do not overwrite each other. */
+export interface CodeEnvRefUpdate {
+  file_id: string;
+  routeKey: string;
+  ref: CodeEnvRef;
+  legacyRef?: CodeEnvRef;
+}
+
 /** Merged code-environment pointers written after a successful sandbox upload. */
 export interface CodeEnvReferenceSetResult {
   codeEnvRef?: CodeEnvRef;
@@ -67,7 +75,7 @@ export interface ProvisionService {
     route?: CodeExecutionRoute;
   }) => Promise<{
     referenceSet: CodeEnvReferenceSetResult;
-    fileUpdate: ProvisionFileUpdate;
+    refUpdate: CodeEnvRefUpdate;
   }>;
   provisionToVectorDB: (params: {
     req: ServerRequest;
@@ -223,7 +231,7 @@ export function createProvisionService({
       );
     }
 
-    const kind = entity_id ? 'agent' : 'user';
+    const kind: 'agent' | 'user' = entity_id ? 'agent' : 'user';
     const id = entity_id ?? (req.user?.id as string);
 
     /* Upload to the deployment this agent actually resolved. Hard-coding the default
@@ -244,7 +252,7 @@ export function createProvisionService({
     /* Merge rather than overwrite: the eager upload path persists the same shape via
      * mergeCodeEnvRef, so both the legacy pointer and the route-keyed map stay in sync
      * and pointers for other Code API routes survive re-provisioning. */
-    const referenceSet = mergeCodeEnvRef(file.metadata, {
+    const ref: CodeEnvRef = {
       kind,
       id,
       storage_session_id: uploaded.storage_session_id,
@@ -252,7 +260,9 @@ export function createProvisionService({
       executionProfile,
       ...(route?.executionRouteKey ? { executionRouteKey: route.executionRouteKey } : {}),
       provisionedAt: Date.now(),
-    });
+    };
+    const referenceSet = mergeCodeEnvRef(file.metadata, ref);
+    const routeKey = route?.executionRouteKey ?? executionProfile;
 
     logger.debug(
       `[provisionToCodeEnv] Provisioned file "${file.filename}" (${file.file_id}) to code env`,
@@ -260,7 +270,12 @@ export function createProvisionService({
 
     return {
       referenceSet,
-      fileUpdate: { file_id: file.file_id, metadata: { ...file.metadata, ...referenceSet } },
+      refUpdate: {
+        file_id: file.file_id,
+        routeKey,
+        ref,
+        ...(referenceSet.codeEnvRef ? { legacyRef: referenceSet.codeEnvRef } : {}),
+      },
     };
   }
 
