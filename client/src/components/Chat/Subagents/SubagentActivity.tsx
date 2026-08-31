@@ -291,21 +291,11 @@ function SubagentPrompt({ prompt }: { prompt: string }) {
   );
 }
 
-export const hasTruncatedActivityDetails = (activity: ChildActivity): boolean =>
-  activity.items.some(
-    (item) =>
-      (item.type === 'writing' && item.textTruncated === true) ||
-      (item.type === 'reasoning' && item.textTruncated === true) ||
-      (item.type === 'activity_label' && item.labelTruncated === true) ||
-      (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
-  );
-
 export function SubagentActivityContent({
   activity,
   activityId,
   state = 'ready',
   showPrompt = true,
-  showDetailTruncationNotice = true,
   conversationId = null,
   onCancelControl,
 }: {
@@ -313,14 +303,12 @@ export function SubagentActivityContent({
   activityId?: string;
   state?: 'ready' | 'loading' | 'error';
   showPrompt?: boolean;
-  showDetailTruncationNotice?: boolean;
   conversationId?: string | null;
   onCancelControl?: (controlId: string) => void;
 }) {
   const localize = useLocalize();
   const isSubmitting = activity.status === 'running' || activity.status === 'dispatched';
   const parts = useMemo(() => activity.items.map(toContentPart), [activity.items]);
-  const activityDetailsTruncated = hasTruncatedActivityDetails(activity);
 
   let body: React.ReactNode;
   if (state === 'loading') {
@@ -365,11 +353,6 @@ export function SubagentActivityContent({
       {activity.controlsTruncated === true && (
         <div className="mb-3 text-xs italic text-text-secondary">
           {localize('com_ui_subagent_control_history_truncated')}
-        </div>
-      )}
-      {showDetailTruncationNotice && activityDetailsTruncated && (
-        <div className="mb-3 text-xs italic text-text-secondary">
-          {localize('com_ui_subagent_activity_details_truncated')}
         </div>
       )}
       {body}

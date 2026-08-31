@@ -1483,6 +1483,67 @@ describe('SubagentThreadPanel', () => {
     expect(screen.queryByText('com_ui_subagent_depth')).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['newest known task', 'task-new', 'last'],
+    ['displaced older task', 'task-old-displaced', 'first'],
+  ] as const)(
+    'places a turn missing from the durable window per its identity: %s',
+    (_label, selectedTaskId, position) => {
+      mockParentChildrenByThread = new Map([
+        [
+          'child-thread',
+          {
+            threadId: 'child-thread',
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'tool-call',
+            subagentType: 'researcher',
+            subagentKind: 'agent',
+            title: 'Research child',
+            origin: 'tool',
+            status: 'running',
+            latestTaskId: 'task-new',
+            tasks: [{ taskId: 'task-new', status: 'running' }],
+            tasksTruncated: false,
+          } as ParentSubagentSummary,
+        ],
+      ]);
+      mockUseSubagentThreadQuery.mockReturnValue({
+        data: {
+          ...completedView,
+          turns: [
+            {
+              taskId: 'task-durable',
+              trigger: { kind: 'parent_dispatch', summary: 'Durable window turn' },
+              status: 'completed',
+              activity: [{ type: 'writing', text: 'Durable result' }],
+              activityTruncated: false,
+              messages: [],
+            },
+          ],
+        },
+        isLoading: false,
+        isError: false,
+        isReadinessPending: false,
+      });
+      const missingSelection: ActiveSubagentPanel = {
+        ...selection,
+        prompt: 'Synthesized window turn',
+        durable: { threadId: 'child-thread', taskId: selectedTaskId },
+      };
+      render(
+        <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, missingSelection)}>
+          <SubagentThreadPanel selection={missingSelection} />
+        </RecoilRoot>,
+      );
+
+      const turns = screen.getAllByTestId('conversation-turn');
+      expect(turns).toHaveLength(2);
+      const synthesizedIndex = position === 'last' ? 1 : 0;
+      expect(turns[synthesizedIndex]).toHaveTextContent('Synthesized window turn');
+      expect(turns[1 - synthesizedIndex]).toHaveTextContent('Durable window turn');
+    },
+  );
+
   it('loads an exact older turn projection only after the local disclosure is opened', async () => {
     const truncatedView: SubagentThreadView = {
       ...completedView,

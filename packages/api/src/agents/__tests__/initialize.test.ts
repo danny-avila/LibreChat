@@ -297,6 +297,7 @@ describe('initializeAgent — execution context', () => {
               user: { id: 'user-1' } as never,
               appConfig: appConfig as never,
               requestBody: { timezone: 'America/New_York' },
+              turnStartedAt: 1000,
             },
             agent,
             loadTools,
@@ -1195,10 +1196,13 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     jest.clearAllMocks();
   });
 
-  it('moves instructions with temporal special vars into the dynamic tail using the conversation anchor', async () => {
+  it('moves instructions with temporal special vars into the dynamic tail using the turn start', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
-    agent.instructions = 'Conversation opened at {{iso_datetime}}';
-    req.conversationCreatedAt = '2023-12-31T23:59:58.000Z';
+    agent.instructions =
+      'Today is {{current_date}}. The turn began at {{current_datetime}} ({{iso_datetime}}).';
+    req.conversationCreatedAt = '2026-08-25T10:00:00.000Z';
+    req.turnStartedAt = new Date('2026-08-31T06:20:00.000Z').getTime();
+    req.body = { timezone: 'UTC' };
 
     const result = await initializeAgent(
       {
@@ -1214,13 +1218,15 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     );
 
     expect(result.instructions).toBeUndefined();
-    expect(result.additional_instructions).toBe('Conversation opened at 2023-12-31T23:59:58.000Z');
+    expect(result.additional_instructions).toBe(
+      'Today is 2026-08-31 (Monday). The turn began at 2026-08-31 06:20:00 +00:00 (Monday) (2026-08-31T06:20:00.000Z).',
+    );
   });
 
   it('resolves temporal special vars in the request timezone', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.instructions = 'It is currently {{current_datetime}}.';
-    req.conversationCreatedAt = '2024-01-15T18:30:00.000Z';
+    req.turnStartedAt = new Date('2024-01-15T18:30:00.000Z').getTime();
     req.body = { timezone: 'America/New_York' };
 
     const result = await initializeAgent(
@@ -1246,7 +1252,6 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.instructions = 'You are helping {{current_user}}.';
     req.user = { id: 'user-1', name: 'Test User' } as never;
-    req.conversationCreatedAt = '2023-12-31T23:59:58.000Z';
 
     const result = await initializeAgent(
       {

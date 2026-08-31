@@ -37,6 +37,12 @@ export interface AgentQueuedTurnTerminalReceipt {
   admissionMode?: 'warm' | 'ordinary';
   generationId?: string;
   generationCreatedAt?: number;
+  /** Effective predecessor consumed by this admission after queued-turn chaining. */
+  effectivePredecessorCreatedAt?: number;
+  /** Durable lineage node: the root-message identity or predecessor queued-turn identity. */
+  lineagePredecessorId?: string;
+  /** This admission consumed no predecessor generation boundary. */
+  rootPredecessor?: true;
   failure?: AgentQueuedTurnFailure;
 }
 
@@ -57,6 +63,8 @@ export interface IAgentQueuedTurn {
   reservationWriterId?: string;
   /** Bounded active-lane capacity token. Present only while queued/claimed. */
   activeSlot?: number;
+  /** Unique durable admission-order reservation for one conversation lane. */
+  admissionSlot?: boolean;
   status: AgentQueuedTurnStatus;
   priority: boolean;
   text: string;
@@ -75,6 +83,10 @@ export interface IAgentQueuedTurn {
   /** Durable proof that ordinary admission may have crossed the HTTP boundary. */
   admissionStartedAt?: Date;
   admissionId?: string;
+  /** Effective predecessor durably fenced before provider admission begins. */
+  admissionEffectivePredecessorCreatedAt?: number;
+  /** Durable lineage node fenced with the effective predecessor. */
+  admissionLineagePredecessorId?: string;
   /** Version 2 requires accepted and deduplicated execution responses to prove
    * the exact post-invocation source receipt. */
   admissionProtocolVersion?: 2;
@@ -148,6 +160,7 @@ export type AgentQueuedTurnActiveRecord = Pick<
 
 export interface AgentQueuedTurnClaim extends AgentQueuedTurnRecord {
   status: 'claimed';
+  admissionSlot: true;
   claimId: string;
   claimBy: string;
   claimUntil: Date;

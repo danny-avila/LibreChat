@@ -24,3 +24,13 @@ export const subagentStatusLabelKey = (status: SubagentThreadStatus) =>
       cancelled: 'com_ui_subagent_thread_status_cancelled',
     }) as const
   )[status];
+
+/** Fixed-size status dot classes: a stable-width indicator that cannot make
+ *  rows shift as status text changes length. */
+export const subagentStatusDotClass = (status: SubagentThreadStatus): string => {
+  if (status === 'completed') return 'bg-status-success';
+  if (status === 'running') return 'animate-pulse bg-status-info';
+  if (status === 'failed' || status === 'interrupted') return 'bg-status-error';
+  if (status === 'cancelled') return 'bg-status-warning';
+  return 'bg-text-tertiary';
+};

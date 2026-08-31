@@ -30,12 +30,32 @@ describe('Error — typed provider errors', () => {
     expect(catalog.com_error_google_video_unprocessable).toMatch(/too long/i);
   });
 
-  it('replaces LangChain model-not-found attribution with localized guidance', () => {
-    const raw =
-      'An error occurred while processing the request: 404 404 page not found Troubleshooting URL: https://docs.langchain.com/oss/javascript/langchain/errors/MODEL_NOT_FOUND/';
+  it.each([
+    ['MODEL_NOT_FOUND', 'com_error_model_not_found'],
+    ['MODEL_RATE_LIMIT', 'com_error_model_rate_limit'],
+  ])('replaces LangChain %s attribution with localized guidance', (code, key) => {
+    const raw = `An error occurred while processing the request: 404 404 page not found Troubleshooting URL: https://docs.langchain.com/oss/javascript/langchain/errors/${code}/`;
     render(<Error text={raw} />);
 
-    expect(screen.getByText(catalog.com_error_model_not_found)).toBeInTheDocument();
+    expect(screen.getByText(catalog[key])).toBeInTheDocument();
+    expect(screen.queryByText(/langchain\.com/i)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [ErrorTypes.MODEL_NOT_FOUND, 'com_error_model_not_found'],
+    [ErrorTypes.MODEL_RATE_LIMIT, 'com_error_model_rate_limit'],
+  ])('localizes the typed %s payload the server now emits', (type, key) => {
+    render(<Error text={JSON.stringify({ type })} />);
+
+    expect(screen.getByText(catalog[key])).toBeInTheDocument();
+  });
+
+  it('keeps the provider message for a LangChain code without localized copy, minus the URL', () => {
+    const raw =
+      'An error occurred while processing the request: could not parse output\n\nTroubleshooting URL: https://docs.langchain.com/oss/javascript/langchain/errors/OUTPUT_PARSING_FAILURE/\n';
+    render(<Error text={raw} />);
+
+    expect(screen.getByText(/could not parse output/)).toBeInTheDocument();
     expect(screen.queryByText(/langchain\.com/i)).not.toBeInTheDocument();
   });
 
