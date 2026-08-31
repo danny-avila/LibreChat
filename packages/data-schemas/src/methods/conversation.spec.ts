@@ -5626,6 +5626,48 @@ describe('Conversation Operations', () => {
       });
     });
 
+    it('sends a pure inclusion projection for the candidate read', async () => {
+      /** The string form `'_id +field'` compiles to `{ _id: 1 }` plus a `: 0`
+       * exclusion for every other `select: false` sibling — a mixed projection
+       * MongoDB tolerates but Amazon DocumentDB rejects, which failed this
+       * sweep on every maintenance pass. The candidate read must stay a pure
+       * inclusion AND still return the hidden reconciliations field. */
+      const conversationId = uuidv4();
+      const now = new Date();
+      await Conversation.create({
+        conversationId,
+        user: 'actor-projection-user',
+        endpoint: EModelEndpoint.agents,
+        agentEventActorReconciliations: [
+          {
+            invocationId: 'projection-probe',
+            status: 'settled',
+            resolution: 'action_compensated',
+            checkpoint: {
+              threadId: conversationId,
+              checkpointNs: 'event-actor/projection-probe',
+            },
+            action: { toolName: 'submit_move' },
+            observedAt: new Date(now.getTime() - 91 * 24 * 60 * 60_000),
+          },
+        ],
+      });
+      const projections: Array<Record<string, number> | undefined> = [];
+      const originalFind = Conversation.collection.find.bind(Conversation.collection);
+      const findSpy = jest
+        .spyOn(Conversation.collection, 'find')
+        .mockImplementation((filter, options) => {
+          projections.push(options?.projection);
+          return originalFind(filter, options);
+        });
+      try {
+        await expect(methods.expireLegacyAgentEventActorReceipts(now)).resolves.toBe(1);
+      } finally {
+        findSpy.mockRestore();
+      }
+      expect(projections[0]).toEqual({ _id: 1, agentEventActorReconciliations: 1 });
+    });
+
     it('retains an expired legacy receipt while its delivery handling is nonterminal', async () => {
       const conversationId = uuidv4();
       const userId = new mongoose.Types.ObjectId();
