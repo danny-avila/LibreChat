@@ -1722,7 +1722,16 @@ export function createConversationMethods(
     const candidates = await Conversation.find({
       ...(legacyReceiptExpiryCursor == null ? {} : { _id: { $gt: legacyReceiptExpiryCursor } }),
     })
-      .select('_id +agentEventActorReconciliations')
+      /** Pure inclusion, as an object. The string form
+       * `'_id +agentEventActorReconciliations'` compiles to `{ _id: 1 }` plus a
+       * `: 0` exclusion for every OTHER `select: false` sibling — the `+` token
+       * only un-hides its field and `_id` alone does not make the projection
+       * inclusive. MongoDB tolerates that mixed shape via the `_id` exception;
+       * Amazon DocumentDB rejects it, which failed this sweep on every pass and
+       * took the sequenced lane reclamation down with it. An explicit `1` for a
+       * `select: false` path overrides the schema default, so nothing hidden
+       * leaks and nothing extra is fetched. */
+      .select({ _id: 1, agentEventActorReconciliations: 1 })
       .sort({ _id: 1 })
       .limit(boundedLimit)
       .lean<

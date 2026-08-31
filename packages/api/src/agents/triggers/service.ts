@@ -348,16 +348,39 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       return purgeRecoveryPromise;
     }
     const methods = deps.methods;
+    /** Each maintenance operation fails alone: a rejection is logged and
+     * counted as zero progress instead of aborting the pass, so one broken
+     * cleanup (e.g. an engine-specific query rejection) can never starve the
+     * others — lane reclamation in particular runs after these and used to be
+     * skipped whenever any of them threw. */
+    const isolated = (label: string, run: () => Promise<number>): Promise<number> =>
+      run().catch((error) => {
+        logger.error(
+          `[agent-triggers] durable delivery maintenance step failed (${label}):`,
+          error,
+        );
+        return 0;
+      });
     const current = runAsSystem(async () => {
       const [purgedUsers, publishedLanes, recoveredBatches, expiredLegacyActorReceipts] =
         await Promise.all([
-          methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
-          methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
-          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
-          methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
-            Promise.resolve(0),
+          isolated('user purges', () => methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit)),
+          isolated('lane publications', () =>
+            methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+          ),
+          isolated('batch receipts', () =>
+            methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
+          ),
+          isolated(
+            'legacy actor receipts',
+            () =>
+              methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
+              Promise.resolve(0),
+          ),
         ]);
-      const reclaimedLanes = await methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit);
+      const reclaimedLanes = await isolated('lane reclamation', () =>
+        methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
+      );
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
