@@ -220,6 +220,18 @@ describe('createProvisionService', () => {
       expect(mockAxios).not.toHaveBeenCalled();
     });
 
+    it('expires references when the Code API reports the session is gone', async () => {
+      const notFound = Object.assign(new Error('Request failed with status code 404'), {
+        response: { status: 404 },
+      });
+      mockAxios.mockRejectedValue(notFound);
+      const { service } = buildService();
+
+      const alive = await service.checkSessionsAlive({ files: [staleFile('f6')], apiKey: 'k' });
+
+      expect(alive.has('f6')).toBe(false);
+    });
+
     it('expires a reference the probe reports as absent', async () => {
       mockAxios.mockResolvedValue({ data: [{ fileId: 'someone-else' }] });
       const { service } = buildService();

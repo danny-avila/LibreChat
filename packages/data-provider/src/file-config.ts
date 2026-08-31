@@ -919,9 +919,44 @@ function mergeDeliveryPathConfig(
   return {
     ...(defaultValue.fallback != null ? { fallback: defaultValue.fallback } : {}),
     ...(hasOverrides
-      ? { overrides: { ...defaultValue.overrides, ...endpointValue.overrides } }
+      ? { overrides: { ...shadowByWildcard(defaultValue.overrides, endpointValue.overrides) } }
       : {}),
   };
+}
+
+/**
+ * Flattens two override layers into one map that still resolves like the layered chain.
+ * Resolution reads exact keys before wildcards, so a plain spread would let a lower
+ * layer's `image/png` outrank the upper layer's `image/*`. Dropping the entries an
+ * upper wildcard covers restores precedence without changing how lookups work.
+ */
+function shadowByWildcard(
+  lower?: Record<string, string>,
+  upper?: Record<string, string>,
+): Record<string, string> {
+  if (!lower) {
+    return { ...upper };
+  }
+  const upperWildcards = new Set<string>();
+  for (const key in upper) {
+    if (key.endsWith('/*')) {
+      upperWildcards.add(key.slice(0, -1));
+    }
+  }
+  if (upperWildcards.size === 0) {
+    return { ...lower, ...upper };
+  }
+  const retained: Record<string, string> = {};
+  for (const key in lower) {
+    const isShadowed =
+      !key.endsWith('/*') &&
+      upperWildcards.has(key.slice(0, key.indexOf('/') + 1)) &&
+      upper?.[key] == null;
+    if (!isShadowed) {
+      retained[key] = lower[key];
+    }
+  }
+  return { ...retained, ...upper };
 }
 
 export function getEndpointFileConfig(params: {

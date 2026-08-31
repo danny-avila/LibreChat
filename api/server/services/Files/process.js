@@ -721,6 +721,34 @@ const resolveUploadLLMDeliveryPath = ({
 };
 
 /**
+ * Whether an image upload with no explicit tool resource is routed to text delivery.
+ * The image pipeline stores pixels and never extracts text, so such an upload has to
+ * take the agent upload path or it reaches neither the model nor a text context.
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {Object} params.metadata
+ * @returns {Promise<boolean>}
+ */
+const resolvesToTextDelivery = async ({ req, metadata }) => {
+  const fileConfig = mergeFileConfig(req.config?.fileConfig);
+  const endpoint = await resolveUploadEndpoint({
+    endpoint: metadata.endpoint,
+    agent_id: metadata.agent_id,
+  });
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+  return (
+    resolveUploadLLMDeliveryPath({
+      tool_resource: metadata.tool_resource,
+      file: req.file,
+      endpointConfig,
+      fileConfig,
+      endpoint,
+    }) === 'text'
+  );
+};
+
+/**
  * Applies the current strategy for file uploads.
  * Saves file metadata to the database with an expiry TTL.
  * Files must be deleted from the server filesystem manually.
@@ -1519,6 +1547,7 @@ function filterFile({ req, image, isAvatar }) {
 
 module.exports = {
   filterFile,
+  resolvesToTextDelivery,
   processFileURL,
   saveBase64Image,
   processImageFile,

@@ -418,6 +418,15 @@ export function createProvisionService({
    * @returns {Promise<Set<string>>} file_ids that are not known to be expired: confirmed
    *   alive, within the safe window, or unverifiable because the probe itself failed
    */
+  /** A definitive not-found from the Code API, as opposed to a transient probe failure. */
+  function isSessionNotFound(error: unknown): boolean {
+    const { response, status } = (error ?? {}) as {
+      response?: { status?: number };
+      status?: number;
+    };
+    return (response?.status ?? status) === 404;
+  }
+
   async function checkSessionsAlive({
     files,
     apiKey,
@@ -506,10 +515,13 @@ export function createProvisionService({
             message: `[checkSessionsAlive] Error checking session "${session_id}": ${(error as Error).message}`,
             error,
           });
-          /* A failed probe means unknown, not expired: a timeout or 5xx would otherwise
-           * clear a live ref and force a re-upload that the same outage will likely fail
-           * too, losing access to a working sandbox file. Only a successful response that
-           * omits the file marks it expired. */
+          /* A 404 is the Code API answering that the session is gone, so its files are
+           * expired and a replacement upload should be queued. Every other failure means
+           * unknown: a timeout or 5xx would otherwise clear a live ref and force a
+           * re-upload that the same outage will likely fail too. */
+          if (isSessionNotFound(error)) {
+            return;
+          }
           for (const { file_id } of fileEntries) {
             aliveFileIds.add(file_id);
           }

@@ -20,6 +20,7 @@ jest.mock('~/server/services/Files/process', () => ({
     return res.status(200).json({ message: 'Image processed' });
   }),
   filterFile: jest.fn(),
+  resolvesToTextDelivery: jest.fn().mockResolvedValue(false),
 }));
 
 jest.mock('fs', () => {
@@ -34,7 +35,11 @@ jest.mock('fs', () => {
 });
 
 const fs = require('fs');
-const { processAgentFileUpload, processImageFile } = require('~/server/services/Files/process');
+const {
+  processAgentFileUpload,
+  processImageFile,
+  resolvesToTextDelivery,
+} = require('~/server/services/Files/process');
 const { UninspectableFileError } = require('@librechat/api');
 
 const router = require('~/server/routes/files/images');
@@ -485,6 +490,20 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     });
 
     expect(response.status).toBe(200);
+  });
+
+  it('sends an image the config routes to text through the agent upload path', async () => {
+    resolvesToTextDelivery.mockResolvedValueOnce(true);
+    const app = createAppWithUser(otherUserId);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(processAgentFileUpload).toHaveBeenCalled();
+    expect(processImageFile).not.toHaveBeenCalled();
   });
 
   it('uses a normalized image error when file protection is active', async () => {
