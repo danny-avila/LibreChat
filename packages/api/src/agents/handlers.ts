@@ -68,6 +68,10 @@ import {
   isContentFilterError,
 } from '~/middleware/contentFilter';
 import {
+  BACKGROUND_TASK_ABORT_GRACE_MS,
+  BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
+} from './backgroundCompletion';
+import {
   hasIntentArg,
   stripIntentArg,
   stripIntentLabelsFromToolDefinitions,
@@ -75,10 +79,6 @@ import {
 } from './intent';
 import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
-import {
-  BACKGROUND_TASK_ABORT_GRACE_MS,
-  BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
-} from './backgroundCompletion';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { createSkillContentDigest } from './compatibility';
 import { parseFrontmatter } from '../skills/import';
@@ -4965,7 +4965,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     return;
                   }
                   try {
-                    const retired = await producerAdmission.retire(retireReason);
+                    const retired = await producerAdmission.retire(retireReason, {
+                      onlyIfUnclaimed: true,
+                    });
                     if (!retired) {
                       logger.warn(
                         `[background] Could not retire timed-out completion delivery for task ${task.id}.`,

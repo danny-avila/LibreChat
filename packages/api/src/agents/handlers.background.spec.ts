@@ -2,11 +2,8 @@ import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
+import { BACKGROUND_TASK_ABORT_GRACE_MS, BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
 import { backgroundTaskRegistry, CHECK_BACKGROUND_TASK_NAME } from './background';
-import {
-  BACKGROUND_TASK_ABORT_GRACE_MS,
-  BACKGROUND_TASK_TIMEOUT_MS,
-} from './backgroundCompletion';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { createToolExecuteHandler } from './handlers';
 
@@ -592,6 +589,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
       expect(renew).toHaveBeenCalled();
       expect(retire).toHaveBeenCalledWith(
         'background task did not settle after its abort grace period',
+        { onlyIfUnclaimed: true },
       );
 
       const renewalsBefore = renew.mock.calls.length;
