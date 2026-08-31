@@ -680,7 +680,11 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   ) => Promise<unknown[]>;
   /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
   getUserCodeFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
-  getDeferredProvisionFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
+  getDeferredProvisionFiles?: (
+    fileIds: string[],
+    ownerScope: FileOwnerScope,
+    resources?: { code?: boolean; search?: boolean },
+  ) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
   getMessages?: (
     filter: { conversationId: string },
@@ -1119,9 +1123,10 @@ export async function initializeAgent(
       requestFileOwnerScope &&
       threadFileIds &&
       threadFileIds.length > 0
-        ? (db.getDeferredProvisionFiles(threadFileIds, requestFileOwnerScope) as Promise<
-            IMongoFile[]
-          >)
+        ? (db.getDeferredProvisionFiles(threadFileIds, requestFileOwnerScope, {
+            code: wantsCodeFiles,
+            search: toolResourceSet.has(EToolResources.file_search),
+          }) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
     ]);
 

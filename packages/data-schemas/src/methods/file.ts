@@ -50,6 +50,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   getDeferredProvisionFiles: (
     fileIds: string[],
     ownerScope: FileOwnerScope,
+    resources?: { code?: boolean; search?: boolean },
   ) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
     filename: string;
@@ -287,15 +288,35 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * for provisioning only; feeding them back into the model's attachments would
    * re-send earlier uploads on every subsequent turn.
    *
+   * Selection is per requested resource, not per file. A file embedded for an earlier
+   * file_search agent still has no code reference, so a later execute_code agent must
+   * see it; requiring both results to be absent would hide exactly that case.
+   *
    * @param fileIds - Candidate file IDs from the current thread
    * @param ownerScope - Authenticated owner scope
-   * @returns Attachments still awaiting provisioning
+   * @param resources - Which provisioning results the current agent needs
+   * @returns Attachments still awaiting a result the current agent needs
    */
   async function getDeferredProvisionFiles(
     fileIds: string[],
     ownerScope: FileOwnerScope,
+    resources: { code?: boolean; search?: boolean } = { code: true, search: true },
   ): Promise<IMongoFile[]> {
     if (!fileIds || fileIds.length === 0) {
+      return [];
+    }
+
+    const missingConditions: FilterQuery<IMongoFile>[] = [];
+    if (resources.code) {
+      missingConditions.push({
+        'metadata.codeEnvRef': { $exists: false },
+        'metadata.codeEnvRefs': { $exists: false },
+      });
+    }
+    if (resources.search) {
+      missingConditions.push({ embedded: { $ne: true } });
+    }
+    if (missingConditions.length === 0) {
       return [];
     }
 
@@ -304,9 +325,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         {
           file_id: { $in: fileIds },
           context: { $ne: FileContext.execute_code },
-          embedded: { $ne: true },
-          'metadata.codeEnvRef': { $exists: false },
-          'metadata.codeEnvRefs': { $exists: false },
+          $or: missingConditions,
         },
         ownerScope,
       );

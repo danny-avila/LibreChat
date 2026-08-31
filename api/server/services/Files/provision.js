@@ -320,7 +320,24 @@ async function checkSessionsAlive({ files, apiKey, req, staleSafeWindowMs = 6 * 
 
   // One API call per session (in parallel)
   const baseURL = getCodeBaseURL();
-  const headers = await buildCodeApiHeaders({ apiKey, req });
+  /* Minting can fail on its own, for example when the request carries no tenant
+   * context. That is an unverifiable probe, not an expired file, so it is handled
+   * like any other probe failure: every ref stays alive rather than the rejection
+   * propagating out and aborting initialization for the whole turn. */
+  let headers;
+  try {
+    headers = await buildCodeApiHeaders({ apiKey, req });
+  } catch (error) {
+    logger.warn(
+      `[checkSessionsAlive] Could not build Code API auth headers; treating ${files.length} reference(s) as unverified: ${error.message}`,
+    );
+    for (const file of files) {
+      if (file?.file_id) {
+        aliveFileIds.add(file.file_id);
+      }
+    }
+    return aliveFileIds;
+  }
   const sessionChecks = Array.from(sessionGroups.entries()).map(
     async ([session_id, fileEntries]) => {
       try {
