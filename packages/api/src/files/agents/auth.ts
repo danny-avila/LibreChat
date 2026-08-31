@@ -35,11 +35,16 @@ export async function checkAgentUploadAuth(
   params: AgentUploadAuthParams,
   deps: AgentUploadAuthDeps,
 ): Promise<AgentUploadAuthResult> {
-  const { userId, userRole, agentId, toolResource, messageFile } = params;
+  const { userId, userRole, agentId, messageFile } = params;
   const { getAgent, checkPermission } = deps;
 
   const isMessageAttachment = messageFile === true || messageFile === 'true';
-  if (!agentId || toolResource == null || isMessageAttachment) {
+  /* Any permanent upload against an agent can mutate that agent's resources, so it
+   * needs edit permission whether or not the request names a tool resource: unified
+   * uploads omit it and are promoted to a context resource during processing. Only
+   * message attachments, which belong to the conversation rather than the agent,
+   * skip the check. */
+  if (!agentId || isMessageAttachment) {
     return { allowed: true };
   }
 
