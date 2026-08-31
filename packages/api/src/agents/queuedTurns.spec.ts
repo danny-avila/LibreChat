@@ -493,7 +493,11 @@ describe('Agent queued-turn continuation', () => {
 
   it('dead-letters a legacy admission order that cannot be reconstructed safely', async () => {
     const { methods, spies } = resolverMethods();
-    spies.beginAgentQueuedTurnAdmission.mockResolvedValueOnce({
+    (
+      spies.beginAgentQueuedTurnAdmission as unknown as jest.MockedFunction<
+        AgentQueuedTurnMethods['beginAgentQueuedTurnAdmission']
+      >
+    ).mockResolvedValueOnce({
       outcome: 'order_unavailable',
       turn: { ...claim(), status: 'dead' },
     });
