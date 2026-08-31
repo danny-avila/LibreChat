@@ -25,9 +25,20 @@ const LANE_WRITER_RETRY_MS = 5;
 const LANE_WRITER_RETRIES = LANE_WRITER_LEASE_MS / LANE_WRITER_RETRY_MS;
 const RETIRED_LANE_RETENTION_MS = 24 * 60 * 60_000;
 const ROOT_LINEAGE_PREDECESSOR_PREFIX = 'root:';
+const ADMISSION_STARTED_LANE_INDEX = 'agent_queued_turn_admission_started_lane';
 
 interface DuplicateKeyError {
   code?: number;
+}
+
+interface DuplicateAdmissionLane {
+  _id: {
+    tenantId?: string | null;
+    user: Types.ObjectId;
+    conversationId: string;
+    laneId: string;
+  };
+  count: number;
 }
 
 export class AgentQueuedTurnConflictError extends Error {
@@ -688,8 +699,121 @@ export function createAgentQueuedTurnMethods(
     }
   }
 
+  /** Pre-fence replicas could start two admissions after the first owner moved
+   * to a legacy dead shell. Such a lane has no reconstructible total order.
+   * Retire it and terminalize every nonterminal row before installing the
+   * unique fence so upgrades remain available without guessing at ordering. */
+  async function quarantineDuplicateAdmissionLanes(): Promise<number> {
+    const lanes = await Turn().aggregate<DuplicateAdmissionLane>([
+      { $match: { admissionStartedAt: { $exists: true } } },
+      {
+        $group: {
+          _id: {
+            tenantId: '$tenantId',
+            user: '$user',
+            conversationId: '$conversationId',
+            laneId: '$laneId',
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ]);
+    for (const lane of lanes) {
+      const scopeInput: AgentQueuedTurnConversationScope = {
+        user: lane._id.user,
+        ...(lane._id.tenantId != null && { tenantId: lane._id.tenantId }),
+        conversationId: requireBoundedString(lane._id.conversationId, 256),
+      };
+      const scope = conversationScope(scopeInput);
+      const laneId = requireBoundedString(lane._id.laneId, 128);
+      const settledAt = new Date();
+      await Sequence().updateOne(
+        { _id: laneKey(scopeInput), ...scope },
+        {
+          $set: { retiredAt: settledAt },
+          $setOnInsert: { ...conversationFields(scopeInput), laneId, value: 0 },
+          $unset: {
+            reservationId: 1,
+            writerId: 1,
+            writerUntil: 1,
+            expiresAt: 1,
+          },
+        },
+        { upsert: true },
+      );
+      await Turn().updateMany(
+        {
+          ...scope,
+          laneId,
+          $or: [
+            { status: { $in: ['reserving', 'queued', 'claimed'] } },
+            { admissionStartedAt: { $exists: true } },
+          ],
+        },
+        {
+          $set: {
+            status: 'dead',
+            terminalReceipt: {
+              outcome: 'dead',
+              settledAt,
+              failure: {
+                code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE',
+                message:
+                  'Multiple queued turns crossed the admission boundary without a durable order. Delete or replace this conversation before continuing.',
+              },
+            },
+          },
+          $unset: {
+            activeSlot: 1,
+            admissionSlot: 1,
+            claimId: 1,
+            claimBy: 1,
+            claimUntil: 1,
+            admissionId: 1,
+            admissionStartedAt: 1,
+            admissionEffectivePredecessorCreatedAt: 1,
+            admissionLineagePredecessorId: 1,
+            admissionProtocolVersion: 1,
+            reconciliationAvailableAt: 1,
+            reconciliationClaimId: 1,
+            reconciliationClaimBy: 1,
+            reconciliationClaimUntil: 1,
+          },
+        },
+      );
+    }
+    return lanes.length;
+  }
+
   async function ensureAgentQueuedTurnIndexes(): Promise<void> {
-    await Promise.all([createIndexesWithRetry(Turn()), createIndexesWithRetry(Sequence())]);
+    const admissionFenceExists = (
+      await Turn()
+        .listIndexes()
+        .catch(() => [])
+    ).some((index) => index.name === ADMISSION_STARTED_LANE_INDEX);
+    if (!admissionFenceExists) {
+      for (let attempt = 0; ; attempt++) {
+        await quarantineDuplicateAdmissionLanes();
+        try {
+          await createIndexesWithRetry(Turn());
+          break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (
+            attempt >= 4 ||
+            (error as DuplicateKeyError).code !== DUPLICATE_KEY ||
+            !message.includes(ADMISSION_STARTED_LANE_INDEX)
+          ) {
+            throw error;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
+        }
+      }
+    } else {
+      await createIndexesWithRetry(Turn());
+    }
+    await createIndexesWithRetry(Sequence());
   }
 
   async function acquireLaneWriter(
@@ -2015,7 +2139,6 @@ export function createAgentQueuedTurnMethods(
           deliveryState: 'published',
           admissionId,
           admissionStartedAt: { $exists: true },
-          admissionSlot: true,
           ...(effectivePredecessorCreatedAt != null
             ? { admissionEffectivePredecessorCreatedAt: effectivePredecessorCreatedAt }
             : { admissionEffectivePredecessorCreatedAt: { $exists: false } }),
@@ -2189,7 +2312,6 @@ export function createAgentQueuedTurnMethods(
           ...(rootPredecessorCreatedAt != null && {
             expectedPredecessorCreatedAt: rootPredecessorCreatedAt,
           }),
-          allowLegacyPredecessorInference: true,
         });
         const lineageConflict =
           resolvedPredecessor === null ||

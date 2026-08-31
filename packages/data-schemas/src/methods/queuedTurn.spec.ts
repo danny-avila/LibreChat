@@ -510,6 +510,75 @@ describe('agent queued turn methods', () => {
     ).rejects.toMatchObject({ code: 11000 });
   });
 
+  it('retires and fail-closes duplicate pre-fence admission lanes before index creation', async () => {
+    const first = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'duplicate-admission-first' }),
+    );
+    const second = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'duplicate-admission-second' }),
+    );
+    await Turn.collection.dropIndex('agent_queued_turn_admission_started_lane');
+    for (const [turn, deliveryKey, status] of [
+      [first, 'legacy-duplicate-first', 'dead'],
+      [second, 'legacy-duplicate-second', 'claimed'],
+    ] as const) {
+      await Turn.updateOne(
+        { _id: turn.turn.queuedTurnId },
+        {
+          $set: {
+            status,
+            deliveryKey,
+            deliveryState: 'published',
+            admissionId: deliveryKey,
+            admissionStartedAt: START,
+            ...(status === 'dead' && {
+              terminalReceipt: {
+                outcome: 'dead',
+                settledAt: START,
+                failure: {
+                  code: 'ADMISSION_INDETERMINATE',
+                  message: 'Legacy admission owner disappeared',
+                },
+              },
+            }),
+          },
+        },
+      );
+    }
+
+    await expect(methods.ensureAgentQueuedTurnIndexes()).resolves.toBeUndefined();
+    await expect(
+      Sequence.findOne({ user, tenantId: 'tenant-1', conversationId: 'conversation-1' }).lean(),
+    ).resolves.toMatchObject({ retiredAt: expect.any(Date) });
+    await expect(
+      Turn.find({ _id: { $in: [first.turn.queuedTurnId, second.turn.queuedTurnId] } })
+        .sort({ sequence: 1 })
+        .lean(),
+    ).resolves.toMatchObject([
+      {
+        status: 'dead',
+        terminalReceipt: {
+          failure: { code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE' },
+        },
+      },
+      {
+        status: 'dead',
+        terminalReceipt: {
+          failure: { code: 'QUEUED_TURN_ADMISSION_ORDER_UNAVAILABLE' },
+        },
+      },
+    ]);
+    await expect(Turn.countDocuments({ admissionStartedAt: { $exists: true } })).resolves.toBe(0);
+    await expect(
+      methods.enqueueAgentQueuedTurn(
+        enqueueInput({ clientRequestId: 'duplicate-admission-follow-up' }),
+      ),
+    ).rejects.toBeInstanceOf(AgentQueuedTurnLaneRetiredError);
+    await expect(
+      Turn.collection.indexExists('agent_queued_turn_admission_started_lane'),
+    ).resolves.toBe(true);
+  });
+
   it('reclaims an expired exact lease but never replays a different claim identity', async () => {
     const queued = await methods.enqueueAgentQueuedTurn(enqueueInput());
     const first = await methods.claimNextAgentQueuedTurn(
@@ -1426,6 +1495,16 @@ describe('agent queued turn methods', () => {
       ),
     ).resolves.toMatchObject({ outcome: 'blocked' });
 
+    /** A protocol-v2 owner created before admission slots existed can already
+     * be in the legacy dead shell when its authoritative source receipt lands. */
+    await Turn.updateOne(
+      { _id: first.turn.queuedTurnId },
+      {
+        $set: { status: 'dead' },
+        $unset: { admissionSlot: 1, claimId: 1, claimBy: 1, claimUntil: 1 },
+      },
+    );
+
     await expect(
       methods.markAgentQueuedTurnAdmitted({
         ...claim,
@@ -2049,7 +2128,7 @@ describe('agent queued turn methods', () => {
     expect(repaired?.terminalReceipt?.effectivePredecessorCreatedAt).toBeUndefined();
   });
 
-  it('keeps exact late evidence quarantined when lineage crosses its successor', async () => {
+  it('keeps exact late evidence quarantined behind an ambiguous legacy successor', async () => {
     const target = await methods.enqueueAgentQueuedTurn(
       enqueueInput({ clientRequestId: 'reconcile-target', expectedPredecessorCreatedAt: 10 }),
     );
@@ -2082,7 +2161,6 @@ describe('agent queued turn methods', () => {
             settledAt: LATER,
             generationCreatedAt: 11,
             effectivePredecessorCreatedAt: 10,
-            lineagePredecessorId: target.turn.queuedTurnId,
           },
         },
         $unset: { activeSlot: 1 },
