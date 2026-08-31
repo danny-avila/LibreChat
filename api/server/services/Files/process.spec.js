@@ -1530,6 +1530,23 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    test('retains an auto-routed context upload as an agent resource', async () => {
+      const { getAgentFileRetentionExpiry } = require('@librechat/api');
+      mergeFileConfig.mockReturnValue(makeFileConfig());
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { agent_id: 'agent-abc', file_id: 'file-uuid-123' },
+      }).catch(() => {});
+
+      expect(getAgentFileRetentionExpiry).toHaveBeenCalledWith(
+        expect.objectContaining({ toolResource: EToolResources.context }),
+        expect.any(Object),
+      );
+    });
+
     test('plans extraction with the promoted context resource for auto-routed text uploads', async () => {
       const { getUploadExtractedTextPlan } = require('@librechat/api');
       mergeFileConfig.mockReturnValue(makeFileConfig());

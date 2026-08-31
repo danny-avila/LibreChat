@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { randomUUID } = require('crypto');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
   logAxiosError,
@@ -168,7 +169,13 @@ async function provisionToVectorDB({ req, file, entity_id, existingStream }) {
     return { embedded: false, fileUpdate: null };
   }
 
-  const tmpPath = path.join(os.tmpdir(), `provision-${file.file_id}${path.extname(file.filename)}`);
+  /* Unique per attempt: two concurrent requests provisioning the same file_id would
+   * otherwise share one path, and the first to finish unlinks it while the second is
+   * still streaming into uploadVectors. */
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `provision-${file.file_id}-${randomUUID()}${path.extname(file.filename)}`,
+  );
 
   try {
     let stream = existingStream;
