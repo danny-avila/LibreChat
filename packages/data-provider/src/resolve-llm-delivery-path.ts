@@ -32,10 +32,27 @@ export const SYSTEM_LLM_DELIVERY_DEFAULTS: Required<TDefaultLLMDeliveryPathConfi
   },
 };
 
-/** Whether some step could turn this type into text: documents parse, images OCR, and
- *  audio transcribes. Video has no such step. */
+/**
+ * Types some step in the upload pipeline can turn into text: natively readable text,
+ * documents a parser or OCR handles, images through OCR, and audio through transcription.
+ *
+ * Everything absent from this list, notably archives, tarballs, columnar data files and
+ * video, has no such step, and the default text matcher accepts any well-formed type, so
+ * routing them to text ends in their bytes being decoded as UTF-8.
+ */
+const TEXT_RECOVERABLE_MIME_TYPES: RegExp[] = [
+  /^text\//,
+  /^image\//,
+  /^audio\//,
+  /^application\/(json|xml|sql|yaml|csv|typescript|x-sh|vnd\.coffeescript)$/,
+  /^application\/(pdf|msword)$/,
+  /^application\/vnd\.(openxmlformats-officedocument|oasis\.opendocument)\./,
+  /^application\/(vnd\.ms-excel|x-msexcel|msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls)$/,
+  /^message\/rfc822$/,
+];
+
 function hasTextExtractionPath(mimeType: string): boolean {
-  return !mimeType.startsWith('video/');
+  return TEXT_RECOVERABLE_MIME_TYPES.some((pattern) => pattern.test(mimeType));
 }
 
 /**
@@ -109,6 +126,15 @@ export function resolveDefaultLLMDeliveryPath(
     isBedrockDocumentType(mimeType)
   ) {
     return 'provider';
+  }
+
+  /* The text fallback is only meaningful where text can be recovered. An archive or a
+   * columnar data file reaching it would be decoded as UTF-8 into the prompt, so keep it
+   * off the model path instead; the file is still stored and reachable by tools. An
+   * explicit configuration above has already returned, so this governs the system default
+   * alone. */
+  if (systemDefault === 'text' && !hasTextExtractionPath(mimeType)) {
+    return 'none';
   }
 
   return systemDefault;

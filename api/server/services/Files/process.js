@@ -1424,8 +1424,18 @@ async function saveBase64Image(
  */
 function filterFile({ req, image, isAvatar, endpoint: endpointOverride }) {
   const { file } = req;
-  const { endpoint: requestEndpoint, endpointType, file_id, width, height } = req.body;
+  const {
+    endpoint: requestEndpoint,
+    endpointType: requestEndpointType,
+    file_id,
+    width,
+    height,
+  } = req.body;
   const endpoint = endpointOverride ?? requestEndpoint;
+  /* getEndpointFileConfig consults endpointType ahead of endpoint, so a composer upload
+   * carrying `agents` would keep the Agents policy and shadow the provider the override
+   * names. The override replaces both or neither. */
+  const endpointType = endpointOverride != null ? undefined : requestEndpointType;
 
   if (!file_id && !isAvatar) {
     throw new Error('No file_id provided');

@@ -174,6 +174,8 @@ export type TFile = {
     codeEnvRefs?: CodeEnvRefMap;
     /** Dispatch-order stamp for the current source artifact generation. */
     sourceDispatchedAt?: number;
+    /** Vector namespaces this file has been embedded into. */
+    embeddedEntities?: string[];
   };
   llmDeliveryPath?: 'provider' | 'text' | 'none';
   createdAt?: string | Date;

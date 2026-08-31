@@ -168,6 +168,21 @@ export const addFileToResource = ({
  *  fails safe, since an unrecognized context provisions per user rather than leaking. */
 const AGENT_SCOPED_FILE_CONTEXTS = new Set<string>([FileContext.agents]);
 
+/**
+ * Whether this file's vectors exist in the namespace the active agent will search.
+ *
+ * Agent-scoped files are embedded under `entity_id: <agentId>`, and a duplicated agent
+ * inherits the file id while searching its own namespace, so the record-wide `embedded`
+ * flag cannot answer this for them. Records embedded before namespaces were tracked carry
+ * no entity list and are re-embedded once per agent, which repairs the record as it goes.
+ */
+const isEmbeddedForNamespace = (file: TFile, agentId?: string): boolean => {
+  if (!isAgentScopedFile(file) || agentId == null) {
+    return file.embedded === true;
+  }
+  return file.metadata?.embeddedEntities?.includes(agentId) === true;
+};
+
 /** Whether a file's tool provisioning is scoped to the agent rather than the user. */
 export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
   AGENT_SCOPED_FILE_CONTEXTS.has(file.context as string);
@@ -217,6 +232,7 @@ const categorizeFileForToolResources = ({
   requestFileSet,
   processedResourceFiles,
   agentScoped = false,
+  agentId,
 }: {
   file: TFile;
   tool_resources: AgentToolResources;
@@ -224,6 +240,8 @@ const categorizeFileForToolResources = ({
   processedResourceFiles: Set<string>;
   /** Whether this file's vectors were embedded under the agent's entity_id. */
   agentScoped?: boolean;
+  /** The agent whose vector namespace this turn will search, when one is scoped. */
+  agentId?: string;
 }): void => {
   if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
     addFileToResource({
@@ -234,7 +252,9 @@ const categorizeFileForToolResources = ({
     });
   }
 
-  if (file.embedded === true) {
+  /* Judged per namespace, not by the record-wide flag: registering a file this agent's
+   * namespace never received would make search query for vectors that are not there. */
+  if (isEmbeddedForNamespace(file, agentScoped ? agentId : undefined)) {
     /** Agent-scoped files are embedded under `entity_id: agentId`, so they must be
      *  reconstructed as `file_ids`: fileSearch's primeFiles only marks those
      *  `fromAgent` and only `fromAgent` queries carry the entity_id that can find
@@ -327,9 +347,11 @@ const computeProvisionState = async ({
   checkSessionsAlive,
   loadCodeApiKey,
   legacyFileUploadUX,
+  agentId,
 }: {
   req?: ServerRequest;
   attachments: Array<TFile>;
+  agentId?: string;
   resourcePrincipal?: Pick<IUser, 'id' | 'role'>;
   enabledToolResources?: Set<EToolResources>;
   tool_resources: AgentToolResources;
@@ -452,7 +474,7 @@ const computeProvisionState = async ({
     if (
       needsVectorDB &&
       !isImage &&
-      file.embedded !== true &&
+      !isEmbeddedForNamespace(file, agentId) &&
       !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
     ) {
       vectorDBFiles.push(file);
@@ -636,6 +658,7 @@ export const primeResources = async ({
           requestFileSet,
           processedResourceFiles,
           agentScoped: agentId != null && isAgentScopedFile(file),
+          agentId,
         });
 
         attachments.push(file);
@@ -667,6 +690,7 @@ export const primeResources = async ({
         checkSessionsAlive,
         loadCodeApiKey,
         legacyFileUploadUX,
+        agentId,
       });
       return {
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -722,6 +746,7 @@ export const primeResources = async ({
       checkSessionsAlive,
       loadCodeApiKey,
       legacyFileUploadUX,
+      agentId,
     });
 
     return {
