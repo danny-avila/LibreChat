@@ -402,7 +402,7 @@ export type QueuedMessage = {
    * after an ambiguous POST could submit the same words twice. */
   server?: {
     id?: string;
-    status: 'sending' | 'uncertain' | 'rejected' | 'queued' | 'claimed';
+    status: 'sending' | 'uncertain' | 'indeterminate' | 'rejected' | 'queued' | 'claimed';
     errorCode?: string;
     errorMessage?: string;
     /** Observation time for a transport-ambiguous enqueue. The logical item
@@ -456,6 +456,29 @@ export type QueuedMessageOrigin = {
  */
 const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   key: 'queuedMessagesByConvoId',
+  default: [],
+});
+
+export type SettledQueuedTurnReceipt = {
+  clientRequestId: string;
+  status: 'admitted' | 'admitted_pending_boundary' | 'indeterminate' | 'cancelled' | 'dead';
+  effectivePredecessorCreatedAt?: number;
+  rootPredecessor?: true;
+  boundaryConsumed?: boolean;
+};
+
+/** Monotonic client knowledge of terminal server queue receipts. Admission
+ * records preserve boundary multiplicity by request identity. Other terminal
+ * records exist only while their original enqueue callback is outstanding. */
+const settledQueuedTurnReceiptsByConvoId = atomFamily<SettledQueuedTurnReceipt[], string>({
+  key: 'settledQueuedTurnReceiptsByConvoId',
+  default: [],
+});
+
+/** Enqueue callbacks that can still race newer GET/cancellation evidence.
+ * Entries retire as soon as that one callback settles. */
+const pendingQueuedTurnEnqueueIdsByConvoId = atomFamily<string[], string>({
+  key: 'pendingQueuedTurnEnqueueIdsByConvoId',
   default: [],
 });
 
@@ -788,6 +811,8 @@ export default {
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
+  settledQueuedTurnReceiptsByConvoId,
+  pendingQueuedTurnEnqueueIdsByConvoId,
   runEndByIndex,
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,
