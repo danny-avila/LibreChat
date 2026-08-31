@@ -1,5 +1,10 @@
 import { logger } from '@librechat/data-schemas';
-import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  EToolResources,
+  AgentCapabilities,
+  FileContext,
+} from 'librechat-data-provider';
 import type {
   AgentToolResources,
   AgentBaseResource,
@@ -155,6 +160,33 @@ export const addFileToResource = ({
   }
 };
 
+/** Mirrors the lazy provisioning writer: agent-scoped search files live in
+ *  `file_ids`, which is the only shape fileSearch treats as agent-owned. */
+const addAgentScopedSearchFile = ({
+  file,
+  tool_resources,
+  processedResourceFiles,
+}: {
+  file: TFile;
+  tool_resources: AgentToolResources;
+  processedResourceFiles: Set<string>;
+}): void => {
+  if (!file.file_id) {
+    return;
+  }
+  const resourceKey = `${EToolResources.file_search}:${file.file_id}`;
+  if (processedResourceFiles.has(resourceKey)) {
+    return;
+  }
+  const resource = tool_resources[EToolResources.file_search] ?? {};
+  const fileIds = resource.file_ids ? [...resource.file_ids] : [];
+  if (!fileIds.includes(file.file_id)) {
+    fileIds.push(file.file_id);
+  }
+  tool_resources[EToolResources.file_search] = { ...resource, file_ids: fileIds };
+  processedResourceFiles.add(resourceKey);
+};
+
 /**
  * Categorizes a file into the appropriate tool resource based on its properties
  * Files are categorized as:
@@ -172,11 +204,14 @@ const categorizeFileForToolResources = ({
   tool_resources,
   requestFileSet,
   processedResourceFiles,
+  agentScoped = false,
 }: {
   file: TFile;
   tool_resources: AgentToolResources;
   requestFileSet: Set<string>;
   processedResourceFiles: Set<string>;
+  /** Whether this file's vectors were embedded under the agent's entity_id. */
+  agentScoped?: boolean;
 }): void => {
   if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
     addFileToResource({
@@ -188,12 +223,20 @@ const categorizeFileForToolResources = ({
   }
 
   if (file.embedded === true) {
-    addFileToResource({
-      file,
-      resourceType: EToolResources.file_search,
-      tool_resources,
-      processedResourceFiles,
-    });
+    /** Agent-scoped files are embedded under `entity_id: agentId`, so they must be
+     *  reconstructed as `file_ids`: fileSearch's primeFiles only marks those
+     *  `fromAgent` and only `fromAgent` queries carry the entity_id that can find
+     *  their vectors. Rebuilding them under `.files` makes them unsearchable. */
+    if (agentScoped) {
+      addAgentScopedSearchFile({ file, tool_resources, processedResourceFiles });
+    } else {
+      addFileToResource({
+        file,
+        resourceType: EToolResources.file_search,
+        tool_resources,
+        processedResourceFiles,
+      });
+    }
   }
 
   if (
@@ -526,6 +569,7 @@ export const primeResources = async ({
           tool_resources,
           requestFileSet,
           processedResourceFiles,
+          agentScoped: agentId != null && file.context !== FileContext.message_attachment,
         });
 
         attachments.push(file);
