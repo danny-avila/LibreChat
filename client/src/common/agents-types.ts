@@ -1,15 +1,16 @@
 import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
+  AgentSubagentsConfig,
   AgentToolOptions,
   SupportContact,
   AgentProvider,
+  MemoryScope,
+  StatefulCodeEnvironment,
   GraphEdge,
   Agent,
 } from 'librechat-data-provider';
 import type { OptionWithIcon, ExtendedFile } from './types';
-
-export type AgentQueryResult = { found: true; agent: Agent } | { found: false };
 
 export type TAgentOption = OptionWithIcon &
   Agent & {
@@ -23,8 +24,10 @@ export type TAgentCapabilities = {
   [AgentCapabilities.web_search]: boolean;
   [AgentCapabilities.file_search]: boolean;
   [AgentCapabilities.execute_code]: boolean;
+  [AgentCapabilities.memory]?: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
+  [AgentCapabilities.stateful_code_sessions]?: boolean;
 };
 
 export type AgentForm = {
@@ -38,10 +41,19 @@ export type AgentForm = {
   tools?: string[];
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
+  skills?: string[];
+  skills_enabled?: boolean;
+  /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
+  /** Sharing scope for stateful Code API workspaces. */
+  stateful_code_environment?: StatefulCodeEnvironment;
+  /** Operator-configured managed or attached execution environment. */
+  code_environment_id?: string | null;
   provider?: AgentProvider | OptionWithIcon;
   /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];
+  subagents?: AgentSubagentsConfig;
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
   support_contact?: SupportContact;

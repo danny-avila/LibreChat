@@ -7,11 +7,14 @@ import {
   dataService,
   actionDelimiter,
   actionDomainSeparator,
+  splitToolCallName,
 } from 'librechat-data-provider';
-import type { TAttachment } from 'librechat-data-provider';
-import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
+import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
-import { useMCPIconMap } from '~/hooks/MCP';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { resolveToolCallPhase } from '~/utils/toolCallPhase';
+import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -22,26 +25,37 @@ export default function ToolCall({
   initialProgress = 0.1,
   isLast = false,
   isSubmitting,
+  toolCallId,
   name,
   args: _args = '',
   output,
   attachments,
   auth,
+  hideAttachments = false,
+  onExpand,
+  runStepStatus,
+  runStepDurationMs,
 }: {
   initialProgress: number;
   isLast?: boolean;
   isSubmitting: boolean;
+  toolCallId?: string;
   name: string;
   args: string | Record<string, unknown>;
   output?: string | null;
   attachments?: TAttachment[];
   auth?: string;
+  hideAttachments?: boolean;
+  onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
+  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(showInfo);
 
   useEffect(() => {
     if (autoExpand && hasOutput) {
@@ -60,14 +74,13 @@ export default function ToolCall({
     }
   }, [auth]);
 
+  const mcpServerNames = useMCPServerNames();
   const { function_name, domain, isMCPToolCall, mcpServerName } = useMemo(() => {
     if (typeof name !== 'string') {
       return { function_name: '', domain: null, isMCPToolCall: false, mcpServerName: '' };
     }
     if (name.includes(Constants.mcp_delimiter)) {
-      const parts = name.split(Constants.mcp_delimiter);
-      const func = parts[0];
-      const server = parts.slice(1).join(Constants.mcp_delimiter);
+      const [func, server = ''] = splitToolCallName(name, mcpServerNames);
       const displayName = func === 'oauth' ? server : func;
       return {
         function_name: displayName || '',
@@ -99,7 +112,7 @@ export default function ToolCall({
       isMCPToolCall: false,
       mcpServerName: '',
     };
-  }, [name, parsedAuthUrl]);
+  }, [name, parsedAuthUrl, mcpServerNames]);
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
   const mcpIconMap = useMCPIconMap();
@@ -130,9 +143,20 @@ export default function ToolCall({
     window.open(auth, '_blank', 'noopener,noreferrer');
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
-  const hasError = typeof output === 'string' && isError(output);
-  const cancelled = !isSubmitting && initialProgress < 1 && !hasError;
-  const errorState = hasError;
+  const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
+  /**
+   * The step's own terminal status wins when the run emitted one. The
+   * `isSubmitting` heuristic below it is a whole-message inference: it cannot
+   * tell which step actually stopped, so it holds every unfinished call in a
+   * running state until the entire response ends and then flips them all to
+   * cancelled at once. Retained as the fallback for messages saved before
+   * `on_run_step_closed` and for endpoints that do not emit it.
+   *
+   * The status is authoritative on its own terms — deliberately not gated on
+   * `hasError`, so output parsing cannot demote a stopped step back into an
+   * in-flight state.
+   */
+  const isClosed = runStepStatus != null;
 
   const args = useMemo(() => {
     if (typeof _args === 'string') {
@@ -158,8 +182,36 @@ export default function ToolCall({
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
 
-  const progress = useProgress(initialProgress);
-  const showCancelled = cancelled || (errorState && !output);
+  /**
+   * Both halves are load-bearing: passing 1 in stops `useProgress` scheduling
+   * its 200ms interval, and masking the result makes the terminal value
+   * observable on the same render rather than after the hook settles.
+   */
+  const rawProgress = useProgress(isClosed ? 1 : initialProgress);
+  /**
+   * One resolution, read by the label, the live region, the icon and the
+   * shimmer alike. It also unifies two inputs that had drifted apart: the
+   * cancellation inference read `initialProgress` while the label read the
+   * animated `rawProgress`.
+   */
+  const phase = resolveToolCallPhase({
+    runStepStatus,
+    displayProgress: rawProgress,
+    reportedProgress: initialProgress,
+    isSubmitting,
+    hasError,
+  });
+
+  const handleToggleInfo = useCallback(() => {
+    mountBody();
+    setShowInfo((prev) => {
+      const next = !prev;
+      if (next) {
+        onExpand?.();
+      }
+      return next;
+    });
+  }, [mountBody, onExpand]);
 
   const subtitle = useMemo(() => {
     if (isMCPToolCall && mcpServerName) {
@@ -171,9 +223,27 @@ export default function ToolCall({
     return undefined;
   }, [isMCPToolCall, mcpServerName, domain, localize]);
 
+  /** Model-authored live label, streamed as the first args key (injected by
+   *  the `tool_intents` capability); persists as the settled label —
+   *  completion is a UI state, not a tense change. */
+  const intent = useToolCallIntent(_args);
+
   const getFinishedText = () => {
-    if (cancelled) {
+    if (phase === 'cancelled') {
       return localize('com_ui_cancelled');
+    }
+    /**
+     * Announced before the completion strings below: a terminal step that
+     * errored must not reach the live region as "completed", which would tell
+     * a screen-reader user the opposite of what the card shows.
+     */
+    if (phase === 'failed') {
+      return function_name
+        ? `${localize('com_ui_failed')}: ${function_name}`
+        : localize('com_ui_failed');
+    }
+    if (intent != null) {
+      return intent;
     }
     if (isMCPToolCall === true) {
       return localize('com_assistants_completed_function', { 0: function_name });
@@ -190,9 +260,13 @@ export default function ToolCall({
 
   return (
     <>
+      {/* The live region gets a STABLE in-progress value: the streaming
+          intent grows on every delta, and an atomic polite region would
+          re-announce the whole sentence each time. The settled intent is
+          announced once via getFinishedText. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
-          if (progress < 1 && !showCancelled) {
+          if (phase === 'running') {
             return function_name
               ? localize('com_assistants_running_var', { 0: function_name })
               : localize('com_assistants_running_action');
@@ -200,43 +274,49 @@ export default function ToolCall({
           return getFinishedText();
         })()}
       </span>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div
+        className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5"
+        data-testid="tool-call"
+        data-tool-call-id={toolCallId}
+      >
         <ProgressText
-          progress={progress}
-          onClick={() => setShowInfo((prev) => !prev)}
+          phase={phase}
+          onClick={handleToggleInfo}
           inProgressText={
-            function_name
+            intent ??
+            (function_name
               ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action')
+              : localize('com_assistants_running_action'))
           }
           authText={
-            !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
+            phase === 'running' && authDomain.length > 0
+              ? localize('com_ui_requires_auth')
+              : undefined
           }
           finishedText={getFinishedText()}
           subtitle={subtitle}
-          errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          durationMs={runStepDurationMs}
           icon={
-            <ToolIcon
-              type={toolIconType}
-              iconUrl={mcpIconUrl}
-              isAnimating={progress < 1 && !showCancelled && !errorState}
-            />
+            <ToolIcon type={toolIconType} iconUrl={mcpIconUrl} isAnimating={phase === 'running'} />
           }
           hasInput={hasInfo}
           isExpanded={showInfo}
-          error={showCancelled}
         />
       </div>
-      <div style={expandStyle}>
+      <div
+        style={expandStyle}
+        onTransitionEnd={handleTransitionEnd}
+        data-tool-call-output-id={toolCallId}
+      >
         <div className="overflow-hidden" ref={expandRef}>
-          {hasInfo && (
+          {hasInfo && shouldRenderBody && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
             </div>
           )}
         </div>
       </div>
-      {auth != null && auth && progress < 1 && !showCancelled && (
+      {auth != null && auth && phase === 'running' && (
         <div className="flex w-full flex-col gap-2.5">
           <div className="mb-1 mt-2">
             <Button
@@ -254,7 +334,9 @@ export default function ToolCall({
           </p>
         </div>
       )}
-      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {!hideAttachments && attachments && attachments.length > 0 && (
+        <AttachmentGroup attachments={attachments} />
+      )}
     </>
   );
 }

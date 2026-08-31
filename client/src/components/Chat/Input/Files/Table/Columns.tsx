@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/rules-of-hooks */
-import { ArrowUpDown, ArrowUp, ArrowDown, Database } from 'lucide-react';
 import { FileSources, FileContext } from 'librechat-data-provider';
+import { ArrowUpDown, ArrowUp, ArrowDown, Database } from 'lucide-react';
 import {
   Button,
   Checkbox,

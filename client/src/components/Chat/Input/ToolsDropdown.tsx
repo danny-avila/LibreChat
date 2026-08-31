@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
 import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
-import type { MenuItemProps } from '~/common';
+import { Brain, Globe, ScrollText, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
 import {
   AuthType,
   Permissions,
@@ -10,7 +9,14 @@ import {
   PermissionTypes,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
+import type { MenuItemProps } from '~/common';
+import {
+  useLocalize,
+  useHasAccess,
+  useAuthContext,
+  useHasMemoryAccess,
+  useAgentCapabilities,
+} from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useGetStartupConfig } from '~/data-provider';
@@ -21,13 +27,24 @@ interface ToolsDropdownProps {
   disabled?: boolean;
 }
 
+/** Ariakit portals to document.body by default, which puts the menu outside every landmark.
+ *  Returning null falls back to that default. */
+const getMainLandmark = () => document.querySelector<HTMLElement>('main');
+
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const context = useBadgeRowContext();
   const { data: startupConfig } = useGetStartupConfig();
 
-  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled } =
-    useAgentCapabilities(context?.agentsConfig?.capabilities ?? defaultAgentCapabilities);
+  const {
+    codeEnabled,
+    memoryEnabled,
+    webSearchEnabled,
+    artifactsEnabled,
+    fileSearchEnabled,
+    skillsEnabled,
+  } = useAgentCapabilities(context?.agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -49,20 +66,27 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
+  const canUseSkills = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.USE,
+  });
+
+  const canUseMemory = useHasMemoryAccess();
+  const showMemory = canUseMemory && memoryEnabled && user?.personalization?.memories !== false;
+
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const isDisabled = disabled ?? false;
   const {
+    skills,
+    memory,
     webSearch,
     artifacts,
     fileSearch,
     mcpServerManager,
-    codeApiKeyForm,
     codeInterpreter,
     searchApiKeyForm,
   } = context ?? {};
 
-  const { setIsDialogOpen: setIsCodeDialogOpen, menuTriggerRef: codeMenuTriggerRef } =
-    codeApiKeyForm ?? {};
   const { setIsDialogOpen: setIsSearchDialogOpen, menuTriggerRef: searchMenuTriggerRef } =
     searchApiKeyForm ?? {};
   const {
@@ -70,24 +94,17 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     setIsPinned: setIsSearchPinned,
     authData: webSearchAuthData,
   } = webSearch ?? {};
-  const {
-    isPinned: isCodePinned,
-    setIsPinned: setIsCodePinned,
-    authData: codeAuthData,
-  } = codeInterpreter ?? {};
+  const { isPinned: isCodePinned, setIsPinned: setIsCodePinned } = codeInterpreter ?? {};
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch ?? {};
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts ?? {};
+  const { isPinned: isSkillsPinned, setIsPinned: setIsSkillsPinned } = skills ?? {};
+  const { isPinned: isMemoryPinned, setIsPinned: setIsMemoryPinned } = memory ?? {};
 
   const showWebSearchSettings = useMemo(() => {
     const authTypes = webSearchAuthData?.authTypes ?? [];
     if (authTypes.length === 0) return true;
     return !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
   }, [webSearchAuthData?.authTypes]);
-
-  const showCodeSettings = useMemo(
-    () => codeAuthData?.message !== AuthType.SYSTEM_DEFINED,
-    [codeAuthData?.message],
-  );
 
   const handleWebSearchToggle = useCallback(() => {
     const newValue = !webSearch?.toggleState;
@@ -130,6 +147,16 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       artifacts?.debouncedChange({ value: ArtifactModes.CUSTOM });
     }
   }, [artifacts]);
+
+  const handleSkillsToggle = useCallback(() => {
+    const newValue = !skills?.toggleState;
+    skills?.debouncedChange({ value: newValue });
+  }, [skills]);
+
+  const handleMemoryToggle = useCallback(() => {
+    const newValue = !memory?.toggleState;
+    memory?.debouncedChange({ value: newValue });
+  }, [memory]);
 
   const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
@@ -221,6 +248,70 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     });
   }
 
+  if (canUseSkills && skillsEnabled) {
+    dropdownItems.push({
+      onClick: handleSkillsToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props} data-testid="tools-menu-skills">
+          <div className="flex items-center gap-2">
+            <ScrollText className="icon-md" aria-hidden="true" />
+            <span>{localize('com_ui_skills')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSkillsPinned?.(!isSkillsPinned);
+            }}
+            className={cn(
+              'rounded p-1 transition-all duration-200',
+              'hover:bg-surface-secondary hover:shadow-sm',
+              !isSkillsPinned && 'text-text-secondary hover:text-text-primary',
+            )}
+            aria-label={isSkillsPinned ? localize('com_ui_unpin') : localize('com_ui_pin')}
+          >
+            <div className="h-4 w-4">
+              <PinIcon unpin={isSkillsPinned} />
+            </div>
+          </button>
+        </div>
+      ),
+    });
+  }
+
+  if (showMemory) {
+    dropdownItems.push({
+      onClick: handleMemoryToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props} data-testid="tools-menu-memory">
+          <div className="flex items-center gap-2">
+            <Brain className="icon-md" aria-hidden="true" />
+            <span>{localize('com_ui_memory')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsMemoryPinned?.(!isMemoryPinned);
+            }}
+            className={cn(
+              'rounded p-1 transition-all duration-200',
+              'hover:bg-surface-secondary hover:shadow-sm',
+              !isMemoryPinned && 'text-text-secondary hover:text-text-primary',
+            )}
+            aria-label={isMemoryPinned ? localize('com_ui_unpin') : localize('com_ui_pin')}
+          >
+            <div className="h-4 w-4">
+              <PinIcon unpin={isMemoryPinned} />
+            </div>
+          </button>
+        </div>
+      ),
+    });
+  }
+
   if (canRunCode && codeEnabled) {
     dropdownItems.push({
       onClick: handleCodeInterpreterToggle,
@@ -229,29 +320,9 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
         <div {...props}>
           <div className="flex items-center gap-2">
             <TerminalSquareIcon className="icon-md" aria-hidden="true" />
-            <span>{localize('com_assistants_code_interpreter')}</span>
+            <span>{localize('com_ui_run_code')}</span>
           </div>
           <div className="flex items-center gap-1">
-            {showCodeSettings && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsCodeDialogOpen?.(true);
-                }}
-                ref={codeMenuTriggerRef}
-                className={cn(
-                  'rounded p-1 transition-all duration-200',
-                  'hover:bg-surface-secondary hover:shadow-sm',
-                  'text-text-secondary hover:text-text-primary',
-                )}
-                aria-label="Configure code interpreter"
-              >
-                <div className="h-4 w-4">
-                  <Settings className="h-4 w-4" aria-hidden="true" />
-                </div>
-              </button>
-            )}
             <button
               type="button"
               onClick={(e) => {
@@ -312,8 +383,8 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           id="tools-dropdown-button"
           aria-label="Tools Options"
           className={cn(
-            'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
-            isPopoverActive && 'bg-surface-hover',
+            'flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
+            isPopoverActive && 'bg-surface-composer-hover',
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">
@@ -333,7 +404,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       menuId="tools-dropdown-menu"
       isOpen={isPopoverActive}
       setIsOpen={setIsPopoverActive}
-      modal={true}
+      modal={false}
+      portal={true}
+      portalElement={getMainLandmark}
+      preserveTabOrder={false}
       unmountOnHide={true}
       trigger={menuTrigger}
       items={dropdownItems}

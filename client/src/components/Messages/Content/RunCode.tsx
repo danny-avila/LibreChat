@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import debounce from 'lodash/debounce';
-import { Tools, AuthType } from 'librechat-data-provider';
+import { useRecoilCallback } from 'recoil';
+import { Tools } from 'librechat-data-provider';
 import { TerminalSquareIcon, Check, X } from 'lucide-react';
 import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
 import type { CodeBarProps } from '~/common';
-import { useVerifyAgentToolAuth, useToolCallMutation } from '~/data-provider';
-import ApiKeyDialog from '~/components/SidePanel/Agents/Code/ApiKeyDialog';
-import { useLocalize, useCodeApiKeyForm } from '~/hooks';
+import { useToolCallMutation } from '~/data-provider';
 import { cn, normalizeLanguage } from '~/utils';
 import { useMessageContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
+import store from '~/store';
 
 type RunState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -24,22 +25,15 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
 
     const { messageId, conversationId, partIndex } = useMessageContext();
     const normalizedLang = useMemo(() => normalizeLanguage(lang), [lang]);
-    const { data } = useVerifyAgentToolAuth(
-      { toolId: Tools.execute_code },
-      {
-        retry: 1,
-      },
+    // Read at click time so retention context is current without re-rendering every code block.
+    const getIsTemporary = useRecoilCallback(
+      ({ snapshot }) =>
+        () =>
+          snapshot.getPromise(store.isTemporary),
+      [],
     );
-    const authType = useMemo(() => data?.message ?? false, [data?.message]);
-    const isAuthenticated = useMemo(() => data?.authenticated ?? false, [data?.authenticated]);
-    const { methods, onSubmit, isDialogOpen, setIsDialogOpen, handleRevokeApiKey } =
-      useCodeApiKeyForm({});
 
     const handleExecute = useCallback(async () => {
-      if (!isAuthenticated) {
-        setIsDialogOpen(true);
-        return;
-      }
       const codeString: string = codeRef.current?.textContent ?? '';
       if (
         typeof codeString !== 'string' ||
@@ -57,6 +51,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
         conversationId: conversationId ?? '',
         lang: normalizedLang,
         code: codeString,
+        isTemporary: await getIsTemporary(),
       });
     }, [
       codeRef,
@@ -66,8 +61,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
       blockIndex,
       conversationId,
       normalizedLang,
-      setIsDialogOpen,
-      isAuthenticated,
+      getIsTemporary,
     ]);
 
     const debouncedExecute = useMemo(
@@ -125,7 +119,9 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-border-heavy',
           'disabled:pointer-events-none disabled:opacity-50',
           isError && 'text-text-destructive hover:text-text-destructive',
-          iconOnly ? 'rounded-lg p-1.5' : 'ml-auto gap-2 rounded-md px-2 py-1',
+          iconOnly
+            ? 'rounded-lg p-1.5'
+            : 'ml-auto gap-2 rounded-lg p-1.5 md:rounded-md md:px-2 md:py-1',
         )}
       >
         <span className="relative flex size-[18px] items-center justify-center" aria-hidden="true">
@@ -142,7 +138,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
           <X size={18} className={iconClass(isError)} />
         </span>
         {!iconOnly && (
-          <span className="relative overflow-hidden">
+          <span className="relative hidden overflow-hidden md:block">
             <span
               className={cn(
                 'block whitespace-nowrap transition-all duration-300 ease-out',
@@ -180,21 +176,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
       </button>
     );
 
-    return (
-      <>
-        {iconOnly ? <TooltipAnchor description={label} render={button} /> : button}
-        <ApiKeyDialog
-          onSubmit={onSubmit}
-          isOpen={isDialogOpen}
-          register={methods.register}
-          onRevoke={handleRevokeApiKey}
-          onOpenChange={setIsDialogOpen}
-          handleSubmit={methods.handleSubmit}
-          isToolAuthenticated={isAuthenticated}
-          isUserProvided={authType === AuthType.USER_PROVIDED}
-        />
-      </>
-    );
+    return <TooltipAnchor description={label} render={button} />;
   },
 );
 

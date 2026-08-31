@@ -1,11 +1,11 @@
-import { useMemo, memo } from 'react';
+import { useRef, useMemo, memo } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import { EditIcon, FileText, Check } from 'lucide-react';
+import { EditIcon, Check } from 'lucide-react';
 import { Controller, useFormContext } from 'react-hook-form';
 import { TextareaAutosize, Button, TooltipAnchor } from '@librechat/client';
 import type { PluggableList } from 'unified';
@@ -24,6 +24,7 @@ type Props = {
 const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   const localize = useLocalize();
   const { control } = useFormContext();
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const EditorIcon = useMemo(() => {
     return isEditing ? Check : EditIcon;
@@ -44,15 +45,14 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   return (
     <div className="flex max-h-[85vh] flex-col sm:max-h-[85vh]">
       <h2 className="sr-only">{localize('com_ui_control_bar')}</h2>
-      <header className="flex items-center justify-between rounded-t-xl border border-border-medium bg-transparent px-2 py-1.5">
-        <div className="ml-1 flex items-center gap-2">
-          <FileText className="size-4 text-text-secondary" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-text-primary">
-            {localize('com_ui_prompt_text')}
-          </h3>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <VariablesDropdown fieldName={name} />
+      <div
+        className={cn(
+          'relative w-full flex-1 overflow-auto rounded-xl border border-border-medium p-3 text-left transition-all duration-200 sm:p-4',
+          isEditing ? '' : 'cursor-pointer hover:bg-surface-tertiary',
+        )}
+      >
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
+          <VariablesDropdown fieldName={name} finalFocus={textareaRef} />
           <TooltipAnchor
             description={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
             render={
@@ -70,18 +70,11 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             }
           />
         </div>
-      </header>
-      <div
-        className={cn(
-          'relative w-full flex-1 overflow-auto rounded-b-xl border border-t-0 border-border-medium p-3 text-left transition-all duration-200 sm:p-4',
-          isEditing ? '' : 'cursor-pointer hover:bg-surface-tertiary',
-        )}
-      >
         {!isEditing && (
           <button
             type="button"
             aria-label={localize('com_ui_edit')}
-            className="absolute inset-0 z-0 rounded-b-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            className="absolute inset-0 z-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             onClick={() => setIsEditing(true)}
           />
         )}
@@ -92,12 +85,22 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             isEditing ? (
               <TextareaAutosize
                 {...field}
+                ref={(el: HTMLTextAreaElement | null) => {
+                  field.ref(el);
+                  textareaRef.current = el;
+                }}
                 // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
                 className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary sm:text-base"
                 minRows={4}
                 maxRows={16}
-                onBlur={() => setIsEditing(false)}
+                onBlur={(e) => {
+                  /** Opening the variables menu moves focus into it; that is not leaving the editor */
+                  if (e.relatedTarget?.closest('[role="menu"]')) {
+                    return;
+                  }
+                  setIsEditing(false);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     e.preventDefault();

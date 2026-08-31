@@ -1,4 +1,5 @@
 import dedent from 'dedent';
+import DOMPurify from 'dompurify';
 
 interface MermaidButtonStyles {
   bg: string;
@@ -448,12 +449,15 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
 export default MermaidDiagram;`);
 
 const wrapMermaidDiagram = (content: string) => {
+  const serializedContent = JSON.stringify(content);
   return dedent(`import React from 'react';
 import MermaidDiagram from '/components/ui/MermaidDiagram';
 
-export default App = () => (
-  <MermaidDiagram content={\`${content}\`} />
+const App = () => (
+  <MermaidDiagram content={${serializedContent}} />
 );
+
+export default App;
 `);
 };
 
@@ -484,3 +488,21 @@ root.render(<App />);
     'mermaid.css': mermaidCSS,
   };
 };
+
+/** Sanitize mermaid SVG and serialize as XML, preserving foreignObject HTML (cure53/DOMPurify#1002). */
+export const sanitizeMermaidSvg = (svg: string): string =>
+  new XMLSerializer().serializeToString(
+    DOMPurify().sanitize(svg, {
+      USE_PROFILES: { svg: true, svgFilters: true, html: true },
+      ADD_TAGS: ['foreignObject', 'use', 'switch'],
+      ADD_ATTR: [
+        'dominant-baseline',
+        'text-anchor',
+        'requiredFeatures',
+        'systemLanguage',
+        'xmlns:xlink',
+      ],
+      HTML_INTEGRATION_POINTS: { foreignobject: true },
+      RETURN_DOM_FRAGMENT: true,
+    }),
+  );

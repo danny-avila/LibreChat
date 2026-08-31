@@ -1,8 +1,10 @@
-import { TokenMethods } from '@librechat/data-schemas';
-import { FlowStateManager, MCPConnection, MCPOAuthTokens, MCPOptions } from '../..';
-import { MCPManager } from '../MCPManager';
+import { logger, TokenMethods } from '@librechat/data-schemas';
+import type { IToken } from '@librechat/data-schemas';
+import type { ParsedServerConfig } from '../..';
 import { OAuthReconnectionManager } from './OAuthReconnectionManager';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
+import { FlowStateManager, MCPConnection, MCPOptions } from '../..';
+import { MCPManager } from '../MCPManager';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -183,7 +185,7 @@ describe('OAuthReconnectionManager', () => {
             userId,
             identifier,
             expiresAt: new Date(Date.now() + 3600000), // 1 hour from now
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -202,6 +204,8 @@ describe('OAuthReconnectionManager', () => {
 
       await reconnectionManager.reconnectServers(userId);
 
+      expect(mockRegistryInstance.getOAuthServers).toHaveBeenCalledWith(userId);
+
       // Verify server3 was marked as active
       expect(reconnectionTracker.isActive(userId, 'server3')).toBe(true);
 
@@ -212,6 +216,7 @@ describe('OAuthReconnectionManager', () => {
       expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith({
         serverName: 'server3',
         user: { id: userId },
+        serverConfig: { initTimeout: 5000 },
         flowManager,
         tokenMethods,
         forceNew: false,
@@ -234,7 +239,7 @@ describe('OAuthReconnectionManager', () => {
         userId,
         identifier: 'mcp:server1',
         expiresAt: new Date(Date.now() + 3600000),
-      } as unknown as MCPOAuthTokens);
+      } as unknown as IToken);
 
       // Mock failed connection
       mockMCPManager.getUserConnection.mockRejectedValue(new Error('Connection failed'));
@@ -250,7 +255,9 @@ describe('OAuthReconnectionManager', () => {
       // Verify failure handling
       expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
-      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1', {
+        reason: 'lifecycle',
+      });
     });
 
     it('should not reconnect servers with expired tokens and no refresh token', async () => {
@@ -264,7 +271,7 @@ describe('OAuthReconnectionManager', () => {
             userId,
             identifier,
             expiresAt: new Date(Date.now() - 3600000),
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -287,13 +294,13 @@ describe('OAuthReconnectionManager', () => {
             userId,
             identifier,
             expiresAt: new Date(Date.now() - 3600000),
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         if (identifier === 'mcp:server1:refresh') {
           return {
             userId,
             identifier,
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -330,7 +337,7 @@ describe('OAuthReconnectionManager', () => {
           return {
             userId,
             identifier,
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -366,7 +373,7 @@ describe('OAuthReconnectionManager', () => {
         userId,
         identifier: 'mcp:server1',
         expiresAt: new Date(Date.now() + 3600000),
-      } as unknown as MCPOAuthTokens);
+      } as unknown as IToken);
 
       // Mock connection that returns but is not connected
       const mockConnection = {
@@ -389,7 +396,9 @@ describe('OAuthReconnectionManager', () => {
       expect(mockConnection.disconnect).toHaveBeenCalled();
       expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
-      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1', {
+        reason: 'lifecycle',
+      });
     });
 
     it('should handle MCPManager not available gracefully', async () => {
@@ -449,6 +458,71 @@ describe('OAuthReconnectionManager', () => {
 
       const result = await reconnectionManager.reconnectServer(userId, serverName);
       expect(result).toBe(true);
+    });
+
+    it('should defer request-scoped reconnection without reporting success', async () => {
+      const userId = 'user-123';
+      const serverName = 'request-scoped-server';
+
+      reconnectionTracker.setFailed(userId, serverName);
+      reconnectionTracker.setActive(userId, serverName);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://example.com/mcp',
+        source: 'yaml',
+        headers: {
+          'X-Conversation-ID': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      } as unknown as MCPOptions);
+
+      const result = await reconnectionManager.reconnectServer(userId, serverName);
+
+      expect(result).toBe(false);
+      expect(reconnectionTracker.isFailed(userId, serverName)).toBe(false);
+      expect(reconnectionTracker.isActive(userId, serverName)).toBe(false);
+      expect(mockMCPManager.getUserConnection).not.toHaveBeenCalled();
+      expect(mockMCPManager.disconnectUserConnection).not.toHaveBeenCalled();
+    });
+
+    it('should classify request scope from the effective config-tier overlay', async () => {
+      const userId = 'user-123';
+      const serverName = 'overlaid-server';
+      const configServers: Record<string, ParsedServerConfig> = {
+        [serverName]: {
+          type: 'streamable-http',
+          url: 'https://example.com/mcp',
+          source: 'config',
+          headers: {
+            'X-Conversation-ID': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+          },
+        },
+      };
+      const effectiveConfig = {
+        ...configServers[serverName],
+        source: 'yaml',
+      } as ParsedServerConfig;
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockImplementation(
+        async (_name, _userId, candidates) =>
+          candidates === configServers
+            ? effectiveConfig
+            : ({
+                type: 'streamable-http',
+                url: 'https://example.com/mcp',
+                source: 'yaml',
+              } as MCPOptions),
+      );
+      const result = await reconnectionManager.reconnectServer(userId, serverName, configServers);
+
+      expect(result).toBe(false);
+      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
+        serverName,
+        userId,
+        configServers,
+      );
+      expect(mockMCPManager.getUserConnection).not.toHaveBeenCalled();
+      expect(reconnectionTracker.isFailed(userId, serverName)).toBe(false);
+      expect(reconnectionTracker.isActive(userId, serverName)).toBe(false);
     });
 
     it('should return false on failed reconnection', async () => {
@@ -512,7 +586,7 @@ describe('OAuthReconnectionManager', () => {
           userId,
           identifier,
           expiresAt: new Date(Date.now() + 3600000),
-        } as unknown as MCPOAuthTokens;
+        } as unknown as IToken;
       });
 
       const mockNewConnection = {
@@ -544,6 +618,56 @@ describe('OAuthReconnectionManager', () => {
       expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
         expect.objectContaining({ serverName: 'server3' }),
       );
+    });
+  });
+
+  describe('fire-and-forget reconnect safety', () => {
+    let reconnectionTracker: OAuthReconnectionTracker;
+
+    beforeEach(async () => {
+      reconnectionTracker = new OAuthReconnectionTracker();
+      reconnectionManager = await OAuthReconnectionManager.createInstance(
+        flowManager,
+        tokenMethods,
+        reconnectionTracker,
+      );
+    });
+
+    /**
+     * Regression test for discussion #12078: a registry rejection from
+     * `getServerConfig` during a reconnect storm previously escaped as an
+     * unhandled promise rejection (Node 15+ terminates the process). The
+     * rejection must be caught and the tracker must be cleaned up so the
+     * server does not stay stuck in `active` state for the full
+     * `RECONNECTION_TIMEOUT_MS` window before retries become possible again.
+     */
+    it('should clean up tracker state when getServerConfig rejects', async () => {
+      const userId = 'user-123';
+      const oauthServers = new Set(['server1']);
+      (mockRegistryInstance.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
+
+      tokenMethods.findToken.mockResolvedValue({
+        userId,
+        identifier: 'mcp:server1',
+        expiresAt: new Date(Date.now() + 3600000),
+      } as unknown as IToken);
+
+      const boom = new Error('boom');
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockRejectedValue(boom);
+
+      await expect(reconnectionManager.reconnectServers(userId)).resolves.toBeUndefined();
+
+      // Flush any microtasks attached inside safeTryReconnect / tryReconnect
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // The rejection must be reported (warn from the inner catch) and the
+      // tracker must be returned to a state that allows future retries.
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to reconnect'));
+      expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
+      expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1', {
+        reason: 'lifecycle',
+      });
     });
   });
 
@@ -602,7 +726,7 @@ describe('OAuthReconnectionManager', () => {
             userId,
             identifier,
             expiresAt: new Date(Date.now() + 3600000),
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -651,7 +775,7 @@ describe('OAuthReconnectionManager', () => {
         userId,
         identifier: `mcp:${serverName}`,
         expiresAt: new Date(Date.now() + 3600000),
-      } as unknown as MCPOAuthTokens);
+      } as unknown as IToken);
 
       // First reconnect attempt - will fail
       mockMCPManager.getUserConnection.mockRejectedValueOnce(new Error('Connection failed'));

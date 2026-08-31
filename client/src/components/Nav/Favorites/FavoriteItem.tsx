@@ -1,14 +1,13 @@
-import React, { useState } from 'react';
-import * as Menu from '@ariakit/react/menu';
-import { Ellipsis, PinOff } from 'lucide-react';
-import { DropdownPopup } from '@librechat/client';
+import React from 'react';
+import { PinOff } from 'lucide-react';
+import { TooltipAnchor } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent, TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import type { FavoriteModel } from '~/store/favorites';
 import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useFavorites, useLocalize } from '~/hooks';
-import { renderAgentAvatar, cn } from '~/utils';
+import { renderAgentAvatar } from '~/utils';
 
 type Kwargs = {
   model?: string;
@@ -38,6 +37,8 @@ type SpecFavoriteProps = FavoriteItemBaseProps & {
   item: TModelSpec;
   onSelectSpec?: (spec: TModelSpec) => void;
   endpointsConfig?: TEndpointsConfig;
+  /** Avatar of the agent the spec targets, used when the spec defines no icon of its own. */
+  agentAvatarURL?: string;
 };
 
 type FavoriteItemProps = AgentFavoriteProps | ModelFavoriteProps | SpecFavoriteProps;
@@ -46,7 +47,6 @@ export default function FavoriteItem(props: FavoriteItemProps) {
   const { onRemoveFocus } = props;
   const localize = useLocalize();
   const { removeFavoriteAgent, removeFavoriteModel, removeFavoriteSpec } = useFavorites();
-  const [isPopoverActive, setIsPopoverActive] = useState(false);
 
   const handleSelect = () => {
     if (props.type === 'agent') {
@@ -59,7 +59,7 @@ export default function FavoriteItem(props: FavoriteItemProps) {
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('[data-testid="favorite-options-button"]')) {
+    if ((e.target as HTMLElement).closest('[data-testid="favorite-unpin-button"]')) {
       return;
     }
     handleSelect();
@@ -81,7 +81,6 @@ export default function FavoriteItem(props: FavoriteItemProps) {
     } else {
       removeFavoriteModel(props.item.model, props.item.endpoint);
     }
-    setIsPopoverActive(false);
     requestAnimationFrame(() => {
       onRemoveFocus?.();
     });
@@ -94,7 +93,11 @@ export default function FavoriteItem(props: FavoriteItemProps) {
     if (props.type === 'spec') {
       return (
         <div className="mr-2 h-5 w-5">
-          <SpecIcon currentSpec={props.item} endpointsConfig={props.endpointsConfig} />
+          <SpecIcon
+            currentSpec={props.item}
+            endpointsConfig={props.endpointsConfig}
+            agentAvatarURL={props.agentAvatarURL}
+          />
         </div>
       );
     }
@@ -119,25 +122,12 @@ export default function FavoriteItem(props: FavoriteItemProps) {
   }
   const ariaLabel = `${name} (${typeLabel})`;
 
-  const menuId = React.useId();
-
-  const dropdownItems = [
-    {
-      label: localize('com_ui_unpin'),
-      onClick: handleRemove,
-      icon: <PinOff className="h-4 w-4 text-text-secondary" />,
-    },
-  ];
-
   return (
     <div
       role="button"
       tabIndex={0}
       aria-label={ariaLabel}
-      className={cn(
-        'group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
-        isPopoverActive ? 'bg-surface-active-alt' : '',
-      )}
+      className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg p-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       data-testid="favorite-item"
@@ -148,44 +138,34 @@ export default function FavoriteItem(props: FavoriteItemProps) {
       </div>
 
       <div
-        className={cn(
-          'absolute right-2 flex items-center',
-          isPopoverActive
-            ? 'pointer-events-auto opacity-100'
-            : 'pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100',
-        )}
+        className={
+          // Interactive by default so it's tappable on touch; only
+          // hidden-until-hover on hover-capable pointers. Otherwise the
+          // whole row is hover-dependent and the first tap just reveals
+          // this instead of selecting (the iOS double-tap).
+          'absolute right-1 flex items-center group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0'
+        }
         onClick={(e) => e.stopPropagation()}
       >
-        <DropdownPopup
-          portal={true}
-          mountByState={true}
-          isOpen={isPopoverActive}
-          setIsOpen={setIsPopoverActive}
-          className="z-[125]"
-          trigger={
-            <Menu.MenuButton
-              className={cn(
-                'inline-flex h-7 w-7 items-center justify-center rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50',
-                isPopoverActive
-                  ? 'opacity-100'
-                  : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
-              )}
-              aria-label={localize('com_nav_convo_menu_options')}
-              data-testid="favorite-options-button"
-              onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                e.stopPropagation();
-              }}
+        <TooltipAnchor
+          description={localize('com_ui_unpin')}
+          side="top"
+          render={
+            <button
+              type="button"
+              aria-label={localize('com_ui_unpin')}
+              data-testid="favorite-unpin-button"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md p-0 text-text-secondary transition-colors duration-150 hover:border-border-medium hover:bg-surface-active hover:text-text-primary focus-visible:border-border-medium focus-visible:bg-surface-active focus-visible:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
+              onClick={handleRemove}
               onKeyDown={(e: React.KeyboardEvent<HTMLButtonElement>) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.stopPropagation();
                 }
               }}
             >
-              <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
-            </Menu.MenuButton>
+              <PinOff className="size-4" aria-hidden={true} />
+            </button>
           }
-          items={dropdownItems}
-          menuId={menuId}
         />
       </div>
     </div>

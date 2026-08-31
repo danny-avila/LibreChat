@@ -16,6 +16,12 @@ import { RedisStore as ConnectRedis } from 'connect-redis';
 import type { SendCommandFn } from 'rate-limit-redis';
 import { keyvRedisClient, ioredisClient } from './redisClients';
 import { batchDeleteKeys, scanKeys } from './redisUtils';
+import {
+  instrumentIORedisClient,
+  instrumentRedisCache,
+  observeRedisOperation,
+  RedisUseCases,
+} from './redisTelemetry';
 import { cacheConfig } from './cacheConfig';
 import { violationFile } from './keyvFiles';
 
@@ -79,7 +85,7 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
         logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
       };
 
-      return cache;
+      return instrumentRedisCache(cache, namespace);
     } catch (err) {
       logger.error(`Failed to create Redis cache for namespace ${namespace}:`, err);
       throw err;
@@ -92,7 +98,12 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
   if (existing) {
     return existing;
   }
-  const cache = new Keyv({ namespace, ttl });
+  /** The default serializer's Buffer-aware reviver costs ~8x a plain JSON round trip on
+   *  every read, and an instrumented sweep of the e2e suite found no namespace ever caching
+   *  a Buffer. Plain JSON keeps today's copy semantics (readers never share references with
+   *  the store, dates still come back as ISO strings); a Buffer would now round-trip as its
+   *  `{ type: 'Buffer', data }` JSON form instead of reviving. */
+  const cache = new Keyv({ namespace, ttl, serialize: JSON.stringify, deserialize: JSON.parse });
   inMemoryCacheMap.set(namespace, cache);
   return cache;
 };
@@ -105,10 +116,14 @@ export const tokenConfigCache = (): Keyv =>
  * Creates a cache instance for storing violation data.
  * Uses a file-based fallback store if Redis is not enabled.
  * @param namespace - The cache namespace for violations.
- * @param ttl - Time to live for cache entries.
+ * @param ttl - Time to live for cache entries. Defaults to `cacheConfig.VIOLATION_SCORE_TTL`
+ * so violation scores decay instead of accumulating forever; each write restarts the countdown.
  * @returns Cache instance for violations.
  */
-export const violationCache = (namespace: string, ttl?: number): Keyv => {
+export const violationCache = (
+  namespace: string,
+  ttl: number | undefined = cacheConfig.VIOLATION_SCORE_TTL,
+): Keyv => {
   return standardCache(`violations:${namespace}`, ttl, violationFile);
 };
 
@@ -124,7 +139,10 @@ export const sessionCache = (namespace: string, ttl?: number): MemoryStore | Con
     const MemoryStore = createMemoryStore(session);
     return new MemoryStore({ ttl, checkPeriod: Time.ONE_DAY });
   }
-  const store = new ConnectRedis({ client: ioredisClient, ttl, prefix: namespace });
+  const redisClient = ioredisClient
+    ? instrumentIORedisClient(ioredisClient, namespace)
+    : ioredisClient;
+  const store = new ConnectRedis({ client: redisClient, ttl, prefix: namespace });
   if (ioredisClient) {
     ioredisClient.on('error', (err) => {
       logger.error(`Session store Redis error for namespace ${namespace}:`, err);
@@ -152,11 +170,14 @@ export const limiterCache = (prefix: string): RedisStore | undefined => {
 
   try {
     const sendCommand: SendCommandFn = (async (...args: string[]) => {
-      if (ioredisClient == null) {
+      const redisClient = ioredisClient;
+      if (redisClient == null) {
         throw new Error('Redis client not available');
       }
       try {
-        return await ioredisClient.call(args[0], ...args.slice(1));
+        return await observeRedisOperation('ioredis', RedisUseCases.RATE_LIMIT, args[0], () =>
+          redisClient.call(args[0], ...args.slice(1)),
+        );
       } catch (err) {
         logger.error('Redis command execution failed:', err);
         throw err;

@@ -12,8 +12,10 @@ import type {
   CompletionUsage,
   ToolCall,
 } from './types';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { ToolExecuteOptions } from '~/agents/handlers';
 import { createToolExecuteHandler } from '~/agents/handlers';
+import { aggregateCollectedUsage } from '../usage';
 
 /**
  * Create a chat completion chunk in OpenAI format
@@ -218,6 +220,10 @@ export interface ModelEndData {
       input_tokens?: number;
       output_tokens?: number;
       model?: string;
+      output_token_details?: {
+        reasoning?: number;
+        reasoning_tokens?: number;
+      };
     };
   };
 }
@@ -354,6 +360,8 @@ export class OpenAIModelEndHandler implements EventHandler {
 
     this.config.tracker.usage.promptTokens += usage.input_tokens ?? 0;
     this.config.tracker.usage.completionTokens += usage.output_tokens ?? 0;
+    this.config.tracker.usage.reasoningTokens +=
+      usage.output_token_details?.reasoning ?? usage.output_token_details?.reasoning_tokens ?? 0;
   }
 }
 
@@ -433,6 +441,7 @@ export function createOpenAIHandlers(
 export function sendFinalChunk(
   config: OpenAIStreamHandlerConfig,
   finishReason: ChatCompletionChunkChoice['finish_reason'] = 'stop',
+  usageOverride?: CompletionUsage,
 ): void {
   const { res, context, tracker } = config;
 
@@ -443,14 +452,14 @@ export function sendFinalChunk(
   }
 
   // Build usage object with reasoning token details (OpenRouter/OpenAI convention)
-  const usage: CompletionUsage = {
+  const usage: CompletionUsage = usageOverride ?? {
     prompt_tokens: tracker.usage.promptTokens,
     completion_tokens: tracker.usage.completionTokens,
     total_tokens: tracker.usage.promptTokens + tracker.usage.completionTokens,
   };
 
   // Add reasoning token breakdown if there are reasoning tokens
-  if (tracker.usage.reasoningTokens > 0) {
+  if (usageOverride == null && tracker.usage.reasoningTokens > 0) {
     usage.completion_tokens_details = {
       reasoning_tokens: tracker.usage.reasoningTokens,
     };
@@ -461,4 +470,29 @@ export function sendFinalChunk(
 
   // Send [DONE] marker
   writeSSE(res, '[DONE]');
+}
+
+/** Build provider-normalized chat-completion usage from every billed call. */
+export function buildCompletionUsage(
+  collectedUsage: ReadonlyArray<UsageMetadata | null | undefined>,
+): CompletionUsage {
+  const { total, primary, subagent } = aggregateCollectedUsage(collectedUsage);
+  return {
+    prompt_tokens: total.inputTokens,
+    completion_tokens: total.outputTokens,
+    total_tokens: total.totalTokens,
+    ...(total.reasoningTokens > 0 && {
+      completion_tokens_details: { reasoning_tokens: total.reasoningTokens },
+    }),
+    primary: {
+      prompt_tokens: primary.inputTokens,
+      completion_tokens: primary.outputTokens,
+      total_tokens: primary.totalTokens,
+    },
+    subagent: {
+      prompt_tokens: subagent.inputTokens,
+      completion_tokens: subagent.outputTokens,
+      total_tokens: subagent.totalTokens,
+    },
+  };
 }

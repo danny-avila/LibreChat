@@ -20,12 +20,14 @@ export type CheckboxProps =
       'aria-label'?: never;
     });
 
-const Checkbox = React.forwardRef<React.ElementRef<typeof CheckboxPrimitive.Root>, CheckboxProps>(
+const Checkbox: React.ForwardRefExoticComponent<
+  CheckboxProps & React.RefAttributes<HTMLButtonElement>
+> = React.forwardRef<React.ElementRef<typeof CheckboxPrimitive.Root>, CheckboxProps>(
   ({ className = '', ...props }, ref) => (
     <CheckboxPrimitive.Root
       ref={ref}
       className={cn(
-        'peer h-4 w-4 shrink-0 rounded-sm border border-border-xheavy ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
+        'peer h-4 w-4 shrink-0 rounded-sm border border-border-xheavy ring-offset-surface-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-surface-inverted data-[state=checked]:text-text-inverted',
         className,
       )}
       {...props}

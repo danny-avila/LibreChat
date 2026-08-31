@@ -1,4 +1,6 @@
 import type { Logger as WinstonLogger } from 'winston';
+import type { z } from 'zod';
+import type { webSearchSchema } from '../config';
 
 export type SearchRefType = 'search' | 'image' | 'news' | 'video' | 'ref';
 
@@ -10,7 +12,8 @@ export enum DATE_RANGE {
   PAST_YEAR = 'y',
 }
 
-export type SearchProvider = 'serper' | 'searxng';
+export type SearchProvider = 'serper' | 'searxng' | 'tavily' | 'keenable';
+export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily' | 'keenable';
 export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
 
 export interface Highlight {
@@ -73,6 +76,13 @@ export interface SearchConfig {
   serperApiKey?: string;
   searxngInstanceUrl?: string;
   searxngApiKey?: string;
+  searxngSearchOptions?: z.infer<typeof webSearchSchema>['searxngSearchOptions'];
+  tavilyApiKey?: string;
+  tavilySearchUrl?: string;
+  tavilySearchOptions?: TavilyConfig['tavilySearchOptions'];
+  keenableApiKey?: string;
+  keenableApiUrl?: string;
+  keenableSearchOptions?: KeenableConfig['keenableSearchOptions'];
 }
 
 export type References = {
@@ -127,6 +137,21 @@ export interface FirecrawlConfig {
       tag?: string | null;
     };
   };
+}
+
+export interface TavilyConfig {
+  tavilyApiKey?: string;
+  tavilySearchUrl?: string;
+  tavilyExtractUrl?: string;
+  tavilySearchOptions?: z.infer<typeof webSearchSchema>['tavilySearchOptions'];
+  tavilyScraperOptions?: z.infer<typeof webSearchSchema>['tavilyScraperOptions'];
+}
+
+export interface KeenableConfig {
+  keenableApiKey?: string;
+  keenableApiUrl?: string;
+  keenableSearchOptions?: z.infer<typeof webSearchSchema>['keenableSearchOptions'];
+  keenableScraperOptions?: z.infer<typeof webSearchSchema>['keenableScraperOptions'];
 }
 
 export interface ScraperContentResult {

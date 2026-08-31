@@ -4,12 +4,12 @@ import { CheckboxButton } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
+import { badgeAccents } from './accents';
 
 function CodeInterpreter() {
   const localize = useLocalize();
   const context = useBadgeRowContext();
   const { toggleState: runCode, debouncedChange, isPinned } = context?.codeInterpreter ?? {};
-  const { badgeTriggerRef } = context?.codeApiKeyForm ?? {};
 
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
@@ -23,12 +23,10 @@ function CodeInterpreter() {
   return (
     (runCode || isPinned) && (
       <CheckboxButton
-        ref={badgeTriggerRef}
-        className="max-w-fit"
         checked={runCode}
         setValue={debouncedChange}
-        label={localize('com_assistants_code_interpreter')}
-        isCheckedClassName="border-purple-600/40 bg-purple-500/10 hover:bg-purple-700/10"
+        label={localize('com_ui_run_code')}
+        isCheckedClassName={badgeAccents.purple}
         icon={<TerminalSquareIcon className="icon-md" aria-hidden="true" />}
       />
     )

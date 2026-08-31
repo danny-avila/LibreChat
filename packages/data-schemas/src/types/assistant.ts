@@ -3,6 +3,7 @@ import { Document, Types } from 'mongoose';
 export interface IAssistant extends Document {
   user: Types.ObjectId;
   assistant_id: string;
+  endpoint?: string;
   avatar?: {
     filepath: string;
     source: string;

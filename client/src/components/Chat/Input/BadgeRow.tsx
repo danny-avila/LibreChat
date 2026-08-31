@@ -11,16 +11,18 @@ import React, {
 import { Badge } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
+import type { BadgeItem } from '~/common';
 import CodeInterpreter from './CodeInterpreter';
 import { BadgeRowProvider } from '~/Providers';
 import ToolsDropdown from './ToolsDropdown';
-import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
 import ToolDialogs from './ToolDialogs';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
+import Memory from './Memory';
+import Skills from './Skills';
 import store from '~/store';
 
 interface BadgeRowProps {
@@ -373,6 +375,8 @@ function BadgeRow({
             <WebSearch />
             <CodeInterpreter />
             <FileSearch />
+            <Skills />
+            <Memory />
             <Artifacts />
             <MCPSelect />
           </>

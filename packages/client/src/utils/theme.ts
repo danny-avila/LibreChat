@@ -1,4 +1,4 @@
-export const applyFontSize = (val: string) => {
+export const applyFontSize = (val: string): void => {
   const root = document.documentElement;
   const size = val.split('-')[1]; // This will be 'xs', 'sm', 'base', 'lg', or 'xl'
 
@@ -21,7 +21,7 @@ export const applyFontSize = (val: string) => {
   }
 };
 
-export const getInitialTheme = () => {
+export const getInitialTheme = (): string => {
   if (typeof window !== 'undefined' && window.localStorage) {
     const storedPrefs = window.localStorage.getItem('color-theme');
     if (typeof storedPrefs === 'string') {

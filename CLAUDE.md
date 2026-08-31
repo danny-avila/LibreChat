@@ -13,7 +13,8 @@ LibreChat is a monorepo with the following key workspaces:
 | `/client` | TypeScript/React | Frontend | `packages/data-provider`, `packages/client` | Frontend SPA |
 | `/packages/client` | TypeScript | Frontend | `packages/data-provider` | Shared frontend utilities |
 
-The source code for `@librechat/agents` (major backend dependency, same team) is at `/home/danny/agentus`.
+The source code for `@librechat/agents` (major backend dependency, same team) lives at
+<https://github.com/danny-avila/agents>.
 
 ---
 
@@ -58,6 +59,19 @@ The source code for `@librechat/agents` (major backend dependency, same team) is
 - Choose data structures that reduce the need to iterate (e.g., `Map`/`Set` for lookups instead of `Array.find`/`Array.includes`).
 - Avoid unnecessary object creation; consider space-time tradeoffs.
 - Prevent memory leaks: careful with closures, dispose resources/event listeners, no circular references.
+
+### Backend Database Performance
+
+- On request startup and first page load paths, watch for serial database reads.
+  Multiple round trips to MongoDB can add significant latency when the database
+  is far from the app server.
+- Prefer passing already-loaded request/user/config data through helper
+  functions instead of re-reading the same user, role, tenant, or principal data.
+- When two reads are independent, start them in parallel and gate the response
+  on the authorization or validation result before returning data.
+- Keep authorization, permission, and tenant checks semantically identical when
+  parallelizing reads. Speculative reads must remain scoped to the authenticated
+  user or tenant and must not write to the response before validation succeeds.
 
 ### Type Safety
 
@@ -108,6 +122,33 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Group related components in feature directories (e.g., `SidePanel/Memories/`).
 - Use index files for clean exports.
 
+### Theming and styling
+
+- **Compose before styling.** Search `@librechat/client` for an existing primitive, semantic
+  variant, or composition before adding feature-local classes or CSS.
+- **Use semantic roles.** Colors and shared appearance values must come from the semantic
+  Tailwind/theme roles. Do not add raw palette utilities, hard-coded hex/RGB/HSL colors, or
+  light/dark-specific values in feature components.
+- **Deepen the system when the need is reusable.** Add a focused variant to a shared primitive or
+  extend the canonical, versioned theme-token registry when multiple screens should share the
+  same design decision. Do not create shallow local wrappers that merely relocate class strings.
+- **Themes are data, not arbitrary CSS.** Theme definitions may select semantic colors and shared
+  appearance roles. They must not contain selectors, arbitrary CSS, application behavior, or
+  alternate feature layouts. Preserve existing environment and stored-theme compatibility when
+  changing the theme engine.
+- **Keep layout and behavior local.** Feature structure, responsive layout, state-driven
+  transitions, and specialized visualization may remain feature-owned. Expose a theme role only
+  when it represents a stable, reusable appearance decision; do not turn every measurement into a
+  global token.
+- **Treat custom CSS as an exception.** Use it only when shared primitives and semantic utilities
+  cannot express the requirement. Keep it narrowly scoped, consume theme variables where
+  applicable, support light/dark and reduced motion, and add a brief code or PR explanation of why
+  the exception is necessary.
+- **Preserve defaults and prove variability.** New theme-aware variants must reproduce the current
+  default appearance unless a redesign is explicitly requested. Test semantic-token use and, when
+  extending theme capabilities, include a deliberately different reference theme to prove that
+  components adapt without feature-specific overrides.
+
 ### Data Management
 
 - Feature hooks: `client/src/data-provider/[Feature]/queries.ts` → `[Feature]/index.ts` → `client/src/data-provider/index.ts`.
@@ -130,6 +171,16 @@ Multi-line imports count total character length across all lines. Consolidate va
 
 ---
 
+## Backend Rules (`api/**`, `packages/api/**`)
+
+### Auth cache invalidation
+
+When adding or changing code that mutates user documents, invalidate the auth user document cache
+for the affected users. This covers single-user updates as well as bulk role and user mutations.
+Without it, OpenID JWT request burst caching can serve a stale `req.user` until its TTL expires.
+
+---
+
 ## Development Commands
 
 | Command | Purpose |
@@ -143,7 +194,7 @@ Multi-line imports count total character length across all lines. Consolidate va
 | `npm run frontend:dev` | Start frontend dev server with HMR (port 3090, requires backend running) |
 | `npm run build:data-provider` | Rebuild `packages/data-provider` after changes |
 
-- Node.js: v20.19.0+ or ^22.12.0 or >= 23.0.0
+- Node.js: v24.16.0
 - Database: MongoDB
 - Backend runs on `http://localhost:3080/`; frontend dev server on `http://localhost:3090/`
 

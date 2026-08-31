@@ -17,6 +17,7 @@ const SUPERSEDED_INDEXES: Record<string, string[]> = {
     'googleId_1',
     'facebookId_1',
     'openidId_1',
+    'openidId_1_tenantId_1',
     'samlId_1',
     'ldapId_1',
     'githubId_1',
@@ -34,6 +35,7 @@ const SUPERSEDED_INDEXES: Record<string, string[]> = {
   mcpservers: ['serverName_1'],
   files: ['filename_1_conversationId_1_context_1'],
   groups: ['idOnTheSource_1_source_1'],
+  skillsyncstatuses: ['provider_1_sourceId_1'],
 };
 
 interface MigrationResult {

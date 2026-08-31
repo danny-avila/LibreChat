@@ -1,7 +1,7 @@
-import reactRouter from 'react-router-dom';
+import * as reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import { getByTestId, render, waitFor } from 'test/layout-test-utils';
 import type { TStartupConfig } from 'librechat-data-provider';
+import { getByTestId, render, waitFor } from 'test/layout-test-utils';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
@@ -114,6 +114,7 @@ const setup = ({
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
+  __esModule: true,
   useOutletContext: () => ({
     startupConfig: mockStartupConfig,
   }),
@@ -176,7 +177,7 @@ test('calls loginUser.mutate on login', async () => {
 });
 
 test('Navigates to / on successful login', async () => {
-  const { getByLabelText, history } = setup({
+  const { getByLabelText } = setup({
     // @ts-ignore - we don't need all parameters of the QueryObserverResult
     useLoginUserReturnValue: {
       isLoading: false,
@@ -202,5 +203,5 @@ test('Navigates to / on successful login', async () => {
   await userEvent.type(passwordInput, 'password');
   await userEvent.click(submitButton);
 
-  waitFor(() => expect(history.location.pathname).toBe('/'));
+  waitFor(() => expect(window.location.pathname).toBe('/'));
 });

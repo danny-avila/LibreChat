@@ -1,5 +1,5 @@
-import { SafeSearchTypes } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
+import { SafeSearchTypes, normalizeSearxngEngines } from 'librechat-data-provider';
+import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
 export const webSearchAuth = {
@@ -12,6 +12,15 @@ export const webSearchAuth = {
       /** Optional (0) */
       searxngApiKey: 0 as const,
     },
+    tavily: {
+      tavilyApiKey: 1 as const,
+      tavilySearchUrl: 0 as const,
+    },
+    keenable: {
+      /** Optional (0) — Keenable works keyless; a key only lifts rate limits */
+      keenableApiKey: 0 as const,
+      keenableApiUrl: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {
@@ -22,6 +31,16 @@ export const webSearchAuth = {
     },
     serper: {
       serperApiKey: 1 as const,
+    },
+    tavily: {
+      tavilyApiKey: 1 as const,
+      tavilyExtractUrl: 0 as const,
+    },
+    keenable: {
+      /** Optional (0) — Keenable's page fetch is keyless as well; a key only
+       * lifts rate limits. The fetch endpoint itself is overridden with the
+       * `KEENABLE_FETCH_URL` env var, not through this config. */
+      keenableApiKey: 0 as const,
     },
   },
   rerankers: {
@@ -60,8 +79,14 @@ export function getWebSearchKeys(): TWebSearchKeys[] {
 
 export const webSearchKeys: TWebSearchKeys[] = getWebSearchKeys();
 
+export const webSearchSelectionFields = {
+  selectedProvider: 'LIBRECHAT_WEB_SEARCH_PROVIDER',
+  selectedScraper: 'LIBRECHAT_WEB_SEARCH_SCRAPER',
+  selectedReranker: 'LIBRECHAT_WEB_SEARCH_RERANKER',
+} as const;
+
 export function loadWebSearchConfig(
-  config: TCustomConfig['webSearch'],
+  config: TWebSearchConfigInput | undefined,
 ): TCustomConfig['webSearch'] {
   const serperApiKey = config?.serperApiKey ?? '${SERPER_API_KEY}';
   const searxngInstanceUrl = config?.searxngInstanceUrl ?? '${SEARXNG_INSTANCE_URL}';
@@ -69,22 +94,39 @@ export function loadWebSearchConfig(
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const firecrawlVersion = config?.firecrawlVersion ?? '${FIRECRAWL_VERSION}';
+  const tavilyApiKey = config?.tavilyApiKey ?? '${TAVILY_API_KEY}';
+  const tavilySearchUrl = config?.tavilySearchUrl ?? '${TAVILY_SEARCH_URL}';
+  const tavilyExtractUrl = config?.tavilyExtractUrl ?? '${TAVILY_EXTRACT_URL}';
+  const keenableApiKey = config?.keenableApiKey ?? '${KEENABLE_API_KEY}';
+  const keenableApiUrl = config?.keenableApiUrl ?? '${KEENABLE_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
+  const rerankerType = config?.rerankerType;
+  const searxngSearchOptions = config?.searxngSearchOptions && {
+    ...config.searxngSearchOptions,
+    engines: normalizeSearxngEngines(config.searxngSearchOptions.engines),
+  };
 
   return {
-    ...config,
+    ...config, // Preserve provider-specific option blocks such as firecrawlOptions and tavilySearchOptions.
     safeSearch,
+    searxngSearchOptions,
     jinaApiKey,
     jinaApiUrl,
     cohereApiKey,
     serperApiKey,
     searxngApiKey,
+    tavilyApiKey,
+    tavilySearchUrl,
+    tavilyExtractUrl,
+    keenableApiKey,
+    keenableApiUrl,
     firecrawlApiKey,
     firecrawlApiUrl,
     firecrawlVersion,
     searxngInstanceUrl,
+    rerankerType,
   };
 }

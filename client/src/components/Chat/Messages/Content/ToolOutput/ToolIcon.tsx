@@ -1,6 +1,22 @@
-import { Constants, isActionTool } from 'librechat-data-provider';
-import { Terminal, Globe, ImageIcon, ArrowRightLeft, FileSearch, Zap, Wrench } from 'lucide-react';
+import { Constants, isActionTool, splitToolCallName } from 'librechat-data-provider';
+import {
+  Terminal,
+  Globe,
+  ImageIcon,
+  ArrowRightLeft,
+  FileSearch,
+  FileText,
+  MessageCircleQuestion,
+  ScrollText,
+  Zap,
+  Wrench,
+} from 'lucide-react';
+import LangIcon from '~/components/Messages/Content/LangIcon';
 import { cn } from '~/utils';
+
+function BashIcon({ className }: { className?: string }) {
+  return <LangIcon lang="bash" className={className} />;
+}
 
 export type ToolIconType =
   | 'mcp'
@@ -9,6 +25,10 @@ export type ToolIconType =
   | 'image_gen'
   | 'agent_handoff'
   | 'file_search'
+  | 'skill'
+  | 'read_file'
+  | 'bash_tool'
+  | 'ask_user_question'
   | 'action'
   | 'generic';
 
@@ -19,6 +39,10 @@ const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>
   image_gen: ImageIcon,
   agent_handoff: ArrowRightLeft,
   file_search: FileSearch,
+  skill: ScrollText,
+  read_file: FileText,
+  bash_tool: BashIcon,
+  ask_user_question: MessageCircleQuestion,
   action: Zap,
   generic: Wrench,
 };
@@ -45,6 +69,18 @@ export function getToolIconType(name: string): ToolIconType {
   if (name === 'code_interpreter') {
     return 'execute_code';
   }
+  if (name === 'skill') {
+    return 'skill';
+  }
+  if (name === 'read_file') {
+    return 'read_file';
+  }
+  if (name === 'bash_tool' || name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING) {
+    return 'bash_tool';
+  }
+  if (name === 'ask_user_question') {
+    return 'ask_user_question';
+  }
   if (name.startsWith(Constants.LC_TRANSFER_TO_)) {
     return 'agent_handoff';
   }
@@ -55,13 +91,12 @@ export function getToolIconType(name: string): ToolIconType {
 }
 
 /** Extracts the MCP server name from a tool name with format `tool<delimiter>server`. */
-export function getMCPServerName(toolName: string): string {
-  const idx = toolName.indexOf(Constants.mcp_delimiter);
-  if (idx < 0) {
+export function getMCPServerName(toolName: string, knownServerNames?: readonly string[]): string {
+  if (!toolName.includes(Constants.mcp_delimiter)) {
     return '';
   }
-  const afterDelimiter = toolName.slice(idx + Constants.mcp_delimiter.length);
-  return afterDelimiter || '';
+  const [, serverName] = splitToolCallName(toolName, knownServerNames);
+  return serverName ?? '';
 }
 
 interface ToolIconProps {

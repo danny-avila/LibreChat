@@ -51,16 +51,17 @@ const Image = ({
   const absoluteImageUrl = useMemo(() => {
     if (!imagePath) return imagePath;
 
-    if (
-      imagePath.startsWith('http') ||
-      imagePath.startsWith('data:') ||
-      !imagePath.startsWith('/images/')
-    ) {
+    if (imagePath.startsWith('http') || imagePath.startsWith('data:')) {
       return imagePath;
     }
 
-    const baseURL = apiBaseUrl();
-    return `${baseURL}${imagePath}`;
+    // Root-relative server paths (`/images/...` static, `/api/share/...` share
+    // routes) are resolved against the API base so they load under a subpath.
+    if (imagePath.startsWith('/images/') || imagePath.startsWith('/api/')) {
+      return `${apiBaseUrl()}${imagePath}`;
+    }
+
+    return imagePath;
   }, [imagePath]);
 
   const downloadImage = async () => {
@@ -113,7 +114,7 @@ const Image = ({
         onClick={() => setIsOpen(true)}
         className={cn(
           'relative mt-1 w-full max-w-lg cursor-pointer overflow-hidden rounded-lg border border-border-light text-text-secondary-alt shadow-md transition-shadow',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
           className,
         )}
         style={heightStyle}

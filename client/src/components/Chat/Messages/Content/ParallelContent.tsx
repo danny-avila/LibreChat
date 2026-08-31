@@ -1,12 +1,18 @@
 import { memo, useMemo } from 'react';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, SearchResultData, TAttachment } from 'librechat-data-provider';
-import { SearchContext } from '~/Providers';
+import {
+  getActivityLabelPart,
+  getActivityLabelText,
+  lastCursorContentIdx,
+} from '~/utils/activityLabels';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
-import { EmptyText } from './Parts';
+import { cn, getPartKeyIndex } from '~/utils';
+import { SearchContext } from '~/Providers';
 import SiblingHeader from './SiblingHeader';
+import { EmptyText } from './Parts';
 import Container from './Container';
-import { cn } from '~/utils';
 
 export type PartWithIndex = { part: TMessageContentParts; idx: number };
 
@@ -29,6 +35,8 @@ export type ParallelSection = {
  */
 export function groupParallelContent(
   content: Array<TMessageContentParts | undefined> | undefined,
+  contentIndexOffset = 0,
+  contentIndices?: ReadonlyArray<number>,
 ): { parallelSections: ParallelSection[]; sequentialParts: PartWithIndex[] } {
   if (!content) {
     return { parallelSections: [], sequentialParts: [] };
@@ -39,10 +47,11 @@ export function groupParallelContent(
   const placeholderAgents = new Map<number, Set<string>>();
   const noGroup: PartWithIndex[] = [];
 
-  content.forEach((part, idx) => {
+  content.forEach((part, localIdx) => {
     if (!part) {
       return;
     }
+    const idx = contentIndices?.[localIdx] ?? localIdx + contentIndexOffset;
 
     // Read metadata directly from content part (TMessageContentParts includes ContentMetadata)
     const { groupId } = part;
@@ -137,6 +146,7 @@ type ParallelColumnsProps = {
   columns: ParallelColumn[];
   groupId: number;
   messageId: string;
+  createdAt?: string | null;
   isSubmitting: boolean;
   lastContentIdx: number;
   conversationId?: string | null;
@@ -150,6 +160,7 @@ export const ParallelColumns = memo(function ParallelColumns({
   columns,
   groupId,
   messageId,
+  createdAt,
   conversationId,
   isSubmitting,
   lastContentIdx,
@@ -157,7 +168,18 @@ export const ParallelColumns = memo(function ParallelColumns({
 }: ParallelColumnsProps) {
   return (
     <div className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}>
-      {columns.map(({ agentId, parts: columnParts }, colIdx) => {
+      {columns.map(({ agentId, parts: allColumnParts }, colIdx) => {
+        /** Lanes render raw parts, so an activity label cannot become a
+         *  collapsible header here (tracked separately). An UNFILLED one has
+         *  nothing to render at all, and every batch now publishes its
+         *  reservation immediately — so drop empty labels rather than emit a
+         *  blank line into the column while generation is pending. */
+        const columnParts = allColumnParts.filter(
+          ({ part }) =>
+            part?.type !== ContentTypes.ACTIVITY_LABEL ||
+            getActivityLabelText(getActivityLabelPart(part)).length > 0,
+        );
+        const lastColumnCursorIdx = lastParallelColumnCursorIdx(columnParts);
         // Show loading cursor if column has no content parts yet (empty array from placeholder)
         const showLoadingCursor = isSubmitting && columnParts.length === 0;
 
@@ -169,6 +191,7 @@ export const ParallelColumns = memo(function ParallelColumns({
             <SiblingHeader
               agentId={agentId}
               messageId={messageId}
+              createdAt={createdAt}
               isSubmitting={isSubmitting}
               conversationId={conversationId}
             />
@@ -178,7 +201,7 @@ export const ParallelColumns = memo(function ParallelColumns({
               </Container>
             ) : (
               columnParts.map(({ part, idx }) => {
-                const isLastInColumn = idx === columnParts[columnParts.length - 1]?.idx;
+                const isLastInColumn = idx === lastColumnCursorIdx;
                 const isLastContent = idx === lastContentIdx;
                 return renderPart(part, idx, isLastInColumn && isLastContent);
               })
@@ -190,14 +213,34 @@ export const ParallelColumns = memo(function ParallelColumns({
   );
 });
 
+export function lastParallelColumnCursorIdx(
+  parts: ReadonlyArray<{ part: TMessageContentParts; idx: number }>,
+): number {
+  const relativeIdx = lastCursorContentIdx(parts.map(({ part }) => part));
+  return relativeIdx < 0 ? -1 : (parts[relativeIdx]?.idx ?? -1);
+}
+
 type ParallelContentRendererProps = {
-  content: Array<TMessageContentParts | undefined>;
+  content?: Array<TMessageContentParts | undefined>;
   messageId: string;
+  createdAt?: string | null;
   conversationId?: string | null;
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
   isSubmitting: boolean;
   renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
+  /**
+   * Author re-attribution for a part that resumes after an inline steer —
+   * returns the header node to render before that part, or null. Only the
+   * sequential before/after stretches consult it: column content already
+   * carries per-agent identity.
+   */
+  renderResumeAttribution?: (idx: number, keyIdx?: number) => React.ReactNode;
+  showDecorations?: boolean;
+  /** Absolute transcript index represented by `content[0]` in a phase slice. */
+  contentIndexOffset?: number;
+  /** Absolute transcript index for each compacted sparse segment entry. */
+  contentIndices?: ReadonlyArray<number>;
 };
 
 /**
@@ -207,18 +250,30 @@ type ParallelContentRendererProps = {
 export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   content,
   messageId,
+  createdAt,
   conversationId,
   attachments,
   searchResults,
   isSubmitting,
   renderPart,
+  renderResumeAttribution,
+  showDecorations = true,
+  contentIndexOffset = 0,
+  contentIndices,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
-    () => groupParallelContent(content),
-    [content],
+    () => groupParallelContent(content, contentIndexOffset, contentIndices),
+    [content, contentIndexOffset, contentIndices],
   );
 
-  const lastContentIdx = content.length - 1;
+  /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
+   *  filtered out of every lane, so counting it as last would leave NO
+   *  rendered part with the last-part cursor until the label fills. */
+  const relativeLastContentIdx = lastCursorContentIdx(content);
+  const lastContentIdx =
+    relativeLastContentIdx < 0
+      ? -1
+      : (contentIndices?.[relativeLastContentIdx] ?? relativeLastContentIdx + contentIndexOffset);
 
   // Split sequential parts into before/after parallel sections
   const { before, after } = useMemo(() => {
@@ -240,11 +295,17 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
 
   return (
     <SearchContext.Provider value={{ searchResults }}>
-      <MemoryArtifacts attachments={attachments} />
-      <Sources messageId={messageId} conversationId={conversationId || undefined} />
+      {showDecorations && <MemoryArtifacts attachments={attachments} />}
+      {showDecorations && (
+        <Sources messageId={messageId} conversationId={conversationId || undefined} />
+      )}
 
       {/* Sequential content BEFORE parallel sections */}
-      {before.map(({ part, idx }) => renderPart(part, idx, false))}
+      {before.flatMap(({ part, idx }) => {
+        const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
+        const rendered = renderPart(part, idx, false);
+        return attribution != null ? [attribution, rendered] : [rendered];
+      })}
 
       {/* Parallel sections - each group renders as columns */}
       {parallelSections.map(({ groupId, columns }) => (
@@ -253,6 +314,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
           columns={columns}
           groupId={groupId}
           messageId={messageId}
+          createdAt={createdAt}
           renderPart={renderPart}
           isSubmitting={isSubmitting}
           conversationId={conversationId}
@@ -261,7 +323,11 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
       ))}
 
       {/* Sequential content AFTER parallel sections */}
-      {after.map(({ part, idx }) => renderPart(part, idx, idx === lastContentIdx))}
+      {after.flatMap(({ part, idx }) => {
+        const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
+        const rendered = renderPart(part, idx, idx === lastContentIdx);
+        return attribution != null ? [attribution, rendered] : [rendered];
+      })}
     </SearchContext.Provider>
   );
 });

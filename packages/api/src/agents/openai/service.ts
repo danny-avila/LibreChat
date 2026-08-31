@@ -19,6 +19,13 @@
  * ```
  */
 import { nanoid } from 'nanoid';
+import { AgentCapabilities } from 'librechat-data-provider';
+import type {
+  FiltersConfig,
+  MessageFilterConfig,
+  MessageFilterPiiConfig,
+  StatefulCodeEnvironment,
+} from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
   ChatCompletionResponse,
@@ -29,7 +36,26 @@ import type {
   ChatMessage,
   ToolCall,
 } from './types';
+import type {
+  ExternalChatMessage,
+  ExternalMessagePart,
+  ContentTraversalLimitError,
+  TextContentFragment,
+  FileContentInput,
+} from '~/protection';
+import type { InitializeAgentParams as CoreInitializeAgentParams } from '../initialize';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { MCPRuntimeRequestBody } from '~/mcp/request';
+import type { ToolExecuteOptions } from '../handlers';
+import {
+  extractMessageContent,
+  extractModelParameterContent,
+  getBlockedOpaqueFileField,
+  getContentTraversalFragments,
+  inspectContent,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
+} from '~/protection';
 import {
   createOpenAIContentAggregator,
   createOpenAIStreamTracker,
@@ -38,7 +64,25 @@ import {
   createChunk,
   writeSSE,
 } from './handlers';
-import type { ToolExecuteOptions } from '../handlers';
+import {
+  assertModelBoundContent,
+  hasModelBoundContentProtection,
+} from '~/middleware/modelBoundContent';
+import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
+import { contentFilterUninspectableResponse } from '~/protection/files';
+import { createMCPRuntimeRequestBody } from '~/mcp/request';
+import { collectReachableAgents } from '../traversal';
+import { getDynamicToolContexts } from '../hitl';
+import { createSafeUser } from '~/utils';
+
+const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
+
+function getUserFacingProviderError(error: unknown, protectionEnabled: boolean): string {
+  if (protectionEnabled) {
+    return GENERIC_PROVIDER_ERROR;
+  }
+  return error instanceof Error ? error.message : 'An error occurred';
+}
 
 /**
  * Dependencies for the chat completion service
@@ -66,7 +110,19 @@ export interface ChatCompletionDependencies {
   ) => Promise<void>;
   /** Create agent run */
   createRun?: CreateRunFn;
-  /** App config */
+  /**
+   * App config. Optional for basic chat, but required for source-aware content
+   * protection, tenant-scoped Langfuse fanout, and agents with `execute_code`
+   * in their tools. Filter policy and tenant Langfuse keys are forwarded to
+   * `createRun`, and the helper derives `codeEnvAvailable` from
+   * `appConfig?.endpoints?.agents?.capabilities` and forwards it into
+   * `deps.initializeAgent`. When `appConfig` is omitted, the resolved
+   * `codeEnvAvailable` is `undefined`, so `initializeAgent` skips the
+   * `execute_code` → `bash_tool` + `read_file` expansion entirely and
+   * code-requesting agents silently lose sandbox tools. Pass `appConfig`
+   * (even a minimal shape with just `endpoints.agents.capabilities`) to
+   * keep tenant tracing and code execution working.
+   */
   appConfig?: AppConfig;
   /** Tool execute options for event-driven tool execution */
   toolExecuteOptions?: ToolExecuteOptions;
@@ -88,6 +144,10 @@ interface Agent {
   [key: string]: unknown;
 }
 
+interface InitializedFile extends FileContentInput {
+  file_id?: string;
+}
+
 /**
  * Initialized agent type - note: after initialization, tools become structured tool objects
  */
@@ -102,10 +162,16 @@ interface InitializedAgent {
   model_parameters?: Record<string, unknown>;
   tool_resources?: Record<string, unknown>;
   tool_options?: Record<string, unknown>;
-  attachments: unknown[];
+  attachments: InitializedFile[];
+  requestAttachments?: InitializedFile[];
+  agentContextAttachments?: InitializedFile[];
   toolContextMap: Record<string, unknown>;
+  dynamicToolContextMap?: Record<string, unknown>;
   maxContextTokens: number;
   userMCPAuthMap?: Record<string, Record<string, string>>;
+  subagentAgentConfigs?: InitializedAgent[];
+  /** Names of tools with the host-injected `intent` label param (see `agents/intent.ts`). */
+  intentToolNames?: string[];
   [key: string]: unknown;
 }
 
@@ -118,11 +184,49 @@ interface InitializeAgentParams {
   agent: Agent;
   conversationId?: string | null;
   parentMessageId?: string | null;
+  requestBody?: MCPRuntimeRequestBody;
   requestFiles?: unknown[];
-  loadTools?: LoadToolsFn;
+  loadTools?: NonNullable<CoreInitializeAgentParams['loadTools']>;
   endpointOption?: Record<string, unknown>;
   allowedProviders: Set<string>;
   isInitialAgent?: boolean;
+  /**
+   * Whether the `execute_code` capability is enabled for the run.
+   * `initializeAgent` uses this to expand `agent.tools: ['execute_code']`
+   * into the `bash_tool` + `read_file` pair — if the caller's injected
+   * `initializeAgent` implementation consults this flag, agents configured
+   * for code execution will keep working post-Phase-8. Absent / `undefined`
+   * skips the expansion (same semantics as the in-repo controllers).
+   */
+  codeEnvAvailable?: boolean;
+  /**
+   * Whether the admin-level `stateful_code_sessions` capability is enabled.
+   * Threaded to `initializeAgent` alongside `codeEnvAvailable` so this
+   * OpenAI-compatible route resolves stateful sessions identically to the
+   * in-repo controllers; absent / `undefined` disables the feature.
+   */
+  statefulSessionsAvailable?: boolean;
+  /** Deployment allowlist carried explicitly because this route's Request has no req.config. */
+  allowedStatefulCodeEnvironments?: readonly StatefulCodeEnvironment[];
+  /**
+   * Whether the admin-level `run_in_background` capability is enabled.
+   * Gates `applyBackgroundToolCalls` in `initializeAgent` (the injected
+   * `run_in_background` param + the `check_background_task` poll tool);
+   * absent / `undefined` disables background tool calls on this route.
+   */
+  backgroundToolsAvailable?: boolean;
+  /**
+   * Whether the admin-level `tool_intents` capability is enabled. Gates
+   * `applyIntentLabels` in `initializeAgent` (the injected `intent` label
+   * param); absent / `undefined` disables intent labels on this route.
+   *
+   * Boundary: injection and the capability-off sanitize operate on the
+   * `toolDefinitions`/`toolRegistry` surfaces. A custom `LoadToolsFn` that
+   * returns only structured tool INSTANCES bypasses both — such loaders
+   * must provide definition/registry surfaces to participate in intent
+   * labels (matching how the in-repo tool loader behaves).
+   */
+  toolIntentsAvailable?: boolean;
 }
 
 /**
@@ -137,6 +241,7 @@ type LoadToolsFn = (params: {
   model: string | null;
   tool_options: unknown;
   tool_resources: unknown;
+  requestBody?: MCPRuntimeRequestBody;
 }) => Promise<{
   tools: unknown[];
   toolContextMap: Record<string, unknown>;
@@ -146,6 +251,8 @@ type LoadToolsFn = (params: {
 /**
  * Create run function type
  */
+type CreateRunAppConfig = Pick<AppConfig, 'endpoints' | 'filters' | 'langfuse' | 'messageFilter'>;
+
 type CreateRunFn = (params: {
   agents: unknown[];
   messages: unknown[];
@@ -154,6 +261,8 @@ type CreateRunFn = (params: {
   customHandlers: Record<string, EventHandler>;
   requestBody: Record<string, unknown>;
   user: Record<string, unknown>;
+  tenantId?: string;
+  appConfig?: CreateRunAppConfig;
   tokenCounter?: (message: unknown) => number;
 }) => Promise<{
   Graph?: unknown;
@@ -169,7 +278,105 @@ type CreateRunFn = (params: {
  */
 interface AppConfig {
   endpoints?: Record<string, unknown>;
+  filters?: FiltersConfig;
+  langfuse?: Record<string, unknown>;
+  messageFilter?: MessageFilterConfig;
   [key: string]: unknown;
+}
+
+function selectCreateRunAppConfig(
+  appConfig: AppConfig | undefined,
+): CreateRunAppConfig | undefined {
+  if (appConfig == null) {
+    return undefined;
+  }
+  return {
+    ...(appConfig.endpoints !== undefined && { endpoints: appConfig.endpoints }),
+    ...(appConfig.filters !== undefined && { filters: appConfig.filters }),
+    ...(appConfig.langfuse !== undefined && { langfuse: appConfig.langfuse }),
+    ...(appConfig.messageFilter !== undefined && { messageFilter: appConfig.messageFilter }),
+  };
+}
+
+function inspectSubmittedRequest(
+  res: ServerResponse,
+  request: ChatCompletionRequest,
+  messages: readonly ExternalChatMessage[],
+  filters: FiltersConfig | undefined,
+  legacyPii: MessageFilterPiiConfig | undefined,
+): boolean {
+  if (filters == null && legacyPii == null) {
+    return false;
+  }
+
+  const uninspectableField = getBlockedOpaqueFileField(filters, messages);
+  if (uninspectableField != null) {
+    const response = contentFilterUninspectableResponse(uninspectableField);
+    sendErrorResponse(res, 400, response.message, 'invalid_request_error', response.error);
+    return true;
+  }
+
+  const messageFragments: TextContentFragment[] = [];
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  try {
+    for (const fragment of extractMessageContent(messages)) {
+      messageFragments.push(fragment);
+    }
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+  try {
+    messageFragments.push(...extractModelParameterContent(request));
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+
+  const finding = inspectContent(messageFragments, {
+    filters,
+    legacyPii,
+  });
+  if (finding != null) {
+    const isLegacyFilter = finding.detectorId === 'legacy-pattern';
+    const response = contentFilterBlockResponse(finding);
+    sendErrorResponse(
+      res,
+      400,
+      isLegacyFilter
+        ? `Message contains a ${finding.label}. Remove it and try again.`
+        : response.message,
+      'invalid_request_error',
+      isLegacyFilter ? 'message_filter_pii_block' : response.error,
+    );
+    return true;
+  }
+
+  const traversalError = traversalErrors.find((error) =>
+    isContentTraversalProtected({
+      error,
+      filters,
+      legacyPii,
+      roles: messages.map((message) => message.role),
+    }),
+  );
+  if (traversalError != null) {
+    sendErrorResponse(
+      res,
+      traversalError.statusCode,
+      traversalError.body.message,
+      'invalid_request_error',
+      traversalError.body.error,
+    );
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -287,6 +494,30 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
         error: `messages[${i}].role must be one of: system, user, assistant, tool`,
       };
     }
+    const toolCalls = msg.tool_calls;
+    if (toolCalls === undefined) {
+      continue;
+    }
+    if (!Array.isArray(toolCalls)) {
+      return { valid: false, error: `messages[${i}].tool_calls must be an array` };
+    }
+    for (let callIndex = 0; callIndex < toolCalls.length; callIndex++) {
+      const toolCall = toolCalls[callIndex];
+      if (toolCall == null || typeof toolCall !== 'object') {
+        continue;
+      }
+      const toolFunction = (toolCall as Record<string, unknown>).function;
+      if (toolFunction == null || typeof toolFunction !== 'object') {
+        continue;
+      }
+      const args = (toolFunction as Record<string, unknown>).arguments;
+      if (args !== undefined && typeof args !== 'string') {
+        return {
+          valid: false,
+          error: `messages[${i}].tool_calls[${callIndex}].function.arguments must be a string`,
+        };
+      }
+    }
   }
 
   if (request.conversation_id !== undefined && typeof request.conversation_id !== 'string') {
@@ -362,6 +593,18 @@ export async function createAgentChatCompletion(
   const request = validation.request;
   const agentId = request.model;
   const requestedStreaming = request.stream === true;
+  const filters = deps.appConfig?.filters;
+  const legacyPii = deps.appConfig?.messageFilter?.pii;
+  const submittedMessages: readonly ExternalChatMessage[] = request.messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content)
+      ? message.content.map<ExternalMessagePart>((part) => ({ ...part }))
+      : (message.content ?? undefined),
+  }));
+
+  if (inspectSubmittedRequest(res, request, submittedMessages, filters, legacyPii)) {
+    return;
+  }
 
   // Look up the agent
   const agent = await deps.getAgent({ id: agentId });
@@ -379,6 +622,17 @@ export async function createAgentChatCompletion(
   // Generate IDs
   const requestId = `chatcmpl-${nanoid()}`;
   const conversationId = request.conversation_id ?? nanoid();
+  let mcpParentMessageId: string | null | undefined;
+  if (typeof request.parent_message_id === 'string' && request.parent_message_id.trim() !== '') {
+    mcpParentMessageId = request.parent_message_id;
+  } else if (request.conversation_id == null) {
+    mcpParentMessageId = null;
+  }
+  const mcpRequestBody = createMCPRuntimeRequestBody({
+    messageId: requestId,
+    conversationId,
+    parentMessageId: mcpParentMessageId,
+  });
   const created = Math.floor(Date.now() / 1000);
 
   // Build response context
@@ -400,6 +654,56 @@ export async function createAgentChatCompletion(
     // Build allowed providers set (empty = all allowed)
     const allowedProviders = new Set<string>();
 
+    /**
+     * Derive `codeEnvAvailable` from the caller-supplied `appConfig` so
+     * `agent.tools: ['execute_code']` still produces `bash_tool` +
+     * `read_file` in the initialized agent's `toolDefinitions` (Phase 8
+     * removed the legacy `execute_code` tool definition, so the
+     * capability flag is the sole gate). Uses the
+     * `AgentCapabilities.execute_code` enum value rather than a string
+     * literal so an enum rename propagates here automatically. Falls
+     * back to `undefined` when the caller doesn't provide `appConfig` —
+     * matching the "explicit opt-in" semantics the in-repo controllers
+     * use.
+     */
+    const agentsConfig = (deps.appConfig?.endpoints as Record<string, unknown> | undefined)?.agents;
+    const capabilityEnabled = (capability: AgentCapabilities): boolean | undefined =>
+      agentsConfig != null && typeof agentsConfig === 'object'
+        ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(capability)
+        : undefined;
+    const codeEnvAvailable = capabilityEnabled(AgentCapabilities.execute_code);
+    /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
+     *  also carries each agent's trusted stateful endpoint/profile selection
+     *  into tool loading and prewarming. */
+    const statefulSessionsAvailable = capabilityEnabled(AgentCapabilities.stateful_code_sessions);
+    const allowedStatefulCodeEnvironments =
+      agentsConfig != null && typeof agentsConfig === 'object'
+        ? (
+            agentsConfig as {
+              statefulCodeSessions?: {
+                allowedEnvironments?: readonly StatefulCodeEnvironment[];
+              };
+            }
+          ).statefulCodeSessions?.allowedEnvironments
+        : undefined;
+    /** Same gate as the in-repo controllers: without it, agents that opted
+     *  tools in via tool_options.run_in_background silently lose the
+     *  background param + poll tool on this route. */
+    const backgroundToolsAvailable = capabilityEnabled(AgentCapabilities.run_in_background);
+    /** Same gate for the injected `intent` label param. */
+    const toolIntentsAvailable = capabilityEnabled(AgentCapabilities.tool_intents);
+    const loadTools: InitializeAgentParams['loadTools'] = deps.loadAgentTools
+      ? async (params) => {
+          const result = await deps.loadAgentTools!({
+            req,
+            res,
+            ...params,
+            requestBody: mcpRequestBody,
+          });
+          return result as Awaited<ReturnType<NonNullable<CoreInitializeAgentParams['loadTools']>>>;
+        }
+      : undefined;
+
     // Initialize the agent first to check for disableStreaming
     const initializedAgent = await deps.initializeAgent({
       req,
@@ -407,13 +711,36 @@ export async function createAgentChatCompletion(
       agent,
       conversationId,
       parentMessageId: request.parent_message_id,
-      loadTools: deps.loadAgentTools,
+      requestBody: mcpRequestBody,
+      loadTools,
       endpointOption: {
         endpoint: agent.provider,
         model_parameters: agent.model_parameters ?? {},
       },
       allowedProviders,
       isInitialAgent: true,
+      codeEnvAvailable,
+      statefulSessionsAvailable,
+      allowedStatefulCodeEnvironments,
+      backgroundToolsAvailable,
+      toolIntentsAvailable,
+    });
+
+    const modelBoundAgents = collectReachableAgents([initializedAgent]);
+    const modelBoundFiles: InitializedFile[] = [];
+    for (const modelBoundAgent of modelBoundAgents) {
+      modelBoundFiles.push(
+        ...(modelBoundAgent.attachments ?? []),
+        ...(modelBoundAgent.requestAttachments ?? []),
+        ...(modelBoundAgent.agentContextAttachments ?? []),
+      );
+    }
+    assertModelBoundContent({
+      filters,
+      legacyPii,
+      submittedMessages,
+      agents: modelBoundAgents,
+      files: [...modelBoundFiles, ...getDynamicToolContexts(modelBoundAgents)],
     });
 
     // Determine if streaming is enabled (check both request and agent config)
@@ -459,19 +786,27 @@ export async function createAgentChatCompletion(
 
     // Create and run the agent
     if (deps.createRun) {
-      const userId = (req as unknown as { user?: { id?: string } }).user?.id ?? 'api-user';
-
+      const reqUser = (req as unknown as { user?: Parameters<typeof createSafeUser>[0] }).user;
+      const userId = reqUser?.id ?? 'api-user';
+      /**
+       * Propagate the full safe user (id + role), matching the in-repo agent
+       * controllers (responses.js / openai.js). The runtime MCP permission
+       * check reads `configurable.user`; passing only `user_id` would make
+       * every MCP tool call fail closed for an authenticated caller. When the
+       * host app didn't attach a user, this falls back to a bare id, which
+       * correctly leaves MCP gated.
+       */
+      const safeUser: Record<string, unknown> = { ...createSafeUser(reqUser), id: userId };
       const run = await deps.createRun({
         agents: [initializedAgent],
         messages,
         runId: requestId,
         signal: abortController.signal,
         customHandlers: eventHandlers,
-        requestBody: {
-          messageId: requestId,
-          conversationId,
-        },
-        user: { id: userId },
+        requestBody: mcpRequestBody,
+        user: safeUser,
+        tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
+        appConfig: selectCreateRunAppConfig(deps.appConfig),
       });
 
       if (run) {
@@ -482,6 +817,15 @@ export async function createAgentChatCompletion(
             configurable: {
               thread_id: conversationId,
               user_id: userId,
+              user: safeUser,
+              requestBody: mcpRequestBody,
+              /** Same per-agent channel the in-repo controllers thread via
+               *  `loadTools`: without it, the executor's PTC path cannot
+               *  strip host-injected `intent` params from the schemas the
+               *  sandbox bridge advertises on this route. */
+              ...(initializedAgent.intentToolNames?.length
+                ? { intentToolNames: initializedAgent.intentToolNames }
+                : {}),
             },
             signal: abortController.signal,
             streamMode: 'values',
@@ -516,8 +860,20 @@ export async function createAgentChatCompletion(
       res.json(response);
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-
+    if (isContentFilterError(error) && !res.headersSent) {
+      sendErrorResponse(
+        res,
+        error.statusCode,
+        error.body.message,
+        'invalid_request_error',
+        error.body.error,
+      );
+      return;
+    }
+    const errorMessage = getUserFacingProviderError(
+      error,
+      hasModelBoundContentProtection(filters, legacyPii),
+    );
     // Check if we already started streaming (headers sent)
     if (res.headersSent) {
       // Headers already sent, try to send error in stream format
@@ -526,7 +882,27 @@ export async function createAgentChatCompletion(
       writeSSE(res, '[DONE]');
       res.end();
     } else {
-      sendErrorResponse(res, 500, errorMessage, 'server_error');
+      const candidateStatus =
+        error != null && typeof error === 'object'
+          ? ((error as { status?: unknown; statusCode?: unknown }).status ??
+            (error as { statusCode?: unknown }).statusCode)
+          : undefined;
+      const statusCode =
+        typeof candidateStatus === 'number' &&
+        Number.isInteger(candidateStatus) &&
+        candidateStatus >= 400 &&
+        candidateStatus < 600
+          ? candidateStatus
+          : 500;
+      const errorType =
+        statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
+      const errorCode =
+        error != null &&
+        typeof error === 'object' &&
+        typeof (error as { code?: unknown }).code === 'string'
+          ? (error as { code: string }).code
+          : null;
+      sendErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
     }
   }
 }

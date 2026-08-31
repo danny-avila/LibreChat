@@ -34,6 +34,18 @@ describe('isSafeRedirect', () => {
     expect(isSafeRedirect('evil.com')).toBe(false);
   });
 
+  it('rejects a backslash protocol-relative URL (CVE-2025-68470 class)', () => {
+    expect(isSafeRedirect('/\\evil.com')).toBe(false);
+  });
+
+  it('rejects a double-backslash URL', () => {
+    expect(isSafeRedirect('\\\\evil.com')).toBe(false);
+  });
+
+  it('rejects a backslash anywhere in the path', () => {
+    expect(isSafeRedirect('/c/new\\x')).toBe(false);
+  });
+
   it('rejects an empty string', () => {
     expect(isSafeRedirect('')).toBe(false);
   });
@@ -100,6 +112,17 @@ describe('getPostLoginRedirect', () => {
 
   it('rejects a protocol-relative URL from params', () => {
     const params = new URLSearchParams('redirect_to=%2F%2Fevil.com');
+    expect(getPostLoginRedirect(params)).toBeNull();
+  });
+
+  it('rejects an encoded backslash URL from params', () => {
+    const params = new URLSearchParams('redirect_to=%2F%5Cevil.com');
+    expect(getPostLoginRedirect(params)).toBeNull();
+  });
+
+  it('rejects a backslash URL from sessionStorage', () => {
+    sessionStorage.setItem(SESSION_KEY, '/\\evil.com');
+    const params = new URLSearchParams();
     expect(getPostLoginRedirect(params)).toBeNull();
   });
 

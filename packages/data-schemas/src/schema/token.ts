@@ -40,5 +40,6 @@ const tokenSchema: Schema<IToken> = new Schema({
 });
 
 tokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+tokenSchema.index({ userId: 1, type: 1, identifier: 1, tenantId: 1 });
 
 export default tokenSchema;

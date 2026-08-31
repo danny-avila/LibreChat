@@ -6,15 +6,17 @@ import {
   getTokenCountForMessage,
   estimateOpenAIImageTokens,
   estimateAnthropicImageTokens,
+  markTokenCounterCacheCompatible,
 } from '@librechat/agents';
-import type { MessageContentComplex } from '@librechat/agents';
+import type { MessageContentComplex, TokenCounter } from '@librechat/agents';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent, TMessage } from 'librechat-data-provider';
-import type { BaseMessage } from '@langchain/core/messages';
 import type { ServerRequest } from '~/types';
+import { getSafeErrorMetadata, mergeQuotedText, formatQuotesAsMarkdown } from '~/utils';
+import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
 import Tokenizer from '~/utils/tokenizer';
-import { logAxiosError } from '~/utils';
 
-export const omitTitleOptions = new Set([
+export const omitTitleOptions: Set<string> = new Set([
   'stream',
   'thinking',
   'streaming',
@@ -26,7 +28,13 @@ export const omitTitleOptions = new Set([
   'additionalModelRequestFields',
 ]);
 
-export function payloadParser({ req, endpoint }: { req: ServerRequest; endpoint: string }) {
+export function payloadParser({
+  req,
+  endpoint,
+}: {
+  req: ServerRequest;
+  endpoint: string;
+}): Record<string, unknown> | undefined {
   if (isAgentsEndpoint(endpoint)) {
     return;
   }
@@ -55,6 +63,108 @@ type ContentBlock = {
   text?: string;
   tool_call?: { name?: string; args?: string; output?: string };
 };
+
+export type FormattedMessageContentPart = {
+  type?: string;
+  text?: string;
+  [key: string]: unknown;
+};
+
+export type FormattedMessageWithContent = {
+  role?: string;
+  content?: string | FormattedMessageContentPart[];
+};
+
+/**
+ * Substitutes stand-in text for a user turn that carries attachments but has
+ * nothing the provider can see: file search and code environment files reach
+ * the model out-of-band, so the content stays empty and Anthropic rejects the
+ * message outright. Apply after the file-context and quote merges so a turn
+ * that already gained inline content is left alone. The stored `message.text`
+ * keeps its empty value, so the UI still renders the attachment on its own.
+ *
+ * Takes the turn's files rather than the message because the current turn does
+ * not carry them yet: `BaseClient` assigns `userMessage.files` only after
+ * `buildMessages` returns, so callers pass the resolved attachments instead.
+ */
+export function applyAttachmentOnlyText(
+  formattedMessage: FormattedMessageWithContent,
+  files?: TMessage['files'] | null,
+): void {
+  if (formattedMessage.role !== 'user' || !files?.length) {
+    return;
+  }
+
+  if (formattedMessage.content !== '') {
+    return;
+  }
+
+  formattedMessage.content = ATTACHMENT_ONLY_TEXT;
+}
+
+export function prependFileContext(
+  formattedMessage: FormattedMessageWithContent,
+  fileContext?: string | null,
+): void {
+  if (!fileContext) {
+    return;
+  }
+
+  if (typeof formattedMessage.content === 'string') {
+    formattedMessage.content = `${fileContext}\n${formattedMessage.content}`;
+    return;
+  }
+
+  if (!Array.isArray(formattedMessage.content)) {
+    return;
+  }
+
+  const textPart = formattedMessage.content.find((part) => part.type === ContentTypes.TEXT);
+  if (textPart != null && typeof textPart.text === 'string') {
+    textPart.text = `${fileContext}\n${textPart.text}`;
+    return;
+  }
+
+  formattedMessage.content.unshift({ type: ContentTypes.TEXT, text: fileContext });
+}
+
+/**
+ * Prepends quoted excerpts (the "Add to chat" selections persisted on
+ * `message.quotes`) to a formatted message's content as Markdown blockquotes.
+ * Applied to every user message that carries quotes — current and historical —
+ * so the model durably receives the referenced context and the token count
+ * stays consistent with what was persisted. The stored `message.text` is left
+ * clean; the excerpts live on `message.quotes` for the UI.
+ */
+export function prependQuotes(
+  formattedMessage: FormattedMessageWithContent,
+  quotes?: string[] | null,
+): void {
+  if (quotes == null || quotes.length === 0) {
+    return;
+  }
+  const block = formatQuotesAsMarkdown(quotes);
+  if (block.length === 0) {
+    return;
+  }
+
+  if (typeof formattedMessage.content === 'string') {
+    formattedMessage.content = mergeQuotedText(formattedMessage.content, quotes);
+    return;
+  }
+
+  if (!Array.isArray(formattedMessage.content)) {
+    return;
+  }
+
+  const textPart = formattedMessage.content.find((part) => part.type === ContentTypes.TEXT);
+  if (textPart != null && typeof textPart.text === 'string') {
+    textPart.text = mergeQuotedText(textPart.text, quotes);
+    return;
+  }
+
+  formattedMessage.content.unshift({ type: ContentTypes.TEXT, text: block });
+}
 
 function estimateImageDataTokens(data: string, isClaude: boolean): number {
   const dims = extractImageDimensions(data);
@@ -205,7 +315,12 @@ export function countFormattedMessageTokens(
           continue;
         }
 
-        if (type === ContentTypes.THINK || type === ContentTypes.ERROR) {
+        if (
+          type === ContentTypes.THINK ||
+          type === ContentTypes.ERROR ||
+          // UI-only progress headers — never model input, never billed output
+          type === ContentTypes.ACTIVITY_LABEL
+        ) {
           continue;
         }
 
@@ -264,10 +379,20 @@ export function countFormattedMessageTokens(
   return isClaude ? Math.ceil(numTokens * CLAUDE_TOKEN_CORRECTION) : numTokens;
 }
 
-export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getTokenCount>[1]) {
+export function createTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+): TokenCounter {
+  return createMessageTokenCounter(encoding, (text: string) =>
+    Tokenizer.getTokenCount(text, encoding),
+  );
+}
+
+function createMessageTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+  countTokens: (text: string) => number,
+): TokenCounter {
   const isClaude = encoding === 'claude';
-  const countTokens = (text: string) => Tokenizer.getTokenCount(text, encoding);
-  return function (message: BaseMessage) {
+  return function (message: BaseMessage): number {
     const count = getTokenCountForMessage(
       message,
       countTokens,
@@ -277,11 +402,28 @@ export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getToke
   };
 }
 
-export function logToolError(_graph: unknown, error: unknown, toolId: string) {
-  logAxiosError({
-    error,
-    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
-  });
+export async function createCachedTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+): Promise<TokenCounter> {
+  const countTokens = await Tokenizer.createExactTokenCounter(encoding ?? 'o200k_base');
+  return markTokenCounterCacheCompatible(createMessageTokenCounter(encoding, countTokens));
+}
+
+export function logToolError(_graph: unknown, error: unknown, toolId: string): void {
+  /**
+   * A GraphInterrupt unwinding out of a tool body is the HITL pause working as
+   * designed (e.g. `ask_user_question` raising LangGraph `interrupt()`), not a
+   * tool failure — logging it as a Tool Error at error level is alarming noise.
+   * Name-based check: the class arrives from `@langchain/langgraph` inside
+   * `@librechat/agents`, so an instanceof against our own import can miss.
+   */
+  if ((error as Error | undefined)?.name === 'GraphInterrupt') {
+    return;
+  }
+  logger.error(
+    `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
+    getSafeErrorMetadata(error),
+  );
 }
 
 const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
@@ -398,7 +540,10 @@ export function createMultiAgentMapper(primaryAgent: Agent, agentConfigs?: Map<s
 
       return { ...message, content: finalContent as TMessage['content'] };
     } catch (error) {
-      logger.error('[AgentClient] Error processing multi-agent message:', error);
+      logger.error(
+        '[AgentClient] Error processing multi-agent message:',
+        getSafeErrorMetadata(error),
+      );
       return message;
     }
   };

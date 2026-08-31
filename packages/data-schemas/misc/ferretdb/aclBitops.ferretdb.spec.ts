@@ -5,10 +5,13 @@ import { createAclEntryMethods } from '~/methods/aclEntry';
 import aclEntrySchema from '~/schema/aclEntry';
 
 /**
- * Integration tests for $bit and $bitsAllSet on FerretDB.
+ * Integration tests for ACL bitwise operations on FerretDB.
  *
- * Validates that modifyPermissionBits (using atomic $bit)
- * and $bitsAllSet queries work identically on both MongoDB and FerretDB.
+ * Validates that `modifyPermissionBits` (using the atomic `$bit` operator) and
+ * the application-layer bitwise filtering used by `hasPermission` /
+ * `findAccessibleResources` behave identically on both MongoDB and FerretDB.
+ * The query methods no longer use `$bitsAllSet` — see #12729 for the Cosmos DB
+ * compatibility fix that moved the bit mask into application code.
  *
  * Run against FerretDB:
  *   FERRETDB_URI="mongodb://ferretdb:ferretdb@127.0.0.1:27020/aclbit_test" npx jest aclBitops.ferretdb
@@ -282,7 +285,7 @@ describeIfFerretDB('ACL bitwise operations - FerretDB compatibility', () => {
     });
   });
 
-  describe('$bitsAllSet queries (hasPermission + findAccessibleResources)', () => {
+  describe('Bitwise permission queries (hasPermission + findAccessibleResources)', () => {
     it('should find entries with specific bits set via hasPermission', async () => {
       const resourceId = new mongoose.Types.ObjectId();
 

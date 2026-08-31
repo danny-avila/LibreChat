@@ -1,3 +1,4 @@
+const { AuthType } = require('librechat-data-provider');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 
 /**
@@ -7,9 +8,16 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
  * @param {string[]} params.authFields
  * @param {Set<string>} [params.optional]
  * @param {boolean} [params.throwError]
+ * @param {boolean} [params.failOnOptionalError]
  * @returns
  */
-const loadAuthValues = async ({ userId, authFields, optional, throwError = true }) => {
+const loadAuthValues = async ({
+  userId,
+  authFields,
+  optional,
+  throwError = true,
+  failOnOptionalError = false,
+}) => {
   let authValues = {};
 
   /**
@@ -19,17 +27,20 @@ const loadAuthValues = async ({ userId, authFields, optional, throwError = true 
    */
   const findAuthValue = async (fields) => {
     for (const field of fields) {
-      let value = process.env[field];
-      if (value) {
-        return { authField: field, authValue: value };
+      const envValue = process.env[field];
+      if (envValue && envValue.trim() !== '' && envValue !== AuthType.USER_PROVIDED) {
+        return { authField: field, authValue: envValue };
       }
+      let value;
       try {
         value = await getUserPluginAuthValue(userId, field, throwError);
       } catch (err) {
-        if (optional && optional.has(field)) {
+        const isOptional = optional && optional.has(field);
+        const isMissingOptional = isOptional && err?.code === 'PLUGIN_AUTH_NOT_FOUND';
+        if (isOptional && (!failOnOptionalError || isMissingOptional)) {
           return { authField: field, authValue: undefined };
         }
-        if (field === fields[fields.length - 1] && !value) {
+        if (field === fields[fields.length - 1]) {
           throw err;
         }
       }
@@ -40,9 +51,11 @@ const loadAuthValues = async ({ userId, authFields, optional, throwError = true 
     return null;
   };
 
-  for (let authField of authFields) {
-    const fields = authField.split('||');
-    const result = await findAuthValue(fields);
+  const results = await Promise.all(
+    authFields.map((authField) => findAuthValue(authField.split('||'))),
+  );
+
+  for (const result of results) {
     if (result) {
       authValues[result.authField] = result.authValue;
     }

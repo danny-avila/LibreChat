@@ -24,7 +24,7 @@ export async function loadDefaultInterface({
 
   const memoryConfig = config?.memory;
   const memoryEnabled = isMemoryEnabled(memoryConfig);
-  /** Only disable memories if memory config is present but disabled/invalid */
+  /** Only disable memories if memory config is present and explicitly disabled */
   const shouldDisableMemories = memoryConfig && !memoryEnabled;
 
   const loadedInterface: AppConfig['interfaceConfig'] = removeNullishValues({
@@ -38,21 +38,34 @@ export async function loadDefaultInterface({
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+    autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
+    buildInfo: interfaceConfig?.buildInfo ?? defaults.buildInfo,
+    contextUsage: interfaceConfig?.contextUsage ?? defaults.contextUsage,
+    contextCost: interfaceConfig?.contextCost ?? defaults.contextCost,
+    feedback: interfaceConfig?.feedback ?? defaults.feedback,
+    currency: interfaceConfig?.currency ?? defaults.currency,
 
-    // Permissions - only include if explicitly configured
+    // Permissions and related settings - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,
     memories: shouldDisableMemories ? false : interfaceConfig?.memories,
     prompts: interfaceConfig?.prompts,
     multiConvo: interfaceConfig?.multiConvo,
     agents: interfaceConfig?.agents,
     temporaryChat: interfaceConfig?.temporaryChat,
+    temporaryChatRetention: interfaceConfig?.temporaryChatRetention,
+    retentionMode: interfaceConfig?.retentionMode,
+    retainAgentFiles: interfaceConfig?.retainAgentFiles,
     runCode: interfaceConfig?.runCode,
     webSearch: interfaceConfig?.webSearch,
     fileSearch: interfaceConfig?.fileSearch,
     fileCitations: interfaceConfig?.fileCitations,
+    defaultPinnedTools: interfaceConfig?.defaultPinnedTools,
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,
     remoteAgents: interfaceConfig?.remoteAgents,
+    skills: interfaceConfig?.skills,
+    sharedLinks: interfaceConfig?.sharedLinks,
+    schedules: interfaceConfig?.schedules,
   });
 
   return loadedInterface;

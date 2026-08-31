@@ -6,6 +6,7 @@ import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';
+const langChainModelNotFoundUrl = /langchain\.com\/.*\/MODEL_NOT_FOUND(?:\/|\b)/i;
 
 type TConcurrent = {
   limit: number;
@@ -75,6 +76,8 @@ const errorMessages = {
     return info;
   },
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
+  [ErrorTypes.GOOGLE_VIDEO_UNPROCESSABLE]: 'com_error_google_video_unprocessable',
+  [ErrorTypes.RESOURCE_RECOVERY_REQUIRED]: 'com_error_resource_recovery_required',
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
@@ -100,9 +103,13 @@ const errorMessages = {
       windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
     }.`;
   },
-  token_balance: (json: TTokenBalance) => {
+  token_balance: (json: TTokenBalance, localize: LocalizeFunction) => {
     const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
+    const message = localize('com_error_token_balance', {
+      0: balance,
+      1: promptTokens,
+      2: tokenCost,
+    });
     return (
       <>
         {message}
@@ -129,6 +136,10 @@ const Error = ({ text }: { text: string }) => {
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
+
+  if (langChainModelNotFoundUrl.test(text)) {
+    return localize('com_error_model_not_found');
+  }
 
   if (!isJson(jsonString)) {
     return defaultResponse;

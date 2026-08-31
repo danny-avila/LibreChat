@@ -218,17 +218,17 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
             {/* Sticky wrapper for search bar and categories */}
             <div className="sticky top-0 z-10 mt-4 bg-presentation pb-4 md:mt-0">
               <div className="container mx-auto max-w-4xl px-4">
-                <div className="mx-auto mb-3 flex max-w-2xl items-center justify-between gap-2 md:hidden">
-                  <OpenSidebar />
-                  <MarketplaceAdminSettings compact />
-                </div>
+                {isSmallScreen ? (
+                  <div className="mx-auto mb-3 flex max-w-2xl items-center justify-between gap-2">
+                    <OpenSidebar />
+                    <MarketplaceAdminSettings compact />
+                  </div>
+                ) : null}
                 {/* Search bar */}
                 <div className="mx-auto flex max-w-2xl gap-2 pb-6">
                   <SearchBar value={searchQuery} onSearch={handleSearch} />
                   {/* TODO: Remove this once we have a better way to handle admin settings */}
-                  <div className="hidden md:block">
-                    <MarketplaceAdminSettings />
-                  </div>
+                  {!isSmallScreen && <MarketplaceAdminSettings />}
                 </div>
 
                 {/* Category tabs */}

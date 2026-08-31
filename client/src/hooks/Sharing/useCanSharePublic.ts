@@ -6,6 +6,8 @@ const resourceToPermissionMap: Partial<Record<ResourceType, PermissionTypes>> = 
   [ResourceType.PROMPTGROUP]: PermissionTypes.PROMPTS,
   [ResourceType.MCPSERVER]: PermissionTypes.MCP_SERVERS,
   [ResourceType.REMOTE_AGENT]: PermissionTypes.REMOTE_AGENTS,
+  [ResourceType.SKILL]: PermissionTypes.SKILLS,
+  [ResourceType.SHARED_LINK]: PermissionTypes.SHARED_LINKS,
 };
 
 /**
@@ -16,7 +18,7 @@ const resourceToPermissionMap: Partial<Record<ResourceType, PermissionTypes>> = 
 export const useCanSharePublic = (resourceType: ResourceType): boolean => {
   const permissionType = resourceToPermissionMap[resourceType];
   const hasAccess = useHasAccess({
-    permissionType,
+    permissionType: permissionType as PermissionTypes,
     permission: Permissions.SHARE_PUBLIC,
   });
   return hasAccess;

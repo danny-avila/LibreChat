@@ -18,6 +18,7 @@ import type {
   ReasoningTextContent,
   ItemStatus,
   ResponseStatus,
+  Usage,
 } from './types';
 
 /* =============================================================================
@@ -124,6 +125,7 @@ export function buildResponse(
   context: ResponseContext,
   tracker: ResponseTracker,
   status: ResponseStatus = 'in_progress',
+  usageOverride?: Usage,
 ): Response {
   const isCompleted = status === 'completed';
 
@@ -153,13 +155,13 @@ export function buildResponse(
     reasoning: null,
     user: null,
     usage: isCompleted
-      ? {
+      ? (usageOverride ?? {
           input_tokens: tracker.usage.inputTokens,
           output_tokens: tracker.usage.outputTokens,
           total_tokens: tracker.usage.inputTokens + tracker.usage.outputTokens,
           input_tokens_details: { cached_tokens: tracker.usage.cachedTokens },
           output_tokens_details: { reasoning_tokens: tracker.usage.reasoningTokens },
-        }
+        })
       : null,
     max_output_tokens: null,
     max_tool_calls: null,
@@ -308,10 +310,10 @@ export function emitResponseInProgress(config: StreamHandlerConfig): void {
 /**
  * Emit response.completed event
  */
-export function emitResponseCompleted(config: StreamHandlerConfig): void {
+export function emitResponseCompleted(config: StreamHandlerConfig, usage?: Usage): void {
   const { res, context, tracker } = config;
   tracker.status = 'completed';
-  const response = buildResponse(context, tracker, 'completed');
+  const response = buildResponse(context, tracker, 'completed', usage);
   writeEvent(res, {
     type: 'response.completed',
     sequence_number: tracker.nextSequence(),
@@ -823,6 +825,25 @@ export interface AttachmentData {
   height?: number;
   /** Associated tool call ID */
   tool_call_id?: string;
+  /**
+   * Inline text or sanitized HTML preview (sized to MAX_TEXT_CACHE_BYTES).
+   * Populated by `extractCodeArtifactText` for tool-output files: raw text
+   * for plain-text artifacts, sanitized rich HTML for office formats
+   * (DOCX/XLSX/CSV/PPTX). The frontend feeds HTML through the Sandpack
+   * `static` template via `index.html`. Null if extraction was unavailable
+   * (binary, oversized, or unsupported).
+   */
+  text?: string | null;
+  /**
+   * Format of the `text` field — `'html'` if `text` is a complete
+   * sanitized HTML document the client is permitted to inject into the
+   * iframe via `index.html`, `'text'` if it's plain text. Clients MUST
+   * gate office-bucket routing on `textFormat === 'html'`; legacy
+   * attachments and RAG-extracted plain text don't have this set and
+   * must default to safe (markdown-escaped) rendering. Codex P1 review
+   * on PR #12934.
+   */
+  textFormat?: 'html' | 'text' | null;
   /** Additional metadata */
   [key: string]: unknown;
 }

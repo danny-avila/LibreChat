@@ -6,13 +6,45 @@ const {
   countTokens,
   GenerationJobManager,
   recordCollectedUsage,
+  getTransactionsConfig,
   sanitizeMessageForTransmit,
+  buildAbortedResponseMetadata,
 } = require('@librechat/api');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
 const { abortRun } = require('./abortRun');
 const db = require('~/models');
+
+/**
+ * @param {Error | unknown} error
+ * @returns {boolean}
+ */
+const isAbortError = (error) => {
+  const visited = new Set();
+  let current = error;
+
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+
+    const errorName = current.name;
+    const errorCode = current.code;
+    const errorMessage = typeof current.message === 'string' ? current.message : '';
+
+    if (
+      errorName === 'AbortError' ||
+      errorCode === 'ABORT_ERR' ||
+      errorMessage.includes('AbortError') ||
+      /(?:operation|request|stream) was aborted/i.test(errorMessage)
+    ) {
+      return true;
+    }
+
+    current = current.cause;
+  }
+
+  return false;
+};
 
 /**
  * Spend tokens for all models from collected usage.
@@ -28,6 +60,7 @@ const db = require('~/models');
  * @param {Array<Object>} params.collectedUsage - Usage metadata from all models
  * @param {string} [params.fallbackModel] - Fallback model name if not in usage
  * @param {string} [params.messageId] - The response message ID for transaction correlation
+ * @param {AppConfig['transactions']} [params.transactions] - Resolved transactions config
  */
 async function spendCollectedUsage({
   userId,
@@ -35,6 +68,7 @@ async function spendCollectedUsage({
   collectedUsage,
   fallbackModel,
   messageId,
+  transactions,
 }) {
   if (!collectedUsage || collectedUsage.length === 0) {
     return;
@@ -54,6 +88,7 @@ async function spendCollectedUsage({
       context: 'abort',
       messageId,
       model: fallbackModel,
+      transactions,
     },
   );
 
@@ -110,6 +145,16 @@ async function abortMessage(req, res) {
     tokenCount: completionTokens,
   };
 
+  /** Persist the usage/cost rollup + context breakdown for the stopped response
+   *  so its branch/total cost and granular rows survive a reload, matching the
+   *  normal completion path. */
+  const abortMetadata = buildAbortedResponseMetadata(jobData);
+  if (abortMetadata) {
+    responseMessage.metadata = abortMetadata;
+  }
+
+  const transactions = getTransactionsConfig(req.config);
+
   // Spend tokens for ALL models from collectedUsage (handles parallel agents/addedConvo)
   if (collectedUsage && collectedUsage.length > 0) {
     await spendCollectedUsage({
@@ -118,11 +163,12 @@ async function abortMessage(req, res) {
       collectedUsage,
       fallbackModel: jobData?.model,
       messageId: jobData?.responseMessageId,
+      transactions,
     });
   } else {
     // Fallback: no collected usage, use text-based token counting for primary model only
     await db.spendTokens(
-      { ...responseMessage, context: 'incomplete', user: userId },
+      { ...responseMessage, context: 'incomplete', user: userId, transactions },
       { promptTokens, completionTokens },
     );
   }
@@ -150,6 +196,7 @@ async function abortMessage(req, res) {
           parentMessageId: jobData.userMessage.parentMessageId,
           conversationId: jobData.userMessage.conversationId,
           text: jobData.userMessage.text,
+          quotes: jobData.userMessage.quotes,
           isCreatedByUser: true,
         })
       : null,
@@ -190,18 +237,26 @@ const handleAbort = function () {
  * @returns {Promise<void>}
  */
 const handleAbortError = async (res, req, error, data) => {
+  const { sender, conversationId, messageId, parentMessageId, userMessageId, partialText } = data;
+
   if (error?.message?.includes('base64')) {
     logger.error('[handleAbortError] Error in base64 encoding', {
       ...error,
       stack: smartTruncateText(error?.stack, 1000),
       message: truncateText(error.message, 350),
     });
+  } else if (isAbortError(error)) {
+    logger.debug('[handleAbortError] AI response aborted by user', {
+      conversationId,
+      code: error?.code,
+      name: error?.name,
+      message: truncateText(error?.message ?? 'AbortError', 350),
+    });
   } else {
     logger.error('[handleAbortError] AI response error; aborting request:', error);
   }
-  const { sender, conversationId, messageId, parentMessageId, userMessageId, partialText } = data;
 
-  if (error.stack && error.stack.includes('google')) {
+  if (error?.stack && error.stack.includes('google')) {
     logger.warn(
       `AI Response error for conversation ${conversationId} likely caused by Google censor/filter`,
     );

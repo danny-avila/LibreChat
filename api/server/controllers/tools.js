@@ -1,7 +1,11 @@
 const { nanoid } = require('nanoid');
-const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { checkAccess, loadWebSearchAuth } = require('@librechat/api');
+const {
+  checkAccess,
+  assertDirectToolOutputAllowed,
+  loadWebSearchAuth,
+  isContentFilterError,
+} = require('@librechat/api');
 const {
   Tools,
   AuthType,
@@ -11,13 +15,18 @@ const {
 } = require('librechat-data-provider');
 const { getRoleByName, createToolCall, getToolCallsByConvo, getMessage } = require('~/models');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
-const { processCodeOutput } = require('~/server/services/Files/Code/process');
+const { getRetentionExpiry } = require('~/server/services/Files/retention');
+const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
+const { preflightCodeOutputBatch } = require('~/server/services/Files/Code/preflight');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { loadTools } = require('~/app/clients/tools/util');
 
-const fieldsMap = {
-  [Tools.execute_code]: [EnvVar.CODE_API_KEY],
-};
+/**
+ * Tools that are callable directly via `POST /tools/:toolId/call`.
+ * `execute_code` is the only entry today; the tool runs server-side via
+ * the agents library / sandbox service without any per-user credential.
+ */
+const directCallableTools = new Set([Tools.execute_code]);
 
 const toolAccessPermType = {
   [Tools.execute_code]: PermissionTypes.RUN_CODE,
@@ -47,6 +56,9 @@ const verifyWebSearchAuth = async (req, res) => {
     return res.status(200).json({
       authenticated: result.authenticated,
       authTypes: result.authTypes,
+      searchProvider: result.authResult.searchProvider,
+      scraperProvider: result.authResult.scraperProvider,
+      rerankerType: result.authResult.rerankerType,
     });
   } catch (error) {
     console.error('Error in verifyWebSearchAuth:', error);
@@ -65,37 +77,23 @@ const verifyToolAuth = async (req, res) => {
     if (toolId === Tools.web_search) {
       return await verifyWebSearchAuth(req, res);
     }
-    const authFields = fieldsMap[toolId];
-    if (!authFields) {
+    if (!directCallableTools.has(toolId)) {
       res.status(404).json({ message: 'Tool not found' });
       return;
     }
-    let result;
-    try {
-      result = await loadAuthValues({
-        userId: req.user.id,
-        authFields,
-        throwError: false,
-      });
-    } catch (error) {
-      logger.error('Error loading auth values', error);
-      res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
-      return;
-    }
-    let isUserProvided = false;
-    for (const field of authFields) {
-      if (!result[field]) {
-        res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
-        return;
-      }
-      if (!isUserProvided && process.env[field] !== result[field]) {
-        isUserProvided = true;
-      }
-    }
-    res.status(200).json({
-      authenticated: true,
-      message: isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED,
-    });
+    /**
+     * `execute_code` no longer requires a per-user credential — sandbox
+     * auth is handled server-side by the agents library. Always report
+     * system-authenticated so the client proceeds straight to the call
+     * without a key-entry dialog.
+     *
+     * Deployment contract: reachability of the sandbox service is the
+     * admin's responsibility. This endpoint does not probe the service
+     * (a per-auth-check network hop would be too expensive for what is
+     * a UI-gate query). If the sandbox is unreachable, the call path
+     * surfaces the error at execution time instead of here.
+     */
+    res.status(200).json({ authenticated: true, message: AuthType.SYSTEM_DEFINED });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -111,7 +109,7 @@ const callTool = async (req, res) => {
   try {
     const appConfig = req.config;
     const { toolId = '' } = req.params;
-    if (!fieldsMap[toolId]) {
+    if (!directCallableTools.has(toolId)) {
       logger.warn(`[${toolId}/call] User ${req.user.id} attempted call to invalid tool`);
       res.status(404).json({ message: 'Tool not found' });
       return;
@@ -171,6 +169,11 @@ const callTool = async (req, res) => {
     });
 
     const { content, artifact } = result;
+    assertDirectToolOutputAllowed(appConfig?.filters, toolId, content);
+    const hasGeneratedArtifacts = toolId === Tools.execute_code && Array.isArray(artifact?.files);
+    const generatedFiles = hasGeneratedArtifacts
+      ? await preflightCodeOutputBatch({ req, artifact })
+      : [];
     const toolCallData = {
       toolId,
       messageId,
@@ -179,9 +182,10 @@ const callTool = async (req, res) => {
       conversationId,
       result: content,
       user: req.user.id,
+      ...(await getRetentionExpiry(req)),
     };
 
-    if (!artifact || !artifact.files || toolId !== Tools.execute_code) {
+    if (!hasGeneratedArtifacts) {
       createToolCall(toolCallData).catch((error) => {
         logger.error(`Error creating tool call: ${error.message}`);
       });
@@ -190,34 +194,44 @@ const callTool = async (req, res) => {
       });
     }
 
-    const artifactPromises = [];
-    for (const file of artifact.files) {
+    const attachments = [];
+    for (const { file, sessionId, preparedBuffer, downloadFallback } of generatedFiles) {
       const { id, name } = file;
-      artifactPromises.push(
-        (async () => {
-          const fileMetadata = await processCodeOutput({
-            req,
-            id,
-            name,
-            apiKey: tool.apiKey,
-            messageId,
-            toolCallId,
-            conversationId,
-            session_id: artifact.session_id,
-          });
-
-          if (!fileMetadata) {
-            return null;
-          }
-
-          return fileMetadata;
-        })().catch((error) => {
-          logger.error('Error processing code output:', error);
-          return null;
-        }),
-      );
+      try {
+        const result = await processCodeOutput({
+          req,
+          id,
+          name,
+          messageId,
+          toolCallId,
+          conversationId,
+          session_id: sessionId,
+          preparedBuffer,
+          downloadFallback,
+        });
+        const fileMetadata = result?.file ?? null;
+        const finalize = result?.finalize;
+        if (!fileMetadata) {
+          attachments.push(null);
+          continue;
+        }
+        /* This endpoint is non-streaming and its contract is "give
+         * me the artifacts" — return the persisted record immediately
+         * (with `status: 'pending'` for office buckets) and run the
+         * preview render in the background. The client polls
+         * `/api/files/:file_id/preview` for the resolved record.
+         * No `onResolved` — there's no live stream to write to here. */
+        runPreviewFinalize({
+          finalize,
+          fileId: fileMetadata.file_id,
+          previewRevision: result?.previewRevision,
+        });
+        attachments.push(fileMetadata);
+      } catch {
+        logger.error('Error processing code output');
+        attachments.push(null);
+      }
     }
-    const attachments = await Promise.all(artifactPromises);
     toolCallData.attachments = attachments;
     createToolCall(toolCallData).catch((error) => {
       logger.error(`Error creating tool call: ${error.message}`);
@@ -227,6 +241,10 @@ const callTool = async (req, res) => {
       attachments,
     });
   } catch (error) {
+    if (isContentFilterError(error)) {
+      res.status(error.statusCode).json(error.body);
+      return;
+    }
     logger.error('Error calling tool', error);
     res.status(500).json({ message: 'Error calling tool' });
   }

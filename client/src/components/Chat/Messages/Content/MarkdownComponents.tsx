@@ -4,10 +4,10 @@ import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import { handleDoubleClick, triggerDownload } from '~/utils';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
-import { handleDoubleClick } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -41,8 +41,12 @@ export const code: React.ElementType = memo(function MarkdownCode({
   const isMermaid = lang === 'mermaid';
   const isSingleLine = isSingleLineCode(children);
 
-  const { getNextIndex, resetCounter } = useCodeBlockContext();
+  const { getNextIndex, getNextMermaidIndex, resetCounter } = useCodeBlockContext();
   const blockIndex = useRef(getNextIndex(isMath || isMermaid || isSingleLine)).current;
+  /* Mermaid fences do not consume a code-block index, so every one of them in a
+   * message would otherwise share `blockIndex` and collapse onto a single
+   * artifact id. They carry their own sequence instead. */
+  const mermaidIndex = useRef(isMermaid ? getNextMermaidIndex() : -1).current;
 
   useEffect(() => {
     resetCounter();
@@ -54,7 +58,7 @@ export const code: React.ElementType = memo(function MarkdownCode({
     const content = typeof children === 'string' ? children : String(children);
     return (
       <MermaidErrorBoundary code={content}>
-        <Mermaid id={`mermaid-${blockIndex}`}>{content}</Mermaid>
+        <Mermaid id={`mermaid-${mermaidIndex}`}>{content}</Mermaid>
       </MermaidErrorBoundary>
     );
   } else if (isSingleLine) {
@@ -127,7 +131,7 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
     return { file_id: '', filename: '', filepath: '' };
   }, [user?.id, href]);
 
-  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
+  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id, { direct: false });
   const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_blank' };
 
   if (!file_id || !filename) {
@@ -150,13 +154,7 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
         });
         return;
       }
-      const link = document.createElement('a');
-      link.href = stream.data;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(stream.data);
+      triggerDownload(stream.data, filename);
     } catch (error) {
       console.error('Error downloading file:', error);
     }
@@ -190,6 +188,19 @@ export const p: React.ElementType = memo(function MarkdownParagraph({ children }
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 p.displayName = 'MarkdownParagraph';
+
+type TTableProps = {
+  children: React.ReactNode;
+};
+
+export const table: React.ElementType = memo(function MarkdownTable({ children }: TTableProps) {
+  return (
+    <div className="markdown-table-wrapper w-full max-w-full">
+      <table>{children}</table>
+    </div>
+  );
+});
+table.displayName = 'MarkdownTable';
 
 type TImageProps = {
   src?: string;

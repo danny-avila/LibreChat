@@ -1,15 +1,41 @@
-import { connectDb } from '@librechat/backend/db/connect';
-import {
-  findUser,
-  deleteConvos,
-  deleteMessages,
-  deleteAllUserSessions,
-} from '@librechat/backend/models';
-import { User, Balance, Transaction, AclEntry, Token, Group } from '@librechat/backend/db/models';
+import path from 'path';
+import { applyRuntimeEnv } from './runtimeEnv';
 
 type TUser = { email: string; password: string };
 
+/**
+ * Registers the backend's `~` alias in this process. Playwright's require hook only
+ * maps it when `api/jsconfig.json` is the nearest path-config to the requiring file,
+ * so a stray `api/tsconfig.json` would otherwise break every backend require here.
+ */
+function registerBackendAlias() {
+  /* eslint-disable-next-line @typescript-eslint/no-require-imports */
+  require('module-alias')({
+    base: path.dirname(require.resolve('@librechat/backend/package.json')),
+  });
+}
+
 export default async function cleanupUser(user: TUser) {
+  applyRuntimeEnv();
+  registerBackendAlias();
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { connectDb } = require('@librechat/backend/db/connect');
+  const {
+    findUser,
+    deleteConvos,
+    deleteMessages,
+    deleteAllUserSessions,
+  } = require('@librechat/backend/models');
+  const {
+    User,
+    Balance,
+    Transaction,
+    AclEntry,
+    Token,
+    Group,
+  } = require('@librechat/backend/db/models');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
   const { email } = user;
   try {
     console.log('🤖: global teardown has been started');
@@ -26,7 +52,14 @@ export default async function cleanupUser(user: TUser) {
     console.log('🤖:  ✅  Found user in Database');
 
     // Delete all conversations & associated messages
-    const { deletedCount, messages } = await deleteConvos(userId, {});
+    const { deletedCount, messages } = await deleteConvos(userId, {}).catch((error) => {
+      if (error instanceof Error && error.message.includes('Conversation not found')) {
+        console.log('🤖:  ⚠️  No conversations found for user');
+        return { deletedCount: 0, messages: { deletedCount: 0 } };
+      }
+
+      throw error;
+    });
 
     if (messages.deletedCount > 0 || deletedCount > 0) {
       console.log(`🤖:  ✅  Deleted ${deletedCount} convos & ${messages.deletedCount} messages`);

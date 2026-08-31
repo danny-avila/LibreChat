@@ -1,4 +1,5 @@
 const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { Constants, ViolationTypes, Time } = require('librechat-data-provider');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation, getLogStores } = require('~/cache');
@@ -51,9 +52,13 @@ const validateConvoAccess = async (req, res, next) => {
       }
     }
 
-    const conversation = await searchConversation(conversationId);
+    /** One read serves the subagent guard, agent initialization, and the first save via
+     *  `req.resolvedConversation`. `messages` is the only unbounded field and no consumer
+     *  reads it, so it stays excluded — ownership is not yet known at this point. */
+    const conversation = await searchConversation(conversationId, '-messages');
 
     if (!conversation) {
+      req.resolvedConversation = null;
       return next();
     }
 
@@ -70,8 +75,13 @@ const validateConvoAccess = async (req, res, next) => {
     }
 
     if (cache) {
-      await cache.set(key, 'authorized', Time.TEN_MINUTES);
+      /** The marker only short-circuits the next check; the violations store is file-backed
+       *  without Redis and its debounced write takes ~100ms, so it must not gate this request. */
+      cache.set(key, 'authorized', Time.TEN_MINUTES).catch((error) => {
+        logger.warn('[validateConvoAccess] Failed to cache conversation access', error);
+      });
     }
+    req.resolvedConversation = conversation;
     next();
   } catch (error) {
     console.error('Error validating conversation access:', error);

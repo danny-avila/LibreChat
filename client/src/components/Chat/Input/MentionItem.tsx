@@ -6,7 +6,7 @@ export interface MentionItemProps {
   name: string;
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   index: number;
-  type?: 'prompt' | 'mention' | 'add-convo';
+  type?: 'prompt' | 'mention' | 'add-convo' | 'skill';
   icon?: React.ReactNode;
   isActive?: boolean;
   description?: string;
@@ -34,7 +34,7 @@ export default function MentionItem({
     >
       <div
         className={cn(
-          'text-token-text-primary bg-token-main-surface-secondary group flex min-h-[44px] items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary active:bg-surface-active',
+          'text-token-text-primary group flex min-h-[44px] items-center gap-2 rounded-lg px-2 text-sm font-medium hover:bg-surface-secondary active:bg-surface-active',
           isActive === true ? 'bg-surface-active' : 'bg-transparent',
         )}
       >

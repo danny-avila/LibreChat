@@ -2,8 +2,12 @@ const { logger } = require('@librechat/data-schemas');
 const { ToolCallTypes } = require('librechat-data-provider');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
-const { getCachedTools } = require('~/server/services/Config');
-const { manifestToolMap } = require('~/app/clients/tools');
+const {
+  healMcpToolNames,
+  getAssistantToolDefinitions,
+  toProviderToolDefinition,
+} = require('~/server/services/MCP');
+const { manifestToolMap, isAgentsOnlyTool } = require('~/app/clients/tools');
 const { updateAssistantDoc } = require('~/models');
 const { getOpenAIClient } = require('./helpers');
 
@@ -28,10 +32,29 @@ const createAssistant = async (req, res) => {
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
 
-    const toolDefinitions = (await getCachedTools()) ?? {};
+    const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
+      req,
+      res,
+      tools,
+    });
+    const healedTools = await healMcpToolNames({
+      req,
+      tools,
+      toolDefinitions,
+      accessibleServerNames,
+    });
 
-    assistantData.tools = tools
+    assistantData.tools = healedTools
       .map((tool) => {
+        /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
+         *  the assistants runtime — drop them even when posted directly, since
+         *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
+        if (isAgentsOnlyTool(tool)) {
+          logger.warn('[/assistants] Dropping agents-only tool from assistant payload', {
+            toolShape: typeof tool === 'string' ? 'name' : 'definition',
+          });
+          return undefined;
+        }
         if (typeof tool !== 'string') {
           return tool;
         }
@@ -47,7 +70,8 @@ const createAssistant = async (req, res) => {
         return toolDef;
       })
       .filter((tool) => tool)
-      .flat();
+      .flat()
+      .map(toProviderToolDefinition);
 
     let azureModelIdentifier = null;
     if (openai.locals?.azureOptions) {
@@ -62,7 +86,7 @@ const createAssistant = async (req, res) => {
 
     const assistant = await openai.beta.assistants.create(assistantData);
 
-    const createData = { user: req.user.id };
+    const createData = { user: req.user.id, endpoint };
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
@@ -83,7 +107,11 @@ const createAssistant = async (req, res) => {
       assistant.append_current_datetime = append_current_datetime;
     }
 
-    logger.debug('/assistants/', assistant);
+    logger.debug('[/assistants] Assistant created', {
+      assistantId: assistant.id,
+      toolCount: assistantData.tools.length,
+      hasConversationStarters: Array.isArray(document.conversation_starters),
+    });
     res.status(201).json(assistant);
   } catch (error) {
     logger.error('[/assistants] Error creating assistant', error);
@@ -124,8 +152,27 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
   }
 
   let hasFileSearch = false;
-  for (const tool of updateData.tools ?? []) {
-    const toolDefinitions = (await getCachedTools()) ?? {};
+  const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
+    req,
+    res: req.res,
+    tools: updateData.tools,
+  });
+  const healedTools = await healMcpToolNames({
+    req,
+    tools: updateData.tools,
+    toolDefinitions,
+    accessibleServerNames,
+  });
+  for (const tool of healedTools) {
+    /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
+     *  the assistants runtime — drop them even when posted directly, since
+     *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
+    if (isAgentsOnlyTool(tool)) {
+      logger.warn(
+        `[/assistants] Dropping agents-only tool from assistant payload: ${typeof tool === 'string' ? tool : tool?.function?.name}`,
+      );
+      continue;
+    }
     let actualTool = typeof tool === 'string' ? toolDefinitions[tool] : tool;
 
     if (!actualTool && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {
@@ -181,7 +228,7 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
     };
   }
 
-  updateData.tools = tools;
+  updateData.tools = tools.map(toProviderToolDefinition);
 
   if (openai.locals?.azureOptions && updateData.model) {
     updateData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;

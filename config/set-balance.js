@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { getBalanceConfig } = require('@librechat/api');
 const { User, Balance } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { getAppConfig } = require('~/server/services/Config');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 
@@ -31,7 +32,8 @@ const connect = require('./connect');
     // console.purple(`[DEBUG] Args Length: ${process.argv.length}`);
   }
 
-  const balanceConfig = getBalanceConfig();
+  const appConfig = await getAppConfig();
+  const balanceConfig = getBalanceConfig(appConfig);
   if (!balanceConfig?.enabled) {
     console.red('Error: Balance is not enabled. Use librechat.yaml to enable it');
     silentExit(1);

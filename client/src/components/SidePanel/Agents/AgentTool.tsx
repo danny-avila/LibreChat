@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { Wrench } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import {
+  Button,
   OGDialog,
   TrashIcon,
   CircleHelpIcon,
@@ -46,12 +48,15 @@ export default function AgentTool({
         { pluginKey: toolId, action: 'uninstall', auth: {}, isEntityTool: true },
         {
           onError: (error: unknown) => {
-            showToast({ message: `Error while deleting the tool: ${error}`, status: 'error' });
+            showToast({
+              message: localize('com_ui_delete_tool_error_var', { 0: String(error) }),
+              status: 'error',
+            });
           },
           onSuccess: () => {
             const remainingToolIds = getValues('tools')?.filter((id: string) => id !== toolId);
             setValue('tools', remainingToolIds);
-            showToast({ message: 'Tool deleted successfully', status: 'success' });
+            showToast({ message: localize('com_ui_delete_tool_success'), status: 'success' });
           },
         },
       );
@@ -73,8 +78,8 @@ export default function AgentTool({
         }}
       >
         <div className="flex grow items-center">
-          {currentTool.icon && (
-            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
+            {currentTool.icon ? (
               <div
                 className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
                 style={{
@@ -82,8 +87,12 @@ export default function AgentTool({
                   backgroundSize: 'cover',
                 }}
               />
-            </div>
-          )}
+            ) : (
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-secondary text-text-secondary">
+                <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
+              </div>
+            )}
+          </div>
           <div
             className="grow px-2 py-1.5"
             style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
@@ -93,21 +102,20 @@ export default function AgentTool({
         </div>
 
         <OGDialogTrigger asChild>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             className={cn(
-              'flex h-7 w-7 items-center justify-center rounded transition-all duration-200',
-              'hover:bg-gray-200 dark:hover:bg-gray-700',
-              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-              'focus:opacity-100',
+              'h-7 w-7 rounded transition-all duration-200 hover:bg-surface-hover',
+              'focus:opacity-100 focus-visible:opacity-100',
               isHovering || isFocused ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
-            aria-label={`Delete ${currentTool.name}`}
+            aria-label={localize('com_ui_delete_var', { 0: currentTool.name })}
             tabIndex={0}
             onFocus={() => setIsFocused(true)}
           >
             <TrashIcon className="h-4 w-4" />
-          </button>
+          </Button>
         </OGDialogTrigger>
       </div>
       <OGDialogTemplate
@@ -132,8 +140,7 @@ export default function AgentTool({
         }
         selection={{
           selectHandler: () => removeTool(tool),
-          selectClasses:
-            'bg-red-700 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 text-white',
+          selectClasses: 'bg-surface-destructive hover:bg-surface-destructive-hover text-white',
           selectText: localize('com_ui_delete'),
         }}
       />

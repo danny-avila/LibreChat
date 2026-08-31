@@ -4,6 +4,7 @@ import { cn } from '~/utils';
 interface ConvoLinkProps {
   isActiveConvo: boolean;
   isPopoverActive: boolean;
+  isSharedBadgeVisible: boolean;
   title: string | null;
   onRename: () => void;
   isSmallScreen: boolean;
@@ -14,6 +15,7 @@ interface ConvoLinkProps {
 const ConvoLink: React.FC<ConvoLinkProps> = ({
   isActiveConvo,
   isPopoverActive,
+  isSharedBadgeVisible,
   title,
   onRename,
   isSmallScreen,
@@ -21,13 +23,23 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   children,
 }) => {
   return (
-    <div
+    <button
+      type="button"
       className={cn(
-        'flex grow items-center gap-2 overflow-hidden rounded-lg px-2',
+        'flex min-w-0 grow cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary',
         isActiveConvo || isPopoverActive ? 'bg-surface-active-alt' : '',
       )}
       title={title ?? undefined}
       aria-current={isActiveConvo ? 'page' : undefined}
+      aria-label={
+        isSharedBadgeVisible
+          ? localize('com_ui_conversation_label_shared', {
+              title: title || localize('com_ui_untitled'),
+            })
+          : localize('com_ui_conversation_label', {
+              title: title || localize('com_ui_untitled'),
+            })
+      }
       style={{ width: '100%' }}
     >
       {children}
@@ -42,20 +54,19 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
           e.stopPropagation();
           onRename();
         }}
-        aria-label={title || localize('com_ui_untitled')}
       >
         {title || localize('com_ui_untitled')}
+        <div
+          className={cn(
+            'pointer-events-none absolute bottom-0 right-0 top-0 w-20 bg-gradient-to-l',
+            isActiveConvo || isPopoverActive
+              ? 'from-surface-active-alt'
+              : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-0%',
+          )}
+          aria-hidden="true"
+        />
       </div>
-      <div
-        className={cn(
-          'pointer-events-none absolute bottom-0.5 right-0.5 top-0.5 w-20 rounded-r-md bg-gradient-to-l',
-          isActiveConvo || isPopoverActive
-            ? 'from-surface-active-alt'
-            : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%',
-        )}
-        aria-hidden="true"
-      />
-    </div>
+    </button>
   );
 };
 
