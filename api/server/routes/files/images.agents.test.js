@@ -20,8 +20,19 @@ jest.mock('~/server/services/Files/process', () => ({
     return res.status(200).json({ message: 'Image processed' });
   }),
   filterFile: jest.fn(),
-  resolvesToTextDelivery: jest.fn().mockResolvedValue(false),
 }));
+
+jest.mock('~/server/services/Files/routing', () => {
+  const actual = jest.requireActual('~/server/services/Files/routing');
+  return {
+    ...actual,
+    /* Real by default so the dispatch is exercised end to end; individual tests override
+     * it for a single call to stand in for a routing configuration. */
+    resolveEffectiveToolResource: jest.fn((...args) =>
+      actual.resolveEffectiveToolResource(...args),
+    ),
+  };
+});
 
 jest.mock('fs', () => {
   const actualFs = jest.requireActual('fs');
@@ -35,11 +46,8 @@ jest.mock('fs', () => {
 });
 
 const fs = require('fs');
-const {
-  processAgentFileUpload,
-  processImageFile,
-  resolvesToTextDelivery,
-} = require('~/server/services/Files/process');
+const { processAgentFileUpload, processImageFile } = require('~/server/services/Files/process');
+const { resolveEffectiveToolResource } = require('~/server/services/Files/routing');
 const { filterFile } = require('~/server/services/Files/process');
 const { UninspectableFileError } = require('@librechat/api');
 
@@ -290,6 +298,45 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     expect(processAgentFileUpload).toHaveBeenCalledTimes(1);
   });
 
+  it('defers extracted-text fail-close for a unified upload the config routes to text', async () => {
+    /* Same policy and file as the explicit-context case above, but with no tool_resource.
+     * Routing promotes it to a context resource, so the preflight has to see the same
+     * downstream extraction rather than fail-closing on an uninspectable derived field. */
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+    resolveEffectiveToolResource.mockResolvedValueOnce('context');
+
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/png'] },
+      },
+      ocr: {},
+    });
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(processAgentFileUpload).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves a deferred extracted-text policy error from image processing', async () => {
     await createAgent({
       id: agentCustomId,
@@ -518,7 +565,7 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
   });
 
   it('sends an image the config routes to text through the agent upload path', async () => {
-    resolvesToTextDelivery.mockResolvedValueOnce(true);
+    resolveEffectiveToolResource.mockResolvedValueOnce('context');
     const app = createAppWithUser(otherUserId);
 
     const response = await request(app).post('/images').send({

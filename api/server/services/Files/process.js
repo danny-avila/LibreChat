@@ -17,7 +17,6 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
-  resolveDefaultLLMDeliveryPath,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -53,7 +52,10 @@ const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
-const { resolveUploadEndpoint } = require('~/server/services/Files/agent');
+const {
+  resolveUploadEndpoint,
+  resolveUploadLLMDeliveryPath,
+} = require('~/server/services/Files/routing');
 const db = require('~/models');
 
 /**
@@ -450,20 +452,6 @@ const processFileURL = async ({
   }
 };
 
-const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig, endpoint }) => {
-  const isLegacyFileUploadUX = endpointConfig?.legacyFileUploadUX === true;
-  if (isLegacyFileUploadUX) {
-    return 'provider';
-  }
-
-  return resolveDefaultLLMDeliveryPath(
-    file.mimetype,
-    endpointConfig?.defaultLLMDeliveryPath,
-    fileConfig?.defaultLLMDeliveryPath,
-    endpoint,
-  );
-};
-
 /**
  * Applies the current strategy for image uploads.
  * Saves file metadata to the database with an expiry TTL.
@@ -485,7 +473,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
   const configEndpoint = await resolveUploadEndpoint({ endpoint, agent_id, req });
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint: configEndpoint });
-  const llmDeliveryPath = resolveDefaultUploadLLMDeliveryPath({
+  const llmDeliveryPath = resolveUploadLLMDeliveryPath({
     file,
     endpointConfig,
     fileConfig,
@@ -688,56 +676,6 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
     true,
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
-};
-
-const resolveUploadLLMDeliveryPath = ({
-  tool_resource,
-  file,
-  endpointConfig,
-  fileConfig,
-  endpoint,
-}) => {
-  if (tool_resource === EToolResources.context || tool_resource === EToolResources.ocr) {
-    return 'text';
-  }
-
-  if (
-    tool_resource === EToolResources.file_search ||
-    tool_resource === EToolResources.execute_code
-  ) {
-    return 'none';
-  }
-
-  return resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig, endpoint });
-};
-
-/**
- * Whether an image upload with no explicit tool resource is routed to text delivery.
- * The image pipeline stores pixels and never extracts text, so such an upload has to
- * take the agent upload path or it reaches neither the model nor a text context.
- *
- * @param {Object} params
- * @param {ServerRequest} params.req
- * @param {Object} params.metadata
- * @returns {Promise<boolean>}
- */
-const resolvesToTextDelivery = async ({ req, metadata }) => {
-  const fileConfig = mergeFileConfig(req.config?.fileConfig);
-  const endpoint = await resolveUploadEndpoint({
-    endpoint: metadata.endpoint,
-    agent_id: metadata.agent_id,
-    req,
-  });
-  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
-  return (
-    resolveUploadLLMDeliveryPath({
-      tool_resource: metadata.tool_resource,
-      file: req.file,
-      endpointConfig,
-      fileConfig,
-      endpoint,
-    }) === 'text'
-  );
 };
 
 /**
@@ -1550,7 +1488,6 @@ function filterFile({ req, image, isAvatar, endpoint: endpointOverride }) {
 
 module.exports = {
   filterFile,
-  resolvesToTextDelivery,
   processFileURL,
   saveBase64Image,
   processImageFile,
