@@ -157,6 +157,26 @@ describe('provisionToCodeEnv', () => {
     expect(result.referenceSet.codeEnvRefs.default.executionProfile).toBe('default');
   });
 
+  it('refuses sources whose download contract differs instead of mis-invoking them', async () => {
+    const uploadCodeEnvFile = jest.fn();
+    setupStrategies(uploadCodeEnvFile);
+
+    await expect(
+      provisionToCodeEnv({
+        req: { user: { id: 'u1' } },
+        file: {
+          file_id: 'f-openai',
+          filename: 'doc.pdf',
+          type: 'application/pdf',
+          source: 'openai',
+          filepath: '/x/doc.pdf',
+          metadata: {},
+        },
+      }),
+    ).rejects.toThrow(/does not support download streams/);
+    expect(uploadCodeEnvFile).not.toHaveBeenCalled();
+  });
+
   it('keeps filenames untouched when the extension already matches or the file is not an image', async () => {
     const uploadCodeEnvFile = jest
       .fn()
