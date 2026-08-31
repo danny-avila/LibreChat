@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useMessageContext } from '~/Providers';
 import { useOpenBklSource } from '~/components/Chat/BklPanel/useActiveBklSource';
 import { FileTypeIcon } from '~/utils';
@@ -25,7 +25,7 @@ const _fetchInflight = new Set<string>();
  * 횟수로 막는다.
  */
 const _fetchAttempts = new Map<string, number>();
-const _MAX_FETCH_ATTEMPTS = 6;
+const _MAX_FETCH_ATTEMPTS = 10;
 
 function requestSources(messageId: string, { force = false } = {}): void {
   if (_fetchInflight.has(messageId)) return;
@@ -314,12 +314,51 @@ function getSourceFileType(messageId: string, n: number): string | null {
   return getFileExtension(extractFileName(name)) || null;
 }
 
+/**
+ * 답변이 끝난 직후 서버가 출처를 저장하기까지 약간 걸릴 수 있어 나눠 시도한다.
+ * 캐시가 그 사이 채워지면 남은 시도는 건너뛴다.
+ */
+const COMPLETION_RETRY_DELAYS_MS = [0, 1500, 4000];
+
 export default function BklCitation({ n }: BklCitationProps) {
-  const { messageId } = useMessageContext();
+  const { messageId, isSubmitting } = useMessageContext();
   const [loading, setLoading] = useState(false);
   const [label, setLabel] = useState<string | null>(() => getSourceLabel(messageId, n));
   const [fileType, setFileType] = useState<string | null>(() => getSourceFileType(messageId, n));
   const openSource = useOpenBklSource();
+
+  /**
+   * 답변이 끝나는 순간 출처를 다시 받는다.
+   *
+   * 스트리밍 중에 조회하면 서버가 **아직 검색 청크만** 캐시해둔 상태라 짧은
+   * 배열이 온다. 그 배열이 클라이언트 캐시에 앉으면 검색 인용 [1..K] 는 바로
+   * 풀리지만, 전문 읽기로 뒤에 붙는 [K+1..] 은 자리가 비어 있다. 그런데 폴링도
+   * 이벤트도 캐시를 "다시 읽기"만 할 뿐 "다시 요청"하지는 않아서, 눌러서
+   * 강제 조회가 돌기 전까지 영영 안 풀렸다. 사용자가 본 "flow 검색 인용은
+   * 빠른데 이것만 눌러야 뜬다" 가 정확히 이 차이다 (2026-08-31).
+   *
+   * 답변 완료가 "서버에 완전한 배열이 올라왔다" 는 유일하게 확실한 신호다.
+   * SSE 의 sources_replace 재매핑 경로에 기대지 않으므로, 그 경로가 어긋나도
+   * (탭 전환 등으로 이벤트를 놓쳐도) 여기서 낫는다.
+   */
+  const wasSubmitting = useRef(isSubmitting === true);
+  useEffect(() => {
+    const justFinished = wasSubmitting.current && isSubmitting !== true;
+    wasSubmitting.current = isSubmitting === true;
+    if (!justFinished || label) return;
+
+    let cancelled = false;
+    const timers = COMPLETION_RETRY_DELAYS_MS.map((delay) =>
+      setTimeout(() => {
+        if (cancelled || getSourceLabel(messageId, n)) return;
+        refetchSources(messageId, n);
+      }, delay),
+    );
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [isSubmitting, label, messageId, n]);
 
   useEffect(() => {
     if (label) return;

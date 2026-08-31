@@ -170,8 +170,9 @@ describe('탭에 돌아왔을 때', () => {
       });
     }
 
-    // messageId 당 조회 6회 상한. 503 은 재시도가 없으므로 조회 1회당 호출 1회.
-    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(6);
+    // messageId 당 조회 10회 상한. 503 은 재시도가 없으므로 조회 1회당 호출 1회.
+    // 탭을 20번 오갔는데도 상한에서 멈춘다는 것이 요점이다.
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(10);
   });
 
   it('탭을 떠나 있는 동안에는 재조회하지 않는다', async () => {
