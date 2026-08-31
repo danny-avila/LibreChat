@@ -752,6 +752,8 @@ router.post('/', async (req, res) => {
       agent_id: metadata.agent_id,
       req,
     });
+    /* Carried so processing routes under the same configuration validation used. */
+    metadata.effectiveEndpoint = effectiveEndpoint;
     filterFile({ req, endpoint: effectiveEndpoint });
 
     /* Same destination the processing path will use: a unified upload routed to text

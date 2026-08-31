@@ -55,6 +55,8 @@ router.post('/', async (req, res) => {
       agent_id: metadata.agent_id,
       req,
     });
+    /* Carried so processing routes under the same configuration validation used. */
+    metadata.effectiveEndpoint = effectiveEndpoint;
     filterFile({ req, image: true, endpoint: effectiveEndpoint });
 
     /* A unified upload the config routes to text is processed as a context resource, so
