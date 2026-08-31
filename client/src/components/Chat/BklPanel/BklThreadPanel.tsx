@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { ChevronDown, ChevronRight, ExternalLink, FileText } from 'lucide-react';
@@ -11,6 +11,7 @@ import {
   type CitedTurn,
   type MentionedFile,
 } from './useConversationCitations';
+import { useOpenBklSource } from './useActiveBklSource';
 
 /**
  * 대화 단위 우측 패널 (mentat ThreadPanel 스타일) — 데스크톱에선 항상 열려
@@ -37,12 +38,7 @@ function ThreadOverview() {
   // 같아야 스트리밍 직후에도 같은 데이터를 본다.
   const { conversationId } = useParams();
   const { turns, files, isLoading } = useConversationCitations(conversationId);
-  const setActive = useSetRecoilState(store.activeBklSource);
-
-  const openChunk = useCallback(
-    (messageId: string, n: number) => setActive({ messageId, n }),
-    [setActive],
-  );
+  const openChunk = useOpenBklSource();
 
   const isEmpty = turns.length === 0 && files.length === 0;
 

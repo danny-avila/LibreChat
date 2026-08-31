@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { useSetRecoilState } from 'recoil';
 import { useMessageContext } from '~/Providers';
-import store from '~/store';
+import { useOpenBklSource } from '~/components/Chat/BklPanel/useActiveBklSource';
 import { FileTypeIcon } from '~/utils';
 import { getFileExtension, stripDisplayExtension } from '~/utils/fileTypeIcon';
 import { notifyBklSourcesChanged } from '~/utils/bklSourcesEvent';
@@ -245,7 +244,7 @@ export default function BklCitation({ n }: BklCitationProps) {
   const [loading, setLoading] = useState(false);
   const [label, setLabel] = useState<string | null>(() => getSourceLabel(messageId, n));
   const [fileType, setFileType] = useState<string | null>(() => getSourceFileType(messageId, n));
-  const setActiveSource = useSetRecoilState(store.activeBklSource);
+  const openSource = useOpenBklSource();
 
   useEffect(() => {
     if (label) return;
@@ -315,9 +314,9 @@ export default function BklCitation({ n }: BklCitationProps) {
         return;
       }
 
-      setActiveSource({ messageId, n });
+      openSource(messageId, n);
     },
-    [messageId, n, label, setActiveSource],
+    [messageId, n, label, openSource],
   );
 
   return (

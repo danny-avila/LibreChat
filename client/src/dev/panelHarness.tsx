@@ -88,7 +88,7 @@ function ChunkViewAt({ w }: { w: number }) {
     <Frame w={w} label="청크 뷰">
       <RecoilRoot
         initializeState={({ set }) => {
-          set(store.activeBklSource, { messageId: 'm1', n: 3 });
+          set(store.activeBklSource, { conversationId: 'c1', messageId: 'm1', n: 3 });
         }}
       >
         <QueryClientProvider

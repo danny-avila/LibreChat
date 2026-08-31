@@ -10,6 +10,7 @@ import { EditorProvider, SidePanelProvider, ArtifactsProvider } from '~/Provider
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
 import BklThreadPanel from '~/components/Chat/BklPanel/BklThreadPanel';
+import { useSyncActiveBklSourceWithConversation } from '~/components/Chat/BklPanel/useActiveBklSource';
 import { useSetFilesToDelete } from '~/hooks';
 import store from '~/store';
 
@@ -62,6 +63,9 @@ export default function Presentation({ children }: { children: React.ReactNode }
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
   const activeBklSource = useRecoilValue(store.activeBklSource);
+  // 대화를 옮기면 열려 있던 청크를 닫는다. 패널은 조건부 마운트라 패널 안에서
+  // 정리할 수 없어, 항상 마운트되는 여기서 한다.
+  useSyncActiveBklSourceWithConversation();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   /**
    * "채팅에 들어간 상태" 판정 — 새 채팅 대기화면(설명 페이지)에서는 패널을
