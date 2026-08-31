@@ -2947,7 +2947,7 @@ class GenerationJobManagerClass {
     userId: string,
     clientRequestId: string,
     streamId: string,
-    conversationId = streamId,
+    conversationId: string = streamId,
   ): Promise<{ generationId: string; generationCreatedAt: number } | null> {
     if (!CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)) {
       return null;
