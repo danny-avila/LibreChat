@@ -12,6 +12,11 @@ import { TooltipAnchor } from './Tooltip';
 import { SendIcon } from '~/svgs';
 import { cn } from '~/utils';
 
+/** What a key press means to the composer. Mirrors the main chat form's own
+ *  verdicts: `block` is "swallow it, do nothing", `newline` and `none` both
+ *  leave the key to the field. */
+export type ComposerKeyVerdict = 'submit' | 'block' | 'newline' | 'none';
+
 export interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
@@ -35,6 +40,17 @@ export interface ComposerProps {
    * leave for a continued chat by reaching for a line break.
    */
   submitOnEnter?: boolean;
+  /**
+   * The host's own key policy, so a reader who rebound (or unbound) the submit
+   * shortcut gets the same contract they get in the main chat form, and chords
+   * claimed by global shortcuts are left for the window handler. Given the
+   * event and whether an IME is mid-composition. Without it, `submitOnEnter`
+   * drives a plain Enter / ⌘-Ctrl+Enter contract.
+   */
+  resolveKeyVerdict?: (
+    event: KeyboardEvent<HTMLTextAreaElement>,
+    isComposing: boolean,
+  ) => ComposerKeyVerdict;
   className?: string;
 }
 
@@ -64,39 +80,41 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
       maxRows = 6,
       actions,
       submitOnEnter = true,
+      resolveKeyVerdict,
       className,
     }: ComposerProps,
     ref: Ref<HTMLTextAreaElement>,
   ) {
     const [isComposing, setIsComposing] = useState(false);
 
-    /**
-     * Four separate reasons not to submit on an Enter:
-     *
-     * - An IME candidate is being committed. `isComposing` alone is not enough:
-     *   Safari reports it as false on the very Enter that commits, so the
-     *   tracked composition state and the legacy `Process`/229 signals stand in
-     *   for it, as the main chat composer's own guard does.
-     * - Shift is held, which is the newline everywhere.
-     * - Enter-to-send is off and no modifier is held, so this Enter is a
-     *   newline and must reach the field untouched.
-     * - The field is empty. A caller whose action needs no text (continuing a
-     *   settled thread) still wants that to be a deliberate press of the
-     *   button, not a stray Enter that navigates the reader somewhere.
-     */
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (
+      /**
+       * `isComposing` alone does not settle the IME question: Safari reports it
+       * as false on the very Enter that commits a candidate, so the tracked
+       * composition state and the legacy `Process`/229 signals stand in for it,
+       * as the main chat composer's own guard does. Committed here rather than
+       * left to the host so every caller inherits it.
+       */
+      const composing =
         isComposing ||
         event.nativeEvent.isComposing ||
         event.key === 'Process' ||
-        event.keyCode === 229
-      ) {
-        return;
-      }
-      if (event.key !== 'Enter' || event.shiftKey) return;
-      if (!submitOnEnter && !(event.metaKey || event.ctrlKey)) return;
+        event.keyCode === 229;
+
+      const defaultVerdict = (): ComposerKeyVerdict => {
+        if (composing || event.key !== 'Enter' || event.shiftKey) return 'none';
+        if (!submitOnEnter && !(event.metaKey || event.ctrlKey)) return 'newline';
+        return 'submit';
+      };
+
+      const verdict = resolveKeyVerdict?.(event, composing) ?? defaultVerdict();
+      if (verdict === 'newline' || verdict === 'none') return;
       event.preventDefault();
-      if (!canSubmit || value.trim() === '') return;
+      /** An empty field never submits, even where the surface would accept it:
+       *  a caller whose action needs no text (continuing a settled thread)
+       *  still wants that to be a deliberate press of the button, not a stray
+       *  Enter that navigates the reader somewhere. */
+      if (verdict === 'block' || !canSubmit || value.trim() === '') return;
       onSubmit();
     };
 

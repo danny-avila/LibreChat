@@ -23,7 +23,8 @@ import type {
   SubagentControlReceipt,
   SubagentControlRequest,
 } from 'librechat-data-provider';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import type { ComposerKeyVerdict } from '@librechat/client';
 import type { ActiveSubagentPanel, SubagentControlUiState } from '~/store/subagents';
 import type { OptionWithIcon } from '~/common';
 import {
@@ -51,7 +52,9 @@ import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActi
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useParentSubagents } from './ParentSubagentsProvider';
+import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
@@ -106,6 +109,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
   const enterToSend = useRecoilValue(store.enterToSend);
+  const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
+  const [actorPickerOpen, setActorPickerOpen] = useState(false);
   const resetSelection = useResetRecoilState(activeSubagentPanel);
   const setSelection = useSetRecoilState(activeSubagentPanel);
   const agentsMap = useAgentsMapContext();
@@ -259,11 +264,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     progress.status !== 'error';
 
   const [controlMessage, setControlMessage] = useState('');
-  /** Read at completion, not at submission: the fork lands after a round trip,
-   *  and the composer stays live for it, so anything typed meanwhile must
-   *  travel too. */
   const controlMessageRef = useRef(controlMessage);
   controlMessageRef.current = controlMessage;
+  /** The continuation in flight, bound to the selection that asked for it. The
+   *  fork lands a round trip later and the panel stays live for it, so the live
+   *  field is the better source — but ONLY while it still belongs to the actor
+   *  that made the request. Switch actors mid-flight and the words in the field
+   *  are the new actor's, so this falls back to what was there at submission. */
+  const continuationRef = useRef<{ identity: string; text: string } | null>(null);
   const handOffComposerText = useRecoilCallback(
     ({ set }) =>
       (conversationId: string, text: string) =>
@@ -278,17 +286,23 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
        *  what the reader typed to that conversation's composer instead of
        *  dropping it with this panel — in memory, since an unsent draft must not
        *  be written to storage the reader may have asked not to use. */
-      const draft = controlMessageRef.current.trim();
+      const continuation = continuationRef.current;
+      continuationRef.current = null;
+      const stillItsOwnComposer = continuation?.identity === controlSelectionRef.current;
+      const draft = stillItsOwnComposer
+        ? controlMessageRef.current.trim() || (continuation?.text ?? '')
+        : (continuation?.text ?? '');
       if (continuedConversationId != null && draft !== '') {
         handOffComposerText(continuedConversationId, draft);
       }
-      setControlMessage('');
+      if (stillItsOwnComposer) setControlMessage('');
       resetSelection();
       navigateToConvo(result.conversation);
     },
     onError: () => {
       /** The panel stays open on a failed continuation, and the composer still
        *  holds the words, so there is nothing to restore. */
+      continuationRef.current = null;
       showToast({ message: localize('com_ui_continue_chat_error'), status: 'error' });
     },
   });
@@ -708,7 +722,20 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     });
   }, [resetSelection, selection.parentMessageId, selection.partIndex, selection.toolCallId]);
 
-  useFocusTrap(panelRef, isMobile, close);
+  /** Escape is handled on the element rather than through the trap's own
+   *  native listener: that listener sits on this `aside`, so it runs BEFORE any
+   *  React handler inside it and would close the whole panel out from under a
+   *  nested popover that meant to dismiss only itself. As a React handler it
+   *  bubbles in DOM order, so an inner control can stop it or mark it handled. */
+  useFocusTrap(panelRef, isMobile);
+  const handlePanelKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      if (!isMobile || event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      close();
+    },
+    [close, isMobile],
+  );
 
   useEffect(() => {
     const activeElement = document.activeElement;
@@ -947,12 +974,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
 
   const continueAsChat = useCallback(() => {
     if (!canContinueAsChat || selection.durable == null || continueChat.isLoading) return;
+    continuationRef.current = { identity: controlIdentity, text: controlMessage.trim() };
     continueChat.mutate({
       conversationId: selection.durable.threadId,
       messageId: `${selection.durable.taskId}:assistant`,
       option: ForkOptions.DIRECT_PATH,
     });
-  }, [canContinueAsChat, continueChat, selection.durable]);
+  }, [canContinueAsChat, continueChat, controlIdentity, controlMessage, selection.durable]);
   /** `control` steers the live run, `continue` carries the thread into a chat
    *  of the reader's own. Both compose into the same field, with the same
    *  placeholder the main chat composer shows for this agent. */
@@ -967,6 +995,28 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     composerMode === 'control'
       ? !controlPending && controlMessage.trim() !== ''
       : !continueChat.isLoading;
+  /** The main chat form's own Enter decision table, so a reader who rebound or
+   *  unbound the submit shortcut gets the same contract here, and chords
+   *  claimed by global shortcuts are left for the window handler. */
+  const resolveKeyVerdict = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>, isComposing: boolean): ComposerKeyVerdict => {
+      const action = resolveComposerKeyDown(event, {
+        isComposing,
+        isSubmitting: false,
+        allowSubmitWhileGenerating: false,
+        hasDuringRunModifier: false,
+        shortcutsEnabled,
+        enterToSend,
+        submitOverride,
+        yieldedChords,
+      });
+      if (action === 'submit') return 'submit';
+      if (action === 'newline') return 'newline';
+      if (action === 'block') return 'block';
+      return 'none';
+    },
+    [enterToSend, shortcutsEnabled, submitOverride, yieldedChords],
+  );
   const submitComposer = useCallback(() => {
     if (controlAvailable) {
       submitControl('steer');
@@ -1151,31 +1201,45 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       role={isMobile ? 'dialog' : 'region'}
       aria-modal={isMobile || undefined}
       aria-label={localize('com_ui_subagent_thread_panel')}
+      onKeyDown={handlePanelKeyDown}
       className="flex h-full w-full flex-col overflow-hidden bg-surface-primary-alt text-text-primary"
     >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border-light px-3">
         {actorOptions.length > 1 ? (
           /* The agent builder's picker, so switching actors here reads as the
              same control as every other agent selection in the app — avatar,
-             searchable list, and the shared theming that comes with it. */
-          <ControlCombobox
-            isCollapsed={false}
-            selectedValue={threadId}
-            setValue={selectActor}
-            displayValue={selectedActorLabel}
-            selectPlaceholder={selectedActorLabel}
-            searchPlaceholder={localize('com_agents_search_name')}
-            ariaLabel={localize('com_ui_subagent_actor')}
-            items={actorOptions}
-            SelectIcon={selectedActorIcon}
-            /** In the panel, not in a portal: on mobile this `aside` is a modal
-                whose focus trap only knows its own descendants, so a portaled
-                search field would let Tab escape to the page behind it. */
-            portal={false}
-            containerClassName="min-w-0 flex-1 px-0"
-            className="h-9 w-full border-transparent bg-transparent font-semibold hover:bg-surface-hover"
-            showCarat
-          />
+             searchable list, and the shared theming that comes with it.
+
+             The wrapper keeps an Escape aimed at the open popover from reaching
+             the panel's focus trap, which closes the whole panel on Escape and
+             would take the composer's text with it. */
+          <div
+            className="flex min-w-0 flex-1"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && actorPickerOpen) event.stopPropagation();
+            }}
+          >
+            <ControlCombobox
+              isCollapsed={false}
+              selectedValue={threadId}
+              setValue={selectActor}
+              displayValue={selectedActorLabel}
+              selectPlaceholder={selectedActorLabel}
+              searchPlaceholder={localize('com_agents_search_name')}
+              ariaLabel={localize('com_ui_subagent_actor')}
+              items={actorOptions}
+              SelectIcon={selectedActorIcon}
+              /** In the panel, not in a portal: on mobile this `aside` is a
+                  modal whose focus trap only knows its own descendants, so a
+                  portaled search field would let Tab escape to the page
+                  behind it. */
+              portal={false}
+              onOpenChange={setActorPickerOpen}
+              containerClassName="min-w-0 flex-1 px-0"
+              className="h-9 w-full border-transparent bg-transparent font-semibold hover:bg-surface-hover"
+              showCarat
+            />
+          </div>
         ) : (
           <>
             {/* The `MessageRow` author-glyph slot, one size up: no plate
@@ -1248,6 +1312,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               ariaLabel={localize('com_ui_message_input')}
               placeholder={composerPlaceholder}
               submitOnEnter={enterToSend}
+              resolveKeyVerdict={resolveKeyVerdict}
               maxLength={4 * 1024}
               actions={
                 composerMode === 'control' ? (

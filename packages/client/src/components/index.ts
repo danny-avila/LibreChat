@@ -44,7 +44,7 @@ export { default as Badge } from './Badge';
 export { default as Avatar } from './Avatar';
 export { default as Combobox } from './Combobox';
 export { default as Composer } from './Composer';
-export type { ComposerProps } from './Composer';
+export type { ComposerProps, ComposerKeyVerdict } from './Composer';
 export { default as Dropdown } from './Dropdown';
 export { default as DataTable } from './DataTable';
 export { default as SplitText } from './SplitText';

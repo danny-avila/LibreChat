@@ -199,6 +199,17 @@ jest.mock('./SubagentConversation', () => ({
   ),
 }));
 
+/** The shared composer's own Enter contract, for the mock to fall back on when
+ *  a host supplies no key policy. */
+const mockComposerVerdict = (
+  event: React.KeyboardEvent<HTMLTextAreaElement>,
+  submitOnEnter: boolean,
+): 'submit' | 'newline' | 'none' => {
+  if (event.key !== 'Enter' || event.shiftKey) return 'none';
+  if (!submitOnEnter && !(event.metaKey || event.ctrlKey)) return 'newline';
+  return 'submit';
+};
+
 jest.mock('@librechat/client', () => ({
   Alert: ({ children, ...props }: React.ComponentProps<'div'>) => (
     <div role="alert" {...props}>
@@ -214,11 +225,13 @@ jest.mock('@librechat/client', () => ({
     setValue,
     ariaLabel,
     displayValue,
+    onOpenChange,
   }: {
     items: { value: string; label: string }[];
     setValue: (value: string) => void;
     ariaLabel: string;
     displayValue?: string;
+    onOpenChange?: (open: boolean) => void;
   }) => (
     <div>
       <button
@@ -227,6 +240,7 @@ jest.mock('@librechat/client', () => ({
         aria-controls="mock-combobox-options"
         aria-expanded="true"
         aria-label={ariaLabel}
+        onClick={() => onOpenChange?.(true)}
       >
         {displayValue}
       </button>
@@ -258,6 +272,7 @@ jest.mock('@librechat/client', () => ({
     disabled,
     actions,
     submitOnEnter = true,
+    resolveKeyVerdict,
   }: {
     value: string;
     onChange: (value: string) => void;
@@ -269,6 +284,10 @@ jest.mock('@librechat/client', () => ({
     disabled?: boolean;
     actions?: React.ReactNode;
     submitOnEnter?: boolean;
+    resolveKeyVerdict?: (
+      event: React.KeyboardEvent<HTMLTextAreaElement>,
+      isComposing: boolean,
+    ) => 'submit' | 'block' | 'newline' | 'none';
   }) => (
     <div>
       <textarea
@@ -278,8 +297,9 @@ jest.mock('@librechat/client', () => ({
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key !== 'Enter' || event.shiftKey) return;
-          if (!submitOnEnter && !(event.metaKey || event.ctrlKey)) return;
+          const verdict =
+            resolveKeyVerdict?.(event, false) ?? mockComposerVerdict(event, submitOnEnter);
+          if (verdict !== 'submit') return;
           event.preventDefault();
           if (canSubmit && value.trim() !== '') onSubmit();
         }}
@@ -1150,6 +1170,56 @@ describe('SubagentThreadPanel', () => {
     expect(getDraft('continued-chat')).toBe('');
   });
 
+  /** The composer is shared across selections, so a continuation that lands
+   *  after the reader has moved on must hand over the words IT was sent with,
+   *  and must not take the words now in front of them. */
+  it('binds the continuation draft to the selection that asked for it', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    let handedOffText: string | undefined;
+    const Observer = () => {
+      handedOffText = useRecoilValue(store.pendingComposerTextByConvoId('continued-chat'));
+      return null;
+    };
+    const { rerender } = render(
+      <RecoilRoot>
+        <Observer />
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Keep going on the first task.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
+
+    /** A different selection owns the composer now — same child thread, but the
+     *  panel is showing it for another parent, so its control identity (and its
+     *  draft) is not the one the fork was sent from. */
+    const laterSelection = { ...selection, parentConversationId: 'other-parent-conversation' };
+    rerender(
+      <RecoilRoot>
+        <Observer />
+        <SubagentThreadPanel selection={laterSelection} />
+      </RecoilRoot>,
+    );
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'A different question entirely.' },
+    });
+
+    const conversation = { conversationId: 'continued-chat', agent_id: 'agent-1' };
+    act(() => mockForkMutate.mock.calls[0][1].onSuccess({ conversation, messages: [] }));
+
+    expect(handedOffText).toBe('Keep going on the first task.');
+    expect(screen.getByLabelText('com_ui_message_input')).toHaveValue(
+      'A different question entirely.',
+    );
+  });
+
   it('continues with no draft when the reader asks for the chat without typing', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: completedView,
@@ -1584,6 +1654,78 @@ describe('SubagentThreadPanel', () => {
       }),
     );
     expect(mockRefreshParentChildren).toHaveBeenCalled();
+  });
+
+  /** The picker's popover renders inside the panel so the mobile focus trap can
+   *  see it. That same trap closes the panel on Escape, which would take the
+   *  composer's text with it — so an Escape aimed at the open picker has to
+   *  stop there. */
+  /** The picker's popover renders inside the panel so the mobile focus trap can
+   *  see it. That same trap closes the panel on Escape, which would take the
+   *  composer's text with it — so an Escape aimed at the OPEN picker has to stop
+   *  there, while an Escape anywhere else still closes the panel. */
+  it.each([
+    ['closes the panel when the actor picker is shut', false, true],
+    ['is left to the actor picker while it is open', true, false],
+  ])('Escape %s', (_label, openPicker, expectsClose) => {
+    const first: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'First actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task',
+      tasks: [{ taskId: 'task', status: 'completed' }],
+      tasksTruncated: false,
+    };
+    const second: ParentSubagentSummary = {
+      ...first,
+      threadId: 'child-thread-2',
+      subagentType: 'agent-2',
+      agentId: 'agent-2',
+      title: 'Second actor',
+      actorId: 'actor-2',
+      latestTaskId: 'task-2',
+      tasks: [{ taskId: 'task-2', status: 'completed' }],
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [first, second]]]);
+    mockParentChildrenByThread = new Map([
+      [first.threadId, first],
+      [second.threadId, second],
+    ]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    mockIsMobile = true;
+    let active: ActiveSubagentPanel | null = null;
+    const Observer = () => {
+      active = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+    };
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+        <Observer />
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    const picker = screen.getByRole('combobox', { name: 'com_ui_subagent_actor' });
+    if (openPicker) fireEvent.click(picker);
+    fireEvent.keyDown(picker, { key: 'Escape' });
+
+    expect(active == null).toBe(expectsClose);
   });
 
   it('keeps a single event actor in the compact header without a duplicate selector', () => {

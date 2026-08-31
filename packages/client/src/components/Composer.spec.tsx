@@ -134,6 +134,50 @@ describe('Composer', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
+  /** The host owns the key policy when it has one, so a reader who rebound or
+   *  unbound the submit shortcut gets the same contract as the main chat form,
+   *  and chords claimed by global shortcuts are left for the window handler. */
+  it('defers to the host key policy over its own Enter contract', () => {
+    const onSubmit = jest.fn();
+    const resolveKeyVerdict = jest
+      .fn()
+      .mockReturnValueOnce('newline')
+      .mockReturnValueOnce('block')
+      .mockReturnValueOnce('submit');
+    const Hosted = () => {
+      const [value, setValue] = useState('Alt is my submit chord now.');
+      return (
+        <Composer
+          value={value}
+          onChange={setValue}
+          onSubmit={onSubmit}
+          canSubmit
+          submitLabel="Send it"
+          ariaLabel="Message input"
+          resolveKeyVerdict={resolveKeyVerdict}
+        />
+      );
+    };
+    render(<Hosted />);
+    const field = screen.getByLabelText('Message input');
+
+    /** `newline` leaves the key to the field; `block` swallows it without
+     *  acting, which is how a chord bound to a global shortcut is yielded. */
+    const asNewline = createEvent.keyDown(field, { key: 'Enter' });
+    fireEvent(field, asNewline);
+    expect(asNewline.defaultPrevented).toBe(false);
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    const asBlock = createEvent.keyDown(field, { key: 'Enter', ctrlKey: true });
+    fireEvent(field, asBlock);
+    expect(asBlock.defaultPrevented).toBe(true);
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(field, { key: 'Enter', altKey: true });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(resolveKeyVerdict).toHaveBeenCalledWith(expect.anything(), false);
+  });
+
   it('sends from the button and keeps the caller actions alongside it', () => {
     const onSubmit = jest.fn();
     render(<Harness onSubmit={onSubmit} />);
