@@ -27,7 +27,8 @@ function setup(
     setQueue?: (value: QueuedMessage[]) => void;
     setNewConvoQueue?: (value: QueuedMessage[]) => void;
     setInterruptFlag?: (value: DrainAfterAbort | false) => void;
-    queueRef?: { current: QueuedMessage[] };
+    queue?: QueuedMessage[];
+    newConvoQueue?: QueuedMessage[];
     runEnd?: RunEnd | null;
   } = {};
 
@@ -39,6 +40,8 @@ function setup(
       store.queuedMessagesByConvoId(Constants.NEW_CONVO),
     );
     setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
+    setters.queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+    setters.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
     setters.runEnd = useRecoilValue(store.runEndByIndex(INDEX));
     useQueueDrain(INDEX, activeConversationId, ask);
     return null;
@@ -166,6 +169,30 @@ describe('useQueueDrain', () => {
 
     await waitFor(() => expect(setters.runEnd).toBeNull());
     expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('migrates the NEW_CONVO queue before discarding a consumed predecessor boundary', async () => {
+    const queuedBeforeResolution = queuedMessage('q-new', 'wait for the admitted successor');
+    const queuedAfterResolution = queuedMessage('q-resolved', 'still ordered after migration');
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [queuedBeforeResolution]);
+      set(store.queuedMessagesByConvoId(CONVO_ID), [queuedAfterResolution]);
+      set(store.admittedQueuedTurnPredecessorByConvoId(CONVO_ID), 41);
+    });
+
+    act(() => {
+      setters.setRunEnd!(
+        runEnd({
+          generationCreatedAt: 41,
+          startedAsNewConvo: true,
+        }),
+      );
+    });
+
+    await waitFor(() => expect(setters.runEnd).toBeNull());
+    expect(ask).not.toHaveBeenCalled();
+    expect(setters.newConvoQueue).toEqual([]);
+    expect(setters.queue).toEqual([queuedBeforeResolution, queuedAfterResolution]);
   });
 
   it('lets the admitted successor terminal boundary release the next turn', async () => {

@@ -368,12 +368,17 @@ export default function useSteering({
       (receipts: AgentQueuedTurnReceipt[]) => {
         let admittedPredecessor: number | undefined;
         for (const receipt of receipts) {
-          if (receipt.status !== 'admitted' || receipt.expectedPredecessorCreatedAt == null) {
+          if (receipt.status !== 'admitted') {
+            continue;
+          }
+          const effectivePredecessor =
+            receipt.effectivePredecessorCreatedAt ?? receipt.expectedPredecessorCreatedAt;
+          if (effectivePredecessor == null) {
             continue;
           }
           admittedPredecessor = Math.max(
-            admittedPredecessor ?? receipt.expectedPredecessorCreatedAt,
-            receipt.expectedPredecessorCreatedAt,
+            admittedPredecessor ?? effectivePredecessor,
+            effectivePredecessor,
           );
         }
         if (admittedPredecessor != null) {

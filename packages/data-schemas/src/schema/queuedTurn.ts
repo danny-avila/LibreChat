@@ -34,6 +34,7 @@ const terminalReceiptSchema = new Schema(
     admissionMode: { type: String, enum: ['warm', 'ordinary'] },
     generationId: { type: String, maxlength: 256 },
     generationCreatedAt: { type: Number, min: 0 },
+    effectivePredecessorCreatedAt: { type: Number, min: 0 },
     failure: { type: failureSchema },
   },
   { _id: false },

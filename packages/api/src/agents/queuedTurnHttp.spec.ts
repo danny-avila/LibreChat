@@ -67,10 +67,21 @@ describe('Agent queued-turn HTTP admission receipts', () => {
     const enqueueAgentQueuedTurn = jest
       .fn()
       .mockResolvedValueOnce({ turn: turn('queued'), replayed: false });
+    const admitted = {
+      ...turn('admitted'),
+      terminalReceipt: {
+        outcome: 'admitted' as const,
+        settledAt: new Date('2026-08-30T12:01:00Z'),
+        admissionId: 'client-request-1',
+        generationId: 'generation-1',
+        generationCreatedAt: 43,
+        effectivePredecessorCreatedAt: 42,
+      },
+    };
     const getAgentQueuedTurnByClientRequestId = jest
       .fn()
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(turn('admitted'));
+      .mockResolvedValueOnce(admitted);
     const schedule = jest.fn().mockRejectedValueOnce(new Error('scheduler unavailable'));
     const methods = {
       getConvo: jest.fn(async () => ({
@@ -104,6 +115,7 @@ describe('Agent queued-turn HTTP admission receipts', () => {
           queuedTurnId: 'queued-turn-1',
           clientRequestId: 'client-request-1',
           status: 'admitted',
+          effectivePredecessorCreatedAt: 42,
         },
       },
     });

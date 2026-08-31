@@ -624,6 +624,7 @@ describe('agent queued turn methods', () => {
       admissionMode: 'ordinary' as const,
       generationId: 'generation-1',
       generationCreatedAt: 84,
+      effectivePredecessorCreatedAt: 83,
       settledAt: START,
     };
     await expect(
@@ -638,7 +639,10 @@ describe('agent queued turn methods', () => {
       turn: {
         status: 'admitted',
         deliveryState: 'published',
-        terminalReceipt: { admissionId: 'admission-1' },
+        terminalReceipt: {
+          admissionId: 'admission-1',
+          effectivePredecessorCreatedAt: 83,
+        },
       },
     });
     await expect(
@@ -650,6 +654,7 @@ describe('agent queued turn methods', () => {
         admissionId: 'admission-1',
         generationId: 'generation-1',
         generationCreatedAt: 84,
+        effectivePredecessorCreatedAt: 83,
       }),
     ).resolves.toBe(true);
     await expect(
@@ -661,6 +666,19 @@ describe('agent queued turn methods', () => {
         admissionId: 'admission-1',
         generationId: 'generation-1',
         generationCreatedAt: 85,
+        effectivePredecessorCreatedAt: 83,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.hasAgentQueuedTurnAdmissionReceipt({
+        user,
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-1',
+        queuedTurnId: admitted.turn.queuedTurnId,
+        admissionId: 'admission-1',
+        generationId: 'generation-1',
+        generationCreatedAt: 84,
+        effectivePredecessorCreatedAt: 82,
       }),
     ).resolves.toBe(false);
     await expect(methods.markAgentQueuedTurnAdmitted(admissionInput)).resolves.toMatchObject({

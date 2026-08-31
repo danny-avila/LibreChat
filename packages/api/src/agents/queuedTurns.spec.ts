@@ -306,6 +306,7 @@ describe('Agent queued-turn continuation', () => {
           sourceId: 'queued-turn-1',
           claimId: 'trigger-1',
           claimBy: 'worker-1',
+          effectivePredecessorCreatedAt: NOW,
         },
         {
           userId: USER_ID,
@@ -325,6 +326,7 @@ describe('Agent queued-turn continuation', () => {
         admissionId: 'trigger-1',
         generationId: 'conversation-1',
         generationCreatedAt: NOW + 1,
+        effectivePredecessorCreatedAt: NOW,
       }),
     );
   });
@@ -342,6 +344,7 @@ describe('Agent queued-turn continuation', () => {
       sourceId: 'queued-turn-1',
       claimId: 'trigger-1',
       claimBy: 'worker-1',
+      effectivePredecessorCreatedAt: NOW,
     };
     const admission = {
       userId: USER_ID,
@@ -361,6 +364,7 @@ describe('Agent queued-turn continuation', () => {
       admissionId: 'trigger-1',
       generationId: 'conversation-1',
       generationCreatedAt: NOW + 1,
+      effectivePredecessorCreatedAt: NOW,
     });
 
     spies.hasAgentQueuedTurnAdmissionReceipt.mockResolvedValueOnce(false);
@@ -459,10 +463,28 @@ describe('Agent queued-turn continuation', () => {
       claimBy: 'worker-1',
     });
 
-    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toMatchObject({
+    const prepared = await resolve(envelope(), { idempotencyKey: 'trigger-1' });
+    expect(prepared).toMatchObject({
       status: 'ready',
       expectedPredecessorCreatedAt: NOW + 250,
+      admissionSource: { effectivePredecessorCreatedAt: NOW + 250 },
     });
+    if (prepared?.status !== 'ready') {
+      throw new Error('Expected a ready queued turn');
+    }
+    await prepared.settleOnAdmission?.({
+      mode: 'continue',
+      status: 'started',
+      conversationId: 'conversation-1',
+      streamId: 'stream-2',
+      generationCreatedAt: NOW + 500,
+    });
+    expect(spies.markAgentQueuedTurnAdmitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: 'queued-turn-1',
+        effectivePredecessorCreatedAt: NOW + 250,
+      }),
+    );
     expect(spies.getEffectiveAgentQueuedTurnPredecessor).toHaveBeenCalledWith({
       user: new Types.ObjectId(USER_ID),
       tenantId: 'tenant-1',

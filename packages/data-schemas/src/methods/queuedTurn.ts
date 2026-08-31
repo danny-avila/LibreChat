@@ -237,6 +237,7 @@ export interface AgentQueuedTurnMethods {
       admissionMode: 'warm' | 'ordinary';
       generationId?: string;
       generationCreatedAt?: number;
+      effectivePredecessorCreatedAt?: number;
       settledAt: Date;
     },
   ) => Promise<AdmitAgentQueuedTurnResult>;
@@ -246,6 +247,7 @@ export interface AgentQueuedTurnMethods {
       admissionId: string;
       generationId: string;
       generationCreatedAt: number;
+      effectivePredecessorCreatedAt?: number;
     },
   ) => Promise<boolean>;
   deadLetterAgentQueuedTurn: (
@@ -1698,12 +1700,14 @@ export function createAgentQueuedTurnMethods(
       admissionMode: 'warm' | 'ordinary';
       generationId?: string;
       generationCreatedAt?: number;
+      effectivePredecessorCreatedAt?: number;
       settledAt: Date;
     },
   ): Promise<AdmitAgentQueuedTurnResult> {
     const admissionId = requireBoundedString(input.admissionId, 128);
     const generationId = normalizeOptionalString(input.generationId, 256);
     const generationCreatedAt = normalizePredecessor(input.generationCreatedAt);
+    const effectivePredecessorCreatedAt = normalizePredecessor(input.effectivePredecessorCreatedAt);
     const turn = await Turn()
       .findOneAndUpdate(
         {
@@ -1736,6 +1740,7 @@ export function createAgentQueuedTurnMethods(
               admissionMode: input.admissionMode,
               ...(generationId != null && { generationId }),
               ...(generationCreatedAt != null && { generationCreatedAt }),
+              ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
             },
           },
           $unset: {
@@ -1780,9 +1785,11 @@ export function createAgentQueuedTurnMethods(
       admissionId: string;
       generationId: string;
       generationCreatedAt: number;
+      effectivePredecessorCreatedAt?: number;
     },
   ): Promise<boolean> {
     const generationCreatedAt = normalizePredecessor(input.generationCreatedAt);
+    const effectivePredecessorCreatedAt = normalizePredecessor(input.effectivePredecessorCreatedAt);
     if (generationCreatedAt == null) {
       throw new TypeError('Agent queued turn admission generation is invalid');
     }
@@ -1795,6 +1802,9 @@ export function createAgentQueuedTurnMethods(
         'terminalReceipt.admissionId': requireBoundedString(input.admissionId, 128),
         'terminalReceipt.generationId': requireBoundedString(input.generationId, 256),
         'terminalReceipt.generationCreatedAt': generationCreatedAt,
+        ...(effectivePredecessorCreatedAt != null && {
+          'terminalReceipt.effectivePredecessorCreatedAt': effectivePredecessorCreatedAt,
+        }),
       })) != null
     );
   }

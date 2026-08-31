@@ -507,13 +507,14 @@ describe('useSteering', () => {
           status: 'admitted',
           revision: 4,
           expectedPredecessorCreatedAt: 41,
+          effectivePredecessorCreatedAt: 42,
           createdAt: new Date(200).toISOString(),
           updatedAt: new Date(300).toISOString(),
         },
       ];
       const { result } = setupServerQueue();
 
-      await waitFor(() => expect(result.current.admittedPredecessor).toBe(41));
+      await waitFor(() => expect(result.current.admittedPredecessor).toBe(42));
       expect(result.current.queue).toEqual([]);
     });
 

@@ -52,6 +52,9 @@ export type TCancelAgentQueuedTurnRequest = z.infer<typeof cancelAgentQueuedTurn
 export const agentQueuedTurnReceiptSchema = enqueueAgentQueuedTurnSchema.extend({
   queuedTurnId: z.string().trim().min(1),
   status: z.enum(agentQueuedTurnStatuses),
+  /** Effective generation boundary consumed by an admitted turn. This can
+   * advance beyond the originally captured root as queued turns chain. */
+  effectivePredecessorCreatedAt: z.number().int().nonnegative().optional(),
   position: z.number().int().nonnegative().optional(),
   revision: z.number().int().nonnegative(),
   failure: z

@@ -37,6 +37,8 @@ export interface AgentQueuedTurnTerminalReceipt {
   admissionMode?: 'warm' | 'ordinary';
   generationId?: string;
   generationCreatedAt?: number;
+  /** Effective predecessor consumed by this admission after queued-turn chaining. */
+  effectivePredecessorCreatedAt?: number;
   failure?: AgentQueuedTurnFailure;
 }
 

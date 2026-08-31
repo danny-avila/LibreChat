@@ -259,6 +259,10 @@ export default function useQueueDrain(
           /** Admission consumed this terminal boundary on the server. A late
            * client terminal observation cannot authorize a second successor. */
           consumeEnd();
+          if (shouldMigrate && newConvoQueue.length > 0) {
+            set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), []);
+            set(store.queuedMessagesByConvoId(conversationId), merged);
+          }
           return null;
         }
         /** A server-owned Agent row means the backend owns the next fresh-turn

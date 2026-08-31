@@ -90,6 +90,10 @@ function receipt(
     ...(turn.expectedPredecessorCreatedAt != null && {
       expectedPredecessorCreatedAt: turn.expectedPredecessorCreatedAt,
     }),
+    ...(turn.terminalReceipt?.outcome === 'admitted' &&
+      turn.terminalReceipt.effectivePredecessorCreatedAt != null && {
+        effectivePredecessorCreatedAt: turn.terminalReceipt.effectivePredecessorCreatedAt,
+      }),
     status: turn.status,
     ...(position != null && { position }),
     revision: turn.sequence,
