@@ -22,10 +22,10 @@ jobs:
     outputs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24.16.0'
 
@@ -58,7 +58,7 @@ jobs:
 
       - name: Upload package
         if: steps.check.outputs.skip != 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: librechat-data-schemas-package
           path: npm-package/*.tgz
@@ -75,7 +75,7 @@ jobs:
       id-token: write  # Required for OIDC trusted publishing
     steps:
       - name: Use Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24.16.0'
           registry-url: 'https://registry.npmjs.org'
@@ -84,7 +84,7 @@ jobs:
         run: npm install -g npm@11.14.1 --ignore-scripts
 
       - name: Download package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: librechat-data-schemas-package
           path: npm-package

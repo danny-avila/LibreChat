@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           # Full history is load-bearing: changed-file steps diff against the
           # PR base and the ESLint regression gate reads the base ref's
@@ -45,7 +45,7 @@ jobs:
       # locally on a commit's diff — keep the two in sync.
       - name: Detect affected checks
         id: paths
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           predicate-quantifier: 'some-with-excludes'
           filters: |
@@ -92,7 +92,7 @@ jobs:
               - '!**.md'
 
       - name: Set up Node.js 24.16.0
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24.16.0'
           cache: npm
@@ -242,7 +242,7 @@ jobs:
         if: always() && steps.paths.outputs.config == 'true'
         id: cache-data-provider
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: packages/data-provider/dist
           key: build-data-provider-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
@@ -257,7 +257,7 @@ jobs:
         if: always() && steps.paths.outputs.config == 'true'
         id: cache-data-schemas
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: packages/data-schemas/dist
           key: build-data-schemas-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
@@ -272,7 +272,7 @@ jobs:
         if: always() && steps.paths.outputs.config == 'true'
         id: cache-api
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: packages/api/dist
           key: build-api-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/api/src/**', 'packages/api/tsconfig*.json', 'packages/api/tsdown.config.mjs', 'packages/api/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json') }}
@@ -758,7 +758,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           # fetch-depth: 0 is load-bearing — the gate reads the base ref's
           # config via `git show`, which a shallow checkout cannot resolve.
@@ -766,7 +766,7 @@ jobs:
 
       - name: Detect config changes
         id: paths
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           predicate-quantifier: 'some-with-excludes'
           filters: |
@@ -776,7 +776,7 @@ jobs:
 
       - name: Set up Node.js 24.16.0
         if: steps.paths.outputs.eslint_config == 'true'
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24.16.0'
           cache: npm

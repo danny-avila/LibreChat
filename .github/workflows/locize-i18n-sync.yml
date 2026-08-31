@@ -22,12 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
 
       - name: Set Up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24.16.0'
 
@@ -61,7 +61,7 @@ jobs:
     steps:
       # 1. Check out the repository.
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: dev
           persist-credentials: false
@@ -72,7 +72,7 @@ jobs:
 
       # Download the latest published translation version from Locize.
       - name: Download Translations from locize
-        uses: locize/download@v2
+        uses: locize/download@695b84767bb41b44f766754f10c491420b1b239a # v2
         with:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           path: "client/src/locales"
@@ -94,7 +94,7 @@ jobs:
             --current-dir client/src/locales
 
       - name: Upload Validated Translations
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: locize-locales-${{ github.run_id }}
           path: client/src/locales
@@ -104,7 +104,7 @@ jobs:
       # 3. Create a Pull Request using this workflow's scoped token.
       - name: Create Pull Request
         id: create-pull-request
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ github.token }}
           add-paths: |

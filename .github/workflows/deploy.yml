@@ -20,15 +20,15 @@ jobs:
     steps:
       # checkout the repo
       - name: 'Checkout GitHub Action'
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: 'Login via Azure CLI'
-        uses: azure/login@v3
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: 'Deploy to Azure Container Instances'
-        uses: 'azure/aci-deploy@v1'
+        uses: azure/aci-deploy@28cafb864979bc5b44cd1f3fd45522727eb5a3db # v1
         with:
           resource-group: ${{ env.ACI_RESOURCE_GROUP }}
           image: ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }}
