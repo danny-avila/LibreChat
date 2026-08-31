@@ -1103,7 +1103,7 @@ describe('useSteering', () => {
 
       mockServerQueuedTurns = [
         {
-          ...mockServerQueuedTurns[0],
+          ...(mockServerQueuedTurns[0] as Record<string, unknown>),
           status: 'queued',
           revision: 3,
           failure: undefined,
