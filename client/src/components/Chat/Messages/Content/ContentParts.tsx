@@ -748,9 +748,15 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *
              *  `messageId` is deliberately absent. The assistant streams under
              *  a synthetic `${userMessage.messageId}_` for the WHOLE run and
-             *  only takes its server id at `finalHandler`, so a key carrying it
-             *  remounts every card at settle and drops whatever the reader had
-             *  open. `ToolCallGroup` keys the same way for the same reason. */
+             *  only takes its server id at `finalHandler` — batched with
+             *  `setIsSubmitting(false)`, so that commit is indistinguishable
+             *  from a sibling switch by message identity alone. A key carrying
+             *  `messageId` therefore remounts every card at settle and drops
+             *  whatever the reader had open. `siblingIdx` separates the two:
+             *  it moves when the reader pages to another response and holds
+             *  still when the same response takes its real id — which matters
+             *  because `MultiMessage` renders siblings without a key and
+             *  reuses this instance. */
             const cardKeyIndex = segment.hasContent ? segmentKeyIndex(segment) : phaseKeyIndex;
             const labelText = getActivityLabelText(segment.labelPart);
             const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
@@ -783,7 +789,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
             }
             return (
               <ActivityPhaseGroup
-                key={`activity-phase-${cardKeyIndex}`}
+                key={`activity-phase-${siblingIdx ?? 0}-${cardKeyIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
                 hasPendingApproval={hasPendingApproval}

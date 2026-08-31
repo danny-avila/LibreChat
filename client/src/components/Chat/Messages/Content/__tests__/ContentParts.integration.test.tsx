@@ -732,6 +732,32 @@ describe('ContentParts — synthesized activity folds', () => {
     expect(foldHeader()).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('resets the card when the reader pages to another sibling', () => {
+    /** `MultiMessage` renders siblings without a key and reuses this instance,
+     *  so an index-anchored card would otherwise carry one response's open
+     *  state into an unrelated one. `siblingIdx` moves here and does not move
+     *  at settle, which is what separates the two. */
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} siblingIdx={0} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          siblingIdx={1}
+          messageId="sibling-msg"
+          content={labeledRun()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('leaves an unlabeled run rendering exactly as before', () => {
     renderContentParts({
       ...baseProps,
