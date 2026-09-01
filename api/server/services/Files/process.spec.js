@@ -2692,6 +2692,32 @@ describe('permanent unified uploads and unknown tool sets', () => {
     checkCapability.mockResolvedValue(true);
   });
 
+  test('records a named destination as chosen in unified mode', async () => {
+    /* The marker asks whether the user named a destination, not which endpoint mode was
+     * on. Recording the mode treats an explicitly sandbox-only upload as inferred, and
+     * delivery then re-resolves it onto the model path. */
+    setupStoredFileUpload();
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        tool_resource: EToolResources.file_search,
+        file_id: 'f-named',
+      },
+    }).catch(() => {});
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ destinationChosen: true }),
+      }),
+      true,
+    );
+  });
+
   test('records the agent namespace on an eagerly embedded file', async () => {
     /* Vectors go in under entity_id, and priming asks which namespaces hold them rather
      * than reading the root flag, so omitting this re-embeds on the first search and

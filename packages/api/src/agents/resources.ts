@@ -418,7 +418,7 @@ const computeProvisionState = async ({
    * the file, not to this request: the endpoint deciding this turn need not be the one it
    * was uploaded under. Records predating the marker have only the setting to go on. */
   const cameFromChooser = (file: TFile): boolean => {
-    const choice = file.metadata?.legacyUploadChoice;
+    const choice = file.metadata?.destinationChosen;
     return choice == null ? legacyFileUploadUX === true : choice;
   };
 
@@ -785,7 +785,32 @@ export const primeResources = async ({
       }
 
       if (screenPersistentFiles) {
-        persistedResourceFiles = screenPersistentFiles(persistedResourceFiles);
+        const admitted = screenPersistentFiles(persistedResourceFiles);
+        /* The tool primers read tool_resources ids directly and re-check only access, so
+         * a record dropped here still reaches the Code API or RAG unless its id goes with
+         * it. Screening the hydrated list alone screens nothing. */
+        if (admitted.length !== persistedResourceFiles.length) {
+          const admittedIds = new Set(
+            admitted.map((file) => file.file_id).filter((id): id is string => id != null),
+          );
+          const rejectedIds = persistedResourceFiles
+            .map((file) => file.file_id)
+            .filter((id): id is string => id != null && !admittedIds.has(id));
+          const runtimeResources = [
+            tool_resources[EToolResources.execute_code],
+            tool_resources[EToolResources.file_search],
+          ];
+          for (const resource of runtimeResources) {
+            if (resource?.file_ids == null) {
+              continue;
+            }
+            resource.file_ids = resource.file_ids.filter((id: string) => !rejectedIds.includes(id));
+          }
+          for (const id of rejectedIds) {
+            toolResourceFileIds.delete(id);
+          }
+        }
+        persistedResourceFiles = admitted;
       }
     }
 

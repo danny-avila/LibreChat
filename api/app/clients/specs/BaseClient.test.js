@@ -3070,9 +3070,48 @@ describe('BaseClient', () => {
       expect(TestClient.addImageURLs).not.toHaveBeenCalled();
     });
 
-    test('keeps an explicit chooser decision even under a different provider', async () => {
-      /* A legacy chooser upload records the user's own decision, which is not this
-       * endpoint's to re-derive. */
+    test('resolves an agent policy by its provider, not the agents container', async () => {
+      /* getEndpointFileConfig prefers endpointType, and an agents chat carries `agents`,
+       * so supplying it answers with the generic entry rather than the provider's. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.agents,
+        agent: { provider: EModelEndpoint.openAI, endpoint: EModelEndpoint.agents },
+        req: {
+          config: {
+            fileConfig: {
+              endpoints: {
+                [EModelEndpoint.openAI]: {
+                  defaultLLMDeliveryPath: { overrides: { 'image/*': 'none' } },
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'agent-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('keeps an explicitly named destination even under a different provider', async () => {
+      /* The user named this one, through the chooser or by requesting a tool resource,
+       * and that decision is not this endpoint's to re-derive. */
       routeTo('text', 'audio/*');
       const message = {};
       const file = {
@@ -3084,7 +3123,7 @@ describe('BaseClient', () => {
         bytes: 100,
         source: 'local',
         llmDeliveryPath: 'provider',
-        metadata: { legacyUploadChoice: true },
+        metadata: { destinationChosen: true },
       };
 
       await TestClient.processAttachments(message, [file]);

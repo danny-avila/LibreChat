@@ -185,6 +185,14 @@ export const bedrockDocumentFormats: Record<string, BedrockDocumentFormat> = {
 export const isMessageFileUpload = (value?: boolean | string | null): boolean =>
   value === true || value === 'true';
 
+/**
+ * Whether the upload's conversation uses the Responses API, which decides whether Azure
+ * can carry a document natively. Multipart form data has no booleans, so it arrives as
+ * the string "true".
+ */
+export const isResponsesApiUpload = (value?: boolean | string | null): boolean =>
+  value === true || value === 'true';
+
 export const isBedrockDocumentType = (mimeType?: string): boolean =>
   mimeType != null && mimeType in bedrockDocumentFormats;
 

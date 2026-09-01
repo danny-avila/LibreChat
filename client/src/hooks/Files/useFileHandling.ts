@@ -360,6 +360,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     const formData = new FormData();
     formData.append('endpoint', endpoint);
     formData.append('endpointType', endpointType ?? '');
+    /* Azure carries native documents only through the Responses API, so routing needs to
+     * know which one this conversation uses. */
+    if (conversation?.useResponsesApi === true) {
+      formData.append('useResponsesApi', 'true');
+    }
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
     if (

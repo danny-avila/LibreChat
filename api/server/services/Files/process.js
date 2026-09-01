@@ -22,6 +22,7 @@ const {
   resolveUploadDestination,
   canToolResourceConsume,
   isMessageFileUpload,
+  isResponsesApiUpload,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -481,7 +482,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     endpointConfig,
     fileConfig,
     endpoint: configEndpoint,
-    useResponsesApi: metadata.useResponsesApi ?? req.body?.useResponsesApi,
+    useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
   });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
@@ -511,7 +512,8 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     /* The image route persists through here directly, so the choice has to be recorded
      * on this path too. Absent, a later turn substitutes its own endpoint's mode. */
     metadata: {
-      legacyUploadChoice: endpointConfig?.legacyFileUploadUX === true,
+      destinationChosen:
+        endpointConfig?.legacyFileUploadUX === true || metadata.tool_resource != null,
       ...(`image/${appConfig.imageOutputType}` !== file.mimetype
         ? { routingMimeType: file.mimetype }
         : {}),
@@ -747,9 +749,13 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   /* Recorded on the file below, both ways: the endpoint setting can differ on a later
    * turn, but the user's decision about this file does not change with it. An absent
-   * marker means a record written before this was tracked, not a unified upload. */
+   * marker means a record written before this was tracked, not an inferred destination.
+   *
+   * A destination is the user's whenever they named one, which the chooser always does
+   * and a request naming a tool resource does too. Recording the endpoint mode instead
+   * would treat an explicitly sandbox-only upload in unified mode as inferred. */
   const legacyUploadUX = endpointConfig?.legacyFileUploadUX === true;
-  const uploadChoiceMetadata = { legacyUploadChoice: legacyUploadUX };
+  const uploadChoiceMetadata = { destinationChosen: legacyUploadUX || tool_resource != null };
 
   if (agent_id && !tool_resource && !messageAttachment) {
     if (legacyUploadUX) {
@@ -763,7 +769,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     endpointConfig,
     fileConfig,
     endpoint,
-    useResponsesApi: metadata.useResponsesApi ?? req.body?.useResponsesApi,
+    useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
   });
 
   /* Destination and acceptability are one decision, made by shared policy rather than
