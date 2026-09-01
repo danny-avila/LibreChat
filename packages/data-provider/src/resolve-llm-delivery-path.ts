@@ -12,12 +12,18 @@ import { EToolResources } from './types/assistants';
 /** Audio and video reach the model only through the media encoders, which support a
  *  narrower provider set than documents. Images use the broadly supported vision
  *  path and are never gated here. */
-const isProviderCapable = (mimeType: string, endpoint: string): boolean => {
+const isProviderCapable = (
+  mimeType: string,
+  endpoint: string,
+  useResponsesApi?: boolean,
+): boolean => {
   if (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
     return isMediaSupportedProvider(endpoint);
   }
   if (mimeType === 'application/pdf') {
-    return isDocumentSupportedProvider(endpoint);
+    /* Azure is out of the document set because it needs the Responses API for native
+     * documents, so the encoder's own condition decides rather than the endpoint alone. */
+    return useResponsesApi === true || isDocumentSupportedProvider(endpoint);
   }
   return true;
 };
@@ -96,6 +102,7 @@ export function resolveDefaultLLMDeliveryPath(
   endpointConfig?: TDefaultLLMDeliveryPathConfig,
   globalConfig?: TDefaultLLMDeliveryPathConfig,
   endpoint?: string,
+  useResponsesApi?: boolean,
 ): TDefaultLLMDeliveryPath {
   const wildcard = mimeType.split('/')[0] + '/*';
 
@@ -138,9 +145,20 @@ export function resolveDefaultLLMDeliveryPath(
    *  at request time and is usually OpenAI- or Anthropic-compatible. Judging
    *  capability from either would downgrade media the actual provider can deliver,
    *  so an unresolved provider keeps the system default. */
-  const providerKnown =
-    endpoint != null && endpoint !== EModelEndpoint.agents && isKnownProviderIdentifier(endpoint);
-  if (systemDefault === 'provider' && providerKnown && !isProviderCapable(mimeType, endpoint)) {
+  const namedEndpoint = endpoint != null && endpoint !== EModelEndpoint.agents;
+  const providerKnown = namedEndpoint && isKnownProviderIdentifier(endpoint);
+  /* Media is judged for any named endpoint, identified or not. The media encoders emit a
+   * payload only for the providers they name, so a custom endpoint gets nothing whatever
+   * it proxies to, and leaving it on the provider path delivers neither media nor text.
+   * Documents keep the narrower rule: an unidentified endpoint is usually OpenAI- or
+   * Anthropic-compatible, both of which do carry them. */
+  const isMedia = mimeType.startsWith('audio/') || mimeType.startsWith('video/');
+  const canJudgeCapability = isMedia ? namedEndpoint : providerKnown;
+  if (
+    systemDefault === 'provider' &&
+    canJudgeCapability &&
+    !isProviderCapable(mimeType, endpoint as string, useResponsesApi)
+  ) {
     /* Downgrading is only useful where text can actually be recovered. Video has no
      * extraction step: speech-to-text covers audio, and the default text matcher accepts
      * any well-formed MIME type, so routing it to text ends in the raw bytes being
@@ -181,11 +199,13 @@ export function resolveDefaultUploadLLMDeliveryPath({
   endpointConfig,
   fileConfig,
   endpoint,
+  useResponsesApi,
 }: {
   mimeType: string;
   endpointConfig?: EndpointFileConfig;
   fileConfig?: FileConfig;
   endpoint?: string;
+  useResponsesApi?: boolean;
 }): TDefaultLLMDeliveryPath {
   if (endpointConfig?.legacyFileUploadUX === true) {
     return 'provider';
@@ -195,6 +215,7 @@ export function resolveDefaultUploadLLMDeliveryPath({
     endpointConfig?.defaultLLMDeliveryPath,
     fileConfig?.defaultLLMDeliveryPath,
     endpoint,
+    useResponsesApi,
   );
 }
 
@@ -205,12 +226,14 @@ export function resolveUploadLLMDeliveryPath({
   endpointConfig,
   fileConfig,
   endpoint,
+  useResponsesApi,
 }: {
   toolResource?: string | null;
   mimeType: string;
   endpointConfig?: EndpointFileConfig;
   fileConfig?: FileConfig;
   endpoint?: string;
+  useResponsesApi?: boolean;
 }): TDefaultLLMDeliveryPath {
   if (toolResource === EToolResources.context || toolResource === EToolResources.ocr) {
     return 'text';
@@ -218,7 +241,13 @@ export function resolveUploadLLMDeliveryPath({
   if (toolResource === EToolResources.file_search || toolResource === EToolResources.execute_code) {
     return 'none';
   }
-  return resolveDefaultUploadLLMDeliveryPath({ mimeType, endpointConfig, fileConfig, endpoint });
+  return resolveDefaultUploadLLMDeliveryPath({
+    mimeType,
+    endpointConfig,
+    fileConfig,
+    endpoint,
+    useResponsesApi,
+  });
 }
 
 /**

@@ -76,6 +76,8 @@ export interface ProvisionService {
   }) => Promise<{
     referenceSet: CodeEnvReferenceSetResult;
     refUpdate: CodeEnvRefUpdate;
+    /** The name the sandbox stored it under, which a converted image renames. */
+    sandboxFilename: string;
   }>;
   provisionToVectorDB: (params: {
     req: ServerRequest;
@@ -239,10 +241,11 @@ export function createProvisionService({
      * be re-uploaded by priming, and a deployment whose only healthy Code API is the
      * configured stateful one could not provision at all. */
     const executionProfile = route?.executionProfile ?? 'default';
+    const sandboxFilename = provisionFilename(file);
     const uploaded = await uploadCodeEnvFile({
       req,
       stream,
-      filename: provisionFilename(file),
+      filename: sandboxFilename,
       kind,
       id,
       ...(route?.baseUrl ? { codeApiBaseUrl: route.baseUrl } : {}),
@@ -270,6 +273,7 @@ export function createProvisionService({
 
     return {
       referenceSet,
+      sandboxFilename,
       refUpdate: {
         file_id: file.file_id,
         routeKey,

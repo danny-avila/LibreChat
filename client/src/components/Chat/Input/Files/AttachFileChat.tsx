@@ -5,6 +5,7 @@ import {
   mergeFileConfig,
   isAgentsEndpoint,
   resolveEndpointType,
+  isEphemeralAgentId,
   isAssistantsEndpoint,
   getEndpointFileConfig,
 } from 'librechat-data-provider';
@@ -100,9 +101,11 @@ function AttachFileChat({
     [disableInputs, endpointFileConfig?.disabled],
   );
   /* A saved agent's policy lives under its provider, so nothing is resolved for it until
-   * that provider is known; until then endpointFileConfig is the generic agents entry. */
-  const isPolicyResolved =
-    isFileConfigLoaded && (!isAgents || !conversation?.agent_id || agentProvider != null);
+   * that provider is known; until then endpointFileConfig is the generic agents entry.
+   * An ephemeral agent has no record to fetch, so waiting on one never ends. */
+  const isSavedAgent =
+    isAgents && conversation?.agent_id != null && !isEphemeralAgentId(conversation.agent_id);
+  const isPolicyResolved = isFileConfigLoaded && (!isSavedAgent || agentProvider != null);
 
   /* Resolved here rather than in the menu: an unresolved config reads as unified, which
    * would show the wrong uploader on a legacy deployment. */

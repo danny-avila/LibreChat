@@ -247,10 +247,14 @@ export function createProvisionFilesCallback({
       const queuedCodeFiles = provisionState.codeEnvFiles;
       const results = await Promise.allSettled(
         queuedCodeFiles.map(async (file) => {
-          const referenceSet = await shareProvisioning(
+          const provisioned = await shareProvisioning(
             shareKey(`code:${codeRouteKey}`, file),
             async () => {
-              const { referenceSet: refs, refUpdate } = await provisionToCodeEnv({
+              const {
+                referenceSet: refs,
+                refUpdate,
+                sandboxFilename,
+              } = await provisionToCodeEnv({
                 req,
                 file,
                 entity_id: entityIdForFile(file),
@@ -272,9 +276,10 @@ export function createProvisionFilesCallback({
                   `Failed to persist the code environment reference for file ${refUpdate.file_id}`,
                 );
               }
-              return refs;
+              return { refs, sandboxFilename };
             },
           );
+          const { refs: referenceSet, sandboxFilename } = provisioned;
           file.metadata = { ...file.metadata, ...referenceSet };
           addProvisionedFile(file, EToolResources.execute_code);
           const ref = referenceSet.codeEnvRefs?.[codeRouteKey];
@@ -283,7 +288,10 @@ export function createProvisionFilesCallback({
               id: ref.file_id,
               resource_id: ref.id,
               storage_session_id: ref.storage_session_id,
-              name: file.filename,
+              /* The name the sandbox stored it under: a converted image is renamed on
+               * upload, and telling the model the record's name sends it to a path that
+               * does not exist. */
+              name: sandboxFilename,
               kind: ref.kind,
             } as CodeEnvFile);
           }

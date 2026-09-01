@@ -68,6 +68,9 @@ function buildHarness({
         routeKey: 'default',
         ref: { kind: 'user', id: 'u1', storage_session_id: 'sess-1', file_id: 'remote-1' },
       },
+      /* Mirrors the service: the sandbox stores a converted image under a corrected
+       * extension, so the name the model is told is not always the record's. */
+      sandboxFilename: file.filename,
     }));
   const provisionToVectorDB =
     vectorImpl ??
@@ -162,6 +165,38 @@ describe('createProvisionFilesCallback', () => {
         kind: 'user',
       },
     ]);
+  });
+
+  it('reports the name the sandbox stored, not the record name', async () => {
+    /* A converted image is uploaded under a corrected extension, so telling the model the
+     * record's name points it at a path the sandbox does not have. */
+    const converted = makeFile({ file_id: 'converted', filename: 'photo.png', type: 'image/webp' });
+    const { provisionFiles } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([converted], []) }]],
+      codeImpl: jest.fn(async ({ file }: { file: TFile }) => ({
+        referenceSet: {
+          codeEnvRef: { kind: 'user', id: 'u1', storage_session_id: 'sess-1', file_id: 'remote-1' },
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'u1',
+              storage_session_id: 'sess-1',
+              file_id: 'remote-1',
+            },
+          },
+        },
+        refUpdate: {
+          file_id: file.file_id,
+          routeKey: 'default',
+          ref: { kind: 'user', id: 'u1', storage_session_id: 'sess-1', file_id: 'remote-1' },
+        },
+        sandboxFilename: 'photo.webp',
+      })),
+    });
+
+    const provisioned = await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+
+    expect(provisioned.map((entry) => entry.name)).toEqual(['photo.webp']);
   });
 
   it('returns the refs to every agent sharing one upload', async () => {

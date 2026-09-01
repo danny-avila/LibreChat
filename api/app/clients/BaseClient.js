@@ -1739,10 +1739,13 @@ class BaseClient {
       file.llmDeliveryPath == null || file.metadata?.legacyUploadChoice === true
         ? file.llmDeliveryPath
         : resolveUploadLLMDeliveryPath({
-            mimeType: file.type,
+            /* Conversion changes the stored type, so re-resolution asks against the type
+             * the route was decided on rather than the format it was written in. */
+            mimeType: file.metadata?.routingMimeType ?? file.type,
             endpointConfig: this._endpointFileConfig,
             fileConfig: this._mergedFileConfig,
             endpoint: this._deliveryEndpoint,
+            useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
           });
 
     for (const file of attachments) {

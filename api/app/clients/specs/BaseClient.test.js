@@ -3040,6 +3040,29 @@ describe('BaseClient', () => {
       expect(TestClient.addAudios).not.toHaveBeenCalled();
     });
 
+    test('re-resolves a converted image against the type it was routed on', async () => {
+      /* Conversion rewrote the stored type, so resolving against that asks about a format
+       * the administrator never configured a route for and delivers what they excluded. */
+      routeTo('none', 'image/png');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'converted-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.webp',
+        type: 'image/webp',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+        metadata: { routingMimeType: 'image/png' },
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
     test('keeps an explicit chooser decision even under a different provider', async () => {
       /* A legacy chooser upload records the user's own decision, which is not this
        * endpoint's to re-derive. */
