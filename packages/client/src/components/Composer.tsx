@@ -125,6 +125,19 @@ const Composer: ForwardRefExoticComponent<
   /** Nothing to send and something to stop: main chat swaps the same slot
    *  rather than standing a second control beside it. */
   const showStop = onStop != null && value.trim() === '';
+  const offeredActions = canSubmit ? (submitActions ?? []) : [];
+  const sendButton = (
+    <button
+      type="button"
+      aria-label={submitLabel}
+      disabled={disabled || !canSubmit}
+      onClick={() => onSubmit()}
+      data-testid="composer-send-button"
+      className={cn(CONTROL_CLASS, offeredActions.length > 0 && 'ml-auto')}
+    >
+      <SendIcon size={24} />
+    </button>
+  );
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     /**
@@ -216,25 +229,18 @@ const Composer: ForwardRefExoticComponent<
           />
         ) : (
           <SendActions
-            actions={canSubmit ? (submitActions ?? []) : []}
+            actions={offeredActions}
             label={submitActionsLabel ?? submitLabel}
             anchor={
-              <TooltipAnchor
-                description={submitLabel}
-                className="ml-auto"
-                render={
-                  <button
-                    type="button"
-                    aria-label={submitLabel}
-                    disabled={disabled || !canSubmit}
-                    onClick={() => onSubmit()}
-                    data-testid="composer-send-button"
-                    className={CONTROL_CLASS}
-                  >
-                    <SendIcon size={24} />
-                  </button>
-                }
-              />
+              /** One popup over this control. With actions to offer, the list
+               *  names them and carries the primary; a tooltip would open on
+               *  the same focus, above the same button, and at a higher
+               *  z-index than the list it would cover. */
+              offeredActions.length > 0 ? (
+                sendButton
+              ) : (
+                <TooltipAnchor description={submitLabel} className="ml-auto" render={sendButton} />
+              )
             }
           />
         )}

@@ -28,6 +28,7 @@ const mockGetSubagentThread = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
 const mockApprovalProviderUnmounted = jest.fn();
 let mockIsMobile = false;
+let mockCoarsePointer = false;
 let mockParentChildrenByMessage = new Map<string, ParentSubagentSummary[]>();
 let mockParentChildrenByThread = new Map<string, ParentSubagentSummary>();
 const mockRefreshParentChildren = jest.fn().mockResolvedValue(undefined);
@@ -359,7 +360,7 @@ jest.mock('@librechat/client', () => ({
       )}
     </div>
   ),
-  useMediaQuery: () => mockIsMobile,
+  useMediaQuery: (query: string) => (query.includes('hover') ? mockCoarsePointer : mockIsMobile),
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
@@ -367,10 +368,10 @@ jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
   CornerUpLeft: () => null,
   CheckCircle2: () => null,
+  Clock: () => null,
   Clock3: () => null,
   Feather: () => null,
-  ListEnd: () => null,
-  OctagonX: () => null,
+  OctagonPause: () => null,
   X: () => null,
   XCircle: () => null,
   Zap: () => null,
@@ -423,6 +424,7 @@ describe('SubagentThreadPanel', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     mockIsMobile = false;
+    mockCoarsePointer = false;
     mockApprovalProviderMounted.mockClear();
     mockApprovalProviderUnmounted.mockClear();
     mockForkMutate.mockClear();
@@ -665,10 +667,16 @@ describe('SubagentThreadPanel', () => {
   });
 
   /** A task on its way to an executor is live: withdrawing the composer until
-   *  the first token lands is the swap this panel exists to avoid. */
-  it('keeps the composer in control mode while the task is only dispatched', () => {
+   *  the first token lands is the swap this panel exists to avoid. But the
+   *  server can only address a task that has a durable input row — it answers
+   *  404 otherwise, which this panel reads as inaccessible and closes controls
+   *  for good — so the field stays and submission waits instead. */
+  it.each([
+    ['has its durable input row', completedView.messages, 1],
+    ['has not been written yet', [], 0],
+  ])('keeps the composer while a dispatched task %s', (_label, messages, invocations) => {
     mockUseSubagentThreadQuery.mockReturnValue({
-      data: { ...completedView, status: 'dispatched', controlReceipts: [] },
+      data: { ...completedView, status: 'dispatched', messages, controlReceipts: [] },
       isLoading: false,
       isError: false,
       isReadinessPending: false,
@@ -680,8 +688,11 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByLabelText('com_ui_message_input')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeInTheDocument();
+    const composer = screen.getByLabelText('com_ui_message_input');
+    expect(composer).toBeInTheDocument();
+    fireEvent.change(composer, { target: { value: 'Check the primary source.' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    expect(mockControlMutate).toHaveBeenCalledTimes(invocations);
   });
 
   /** Queue and interrupt keep the chords main chat gives them instead of
@@ -738,6 +749,34 @@ describe('SubagentThreadPanel', () => {
 
     expect(mockControlMutate).toHaveBeenCalledTimes(1);
     expect(mockControlMutate.mock.calls[0][0].command.action).toBe('steer');
+  });
+
+  /** Where there is no hover, the send control's action list cannot be opened —
+   *  a tap on that anchor submits — so those readers get the actions as
+   *  controls of their own instead. */
+  it('offers the alternate submissions inline when the pointer cannot hover', () => {
+    mockIsMobile = true;
+    mockCoarsePointer = true;
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Check the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+
+    expect(mockControlMutate).toHaveBeenCalledTimes(1);
+    expect(mockControlMutate.mock.calls[0][0].command.action).toBe('queue');
   });
 
   /** Queue and interrupt keep a pointer of their own — a touch reader, or one

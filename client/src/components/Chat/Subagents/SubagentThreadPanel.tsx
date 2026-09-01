@@ -120,6 +120,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
+  /** No hover means the send control's action list cannot be reached: a tap on
+   *  that anchor submits. Those readers get the same actions as controls of
+   *  their own instead. */
+  const coarsePointer = useMediaQuery('(hover: none)');
   const enterToSend = useRecoilValue(store.enterToSend);
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
   const [actorPickerOpen, setActorPickerOpen] = useState(false);
@@ -985,16 +989,19 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const hasConversationProjection =
     selection.durable == null || threadView == null || Array.isArray(threadView.turns);
   const taskInaccessible = controlInaccessible || transientControl?.reason === 'task_inaccessible';
-  /** `dispatched` counts as live. The task is on its way to an executor, and a
-   *  reader who types into a run that has only just started means it for that
-   *  run — withdrawing the composer until the first token lands is the swap
-   *  this panel exists to avoid. */
-  const controlAvailable =
-    selection.durable != null &&
+  const taskIsLive = taskView != null && isLiveSubagentStatus(taskView.status);
+  /** A command can only be addressed once the task has a durable input row or a
+   *  live lease — `control.ts` answers 404 otherwise, which this panel reads as
+   *  an inaccessible task and closes its controls for good. A `dispatched` task
+   *  without that evidence is live but not yet controllable: the composer stays
+   *  (withdrawing it as a run starts is the swap this panel exists to avoid),
+   *  while submission waits. */
+  const controlAddressable =
     taskView != null &&
-    isLiveSubagentStatus(taskView.status) &&
-    !taskInaccessible &&
-    !controlsClosed;
+    (taskView.status === 'running' ||
+      (taskView.status === 'dispatched' && subagentThreadHasTaskEvidence(taskView, taskId)));
+  const controlAvailable =
+    selection.durable != null && controlAddressable && !taskInaccessible && !controlsClosed;
   const controlPending =
     controlTask.isLoading || transientControl?.status === 'submitted' || retryControl != null;
   const showControlFooter =
@@ -1040,9 +1047,19 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   } else if (retainedModeRef.current != null && retainedModeRef.current.threadId !== threadId) {
     retainedModeRef.current = null;
   }
-  const composerSettling = liveComposerMode == null && taskView == null;
-  const composerMode =
-    liveComposerMode ?? (composerSettling ? retainedModeRef.current?.mode : null);
+  /** Hold the surface both while a delivery re-keys the view and while a live
+   *  task is not yet addressable; submission waits in either case. A task whose
+   *  controls are definitively closed holds nothing — there is no command left
+   *  for the field to carry. */
+  const composerSettling =
+    liveComposerMode == null &&
+    (taskView == null || (taskIsLive && !controlsClosed && !taskInaccessible));
+  /** While settling, the surface the thread last showed — or, on a first render
+   *  that has never had one, the surface a live task would have. */
+  let composerMode: 'control' | 'continue' | null = liveComposerMode;
+  if (composerMode == null && composerSettling) {
+    composerMode = retainedModeRef.current?.mode ?? (taskIsLive ? 'control' : null);
+  }
   const composerPlaceholder = localize('com_endpoint_message_new', { 0: panelTitle });
   /** The send control names what IT does, distinct from the `Steer` row it
    *  offers — the same pairing main chat uses for its during-run send. */
@@ -1109,7 +1126,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         key: 'steer',
         label: localize('com_ui_steer'),
         kbd: steerKbd,
-        icon: <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />,
+        icon: <Zap className="h-4 w-4 text-status-warning" aria-hidden="true" />,
         disabled: blocked,
         onClick: () => submitControl('steer'),
       },
@@ -1117,7 +1134,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         key: 'queue',
         label: localize('com_ui_queue'),
         kbd: modEnter === 'other' ? modSymbol : undefined,
-        icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+        icon: <Clock className="h-4 w-4 text-status-info" aria-hidden="true" />,
         disabled: blocked,
         onClick: () => submitControl('queue'),
       },
@@ -1125,7 +1142,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         key: 'interrupt',
         label: localize('com_ui_subagent_interrupt'),
         kbd: altEnter === 'interrupt' ? altSymbol : undefined,
-        icon: <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />,
+        icon: <OctagonPause className="h-4 w-4 text-status-error" aria-hidden="true" />,
         disabled: blocked,
         onClick: () => submitControl('interrupt'),
       },
@@ -1490,8 +1507,28 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
                *  continuation is ordinary chat text bound for an ordinary
                *  composer, which caps nothing. */
               maxLength={composerMode === 'control' ? 4 * 1024 : undefined}
-              submitActions={submitActions}
+              submitActions={coarsePointer ? [] : submitActions}
               submitActionsLabel={localize('com_ui_during_run_actions')}
+              actions={
+                coarsePointer
+                  ? submitActions
+                      .filter((action) => action.key !== 'steer')
+                      .map((action) => (
+                        <Button
+                          key={action.key}
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={action.label}
+                          disabled={action.disabled}
+                          onClick={action.onClick}
+                          className="size-9 rounded-full text-text-secondary hover:text-text-primary"
+                        >
+                          {action.icon}
+                        </Button>
+                      ))
+                  : null
+              }
             />
           )}
         </div>

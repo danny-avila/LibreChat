@@ -125,7 +125,7 @@ const DuringRunSendButton = React.memo(
       key: 'steer',
       label: localize('com_ui_steer'),
       kbd: steerKbd,
-      icon: <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />,
+      icon: <Zap className="h-4 w-4 text-status-warning" aria-hidden="true" />,
       // Gate on availability, not the default action — the row exists to
       // override a queue-preferring default with an explicit steer.
       disabled: !steering.canSteer,
@@ -135,7 +135,7 @@ const DuringRunSendButton = React.memo(
       key: 'queue',
       label: localize('com_ui_queue'),
       kbd: primary === 'queue' ? submitHint : alternateHint,
-      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      icon: <Clock className="h-4 w-4 text-status-info" aria-hidden="true" />,
       onClick: () => runAction((text) => steering.queueFromComposer(text)),
     };
     /** Keeps the half-written answer, unlike interrupt & send below it. */
@@ -143,7 +143,7 @@ const DuringRunSendButton = React.memo(
       key: 'interrupt-steer',
       label: localize('com_ui_interrupt_steer'),
       kbd: interruptSteerKbd,
-      icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
+      icon: <ZapOff className="h-4 w-4 text-status-warning" aria-hidden="true" />,
       // Matches the standalone button's gate, and deliberately NOT
       // `!canSteer` like the steer row above: `canSteer` is also false before
       // a conversation exists, where `interruptSteer` falls back to interrupt
@@ -155,7 +155,7 @@ const DuringRunSendButton = React.memo(
       key: 'interrupt',
       label: localize('com_ui_interrupt_send'),
       kbd: verdicts.altEnter === 'interrupt' ? altEnter : undefined,
-      icon: <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />,
+      icon: <OctagonPause className="h-4 w-4 text-status-error" aria-hidden="true" />,
       disabled: !steering.canControlGeneration,
       onClick: () => runAction((text) => steering.interruptAndSend(text)),
     };
