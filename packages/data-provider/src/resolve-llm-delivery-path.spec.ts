@@ -1,5 +1,6 @@
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 import {
+  isNativelyReadableText,
   resolveUploadDestination,
   resolveDefaultLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
@@ -286,7 +287,7 @@ describe('resolveDefaultLLMDeliveryPath', () => {
 });
 
 describe('resolveUploadDestination', () => {
-  const base = { mimeType: 'application/zip', hasAgent: true, isMessageAttachment: false };
+  const base = { hasAgent: true, isMessageAttachment: false };
 
   it('keeps an explicit resource and normalizes ocr to context', () => {
     expect(
@@ -304,10 +305,17 @@ describe('resolveUploadDestination', () => {
     );
   });
 
-  it('refuses a type no enabled tool can read', () => {
+  it('does not refuse an upload for having no consumer on the agent record', () => {
+    /* A skill can contribute file search or code execution for the turn without appearing
+     * in agent.tools, so an empty list is not evidence that nothing will read the file. */
     expect(
-      resolveUploadDestination({ ...base, deliveryPath: 'none', agentTools: [] }).rejection,
-    ).toBe('no-consumer');
+      resolveUploadDestination({
+        ...base,
+        deliveryPath: 'none',
+        agentTools: [],
+        isMessageAttachment: true,
+      }).rejection,
+    ).toBeUndefined();
   });
 
   it('does not judge an unknown tool set', () => {
@@ -332,7 +340,6 @@ describe('resolveUploadDestination', () => {
     expect(
       resolveUploadDestination({
         ...base,
-        mimeType: 'image/png',
         deliveryPath: 'provider',
         agentTools: [],
       }).rejection,
@@ -343,10 +350,39 @@ describe('resolveUploadDestination', () => {
     expect(
       resolveUploadDestination({
         ...base,
-        mimeType: 'image/png',
         deliveryPath: 'provider',
         isMessageAttachment: true,
       }),
     ).toEqual({});
+  });
+});
+
+describe('isNativelyReadableText', () => {
+  it('admits the application types whose payload is text', () => {
+    /* Kept in step with the textual set in the content-protection code. Missing one sends
+     * a readable file down the extractor path, where no parser claims it and it is lost. */
+    for (const mimeType of [
+      'application/json',
+      'application/javascript',
+      'application/sql',
+      'application/xml',
+      'application/x-yaml',
+      'application/yaml',
+      'text/markdown',
+      'message/rfc822',
+    ]) {
+      expect(isNativelyReadableText(mimeType)).toBe(true);
+    }
+  });
+
+  it('rejects types whose bytes are not text', () => {
+    for (const mimeType of ['application/zip', 'application/pdf', 'image/png']) {
+      expect(isNativelyReadableText(mimeType)).toBe(false);
+    }
+  });
+
+  it('ignores parameters and case, as browsers send both', () => {
+    expect(isNativelyReadableText('text/plain; charset=utf-8')).toBe(true);
+    expect(isNativelyReadableText('Application/JSON')).toBe(true);
   });
 });
