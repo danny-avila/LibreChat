@@ -1145,9 +1145,19 @@ describe('initializeClient — subagent loading', () => {
       });
 
       expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
-      expect(listAlwaysApplySkillsSpy).not.toHaveBeenCalled();
+      expect(listAlwaysApplySkillsSpy).toHaveBeenCalledTimes(1);
       for (const descriptor of agentClientArgs.agent.lazySubagentConfigs) {
-        expect(descriptor.alwaysApplySkillPrimes).toEqual([]);
+        expect(descriptor.alwaysApplySkillPrimes).toEqual([
+          expect.objectContaining({
+            _id: skill._id,
+            name: 'lazy-specialist',
+            version: 1,
+            body: '# Lazy specialist v1\n',
+          }),
+        ]);
+        expect(descriptor.historicalToolNames).toEqual(
+          expect.arrayContaining(['skill', 'read_file']),
+        );
       }
 
       const eventReq = makeSubagentReq();
@@ -1162,7 +1172,7 @@ describe('initializeClient — subagent loading', () => {
       });
 
       expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
-      expect(listAlwaysApplySkillsSpy).toHaveBeenCalledTimes(1);
+      expect(listAlwaysApplySkillsSpy).toHaveBeenCalledTimes(2);
       expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(2);
       for (const descriptor of agentClientArgs.agent.lazySubagentConfigs) {
         expect(descriptor.alwaysApplySkillPrimes).toEqual([
@@ -1173,6 +1183,9 @@ describe('initializeClient — subagent loading', () => {
             body: '# Lazy specialist v1\n',
           }),
         ]);
+        expect(descriptor.historicalToolNames).toEqual(
+          expect.arrayContaining(['skill', 'read_file']),
+        );
       }
     } finally {
       listAlwaysApplySkillsSpy.mockRestore();

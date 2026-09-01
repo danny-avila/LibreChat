@@ -5,9 +5,11 @@ import {
   ReadFileToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
+import type { AgentToolOptions, GraphEdge } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
-import type { GraphEdge } from 'librechat-data-provider';
 import type { ReachableAgent } from './traversal';
+import { toolkitExpansion } from '~/tools/toolkits/mapping';
+import { normalizeAgentToolKeys } from '~/mcp/utils';
 import { collectReachableAgents } from './traversal';
 
 export const CREATE_FILE_TOOL_NAME = 'create_file';
@@ -40,6 +42,84 @@ export interface BuildToolSetConfig {
   tools?: (ToolInstanceLike | null | undefined)[];
   /** Tool names retained on unresolved agent descriptors for history replay. */
   historicalToolNames?: readonly string[];
+}
+
+export interface BuildHistoricalToolNamesConfig {
+  configuredToolNames?: readonly string[];
+  alwaysApplyToolNames?: readonly string[];
+  toolOptions?: AgentToolOptions;
+  rawMcpServerNames?: readonly string[];
+  codeExecutionAvailable?: boolean;
+  memoryAvailable?: boolean;
+  skillsAvailable?: boolean;
+  skillAuthoringAvailable?: boolean;
+  deferredToolsAvailable?: boolean;
+  programmaticToolsAvailable?: boolean;
+  backgroundToolsAvailable?: boolean;
+}
+
+/** Derives the model-facing names an unresolved lazy agent can expose without loading it. */
+export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig): Set<string> {
+  const configuredToolNames = [
+    ...(config.configuredToolNames ?? []),
+    ...(config.alwaysApplyToolNames ?? []),
+  ];
+  const normalized = normalizeAgentToolKeys({
+    tools: configuredToolNames,
+    toolOptions: config.toolOptions,
+    rawServerNames: config.rawMcpServerNames ?? [],
+  });
+  const toolNames = new Set(normalized.tools ?? []);
+
+  for (const name of [...toolNames]) {
+    for (const child of toolkitExpansion[name as keyof typeof toolkitExpansion] ?? []) {
+      toolNames.add(child);
+    }
+  }
+
+  if (config.codeExecutionAvailable === true) {
+    toolNames.add('bash_tool');
+    toolNames.add('read_file');
+    toolNames.add(CREATE_FILE_TOOL_NAME);
+    toolNames.add(EDIT_FILE_TOOL_NAME);
+  }
+  if (config.memoryAvailable === true) {
+    toolNames.add('set_memory');
+    toolNames.add('delete_memory');
+  }
+  if (config.skillsAvailable === true) {
+    toolNames.add('skill');
+    toolNames.add('read_file');
+  }
+  if (config.skillAuthoringAvailable === true) {
+    toolNames.add('read_file');
+    toolNames.add(CREATE_FILE_TOOL_NAME);
+    toolNames.add(EDIT_FILE_TOOL_NAME);
+  }
+
+  const options = normalized.toolOptions ?? {};
+  const hasDeferredTool = [...toolNames].some((name) => options[name]?.defer_loading === true);
+  if (config.deferredToolsAvailable === true && hasDeferredTool) {
+    toolNames.add('tool_search');
+  }
+  const hasProgrammaticTool = [...toolNames].some((name) =>
+    options[name]?.allowed_callers?.includes('code_execution'),
+  );
+  if (
+    config.programmaticToolsAvailable === true &&
+    config.codeExecutionAvailable === true &&
+    hasProgrammaticTool
+  ) {
+    toolNames.add('run_tools_with_bash');
+  }
+  const hasBackgroundTool =
+    config.codeExecutionAvailable === true ||
+    [...toolNames].some((name) => options[name]?.run_in_background === true);
+  if (config.backgroundToolsAvailable === true && hasBackgroundTool) {
+    toolNames.add(`${Constants.CHECK_BACKGROUND_TASK}`);
+  }
+
+  return toolNames;
 }
 
 /**
@@ -77,6 +157,7 @@ export interface RunToolSetConfig extends BuildToolSetConfig, ReachableAgent<Run
 export function buildRunToolSet(
   primaryConfig: RunToolSetConfig | null | undefined,
   additionalConfigs?: Iterable<RunToolSetConfig | null | undefined> | null,
+  hostGeneratedToolNames?: Iterable<string> | null,
 ): Set<string> {
   const roots = [primaryConfig];
   if (additionalConfigs) {
@@ -88,7 +169,10 @@ export function buildRunToolSet(
     return new Set();
   }
 
-  const toolSet = new Set<string>([`${Constants.SUBAGENT}`]);
+  const toolSet = new Set<string>([`${Constants.SUBAGENT}`, 'conditional_transfer']);
+  for (const name of hostGeneratedToolNames ?? []) {
+    toolSet.add(name);
+  }
   for (const agent of agents) {
     for (const name of buildToolSet(agent)) {
       toolSet.add(name);

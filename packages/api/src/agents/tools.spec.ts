@@ -43,6 +43,7 @@ import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import {
   buildToolSet,
   buildRunToolSet,
+  buildHistoricalToolNames,
   BuildToolSetConfig,
   registerCodeExecutionTools,
   registerFileAuthoringTools,
@@ -230,6 +231,7 @@ describe('buildRunToolSet', () => {
     expect(buildRunToolSet(primary)).toEqual(
       new Set([
         'subagent',
+        'conditional_transfer',
         'primary_tool',
         'eager_tool',
         'lazy_tool',
@@ -254,11 +256,67 @@ describe('buildRunToolSet', () => {
     expect(toolSet).toEqual(
       new Set([
         'subagent',
+        'conditional_transfer',
         'primary_tool',
         'disconnected_tool',
         'lc_transfer_to_writer',
         'lc_transfer_to_reviewer',
         'lc_transfer_to_publisher',
+      ]),
+    );
+  });
+
+  it('includes host-generated controls supplied by the run', () => {
+    expect(buildRunToolSet(agent('primary'), null, ['check_background_task'])).toEqual(
+      new Set(['subagent', 'conditional_transfer', 'check_background_task']),
+    );
+  });
+});
+
+describe('buildHistoricalToolNames', () => {
+  it('normalizes MCP names and expands toolkits and deferred search', () => {
+    expect(
+      buildHistoricalToolNames({
+        configuredToolNames: ['search_mcp_Connector: Company', 'image_gen_oai'],
+        toolOptions: {
+          'search_mcp_Connector: Company': { defer_loading: true },
+        },
+        rawMcpServerNames: ['Connector: Company'],
+        deferredToolsAvailable: true,
+      }),
+    ).toEqual(
+      new Set(['search_mcp_Connector__Company', 'image_gen_oai', 'image_edit_oai', 'tool_search']),
+    );
+  });
+
+  it('expands code, memory, skill, programmatic, and background controls', () => {
+    expect(
+      buildHistoricalToolNames({
+        configuredToolNames: ['execute_code', 'memory', 'lookup'],
+        alwaysApplyToolNames: ['skill_allowed_tool'],
+        toolOptions: { lookup: { allowed_callers: ['code_execution'], run_in_background: true } },
+        codeExecutionAvailable: true,
+        memoryAvailable: true,
+        skillsAvailable: true,
+        skillAuthoringAvailable: true,
+        programmaticToolsAvailable: true,
+        backgroundToolsAvailable: true,
+      }),
+    ).toEqual(
+      new Set([
+        'execute_code',
+        'memory',
+        'lookup',
+        'skill_allowed_tool',
+        'bash_tool',
+        'read_file',
+        'create_file',
+        'edit_file',
+        'set_memory',
+        'delete_memory',
+        'skill',
+        'run_tools_with_bash',
+        'check_background_task',
       ]),
     );
   });

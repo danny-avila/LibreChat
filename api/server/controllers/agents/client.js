@@ -3852,7 +3852,11 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
-      const toolSet = buildRunToolSet(this.options.agent, this.agentConfigs?.values());
+      const toolSet = buildRunToolSet(
+        this.options.agent,
+        this.agentConfigs?.values(),
+        this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
+      );
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */

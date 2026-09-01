@@ -25,10 +25,7 @@ const {
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
-  CREATE_FILE_TOOL_NAME,
-  DELETE_MEMORY_TOOL_NAME,
-  EDIT_FILE_TOOL_NAME,
-  SET_MEMORY_TOOL_NAME,
+  buildHistoricalToolNames,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -37,6 +34,7 @@ const {
   MAX_SUBAGENT_DEPTH,
   isAgentsEndpoint,
   AgentCapabilities,
+  Constants,
   Tools,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_SUBAGENT_RUN_CONFIGS,
@@ -232,6 +230,8 @@ const initializeClient = async ({
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
   const backgroundToolsAvailable = enabledCapabilities.has(AgentCapabilities.run_in_background);
   const toolIntentsAvailable = enabledCapabilities.has(AgentCapabilities.tool_intents);
+  const deferredToolsAvailable = enabledCapabilities.has(AgentCapabilities.deferred_tools);
+  const programmaticToolsAvailable = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
   const statefulSessionsAvailable = enabledCapabilities.has(
     AgentCapabilities.stateful_code_sessions,
   );
@@ -783,10 +783,8 @@ const initializeClient = async ({
   const skippedAgentIds = new Set(discoveredSkippedIds ?? []);
 
   const lazyMetadataByAgentId = new Map();
-  const eventActorContextRequested =
-    req._isAgentTrigger === true && req._agentEventBindingParentConversationId != null;
   /** Request-scoped cache: lazy descriptors sharing the same Skill ACL scope
-   * reuse one metadata-only always-apply lookup without initializing tools,
+   * reuse one history-only always-apply lookup without initializing tools,
    * files, model clients, or MCP connections. */
   const lazyAlwaysApplySkillsByScope = new Map();
   const subagentGraphIds = new Set();
@@ -900,9 +898,6 @@ const initializeClient = async ({
     );
 
   const resolveLazyAlwaysApplySkillPrimes = (agent) => {
-    if (!eventActorContextRequested) {
-      return Promise.resolve([]);
-    }
     const scopedSkillIds = resolveAgentScopedSkillIds({
       agent,
       accessibleSkillIds,
@@ -928,6 +923,20 @@ const initializeClient = async ({
       lazyAlwaysApplySkillsByScope.set(scopeKey, resolution);
     }
     return resolution;
+  };
+
+  let historicalMcpServerNamesPromise;
+  const resolveHistoricalMcpServerNames = () => {
+    historicalMcpServerNamesPromise ??= getAccessibleMcpServerNames(req.user.id, req.user.role)
+      .then((names) => [...new Set([...names, ...Object.keys(appConfig?.mcpConfig ?? {})])])
+      .catch((error) => {
+        logger.warn(
+          '[initializeClient] Failed to resolve MCP names for lazy history normalization:',
+          error,
+        );
+        return Object.keys(appConfig?.mcpConfig ?? {});
+      });
+    return historicalMcpServerNamesPromise;
   };
 
   const toLazySubagentMetadata = async (agent) => {
@@ -962,18 +971,49 @@ const initializeClient = async ({
             conversationId,
           })
         : undefined;
+    const scopedSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
+    const scopedEditableSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds: editableSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
+    const skillAuthoringAvailable = canAuthorSkillFiles({
+      agent,
+      scopedEditableSkillIds,
+      skillCreateAllowed,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
     const alwaysApplySkillPrimes = await resolveLazyAlwaysApplySkillPrimes(agent);
+    const configuredAndSkillToolNames = [
+      ...(agent.tools ?? []),
+      ...alwaysApplySkillPrimes.flatMap((prime) => prime.allowedTools ?? []),
+    ];
+    const rawMcpServerNames = configuredAndSkillToolNames.some((name) =>
+      name.includes(Constants.mcp_delimiter),
+    )
+      ? await resolveHistoricalMcpServerNames()
+      : [];
     const historicalToolNames = Array.from(
-      new Set([
-        ...(agent.tools ?? []),
-        ...alwaysApplySkillPrimes.flatMap((prime) => prime.allowedTools ?? []),
-        ...(lazyCodeEnvAvailable
-          ? [Tools.bash_tool, Tools.read_file, CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME]
-          : []),
-        ...(memoryAvailable === true && agent.tools?.includes(Tools.memory) === true
-          ? [SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME]
-          : []),
-      ]),
+      buildHistoricalToolNames({
+        configuredToolNames: agent.tools,
+        alwaysApplyToolNames: alwaysApplySkillPrimes.flatMap((prime) => prime.allowedTools ?? []),
+        toolOptions: agent.tool_options,
+        rawMcpServerNames,
+        codeExecutionAvailable: lazyCodeEnvAvailable,
+        memoryAvailable: memoryAvailable === true && agent.tools?.includes(Tools.memory) === true,
+        skillsAvailable: scopedSkillIds.length > 0,
+        skillAuthoringAvailable,
+        deferredToolsAvailable,
+        programmaticToolsAvailable,
+        backgroundToolsAvailable,
+      }),
     );
     return {
       id: agent.id,
