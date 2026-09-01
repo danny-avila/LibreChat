@@ -182,13 +182,14 @@ export async function reconcileCodeEnvironmentLifecycle({
     /** A failed marker write after an account deletion must not strand live worker
      * credentials. The missing owner is itself durable retry intent, so discover
      * unmarked orphans independently of the account-deletion request path. */
-    const orphanedUserEnvironments = await CodeEnvironment.aggregate<{
+    const orphanedEnvironments = await CodeEnvironment.aggregate<{
       _id: CodeEnvironmentDocument['_id'];
+      createdBy: CodeEnvironmentDocument['createdBy'];
+      workerId?: string;
+      workerPrincipal?: CodeEnvironmentDocument['workerPrincipal'];
     }>([
       {
         $match: {
-          'workerPrincipal.type': 'user',
-          workerId: { $exists: true },
           revocationPendingAt: { $exists: false },
           deletionCommittedAt: { $exists: false },
         },
@@ -204,17 +205,25 @@ export async function reconcileCodeEnvironmentLifecycle({
       { $match: { owner: { $size: 0 } } },
       { $sort: { _id: 1 } },
       { $limit: limit },
-      { $project: { _id: 1 } },
+      { $project: { _id: 1, createdBy: 1, workerId: 1, workerPrincipal: 1 } },
     ]);
-    if (orphanedUserEnvironments.length > 0) {
+    const revocationTargets = orphanedEnvironments.filter(
+      ({ workerId, workerPrincipal }) => workerId != null && workerPrincipal?.type === 'user',
+    );
+    if (revocationTargets.length > 0) {
       await CodeEnvironment.updateMany(
-        { _id: { $in: orphanedUserEnvironments.map(({ _id }) => _id) } },
+        { _id: { $in: revocationTargets.map(({ _id }) => _id) } },
         {
           $set: { revocationPendingAt: now },
           $inc: { revocationAttempts: 1 },
           $unset: { revocationLastError: 1, revocationReconcileAfter: 1 },
         },
       );
+    }
+    for (const creatorId of new Set(
+      orphanedEnvironments.map(({ createdBy }) => createdBy.toHexString()),
+    )) {
+      await methods.deleteUserCodeEnvironments(creatorId);
     }
 
     const candidates = await CodeEnvironment.find({

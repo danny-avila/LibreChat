@@ -570,6 +570,16 @@ describe('code environment registry', () => {
         workerPrincipal: { type: 'user', id: ownerId.toString() },
       },
     });
+    await createCodeEnvironmentRegistry(mongoose).register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'unmarked-local-environment',
+        name: 'Unmarked local environment',
+        type: 'attached',
+        baseURL: 'https://local.example.com/v1',
+        controlPlaneId: 'deployment-code-api',
+      },
+    });
     await mongoose.models.User.deleteOne({ _id: ownerId });
     const fetchImpl = jest.fn().mockResolvedValue({
       ok: true,
@@ -588,6 +598,9 @@ describe('code environment registry', () => {
     );
     await expect(
       mongoose.models.CodeEnvironment.findOne({ environmentId: 'unmarked-orphan-worker' }),
+    ).resolves.toBeNull();
+    await expect(
+      mongoose.models.CodeEnvironment.findOne({ environmentId: 'unmarked-local-environment' }),
     ).resolves.toBeNull();
   });
 

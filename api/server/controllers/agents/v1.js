@@ -1571,7 +1571,18 @@ const duplicateAgentHandler = async (req, res) => {
     );
     newAgentData.actions = agentActions;
 
-    const newAgent = await db.createAgent(newAgentData);
+    let newAgent;
+    try {
+      newAgent = await db.createAgent(newAgentData);
+    } catch (error) {
+      await db.deleteActions({ agent_id: newAgentId, user: userId }).catch((cleanupError) => {
+        logger.error(
+          '[/agents/:id/duplicate] Failed to clean up cloned Actions after Agent creation failed:',
+          cleanupError,
+        );
+      });
+      throw error;
+    }
 
     try {
       await Promise.all([

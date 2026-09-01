@@ -549,6 +549,33 @@ export function createAgentMethods(
 } {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
 
+  async function restoreAgentAfterReferenceLoss(
+    Agent: Model<IAgent>,
+    agentAfterWrite: IAgent | null,
+    originalAgent: IAgent,
+    lostEnvironmentId: string,
+  ): Promise<void> {
+    if (agentAfterWrite == null) return;
+    const restored = await Agent.replaceOne(
+      {
+        _id: agentAfterWrite._id,
+        code_environment_id: lostEnvironmentId,
+        updatedAt: agentAfterWrite.updatedAt,
+      },
+      originalAgent,
+      { timestamps: false },
+    );
+    if (restored.matchedCount === 0) {
+      /** A concurrent writer may have changed the document after the guarded
+       * write. Never erase that writer, but still remove the lost reference if
+       * it remains active. */
+      await Agent.updateOne(
+        { _id: agentAfterWrite._id, code_environment_id: lostEnvironmentId },
+        { $unset: { code_environment_id: 1 } },
+      );
+    }
+  }
+
   /**
    * Create an agent with the provided data.
    */
@@ -860,12 +887,12 @@ export function createAgentMethods(
       undefined,
       async (agentAfterUpdate) => {
         if (agentAfterUpdate == null || nextEnvironmentId == null) return;
-        const previousEnvironmentId = currentAgent?.code_environment_id;
-        await Agent.updateOne(
-          { _id: agentAfterUpdate._id, code_environment_id: nextEnvironmentId },
-          previousEnvironmentId == null
-            ? { $unset: { code_environment_id: 1 } }
-            : { $set: { code_environment_id: previousEnvironmentId } },
+        if (currentAgent == null) return;
+        await restoreAgentAfterReferenceLoss(
+          Agent,
+          agentAfterUpdate,
+          currentAgent.toObject() as IAgent,
+          nextEnvironmentId,
         );
       },
     );
@@ -1306,14 +1333,11 @@ export function createAgentMethods(
         if (agentAfterRevert == null || typeof revertToVersion.code_environment_id !== 'string') {
           return;
         }
-        await Agent.updateOne(
-          {
-            _id: agentAfterRevert._id,
-            code_environment_id: revertToVersion.code_environment_id,
-          },
-          agent.code_environment_id == null
-            ? { $unset: { code_environment_id: 1 } }
-            : { $set: { code_environment_id: agent.code_environment_id } },
+        await restoreAgentAfterReferenceLoss(
+          Agent,
+          agentAfterRevert,
+          agent.toObject() as IAgent,
+          revertToVersion.code_environment_id,
         );
       },
     );

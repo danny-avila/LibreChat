@@ -2653,6 +2653,7 @@ describe('Agent Methods', () => {
         createdBy: new mongoose.Types.ObjectId(),
       });
       let settleWrite: (() => void) | undefined;
+      const compensate = jest.fn().mockResolvedValue(undefined);
       const guardedWrite = withCodeEnvironmentReference(
         mongoose,
         environmentId,
@@ -2661,6 +2662,7 @@ describe('Agent Methods', () => {
             settleWrite = resolve;
           }),
         10,
+        compensate,
       );
       for (let attempt = 0; attempt < 20; attempt++) {
         const environment = await mongoose.models.CodeEnvironment.findOne({
@@ -2680,6 +2682,7 @@ describe('Agent Methods', () => {
       await expect(guardedWrite).rejects.toMatchObject({
         name: 'CodeEnvironmentReferenceError',
       });
+      expect(compensate).toHaveBeenCalledWith(undefined);
     });
 
     test('should prune deleted skill ids when reverting to an older version', async () => {

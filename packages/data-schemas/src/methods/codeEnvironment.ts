@@ -157,6 +157,9 @@ export async function withCodeEnvironmentReference<T>(
   timer.unref();
   try {
     const result = await operation();
+    /** Freeze the renewal chain before awaiting it. Otherwise the interval can
+     * append one last renewal after this await has captured an earlier promise. */
+    clearInterval(timer);
     await renewal;
     if (renewalError != null) {
       try {
