@@ -803,7 +803,7 @@ describe('File Methods', () => {
       const results = await fileMethods.getDeferredProvisionFiles(
         [refId],
         { userId: ownerId.toString(), tenantId: 'tenant-a' },
-        { code: true, codeRouteKey: 'default', screenCodeLiveness: true },
+        { code: true, codeRouteKey: 'default', hydrateProvisioned: true },
       );
 
       expect(results.map((file) => file.file_id)).toEqual([refId]);
@@ -826,7 +826,7 @@ describe('File Methods', () => {
       const results = await fileMethods.getDeferredProvisionFiles(
         [refId],
         { userId: ownerId.toString(), tenantId: 'tenant-a' },
-        { code: true, codeRouteKey: 'default', screenCodeLiveness: false },
+        { code: true, codeRouteKey: 'default', hydrateProvisioned: false },
       );
 
       expect(results).toEqual([]);
@@ -855,10 +855,42 @@ describe('File Methods', () => {
       const results = await fileMethods.getDeferredProvisionFiles(
         [refId],
         { userId: ownerId.toString(), tenantId: 'tenant-a' },
-        { code: true, codeRouteKey: 'stateful:a', screenCodeLiveness: true },
+        { code: true, codeRouteKey: 'stateful:a', hydrateProvisioned: true },
       );
 
       expect(results.map((file) => file.file_id)).toEqual([refId]);
+    });
+
+    it('returns an embedded attachment to a search-only agent when nothing else hydrates', async () => {
+      /* With resendFiles off, getToolFilesByIds does not run, so this is the only query
+       * that can put an already-embedded attachment into tool_resources.file_search.
+       * Excluding it on the embedded flag leaves the next search with no reference to a
+       * file the previous turn embedded successfully. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      await makeFile(fileId, ownerId, { embedded: true });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [fileId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { search: true, searchNamespaces: [ownerId.toString()], hydrateProvisioned: true },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([fileId]);
+    });
+
+    it('leaves an embedded attachment alone when another query already hydrates it', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      await makeFile(fileId, ownerId, { embedded: true });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [fileId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { search: true, searchNamespaces: [ownerId.toString()], hydrateProvisioned: false },
+      );
+
+      expect(results).toEqual([]);
     });
 
     it('surfaces a read failure rather than reporting nothing to provision', async () => {
