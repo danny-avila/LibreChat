@@ -1255,13 +1255,30 @@ export async function initializeAgent(
     if (deferredProvisionFiles.length > 0) {
       /* One request, one total-size allowance. Filtering each set from zero would let a
        * delivery attachment and a provisioning candidate that each fit alone exceed the
-       * limit together once withDeferredCandidates merges them. */
-      const deliveredBytes = (currentFiles ?? []).reduce((sum, file) => sum + (file.bytes ?? 0), 0);
+       * limit together once withDeferredCandidates merges them.
+       *
+       * A file can appear in both sets, an embedded attachment still missing the active
+       * code route being the case in point, and the merge deduplicates afterwards. Charging
+       * it twice would spend an allowance the request never uses and drop a different
+       * candidate that fits, so the shared ones are counted once. */
+      const deliveredIds = new Set<string>();
+      let deliveredBytes = 0;
+      for (const file of currentFiles ?? []) {
+        if (file.file_id != null) {
+          deliveredIds.add(file.file_id);
+        }
+        deliveredBytes += file.bytes ?? 0;
+      }
+      const alreadyCharged = deferredProvisionFiles.reduce(
+        (sum, file) =>
+          file.file_id != null && deliveredIds.has(file.file_id) ? sum + (file.bytes ?? 0) : sum,
+        0,
+      );
       deferredProvisionFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
         files: deferredProvisionFiles,
         endpoint: agent.endpoint ?? '',
         endpointType,
-        consumedBytes: deliveredBytes,
+        consumedBytes: deliveredBytes - alreadyCharged,
       }) as IMongoFile[];
     }
   }

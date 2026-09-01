@@ -6,7 +6,6 @@ import type { CodeEnvFile } from '@librechat/agents';
 import type { CodeEnvRefUpdate, CodeExecutionRoute, ProvisionService } from './service';
 import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
-import { isAgentScopedFile } from '~/agents/resources';
 import { CREATE_FILE_TOOL_NAME } from '~/agents/tools';
 
 /** Deferred database write produced by a successful provisioning call. */
@@ -175,10 +174,15 @@ export function createProvisionFilesCallback({
       return [];
     }
 
-    /** Chat attachments and generated code outputs stay in the user's sandbox /
-     *  unscoped vector index; only agent setup files are scoped to the agent. */
+    /** Chat attachments and generated code outputs stay in the user's sandbox and unscoped
+     *  vector index; only this agent's own setup files are scoped to it. Membership decides
+     *  that, not the record's context: a user may attach another agent's setup file to this
+     *  conversation, and provisioning it under this agent would place it in a namespace
+     *  this agent's other users can read. */
     const entityIdForFile = (file: TFile) =>
-      isAgentScopedFile(file) ? resolvedAgentId : undefined;
+      file.file_id && provisionState.agentScopedFileIds.has(file.file_id)
+        ? resolvedAgentId
+        : undefined;
 
     /** Two agents may resolve different code deployments, where the same file genuinely
      *  needs uploading to each, so the destination is part of the sharing key. */
