@@ -36,6 +36,7 @@ const {
   getEndpointFileConfig,
   stripReasoningLabelMetadata,
   resolveUploadLLMDeliveryPath,
+  isSpeechProviderConfigured,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -1760,7 +1761,7 @@ class BaseClient {
             fileConfig: this._mergedFileConfig,
             endpoint: this._deliveryEndpoint,
             useResponsesApi: this.usesResponsesApi(),
-            sttConfigured: this.options.req?.config?.speech?.stt != null,
+            sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
           });
 
     for (const file of attachments) {

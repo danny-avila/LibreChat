@@ -465,15 +465,28 @@ describe('resolveUploadDestination', () => {
     ).toBe('no-agent-resource');
   });
 
-  it('refuses a none-routed upload with no agent behind it', () => {
-    /* Nothing provisions in a conversation with no agent, so a file kept off the model
-     * path there is reachable by nothing at all. */
+  it('accepts a none-routed message attachment with no agent record behind it', () => {
+    /* The ephemeral agent that runs the turn takes its tools from per-turn state the
+     * upload cannot see, so refusing here rejects the file a user just enabled the code
+     * interpreter for. Storing it is what lets provisioning reach it when the tool runs. */
     expect(
       resolveUploadDestination({
         ...base,
         deliveryPath: 'none',
         hasAgent: false,
         isMessageAttachment: true,
+      }),
+    ).toEqual({});
+  });
+
+  it('refuses a none-routed upload with no turn and no agent behind it', () => {
+    /* Nothing provisions this: no agent to file it under and no message to carry it. */
+    expect(
+      resolveUploadDestination({
+        ...base,
+        deliveryPath: 'none',
+        hasAgent: false,
+        isMessageAttachment: false,
       }).rejection,
     ).toBe('no-consumer');
   });

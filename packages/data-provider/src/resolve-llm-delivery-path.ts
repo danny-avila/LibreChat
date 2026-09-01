@@ -363,10 +363,11 @@ export function resolveUploadDestination(params: {
     return { rejection: 'no-agent-resource' };
   }
 
-  /* With no agent behind the upload there is no tool to provision it to and no callback
-   * that could, so a file kept off the model path here is unreachable by anything. This
-   * is knowable, unlike an agent's tool set, which a skill can add to at execution. */
-  if (!hasAgent && deliveryPath === 'none') {
+  /* A message attachment is not knowable this way. The turn behind it runs on an
+   * ephemeral agent whose tools come from per-turn state the upload never sees, so the
+   * absence of an agent record here proves nothing about what will read the file. Only
+   * an upload with no turn behind it is genuinely unreachable. */
+  if (!isMessageAttachment && !hasAgent && deliveryPath === 'none') {
     return { rejection: 'no-consumer' };
   }
 

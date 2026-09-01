@@ -77,4 +77,30 @@ describe('resolveEffectiveToolResource Responses handling', () => {
     expect(withString).toBeUndefined();
     expect(withoutFlag).toBe('context');
   });
+
+  it('does not classify audio as a context upload when no STT provider is usable', async () => {
+    /* Transcription needs exactly one non-empty provider block. A schema holding only
+     * allowedAddresses reports STT present while the service refuses it, so calling this
+     * a context upload promises a transcript the preflight then waits on. */
+    const makeAudioReq = (stt: Record<string, unknown>) =>
+      ({
+        user: { id: 'user-1' },
+        file: { mimetype: 'audio/mpeg' },
+        config: { fileConfig: undefined, speech: { stt } },
+      }) as unknown as ServerRequest;
+
+    const unusable = await resolveEffectiveToolResource({
+      req: makeAudioReq({ allowedAddresses: ['127.0.0.1'] }),
+      metadata: { endpoint: EModelEndpoint.openAI },
+      getAgent: jest.fn(),
+    });
+    const usable = await resolveEffectiveToolResource({
+      req: makeAudioReq({ openai: { apiKey: 'sk-test' } }),
+      metadata: { endpoint: EModelEndpoint.openAI },
+      getAgent: jest.fn(),
+    });
+
+    expect(unusable).not.toBe('context');
+    expect(usable).toBe('context');
+  });
 });
