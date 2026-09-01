@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import type { QueryClient, InfiniteData } from '@tanstack/react-query';
+import type { Query, QueryClient, InfiniteData } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import type { ConversationCursorData, PinnedConversationsData } from '~/utils/convos';
 import type { ConvoCandidate } from '~/utils';
@@ -48,6 +48,21 @@ export type ReplyReadState = {
   stamps: Array<[conversationId: string, lastResponseAt: string]>;
 };
 
+/**
+ * How long an unmounted list variant keeps counting toward the aggregate.
+ *
+ * A variant nobody is looking at can list a conversation that has since been deleted or
+ * archived on another device: refetching the mounted list removes the row there and nowhere
+ * else, and absence never supersedes presence in the scan below, so the leftover would hold a
+ * phantom dot in the badge and the alerts for the rest of the cache's lifetime. A recently
+ * refreshed variant still counts, which is what keeps a conversation visible across a filter
+ * switch; past this age an unmounted snapshot is no longer treated as authoritative.
+ */
+const LEFTOVER_CACHE_AGE_MS = 5 * 60_000;
+
+const isLeftover = (query: Query, heardAt: number): boolean =>
+  query.getObserversCount() === 0 && Date.now() - heardAt > LEFTOVER_CACHE_AGE_MS;
+
 /** Null until a conversation list has actually resolved, which is not the same as an empty
  *  one: treating "not loaded yet" as "nothing unseen" makes the backlog look like arrivals. */
 const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
@@ -74,11 +89,11 @@ const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
 
   for (const query of listQueries) {
     const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(query.queryKey);
-    if (!data) {
+    const heardAt = queryClient.getQueryState(query.queryKey)?.dataUpdatedAt ?? 0;
+    if (!data || isLeftover(query, heardAt)) {
       continue;
     }
     hasList = true;
-    const heardAt = queryClient.getQueryState(query.queryKey)?.dataUpdatedAt ?? 0;
     for (const page of data.pages) {
       for (const convo of page.conversations) {
         collect(convo, heardAt);
@@ -96,10 +111,10 @@ const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
 
   for (const query of pinnedQueries) {
     const data = queryClient.getQueryData<PinnedConversationsData>(query.queryKey);
-    if (!data) {
+    const heardAt = queryClient.getQueryState(query.queryKey)?.dataUpdatedAt ?? 0;
+    if (!data || isLeftover(query, heardAt)) {
       continue;
     }
-    const heardAt = queryClient.getQueryState(query.queryKey)?.dataUpdatedAt ?? 0;
     for (const convo of data.conversations) {
       collect(convo, heardAt);
     }

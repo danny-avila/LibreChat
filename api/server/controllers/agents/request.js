@@ -416,6 +416,16 @@ async function saveErrorTurn(
       { conversationId, ...convoFields },
       seedConvo ? { context } : { context, noUpsert: true },
     );
+    /* A failed run still persisted an assistant message, and a user on another device has no
+       other way to learn the turn ended. Best effort: the error turn is already durable, and
+       a missed indicator must not turn a handled failure into a thrown one. */
+    if (reqCtx.isTemporary !== true) {
+      try {
+        await stampConvoLastResponse(userId, conversationId);
+      } catch (stampError) {
+        logger.error('[AgentController] Failed to stamp the persisted error turn', stampError);
+      }
+    }
   } catch (err) {
     logger.error('[AgentController] Failed to persist error turn', err);
     throw err;

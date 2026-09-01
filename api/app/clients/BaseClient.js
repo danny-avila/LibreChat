@@ -1281,10 +1281,6 @@ class BaseClient {
       ...endpointOptions,
     };
 
-    /** Drives the unseen-reply indicator; only assistant replies count, never the user's own turn. */
-    if (message.isCreatedByUser === false && reqCtx.isTemporary !== true) {
-      fieldsToKeep.lastResponseAt = new Date();
-    }
     const conversationCreatedAt = options?.req?.conversationCreatedAt;
     const createdAtOnInsert =
       conversationCreatedAt != null ? new Date(conversationCreatedAt) : undefined;
@@ -1331,6 +1327,15 @@ class BaseClient {
           unsetFields[key] = 1;
         }
       }
+    }
+
+    /** Drives the unseen-reply indicator; only assistant replies count, never the user's own
+     *  turn. Taken here rather than with the rest of the payload above: the conversation read
+     *  in between can pause long enough for the open tab to acknowledge the previous reply,
+     *  and a catch-up written after a stamp captured before it would land ahead of this reply
+     *  and read it as already seen. */
+    if (message.isCreatedByUser === false && reqCtx.isTemporary !== true) {
+      fieldsToKeep.lastResponseAt = new Date();
     }
 
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
