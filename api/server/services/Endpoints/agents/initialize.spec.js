@@ -990,8 +990,10 @@ describe('initializeClient — subagent loading', () => {
       )
       .mockRejectedValueOnce(resourceRecoveryError);
 
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('execute_code');
     await initializeClient({
-      req: makeSubagentReq(),
+      req,
       res: {},
       signal: new AbortController().signal,
       endpointOption: makeEndpointOption(),
