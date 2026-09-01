@@ -927,8 +927,10 @@ const initializeClient = async ({
 
   let historicalMcpServerNamesPromise;
   const resolveHistoricalMcpServerNames = () => {
-    historicalMcpServerNamesPromise ??= getAccessibleMcpServerNames(req.user.id, req.user.role)
-      .then((names) => [...new Set([...names, ...Object.keys(appConfig?.mcpConfig ?? {})])])
+    historicalMcpServerNamesPromise ??= Promise.resolve(
+      getAccessibleMcpServerNames(req.user.id, req.user.role),
+    )
+      .then((names) => [...new Set([...(names ?? []), ...Object.keys(appConfig?.mcpConfig ?? {})])])
       .catch((error) => {
         logger.warn(
           '[initializeClient] Failed to resolve MCP names for lazy history normalization:',
