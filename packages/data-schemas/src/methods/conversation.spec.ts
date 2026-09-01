@@ -17,6 +17,7 @@ import type {
 } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -6510,17 +6511,19 @@ describe('Conversation Operations', () => {
         endpoint: EModelEndpoint.openAI,
       });
 
-      Object.assign(Conversation, {
-        meiliSearch: jest
-          .fn()
-          .mockResolvedValue({ hits: [{ conversationId: titleMatch.conversationId }] }),
-      });
+      const meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: titleMatch.conversationId }] });
+      Object.assign(Conversation, { meiliSearch });
       searchMessages.mockResolvedValue({
         hits: [{ conversationId: contentMatch.conversationId }],
       });
 
       const result = await getConvosByCursor('user123', { search: 'keyword' });
 
+      const searchParams = { filter: 'user = "user123"', limit: MEILI_SEARCH_LIMIT };
+      expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+      expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
       const convoIds = result?.conversations.map((c) => c.conversationId);
       expect(convoIds).toHaveLength(2);
       expect(convoIds).toContain(titleMatch.conversationId);
@@ -6547,14 +6550,13 @@ describe('Conversation Operations', () => {
         endpoint: EModelEndpoint.openAI,
       });
 
-      Object.assign(Conversation, {
-        meiliSearch: jest.fn().mockResolvedValue({
-          hits: [
-            { conversationId: overlapMatch.conversationId },
-            { conversationId: titleOnlyMatch.conversationId },
-          ],
-        }),
+      const meiliSearch = jest.fn().mockResolvedValue({
+        hits: [
+          { conversationId: overlapMatch.conversationId },
+          { conversationId: titleOnlyMatch.conversationId },
+        ],
       });
+      Object.assign(Conversation, { meiliSearch });
       searchMessages.mockResolvedValue({
         hits: [
           { conversationId: overlapMatch.conversationId },
@@ -6564,6 +6566,9 @@ describe('Conversation Operations', () => {
 
       const result = await getConvosByCursor('user123', { search: 'keyword' });
 
+      const searchParams = { filter: 'user = "user123"', limit: MEILI_SEARCH_LIMIT };
+      expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+      expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
       const convoIds = result?.conversations.map((c) => c.conversationId);
       expect(convoIds).toHaveLength(3);
       expect(convoIds).toContain(overlapMatch.conversationId);
