@@ -1,8 +1,10 @@
-import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback, useContext } from 'react';
 import debounce from 'lodash/debounce';
 import MonacoEditor from '@monaco-editor/react';
 import type { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
+import { ThemeContext, highContrastDarkTheme, highContrastLightTheme } from '@librechat/client';
+import type { IThemeRGB } from '@librechat/client';
 import type { Artifact } from '~/common';
 import { useMutationState, useCodeState } from '~/Providers/EditorContext';
 import { getResponseStatus } from '~/utils/errors';
@@ -49,6 +51,93 @@ const TYPE_MAP: Record<string, string> = {
   'text/plain': 'plaintext',
   'application/vnd.mermaid': 'markdown',
 };
+
+const HIGH_CONTRAST_LIGHT_EDITOR_THEME = 'librechat-high-contrast-light';
+const HIGH_CONTRAST_DARK_EDITOR_THEME = 'librechat-high-contrast-dark';
+
+const toHexColor = (palette: IThemeRGB, token: keyof IThemeRGB): string => {
+  const value = palette[token];
+  if (value == null) {
+    throw new Error(`Missing Monaco theme token: ${token}`);
+  }
+
+  const channels = value.split(/\s+/).map((channel) => Number(channel));
+  if (channels.length !== 3 || channels.some((channel) => !Number.isInteger(channel))) {
+    throw new Error(`Invalid Monaco theme token: ${token}`);
+  }
+
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+};
+
+const createHighContrastEditorTheme = (
+  palette: IThemeRGB,
+  base: 'vs' | 'vs-dark',
+  backgroundToken: keyof IThemeRGB,
+): editor.IStandaloneThemeData => {
+  const color = (token: keyof IThemeRGB) => toHexColor(palette, token);
+  const syntax = (token: keyof IThemeRGB) => color(token).slice(1);
+
+  return {
+    base,
+    inherit: false,
+    rules: [
+      { token: '', foreground: syntax('rgb-syntax-text') },
+      { token: 'identifier', foreground: syntax('rgb-syntax-text') },
+      { token: 'comment', foreground: syntax('rgb-syntax-comment') },
+      { token: 'meta', foreground: syntax('rgb-syntax-meta') },
+      { token: 'annotation', foreground: syntax('rgb-syntax-meta') },
+      { token: 'delimiter', foreground: syntax('rgb-syntax-meta') },
+      { token: 'predefined', foreground: syntax('rgb-syntax-builtin') },
+      { token: 'class', foreground: syntax('rgb-syntax-builtin') },
+      { token: 'keyword', foreground: syntax('rgb-syntax-keyword') },
+      { token: 'literal', foreground: syntax('rgb-syntax-keyword') },
+      { token: 'string', foreground: syntax('rgb-syntax-string') },
+      { token: 'regexp', foreground: syntax('rgb-syntax-string') },
+      { token: 'variable', foreground: syntax('rgb-syntax-attr') },
+      { token: 'number', foreground: syntax('rgb-syntax-attr') },
+      { token: 'type', foreground: syntax('rgb-syntax-attr') },
+      { token: 'attribute.name', foreground: syntax('rgb-syntax-attr') },
+      { token: 'tag', foreground: syntax('rgb-syntax-title') },
+      { token: 'symbol', foreground: syntax('rgb-syntax-title') },
+    ],
+    colors: {
+      'editor.background': color(backgroundToken),
+      'editor.foreground': color('rgb-syntax-text'),
+      'editorLineNumber.foreground': color('rgb-text-secondary'),
+      'editorLineNumber.activeForeground': color('rgb-text-primary'),
+      'editorCursor.foreground': color('rgb-ring-primary'),
+      'editor.selectionBackground': color('rgb-surface-active'),
+      'editor.inactiveSelectionBackground': color('rgb-surface-active-alt'),
+      'editor.selectionHighlightBackground': color('rgb-surface-active'),
+      'editor.lineHighlightBackground': color('rgb-surface-hover'),
+      'editor.findMatchBackground': color('rgb-surface-active'),
+      'editor.findMatchBorder': color('rgb-border-heavy'),
+      'editor.findMatchHighlightBackground': color('rgb-surface-active-alt'),
+      'editorWidget.background': color('rgb-surface-dialog'),
+      'editorWidget.border': color('rgb-border-medium'),
+      'input.background': color('rgb-surface-primary'),
+      'input.foreground': color('rgb-text-primary'),
+      'input.border': color('rgb-border-medium'),
+      focusBorder: color('rgb-ring-primary'),
+      'editorIndentGuide.background1': color('rgb-border-light'),
+      'editorIndentGuide.activeBackground1': color('rgb-border-heavy'),
+      'scrollbarSlider.background': color('rgb-border-light'),
+      'scrollbarSlider.hoverBackground': color('rgb-border-heavy'),
+      'scrollbarSlider.activeBackground': color('rgb-border-xheavy'),
+    },
+  };
+};
+
+const highContrastLightEditorTheme = createHighContrastEditorTheme(
+  highContrastLightTheme,
+  'vs',
+  'rgb-surface-primary-alt',
+);
+const highContrastDarkEditorTheme = createHighContrastEditorTheme(
+  highContrastDarkTheme,
+  'vs-dark',
+  'rgb-presentation',
+);
 
 type ArtifactEditTarget = {
   artifactId: string;
@@ -107,6 +196,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   monacoRef: React.MutableRefObject<editor.IStandaloneCodeEditor | null>;
   readOnly?: boolean;
 }) {
+  const { resolvedMode, highContrast } = useContext(ThemeContext);
   const { isSubmitting } = useArtifactsContext();
   const readOnly = (externalReadOnly ?? false) || isSubmitting;
   const { setCurrentCode } = useCodeState();
@@ -338,6 +428,9 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
    * as `{ deprecated: true }` while the runtime API is fully functional.
    */
   const handleBeforeMount = useCallback((monaco: Monaco) => {
+    monaco.editor.defineTheme(HIGH_CONTRAST_LIGHT_EDITOR_THEME, highContrastLightEditorTheme);
+    monaco.editor.defineTheme(HIGH_CONTRAST_DARK_EDITOR_THEME, highContrastDarkEditorTheme);
+
     const { typescriptDefaults, javascriptDefaults, JsxEmit } = monaco.languages
       .typescript as unknown as {
       typescriptDefaults: {
@@ -388,6 +481,11 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   );
 
   const language = getMonacoLanguage(artifact.type, artifact.language);
+  let editorTheme = 'vs-dark';
+  if (highContrast) {
+    editorTheme =
+      resolvedMode === 'dark' ? HIGH_CONTRAST_DARK_EDITOR_THEME : HIGH_CONTRAST_LIGHT_EDITOR_THEME;
+  }
 
   const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(
     () => ({
@@ -433,11 +531,11 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   }
 
   return (
-    <div className="h-full w-full bg-[#1e1e1e]">
+    <div className="h-full w-full bg-surface-code">
       <MonacoEditor
         height="100%"
         language={readOnly ? 'plaintext' : language}
-        theme="vs-dark"
+        theme={editorTheme}
         defaultValue={artifact.content}
         onChange={handleChange}
         beforeMount={handleBeforeMount}

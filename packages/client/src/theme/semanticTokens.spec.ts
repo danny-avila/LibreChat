@@ -247,13 +247,15 @@ describe.each([
 });
 
 /** The meter paints segments on `surface-tertiary`; the swatch and popover chrome
- *  sit on `surface-secondary`; checked capability badges sit on `surface-chat`.
- *  All have to clear the 3:1 mark-contrast floor. */
+ *  sit on `surface-secondary`; prompt categories sit on `surface-primary`;
+ *  checked capability badges sit on `surface-chat`. All have to clear the 3:1
+ *  mark-contrast floor. */
 const seriesTokens = Array.from(
   { length: 7 },
   (_, index) => `rgb-series-${index + 1}` as keyof IThemeRGB,
 );
 const seriesSurfaces: Array<keyof IThemeRGB> = [
+  'rgb-surface-primary',
   'rgb-surface-tertiary',
   'rgb-surface-secondary',
   'rgb-surface-chat',
@@ -333,6 +335,29 @@ describe.each([
     const failures = seriesTokens.flatMap((token) => {
       const ratio = contrast(toRgb(theme, token), toRgb(theme, 'rgb-text-on-status'));
       return ratio < WCAG_MARK_MIN ? [`${token} under text-on-status: ${ratio.toFixed(2)}:1`] : [];
+    });
+
+    expect(failures).toEqual([]);
+  });
+});
+
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s skill indicators', (_name, theme: IThemeRGB) => {
+  it('keeps informational marks at the 3:1 floor on every skill surface', () => {
+    const indicator = toRgb(theme, 'rgb-status-info');
+    const surfaces: Array<keyof IThemeRGB> = [
+      'rgb-presentation',
+      'rgb-surface-secondary',
+      'rgb-surface-active',
+    ];
+
+    const failures = surfaces.flatMap((surface) => {
+      const ratio = contrast(indicator, toRgb(theme, surface));
+      return ratio < WCAG_MARK_MIN ? [`${surface}: ${ratio.toFixed(2)}:1`] : [];
     });
 
     expect(failures).toEqual([]);
