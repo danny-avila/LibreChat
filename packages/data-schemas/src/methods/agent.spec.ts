@@ -2034,6 +2034,23 @@ describe('Agent Methods', () => {
       expect(thirdUpdate!.versions).toHaveLength(4);
     });
 
+    test('should unset a field and omit it from the recorded version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        code_environment_id: 'attached-vm',
+      });
+
+      const updated = await updateAgent({ id: agentId }, { $unset: { code_environment_id: 1 } });
+
+      expect(updated!.code_environment_id).toBeUndefined();
+      expect(updated!.versions).toHaveLength(2);
+      expect(updated!.versions![1].code_environment_id).toBeUndefined();
+    });
+
     test('should handle parameter objects correctly', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
@@ -2527,6 +2544,24 @@ describe('Agent Methods', () => {
       expect(revertedAgent.author.toString()).toBe(originalAuthor.toString());
       expect(revertedAgent.name).toBe('Original Agent');
       expect(revertedAgent.description).toBe('Original description');
+    });
+
+    test('should clear an explicit code environment when the restored version used the default', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Default Environment Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await updateAgent({ id: agentId }, { code_environment_id: 'replacement-environment' });
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.code_environment_id).toBeUndefined();
     });
 
     test('should prune deleted skill ids when reverting to an older version', async () => {

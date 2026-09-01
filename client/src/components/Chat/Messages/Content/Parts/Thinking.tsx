@@ -42,6 +42,7 @@ export const ThinkingButton = memo(
     contentId,
     showCopyButton = true,
     animateLabel = false,
+    shimmerLabel = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -50,6 +51,10 @@ export const ThinkingButton = memo(
     contentId: string;
     showCopyButton?: boolean;
     animateLabel?: boolean;
+    /** Reasoning is still being generated: carry the same shimmer a running
+     *  tool call's label carries, so "thinking" reads as in-flight rather
+     *  than as a settled disclosure. Off for finished thoughts. */
+    shimmerLabel?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -93,15 +98,39 @@ export const ThinkingButton = memo(
               aria-hidden="true"
             />
           </span>
+          {/* The sweep rides the label row itself. That row is a flex item, so
+              `.shimmer`'s `inline-block` is blockified away and the text sits
+              exactly where the un-shimmered label sits — which matters, because
+              an `inline-block` carrying `truncate` takes its baseline from its
+              bottom margin edge, growing the line box and lifting the label off
+              the icon's axis.
+
+              Only the generated-label entrance forces a nested span: it and the
+              sweep both drive `animation-name`, so they cannot share an element.
+              There the entrance must stay outside — the clipped element paints
+              the glyphs itself, so a descendant's opacity cannot fade them — and
+              the inner span takes `align-top` to keep the baseline rule above
+              from reopening the same gap.
+
+              `key` remounts the row so the entrance replays, and that restarts
+              the sweep with it. Reasoning labels revise on a 3s default against
+              a 4s sweep, so the restart is frequent; it reads as intentional
+              only while the entrance is there to cover it. With no entrance to
+              play, the row keeps its identity and the sweep runs unbroken. */}
           <span
-            key={label}
+            key={animateLabel ? label : undefined}
             className={cn(
               'min-w-0 truncate text-left',
+              shimmerLabel && !animateLabel && 'shimmer',
               animateLabel &&
                 'duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none',
             )}
           >
-            {label}
+            {shimmerLabel && animateLabel ? (
+              <span className="shimmer max-w-full truncate align-top">{label}</span>
+            ) : (
+              label
+            )}
           </span>
         </button>
         {content && showCopyButton && (
@@ -139,6 +168,29 @@ export const ThinkingButton = memo(
     );
   },
 );
+
+/**
+ * ThinkingLabel - Non-interactive variant of the ThinkingButton header row,
+ * for reasoning that happened but whose text is not available to this view
+ * (detached subagent projections retain only a marker). Keeps the reasoning
+ * presentation identical across surfaces without offering an empty disclosure.
+ */
+export const ThinkingLabel = memo(({ label, title }: { label: string; title?: string }) => {
+  const fontSize = useAtomValue(fontSizeAtom);
+  return (
+    <div className="mb-2 pb-2 pt-2">
+      <div
+        className={cn('flex w-full items-center justify-start leading-[18px]', fontSize)}
+        title={title}
+      >
+        <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+          <Lightbulb className="icon-sm text-text-secondary" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 truncate text-left text-text-secondary">{label}</span>
+      </div>
+    </div>
+  );
+});
 
 /**
  * FloatingThinkingBar - Floating bar with expand/collapse and copy buttons
@@ -348,6 +400,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
 ThinkingButton.displayName = 'ThinkingButton';
 ThinkingContent.displayName = 'ThinkingContent';
+ThinkingLabel.displayName = 'ThinkingLabel';
 FloatingThinkingBar.displayName = 'FloatingThinkingBar';
 Thinking.displayName = 'Thinking';
 

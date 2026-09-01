@@ -488,6 +488,244 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts uniquely named execution environments with exactly one default', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'managed',
+            name: 'Managed',
+            type: 'managed',
+            baseURL: 'https://code.example.com/v1',
+            default: true,
+          },
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    'ftp://code.example.com/v1',
+    'https://code.example.com/v1?',
+    'https://code.example.com/v1?token=secret',
+    'https://code.example.com/v1#',
+    'https://code.example.com/v1#fragment',
+  ])('rejects a non-base execution environment URL: %s', (baseURL) => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL,
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('normalizes surrounding whitespace in an execution environment URL', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: '  https://bridge.example.com/v1/  ',
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.statefulCodeSessions?.environments?.[0]?.baseURL).toBe(
+        'https://bridge.example.com/v1/',
+      );
+    }
+  });
+
+  it('accepts deployment-owned pairing configuration for an attached environment', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            owner: 'deployment',
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.statefulCodeSessions?.environments?.[0]).toMatchObject({
+        owner: 'deployment',
+        pairing: {
+          workerId: 'vm-1',
+          tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+        },
+      });
+    }
+  });
+
+  it('accepts a principal-owned environment without deployment pairing metadata', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            owner: 'principal',
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects pairing metadata on a principal-owned environment', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            owner: 'principal',
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects pairing configuration for a managed environment', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'managed',
+            name: 'Managed',
+            type: 'managed',
+            baseURL: 'https://code.example.com/v1',
+            default: true,
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects pairing over insecure non-loopback transport', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'http://bridge.example.com/v1',
+            default: true,
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('allows loopback HTTP pairing for local development', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'http://127.0.0.1:23112/v1',
+            default: true,
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects ambiguous execution environment routing', () => {
+    const environment = {
+      id: 'attached-vm',
+      name: 'Attached VM',
+      type: 'attached',
+      baseURL: 'https://bridge.example.com/v1',
+    } as const;
+    const parse = (environments: unknown[]) =>
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: {
+          allowedEnvironments: ['conversation'],
+          environments,
+        },
+      });
+
+    expect(parse([environment]).success).toBe(false);
+    expect(parse([{ ...environment, default: true }, { ...environment }]).success).toBe(false);
+  });
+
   it('defaults maxSubagents to MAX_SUBAGENTS and validates its bounds', () => {
     const omitted = agentsEndpointSchema.safeParse({});
     expect(omitted.success).toBe(true);

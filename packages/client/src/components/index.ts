@@ -43,6 +43,15 @@ export { default as Radio } from './Radio';
 export { default as Badge } from './Badge';
 export { default as Avatar } from './Avatar';
 export { default as Combobox } from './Combobox';
+export { default as Composer } from './Composer';
+export { SendActions } from './SendActions';
+export type { SendAction } from './SendActions';
+export type {
+  ComposerProps,
+  ComposerPropsWithStop,
+  ComposerStopProps,
+  ComposerKeyVerdict,
+} from './Composer';
 export { default as Dropdown } from './Dropdown';
 export { default as DataTable } from './DataTable';
 export { default as SplitText } from './SplitText';

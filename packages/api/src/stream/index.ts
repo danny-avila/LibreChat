@@ -20,10 +20,12 @@ export type {
   ParkedSteerClaim,
   IJobStore,
   IJobStoreV2,
+  DetachedAgentEventActionStoreMode,
 } from './interfaces/IJobStore';
 // Canonical "is this approval live?" predicate — one definition shared by the
 // stores, the approval lifecycle, and the status route / message middleware.
 export {
+  GenerationPublicationFencedError,
   JobPredecessorMismatchError,
   isPendingActionExpired,
   isPendingActionStale,

@@ -33,6 +33,20 @@ function mapColors(colors: IThemeRGB): Array<[string, string]> {
     variables.push(['--surface-composer-hover', colors['rgb-surface-hover']]);
   }
 
+  /**
+   * Stored and environment themes predate the shimmer stops, and this adapter
+   * applies only the keys a theme names — so without this they would keep the
+   * stock sweep while every other color moved, and in dark mode the CSS cannot
+   * recover: `.dark` declares a base outright, so the `--text-primary` fallback
+   * never runs. The bright stop follows the theme's primary text color, which
+   * is what it already resolves to in light. The dip has no legacy counterpart
+   * and stays at its default: it is the faded half of the sweep, carried at low
+   * alpha, so it reads as dimmed against any base.
+   */
+  if (colors['rgb-shimmer-base'] === undefined && colors['rgb-text-primary'] !== undefined) {
+    variables.push(['--shimmer-base', colors['rgb-text-primary']]);
+  }
+
   return variables;
 }
 

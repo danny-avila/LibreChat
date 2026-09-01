@@ -15,6 +15,7 @@ import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
   ContextPruningConfig,
+  CompactionSemanticIndex,
   OpenAIClientOptions,
   StandardGraphConfig,
   StreamPreemption,
@@ -47,7 +48,9 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
+import type { TerminalSteerHook } from '~/agents/steering/runtime';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
+import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
@@ -58,6 +61,16 @@ import {
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
 import {
+  createSubagentWakeupHandleHook,
+  agentUsesSubagentCompletionWakeups,
+  usesSubagentCompletionWakeups,
+} from '~/agents/subagentDelivery';
+import {
+  isSteeringSupported,
+  isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
+} from '~/agents/steering/runtime';
+import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
   exemptAskUserQuestionFromApproval,
@@ -66,13 +79,8 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
-import {
-  createSubagentWakeupHandleHook,
-  usesSubagentCompletionWakeups,
-} from '~/agents/subagentDelivery';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
-import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
@@ -396,6 +404,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   backgroundToolNames?: string[];
   /** Names of tools with the host-injected `intent` param (stripped from self-spawn inputs). */
   intentToolNames?: string[];
+  /** Marker-verified tool names whose intent labels are safe compaction guidance. */
+  semanticIntentToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -414,6 +424,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   statefulCodeEnvironment?: Agent['stateful_code_environment'];
   /** Trusted partition for transient code session ids and file references. */
   codeSessionKey?: string;
+  /** Trusted Code API route selected during initialization. */
+  codeExecutionContext?: CodeExecutionContext;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -457,6 +469,7 @@ type LazySubagentAgent = Pick<
   | 'codeEnvAvailable'
   | 'statefulCodeSessions'
   | 'statefulCodeEnvironment'
+  | 'codeExecutionContext'
   | 'codeSessionKey'
   | 'includeReasoningHistory'
   | 'mcpToolAliases'
@@ -478,6 +491,7 @@ type SubagentTreeNode = Pick<
   | 'codeEnvAvailable'
   | 'statefulCodeSessions'
   | 'statefulCodeEnvironment'
+  | 'codeExecutionContext'
   | 'codeSessionKey'
   | 'includeReasoningHistory'
   | 'mcpToolAliases'
@@ -1382,6 +1396,7 @@ export async function createRun({
   indexTokenCountMap,
   initialSessions,
   summarizationConfig,
+  compactionSemanticIndex,
   initialSummary,
   modelCallbacks,
   calibrationRatio,
@@ -1428,6 +1443,8 @@ export async function createRun({
    */
   discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
+  /** Bounded, source-addressed navigation guidance derived with provider messages. */
+  compactionSemanticIndex?: CompactionSemanticIndex;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
   /** Model-level guards inherited by root, summary, fallback, and subagent clients. */
@@ -1466,6 +1483,11 @@ export async function createRun({
      * when the SDK seals a model stream mid-generation on a preempt request.
      */
     preemptHook?: HookCallback<'PreemptBoundary'>;
+    /**
+     * Atomically claims queued steers at the SDK's terminal Stop boundary or
+     * seals admission so later messages become ordinary follow-up turns.
+     */
+    terminalHook?: TerminalSteerHook;
     /**
      * Level-triggered O(1) poll over the job's armed preempt requests
      * (`createSteerPreemptPoll`). Threaded into `RunConfig.preemption`, which
@@ -1729,6 +1751,7 @@ export async function createRun({
         !isSubagent && discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled: summarization.enabled,
       summarizationConfig: summarization.config,
+      ...(!isSubagent && compactionSemanticIndex != null ? { compactionSemanticIndex } : {}),
       initialSummary: isSubagent ? undefined : initialSummary,
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
@@ -1801,7 +1824,7 @@ export async function createRun({
       agentInput.toolDefinitions = registerBackgroundTaskTool({
         toolRegistry: agentInput.toolRegistry,
         toolDefinitions: agentInput.toolDefinitions,
-        subagentCompletionWakeups: usesSubagentCompletionWakeups(subagentTasks),
+        subagentCompletionWakeups: agentUsesSubagentCompletionWakeups(subagentTasks, agent.id),
       }).toolDefinitions;
     }
     agentInputs.push(agentInput);
@@ -1938,7 +1961,11 @@ export async function createRun({
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolUse', {
       pattern: String(Constants.SUBAGENT),
-      hooks: [createSubagentWakeupHandleHook()],
+      hooks: [
+        createSubagentWakeupHandleHook((agentId) =>
+          agentUsesSubagentCompletionWakeups(subagentTasks, agentId),
+        ),
+      ],
       internal: true,
     });
   }
@@ -1961,6 +1988,12 @@ export async function createRun({
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
     if (steering.preemptHook != null && isSteerPreemptSupported()) {
       hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
+    }
+    if (steering.terminalHook != null && isSteerTerminalContinuationSupported()) {
+      const stopFinalizeRegistry = hooks as unknown as {
+        register: (event: 'StopFinalize', matcher: { hooks: TerminalSteerHook[] }) => () => void;
+      };
+      stopFinalizeRegistry.register('StopFinalize', { hooks: [steering.terminalHook] });
     }
   }
   /**

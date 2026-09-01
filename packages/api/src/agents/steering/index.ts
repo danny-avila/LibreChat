@@ -1,11 +1,18 @@
 export {
   createSteerDrainHook,
   createSteerPreemptBoundaryHook,
+  createSteerTerminalContinuationHook,
   createSteerPreemptPoll,
   isSteeringSupported,
   isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
 } from './runtime';
-export type { SteerDrainHookOptions, SteerMediaResult } from './runtime';
+export type {
+  SteerDrainHookOptions,
+  SteerMediaResult,
+  TerminalSteerHook,
+  TerminalSteerHookInput,
+} from './runtime';
 export {
   handleSteerRequest,
   handleSteerCancel,

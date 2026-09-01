@@ -6,6 +6,7 @@ const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const {
   sendEvent,
   logAxiosError,
+  getTokenExpiresAt,
   refreshAccessToken,
   GenerationJobManager,
   createSSRFSafeAgents,
@@ -294,8 +295,8 @@ async function createActionTool({
                 await sleep(3000);
                 metadata.oauth_access_token = result.access_token;
                 metadata.oauth_refresh_token = result.refresh_token;
-                const expiresAt = new Date(Date.now() + result.expires_in * 1000);
-                metadata.oauth_token_expires_at = expiresAt.toISOString();
+                const expiresAt = getTokenExpiresAt(result.expires_in);
+                metadata.oauth_token_expires_at = expiresAt?.toISOString();
               } catch (error) {
                 const errorMessage = 'Failed to authenticate OAuth tool';
                 logger.error(errorMessage, error);
@@ -358,8 +359,8 @@ async function createActionTool({
                 if (refreshData.refresh_token) {
                   metadata.oauth_refresh_token = refreshData.refresh_token;
                 }
-                const expiresAt = new Date(Date.now() + refreshData.expires_in * 1000);
-                metadata.oauth_token_expires_at = expiresAt.toISOString();
+                const expiresAt = getTokenExpiresAt(refreshData.expires_in);
+                metadata.oauth_token_expires_at = expiresAt?.toISOString();
               } catch (error) {
                 logger.error('Failed to refresh token, requesting new login:', error);
                 await requestLogin();

@@ -1,15 +1,18 @@
 import type {
   IAgentEventActorReconciliation,
   IAgentEventActorState,
+  IAgentEventActorSuspension,
 } from '@librechat/data-schemas';
+import type { EventActorInterrupt } from '@librechat/agents';
 import {
   captureAgentEventCheckpoint,
   deleteAgentCheckpoint,
   forkAgentEventCheckpoint,
   getAgentCheckpointer,
 } from '../checkpointer';
+import { cancelAgentEventActor, executeAgentEventActor, resumeAgentEventActor } from './actor';
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
-import { executeAgentEventActor } from './actor';
+import { createAgentContextFingerprint } from '../compatibility';
 
 jest.mock('../checkpointer', () => ({
   ...jest.requireActual('../checkpointer'),
@@ -26,12 +29,14 @@ const mockedGetCheckpointer = jest.mocked(getAgentCheckpointer);
 
 describe('event actor host adapter', () => {
   const conversationId = 'actor-thread';
+  const originalCredsKey = process.env.CREDS_KEY;
   let state: IAgentEventActorState | null;
   let epoch = 0;
   let legacyTurn: { token: string; startedAt: Date } | null = null;
   let nextCheckpoint = 1;
 
   beforeEach(() => {
+    process.env.CREDS_KEY = 'event-actor-test-credentials-key';
     state = null;
     epoch = 0;
     legacyTurn = null;
@@ -51,38 +56,555 @@ describe('event actor host adapter', () => {
     mockedDelete.mockResolvedValue();
   });
 
+  afterAll(() => {
+    if (originalCredsKey == null) {
+      delete process.env.CREDS_KEY;
+    } else {
+      process.env.CREDS_KEY = originalCredsKey;
+    }
+  });
+
   const deps = () => ({
     getSnapshot: jest.fn(async () => ({
       state,
       reconciliations: [] as IAgentEventActorReconciliation[],
       legacyTurn,
+      suspension: null as IAgentEventActorSuspension | null,
       epoch,
     })),
-    commitState: jest.fn(async ({ expected, expectedEpoch, checkpoint }) => {
-      if (
-        expectedEpoch !== epoch ||
-        (state == null && expected != null) ||
-        (state != null &&
-          (expected == null ||
-            expected.generation !== state.generation ||
-            expected.checkpoint.checkpointId !== state.checkpoint.checkpointId ||
-            (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
-      ) {
-        return { status: 'stale' as const, ...(state == null ? {} : { state }) };
-      }
-      const previous = state?.checkpoint;
-      state = {
-        generation: (state?.generation ?? 0) + 1,
+    commitState: jest.fn(
+      async ({
+        expected,
+        expectedEpoch,
         checkpoint,
-        ...(previous == null ? {} : { previousCheckpoint: previous }),
-      };
-      return { status: 'committed' as const, state };
-    }),
+        contextFingerprint,
+        skillManifest,
+        discoveredToolNames,
+        summary,
+        contextMeta,
+        compactionSemanticIndex,
+      }) => {
+        if (
+          expectedEpoch !== epoch ||
+          (state == null && expected != null) ||
+          (state != null &&
+            (expected == null ||
+              expected.generation !== state.generation ||
+              expected.checkpoint.checkpointId !== state.checkpoint.checkpointId ||
+              JSON.stringify(expected.skillManifest) !== JSON.stringify(state.skillManifest) ||
+              JSON.stringify(expected.discoveredToolNames) !==
+                JSON.stringify(state.discoveredToolNames) ||
+              JSON.stringify(expected.summary) !== JSON.stringify(state.summary) ||
+              JSON.stringify(expected.contextMeta) !== JSON.stringify(state.contextMeta) ||
+              JSON.stringify(expected.compactionSemanticIndex) !==
+                JSON.stringify(state.compactionSemanticIndex) ||
+              (expected.requiresColdStart === true) !== (state.requiresColdStart === true)))
+        ) {
+          return { status: 'stale' as const, ...(state == null ? {} : { state }) };
+        }
+        const previous = state?.checkpoint;
+        state = {
+          generation: (state?.generation ?? 0) + 1,
+          checkpoint,
+          ...(contextFingerprint == null ? {} : { contextFingerprint }),
+          ...(skillManifest == null ? {} : { skillManifest }),
+          ...(discoveredToolNames == null ? {} : { discoveredToolNames }),
+          ...(summary == null ? {} : { summary }),
+          ...(contextMeta == null ? {} : { contextMeta }),
+          ...(compactionSemanticIndex == null ? {} : { compactionSemanticIndex }),
+          ...(previous == null ? {} : { previousCheckpoint: previous }),
+        };
+        return { status: 'committed' as const, state };
+      },
+    ),
     recordReconciliation: jest.fn(async () => true),
     resolveReconciliation: jest.fn(async () => true),
     admitAction: jest.fn(async () => true),
     releaseAction: jest.fn(async () => true),
     hasActionAdmission: jest.fn(async () => false),
+  });
+
+  it('publishes a signed durable suspension instead of discarding a paused fork', async () => {
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async () => ({ status: 'stored' as const })),
+    };
+
+    const result = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-paused',
+        event: { id: 'event-paused', type: 'turn' },
+        signal: new AbortController().signal,
+        invoke: async () => 'paused-response',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'action-paused',
+          jobCreatedAt: 123,
+          interrupt: {
+            id: 'interrupt-paused',
+            payload: { type: 'ask_user_question', question: 'Continue?' },
+          },
+        }),
+      },
+      dependencies,
+    );
+
+    expect(result.value).toBe('paused-response');
+    expect(result.execution).toMatchObject({
+      status: 'suspended',
+      suspension: {
+        version: 1,
+        attempt: 0,
+        invocation: { invocationId: 'event-paused' },
+        checkpoint: { checkpointId: 'checkpoint-1' },
+        interrupt: {
+          id: 'interrupt-paused',
+          payload: { type: 'ask_user_question', question: 'Continue?' },
+        },
+      },
+    });
+    expect(dependencies.storeSuspension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionId: 'action-paused',
+        jobCreatedAt: 123,
+        suspension: expect.objectContaining({ suspensionId: expect.any(String) }),
+      }),
+    );
+    expect(dependencies.storeSuspension).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+    expect(mockedDelete).not.toHaveBeenCalled();
+  });
+
+  it('preserves a pause reached after the expected action in the same fresh segment', async () => {
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async () => ({ status: 'stored' as const })),
+    };
+
+    const result = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-action-then-pause',
+        event: { id: 'event-action-then-pause' },
+        signal: new AbortController().signal,
+        invoke: async () => 'paused-after-action',
+        readAppliedAction: () => ({ toolName: 'submit_move', toolCallId: 'call-before-pause' }),
+        readSuspension: () => ({
+          actionId: 'action-after-tool',
+          jobCreatedAt: 456,
+          interrupt: { id: 'interrupt-after-tool', payload: { type: 'tool_approval' } },
+        }),
+      },
+      dependencies,
+    );
+
+    expect(result.execution).toMatchObject({
+      status: 'suspended',
+      suspension: { interrupt: { id: 'interrupt-after-tool' } },
+    });
+    expect(dependencies.storeSuspension).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+  });
+
+  it('validates and cancels the exact signed suspension before deleting its fork', async () => {
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async () => ({ status: 'stored' as const })),
+      cancelSuspension: jest.fn(async () => ({ status: 'cancelled' as const })),
+    };
+    const paused = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-cancelled',
+        event: { id: 'event-cancelled' },
+        signal: new AbortController().signal,
+        invoke: async () => 'paused-response',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'action-cancelled',
+          jobCreatedAt: 456,
+          interrupt: { id: 'interrupt-cancelled', payload: { type: 'tool_approval' } },
+        }),
+      },
+      dependencies,
+    );
+    if (paused.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
+
+    await expect(
+      cancelAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          suspension: JSON.parse(JSON.stringify(paused.execution.suspension)),
+          cancelAttemptId: 'cancel-attempt-1',
+          reason: 'cancelled',
+        },
+        dependencies,
+      ),
+    ).resolves.toEqual({ status: 'cancelled' });
+    expect(dependencies.cancelSuspension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspensionId: paused.execution.suspension.suspensionId,
+        invocationId: 'event-cancelled',
+      }),
+    );
+    expect(mockedDelete).toHaveBeenCalledWith(
+      conversationId,
+      undefined,
+      undefined,
+      expect.objectContaining({
+        throwOnError: true,
+        checkpointNamespace: paused.execution.suspension.checkpoint.checkpointNs,
+      }),
+    );
+  });
+
+  it('resumes signed evidence on a new executor and consumes its claim with the head CAS', async () => {
+    let storedSuspension: IAgentEventActorSuspension | undefined;
+    let action: { toolName: string; toolCallId?: string } | undefined;
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async (input) => {
+        storedSuspension = {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          status: 'pending',
+          observedAt: new Date(),
+        };
+        return { status: 'stored' as const };
+      }),
+      claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        if (storedSuspension == null) {
+          throw new Error('test setup did not store a suspension');
+        }
+        storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
+        return { status: 'claimed' as const };
+      }),
+      settleSuspension: jest.fn(async () => ({ status: 'settled' as const })),
+    };
+    dependencies.getSnapshot.mockImplementation(async () => ({
+      state,
+      reconciliations: [],
+      legacyTurn: null,
+      suspension: storedSuspension ?? null,
+      epoch,
+    }));
+
+    const paused = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-cross-executor',
+        event: { id: 'event-cross-executor' },
+        signal: new AbortController().signal,
+        invoke: async () => 'paused-response',
+        readAppliedAction: () => action,
+        readSuspension: () => ({
+          actionId: 'action-cross-executor',
+          jobCreatedAt: 321,
+          interrupt: {
+            id: 'interrupt-cross-executor',
+            payload: { type: 'tool_approval', actionId: 'action-cross-executor' },
+          },
+        }),
+      },
+      dependencies,
+    );
+    if (paused.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
+    const evidence = JSON.parse(JSON.stringify(paused.execution.suspension));
+    dependencies.getSnapshot.mockClear();
+    dependencies.claimSuspension.mockClear();
+    dependencies.commitState.mockClear();
+
+    const resumed = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        bindingId: 'binding-1',
+        suspension: evidence,
+        resumeAttemptId: 'resume-cross-executor',
+        resumeValue: { approved: true },
+        signal: new AbortController().signal,
+        resume: async () => {
+          action = { toolName: 'submit_move', toolCallId: 'call-resumed' };
+          return 'resumed-response';
+        },
+        readAppliedAction: () => action,
+      },
+      dependencies,
+    );
+
+    expect(resumed).toMatchObject({
+      value: 'resumed-response',
+      execution: {
+        status: 'applied',
+        result: { action: { toolName: 'submit_move', toolCallId: 'call-resumed' } },
+      },
+    });
+    expect(dependencies.claimSuspension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspensionId: evidence.suspensionId,
+        resumeAttemptId: 'resume-cross-executor',
+        actionId: 'action-cross-executor',
+      }),
+    );
+    expect(dependencies.getSnapshot).toHaveBeenCalledTimes(1);
+    expect(dependencies.claimSuspension).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitState).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settlementAuthority: expect.objectContaining({
+          suspensionId: evidence.suspensionId,
+          resumeAttemptId: 'resume-cross-executor',
+        }),
+      }),
+    );
+  });
+
+  it('atomically re-pauses after an action and settles a later no-action reply', async () => {
+    let storedSuspension: IAgentEventActorSuspension | undefined;
+    let pendingPause:
+      | { actionId: string; jobCreatedAt: number; interrupt: EventActorInterrupt }
+      | undefined;
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async (input) => {
+        storedSuspension = {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          status: 'pending',
+          observedAt: new Date(),
+        };
+        return { status: 'stored' as const };
+      }),
+      claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        if (storedSuspension == null) {
+          throw new Error('test setup did not store a suspension');
+        }
+        storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
+        return { status: 'claimed' as const };
+      }),
+      settleSuspension: jest.fn(async () => ({ status: 'settled' as const })),
+    };
+    dependencies.getSnapshot.mockImplementation(async () => ({
+      state,
+      reconciliations: [],
+      legacyTurn: null,
+      suspension: storedSuspension ?? null,
+      epoch,
+    }));
+
+    const initial = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-repause',
+        event: { id: 'event-repause' },
+        signal: new AbortController().signal,
+        invoke: async () => 'initial-pause',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'action-first',
+          jobCreatedAt: 789,
+          interrupt: { id: 'interrupt-first', payload: { type: 'tool_approval' } },
+        }),
+      },
+      dependencies,
+    );
+    if (initial.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
+    pendingPause = {
+      actionId: 'action-second',
+      jobCreatedAt: 789,
+      interrupt: { id: 'interrupt-second', payload: { type: 'ask_user_question' } },
+    };
+    const repaused = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: initial.execution.suspension,
+        resumeAttemptId: 'resume-first',
+        resumeValue: { approved: true },
+        signal: new AbortController().signal,
+        resume: async () => 'second-pause',
+        readAppliedAction: () => ({ toolName: 'submit_move', toolCallId: 'call-before-repause' }),
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(repaused.execution).toMatchObject({
+      status: 'suspended',
+      suspension: { attempt: 1, interrupt: { id: 'interrupt-second' } },
+    });
+    expect(dependencies.storeSuspension).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        actionId: 'action-second',
+        invalidateHead: true,
+        previous: {
+          suspensionId: initial.execution.suspension.suspensionId,
+          attempt: 0,
+          resumeAttemptId: 'resume-first',
+        },
+      }),
+    );
+    if (repaused.execution.status !== 'suspended') {
+      throw new Error('test setup did not re-pause');
+    }
+    pendingPause = undefined;
+    const rejected = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: repaused.execution.suspension,
+        resumeAttemptId: 'resume-second',
+        resumeValue: { rejected: true },
+        signal: new AbortController().signal,
+        resume: async () => 'rejected-response',
+        readAppliedAction: () => undefined,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(rejected).toMatchObject({
+      value: 'rejected-response',
+      execution: { status: 'completed_no_action' },
+    });
+    expect(dependencies.settleSuspension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        suspensionId: repaused.execution.suspension.suspensionId,
+        attempt: 1,
+        resumeAttemptId: 'resume-second',
+      }),
+    );
+    expect(mockedDelete).toHaveBeenCalledWith(
+      conversationId,
+      undefined,
+      undefined,
+      expect.objectContaining({
+        throwOnError: true,
+        checkpointNamespace: repaused.execution.suspension.checkpoint.checkpointNs,
+      }),
+    );
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+  });
+
+  it('carries applied expected-action evidence across a later re-pause', async () => {
+    let storedSuspension: IAgentEventActorSuspension | undefined;
+    let pendingPause:
+      | {
+          actionId: string;
+          jobCreatedAt: number;
+          interrupt: EventActorInterrupt;
+        }
+      | undefined;
+    let observedAction: { toolName: string; toolCallId?: string } | undefined;
+    const dependencies = {
+      ...deps(),
+      storeSuspension: jest.fn(async (input) => {
+        storedSuspension = {
+          suspension: input.suspension,
+          actionId: input.actionId,
+          jobCreatedAt: input.jobCreatedAt,
+          appliedAction: input.appliedAction,
+          status: 'pending',
+          observedAt: new Date(),
+        };
+        return { status: 'stored' as const };
+      }),
+      claimSuspension: jest.fn(async ({ resumeAttemptId }) => {
+        if (storedSuspension == null) {
+          throw new Error('test suspension was not stored');
+        }
+        storedSuspension = { ...storedSuspension, status: 'claimed', resumeAttemptId };
+        return { status: 'claimed' as const };
+      }),
+      settleSuspension: jest.fn(async () => ({ status: 'settled' as const })),
+    };
+    dependencies.getSnapshot.mockImplementation(async () => ({
+      state,
+      reconciliations: [],
+      legacyTurn: null,
+      suspension: storedSuspension ?? null,
+      epoch,
+    }));
+    const initial = await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-action-repause',
+        event: { id: 'event-action-repause' },
+        signal: new AbortController().signal,
+        invoke: async () => 'initial-pause',
+        readAppliedAction: () => undefined,
+        readSuspension: () => ({
+          actionId: 'detached-task',
+          jobCreatedAt: 801,
+          interrupt: { id: 'detached-task', payload: { type: 'detached' } },
+        }),
+      },
+      dependencies,
+    );
+    if (initial.execution.status !== 'suspended') {
+      throw new Error('test setup did not suspend');
+    }
+    observedAction = { toolName: 'submit_move', toolCallId: 'call-detached' };
+    pendingPause = {
+      actionId: 'ask-user',
+      jobCreatedAt: 802,
+      interrupt: { id: 'ask-user', payload: { type: 'ask_user_question' } },
+    };
+    const repaused = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: initial.execution.suspension,
+        resumeAttemptId: 'resume-detached',
+        resumeValue: { status: 'succeeded' },
+        signal: new AbortController().signal,
+        resume: async () => 'asks-user',
+        readAppliedAction: () => observedAction,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(repaused.execution.status).toBe('suspended');
+    expect(dependencies.storeSuspension).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appliedAction: observedAction }),
+    );
+    if (repaused.execution.status !== 'suspended') {
+      throw new Error('test setup did not re-pause');
+    }
+    observedAction = undefined;
+    pendingPause = undefined;
+    const completed = await resumeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        suspension: repaused.execution.suspension,
+        resumeAttemptId: 'resume-human',
+        resumeValue: { answer: 'continue' },
+        signal: new AbortController().signal,
+        resume: async () => 'completed',
+        readAppliedAction: () => observedAction,
+        readSuspension: () => pendingPause,
+      },
+      dependencies,
+    );
+    expect(completed.execution).toMatchObject({
+      status: 'applied',
+      result: { action: { toolName: 'submit_move', toolCallId: 'call-detached' } },
+    });
   });
 
   it('cold-starts once, then forks and warm-continues only the next event', async () => {
@@ -123,8 +645,126 @@ describe('event actor host adapter', () => {
       expect.stringMatching(/^event-actor\//),
       'event-2',
       undefined,
+      undefined,
     );
     expect(state).toMatchObject({ generation: 2, checkpoint: { checkpointId: 'checkpoint-2' } });
+  });
+
+  it('rebuilds on a missing or changed context fingerprint and stamps the new head', async () => {
+    const current = createAgentContextFingerprint({ agents: [{ id: 'agent-1', version: 2 }] });
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-old-context',
+        checkpointNs: 'event-actor/old-context',
+      },
+    };
+    const dependencies = deps();
+    let continuation: 'warm' | 'cold' | undefined;
+
+    await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-new-context',
+        event: { id: 'event-new-context', type: 'turn' },
+        signal: new AbortController().signal,
+        contextFingerprint: current,
+        invoke: async (context) => {
+          continuation = context.continuation;
+          return 'response';
+        },
+        readAppliedAction: () => ({ toolName: 'submit_move' }),
+      },
+      dependencies,
+    );
+
+    expect(continuation).toBe('cold');
+    expect(mockedFork).not.toHaveBeenCalled();
+    expect(state?.contextFingerprint).toEqual(current);
+  });
+
+  it('validates the stored Skill manifest before warm continuation and commits additions', async () => {
+    const current = createAgentContextFingerprint({ agents: [{ id: 'agent-1', version: 2 }] });
+    const storedSkill = { id: 'skill-1', name: 'analysis', version: 3 };
+    const invokedSkill = { id: 'skill-2', name: 'reporting', version: 1 };
+    const storedCompactionSemanticIndex = {
+      version: 1 as const,
+      entries: [
+        {
+          type: 'activity_phase' as const,
+          sourceMessageId: 'assistant-history',
+          sourceContentIndex: 1,
+          revision: 1,
+          status: 'committed' as const,
+          text: 'Verified the release state',
+        },
+      ],
+    };
+    state = {
+      generation: 1,
+      checkpoint: {
+        threadId: conversationId,
+        checkpointId: 'checkpoint-compatible',
+        checkpointNs: 'event-actor/compatible',
+      },
+      contextFingerprint: current,
+      skillManifest: [storedSkill],
+      discoveredToolNames: ['deferred_lookup'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex: storedCompactionSemanticIndex,
+    };
+    let continuation: 'warm' | 'cold' | undefined;
+    const checkpointMessageOverlay = { source: 'skill', messages: [] };
+
+    await executeAgentEventActor(
+      {
+        user: 'user-1',
+        conversationId,
+        invocationId: 'event-skill-context',
+        event: { id: 'event-skill-context', type: 'turn' },
+        signal: new AbortController().signal,
+        resolveContext: async (observed) => ({
+          fingerprint: current,
+          skillManifest: observed.skillManifest ?? [],
+          discoveredToolNames: observed.discoveredToolNames ?? [],
+          summary: observed.summary,
+          contextMeta: observed.contextMeta,
+          compactionSemanticIndex: observed.compactionSemanticIndex,
+          checkpointMessageOverlay,
+        }),
+        readResultContext: async () => ({
+          fingerprint: current,
+          skillManifest: [storedSkill, invokedSkill],
+          discoveredToolNames: ['deferred_lookup', 'deferred_write'],
+          summary: { text: 'Updated compacted context.', tokenCount: 15 },
+          contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+          compactionSemanticIndex: storedCompactionSemanticIndex,
+        }),
+        invoke: async (context) => {
+          continuation = context.continuation;
+          return 'response';
+        },
+        readAppliedAction: () => ({ toolName: 'submit_move' }),
+      },
+      deps(),
+    );
+
+    expect(continuation).toBe('warm');
+    expect(state?.skillManifest).toEqual([storedSkill, invokedSkill]);
+    expect(state?.discoveredToolNames).toEqual(['deferred_lookup', 'deferred_write']);
+    expect(state?.summary).toEqual({ text: 'Updated compacted context.', tokenCount: 15 });
+    expect(state?.contextMeta).toEqual({ calibrationRatio: 1.3, encoding: 'o200k_base' });
+    expect(state?.compactionSemanticIndex).toEqual(storedCompactionSemanticIndex);
+    expect(mockedFork).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      'event-skill-context',
+      undefined,
+      checkpointMessageOverlay,
+    );
   });
 
   it('commits from the execution-time receipt when run steps lag sendMessage', async () => {
@@ -461,6 +1101,41 @@ describe('event actor host adapter', () => {
     expect(mockedDelete).not.toHaveBeenCalled();
   });
 
+  it('retains applied-action evidence when result context capture fails', async () => {
+    const dependencies = deps();
+    let toolExecutions = 0;
+    await expect(
+      executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-context-indeterminate',
+          event: { id: 'event-context-indeterminate' },
+          signal: new AbortController().signal,
+          invoke: async () => {
+            toolExecutions += 1;
+            return 'response';
+          },
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+          readResultContext: async () => {
+            throw new Error('memory partition unavailable');
+          },
+        },
+        dependencies,
+      ),
+    ).rejects.toThrow('requires commit_indeterminate reconciliation');
+
+    expect(toolExecutions).toBe(1);
+    expect(dependencies.commitState).not.toHaveBeenCalled();
+    expect(dependencies.recordReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reconciliation: expect.objectContaining({ status: 'commit_indeterminate' }),
+      }),
+    );
+    expect(mockedCapture).not.toHaveBeenCalled();
+    expect(mockedDelete).not.toHaveBeenCalled();
+  });
+
   it('recovers an indeterminate cleanup after the actor head was committed', async () => {
     state = {
       generation: 2,
@@ -566,6 +1241,7 @@ describe('event actor host adapter', () => {
           state: baseState,
           reconciliations: [],
           legacyTurn: null,
+          suspension: null,
           epoch: 0,
         })
         .mockRejectedValueOnce(new Error('readback unavailable')),
@@ -623,6 +1299,7 @@ describe('event actor host adapter', () => {
       state: authoritative,
       reconciliations: [marker],
       legacyTurn: null,
+      suspension: null,
       epoch: 0,
     });
 
@@ -668,6 +1345,7 @@ describe('event actor host adapter', () => {
           },
         ],
         legacyTurn: null,
+        suspension: null,
         epoch: 0,
       })),
     };
@@ -707,6 +1385,7 @@ describe('event actor host adapter', () => {
           },
         ],
         legacyTurn: null,
+        suspension: null,
         epoch: 0,
       })),
       commitState: jest.fn(),
@@ -780,6 +1459,7 @@ describe('event actor host adapter', () => {
           },
         ],
         legacyTurn: null,
+        suspension: null,
         epoch: 0,
       })),
       getReceipt: jest.fn(async () => ({
@@ -922,6 +1602,7 @@ describe('event actor host adapter', () => {
         },
       ],
       legacyTurn: null,
+      suspension: null,
       epoch: 0,
     });
 
@@ -1049,6 +1730,7 @@ describe('event actor host adapter', () => {
         },
       ],
       legacyTurn: null,
+      suspension: null,
       epoch: 0,
     });
 

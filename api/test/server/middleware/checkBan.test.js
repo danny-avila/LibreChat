@@ -41,6 +41,8 @@ jest.mock('@librechat/api', () => ({
   },
   keyvMongo: {},
   removePorts: jest.fn((req) => req.ip),
+  redirectToAuthFailure: (res, { clientDomain, authFailedError }) =>
+    res.redirect(`${clientDomain}/login?redirect=false&error=${authFailedError}`),
 }));
 
 jest.mock('~/models', () => ({
@@ -72,6 +74,7 @@ const createReq = (overrides = {}) => ({
 const createRes = () => ({
   status: jest.fn().mockReturnThis(),
   json: jest.fn().mockReturnThis(),
+  redirect: jest.fn().mockReturnThis(),
 });
 
 describe('checkBan middleware', () => {
@@ -150,6 +153,26 @@ describe('checkBan middleware', () => {
       expect(next).not.toHaveBeenCalled();
       expect(req.banned).toBe(true);
       expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    it('redirects instead of sending JSON when the ban hits an OAuth navigation', async () => {
+      process.env.DOMAIN_CLIENT = 'http://client.test';
+      mockBanCacheGet.mockResolvedValueOnce({ expiresAt: Date.now() + 60000 });
+      const next = jest.fn();
+      const req = createReq({
+        isOAuthNavigation: true,
+        baseUrl: '/oauth',
+        originalUrl: '/oauth/openid/callback',
+      });
+      const res = createRes();
+
+      await checkBan(req, res, next);
+
+      expect(req.banned).toBe(true);
+      expect(res.json).not.toHaveBeenCalled();
+      expect(res.redirect).toHaveBeenCalledWith(
+        'http://client.test/login?redirect=false&error=auth_banned',
+      );
     });
 
     it('returns 403 when user ban is cached (IP miss)', async () => {

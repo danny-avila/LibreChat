@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import type { ICompactionSemanticIndexProjection } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type {
   IJobStoreV2,
@@ -30,10 +31,13 @@ export interface ApprovalLifecycleCallbacks {
 export interface ApprovalPauseOptions {
   discoveredTools?: string[];
   activityPhaseSnapshot?: ActivityPhaseSnapshot;
+  compactionSemanticIndex?: ICompactionSemanticIndexProjection;
   /** Generation identity observed by the interrupted run. */
   expectedCreatedAt?: number;
   /** Hold Stop/resume until the paused assistant row is durably unfinished. */
   persistencePending?: boolean;
+  /** Versioned pointer to the canonical signed Conversation suspension. */
+  agentEventSuspension?: import('~/agents/triggers/types').AgentEventSuspensionProjection;
 }
 
 export const PENDING_ACTION_EXPIRED_CODE = 'HITL_ACTION_EXPIRED';
@@ -111,6 +115,7 @@ export class ApprovalLifecycle {
     const expectedCreatedAt = options.expectedCreatedAt ?? job.createdAt;
     const discoveredTools = options.discoveredTools;
     const activityPhaseSnapshot = options.activityPhaseSnapshot;
+    const compactionSemanticIndex = options.compactionSemanticIndex;
     /** The normal receipt TTL matches a running job, but a review pause can
      * live for 24h or an explicit later expiry. The store extends every
      * receipt in the SAME CAS that closes running enqueues: a separate pass
@@ -142,6 +147,10 @@ export class ApprovalLifecycle {
             ? { discoveredTools: [...discoveredTools] }
             : {}),
           ...(activityPhaseSnapshot != null ? { activityPhaseSnapshot } : {}),
+          ...(compactionSemanticIndex != null ? { compactionSemanticIndex } : {}),
+          ...(options.agentEventSuspension != null
+            ? { agentEventSuspension: options.agentEventSuspension }
+            : {}),
         },
         expectCreatedAt: expectedCreatedAt,
         notAfterMs: pendingAction.expiresAt,
@@ -388,7 +397,16 @@ export class ApprovalLifecycle {
     const resumed = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'running',
-      clear: ['pendingAction', 'pendingActionId'],
+      /** The old suspension marker must not survive into the resumed provider
+       * segment. If that segment re-pauses, its canonical successor is stored
+       * before a new marker is published; clearing here makes a terminal job
+       * in that gap unambiguously recoverable as an unpublished re-pause. */
+      clear: [
+        'pendingAction',
+        'pendingActionId',
+        'agentEventSuspension',
+        'providerExecutionStartedId',
+      ],
       // Refresh the liveness basis so a long-paused run isn't reaped as stale
       // immediately after resuming (cleanup keys off lastActiveAt).
       /** Ownership can move across replicas on resume. Owner-specific fields

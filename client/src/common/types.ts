@@ -492,6 +492,7 @@ export type TAuthContext = {
   user: t.TUser | undefined;
   token: string | undefined;
   isAuthenticated: boolean;
+  isAuthReady: boolean;
   error: string | undefined;
   login: (data: t.TLoginUser) => void;
   logout: (redirect?: string) => void;
@@ -509,6 +510,7 @@ export type TUserContext = {
 export type TAuthConfig = {
   loginRedirect: string;
   test?: boolean;
+  optional?: boolean;
 };
 
 export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &

@@ -67,6 +67,7 @@ const { capabilityContextMiddleware } = require('./middleware/roles/capabilities
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { resumeAgentEventDetachedAction } = require('./services/Agents/detachedActionResume');
 const { initializeScheduleEngine, recordExpiredScheduleApproval } = require('./services/Schedules');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
@@ -128,7 +129,9 @@ const configureGenerationStreams = () => {
   });
   GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
   GenerationJobManager.setTerminalHostActionHandler(
-    createAgentEventTerminalHandler(agentEventMethods),
+    createAgentEventTerminalHandler(agentEventMethods, {
+      resumeDetachedAction: resumeAgentEventDetachedAction,
+    }),
   );
   GenerationJobManager.initialize();
   // Stop active generations and close their SSE streams while the HTTP server drains.
@@ -364,6 +367,8 @@ const startServer = async () => {
   app.use('/api/admin/insights', routes.insights);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
+  app.use('/api/admin/code-environments', routes.adminCodeEnvironments);
+  app.use('/api/code-environments', routes.codeEnvironments);
   app.use('/api/admin/langfuse', routes.adminLangfuse);
   app.use('/api/admin/grants', routes.adminGrants);
   app.use('/api/admin/groups', routes.adminGroups);

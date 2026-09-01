@@ -14,6 +14,7 @@ const db = require('~/models');
 const apiKeyMiddleware = createRequireApiKeyAuth({
   validateAgentApiKey: db.validateAgentApiKey,
   findUser: db.findUser,
+  isPrincipalActive: db.isAgentTriggerPrincipalActive,
 });
 
 const requireRemoteAgentAuth = createRemoteAgentAuth({
@@ -21,6 +22,7 @@ const requireRemoteAgentAuth = createRemoteAgentAuth({
   findUser: db.findUser,
   getRolesByNames: db.findRolesByNames,
   updateUser: db.updateUser,
+  isPrincipalActive: db.isAgentTriggerPrincipalActive,
   getAppConfig,
 });
 

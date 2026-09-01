@@ -67,7 +67,7 @@ describe('bedrockEndpointSchema', () => {
 });
 
 describe('agent event runtime config', () => {
-  it('accepts rollout flags and agent-event admission limits', () => {
+  it('accepts the routing choice and ignores removed rollout fields', () => {
     const result = configSchema.safeParse({
       version: '1.0',
       endpoints: {
@@ -93,12 +93,6 @@ describe('agent event runtime config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.eventDriven).toEqual({
-      childTurns: true,
-      completionWakeups: false,
-      coalescing: true,
-      actorMailbox: true,
-      checkpointForks: true,
-      durableReceipts: true,
       selfUrl: 'https://triggers.internal',
     });
     expect(result.data.rateLimits?.agentEvents).toEqual({
@@ -107,7 +101,7 @@ describe('agent event runtime config', () => {
     });
   });
 
-  it('rejects checkpoint forks with the process-local memory checkpointer', () => {
+  it('does not let removed checkpoint fields control memory-checkpointer validation', () => {
     const result = configSchema.safeParse({
       version: '1.0',
       endpoints: {
@@ -118,14 +112,40 @@ describe('agent event runtime config', () => {
       },
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error?.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: ['endpoints', 'agents', 'eventDriven', 'checkpointForks'],
-        }),
-      ]),
-    );
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.eventDriven).toEqual({});
+    expect(result.data.endpoints?.agents?.checkpointer).toEqual({ type: 'memory' });
+  });
+});
+
+describe('agent background task config', () => {
+  it('enables completion wakeups by default when the policy block is present', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: {} } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: true });
+  });
+
+  it('accepts an administrator poll-only policy', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: { completionWakeups: false } } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: false });
   });
 });
 
@@ -731,6 +751,66 @@ describe('webSearchSchema', () => {
     expect(() =>
       webSearchSchema.parse({
         tavilyScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts Keenable search options', () => {
+    const result = webSearchSchema.parse({
+      keenableSearchOptions: {
+        maxResults: 7,
+        site: 'example.com',
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.keenableSearchOptions?.maxResults).toBe(7);
+    expect(result.keenableSearchOptions?.site).toBe('example.com');
+    expect(result.keenableSearchOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts Keenable as a scraper provider with its options', () => {
+    const result = webSearchSchema.parse({
+      searchProvider: 'keenable',
+      scraperProvider: 'keenable',
+      rerankerType: 'none',
+      keenableScraperOptions: {
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.scraperProvider).toBe('keenable');
+    expect(result.keenableScraperOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableScraperOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable scraper options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableScraperOptions: {
           timeout: 120001,
         },
       }),

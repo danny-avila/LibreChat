@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare": "node -e \"import('husky').then((h) => h.default()).catch(() => {})\"",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",
@@ -104,6 +105,8 @@
     "lint": "eslint .",
     "sort-imports": "node scripts/sort-imports.mts",
     "sort-imports:check": "node scripts/sort-imports.mts --check",
+    "static-checks": "node scripts/static-checks.mts",
+    "static-checks:full": "node scripts/static-checks.mts --full",
     "format": "npx prettier --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
     "b:api-inspect": "NODE_ENV=production bun --inspect run api/server/index.js",
@@ -194,7 +197,11 @@
       "brace-expansion": "^5.0.8"
     },
     "@xmldom/xmldom": "^0.8.13",
+    "baseline-browser-mapping": "^2.11.0",
+    "browserslist": "^4.28.7",
     "elliptic": "^6.6.1",
+    "fast-uri": "^3.1.6",
+    "fflate": "^0.8.3",
     "form-data": "^4.0.6",
     "langsmith": "^0.6.0",
     "postcss": "^8.5.18",
@@ -224,7 +231,7 @@
     "hono": "^4.12.25",
     "@hono/node-server": "^2.0.11",
     "monaco-editor": {
-      "dompurify": "3.4.12"
+      "dompurify": "3.4.14"
     },
     "test-exclude": "^8.0.0",
     "js-yaml": "^4.2.0",
