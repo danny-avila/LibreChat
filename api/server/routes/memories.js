@@ -99,6 +99,34 @@ const getAgentPartitionAccess = async (user, agentId) => {
   return canViewAgent ? 'allowed' : 'denied';
 };
 
+const validateAgentPartition = (source) => async (req, res, next) => {
+  const agentId = getAgentIdParam(req[source]?.agentId);
+  if (!agentId) {
+    return next();
+  }
+
+  try {
+    const agentAccess = await getAgentPartitionAccess(req.user, agentId);
+    if (agentAccess === 'not_found') {
+      return res.status(404).json({ error: 'Agent not found.' });
+    }
+    if (agentAccess === 'denied') {
+      return res.status(403).json({ error: 'Agent access denied.' });
+    }
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to validate agent access.' });
+  }
+};
+
+const validateQueryAgentPartition = validateAgentPartition('query');
+const updateMemoryMiddleware = [
+  memoryPayloadLimit,
+  checkMemoryUpdate,
+  validateQueryAgentPartition,
+  configMiddleware,
+];
+
 /** Resolves agent display names for agent-partitioned memories, restricted
  *  to agents the requester can VIEW — `agentId` is caller-supplied on write,
  *  so an unrestricted lookup would leak private agents' names. */
@@ -301,10 +329,16 @@ router.patch(
   '/id/:id',
   memoryPayloadLimit,
   checkMemoryUpdate,
+  validateQueryAgentPartition,
   configMiddleware,
   opaqueMemoryHandlers.updateById,
 );
-router.delete('/id/:id', checkMemoryDelete, opaqueMemoryHandlers.deleteById);
+router.delete(
+  '/id/:id',
+  checkMemoryDelete,
+  validateQueryAgentPartition,
+  opaqueMemoryHandlers.deleteById,
+);
 
 /**
  * PATCH /memories/:key
@@ -312,7 +346,7 @@ router.delete('/id/:id', checkMemoryDelete, opaqueMemoryHandlers.deleteById);
  * Body: { key?: string, value: string }
  * Returns 200 and { updated: true, memory: <updatedDoc> } when successful.
  */
-router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, async (req, res) => {
+router.patch('/:key', updateMemoryMiddleware, async (req, res) => {
   const { key: urlKey } = req.params;
   const { key: bodyKey, value } = req.body || {};
   const agentId = getAgentIdParam(req.query.agentId);
@@ -402,7 +436,7 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
  * Deletes a memory entry for the authenticated user.
  * Returns 200 and { deleted: true } when successful.
  */
-router.delete('/:key', checkMemoryDelete, async (req, res) => {
+router.delete('/:key', checkMemoryDelete, validateQueryAgentPartition, async (req, res) => {
   const { key } = req.params;
   const agentId = getAgentIdParam(req.query.agentId);
 

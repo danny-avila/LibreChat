@@ -149,6 +149,24 @@ describe('agent memory partition authorization', () => {
       expect.objectContaining({ userId: 'user-1', agentId: 'agent-1' }),
     );
   });
+
+  it.each([
+    ['patch', '/api/memories/id/507f1f77bcf86cd799439011?agentId=agent-1'],
+    ['delete', '/api/memories/id/507f1f77bcf86cd799439011?agentId=agent-1'],
+    ['patch', '/api/memories/timezone?agentId=agent-1'],
+    ['delete', '/api/memories/timezone?agentId=agent-1'],
+  ])('rejects unauthorized %s mutations of an agent partition', async (method, path) => {
+    mockCheckPermission.mockResolvedValue(false);
+
+    const pendingRequest = request(buildApp())[method](path);
+    const response =
+      method === 'patch' ? await pendingRequest.send({ value: 'UTC' }) : await pendingRequest;
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: 'Agent access denied.' });
+    expect(mockOpaqueUpdateById).not.toHaveBeenCalled();
+    expect(mockOpaqueDeleteById).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /api/memories content policy', () => {
@@ -245,6 +263,9 @@ describe('GET /api/memories content policy', () => {
 describe('opaque memory management routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetAgent.mockResolvedValue({ _id: 'agent-object-id', id: 'agent-1' });
+    mockCheckPermission.mockResolvedValue(true);
+    mockHasCapability.mockResolvedValue(false);
     mockFilters = {
       memories: {
         pii: {
