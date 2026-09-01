@@ -11,8 +11,11 @@ const {
   flattenArtifactPath,
   createAxiosInstance,
   getCodeApiAuthHeaders,
-  getCodeApiRetryAfterMs,
+  withCodeApiRateLimit,
   classifyCodeArtifact,
+  parseSandboxImageChunk,
+  readWindowedSandboxImage,
+  createCodeApiRateLimitBudget,
   codeServerHttpAgent,
   codeServerHttpsAgent,
   extractCodeArtifactText,
@@ -1454,67 +1457,19 @@ async function readSandboxFile({
 }
 
 /**
- * Sandbox stdout a single `/exec` response may carry, in bytes. The runner
- * truncates + SIGKILLs the job past its own `SANDBOX_OUTPUT_MAX_SIZE`
- * (64KB in the reference deployment), so this is the ceiling every image
- * chunk is sized against. Deployments that changed the runner's cap set
- * `LIBRECHAT_CODE_SANDBOX_OUTPUT_MAX_SIZE` to match; a smaller cap is also
- * discovered at runtime (see {@link narrowImageChunkBytes}).
- */
-const DEFAULT_SANDBOX_OUTPUT_MAX_SIZE = 64 * 1024;
-
-/** JSON envelope around the base64 window (`{"total":…,"n":…,"b64":"…"}`),
- *  plus room for a trailing newline and a stray shell banner line. */
-const IMAGE_CHUNK_ENVELOPE_BYTES = 256;
-
-/** Floor for a narrowed window; below this the round-trip count makes an
- *  inline read cost more than it is worth. */
-const MIN_IMAGE_CHUNK_BYTES = 8 * 1024;
-
-/**
- * Hard round-trip ceiling for one image read. Each chunk is an `/exec`
- * call against the Code API's per-user execution limiter (20 requests per
- * 30s in the reference deployment), so an unbounded read would stall a
- * chat turn across several limiter windows. A file that cannot be pulled
- * within this budget degrades to the same "too large to inline" result as
- * one over the byte cap.
- */
-const MAX_IMAGE_EXEC_CALLS = 24;
-
-/** Halvings allowed when the runner's stdout cap turns out to be smaller
- *  than {@link DEFAULT_SANDBOX_OUTPUT_MAX_SIZE}. */
-const MAX_IMAGE_OVERFLOW_RETRIES = 2;
-
-/** Total time one read may spend waiting out Code API rate limits. Sized
- *  to cover a single limiter window without stalling a turn indefinitely. */
-const MAX_IMAGE_RATE_LIMIT_WAIT_MS = 20_000;
-
-/** Marks the error thrown when the runner truncated a chunk's stdout, so
- *  the reader can narrow the window instead of failing the whole image. */
-const SANDBOX_OUTPUT_OVERFLOW = Symbol('sandboxOutputOverflow');
-
-/** Per-base-URL window size, narrowed in place the first time a runner
- *  reports truncation so later reads start at a size it accepts. */
-const learnedImageChunkBytes = new Map();
-
-/**
  * Reads a small image file out of the code-execution sandbox as base64 so
  * `read_file` can surface it to vision-capable models. `readSandboxFile`'s
  * `cat` round-trips stdout through codeapi's JSON transport, which lossily
- * replaces non-UTF-8 bytes and corrupts image data. Here a tiny Python
- * reader stats the file, refuses (without transferring) anything over
- * `maxBytes`, and otherwise base64-encodes the bytes IN the sandbox so the
- * payload stays ASCII-safe across the JSON `/exec` transport. Session
- * forwarding mirrors `readSandboxFile` so the read lands in the same
- * sandbox session that holds the agent's prior-turn artifacts.
+ * replaces non-UTF-8 bytes and corrupts image data. The in-sandbox reader
+ * base64-encodes the bytes instead, so the payload stays ASCII-safe across
+ * the JSON `/exec` transport. Session forwarding mirrors `readSandboxFile`
+ * so the read lands in the same sandbox session that holds the agent's
+ * prior-turn artifacts.
  *
- * The runner caps a response's stdout, so the bytes come back through
- * windowed reads — each one an `/exec` call against the Code API's
- * per-user execution limiter. The window is therefore sized to fill that
- * stdout budget (and narrowed if a runner rejects it), the read waits out
- * a rate limit it can afford rather than discarding the bytes it already
- * pulled, and a file needing more round-trips than one read may spend is
- * reported as unreadable-inline instead of stalling the turn.
+ * Windowing, window sizing, and assembly live in `@librechat/api`
+ * (`readWindowedSandboxImage`); this function is the `/exec` transport it
+ * calls, plus the rate-limit wait that keeps a multi-window read from
+ * discarding the bytes it already pulled.
  *
  * @param {Object} params
  * @param {string} params.file_path - Path inside the sandbox (e.g. `/mnt/data/chart.png`).
@@ -1542,61 +1497,16 @@ async function readSandboxImage({
     return null;
   }
 
-  const limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte;
-  /** Every chunk is one `/exec` call against the Code API's per-user
+  /** Every window is one `/exec` call against the Code API's per-user
    *  execution limiter, so the read shares one wait budget: a window that
    *  resets mid-read is worth pausing for, an exhausted budget is not. */
-  const rateLimit = { remainingMs: MAX_IMAGE_RATE_LIMIT_WAIT_MS };
-  let chunkBytes = getImageChunkBytes(baseURL);
-  let overflowRetries = 0;
-
-  /** @type {Buffer[]} */
-  const parts = [];
-  let offset = 0;
-  let total = null;
-
-  for (let i = 0; i < MAX_IMAGE_EXEC_CALLS; i++) {
-    const payload = Buffer.from(
-      JSON.stringify({ file_path, limit, offset, chunk: chunkBytes }),
-      'utf8',
-    ).toString('base64');
-    const code = [
-      "python3 - <<'PY'",
-      'import base64, json, os, stat',
-      `payload = ${JSON.stringify(payload)}`,
-      "data = json.loads(base64.b64decode(payload).decode('utf-8'))",
-      "p = data['file_path']",
-      "limit = data['limit']",
-      "offset = data['offset']",
-      "chunk = data['chunk']",
-      'try:',
-      '    st = os.stat(p)',
-      'except OSError as e:',
-      '    print(json.dumps({"error": str(e)}))',
-      '    raise SystemExit(0)',
-      // Reject FIFOs, sockets, and device files (e.g. a symlink to /dev/zero):
-      // os.stat can report a small/zero size while an unbounded read blocks or
-      // streams forever until the request times out.
-      'if not stat.S_ISREG(st.st_mode):',
-      '    print(json.dumps({"error": "not a regular file"}))',
-      '    raise SystemExit(0)',
-      'if st.st_size > limit:',
-      '    print(json.dumps({"too_large": True, "bytes": st.st_size}))',
-      '    raise SystemExit(0)',
-      // Read only this window. The whole base64 payload cannot be emitted in
-      // one shot: the runner caps stdout at SANDBOX_OUTPUT_MAX_SIZE (1024
-      // bytes by default) and SIGKILLs the job on overflow, which truncates
-      // the JSON mid-string. Windowing keeps every response under that cap.
-      "with open(p, 'rb') as f:",
-      '    f.seek(offset)',
-      '    raw = f.read(chunk)',
-      'print(json.dumps({"total": st.st_size, "n": len(raw), "b64": base64.b64encode(raw).decode("ascii")}))',
-      'PY',
-    ].join('\n');
-
-    let parsed;
-    try {
-      parsed = await execSandboxImageChunk({
+  const rateLimit = createCodeApiRateLimitBudget();
+  return readWindowedSandboxImage({
+    filePath: file_path,
+    baseUrl: baseURL,
+    limit: typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte,
+    readChunk: ({ code }) =>
+      execSandboxImageChunk({
         baseURL,
         code,
         file_path,
@@ -1605,179 +1515,17 @@ async function readSandboxImage({
         executionProfile,
         files,
         req,
-        chunkBytes,
         rateLimit,
-      });
-    } catch (error) {
-      /* The runner's stdout cap is smaller than this deployment assumed.
-       * Halve the window and re-read the same offset rather than failing
-       * the whole image: the narrowed size is remembered per base URL, so
-       * only the first read of a process pays for the discovery. */
-      if (!error?.[SANDBOX_OUTPUT_OVERFLOW] || overflowRetries >= MAX_IMAGE_OVERFLOW_RETRIES) {
-        throw error;
-      }
-      overflowRetries++;
-      chunkBytes = narrowImageChunkBytes(baseURL);
-      continue;
-    }
-
-    if (parsed.error) {
-      throw new Error(String(parsed.error));
-    }
-    if (parsed.too_large === true) {
-      return { tooLarge: true, reason: 'size', bytes: Number(parsed.bytes) || 0 };
-    }
-    if (typeof parsed.b64 !== 'string' || typeof parsed.n !== 'number') {
-      return null;
-    }
-
-    if (total == null) {
-      total = Number(parsed.total) || 0;
-      if (total > limit) {
-        return { tooLarge: true, reason: 'size', bytes: total };
-      }
-    } else if (Number(parsed.total) !== total) {
-      /* The file changed underneath us; a spliced-together buffer would be
-       * a mix of two versions rather than any real image. */
-      throw new Error(`"${file_path}" changed while being read from the sandbox`);
-    }
-
-    parts.push(Buffer.from(parsed.b64, 'base64'));
-    offset += parsed.n;
-
-    if (parsed.n === 0 || offset >= total) {
-      break;
-    }
-  }
-
-  const buffer = Buffer.concat(parts);
-  if (total == null) {
-    return null;
-  }
-  if (buffer.length !== total) {
-    /* Ran out of round-trip budget (or short reads); returning a partial
-     * image would render as a corrupt file, so surface it as
-     * unreadable-inline with the reason the caller should report. */
-    return { tooLarge: true, reason: 'round_trips', bytes: total };
-  }
-  return { base64: buffer.toString('base64'), bytes: buffer.length };
+      }),
+  });
 }
 
 /**
- * Raw bytes pulled per `/exec` round-trip when inlining a sandbox image.
- * Each chunk is base64-encoded (~1.33x) into the response's stdout, so the
- * window is the largest multiple of 3 (padding-free base64) whose encoding
- * plus envelope fits the runner's stdout budget.
- * @param {string} [baseURL] - Code API base URL whose learned window applies.
- * @returns {number}
- */
-function getImageChunkBytes(baseURL) {
-  const baseline = baselineImageChunkBytes();
-  const learned = learnedImageChunkBytes.get(baseURL);
-  /* A learned narrowing only ever caps the configured size: an operator who
-   * sets a smaller window explicitly still wins. */
-  return learned == null ? baseline : Math.min(learned, baseline);
-}
-
-/** @returns {number} */
-function baselineImageChunkBytes() {
-  const override = Number(process.env.LIBRECHAT_CODE_IMAGE_CHUNK_BYTES);
-  if (Number.isFinite(override) && override > 0) {
-    return Math.floor(override);
-  }
-  const configured = Number(process.env.LIBRECHAT_CODE_SANDBOX_OUTPUT_MAX_SIZE);
-  const budget =
-    Number.isFinite(configured) && configured > 0
-      ? Math.floor(configured)
-      : DEFAULT_SANDBOX_OUTPUT_MAX_SIZE;
-  const usable = Math.max(budget - IMAGE_CHUNK_ENVELOPE_BYTES, 0);
-  return Math.max(Math.floor((usable * 3) / 4 / 3) * 3, MIN_IMAGE_CHUNK_BYTES);
-}
-
-/**
- * Halves the window for a Code API after its runner truncated a chunk, and
- * returns the size to retry the same offset with.
- * @returns {number}
- */
-function narrowImageChunkBytes(baseURL) {
-  const current = getImageChunkBytes(baseURL);
-  const narrowed = Math.max(Math.floor(current / 2 / 3) * 3, MIN_IMAGE_CHUNK_BYTES);
-  learnedImageChunkBytes.set(baseURL, narrowed);
-  logger.warn(
-    `[readSandboxImage] Sandbox stdout limit exceeded; narrowing image window to ${narrowed} bytes for ${baseURL}. ` +
-      "Set LIBRECHAT_CODE_SANDBOX_OUTPUT_MAX_SIZE to this runner's stdout cap to skip the discovery read.",
-  );
-  return narrowed;
-}
-
-/**
- * Posts one image-chunk read, waiting out a Code API rate limit when the
- * shared per-read budget still covers the server's `Retry-After`. Every
- * chunk spends one `/exec` call against a per-user limiter, so a read that
- * starts near the end of a window would otherwise abandon the bytes it had
- * already pulled.
- * @returns {Promise<Record<string, unknown>>}
- */
-async function postSandboxImageChunk({
-  baseURL,
-  postData,
-  executionProfile,
-  file_path,
-  rateLimit,
-  req,
-}) {
-  for (;;) {
-    try {
-      const authHeaders = await getCodeApiAuthHeaders(req);
-      const response = await axios({
-        method: 'post',
-        url: `${baseURL}/exec`,
-        data: postData,
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'LibreChat/1.0',
-          ...authHeaders,
-          ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
-        },
-        httpAgent: codeServerHttpAgent,
-        httpsAgent: codeServerHttpsAgent,
-        timeout: 15000,
-      });
-      return response?.data ?? {};
-    } catch (error) {
-      if (error?.response?.status !== 429) {
-        throw error;
-      }
-      const retryAfterMs = getCodeApiRetryAfterMs(error);
-      /* Rate-limited with no delay to wait on: name the limit anyway rather
-       * than letting a bare "status code 429" reach the model, which reads
-       * as an unspecified failure instead of one that clears on its own. */
-      if (retryAfterMs == null) {
-        throw new Error(
-          `Code API rate limit reached while reading "${file_path}" from the sandbox.`,
-        );
-      }
-      /* A zero delay would spin; charge at least a second so the budget
-       * always drains and the loop terminates. */
-      const waitMs = Math.max(retryAfterMs, 1000);
-      if (rateLimit == null || waitMs > rateLimit.remainingMs) {
-        throw new Error(
-          `Code API rate limit reached while reading "${file_path}" from the sandbox ` +
-            `(retry in ${Math.ceil(waitMs / 1000)}s).`,
-        );
-      }
-      rateLimit.remainingMs -= waitMs;
-      logger.warn(
-        `[readSandboxImage] Rate-limited reading "${file_path}"; retrying in ${waitMs}ms`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-    }
-  }
-}
-
-/**
- * Runs one image-chunk read over `/exec` and parses its JSON line.
- * @returns {Promise<Record<string, unknown>>}
+ * Runs one image-window read over `/exec` and hands the response to the
+ * shared parser. Rate limits are waited out inside the shared budget; a
+ * truncated response comes back as a chunk the reader narrows for, not an
+ * error, so it is neither logged nor thrown here.
+ * @returns {Promise<import('@librechat/api').SandboxImageChunk>}
  */
 async function execSandboxImageChunk({
   baseURL,
@@ -1788,7 +1536,6 @@ async function execSandboxImageChunk({
   executionProfile,
   files,
   req,
-  chunkBytes,
   rateLimit,
 }) {
   /** @type {Record<string, unknown>} */
@@ -1804,54 +1551,37 @@ async function execSandboxImageChunk({
   }
 
   try {
-    const result = await postSandboxImageChunk({
-      baseURL,
-      postData,
-      executionProfile,
-      file_path,
-      rateLimit,
-      req,
+    const response = await withCodeApiRateLimit({
+      label: `reading "${file_path}" from the sandbox`,
+      budget: rateLimit,
+      onWait: (waitMs) =>
+        logger.warn(
+          `[readSandboxImage] Rate-limited reading "${file_path}"; retrying in ${waitMs}ms`,
+        ),
+      attempt: async () => {
+        const authHeaders = await getCodeApiAuthHeaders(req);
+        return axios({
+          method: 'post',
+          url: `${baseURL}/exec`,
+          data: postData,
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'LibreChat/1.0',
+            ...authHeaders,
+            ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+          },
+          httpAgent: codeServerHttpAgent,
+          httpsAgent: codeServerHttpsAgent,
+          timeout: 15000,
+        });
+      },
     });
-    /* The runner truncates stdout at SANDBOX_OUTPUT_MAX_SIZE and SIGKILLs the
-     * job (status `OL`). Detect that explicitly: the surviving stdout is a
-     * base64 string cut mid-flight, so parsing it yields a misleading
-     * "unexpected output" instead of naming the real, fixable cause. The
-     * marker lets the reader narrow its window and re-read the same offset. */
-    if (result.status === 'OL') {
-      const overflow = new Error(
-        `Reading "${file_path}" exceeded the sandbox stdout limit (chunk ${chunkBytes} bytes).`,
-      );
-      overflow[SANDBOX_OUTPUT_OVERFLOW] = true;
-      throw overflow;
-    }
-    if (result.stderr && (result.stdout == null || result.stdout === '')) {
-      throw new Error(String(result.stderr).trim());
-    }
-    if (result.stdout == null || String(result.stdout).trim() === '') {
-      return {};
-    }
-    /* Parse the LAST non-empty line: the reader's JSON is the final thing it
-     * prints, so anything a shell profile or library emitted ahead of it
-     * (banners, warnings) must not break the read. */
-    const lines = String(result.stdout)
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-    try {
-      return JSON.parse(lines[lines.length - 1]);
-    } catch {
-      throw new Error(
-        `Unexpected output while reading image bytes from the sandbox: ${String(result.stdout).slice(0, 120)}`,
-      );
-    }
+    return parseSandboxImageChunk(response?.data ?? {});
   } catch (error) {
-    /* Truncation is recovered by narrowing the window, not a read failure. */
-    if (!error?.[SANDBOX_OUTPUT_OVERFLOW]) {
-      logAxiosError({
-        message: `Error reading sandbox image "${file_path}"`,
-        error,
-      });
-    }
+    logAxiosError({
+      message: `Error reading sandbox image "${file_path}"`,
+      error,
+    });
     throw error;
   }
 }
