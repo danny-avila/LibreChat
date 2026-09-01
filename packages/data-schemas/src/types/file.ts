@@ -76,6 +76,7 @@ export interface IMongoFile extends Omit<Document, 'model'> {
     /** Vector namespaces this file has been embedded into. */
     embeddedEntities?: string[];
   };
+  /** Upload-time inference, not a durable contract. See the schema field for why. */
   llmDeliveryPath?: string;
   expiresAt?: Date;
   expiredAt?: Date | null;
