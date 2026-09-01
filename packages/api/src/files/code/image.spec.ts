@@ -85,14 +85,49 @@ describe('sandbox image window sizing', () => {
   it('narrows per base URL, and never past an explicit override', () => {
     const url = 'https://narrowing.example.com';
     const before = getSandboxImageChunkBytes(url);
-    const narrowed = narrowSandboxImageChunkBytes(url);
+    const narrowed = narrowSandboxImageChunkBytes(before, url);
 
+    expect(narrowed).not.toBeNull();
     expect(narrowed).toBeLessThan(before);
     expect(getSandboxImageChunkBytes(url)).toBe(narrowed);
     expect(getSandboxImageChunkBytes('https://untouched.example.com')).toBe(before);
 
     process.env.LIBRECHAT_CODE_IMAGE_CHUNK_BYTES = '512';
     expect(getSandboxImageChunkBytes(url)).toBe(512);
+  });
+
+  it("halves the caller's own failing window, not the shared learned value", () => {
+    /* Reads run concurrently (one per tool call). Two reads failing at the
+     * same size used to halve the shared value twice, skipping a size the
+     * runner would have accepted and persisting it for later reads. */
+    const url = 'https://concurrent.example.com';
+    const window = getSandboxImageChunkBytes(url);
+
+    const first = narrowSandboxImageChunkBytes(window, url);
+    const second = narrowSandboxImageChunkBytes(window, url);
+
+    expect(second).toBe(first);
+    expect(getSandboxImageChunkBytes(url)).toBe(first);
+  });
+
+  it('keeps halving until a small runner cap is reachable', () => {
+    /* Two halvings stop at 12,240 raw bytes — still ~16KB of base64, so an
+     * 8KB runner cap was unreachable and the read failed outright. */
+    const url = 'https://tiny-cap.example.com';
+    let window: number | null = getSandboxImageChunkBytes(url);
+    const attempts: number[] = [window];
+    while (window != null && Math.ceil(window / 3) * 4 > 8 * 1024) {
+      window = narrowSandboxImageChunkBytes(window, url);
+      if (window != null) {
+        attempts.push(window);
+      }
+    }
+    expect(window).not.toBeNull();
+    expect(attempts.length).toBeLessThan(MAX_SANDBOX_IMAGE_EXEC_CALLS);
+  });
+
+  it('stops narrowing at a window no image runner could serve', () => {
+    expect(narrowSandboxImageChunkBytes(1536, 'https://floor.example.com')).toBeNull();
   });
 });
 
@@ -216,9 +251,11 @@ describe('readWindowedSandboxImage', () => {
     expect(calls).toBe(1);
   });
 
-  it('stops at the round-trip ceiling instead of stalling across limiter windows', async () => {
-    /* A window this small needs far more `/exec` calls than one read may
-     * spend, so the read degrades rather than draining the limiter. */
+  it('gives up from the first window rather than draining the limiter', async () => {
+    /* The first response reveals the file size, so a read that cannot
+     * finish within the round-trip ceiling is known immediately — spending
+     * the rest of the limiter window to rediscover it would leave the turn
+     * with no executions left. */
     const source = crypto.randomBytes(64 * 1024);
     let calls = 0;
     const readChunk = async ({ code }: { code: string }): Promise<SandboxImageChunk> => {
@@ -235,8 +272,32 @@ describe('readWindowedSandboxImage', () => {
       readChunk,
     });
 
-    expect(calls).toBe(MAX_SANDBOX_IMAGE_EXEC_CALLS);
-    expect(result).toEqual({ tooLarge: true, reason: 'round_trips', bytes: source.length });
+    expect(calls).toBe(1);
+    expect(result).toEqual({
+      tooLarge: true,
+      reason: 'round_trips',
+      bytes: source.length,
+      /* What this deployment could actually deliver: 300 bytes a call for
+       * the whole round-trip budget. The caller names it as a downscale
+       * target instead of leaving the model to guess. */
+      inlineCeiling: 300 * MAX_SANDBOX_IMAGE_EXEC_CALLS,
+    });
+  });
+
+  it('reads a file that exactly fills the round-trip ceiling', async () => {
+    const window = getSandboxImageChunkBytes('https://exact.example.com');
+    const source = crypto.randomBytes(window * MAX_SANDBOX_IMAGE_EXEC_CALLS);
+    const { readChunk, windows } = serveFile(source);
+
+    const result = await readWindowedSandboxImage({
+      filePath: '/mnt/data/exact.png',
+      baseUrl: 'https://exact.example.com',
+      limit: source.length,
+      readChunk,
+    });
+
+    expect(windows).toHaveLength(MAX_SANDBOX_IMAGE_EXEC_CALLS);
+    expect(Buffer.from((result as { base64: string }).base64, 'base64').equals(source)).toBe(true);
   });
 
   it('refuses to splice a file that changed mid-read', async () => {

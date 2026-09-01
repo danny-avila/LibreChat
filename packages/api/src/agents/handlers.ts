@@ -478,7 +478,7 @@ export interface ToolExecuteOptions {
     /** `size`: over `maxBytes`. `round_trips`: within the byte cap, but more
      *  windowed `/exec` reads than one call may spend on the Code API's
      *  per-user execution limiter. */
-    | { tooLarge: true; reason?: 'size' | 'round_trips'; bytes: number }
+    | { tooLarge: true; reason?: 'size' | 'round_trips'; bytes: number; inlineCeiling?: number }
     | null
   >;
   /**
@@ -1856,6 +1856,24 @@ function looksBinary(content: string): boolean {
 }
 
 /**
+ * True for the errors a sandbox raises about the requested PATH, and only
+ * those. Deliberately narrower than {@link isSandboxMissingFileError}: that
+ * predicate also accepts a bare "not found", which the sandbox reader emits
+ * for a missing interpreter (`python3: not found`). Reporting that as a
+ * missing image would send the model to `ls /mnt/data` while hiding a
+ * runner dependency the operator needs to see.
+ */
+function isMissingSandboxPathError(reason: string): boolean {
+  const message = reason.toLowerCase();
+  return (
+    message.includes('no such file or directory') ||
+    message.includes('cannot access') ||
+    message.includes('cannot find the path') ||
+    message.includes('enoent')
+  );
+}
+
+/**
  * Model-visible error for an image the sandbox could not hand back. The
  * read is a supported operation that FAILED, so the message must not reuse
  * the "images cannot be read as text" phrasing — that reads as a permanent
@@ -1869,7 +1887,7 @@ function looksBinary(content: string): boolean {
  */
 function buildImageReadError(filePath: string, reason: string): string {
   const detail = reason.replace(/\.$/, '');
-  if (isSandboxMissingFileError(reason)) {
+  if (isMissingSandboxPathError(reason)) {
     return `"${filePath}" was not found in the code-execution sandbox (${detail}). List the directory with \`bash_tool\` (e.g. \`ls /mnt/data\`) to find the correct path.`;
   }
   if (/rate limit/i.test(reason)) {
@@ -1922,7 +1940,7 @@ async function handleSandboxImageRead(
   const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
   let read:
     | { base64: string; bytes: number }
-    | { tooLarge: true; reason?: 'size' | 'round_trips'; bytes: number }
+    | { tooLarge: true; reason?: 'size' | 'round_trips'; bytes: number; inlineCeiling?: number }
     | null;
   try {
     read = await readSandboxImage({
@@ -1944,14 +1962,22 @@ async function handleSandboxImageRead(
   }
   if ('tooLarge' in read) {
     onSuccess?.();
+    /* Name the size that would actually work: each window costs one sandbox
+     * execution, so what can be inlined depends on the runner's stdout
+     * budget, not only on the byte cap. Without a target the model can only
+     * guess how far to downscale. */
+    const ceiling =
+      read.reason === 'round_trips' && read.inlineCeiling != null
+        ? read.inlineCeiling
+        : MAX_SANDBOX_INLINE_IMAGE_BYTES;
     const overBudget =
       read.reason === 'round_trips'
-        ? 'needed more sandbox round-trips than one read may spend'
+        ? `more than this sandbox can return inline (about ${ceiling} bytes)`
         : `over the ${MAX_SANDBOX_INLINE_IMAGE_BYTES}-byte inline limit`;
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `Image "${filePath}" is ${read.bytes} bytes, ${overBudget}. Downscale it in the sandbox with \`bash_tool\` and read the smaller copy to view it, or inspect it with \`bash_tool\` (e.g. \`file ${filePath}\` for metadata).`,
+      content: `Image "${filePath}" is ${read.bytes} bytes, ${overBudget}. Downscale it under ${ceiling} bytes in the sandbox with \`bash_tool\` and read the smaller copy to view it, or inspect it with \`bash_tool\` (e.g. \`file ${filePath}\` for metadata).`,
     };
   }
 

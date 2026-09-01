@@ -30,23 +30,24 @@ const DEFAULT_SANDBOX_OUTPUT_MAX_SIZE = 64 * 1024;
 const IMAGE_CHUNK_ENVELOPE_BYTES = 256;
 
 /** Base64 encodes in 3-byte groups; windowing on a multiple of 3 keeps
- *  every response padding-free. Also the floor: a runner configured with a
- *  tiny stdout cap gets a tiny window rather than one it must reject, and
- *  {@link MAX_SANDBOX_IMAGE_EXEC_CALLS} bounds what that costs. */
+ *  every response padding-free. */
 const BASE64_GROUP_BYTES = 3;
 
-/**
- * Hard round-trip ceiling for one image read. Each window is an `/exec`
- * call against the Code API's per-user execution limiter, so an unbounded
- * read would stall a chat turn across several limiter windows. A file that
- * cannot be pulled within this budget degrades to the same
- * "too large to inline" result as one over the byte cap.
- */
-export const MAX_SANDBOX_IMAGE_EXEC_CALLS = 24;
+/** Floor for a narrowed window. A runner whose stdout cap cannot hold even
+ *  this much base64 (~2KB) cannot serve images at all, so further halving
+ *  would only burn the round-trip budget on responses it must truncate. */
+const MIN_IMAGE_CHUNK_BYTES = 1536;
 
-/** Halvings allowed when a runner's stdout cap turns out to be smaller
- *  than the configured budget. */
-const MAX_IMAGE_OVERFLOW_RETRIES = 2;
+/**
+ * Hard round-trip ceiling for one image read, matched to a single window of
+ * the Code API's per-user execution limiter (20 requests per 30s in the
+ * reference deployment). Beyond it a read would have to wait out limiter
+ * windows to finish, stalling a chat turn; a file that needs more windows
+ * than this degrades to the same "too large to inline" result as one over
+ * the byte cap — and {@link readWindowedSandboxImage} detects that from the
+ * first window rather than spending the whole budget discovering it.
+ */
+export const MAX_SANDBOX_IMAGE_EXEC_CALLS = 20;
 
 /** Per-base-URL window size, narrowed in place the first time a runner
  *  reports truncation so later reads start at a size it accepts. */
@@ -75,8 +76,10 @@ export type SandboxImageChunkReader = (params: { code: string }) => Promise<Sand
 export type SandboxImageReadResult =
   | { base64: string; bytes: number }
   /** `size`: over the caller's cap. `round_trips`: within the byte cap, but
-   *  more windows than {@link MAX_SANDBOX_IMAGE_EXEC_CALLS} allows. */
-  | { tooLarge: true; reason: 'size' | 'round_trips'; bytes: number }
+   *  more windows than {@link MAX_SANDBOX_IMAGE_EXEC_CALLS} allows —
+   *  `inlineCeiling` is the largest file this deployment's window size can
+   *  actually deliver, which the caller can name as a downscale target. */
+  | { tooLarge: true; reason: 'size' | 'round_trips'; bytes: number; inlineCeiling?: number }
   | null;
 
 /**
@@ -113,18 +116,34 @@ function alignToBase64Group(bytes: number): number {
 }
 
 /**
- * Halves the window for a Code API after its runner truncated a response,
- * and returns the size to retry the same offset with. Remembered per base
- * URL so only the first read of a process pays for the discovery.
+ * Halves the window that a runner just truncated and returns the size to
+ * retry the same offset with, or `null` once the floor is reached.
+ *
+ * The halving is computed from the caller's own failing window, never from
+ * the shared learned value: reads run concurrently (one per tool call), so
+ * two reads failing at the same size would otherwise halve the shared value
+ * twice and skip a size the runner would have accepted. For the same reason
+ * the learned value only ever moves down to the narrowest size any read has
+ * needed.
  */
-export function narrowSandboxImageChunkBytes(baseUrl?: string): number {
-  const narrowed = alignToBase64Group(Math.floor(getSandboxImageChunkBytes(baseUrl) / 2));
+export function narrowSandboxImageChunkBytes(
+  failedChunkBytes: number,
+  baseUrl?: string,
+): number | null {
+  if (failedChunkBytes <= MIN_IMAGE_CHUNK_BYTES) {
+    return null;
+  }
+  const narrowed = Math.max(
+    alignToBase64Group(Math.floor(failedChunkBytes / 2)),
+    MIN_IMAGE_CHUNK_BYTES,
+  );
   if (baseUrl != null) {
-    learnedChunkBytes.set(baseUrl, narrowed);
+    const learned = learnedChunkBytes.get(baseUrl);
+    learnedChunkBytes.set(baseUrl, learned == null ? narrowed : Math.min(learned, narrowed));
   }
   logger.warn(
-    `[readSandboxImage] Sandbox stdout limit exceeded; narrowing image window to ${narrowed} bytes for ${baseUrl}. ` +
-      "Set LIBRECHAT_CODE_SANDBOX_OUTPUT_MAX_SIZE to this runner's stdout cap to skip the discovery read.",
+    `[readSandboxImage] Sandbox stdout limit exceeded at ${failedChunkBytes} bytes; retrying with ${narrowed} for ${baseUrl}. ` +
+      "Set LIBRECHAT_CODE_SANDBOX_OUTPUT_MAX_SIZE to this runner's stdout cap to skip the discovery reads.",
   );
   return narrowed;
 }
@@ -239,12 +258,12 @@ export async function readWindowedSandboxImage(params: {
 }): Promise<SandboxImageReadResult> {
   const { filePath, limit, baseUrl, readChunk } = params;
   let chunkBytes = getSandboxImageChunkBytes(baseUrl);
-  let overflowRetries = 0;
+  let sawOverflow = false;
   const parts: Buffer[] = [];
   let offset = 0;
   let total: number | null = null;
 
-  for (let i = 0; i < MAX_SANDBOX_IMAGE_EXEC_CALLS; i++) {
+  for (let call = 0; call < MAX_SANDBOX_IMAGE_EXEC_CALLS; call++) {
     const chunk = await readChunk({
       code: buildSandboxImageReaderCode({ filePath, limit, offset, chunkBytes }),
     });
@@ -252,14 +271,16 @@ export async function readWindowedSandboxImage(params: {
     if (chunk.outputOverflow === true) {
       /* The runner's stdout cap is smaller than this deployment assumed.
        * Halve the window and re-read the same offset rather than failing
-       * the whole image. */
-      if (overflowRetries >= MAX_IMAGE_OVERFLOW_RETRIES) {
+       * the whole image; keep halving until the runner accepts a size or
+       * the floor says it never will. */
+      sawOverflow = true;
+      const narrowed = narrowSandboxImageChunkBytes(chunkBytes, baseUrl);
+      if (narrowed == null) {
         throw new Error(
           `Reading "${filePath}" exceeded the sandbox stdout limit (window ${chunkBytes} bytes).`,
         );
       }
-      overflowRetries++;
-      chunkBytes = narrowSandboxImageChunkBytes(baseUrl);
+      chunkBytes = narrowed;
       continue;
     }
     if (chunk.error) {
@@ -289,17 +310,41 @@ export async function readWindowedSandboxImage(params: {
     if (chunk.n === 0 || offset >= total) {
       break;
     }
+    /* The first window reveals both the file's size and what a call really
+     * delivers, so a read that cannot finish is known now rather than after
+     * draining the limiter. Project from the bytes actually returned, not
+     * the window requested: a runner that serves short reads would other-
+     * wise look like it was keeping up. */
+    if (Math.ceil((total - offset) / chunk.n) > MAX_SANDBOX_IMAGE_EXEC_CALLS - call - 1) {
+      return {
+        tooLarge: true,
+        reason: 'round_trips',
+        bytes: total,
+        inlineCeiling: chunk.n * MAX_SANDBOX_IMAGE_EXEC_CALLS,
+      };
+    }
   }
 
   if (total == null) {
+    /* Every call was spent narrowing: the runner never accepted a window. */
+    if (sawOverflow) {
+      throw new Error(
+        `Reading "${filePath}" exceeded the sandbox stdout limit (window ${chunkBytes} bytes).`,
+      );
+    }
     return null;
   }
   const buffer = Buffer.concat(parts);
   if (buffer.length !== total) {
-    /* Ran out of round-trip budget (or short reads); returning a partial
-     * image would render as a corrupt file, so surface it as
-     * unreadable-inline with the reason the caller should report. */
-    return { tooLarge: true, reason: 'round_trips', bytes: total };
+    /* Short reads: returning a partial image would render as a corrupt
+     * file, so surface it as unreadable-inline with the reason the caller
+     * should report. */
+    return {
+      tooLarge: true,
+      reason: 'round_trips',
+      bytes: total,
+      inlineCeiling: buffer.length,
+    };
   }
   return { base64: buffer.toString('base64'), bytes: buffer.length };
 }

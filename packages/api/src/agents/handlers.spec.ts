@@ -5609,6 +5609,7 @@ describe('createToolExecuteHandler', () => {
           tooLarge: true as const,
           reason: 'round_trips' as const,
           bytes: 900_000,
+          inlineCeiling: 489_600,
         }));
         const handler = makeReadFileHandler({
           codeEnvAvailable: true,
@@ -5625,7 +5626,9 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(result.status).toBe('success');
-        expect(result.content).toContain('round-trips');
+        /* Names the size that would actually work, so the model has a
+         * downscale target instead of a guess. */
+        expect(result.content).toContain('489600');
         expect(result.content).not.toContain('inline limit');
         expect(result.content).toContain('Downscale');
       });
@@ -5655,6 +5658,33 @@ describe('createToolExecuteHandler', () => {
         expect(result.errorMessage).toContain('truncated transfer');
         expect(result.errorMessage).toContain('Retry the read');
         expect(result.errorMessage).not.toContain('cannot be read as text');
+      });
+
+      it('reports a missing interpreter as itself, not as a missing image path', async () => {
+        /* The sandbox reader surfaces `python3: not found` on stderr. A
+         * generic "not found" match would send the model to `ls /mnt/data`
+         * and hide the runner dependency the operator has to fix. */
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error('python3: not found');
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_nopython',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/chart.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('python3: not found');
+        expect(result.errorMessage).not.toContain('was not found in the code-execution sandbox');
+        expect(result.errorMessage).not.toContain('ls /mnt/data');
       });
 
       it('surfaces the transport failure when the image reader throws', async () => {
