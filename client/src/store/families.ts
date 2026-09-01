@@ -333,6 +333,25 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
 });
 
 /**
+ * Text handed to a conversation's composer by a surface the user is leaving —
+ * today, a subagent thread continued into a chat of its own, where the panel
+ * and its composer unmount as the destination opens.
+ *
+ * Keyed by conversation rather than by composer index because the handoff
+ * outlives the navigation that carries it: a first visit resolves its record
+ * before the route moves, so the destination's composer mounts commits later.
+ * `useTextarea` drains it when that conversation's composer is on screen.
+ *
+ * Deliberately in memory rather than in the composer draft store: nothing the
+ * user has not sent should be written to storage they asked not to use, and
+ * draft restoration is itself gated on the Save Drafts preference.
+ */
+const pendingComposerTextByConvoId = atomFamily<string | undefined, string>({
+  key: 'pendingComposerTextByConvoId',
+  default: undefined,
+});
+
+/**
  * A steer message submitted mid-run. Server truth: `sending` covers the POST
  * in flight, `pending` means the server queued it (awaiting its injection
  * boundary — the next tool batch, or the next safe token boundary when
@@ -807,6 +826,7 @@ export default {
   useClearSubmissionState,
   showPromptsPopoverFamily,
   showSkillsPopoverFamily,
+  pendingComposerTextByConvoId,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
