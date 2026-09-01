@@ -60,4 +60,34 @@ describe('agent tool history formatting', () => {
     expect(JSON.stringify(assistant.content)).not.toContain('Tool:');
     expect(toolMessages.map(({ name }) => name)).toEqual([transferName, 'research_database']);
   });
+
+  it('preserves an authorized MCP wildcard call without a live catalog', () => {
+    const primary = {
+      historicalToolNames: [`${Constants.mcp_all}${Constants.mcp_delimiter}warehouse`],
+    };
+    const payload: TPayload = [
+      { role: 'user', content: 'Run the saved query' },
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              id: 'query-1',
+              name: 'run_query_mcp_warehouse',
+              args: '{}',
+              output: '{"rows":1}',
+            },
+          },
+        ],
+      },
+    ];
+
+    const toolSet = buildRunToolSet(primary, null, null, payload);
+    const { messages } = formatAgentMessages(payload, undefined, toolSet);
+
+    expect(toolSet).toContain('run_query_mcp_warehouse');
+    expect(JSON.stringify(messages)).not.toContain('Tool:');
+    expect(messages.some((message) => message instanceof ToolMessage)).toBe(true);
+  });
 });

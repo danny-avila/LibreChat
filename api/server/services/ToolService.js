@@ -39,7 +39,6 @@ const {
   normalizeActionToolName,
   ASK_USER_QUESTION_TOOL_NAME,
   splitMCPToolKey,
-  isMCPAllPlaceholder,
   buildServerNameAliases,
   findShadowedServerNames,
   isNormalizationSensitiveName,
@@ -108,31 +107,6 @@ const { getLogStores } = require('~/cache');
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 const encryptedActionMetadataFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 const requiredActionContentFields = ['name', 'arguments', 'output'];
-
-/** Reads already-cached MCP catalogs for lazy wildcard history without opening connections. */
-const getCachedMcpToolNamesForPlaceholders = async ({ userId, toolNames, rawServerNames }) => {
-  const names = new Set();
-  for (const toolName of toolNames ?? []) {
-    if (!isMCPAllPlaceholder(toolName)) {
-      continue;
-    }
-    const [, serverName] = splitMCPToolKey(toolName, rawServerNames ?? []);
-    if (!serverName || !rawServerNames?.includes(serverName)) {
-      continue;
-    }
-    try {
-      const cachedTools = await getMCPServerTools(userId, serverName);
-      for (const [name, definition] of Object.entries(cachedTools ?? {})) {
-        if (definition?.function) {
-          names.add(name);
-        }
-      }
-    } catch {
-      logger.warn('[MCP Cache] Unable to read cached wildcard tools for lazy history');
-    }
-  }
-  return [...names];
-};
 
 const getActiveToolResources = (toolResources, tools) => {
   if (toolResources == null) {
@@ -2425,5 +2399,4 @@ module.exports = {
   /** Re-exported for controllers that already depend on (and mock) this
    *  module, avoiding a fresh heavy `services/MCP` require chain there. */
   getAccessibleMcpServerNames,
-  getCachedMcpToolNamesForPlaceholders,
 };

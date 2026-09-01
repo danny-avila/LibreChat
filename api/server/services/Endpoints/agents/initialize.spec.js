@@ -60,13 +60,10 @@ jest.mock('~/server/controllers/agents/callbacks', () => ({
 
 const mockLoadToolsForExecution = jest.fn();
 const mockGetAccessibleMcpServerNames = jest.fn();
-const mockGetCachedMcpToolNamesForPlaceholders = jest.fn();
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
   getAccessibleMcpServerNames: (...args) => mockGetAccessibleMcpServerNames(...args),
-  getCachedMcpToolNamesForPlaceholders: (...args) =>
-    mockGetCachedMcpToolNamesForPlaceholders(...args),
   isFatalAgentInitializationError: (error) =>
     [
       'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
@@ -674,8 +671,6 @@ describe('initializeClient — subagent loading', () => {
     mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
     mockGetAccessibleMcpServerNames.mockReset();
     mockGetAccessibleMcpServerNames.mockResolvedValue([]);
-    mockGetCachedMcpToolNamesForPlaceholders.mockReset();
-    mockGetCachedMcpToolNamesForPlaceholders.mockResolvedValue([]);
 
     testUser = await User.create({
       email: 'subagent@example.com',
@@ -934,7 +929,7 @@ describe('initializeClient — subagent loading', () => {
       provider: 'openai',
       model: 'gpt-4',
       author: new mongoose.Types.ObjectId(),
-      tools: ['mcp_all_mcp_warehouse'],
+      tools: [`${Constants.mcp_all}${Constants.mcp_delimiter}warehouse`],
     });
     await grantView(subAgent);
 
@@ -944,7 +939,6 @@ describe('initializeClient — subagent loading', () => {
     });
     loadAgentTools.mockRejectedValueOnce(toolError);
     mockGetAccessibleMcpServerNames.mockResolvedValueOnce(['warehouse']);
-    mockGetCachedMcpToolNamesForPlaceholders.mockResolvedValueOnce(['run_query_mcp_warehouse']);
     mockInitializeAgent
       .mockResolvedValueOnce(
         makePrimaryConfig({
@@ -971,14 +965,8 @@ describe('initializeClient — subagent loading', () => {
 
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
     expect(mockGetAccessibleMcpServerNames).toHaveBeenCalledWith(testUser._id.toString(), 'USER');
-    expect(mockGetCachedMcpToolNamesForPlaceholders).toHaveBeenCalledWith({
-      userId: testUser._id.toString(),
-      toolNames: ['mcp_all_mcp_warehouse'],
-      rawServerNames: ['warehouse'],
-    });
     expect(agentClientArgs.agent.lazySubagentConfigs[0].historicalToolNames).toEqual([
-      'mcp_all_mcp_warehouse',
-      'run_query_mcp_warehouse',
+      `${Constants.mcp_all}${Constants.mcp_delimiter}warehouse`,
     ]);
     await expect(
       agentClientArgs.agent.lazySubagentConfigs[0].resolve({

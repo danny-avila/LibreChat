@@ -40,6 +40,7 @@ jest.mock('@librechat/agents', () => ({
 
 import { CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
+import { Constants } from 'librechat-data-provider';
 import {
   buildToolSet,
   buildRunToolSet,
@@ -321,11 +322,13 @@ describe('buildHistoricalToolNames', () => {
     );
   });
 
-  it('includes cached MCP wildcard children and normalizes Action names and options', () => {
+  it('normalizes Action names and their options', () => {
     expect(
       buildHistoricalToolNames({
-        configuredToolNames: ['mcp_all_mcp_warehouse', 'lookup_action_api---example---com'],
-        mcpWildcardToolNames: ['run_query_mcp_warehouse'],
+        configuredToolNames: [
+          `${Constants.mcp_all}${Constants.mcp_delimiter}warehouse`,
+          'lookup_action_api---example---com',
+        ],
         toolOptions: {
           'lookup_action_api---example---com': { defer_loading: true },
         },
@@ -333,10 +336,43 @@ describe('buildHistoricalToolNames', () => {
       }),
     ).toEqual(
       new Set([
-        'mcp_all_mcp_warehouse',
-        'run_query_mcp_warehouse',
+        `${Constants.mcp_all}${Constants.mcp_delimiter}warehouse`,
         'lookup_action_api_example_com',
         'tool_search',
+      ]),
+    );
+  });
+
+  it('accepts only historical calls covered by an MCP wildcard server suffix', () => {
+    const primary = {
+      id: 'primary',
+      toolDefinitions: [
+        { name: `${Constants.mcp_all}${Constants.mcp_delimiter}Connector: Company` },
+      ],
+    };
+    const messages = [
+      {
+        content: [
+          { tool_call: { name: 'search_mcp_Connector__Company' } },
+          { tool_call: { name: 'search_mcp_attacker' } },
+        ],
+      },
+      {
+        tool_calls: [{ name: 'lookup_mcp_Connector__Company' }],
+        additional_kwargs: {
+          tool_calls: [{ function: { name: 'legacy_mcp_Connector__Company' } }],
+        },
+      },
+    ];
+
+    expect(buildRunToolSet(primary, null, null, messages)).toEqual(
+      new Set([
+        'subagent',
+        'conditional_transfer',
+        `${Constants.mcp_all}${Constants.mcp_delimiter}Connector: Company`,
+        'search_mcp_Connector__Company',
+        'lookup_mcp_Connector__Company',
+        'legacy_mcp_Connector__Company',
       ]),
     );
   });

@@ -3856,6 +3856,7 @@ class AgentClient extends BaseClient {
         this.options.agent,
         this.agentConfigs?.values(),
         this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
+        payload,
       );
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 

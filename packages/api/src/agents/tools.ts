@@ -1,4 +1,4 @@
-import { Constants, normalizeActionToolName } from 'librechat-data-provider';
+import { Constants, normalizeActionToolName, normalizeServerName } from 'librechat-data-provider';
 import {
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
@@ -49,7 +49,6 @@ export interface BuildHistoricalToolNamesConfig {
   alwaysApplyToolNames?: readonly string[];
   toolOptions?: AgentToolOptions;
   rawMcpServerNames?: readonly string[];
-  mcpWildcardToolNames?: readonly string[];
   codeExecutionAvailable?: boolean;
   memoryAvailable?: boolean;
   skillsAvailable?: boolean;
@@ -70,10 +69,7 @@ export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig)
     toolOptions: config.toolOptions,
     rawServerNames: config.rawMcpServerNames ?? [],
   });
-  const toolNames = new Set([
-    ...(normalized.tools ?? []).map(normalizeActionToolName),
-    ...(config.mcpWildcardToolNames ?? []),
-  ]);
+  const toolNames = new Set((normalized.tools ?? []).map(normalizeActionToolName));
 
   const normalizedOptions: AgentToolOptions = {};
   for (const [name, options] of Object.entries(normalized.toolOptions ?? {})) {
@@ -166,11 +162,51 @@ export interface RunToolSetConfig extends BuildToolSetConfig, ReachableAgent<Run
   readonly edges?: readonly GraphEdge[];
 }
 
+function collectHistoricalToolCallNames(messages?: Iterable<unknown> | null): Set<string> {
+  const names = new Set<string>();
+  const addCall = (value: unknown) => {
+    if (value == null || typeof value !== 'object') {
+      return;
+    }
+    const call = value as {
+      name?: unknown;
+      function?: { name?: unknown };
+      tool_call?: { name?: unknown };
+    };
+    const name = call.name ?? call.function?.name ?? call.tool_call?.name;
+    if (typeof name === 'string') {
+      names.add(name);
+    }
+  };
+
+  for (const value of messages ?? []) {
+    if (value == null || typeof value !== 'object') {
+      continue;
+    }
+    const message = value as {
+      content?: unknown;
+      tool_calls?: unknown;
+      additional_kwargs?: { tool_calls?: unknown };
+    };
+    if (Array.isArray(message.tool_calls)) {
+      message.tool_calls.forEach(addCall);
+    }
+    if (Array.isArray(message.additional_kwargs?.tool_calls)) {
+      message.additional_kwargs.tool_calls.forEach(addCall);
+    }
+    if (Array.isArray(message.content)) {
+      message.content.forEach(addCall);
+    }
+  }
+  return names;
+}
+
 /** Builds the historical tool allowlist for the complete effective run topology. */
 export function buildRunToolSet(
   primaryConfig: RunToolSetConfig | null | undefined,
   additionalConfigs?: Iterable<RunToolSetConfig | null | undefined> | null,
   hostGeneratedToolNames?: Iterable<string> | null,
+  historicalMessages?: Iterable<unknown> | null,
 ): Set<string> {
   const roots = [primaryConfig];
   if (additionalConfigs) {
@@ -183,11 +219,30 @@ export function buildRunToolSet(
   }
 
   const toolSet = new Set<string>([`${Constants.SUBAGENT}`, 'conditional_transfer']);
+  const wildcardSuffixes = new Set<string>();
   for (const name of hostGeneratedToolNames ?? []) {
     toolSet.add(name);
   }
   for (const agent of agents) {
     for (const name of buildToolSet(agent)) {
+      toolSet.add(name);
+      const wildcardPrefix = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
+      if (name.startsWith(wildcardPrefix)) {
+        const rawServerName = name.slice(wildcardPrefix.length);
+        if (rawServerName) {
+          wildcardSuffixes.add(`${Constants.mcp_delimiter}${normalizeServerName(rawServerName)}`);
+        }
+      }
+    }
+  }
+
+  /** A wildcard authorizes every callable under one exact normalized server suffix.
+   * Re-derive only matching names from persisted structured calls so replay remains
+   * durable after the MCP catalog expires without trusting arbitrary history names. */
+  for (const name of collectHistoricalToolCallNames(historicalMessages)) {
+    if (
+      [...wildcardSuffixes].some((suffix) => name.length > suffix.length && name.endsWith(suffix))
+    ) {
       toolSet.add(name);
     }
   }

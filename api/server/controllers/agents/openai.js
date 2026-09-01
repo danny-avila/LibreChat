@@ -806,7 +806,12 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
       const openaiMessages = convertMessages(request.messages);
 
-      const toolSet = buildRunToolSet(primaryConfig, handoffAgentConfigs.values());
+      const toolSet = buildRunToolSet(
+        primaryConfig,
+        handoffAgentConfigs.values(),
+        undefined,
+        openaiMessages,
+      );
       const formatted = formatAgentMessages(stripActivityLabelParts(openaiMessages), {}, toolSet);
       const formattedMessages = formatted.messages;
       const initialSummary = formatted.summary;
