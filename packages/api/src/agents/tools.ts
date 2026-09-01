@@ -38,6 +38,8 @@ interface ToolInstanceLike {
 export interface BuildToolSetConfig {
   toolDefinitions?: ToolDefLike[];
   tools?: (ToolInstanceLike | null | undefined)[];
+  /** Tool names retained on unresolved agent descriptors for history replay. */
+  historicalToolNames?: readonly string[];
 }
 
 /**
@@ -55,14 +57,16 @@ export function buildToolSet(agentConfig: BuildToolSetConfig | null | undefined)
     return new Set();
   }
 
-  const { toolDefinitions, tools } = agentConfig;
+  const { toolDefinitions, tools, historicalToolNames } = agentConfig;
 
   const toolNames =
     toolDefinitions && toolDefinitions.length > 0
       ? toolDefinitions.map((def) => def.name)
       : (tools ?? []).map((tool) => tool?.name);
 
-  return new Set(toolNames.filter((name): name is string => Boolean(name)));
+  return new Set(
+    [...toolNames, ...(historicalToolNames ?? [])].filter((name): name is string => Boolean(name)),
+  );
 }
 
 export interface RunToolSetConfig extends BuildToolSetConfig, ReachableAgent<RunToolSetConfig> {

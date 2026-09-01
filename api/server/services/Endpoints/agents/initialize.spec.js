@@ -997,6 +997,14 @@ describe('initializeClient — subagent loading', () => {
       endpointOption: makeEndpointOption(),
     });
 
+    expect(agentClientArgs.agent.lazySubagentConfigs[0].historicalToolNames).toEqual([
+      'execute_code',
+      'bash_tool',
+      'read_file',
+      'create_file',
+      'edit_file',
+    ]);
+
     await expect(
       agentClientArgs.agent.lazySubagentConfigs[0].resolve({
         signal: new AbortController().signal,
@@ -1049,6 +1057,7 @@ describe('initializeClient — subagent loading', () => {
         statefulCodeEnvironment: 'agent-user',
         memory_scope: 'agent',
         memoryToolsRegistered: false,
+        historicalToolNames: ['web'],
       }),
     );
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tools');

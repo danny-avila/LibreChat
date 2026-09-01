@@ -146,6 +146,14 @@ describe('buildToolSet', () => {
   });
 
   describe('edge cases', () => {
+    it('includes names retained on unresolved lazy agent descriptors', () => {
+      const toolSet = buildToolSet({
+        historicalToolNames: ['lazy_search', 'lazy_calculator'],
+      });
+
+      expect(toolSet).toEqual(new Set(['lazy_search', 'lazy_calculator']));
+    });
+
     it('returns empty set when agentConfig is null', () => {
       const toolSet = buildToolSet(null);
       expect(toolSet.size).toBe(0);
@@ -205,7 +213,10 @@ describe('buildRunToolSet', () => {
 
   it('collects tools recursively across every reachable agent shape', () => {
     const eager = agent('eager', 'eager_tool');
-    const lazy = agent('lazy', 'lazy_tool');
+    const lazy = {
+      id: 'lazy',
+      historicalToolNames: ['lazy_tool'],
+    };
     const metadata = agent('metadata', 'metadata_tool');
     const graphMember = agent('graph-member', 'graph_tool');
     const primary = {

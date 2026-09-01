@@ -25,6 +25,10 @@ const {
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
+  CREATE_FILE_TOOL_NAME,
+  DELETE_MEMORY_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
+  SET_MEMORY_TOOL_NAME,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -958,6 +962,19 @@ const initializeClient = async ({
             conversationId,
           })
         : undefined;
+    const alwaysApplySkillPrimes = await resolveLazyAlwaysApplySkillPrimes(agent);
+    const historicalToolNames = Array.from(
+      new Set([
+        ...(agent.tools ?? []),
+        ...alwaysApplySkillPrimes.flatMap((prime) => prime.allowedTools ?? []),
+        ...(lazyCodeEnvAvailable
+          ? [Tools.bash_tool, Tools.read_file, CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME]
+          : []),
+        ...(memoryAvailable === true && agent.tools?.includes(Tools.memory) === true
+          ? [SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME]
+          : []),
+      ]),
+    );
     return {
       id: agent.id,
       name: agent.name,
@@ -977,7 +994,8 @@ const initializeClient = async ({
       codeExecutionContext,
       codeSessionKey: codeExecutionContext?.codeSessionKey,
       includeReasoningHistory: getIncludeReasoningHistory(agent),
-      alwaysApplySkillPrimes: await resolveLazyAlwaysApplySkillPrimes(agent),
+      alwaysApplySkillPrimes,
+      historicalToolNames,
     };
   };
 
@@ -1212,6 +1230,7 @@ const initializeClient = async ({
         codeSessionKey: metadata.codeSessionKey,
         includeReasoningHistory: metadata.includeReasoningHistory,
         alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
+        historicalToolNames: metadata.historicalToolNames,
         lazySubagentConfigs: lazyChildren,
         subagentAgentConfigs: eagerChildren,
         subagentGraphMemberMetadata,
