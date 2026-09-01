@@ -405,12 +405,15 @@ const computeProvisionState = async ({
     return undefined;
   }
 
+  const activeCodeRouteKey = codeRouteKey ?? 'default';
+
   /** Batch staleness check: identify which code env files are still alive. Only files
    *  that already carry a default-route ref can be probed, so that set is computed
    *  first: a turn whose attachments are all freshly uploaded has nothing to probe and
-   *  must not pay for a credential lookup that cannot change the outcome. */
+   *  must not pay for a credential lookup that cannot change the outcome. A turn running
+   *  on another route cannot act on the answer either, so it does not ask. */
   const filesWithIdentifiers =
-    needsCodeEnv && checkSessionsAlive
+    needsCodeEnv && checkSessionsAlive && activeCodeRouteKey === 'default'
       ? attachments.filter(
           (f) =>
             f?.metadata?.codeEnvRef &&
@@ -443,7 +446,6 @@ const computeProvisionState = async ({
     });
   }
 
-  const activeCodeRouteKey = codeRouteKey ?? 'default';
   const scopedIds = agentScopedFileIds ?? new Set<string>();
   const codeEnvFiles: TFile[] = [];
   const vectorDBFiles: TFile[] = [];
@@ -463,7 +465,14 @@ const computeProvisionState = async ({
     if (needsCodeEnv) {
       const legacyRef = file.metadata?.codeEnvRef;
       const isDefaultRoute = legacyRef != null && codeEnvRouteKey(legacyRef) === 'default';
-      const isStale = isDefaultRoute && aliveFileIds != null && !aliveFileIds.has(file.file_id);
+      /* Liveness was probed on the default route, so it answers only for a turn running
+       * there. A stateful turn holding a usable ref for its own route would otherwise be
+       * forced into a redundant upload by a dead default session. */
+      const isStale =
+        isDefaultRoute &&
+        activeCodeRouteKey === 'default' &&
+        aliveFileIds != null &&
+        !aliveFileIds.has(file.file_id);
 
       /** Staleness must be repaired even for files that pre-categorization already
        *  added to execute_code resources, so the check runs before the processed

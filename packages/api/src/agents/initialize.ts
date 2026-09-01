@@ -706,7 +706,12 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   getDeferredProvisionFiles?: (
     fileIds: string[],
     ownerScope: FileOwnerScope,
-    resources?: { code?: boolean; search?: boolean; codeRouteKey?: string },
+    resources?: {
+      code?: boolean;
+      search?: boolean;
+      codeRouteKey?: string;
+      searchNamespaces?: string[];
+    },
   ) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
   getMessages?: (
@@ -1180,6 +1185,11 @@ export async function initializeAgent(
             search: wantsSearchFiles,
             codeRouteKey:
               codeExecutionContext.executionRouteKey ?? codeExecutionContext.executionProfile,
+            /* Both namespaces an attachment can be embedded under this turn: this agent's,
+             * for its own resource files, and the user's for everything else. */
+            searchNamespaces: [agent.id, requestFileOwnerId].filter(
+              (id): id is string => typeof id === 'string',
+            ),
           }) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
     ]);

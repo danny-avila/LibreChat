@@ -740,6 +740,51 @@ describe('File Methods', () => {
       expect(results.map((file) => file.file_id)).toEqual([deferredId]);
     });
 
+    it('returns an agent file embedded only in another agent namespace', async () => {
+      /* Its vectors are under the other agent's entity, so the namespace this turn
+       * searches has none of them. The record-wide flag cannot say that, and skipping
+       * hydration here means nothing downstream ever notices. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const foreignId = uuidv4();
+      await makeFile(foreignId, ownerId, {
+        context: FileContext.agents,
+        embedded: true,
+        metadata: { embeddedEntities: ['other-agent'] },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [foreignId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        {
+          search: true,
+          searchNamespaces: ['this-agent', ownerId.toString()],
+        },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([foreignId]);
+    });
+
+    it('leaves an agent file embedded in every candidate namespace alone', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const settledId = uuidv4();
+      await makeFile(settledId, ownerId, {
+        context: FileContext.agents,
+        embedded: true,
+        metadata: { embeddedEntities: ['this-agent', ownerId.toString()] },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [settledId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        {
+          search: true,
+          searchNamespaces: ['this-agent', ownerId.toString()],
+        },
+      );
+
+      expect(results).toEqual([]);
+    });
+
     it('surfaces a read failure rather than reporting nothing to provision', async () => {
       /* An empty list is indistinguishable from nothing needing provisioning, so a
        * swallowed error would let the tool run without the attachment. */

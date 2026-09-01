@@ -66,6 +66,10 @@ describe('file content inspection policy', () => {
       }),
     ).toBe(false);
 
+    /* An explicitly narrowed text list names types the built-in parser does not handle.
+     * Processing sends those to RAG with native fallback off and passes the result
+     * through extractInspectableFileText, so the extraction step exists and fail-closing
+     * here would reject an upload that does get inspected. */
     const configuredNonDocumentText = mergeFileConfig({
       ocr: { supportedMimeTypes: [] },
       text: { supportedMimeTypes: ['application/x-rag-document'] },
@@ -76,6 +80,15 @@ describe('file content inspection policy', () => {
         mimeType: 'application/x-rag-document',
         fileConfig: configuredNonDocumentText,
         ragConfigured: true,
+      }),
+    ).toBe(true);
+    /* Only when RAG is actually configured: without it nothing extracts the type. */
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/x-rag-document',
+        fileConfig: configuredNonDocumentText,
+        ragConfigured: false,
       }),
     ).toBe(false);
 

@@ -2533,6 +2533,31 @@ describe('permanent unified uploads and unknown tool sets', () => {
     );
   });
 
+  test('skips a consumer whose capability is disabled', async () => {
+    /* Otherwise the choice depends on the persisted tool order: code execution listed
+     * first would be selected and then rejected, while file search could have kept it. */
+    const { addAgentResourceFile } = require('~/models');
+    setupStoredFileUpload();
+    checkCapability.mockImplementation(
+      async (_req, capability) => capability !== AgentCapabilities.execute_code,
+    );
+
+    await processAgentFileUpload({
+      req: zipReq(),
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        file_id: 'f-disabled',
+        agentTools: [EToolResources.execute_code, EToolResources.file_search],
+      },
+    }).catch(() => {});
+
+    expect(addAgentResourceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ tool_resource: EToolResources.file_search }),
+    );
+    checkCapability.mockResolvedValue(true);
+  });
+
   test('refuses a permanent upload that would land on no agent resource', async () => {
     /* Delivered straight to the model, with no agent resource to hold it, storing it
      * would report success while leaving the agent without a reference. */
