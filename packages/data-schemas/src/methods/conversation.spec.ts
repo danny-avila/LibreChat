@@ -212,6 +212,30 @@ describe('Conversation Operations', () => {
       expect(convo?.lastResponseAt?.getTime()).toBe(stamp.getTime());
     });
 
+    it('stamps the reply at write time when asked to, past its own awaited reads', async () => {
+      /* The caller cannot hold a stamp across those reads: a catch-up recorded by `/seen`
+         while one is in flight would be newer, and `$max` would keep it, leaving the reply
+         this save persists reading as already seen. */
+      const before = new Date();
+
+      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    });
+
+    it('leaves the reply stamp alone for a save that does not carry one', async () => {
+      await saveConvo(mockCtx, { ...mockConversationData });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt).toBeUndefined();
+    });
+
     it('should handle newConversationId when provided', async () => {
       const newConversationId = uuidv4();
       const result = await saveConvo(mockCtx, {

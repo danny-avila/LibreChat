@@ -1532,7 +1532,9 @@ describe('BaseClient', () => {
       );
     });
 
-    test('stamps lastResponseAt for the assistant reply but never for the user turn', async () => {
+    test('asks saveConvo to stamp the assistant reply but never the user turn', async () => {
+      /* The timestamp itself is assigned inside `saveConvo`, past its own awaited reads, so a
+         catch-up recorded while one of them is in flight cannot outrank the reply. */
       const saveOptions = TestClient.getSaveOptions();
       TestClient.skipSaveConvo = false;
       saveConvo.mockClear();
@@ -1551,7 +1553,9 @@ describe('BaseClient', () => {
       const [userTurn, reply] = saveConvo.mock.calls;
       /* A user turn stamping this would light the unseen dot the moment they press Enter. */
       expect(userTurn[1].lastResponseAt).toBeUndefined();
-      expect(reply[1].lastResponseAt).toBeInstanceOf(Date);
+      expect(userTurn[2].stampReply).toBeUndefined();
+      expect(reply[1].lastResponseAt).toBeUndefined();
+      expect(reply[2].stampReply).toBe(true);
     });
 
     test('stamps the reply of a response that skips the conversation save', async () => {

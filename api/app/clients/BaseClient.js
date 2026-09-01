@@ -1330,19 +1330,17 @@ class BaseClient {
     }
 
     /** Drives the unseen-reply indicator; only assistant replies count, never the user's own
-     *  turn. Taken here rather than with the rest of the payload above: the conversation read
-     *  in between can pause long enough for the open tab to acknowledge the previous reply,
-     *  and a catch-up written after a stamp captured before it would land ahead of this reply
-     *  and read it as already seen. */
-    if (message.isCreatedByUser === false && reqCtx.isTemporary !== true) {
-      fieldsToKeep.lastResponseAt = new Date();
-    }
+     *  turn. `saveConvo` assigns the timestamp itself, past its own awaited reads and against
+     *  the write: a catch-up recorded by `/seen` while one of those reads is in flight would
+     *  otherwise outrank a stamp captured here and leave this reply reading as already seen. */
+    const stampReply = message.isCreatedByUser === false && reqCtx.isTemporary !== true;
 
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
       noUpsert: req?._agentEventBindingParentConversationId != null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
+      ...(stampReply ? { stampReply } : {}),
       ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
 

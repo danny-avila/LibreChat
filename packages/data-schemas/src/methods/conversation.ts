@@ -245,6 +245,10 @@ export interface ConversationMethods {
        *  `$addToSet` and the O(n) read-and-rewrite of the `messages` array is skipped;
        *  every save without this option still rebuilds the array from the database. */
       appendMessageIds?: Types.ObjectId[];
+      /** Stamp `lastResponseAt` at write time: this save carries a persisted assistant reply.
+       *  Assigned inside `saveConvo`, past its own awaited reads, so a catch-up recorded while
+       *  one of them is in flight cannot outrank the reply through `$max`. */
+      stampReply?: boolean;
     },
   ): Promise<IConversation | { message: string } | null>;
   setConvoPinned(
@@ -2109,6 +2113,8 @@ export function createConversationMethods(
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
       appendMessageIds?: Types.ObjectId[];
+      /** Stamp `lastResponseAt` at write time: this save carries a persisted assistant reply. */
+      stampReply?: boolean;
     },
   ) {
     try {
@@ -2218,11 +2224,9 @@ export function createConversationMethods(
         if (appendMessageIds != null && appendMessageIds.length > 0) {
           operation.$addToSet = { messages: { $each: appendMessageIds } };
         }
-        /* The reply stamp is computed before the caller's and this function's own awaited
-         * reads, so with two responses persisting concurrently an older save can resume after
-         * a newer one has landed and would walk the stamp backwards, reading the newer reply
-         * as already seen. `$max` keeps whichever stamp is later without a pipeline update,
-         * which the DocumentDB targets rule out. */
+        /* Two responses can persist concurrently, and the older one can reach the write last.
+         * `$max` keeps whichever stamp is later without a pipeline update, which the
+         * DocumentDB targets rule out. */
         if (setFields.lastResponseAt instanceof Date) {
           const { lastResponseAt, ...withoutReplyStamp } = setFields;
           operation.$set = withoutReplyStamp;
@@ -2240,6 +2244,14 @@ export function createConversationMethods(
         }
         return operation;
       };
+
+      /* The reply stamp is assigned here, after every awaited read this function performs and
+       * immediately before the write: a catch-up recorded by `/seen` while one of those reads
+       * was in flight would otherwise be newer than a stamp captured earlier, and `$max` would
+       * keep it, leaving the reply this save is persisting to read as already seen. */
+      if (metadata?.stampReply === true) {
+        update.lastResponseAt = new Date();
+      }
 
       const baseFilter = { conversationId, user: userId };
       const canUpsert = metadata?.noUpsert !== true;

@@ -24,6 +24,7 @@ const mockGenerationJobManager = {
 };
 
 const mockSaveMessage = jest.fn();
+const mockSaveConvo = jest.fn();
 
 const mockRecordScheduleOutcome = jest.fn();
 const mockBeginScheduledStop = jest.fn();
@@ -47,6 +48,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
+  saveConvo: (...args) => mockSaveConvo(...args),
 }));
 
 jest.mock('~/server/services/Schedules', () => ({
@@ -98,6 +100,8 @@ describe('Agent Abort Endpoint', () => {
     mockGenerationJobManager.getActiveJobIdsForUser.mockReset();
     mockSaveMessage.mockReset();
     mockSaveMessage.mockImplementation(async (_context, message) => message);
+    mockSaveConvo.mockReset();
+    mockSaveConvo.mockResolvedValue({});
     mockRecordScheduleOutcome.mockReset();
     mockRecordScheduleOutcome.mockResolvedValue(true);
     mockBeginScheduledStop.mockReset();
@@ -421,6 +425,49 @@ describe('Agent Abort Endpoint', () => {
           expect.objectContaining({
             context: 'api/server/routes/agents/index.js - abort endpoint',
           }),
+        );
+      });
+
+      it('stamps the aborted reply through an upsert so an early stop still lights the dot', async () => {
+        /* A stop right after `created` reaches this barrier before the conversation row
+           exists, and the later user-turn save carries no reply stamp: the upsert that
+           creates the row has to carry it. */
+        const jobStreamId = 'test-stream-123';
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+
+        const abortResult = {
+          success: true,
+          jobData: {
+            userMessage: { messageId: 'user-msg-123' },
+            responseMessageId: 'response-msg-456',
+            conversationId: jobStreamId,
+            endpoint: 'anthropic',
+            model: 'claude-3',
+          },
+          content: [{ type: 'text', text: 'Partial response...' }],
+          text: 'Partial response...',
+        };
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          await options.beforePublish(abortResult);
+          return abortResult;
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+        expect(mockSaveConvo).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            conversationId: jobStreamId,
+            endpoint: 'anthropic',
+            model: 'claude-3',
+          }),
+          expect.objectContaining({ stampReply: true }),
         );
       });
 
