@@ -2973,6 +2973,7 @@ describe('BaseClient', () => {
         return files;
       });
       TestClient.addVideos = jest.fn(async (_message, files) => files);
+      TestClient.modelOptions = undefined;
       TestClient.addAudios = jest.fn(async (_message, files) => files);
     });
 
@@ -3068,6 +3069,35 @@ describe('BaseClient', () => {
 
       expect(result).toEqual([file]);
       expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('reads the Responses setting from a plain conversation too', async () => {
+      /* A non-agent Azure chat carries it in model options, and reading only the agent
+       * parameters re-resolves a natively supported PDF to text, which the record has
+       * none of, so the model receives nothing. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.azureOpenAI,
+        req: { config: { fileConfig: undefined } },
+      };
+      TestClient.modelOptions = { useResponsesApi: true };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'azure-pdf',
+        filename: 'doc.pdf',
+        filepath: '/uploads/doc.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addDocuments).toHaveBeenCalled();
+      TestClient.modelOptions = undefined;
     });
 
     test('resolves an agent policy by its provider, not the agents container', async () => {

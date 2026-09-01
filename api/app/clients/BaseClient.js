@@ -1639,6 +1639,15 @@ class BaseClient {
     return await this.sendCompletion(payload, opts);
   }
 
+  /** Whether this turn talks to the Responses API, which is what lets Azure carry a
+   *  document natively. A saved agent holds it in its parameters and a plain conversation
+   *  in its model options, and both readers of it have been wrong by consulting one. */
+  usesResponsesApi() {
+    return (
+      this.options.agent?.model_parameters?.useResponsesApi ?? this.modelOptions?.useResponsesApi
+    );
+  }
+
   async addDocuments(message, attachments) {
     const documentResult = await encodeAndFormatDocuments(
       this.options.req,
@@ -1646,7 +1655,7 @@ class BaseClient {
       {
         provider: this.options.agent?.provider ?? this.options.endpoint,
         endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
-        useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+        useResponsesApi: this.usesResponsesApi(),
         model: this.modelOptions?.model ?? this.model,
       },
       getStrategyFunctions,
@@ -1750,7 +1759,7 @@ class BaseClient {
             endpointConfig: this._endpointFileConfig,
             fileConfig: this._mergedFileConfig,
             endpoint: this._deliveryEndpoint,
-            useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+            useResponsesApi: this.usesResponsesApi(),
             sttConfigured: this.options.req?.config?.speech?.stt != null,
           });
 

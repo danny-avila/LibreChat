@@ -1072,6 +1072,37 @@ describe('useFileHandling', () => {
       expect(formData.get('conversationId')).toBeNull();
     });
 
+    it('validates against the agent provider policy, not the agents entry', async () => {
+      /* The server validates a saved agent's upload under its provider, so preflighting the
+       * `agents` entry rejects provider-supported files that the request would have accepted. */
+      mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
+      mockAgentsMap = { agent_a1: { provider: 'Custom Provider' } };
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          agents: { fileSizeLimit: 5 },
+          'Custom Provider': { fileSizeLimit: 20 },
+        },
+      });
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([makeSizedFile('notes.txt', 'text/plain', megabyte)]);
+      });
+
+      expect(mockValidateFiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpointFileConfig: expect.objectContaining({
+            fileSizeLimit: mockFileConfig.endpoints['Custom Provider']?.fileSizeLimit,
+          }),
+        }),
+      );
+      expect(mockFileConfig.endpoints['Custom Provider']?.fileSizeLimit).not.toEqual(
+        mockFileConfig.endpoints.agents?.fileSizeLimit,
+      );
+    });
+
     it('sends the Responses flag a saved agent holds on its own record', async () => {
       /* A saved Azure agent keeps the setting in model_parameters, and without it the
        * server routes a natively supported PDF to extracted text. */
