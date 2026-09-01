@@ -47,6 +47,30 @@ describe('claimCodeDestination', () => {
     expect(withNewcomer).toBe(withoutNewcomer);
   });
 
+  /**
+   * The one case where a displaced file does move, and why that is right.
+   * The model is told the displaced file is at `<stem>-<hash>.png`, rewrites
+   * it in place, and `processCodeOutput` registers the output under that
+   * literal name. Next turn the output is the newest holder of that path, so
+   * it keeps it and the superseded original steps aside — the model's
+   * familiar path resolves to its own edit rather than to the bytes it
+   * replaced.
+   */
+  it('leaves an alias with the later file that rewrote it, not the superseded original', () => {
+    const firstTurn = createCodeDestinationSet();
+    claimCodeDestination(firstTurn, 'image.png', 'newer-upload');
+    const alias = claimCodeDestination(firstTurn, 'image.png', 'original');
+    expect(alias).toBe(`image${suffixFor('original')}.png`);
+
+    const secondTurn = createCodeDestinationSet();
+    const rewrite = claimCodeDestination(secondTurn, alias, 'rewrite-output');
+    claimCodeDestination(secondTurn, 'image.png', 'newer-upload');
+    const originalNow = claimCodeDestination(secondTurn, 'image.png', 'original');
+
+    expect(rewrite).toBe(alias);
+    expect(originalNow).toBe(`image${suffixFor('original')}-2.png`);
+  });
+
   it('preserves directory structure when disambiguating', () => {
     const set = createCodeDestinationSet();
     claimCodeDestination(set, 'out/plots/fig.png', 'file-a');

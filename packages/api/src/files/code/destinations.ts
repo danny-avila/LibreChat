@@ -99,11 +99,20 @@ function withSuffix(destination: string, suffix: string): string {
  * from the current set: a third file arriving under the literal name a
  * displaced file had been given would push that file along, and code the
  * model wrote in an earlier turn would silently start reading the newcomer.
- * The hash is immune to what else is present, so only the winner of the bare
- * name can ever change, and only when a newer file legitimately takes it.
+ * The hash does not depend on what else is present, so a file that has been
+ * told to the model at one path stays there.
  *
- * A trailing counter is still appended in the event of a hash collision, so
- * the search terminates on any input.
+ * One case still moves it, and deliberately: when a *later* file is itself
+ * named the alias, it takes it and the older file falls to a counter. In
+ * practice that later file is the model's own in-place rewrite of the
+ * displaced one — it was told `<stem>-<hash>.ext`, wrote back to it, and
+ * `processCodeOutput` registered an output under that literal name — so the
+ * path the model has been using keeps resolving to the newest content at
+ * that path, which is the whole point of the recency ordering. Reserving the
+ * alias against the newcomer instead would hand that path back to the
+ * superseded original. An *unrelated* file reaching this branch would have
+ * to be named for the hex digest of another file's `file_id`, which is not
+ * a name a user can construct.
  */
 export function claimCodeDestination(
   set: CodeDestinationSet,
