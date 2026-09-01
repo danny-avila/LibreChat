@@ -247,7 +247,7 @@ const matchesMimeList = (mimeType: string, patterns: RegExp[]): boolean =>
   patterns.some((pattern) => pattern.test(mimeType));
 
 /** Why an upload cannot be accepted, when nothing would be able to read it. */
-export type UploadRejection = 'no-agent-resource' | 'context-disabled';
+export type UploadRejection = 'no-agent-resource' | 'context-disabled' | 'no-consumer';
 
 /**
  * Where a unified upload will end up, and whether it can be accepted at all.
@@ -319,6 +319,13 @@ export function resolveUploadDestination(params: {
 
   if (hasAgent && !isMessageAttachment) {
     return { rejection: 'no-agent-resource' };
+  }
+
+  /* With no agent behind the upload there is no tool to provision it to and no callback
+   * that could, so a file kept off the model path here is unreachable by anything. This
+   * is knowable, unlike an agent's tool set, which a skill can add to at execution. */
+  if (!hasAgent && deliveryPath === 'none') {
+    return { rejection: 'no-consumer' };
   }
 
   return {};
