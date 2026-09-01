@@ -1,10 +1,10 @@
+import { useAtomValue } from 'jotai';
 import { useRef, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { ReplyReadState } from './useUnseenConversations';
+import { replyNotificationsAtom, replyNotificationSoundAtom } from './replyNotificationSettings';
 import { suppressFocusAcknowledgement } from './notificationNavigation';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 let sharedContext: AudioContext | null = null;
 
@@ -90,9 +90,10 @@ const ANNOUNCED_LIMIT = 100;
  * everywhere before; unavailable storage (private windows, quota) falls back to announcing
  * locally for the same reason.
  *
- * Per channel, because the toggles are per-tab snapshots: a tab holding only the sound setting
- * and a tab holding only notifications are not duplicates of each other, and a single shared
- * claim would let whichever reached the reply first silence the other channel entirely.
+ * Per channel, because two tabs are not necessarily duplicates of each other: notification
+ * permission is asked for per tab and can be granted in one and denied in another, and a
+ * settings change reaches other tabs only once its storage event lands. A single shared claim
+ * would let whichever tab reached the reply first silence the other channel entirely.
  */
 const claimReplyAnnouncement = (
   channel: AlertChannel,
@@ -143,8 +144,8 @@ export const requestReplyNotificationPermission = (): void => {
  * pass only records what is already unseen, so signing in with a backlog does not fire a burst.
  */
 export default function useReplyAlerts(state: ReplyReadState | null) {
-  const notificationsEnabled = useRecoilValue(store.replyNotifications);
-  const soundEnabled = useRecoilValue(store.replyNotificationSound);
+  const notificationsEnabled = useAtomValue(replyNotificationsAtom);
+  const soundEnabled = useAtomValue(replyNotificationSoundAtom);
   const localize = useLocalize();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -221,11 +222,10 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
     }
 
     /* Only a tab that will actually announce may claim, and only for the channel it will
-       announce on. The toggles are per-tab snapshots (`atomWithLocalStorage` writes storage
-       without subscribing to it), so a tab holding stale "off" values still runs this hook for
-       the badge; letting it claim would consume the reply while producing neither chime nor
-       notification. The focus guard stays first, so a focused tab never claims a reply it
-       would not announce either. */
+       announce on. A tab with both channels off still runs this hook for the badge, and a tab
+       whose notification permission was denied still holds the setting on; letting either
+       claim would consume the reply while producing neither chime nor notification. The focus
+       guard stays first, so a focused tab never claims a reply it would not announce either. */
     const willNotify = notificationsEnabled && canNotify();
     if (!soundEnabled && !willNotify) {
       return;

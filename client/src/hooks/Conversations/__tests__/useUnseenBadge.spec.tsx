@@ -1,6 +1,7 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
+import { Provider as JotaiProvider, createStore } from 'jotai';
 import { renderHook, waitFor } from '@testing-library/react';
+import { unseenTabBadgeAtom } from '../replyNotificationSettings';
 import useUnseenBadge from '../useUnseenBadge';
 
 function mountIcons() {
@@ -16,10 +17,14 @@ function mountIcons() {
   return { icon32, icon16 };
 }
 
-function mount(count: number) {
+function mount(count: number, badgeEnabled = true) {
+  const settings = createStore();
+  settings.set(unseenTabBadgeAtom, badgeEnabled);
   return renderHook((nextCount: number) => useUnseenBadge(nextCount), {
     initialProps: count,
-    wrapper: ({ children }: { children: React.ReactNode }) => <RecoilRoot>{children}</RecoilRoot>,
+    wrapper: ({ children }: { children: React.ReactNode }) => (
+      <JotaiProvider store={settings}>{children}</JotaiProvider>
+    ),
   });
 }
 
@@ -87,5 +92,12 @@ describe('useUnseenBadge', () => {
     rerender(0);
 
     await waitFor(() => expect(document.title).toBe('Renamed Conversation'));
+  });
+
+  it('leaves the title and icons alone while the setting is off', async () => {
+    mount(3, false);
+
+    await waitFor(() => expect(document.title).toBe('LibreChat'));
+    expect(icons.icon32.href).toContain('assets/favicon-32x32.png');
   });
 });

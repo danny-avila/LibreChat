@@ -1,6 +1,6 @@
+import { useAtomValue } from 'jotai';
 import { useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
+import { unseenTabBadgeAtom } from './replyNotificationSettings';
 
 const FAVICON_SELECTOR = 'link[rel="icon"]';
 const FALLBACK_ICON_SIZE = 32;
@@ -70,7 +70,7 @@ const drawBadgedFavicon = (
  * 16x16 link, and a single-link badge would leave them without one.
  */
 export default function useUnseenBadge(count: number) {
-  const badgeEnabled = useRecoilValue(store.unseenTabBadge);
+  const badgeEnabled = useAtomValue(unseenTabBadgeAtom);
   const activeCount = badgeEnabled ? count : 0;
 
   useEffect(() => {

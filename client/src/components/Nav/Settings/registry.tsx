@@ -15,7 +15,13 @@ import {
   AutoSendTextSelector,
   DecibelSelector,
 } from '../SettingsTabs/Speech/STT';
-import { unlockReplyNotificationSound, requestReplyNotificationPermission } from '~/hooks';
+import {
+  unseenTabBadgeAtom,
+  replyNotificationsAtom,
+  replyNotificationSoundAtom,
+  unlockReplyNotificationSound,
+  requestReplyNotificationPermission,
+} from '~/hooks';
 import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMessages';
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
@@ -168,7 +174,7 @@ export const registry: SettingEntry[] = [
     section: 'notifications',
     labelKey: 'com_nav_unseen_tab_badge',
     Component: toggleControl({
-      stateAtom: store.unseenTabBadge,
+      stateAtom: unseenTabBadgeAtom,
       localizationKey: 'com_nav_unseen_tab_badge',
       switchId: 'unseenTabBadge',
       hoverCardText: 'com_nav_info_unseen_tab_badge',
@@ -180,7 +186,7 @@ export const registry: SettingEntry[] = [
     section: 'notifications',
     labelKey: 'com_nav_reply_notifications',
     Component: toggleControl({
-      stateAtom: store.replyNotifications,
+      stateAtom: replyNotificationsAtom,
       localizationKey: 'com_nav_reply_notifications',
       switchId: 'replyNotifications',
       hoverCardText: 'com_nav_info_reply_notifications',
@@ -199,7 +205,7 @@ export const registry: SettingEntry[] = [
     section: 'notifications',
     labelKey: 'com_nav_reply_notification_sound',
     Component: toggleControl({
-      stateAtom: store.replyNotificationSound,
+      stateAtom: replyNotificationSoundAtom,
       localizationKey: 'com_nav_reply_notification_sound',
       switchId: 'replyNotificationSound',
       hoverCardText: 'com_nav_info_reply_notification_sound',
