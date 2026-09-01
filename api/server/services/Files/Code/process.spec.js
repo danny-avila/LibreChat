@@ -55,6 +55,9 @@ const mockGetExtractedTextFormat = jest.fn((_name, _mime, text) => (text == null
  * legacy single-phase tests below (txt/png/etc) exercise the inline path
  * unchanged. The dedicated office/finalize describe block toggles it on. */
 const mockHasOfficeHtmlPath = jest.fn(() => false);
+/* Stands in for the real chunk parser so a transport test can decide what
+ * one `/exec` response means without reaching into `packages/api`. */
+const mockParseSandboxImageChunk = jest.fn((response) => response);
 /* Pass-through `withTimeout`: tests don't drive timeouts here (those live
  * in promise.spec.ts and the finalizePreview unit tests below). */
 const passthroughWithTimeout = async (promise) => promise;
@@ -68,6 +71,19 @@ jest.mock('@librechat/api', () => {
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    /* Windowing, sizing and rate-limit policy are real code in
+     * `packages/api` with their own tests (`files/code/image.spec.ts`,
+     * `utils/code.spec.ts`). These stand-ins are deliberately inert
+     * passthroughs — they assert nothing about that behavior, so the
+     * transport tests below cover only what this file still owns. */
+    createCodeApiRateLimitBudget: jest.fn(() => ({ remainingMs: 20_000 })),
+    withCodeApiRateLimit: jest.fn(({ attempt }) => attempt()),
+    buildSandboxImageReaderCode: jest.fn(
+      ({ filePath, limit, offset, chunkBytes }) =>
+        `read ${filePath} ${limit} ${offset} ${chunkBytes}`,
+    ),
+    parseSandboxImageChunk: jest.fn((response) => mockParseSandboxImageChunk(response)),
+    readWindowedSandboxImage: jest.fn(({ readChunk }) => readChunk({ code: 'read-one-window' })),
     getCodeExecutionBaseUrl: jest.fn((profile) =>
       profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
     ),
@@ -2776,111 +2792,87 @@ describe('Code Process', () => {
   });
 
   /**
-   * These drive the REAL reader against a mocked `/exec` transport (rather
-   * than mocking `readSandboxImage` itself), because the bug this covers
-   * lived entirely in the transport: base64 leaves the sandbox on stdout,
-   * which the runner truncates + SIGKILLs past `SANDBOX_OUTPUT_MAX_SIZE`.
+   * Windowing, window sizing, rate-limit waiting and byte assembly moved to
+   * `packages/api` (`files/code/image.ts`, `utils/code.ts`) and are tested
+   * there against the real implementations. What remains here is the piece
+   * this file still owns: the `/exec` transport — session forwarding, the
+   * profile header, and handing the response to the shared parser.
    */
-  describe('readSandboxImage', () => {
-    const crypto = require('crypto');
-    const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    /** Reply as the sandbox would: serve `buffer` through the windowed reader. */
-    const serveFile = (buffer) =>
-      mockAxios.mockImplementation(async ({ data }) => {
-        const payload = JSON.parse(
-          Buffer.from(JSON.parse(/payload = ("[^"]+")/.exec(data.code)[1]), 'base64').toString(),
-        );
-        const slice = buffer.subarray(payload.offset, payload.offset + payload.chunk);
-        return {
-          data: {
-            stdout: JSON.stringify({
-              total: buffer.length,
-              n: slice.length,
-              b64: slice.toString('base64'),
-            }),
-          },
-        };
-      });
-
+  describe('readSandboxImage transport', () => {
     beforeEach(() => {
       process.env.LIBRECHAT_CODE_BASEURL = 'http://code.test/v1';
-      delete process.env.LIBRECHAT_CODE_IMAGE_CHUNK_BYTES;
       mockAxios.mockReset();
+      mockParseSandboxImageChunk.mockReset();
+      mockParseSandboxImageChunk.mockImplementation((response) => response);
     });
 
-    it('reassembles an image larger than one chunk, byte-for-byte', async () => {
-      /* 200KB of PNG-headed noise: > 6 chunks at the 32KB default, and the
-       * exact shape that used to blow the stdout cap and SIGKILL the job. */
-      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(200 * 1024)]);
-      serveFile(source);
+    it('forwards the sandbox session, runtime hint and profile header', async () => {
+      mockAxios.mockResolvedValue({ data: { stdout: '{}' } });
 
-      const result = await readSandboxImage({ file_path: '/mnt/data/big.png' });
-
-      expect(mockAxios.mock.calls.length).toBeGreaterThan(1);
-      expect(result.bytes).toBe(source.length);
-      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
-    });
-
-    it('reads a single-chunk image in one round-trip', async () => {
-      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(1024)]);
-      serveFile(source);
-
-      const result = await readSandboxImage({ file_path: '/mnt/data/small.png' });
-
-      expect(mockAxios).toHaveBeenCalledTimes(1);
-      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
-    });
-
-    it('names the real cause when a chunk overflows the runner stdout cap', async () => {
-      /* The runner truncates stdout and SIGKILLs with status `OL`; the old
-       * reader parsed the truncated base64 and reported a misleading
-       * "unexpected output" instead of the fixable limit. */
-      mockAxios.mockResolvedValue({
-        data: { stdout: '{"total":999999,"n":32768,"b64":"iVBORw0KGg', status: 'OL', code: 137 },
+      await readSandboxImage({
+        file_path: '/mnt/data/chart.png',
+        session_id: 'session-abc',
+        runtime_session_hint: 'hint-xyz',
+        files: [{ id: 'file-1', name: 'seed.csv' }],
+        codeApiBaseUrl: 'https://code-stateful.example.com',
+        executionProfile: 'stateful',
       });
 
-      await expect(readSandboxImage({ file_path: '/mnt/data/big.png' })).rejects.toThrow(
-        /exceeded the sandbox stdout limit/,
+      expect(mockAxios).toHaveBeenCalledTimes(1);
+      const call = mockAxios.mock.calls[0][0];
+      expect(call.url).toBe('https://code-stateful.example.com/exec');
+      expect(call.data).toMatchObject({
+        lang: 'bash',
+        session_id: 'session-abc',
+        runtime_session_hint: 'hint-xyz',
+        files: [{ id: 'file-1', name: 'seed.csv' }],
+      });
+      expect(call.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+    });
+
+    it('omits the profile header and optional session fields when unset', async () => {
+      mockAxios.mockResolvedValue({ data: { stdout: '{}' } });
+
+      await readSandboxImage({ file_path: '/mnt/data/chart.png' });
+
+      const call = mockAxios.mock.calls[0][0];
+      expect(call.data.session_id).toBeUndefined();
+      expect(call.data.runtime_session_hint).toBeUndefined();
+      expect(call.data.files).toBeUndefined();
+      expect(call.headers['X-CodeAPI-Expected-Profile']).toBeUndefined();
+    });
+
+    it('hands the raw `/exec` response to the shared chunk parser', async () => {
+      const data = { stdout: '{"total":3,"n":3,"b64":"AAAA"}', status: null };
+      mockAxios.mockResolvedValue({ data });
+      mockParseSandboxImageChunk.mockReturnValue({ total: 3, n: 3, b64: 'AAAA' });
+
+      const result = await readSandboxImage({ file_path: '/mnt/data/x.png' });
+
+      expect(mockParseSandboxImageChunk).toHaveBeenCalledWith(data);
+      expect(result).toEqual({ total: 3, n: 3, b64: 'AAAA' });
+    });
+
+    it('returns null when no code base URL is configured', async () => {
+      const { getCodeBaseURL } = require('@librechat/agents');
+      getCodeBaseURL.mockReturnValueOnce('');
+
+      await expect(readSandboxImage({ file_path: '/mnt/data/x.png' })).resolves.toBeNull();
+      expect(mockAxios).not.toHaveBeenCalled();
+    });
+
+    it('logs and rethrows a transport failure', async () => {
+      const { logAxiosError } = require('@librechat/api');
+      mockAxios.mockRejectedValue(new Error('codeapi unreachable'));
+
+      await expect(readSandboxImage({ file_path: '/mnt/data/x.png' })).rejects.toThrow(
+        'codeapi unreachable',
       );
-    });
-
-    it('honors LIBRECHAT_CODE_IMAGE_CHUNK_BYTES', async () => {
-      process.env.LIBRECHAT_CODE_IMAGE_CHUNK_BYTES = '1024';
-      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(4 * 1024)]);
-      serveFile(source);
-
-      const result = await readSandboxImage({ file_path: '/mnt/data/x.png' });
-
-      expect(mockAxios.mock.calls.length).toBe(5);
-      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
-    });
-
-    it('parses the reader JSON even when the shell emits a banner first', async () => {
-      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(64)]);
-      mockAxios.mockResolvedValue({
-        data: {
-          stdout: `motd banner\n${JSON.stringify({
-            total: source.length,
-            n: source.length,
-            b64: source.toString('base64'),
-          })}`,
-        },
-      });
-
-      const result = await readSandboxImage({ file_path: '/mnt/data/x.png' });
-
-      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
-    });
-
-    it('refuses an oversize file in-sandbox without transferring bytes', async () => {
-      mockAxios.mockResolvedValue({
-        data: { stdout: JSON.stringify({ too_large: true, bytes: 9 * 1024 * 1024 }) },
-      });
-
-      const result = await readSandboxImage({ file_path: '/mnt/data/huge.png' });
-
-      expect(result).toEqual({ tooLarge: true, bytes: 9 * 1024 * 1024 });
-      expect(mockAxios).toHaveBeenCalledTimes(1);
+      expect(logAxiosError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Error reading sandbox image "/mnt/data/x.png"',
+        }),
+      );
     });
   });
 
