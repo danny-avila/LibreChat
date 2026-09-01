@@ -62,7 +62,12 @@ type PollIntervals = Record<string, NodeJS.Timeout | null>;
 export function useMCPServerManager({
   conversationId,
   storageContextKey,
-}: { conversationId?: string | null; storageContextKey?: string } = {}) {
+  specName,
+}: {
+  conversationId?: string | null;
+  storageContextKey?: string;
+  specName?: string | null;
+} = {}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
@@ -122,6 +127,7 @@ export function useMCPServerManager({
     storageContextKey,
     servers: selectableServers,
     allServers: availableMCPServers,
+    specName,
   });
   const mcpValuesRef = useRef(mcpValues);
 

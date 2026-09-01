@@ -16,7 +16,12 @@ jest.mock('~/utils/timestamps', () => ({
 jest.mock('lodash/isEqual', () => jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)));
 
 // Mutable startup config so tests can vary `interface.defaultPinnedTools`
-let mockStartupConfig: { interface?: { defaultPinnedTools?: string[] } } | undefined;
+let mockStartupConfig:
+  | {
+      interface?: { defaultPinnedTools?: string[] };
+      modelSpecs?: { list?: Array<{ name: string; mcpServers?: string[] }> };
+    }
+  | undefined;
 
 jest.mock('~/data-provider', () => ({
   ...jest.requireActual('~/data-provider'),
@@ -866,6 +871,37 @@ describe('useMCPSelect', () => {
       await waitFor(() => {
         expect(result.current.ephemeralAgent?.mcp).toEqual(['visible']);
         expect(result.current.mcpHook.mcpValues).toEqual(['visible']);
+      });
+    });
+
+    it('keeps a server a model spec pins, even though the menu hides it', async () => {
+      mockStartupConfig = {
+        modelSpecs: { list: [{ name: 'pins-hidden', mcpServers: ['spec-server'] }] },
+      };
+      const { Wrapper } = createWrapper();
+
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({
+          servers: createMCPServers(['visible']),
+          allServers: createMCPServers(['visible', 'spec-server', 'stale-hidden']),
+          specName: 'pins-hidden',
+        });
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, ephemeralAgent, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
+
+      act(() => {
+        result.current.setEphemeralAgent({
+          mcp: ['visible', 'spec-server', 'stale-hidden'],
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.ephemeralAgent?.mcp).toEqual(['visible', 'spec-server']);
+        expect(result.current.mcpHook.mcpValues).toEqual(['visible', 'spec-server']);
       });
     });
 

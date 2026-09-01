@@ -7,6 +7,7 @@ import type { MCPServerDefinition } from './useMCPServerManager';
 import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtom } from '~/store';
 import { useGetStartupConfig } from '~/data-provider';
 import { setTimestamp } from '~/utils/timestamps';
+import { getModelSpec } from '~/utils';
 
 /** Sentinel in `interface.defaultPinnedTools` that pins the MCP dropdown to the prompt bar. */
 const MCP_PIN_KEYWORD = 'mcp';
@@ -16,6 +17,7 @@ export function useMCPSelect({
   storageContextKey,
   servers,
   allServers,
+  specName,
 }: {
   conversationId?: string | null;
   storageContextKey?: string;
@@ -23,6 +25,8 @@ export function useMCPSelect({
   servers: MCPServerDefinition[];
   /** Every server the catalog returned, selectable or not. Defaults to `servers`. */
   allServers?: MCPServerDefinition[];
+  /** Active model spec, whose pinned servers are exempt from pruning. */
+  specName?: string | null;
 }) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const configuredServers = useMemo(() => {
@@ -41,6 +45,24 @@ export function useMCPSelect({
    * never be read as "the admin removed everything" and wipe the selection.
    */
   const canPruneSelections = (allServers ?? servers).length > 0;
+  const { data: startupConfig } = useGetStartupConfig();
+  /**
+   * Selections that survive pruning: what the dropdown offers, plus whatever the
+   * active model spec pins. `chatMenu` hides a server from the picker; it does
+   * not override an admin's spec, so a spec-assigned server stays selected even
+   * when the picker would never have offered it.
+   */
+  const retainedServers = useMemo(() => {
+    const specServers = getModelSpec({ specName, startupConfig })?.mcpServers;
+    if (!specServers?.length) {
+      return configuredServers;
+    }
+    const retained = new Set(configuredServers);
+    for (const serverName of specServers) {
+      retained.add(serverName);
+    }
+    return retained;
+  }, [configuredServers, specName, startupConfig]);
 
   /**
    * For new conversations, key the MCP atom by environment (spec or defaults)
@@ -50,7 +72,6 @@ export function useMCPSelect({
   const isNewConvo = key === Constants.NEW_CONVO;
   const mcpAtomKey = isNewConvo && storageContextKey ? storageContextKey : key;
 
-  const { data: startupConfig } = useGetStartupConfig();
   const [isPinned, setIsPinned] = useAtom(mcpPinnedAtom);
   const [mcpValues, setMCPValuesRaw] = useAtom(mcpValuesAtomFamily(mcpAtomKey));
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
@@ -94,17 +115,17 @@ export function useMCPSelect({
     if (!canPruneSelections || mcpValues.length === 0) {
       return;
     }
-    const activeMcpValues = mcpValues.filter((mcp) => configuredServers.has(mcp));
+    const activeMcpValues = mcpValues.filter((mcp) => retainedServers.has(mcp));
     if (activeMcpValues.length !== mcpValues.length) {
       setMCPValuesRaw(activeMcpValues);
     }
-  }, [canPruneSelections, mcpValues, configuredServers, setMCPValuesRaw]);
+  }, [canPruneSelections, mcpValues, retainedServers, setMCPValuesRaw]);
 
   // Sync ephemeral agent MCP → Jotai atom (strip unconfigured servers)
   useEffect(() => {
     const mcps = ephemeralAgent?.mcp;
     if (Array.isArray(mcps) && mcps.length > 0 && canPruneSelections) {
-      const activeMcps = mcps.filter((mcp) => configuredServers.has(mcp));
+      const activeMcps = mcps.filter((mcp) => retainedServers.has(mcp));
       /** The ephemeral agent is what carries the selection to the server, so a
        *  hidden name has to leave it too, not just the dropdown's atom. */
       if (activeMcps.length !== mcps.length) {
@@ -126,7 +147,7 @@ export function useMCPSelect({
     ephemeralAgent?.mcp,
     setEphemeralAgent,
     setMCPValuesRaw,
-    configuredServers,
+    retainedServers,
     canPruneSelections,
     mcpValues,
   ]);
