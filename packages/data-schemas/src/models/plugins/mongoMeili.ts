@@ -29,6 +29,8 @@ interface MongoMeiliOptions {
 
 interface MeiliIndexable {
   [key: string]: unknown;
+  conversationId?: string;
+  originalConversationId?: string;
   _meiliIndex?: boolean;
   _meiliIndexAttempted?: boolean;
   _meiliIndexVersion?: string;
@@ -111,6 +113,42 @@ const hasSchemaPath = (schema: Schema, path: string): boolean =>
 
 /** Bump when the indexed document shape or projection changes. */
 export const MEILI_INDEX_SCHEMA_VERSION = 2;
+
+/**
+ * Encodes a conversation ID for use as a MeiliSearch document primary key.
+ */
+export const toMeiliConversationKey = (id: unknown): string => {
+  const str = String(id);
+  return str.includes('|') ? str.replace(/\|/g, '--') : str;
+};
+
+const getMeiliPrimaryKey = (value: unknown, primaryKey: string): string => {
+  if (primaryKey === 'conversationId') {
+    return toMeiliConversationKey(value);
+  }
+  return String(value);
+};
+
+const prepareObjectForIndex = (object: Record<string, unknown>, primaryKey: string): void => {
+  if (primaryKey === 'conversationId' && object.conversationId != null) {
+    const rawId = String(object.conversationId);
+    object.originalConversationId = rawId;
+    object.conversationId = toMeiliConversationKey(rawId);
+  }
+};
+
+const normalizeSearchHit = (hit: MeiliIndexable, primaryKey: string): MeiliIndexable => {
+  if (primaryKey === 'conversationId') {
+    const originalConversationId =
+      typeof hit.originalConversationId === 'string'
+        ? hit.originalConversationId
+        : hit.conversationId;
+    if (originalConversationId) {
+      return { ...hit, conversationId: originalConversationId };
+    }
+  }
+  return hit;
+};
 
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 const previouslyIndexedFlagKey = 'meiliPreviouslyIndexed';
@@ -323,7 +361,7 @@ const createMeiliMongooseModel = ({
 
   const deleteDocumentAndWait = async (doc: DocumentWithMeiliIndex): Promise<void> => {
     const deletion = await index.deleteDocument(
-      String(doc[primaryKey as keyof DocumentWithMeiliIndex]),
+      getMeiliPrimaryKey(doc[primaryKey as keyof DocumentWithMeiliIndex], primaryKey),
     );
     const deletionTask = await client.waitForTask(deletion.taskUid, {
       timeOutMs: meiliRequestTimeoutMs,
@@ -569,9 +607,11 @@ const createMeiliMongooseModel = ({
       }
 
       // Format documents for MeiliSearch
-      const formattedDocs = documents.map((doc) =>
-        _.omitBy(_.pick(doc, attributesToIndex), (_v, k) => k.startsWith('$')),
-      );
+      const formattedDocs = documents.map((doc) => {
+        const object = _.omitBy(_.pick(doc, attributesToIndex), (_v, k) => k.startsWith('$'));
+        prepareObjectForIndex(object, primaryKey);
+        return object;
+      });
 
       try {
         const docsIds = documents.map((doc) => doc._id);
@@ -626,10 +666,10 @@ const createMeiliMongooseModel = ({
           break;
         }
 
-        const pendingIds = pendingExcludedDocuments.map(
-          (doc: Record<string, unknown>) => doc[primaryKey],
+        const pendingIds = pendingExcludedDocuments.map((doc: Record<string, unknown>) =>
+          getMeiliPrimaryKey(doc[primaryKey], primaryKey),
         );
-        const deletion = await index.deleteDocuments(pendingIds.map(String));
+        const deletion = await index.deleteDocuments(pendingIds);
         const deletionTask = await client.waitForTask(deletion.taskUid, {
           timeOutMs: 10000,
           intervalMs: 100,
@@ -639,8 +679,11 @@ const createMeiliMongooseModel = ({
             `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
           );
         }
+        const pendingDocIds = pendingExcludedDocuments.map(
+          (doc: Record<string, unknown>) => doc._id,
+        );
         await this.updateMany(
-          { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
+          { _id: { $in: pendingDocIds } },
           {
             $set: { _meiliCleanupVersion: meiliCleanupVersion },
             $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
@@ -680,22 +723,35 @@ const createMeiliMongooseModel = ({
             break;
           }
 
-          const meiliIds = batch.results.map((doc) => doc[primaryKey]);
-          const query: Record<string, unknown> = {};
-          query[primaryKey] = { $in: meiliIds };
+          const meiliIds = batch.results.map((doc) => String(doc[primaryKey]));
+          const candidateMongoIds =
+            primaryKey === 'conversationId'
+              ? batch.results.map((doc) =>
+                  typeof doc.originalConversationId === 'string'
+                    ? doc.originalConversationId
+                    : String(doc[primaryKey]),
+                )
+              : meiliIds;
 
-          const existingDocs = await this.find({ ...query, ...getIndexableQuery() })
+          const existingDocs = await this.find({
+            $and: [
+              { [primaryKey]: { $in: candidateMongoIds } },
+              getIndexableQuery(),
+            ],
+          })
             .select(primaryKey)
             .lean();
 
-          const existingIds = new Set(
-            existingDocs.map((doc: Record<string, unknown>) => doc[primaryKey]),
+          const existingMeiliKeys = new Set(
+            existingDocs.map((doc: Record<string, unknown>) =>
+              getMeiliPrimaryKey(doc[primaryKey], primaryKey),
+            ),
           );
 
           // Delete documents that don't exist in MongoDB
-          const toDelete = meiliIds.filter((id) => !existingIds.has(id));
+          const toDelete = meiliIds.filter((id) => !existingMeiliKeys.has(id));
           if (toDelete.length > 0) {
-            const deletion = await index.deleteDocuments(toDelete.map(String));
+            const deletion = await index.deleteDocuments(toDelete);
             const deletionTask = await client.waitForTask(deletion.taskUid, {
               timeOutMs: 10000,
               intervalMs: 100,
@@ -705,8 +761,14 @@ const createMeiliMongooseModel = ({
                 `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
               );
             }
+            const toDeleteMongoIds = toDelete.map((id) => {
+              const matchingDoc = batch.results.find((d) => String(d[primaryKey]) === id);
+              return typeof matchingDoc?.originalConversationId === 'string'
+                ? matchingDoc.originalConversationId
+                : id;
+            });
             await this.updateMany(
-              { [primaryKey]: { $in: toDelete } },
+              { [primaryKey]: { $in: toDeleteMongoIds } },
               {
                 $set: { _meiliCleanupVersion: meiliCleanupVersion },
                 $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
@@ -750,10 +812,24 @@ const createMeiliMongooseModel = ({
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
       await ensureSettingsReady();
       const data = await index.search(q, params);
+      const originalConversationIds =
+        primaryKey === 'conversationId'
+          ? data.hits.map((hit) =>
+              typeof hit.originalConversationId === 'string'
+                ? hit.originalConversationId
+                : String(hit.conversationId),
+            )
+          : [];
+
+      data.hits = data.hits.map((hit) => normalizeSearchHit(hit, primaryKey));
 
       if (populate) {
         const query: Record<string, unknown> = {};
-        query[primaryKey] = _.map(data.hits, (hit) => hit[primaryKey]);
+        if (primaryKey === 'conversationId') {
+          query[primaryKey] = { $in: originalConversationIds };
+        } else {
+          query[primaryKey] = _.map(data.hits, (hit) => hit[primaryKey]);
+        }
 
         const projection = Object.keys(this.schema.obj).reduce<Record<string, number>>(
           (results, key) => {
@@ -794,13 +870,7 @@ const createMeiliMongooseModel = ({
         k.startsWith('$'),
       );
 
-      if (
-        object.conversationId &&
-        typeof object.conversationId === 'string' &&
-        object.conversationId.includes('|')
-      ) {
-        object.conversationId = object.conversationId.replace(/\|/g, '--');
-      }
+      prepareObjectForIndex(object, primaryKey);
 
       if (object.content && Array.isArray(object.content)) {
         /** Search indexes the full conversational record, steered words included. */
@@ -857,7 +927,9 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        await index.deleteDocument(String(this[primaryKey as keyof DocumentWithMeiliIndex]));
+        await index.deleteDocument(
+          getMeiliPrimaryKey(this[primaryKey as keyof DocumentWithMeiliIndex], primaryKey),
+        );
         next();
       } catch (error) {
         logger.error('[deleteObjectFromMeili] Error deleting document from Meili:', error);
@@ -1254,7 +1326,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         // Process deletions in batches
         await processBatch(deletedConvos, batchSize, delayMs, async (batch) => {
           const promises = batch.map((convo: Record<string, unknown>) =>
-            convoIndex.deleteDocument(convo.conversationId as string),
+            convoIndex.deleteDocument(toMeiliConversationKey(convo.conversationId)),
           );
           await Promise.all(promises);
         });

@@ -2,7 +2,10 @@ import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
-import mongoMeili, { MEILI_INDEX_SCHEMA_VERSION } from '~/models/plugins/mongoMeili';
+import mongoMeili, {
+  MEILI_INDEX_SCHEMA_VERSION,
+  toMeiliConversationKey,
+} from '~/models/plugins/mongoMeili';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
 
@@ -541,7 +544,12 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(mockDeleteDocument).not.toHaveBeenCalledWith(String(msg._id));
   });
 
-  test('updateDocuments receives preprocessed data with primaryKey', async () => {
+  test('toMeiliConversationKey encodes pipes into double hyphens', () => {
+    expect(toMeiliConversationKey('abc|def|ghi')).toBe('abc--def--ghi');
+    expect(toMeiliConversationKey('normal-id')).toBe('normal-id');
+  });
+
+  test('updateDocuments receives preprocessed data with primaryKey and originalConversationId', async () => {
     const conversationModel = createConversationModel(
       mongoose,
     ) as unknown as SchemaWithMeiliMethods;
@@ -560,7 +568,12 @@ describe('Meilisearch Mongoose plugin', () => {
 
     await waitForMock(mockUpdateDocuments);
     expect(mockUpdateDocuments).toHaveBeenCalledWith(
-      [expect.objectContaining({ conversationId: 'abc--def--ghi' })],
+      [
+        expect.objectContaining({
+          conversationId: 'abc--def--ghi',
+          originalConversationId: 'abc|def|ghi',
+        }),
+      ],
       { primaryKey: 'conversationId' },
     );
   });
@@ -1798,6 +1811,45 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockDeleteDocuments).toHaveBeenCalledWith([orphanedConvoId1, orphanedConvoId2]);
     });
 
+    test('cleanupMeiliIndex preserves pipe-containing conversation IDs with originalConversationId', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      const existingPipeConvoId = 'convo|with|pipe';
+      const orphanedPipeConvoId = 'orphaned|with|pipe';
+
+      await conversationModel.collection.insertOne({
+        conversationId: existingPipeConvoId,
+        user: new mongoose.Types.ObjectId(),
+        title: 'Pipe Conversation',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: true,
+        expiredAt: null,
+      });
+
+      mockGetDocuments.mockResolvedValueOnce({
+        results: [
+          {
+            conversationId: toMeiliConversationKey(existingPipeConvoId),
+            originalConversationId: existingPipeConvoId,
+          },
+          {
+            conversationId: toMeiliConversationKey(orphanedPipeConvoId),
+            originalConversationId: orphanedPipeConvoId,
+          },
+        ],
+      });
+
+      const indexMock = mockIndex();
+      await conversationModel.cleanupMeiliIndex(indexMock, 'conversationId', 100, 0);
+
+      expect(mockDeleteDocuments).toHaveBeenCalledWith([
+        toMeiliConversationKey(orphanedPipeConvoId),
+      ]);
+    });
+
     test('cleanupMeiliIndex handles offset correctly when documents are deleted', async () => {
       const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
       await messageModel.deleteMany({});
@@ -2535,6 +2587,61 @@ describe('Meilisearch Mongoose plugin', () => {
         _meiliIndex: true,
       });
       expect(afterSync.length).toBe(2);
+    });
+
+    test('deleteObjectFromMeili uses toMeiliConversationKey for conversationId', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      const convo = await conversationModel.create({
+        conversationId: 'delete|with|pipes',
+        user: new mongoose.Types.ObjectId(),
+        title: 'Delete Pipe Test',
+        endpoint: EModelEndpoint.openAI,
+      });
+      mockDeleteDocument.mockClear();
+
+      await new Promise<void>((resolve) => {
+        convo.deleteObjectFromMeili!(() => resolve());
+      });
+
+      expect(mockDeleteDocument).toHaveBeenCalledWith('delete--with--pipes');
+    });
+
+    test('deleteMany hook deletes documents using toMeiliConversationKey', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.create({
+        conversationId: 'batch|del|pipe',
+        user: new mongoose.Types.ObjectId(),
+        title: 'Batch Delete Pipe Test',
+        endpoint: EModelEndpoint.openAI,
+      });
+      mockDeleteDocument.mockClear();
+
+      await conversationModel.deleteMany({ conversationId: 'batch|del|pipe' });
+
+      expect(mockDeleteDocument).toHaveBeenCalledWith('batch--del--pipe');
+    });
+
+    test('normalizes search hits back to originalConversationId', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      const conversationId = 'search|with|pipes';
+      mockSearch.mockResolvedValue({
+        hits: [
+          {
+            conversationId: toMeiliConversationKey(conversationId),
+            originalConversationId: conversationId,
+          },
+        ],
+      });
+
+      const result = await conversationModel.meiliSearch('keyword', undefined, false);
+
+      expect(result.hits[0].conversationId).toBe(conversationId);
     });
   });
 });
