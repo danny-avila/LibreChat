@@ -43,9 +43,13 @@ function WorkerCommand({ pairing }: { pairing: CodeEnvironmentPairingResponse['p
         variant="outline"
         size="sm"
         className="self-start"
-        onClick={() => {
-          void navigator.clipboard.writeText(command);
-          showToast({ message: localize('com_ui_copy_to_clipboard'), status: 'success' });
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(command);
+            showToast({ message: localize('com_ui_copied_to_clipboard'), status: 'success' });
+          } catch {
+            showToast({ message: localize('com_ui_copy_failed'), status: 'error' });
+          }
         }}
       >
         {localize('com_ui_copy_to_clipboard')}

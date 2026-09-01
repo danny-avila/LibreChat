@@ -311,7 +311,14 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
 
     const workerId = createEnvironmentId();
-    if (!(await principalIsActive(principal.userId.toString()))) {
+    let activeBeforePairing: boolean;
+    try {
+      activeBeforePairing = await principalIsActive(principal.userId.toString());
+    } catch (error) {
+      logger.error('[codeEnvironments] pre-pairing principal check failed:', error);
+      return res.status(503).json({ error: 'Account status could not be confirmed' });
+    }
+    if (!activeBeforePairing) {
       return res.status(409).json({ error: 'Account deletion is already in progress' });
     }
     let pairing;

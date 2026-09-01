@@ -843,7 +843,7 @@ export function createAgentMethods(
     const directEnvironmentId = updateData.code_environment_id;
     const setEnvironmentId =
       typeof updateData.$set === 'object' && updateData.$set != null
-        ? (updateData.$set as Record<string, unknown>).code_environment_id
+        ? (updateData.$set as { code_environment_id?: unknown }).code_environment_id
         : undefined;
     let nextEnvironmentId: string | undefined;
     if (typeof directEnvironmentId === 'string') {

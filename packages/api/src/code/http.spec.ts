@@ -283,6 +283,51 @@ describe('code environment HTTP handlers', () => {
     );
   });
 
+  test('returns 503 without issuing a pairing when the initial principal check is unavailable', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example/v1',
+                  owner: 'deployment',
+                  pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: { register: jest.fn(), listAccessible: jest.fn(), remove: jest.fn() },
+      createEnvironmentId: () => 'code-generated',
+      readSecret: () => 'administrator-token',
+      principalAuthEnabled: () => true,
+      principalAuthReady: jest.fn(),
+      principalIsActive: jest.fn().mockRejectedValue(new Error('user store unavailable')),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({ error: 'Account status could not be confirmed' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   test('revokes through the registry fence when the principal becomes inactive after registration', async () => {
     const remove = jest.fn(
       async ({ beforeDelete }: { beforeDelete?: (target: never) => Promise<void> }) => {

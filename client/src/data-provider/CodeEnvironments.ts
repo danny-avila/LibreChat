@@ -31,14 +31,14 @@ export function usePairCodeEnvironmentMutation() {
 
 export function useDeleteCodeEnvironmentMutation() {
   const queryClient = useQueryClient();
-  return useMutation<unknown, Error, string>(
-    [MutationKeys.deleteCodeEnvironment],
-    dataService.deleteCodeEnvironment,
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries([QueryKeys.codeEnvironments]);
-        queryClient.invalidateQueries([QueryKeys.endpoints]);
-      },
+  return useMutation<
+    { environment: TCodeEnvironmentsResponse['environments'][number] },
+    Error,
+    string
+  >([MutationKeys.deleteCodeEnvironment], dataService.deleteCodeEnvironment, {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.codeEnvironments]);
+      queryClient.invalidateQueries([QueryKeys.endpoints]);
     },
-  );
+  });
 }
