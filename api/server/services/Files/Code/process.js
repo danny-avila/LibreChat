@@ -22,7 +22,10 @@ const {
   getStorageMetadata,
   getCodeExecutionBaseUrl,
   buildCodeEnvDownloadQuery,
+  claimCodeDestination,
+  createCodeDestinationSet,
   CODE_API_EXPECTED_PROFILE_HEADER,
+  sortCodeFilesByDestinationPriority,
 } = require('@librechat/api');
 const {
   Tools,
@@ -1030,13 +1033,13 @@ const getPreviewContextSuffix = (file) => {
     : ' (preview unavailable)';
 };
 
-const getVisibleCodeFileContextLine = (file, agentResourceIds) => {
+const getVisibleCodeFileContextLine = (file, agentResourceIds, destination) => {
   if (file.context === FileContext.execute_code) {
     return '';
   }
 
   const fileSuffix = agentResourceIds.has(file.file_id) ? '' : ' (attached by user)';
-  return `\n\t- /mnt/data/${file.filename}${fileSuffix}${getPreviewContextSuffix(file)}`;
+  return `\n\t- /mnt/data/${destination}${fileSuffix}${getPreviewContextSuffix(file)}`;
 };
 
 const appendVisibleCodeFileContext = (toolContext, contextLine) => {
@@ -1163,6 +1166,13 @@ const primeFiles = async (options) => {
   const sessions = new Map();
   let toolContext = '';
 
+  /* Claim order decides which record keeps the bare `/mnt/data/<name>` path
+   * when several share a filename, so it is fixed here rather than inherited
+   * from `getFiles`'s `updatedAt` sort — usage accounting and re-upload both
+   * bump `updatedAt`, which would repoint paths between turns. */
+  const orderedFiles = sortCodeFilesByDestinationPriority(dbFiles);
+  const destinations = createCodeDestinationSet();
+
   /* Per-file path counters — emitted at the bottom so a single
    * grep on `[primeCodeFiles]` shows the input volume, the per-file
    * paths taken, and the final dispatch summary in one trace. */
@@ -1171,8 +1181,8 @@ const primeFiles = async (options) => {
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
 
-  for (let i = 0; i < dbFiles.length; i++) {
-    const file = dbFiles[i];
+  for (let i = 0; i < orderedFiles.length; i++) {
+    const file = orderedFiles[i];
     if (!file) {
       continue;
     }
@@ -1205,9 +1215,19 @@ const primeFiles = async (options) => {
      * tenant prefix from auth context).
      */
     const pushFile = (overrideSessionId, overrideId) => {
+      /* Claimed here rather than up front so files that never reach the
+       * sandbox — no code-env ref, or a failed re-upload — do not reserve a
+       * name and push a file that does reach it onto a counter. */
+      const destination = claimCodeDestination(destinations, file.filename);
+      if (destination !== file.filename) {
+        logger.debug(
+          `[primeCodeFiles] file=${file.file_id} destination=${destination} ` +
+            `reason=name-collision filename=${file.filename}`,
+        );
+      }
       toolContext = appendVisibleCodeFileContext(
         toolContext,
-        getVisibleCodeFileContextLine(file, agentResourceIds),
+        getVisibleCodeFileContextLine(file, agentResourceIds, destination),
       );
       /* `id` is the storage file_id (drives codeapi's upload-key
        * existence check), `resource_id` is the entity that owns
@@ -1219,7 +1239,7 @@ const primeFiles = async (options) => {
         id: overrideId ?? id,
         resource_id: sourceRef.id,
         storage_session_id: overrideSessionId ?? session_id,
-        name: file.filename,
+        name: destination,
         kind: sourceRef.kind,
         ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
       });

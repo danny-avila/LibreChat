@@ -1,4 +1,5 @@
 import { Constants } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import type { FileRefs, CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import {
@@ -6,6 +7,7 @@ import {
   resolveCodeExecutionContext,
   type CodeExecutionContext,
 } from './execution';
+import { createCodeDestinationSet, reserveCodeDestination } from '~/files/code/destinations';
 
 /**
  * Minimal shape for an agent that may contribute primed code files to its
@@ -125,6 +127,15 @@ export function collectCodeExecutionProfileRoutes(
  * dedupe `_injected_files` would grow proportionally to agent count and
  * inflate every `/exec` POST. First-seen wins so the original ordering /
  * source is preserved.
+ *
+ * Identity dedupe alone cannot keep the seed valid: codeapi rejects the
+ * whole `/exec` request when two entries mount at one destination, and a
+ * file re-uploaded by one agent but cache-hit by another arrives twice
+ * under different `storage_session_id`s with a single `name`. Sources are
+ * merged in trust order — skill seed, then primary agent, then the rest —
+ * so first-seen also wins the destination, and the later copy of an
+ * already-mounted name is dropped rather than renamed to a path nothing
+ * told the model about.
  */
 export function seedCodeFilesIntoSessions(
   files: CodeEnvFile[] | undefined,
@@ -139,16 +150,26 @@ export function seedCodeFilesIntoSessions(
   const prior = sessions.get(sessionKey) as CodeSessionContext | undefined;
 
   /**
-   * Compose `(storage_session_id, id)` as a stable identity. `name` alone
-   * isn't sufficient — two distinct primed uploads can share a filename
-   * (different storage sessions, different file_ids). The composite stays
-   * cheap to compute and the keys are short uuids.
+   * Identity is `(storage_session_id, id)`, not `name` — two distinct primed
+   * uploads can share a filename across different storage sessions and
+   * file_ids, and collapsing those would drop a file the caller resolved to
+   * its own mount path. The composite stays cheap to compute and the keys
+   * are short uuids. Destination uniqueness is enforced separately below,
+   * against the sandbox's one-file-per-path constraint.
    */
   const seenKeys = new Set<string>();
+  const destinations = createCodeDestinationSet();
   const mergedFiles: FileRefs = [];
   const pushIfFresh = (f: { id?: string; storage_session_id?: string; name?: string }): void => {
     const key = `${f.storage_session_id ?? ''}\0${f.id ?? ''}`;
     if (seenKeys.has(key)) return;
+    if (f.name != null && !reserveCodeDestination(destinations, f.name)) {
+      logger.debug(
+        `[seedCodeFilesIntoSessions] dropped id=${f.id} name=${f.name} ` +
+          `reason=destination-taken sessionKey=${sessionKey}`,
+      );
+      return;
+    }
     seenKeys.add(key);
     mergedFiles.push(f as FileRefs[number]);
   };
