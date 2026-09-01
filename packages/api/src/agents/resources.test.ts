@@ -2510,6 +2510,72 @@ describe('primeResources', () => {
       expect(result.provisionState).toBeUndefined();
     });
 
+    it('queues a unified file even when this turn runs under the legacy setting', async () => {
+      /* The marker says the upload was not a legacy choice, so its missing references are
+       * work to do. Deferring to the request's setting would let the tool run without it
+       * after an administrator flips the endpoint or a handoff crosses providers. */
+      const unifiedFile = {
+        user: 'user1',
+        file_id: 'unified-under-legacy',
+        filename: 'notes.csv',
+        filepath: '/uploads/notes.csv',
+        object: 'file',
+        type: 'text/csv',
+        bytes: 512,
+        embedded: false,
+        usage: 0,
+        metadata: { legacyUploadChoice: false },
+      } as TFile;
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([unifiedFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.file_search]),
+        legacyFileUploadUX: true,
+      });
+
+      expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
+        'unified-under-legacy',
+      ]);
+    });
+
+    it('still defers to the request setting for a record predating the marker', async () => {
+      /* No marker means the upload happened before the choice was tracked, so the
+       * endpoint setting is the only evidence available. */
+      const legacyEraFile = {
+        user: 'user1',
+        file_id: 'pre-marker',
+        filename: 'notes.csv',
+        filepath: '/uploads/notes.csv',
+        object: 'file',
+        type: 'text/csv',
+        bytes: 512,
+        embedded: false,
+        usage: 0,
+      } as TFile;
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([legacyEraFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.file_search]),
+        legacyFileUploadUX: true,
+      });
+
+      expect(result.provisionState).toBeUndefined();
+    });
+
     it('queues a deferred candidate for provisioning without delivering it again', async () => {
       process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
       const deferred = makeCodeFile({ file_id: 'deferred-file' });
