@@ -18,6 +18,7 @@ const mockMeiliHealth = jest.fn();
 const mockMeiliIndex = jest.fn();
 const mockBatchResetMeiliFlags = jest.fn();
 const mockIsEnabled = jest.fn();
+const mockRunDistributedJob = jest.fn();
 const mockGetLogStores = jest.fn();
 
 // Create mock models that will be reused
@@ -49,6 +50,7 @@ jest.mock('./utils', () => ({
 
 jest.mock('@librechat/api', () => ({
   isEnabled: mockIsEnabled,
+  runDistributedJob: mockRunDistributedJob,
   FlowStateManager: jest.fn(),
 }));
 
@@ -96,6 +98,7 @@ describe('performSync() - syncThreshold logic', () => {
 
     // Mock isEnabled
     mockIsEnabled.mockImplementation((val) => val === 'true' || val === true);
+    mockRunDistributedJob.mockImplementation((_collection, _jobId, handler) => handler());
 
     // Mock MeiliSearch client responses
     mockMeiliHealth.mockResolvedValue({ status: 'available' });
@@ -115,6 +118,28 @@ describe('performSync() - syncThreshold logic', () => {
   afterAll(() => {
     mongoose.models.Message = originalMessageModel;
     mongoose.models.Conversation = originalConversationModel;
+  });
+
+  test('skips synchronization when another replica completed the distributed job', async () => {
+    mockRunDistributedJob.mockResolvedValue(undefined);
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(mockGetLogStores).not.toHaveBeenCalled();
+    expect(mockMeiliHealth).not.toHaveBeenCalled();
+  });
+
+  test('propagates synchronization failures to the distributed job coordinator', async () => {
+    const createFlowWithHandler = jest.fn().mockRejectedValue(new Error('sync failed'));
+    const { FlowStateManager } = require('@librechat/api');
+    FlowStateManager.mockImplementationOnce(() => ({ createFlowWithHandler }));
+    mockGetLogStores.mockReturnValueOnce({});
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow('sync failed');
+    expect(mockLogger.error).toHaveBeenCalledWith('[indexSync] error', expect.any(Error));
   });
 
   test('triggers sync when unindexed messages exceed syncThreshold', async () => {
