@@ -42,6 +42,7 @@ import { CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import {
   buildToolSet,
+  buildRunToolSet,
   BuildToolSetConfig,
   registerCodeExecutionTools,
   registerFileAuthoringTools,
@@ -189,6 +190,66 @@ describe('buildToolSet', () => {
       expect(toolSet.has('also_valid')).toBe(true);
       expect(toolSet.has('')).toBe(false);
     });
+  });
+});
+
+describe('buildRunToolSet', () => {
+  const agent = (id: string, ...toolNames: string[]) => ({
+    id,
+    toolDefinitions: toolNames.map((name) => ({ name })),
+  });
+
+  it('returns an empty set without a primary or additional agent', () => {
+    expect(buildRunToolSet(null)).toEqual(new Set());
+  });
+
+  it('collects tools recursively across every reachable agent shape', () => {
+    const eager = agent('eager', 'eager_tool');
+    const lazy = agent('lazy', 'lazy_tool');
+    const metadata = agent('metadata', 'metadata_tool');
+    const graphMember = agent('graph-member', 'graph_tool');
+    const primary = {
+      ...agent('primary', 'primary_tool'),
+      subagentAgentConfigs: [eager],
+      lazySubagentConfigs: [lazy],
+      subagentGraphMemberMetadata: [metadata],
+      subagentGraphConfigs: [{ memberConfigs: [graphMember] }],
+    };
+
+    expect(buildRunToolSet(primary)).toEqual(
+      new Set([
+        'subagent',
+        'primary_tool',
+        'eager_tool',
+        'lazy_tool',
+        'metadata_tool',
+        'graph_tool',
+      ]),
+    );
+  });
+
+  it('adds only effective handoff destinations as transfer tools', () => {
+    const primary = {
+      ...agent('primary', 'primary_tool'),
+      edges: [
+        { from: 'primary', to: 'writer', edgeType: 'handoff' as const },
+        { from: 'writer', to: ['reviewer', 'publisher'] },
+        { from: 'publisher', to: 'archive', edgeType: 'direct' as const },
+      ],
+    };
+
+    const toolSet = buildRunToolSet(primary, [agent('disconnected', 'disconnected_tool')]);
+
+    expect(toolSet).toEqual(
+      new Set([
+        'subagent',
+        'primary_tool',
+        'disconnected_tool',
+        'lc_transfer_to_writer',
+        'lc_transfer_to_reviewer',
+        'lc_transfer_to_publisher',
+      ]),
+    );
   });
 });
 

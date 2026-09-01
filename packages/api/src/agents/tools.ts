@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import {
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
@@ -5,6 +6,9 @@ import {
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
+import type { GraphEdge } from 'librechat-data-provider';
+import type { ReachableAgent } from './traversal';
+import { collectReachableAgents } from './traversal';
 
 export const CREATE_FILE_TOOL_NAME = 'create_file';
 export const EDIT_FILE_TOOL_NAME = 'edit_file';
@@ -59,6 +63,47 @@ export function buildToolSet(agentConfig: BuildToolSetConfig | null | undefined)
       : (tools ?? []).map((tool) => tool?.name);
 
   return new Set(toolNames.filter((name): name is string => Boolean(name)));
+}
+
+export interface RunToolSetConfig extends BuildToolSetConfig, ReachableAgent<RunToolSetConfig> {
+  readonly edges?: readonly GraphEdge[];
+}
+
+/** Builds the historical tool allowlist for the complete effective run topology. */
+export function buildRunToolSet(
+  primaryConfig: RunToolSetConfig | null | undefined,
+  additionalConfigs?: Iterable<RunToolSetConfig | null | undefined> | null,
+): Set<string> {
+  const roots = [primaryConfig];
+  if (additionalConfigs) {
+    roots.push(...additionalConfigs);
+  }
+
+  const agents = collectReachableAgents(roots);
+  if (agents.length === 0) {
+    return new Set();
+  }
+
+  const toolSet = new Set<string>([`${Constants.SUBAGENT}`]);
+  for (const agent of agents) {
+    for (const name of buildToolSet(agent)) {
+      toolSet.add(name);
+    }
+  }
+
+  for (const edge of primaryConfig?.edges ?? []) {
+    if (edge.edgeType === 'direct') {
+      continue;
+    }
+    const destinations = Array.isArray(edge.to) ? edge.to : [edge.to];
+    for (const destination of destinations) {
+      if (destination) {
+        toolSet.add(`${Constants.LC_TRANSFER_TO_}${destination}`);
+      }
+    }
+  }
+
+  return toolSet;
 }
 
 export interface RegisterCodeExecutionToolsParams {
