@@ -23,6 +23,7 @@ export type CodeEnvironment = {
   revocationPendingAt?: Date;
   revocationAttempts?: number;
   revocationLastError?: string;
+  revocationReconcileAfter?: Date;
   revocationLeaseId?: string;
   revocationLeaseExpiresAt?: Date;
   workerId?: string;

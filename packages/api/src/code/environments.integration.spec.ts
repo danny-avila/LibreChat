@@ -487,10 +487,56 @@ describe('code environment registry', () => {
       revocationLastError: 'Code bridge lifecycle request failed',
     });
 
+    const reconcileFailure = jest.fn().mockRejectedValue(new Error('control plane still down'));
+    await reconcileCodeEnvironmentLifecycle({
+      mongoose,
+      readSecret: () => 'administrator-token',
+      fetchImpl: reconcileFailure,
+    });
+    await expect(
+      mongoose.models.CodeEnvironment.findOne({ environmentId: 'worker-unreachable' }).lean(),
+    ).resolves.toMatchObject({ revocationReconcileAfter: expect.any(Date) });
+
+    await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'worker-later',
+        name: 'worker-later',
+        type: 'attached',
+        baseURL: 'https://worker-later.example.com/v1',
+        controlPlaneId: 'shared-code-api',
+        workerId: 'worker-later',
+        revocationTokenEnv: 'CODE_ADMIN_TOKEN',
+        workerPrincipal: { type: 'user', id: ownerId.toString() },
+      },
+    });
+    await mongoose.models.CodeEnvironment.updateOne(
+      { environmentId: 'worker-later' },
+      { $set: { revocationPendingAt: new Date() } },
+    );
+
     const retryFetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ protocolVersion: 1, revoked: true }),
     });
+    await reconcileCodeEnvironmentLifecycle({
+      mongoose,
+      readSecret: () => 'administrator-token',
+      fetchImpl: retryFetch,
+      limit: 1,
+    });
+    expect(retryFetch).toHaveBeenCalledWith(
+      'https://worker-later.example.com/v1/bridge/workers/worker-later/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    await expect(
+      mongoose.models.CodeEnvironment.findOne({ environmentId: 'worker-later' }),
+    ).resolves.toBeNull();
+    retryFetch.mockClear();
+    await mongoose.models.CodeEnvironment.updateOne(
+      { environmentId: 'worker-unreachable' },
+      { $set: { revocationReconcileAfter: new Date(Date.now() - 1_000) } },
+    );
     await reconcileCodeEnvironmentLifecycle({
       mongoose,
       readSecret: () => 'administrator-token',

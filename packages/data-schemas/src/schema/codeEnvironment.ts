@@ -81,6 +81,7 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
     revocationLastError: {
       type: String,
     },
+    revocationReconcileAfter: { type: Date },
     revocationLeaseId: { type: String },
     revocationLeaseExpiresAt: { type: Date },
     workerId: {

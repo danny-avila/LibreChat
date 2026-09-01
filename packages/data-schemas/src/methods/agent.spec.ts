@@ -19,7 +19,8 @@ import type {
   UpdateQuery,
   Model,
 } from 'mongoose';
-import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
+import type { IAgent, IAclEntry, IUser, IAccessRole, CodeEnvironmentDocument } from '..';
+import { withCodeEnvironmentReference } from './codeEnvironment';
 import { createAgentMethods, type AgentMethods } from './agent';
 import { tenantStorage } from '~/config/tenantContext';
 import { createAclEntryMethods } from './aclEntry';
@@ -2593,6 +2594,52 @@ describe('Agent Methods', () => {
       expect(revertedAgent.skills).toEqual([]);
       expect(revertedAgent.skills_scope).toBeUndefined();
       expect(revertedAgent.skill_authoring_enabled).toBeUndefined();
+    });
+
+    test('renews a code environment reference until the guarded write settles', async () => {
+      const environmentId = `environment_${uuidv4()}`;
+      await mongoose.models.CodeEnvironment.create({
+        environmentId,
+        name: 'Slow writer environment',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: new mongoose.Types.ObjectId(),
+      });
+      let settleWrite: (() => void) | undefined;
+      const guardedWrite = withCodeEnvironmentReference(
+        mongoose,
+        environmentId,
+        async () =>
+          await new Promise<void>((resolve) => {
+            settleWrite = resolve;
+          }),
+        10,
+      );
+      let initial: CodeEnvironmentDocument | null = null;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        initial = await mongoose.models.CodeEnvironment.findOne({
+          environmentId,
+        }).lean<CodeEnvironmentDocument>();
+        if (initial?.pendingAgentReferences?.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const initialExpiry = initial?.pendingAgentReferences?.[0]?.expiresAt;
+
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      const renewed = await mongoose.models.CodeEnvironment.findOne({
+        environmentId,
+      }).lean<CodeEnvironmentDocument>();
+      expect(initialExpiry).toBeInstanceOf(Date);
+      expect(renewed?.pendingAgentReferences?.[0]?.expiresAt.getTime()).toBeGreaterThan(
+        initialExpiry?.getTime() ?? 0,
+      );
+      settleWrite?.();
+      await guardedWrite;
+      await expect(
+        mongoose.models.CodeEnvironment.findOne({ environmentId }).lean(),
+      ).resolves.toMatchObject({ pendingAgentReferences: [] });
     });
 
     test('should prune deleted skill ids when reverting to an older version', async () => {

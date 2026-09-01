@@ -223,6 +223,17 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       return res.status(404).json({ error: 'Code control plane was not found' });
     }
 
+    let activeBeforeRegistration: boolean;
+    try {
+      activeBeforeRegistration = await principalIsActive(principal.userId.toString());
+    } catch (error) {
+      logger.error('[codeEnvironments] pre-registration principal check failed:', error);
+      return res.status(503).json({ error: 'Account status could not be confirmed' });
+    }
+    if (!activeBeforeRegistration) {
+      return res.status(409).json({ error: 'Account deletion is already in progress' });
+    }
+
     try {
       const environment = await deps.registry.register({
         actor: principal,
@@ -236,6 +247,20 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           workerPrincipal: { type: 'deployment', id: controlPlane.id },
         },
       });
+      let activeAfterRegistration = false;
+      let principalCheckUnavailable = false;
+      try {
+        activeAfterRegistration = await principalIsActive(principal.userId.toString());
+      } catch (error) {
+        principalCheckUnavailable = true;
+        logger.error('[codeEnvironments] post-registration principal check failed:', error);
+      }
+      if (!activeAfterRegistration) {
+        await deps.registry.remove({ actor: principal, environmentId: environment.id });
+        return principalCheckUnavailable
+          ? res.status(503).json({ error: 'Account status could not be confirmed' })
+          : res.status(409).json({ error: 'Account deletion is already in progress' });
+      }
       return res.status(201).json({ environment });
     } catch (error) {
       const duplicate =

@@ -5,9 +5,11 @@ import type { Model } from 'mongoose';
 import type { CodeEnvironmentDocument } from '~/types';
 import type { IAclEntry } from '~/types';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import logger from '~/config/winston';
 
 const CODE_ENVIRONMENT_TOMBSTONES = 'code_environment_tombstones';
 const REFERENCE_LEASE_MS = 2 * 60_000;
+const REFERENCE_RENEW_INTERVAL_MS = REFERENCE_LEASE_MS / 3;
 const REMOVAL_LEASE_MS = 2 * 60_000;
 
 type CodeEnvironmentTombstone = {
@@ -105,6 +107,58 @@ export async function releaseCodeEnvironmentReference(
     { environmentId: reservation.environmentId },
     { $pull: { pendingAgentReferences: { reservationId: reservation.reservationId } } },
   );
+}
+
+async function renewCodeEnvironmentReference(
+  mongoose: typeof import('mongoose'),
+  reservation: CodeEnvironmentReferenceReservation,
+): Promise<void> {
+  const CodeEnvironment = mongoose.models.CodeEnvironment as
+    | Model<CodeEnvironmentDocument>
+    | undefined;
+  if (CodeEnvironment == null) return;
+  const result = await CodeEnvironment.updateOne(
+    {
+      environmentId: reservation.environmentId,
+      deletionStartedAt: { $exists: false },
+      'pendingAgentReferences.reservationId': reservation.reservationId,
+    },
+    {
+      $set: {
+        'pendingAgentReferences.$.expiresAt': new Date(Date.now() + REFERENCE_LEASE_MS),
+      },
+    },
+  );
+  if (result.matchedCount !== 1) {
+    throw new CodeEnvironmentReferenceError(reservation.environmentId);
+  }
+}
+
+export async function withCodeEnvironmentReference<T>(
+  mongoose: typeof import('mongoose'),
+  environmentId: string | undefined,
+  operation: () => Promise<T>,
+  renewIntervalMs = REFERENCE_RENEW_INTERVAL_MS,
+): Promise<T> {
+  const reservation = await reserveCodeEnvironmentReference(mongoose, environmentId);
+  if (reservation == null) return await operation();
+
+  let renewal = Promise.resolve();
+  const timer = setInterval(() => {
+    renewal = renewal
+      .then(() => renewCodeEnvironmentReference(mongoose, reservation))
+      .catch((error) => {
+        logger.error('[code-environments] agent reference lease renewal failed:', error);
+      });
+  }, renewIntervalMs);
+  timer.unref();
+  try {
+    return await operation();
+  } finally {
+    clearInterval(timer);
+    await renewal;
+    await releaseCodeEnvironmentReference(mongoose, reservation);
+  }
 }
 
 type CreateCodeEnvironmentInput = Pick<

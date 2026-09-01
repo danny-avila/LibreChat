@@ -8,6 +8,7 @@ const RECONCILE_INTERVAL_MS = 60_000;
 const RECONCILE_LEASE_MS = 2 * 60_000;
 const REGISTRATION_STALE_MS = 5 * 60_000;
 const REGISTRATION_RETRY_MS = 5 * 60_000;
+const REVOCATION_RETRY_MS = 5 * 60_000;
 let reconcileTimer: NodeJS.Timeout | undefined;
 let reconcileInFlight: Promise<void> | undefined;
 
@@ -178,7 +179,24 @@ export async function reconcileCodeEnvironmentLifecycle({
       await methods.deleteCodeEnvironmentById(environment._id);
     }
 
-    const candidates = await CodeEnvironment.find({ revocationPendingAt: { $exists: true } })
+    const candidates = await CodeEnvironment.find({
+      revocationPendingAt: { $exists: true },
+      $and: [
+        {
+          $or: [
+            { revocationReconcileAfter: { $exists: false } },
+            { revocationReconcileAfter: { $lte: now } },
+          ],
+        },
+        {
+          $or: [
+            { revocationLeaseExpiresAt: { $exists: false } },
+            { revocationLeaseExpiresAt: { $lte: now } },
+          ],
+        },
+      ],
+    })
+      .sort({ revocationReconcileAfter: 1, _id: 1 })
       .limit(limit)
       .select('_id')
       .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
@@ -189,9 +207,19 @@ export async function reconcileCodeEnvironmentLifecycle({
         {
           _id: candidate._id,
           revocationPendingAt: { $exists: true },
-          $or: [
-            { revocationLeaseExpiresAt: { $exists: false } },
-            { revocationLeaseExpiresAt: { $lte: now } },
+          $and: [
+            {
+              $or: [
+                { revocationReconcileAfter: { $exists: false } },
+                { revocationReconcileAfter: { $lte: now } },
+              ],
+            },
+            {
+              $or: [
+                { revocationLeaseExpiresAt: { $exists: false } },
+                { revocationLeaseExpiresAt: { $lte: now } },
+              ],
+            },
           ],
         },
         {
@@ -227,7 +255,10 @@ export async function reconcileCodeEnvironmentLifecycle({
         await CodeEnvironment.updateOne(
           { _id: environment._id, revocationLeaseId: leaseId },
           {
-            $set: { revocationLastError: message },
+            $set: {
+              revocationLastError: message,
+              revocationReconcileAfter: new Date(Date.now() + REVOCATION_RETRY_MS),
+            },
             $unset: { revocationLeaseId: 1, revocationLeaseExpiresAt: 1 },
           },
         );
@@ -331,6 +362,7 @@ export async function revokeUserCodeEnvironmentWorkers({
             revocationPendingAt: 1,
             revocationAttempts: 1,
             revocationLastError: 1,
+            revocationReconcileAfter: 1,
           },
         },
       );

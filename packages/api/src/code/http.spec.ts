@@ -752,6 +752,96 @@ describe('code environment HTTP handlers', () => {
     });
   });
 
+  test('removes a fixed environment when its principal becomes inactive after registration', async () => {
+    const register = jest.fn().mockResolvedValue({
+      resourceId: '68b2f0c498f24c1e78fa0111',
+      id: 'personal-vm',
+      name: 'Personal VM',
+      type: 'attached',
+    });
+    const remove = jest.fn().mockResolvedValue({ id: 'personal-vm' });
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example',
+                  owner: 'deployment',
+                  pairing: { workerId: 'deployment-worker' },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: { register, listAccessible: jest.fn(), remove },
+      createEnvironmentId: () => 'personal-vm',
+      principalIsActive: jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false),
+    });
+    const res = response();
+
+    await handlers.register(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(remove).toHaveBeenCalledWith({
+      actor: {
+        userId: '68b2f0c498f24c1e78fa0001',
+        role: 'USER',
+        idOnTheSource: null,
+      },
+      environmentId: 'personal-vm',
+    });
+  });
+
+  test('returns 503 without fixed registration when the principal check is unavailable', async () => {
+    const register = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example',
+                  owner: 'deployment',
+                  pairing: { workerId: 'deployment-worker' },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: { register, listAccessible: jest.fn(), remove: jest.fn() },
+      principalIsActive: jest.fn().mockRejectedValue(new Error('user store unavailable')),
+    });
+    const res = response();
+
+    await handlers.register(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(register).not.toHaveBeenCalled();
+  });
+
   test('does not register a fixed environment on a self-service-only control plane', async () => {
     const register = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({

@@ -9,10 +9,7 @@ import {
 import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry } from '~/types';
-import {
-  releaseCodeEnvironmentReference,
-  reserveCodeEnvironmentReference,
-} from './codeEnvironment';
+import { withCodeEnvironmentReference } from './codeEnvironment';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
@@ -589,15 +586,11 @@ export function createAgentMethods(
         extractMCPServerNames(agentData.tools as string[] | undefined),
     };
 
-    const reservation = await reserveCodeEnvironmentReference(
+    return await withCodeEnvironmentReference(
       mongoose,
       typeof agentData.code_environment_id === 'string' ? agentData.code_environment_id : undefined,
+      async () => (await Agent.create(initialAgentData)).toObject() as IAgent,
     );
-    try {
-      return (await Agent.create(initialAgentData)).toObject() as IAgent;
-    } finally {
-      await releaseCodeEnvironmentReference(mongoose, reservation);
-    }
   }
 
   /**
@@ -851,17 +844,16 @@ export function createAgentMethods(
     } else if (typeof setEnvironmentId === 'string') {
       nextEnvironmentId = setEnvironmentId;
     }
-    const reservation = await reserveCodeEnvironmentReference(mongoose, nextEnvironmentId);
-    let updatedAgent: IAgent | null;
-    try {
-      updatedAgent = (await Agent.findOneAndUpdate(
-        searchParameter,
-        updateData,
-        mongoOptions,
-      ).lean()) as IAgent | null;
-    } finally {
-      await releaseCodeEnvironmentReference(mongoose, reservation);
-    }
+    const updatedAgent = await withCodeEnvironmentReference(
+      mongoose,
+      nextEnvironmentId,
+      async () =>
+        (await Agent.findOneAndUpdate(
+          searchParameter,
+          updateData,
+          mongoOptions,
+        ).lean()) as IAgent | null,
+    );
 
     /** `version` is a response-only field holding the count of `versions`. It is reported
      *  here so a suppressed entry keeps the shape callers saw before the write was fixed.
@@ -1192,6 +1184,8 @@ export function createAgentMethods(
     if (includeSkillConfig) {
       projection.skills = 1;
       projection.skills_enabled = 1;
+      projection.skill_authoring_enabled = 1;
+      projection.skills_scope = 1;
     }
 
     let query = Agent.find(baseQuery, projection).sort({ updatedAt: -1, _id: 1 });
@@ -1273,27 +1267,26 @@ export function createAgentMethods(
       }
     }
 
-    const restoresDeploymentDefault = !Object.prototype.hasOwnProperty.call(
-      revertToVersion,
-      'code_environment_id',
-    );
-    const revertUpdate = restoresDeploymentDefault
-      ? { $set: revertToVersion, $unset: { code_environment_id: 1 } }
-      : { $set: revertToVersion };
-    const reservation = await reserveCodeEnvironmentReference(
+    const unsetOnRestore: Record<string, 1> = {};
+    for (const field of ['code_environment_id', 'skills_scope', 'skill_authoring_enabled']) {
+      if (!Object.prototype.hasOwnProperty.call(revertToVersion, field)) {
+        unsetOnRestore[field] = 1;
+      }
+    }
+    const revertUpdate =
+      Object.keys(unsetOnRestore).length > 0
+        ? { $set: revertToVersion, $unset: unsetOnRestore }
+        : { $set: revertToVersion };
+    const revertedAgent = await withCodeEnvironmentReference(
       mongoose,
       typeof revertToVersion.code_environment_id === 'string'
         ? revertToVersion.code_environment_id
         : undefined,
+      async () =>
+        await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
+          new: true,
+        }).lean<IAgent>(),
     );
-    let revertedAgent: IAgent | null;
-    try {
-      revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
-        new: true,
-      }).lean<IAgent>();
-    } finally {
-      await releaseCodeEnvironmentReference(mongoose, reservation);
-    }
     if (!revertedAgent) {
       throw new Error('Agent not found');
     }
