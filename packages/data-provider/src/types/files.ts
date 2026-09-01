@@ -176,6 +176,8 @@ export type TFile = {
     sourceDispatchedAt?: number;
     /** Vector namespaces this file has been embedded into. */
     embeddedEntities?: string[];
+    /** The destination came from the legacy chooser, so absent ones were declined. */
+    legacyUploadChoice?: boolean;
   };
   llmDeliveryPath?: 'provider' | 'text' | 'none';
   createdAt?: string | Date;

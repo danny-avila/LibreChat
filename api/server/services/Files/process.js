@@ -21,6 +21,7 @@ const {
   isNativelyReadableText,
   resolveUploadDestination,
   canToolResourceConsume,
+  isMessageFileUpload,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -725,7 +726,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
 
-  let messageAttachment = !!metadata.message_file;
+  let messageAttachment = isMessageFileUpload(metadata.message_file);
 
   let effectiveToolResource;
 
@@ -733,8 +734,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const endpoint = metadata.effectiveEndpoint ?? req.body?.endpoint;
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
 
+  /* Recorded on the file below: the endpoint setting can differ on a later turn, but the
+   * user's decision about this file does not change with it. */
+  const legacyUploadUX = endpointConfig?.legacyFileUploadUX === true;
+
   if (agent_id && !tool_resource && !messageAttachment) {
-    if (endpointConfig?.legacyFileUploadUX === true) {
+    if (legacyUploadUX) {
       throw new Error('No tool resource provided for agent file upload');
     }
   }
@@ -1141,6 +1146,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     });
   }
 
+  /* The stored bytes are the converted image, so the record has to name that format.
+   * Keeping the upload's type leaves reprovisioning sending, say, webp bytes under a
+   * .jpg name, which the sandbox decoder reads by extension. */
+  let storedType = file.mimetype;
   if (isImage) {
     const result = await processImageFile({
       req,
@@ -1149,6 +1158,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       returnFile: true,
     });
     filepath = result.filepath;
+    storedType = result.type ?? storedType;
     storageMetadata = getStorageMetadata({
       filepath,
       source: result.source,
@@ -1173,8 +1183,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       filename: filename ?? sanitizeFilename(file.originalname),
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       model: messageAttachment ? undefined : req.body.model,
-      metadata: fileInfoMetadata,
-      type: file.mimetype,
+      metadata: legacyUploadUX
+        ? { ...(fileInfoMetadata ?? {}), legacyUploadChoice: true }
+        : fileInfoMetadata,
+      type: storedType,
       embedded,
       source,
       height,

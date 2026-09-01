@@ -462,6 +462,13 @@ const computeProvisionState = async ({
       continue;
     }
 
+    /** The user chose this file's destination from the legacy chooser, so the ones it
+     *  carries no reference for were declined. The request-level check cannot answer for
+     *  it: the endpoint deciding this turn may not be the one it was uploaded under. */
+    if (file.metadata?.legacyUploadChoice === true) {
+      continue;
+    }
+
     if (needsCodeEnv) {
       const legacyRef = file.metadata?.codeEnvRef;
       const isDefaultRoute = legacyRef != null && codeEnvRouteKey(legacyRef) === 'default';

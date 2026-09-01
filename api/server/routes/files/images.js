@@ -17,6 +17,7 @@ const {
   isAssistantsEndpoint,
   hasActivePiiPatterns,
   mergeFileConfig,
+  isMessageFileUpload,
 } = require('librechat-data-provider');
 const {
   processAgentFileUpload,
@@ -115,9 +116,7 @@ router.post('/', async (req, res) => {
      * files anything against the agent. Sent here it would report success while leaving
      * an orphan, so it goes where that is decided rather than assumed. */
     const isPermanentAgentUpload =
-      metadata.agent_id != null &&
-      metadata.message_file !== true &&
-      metadata.message_file !== 'true';
+      metadata.agent_id != null && !isMessageFileUpload(metadata.message_file);
     const takesAgentUploadPath = effectiveToolResource != null || isPermanentAgentUpload;
 
     if (!isAssistants && takesAgentUploadPath) {

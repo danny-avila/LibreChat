@@ -743,6 +743,7 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
       search?: boolean;
       codeRouteKey?: string;
       searchNamespaces?: string[];
+      screenCodeLiveness?: boolean;
     },
   ) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
@@ -1222,6 +1223,9 @@ export async function initializeAgent(
             searchNamespaces: [agent.id, requestFileOwnerId].filter(
               (id): id is string => typeof id === 'string',
             ),
+            /* With resendFiles on, getToolFilesByIds already loads provisioned files and
+             * the staleness probe sees them. Off, this query is the only one that runs. */
+            screenCodeLiveness: !resendFiles,
           }) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
     ]);

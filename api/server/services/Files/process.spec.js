@@ -2533,6 +2533,68 @@ describe('permanent unified uploads and unknown tool sets', () => {
     );
   });
 
+  test('records the converted image format rather than the upload type', async () => {
+    /* The stored bytes are the converted image. Keeping the upload's type leaves a later
+     * reprovision handing the sandbox webp bytes under a .jpg name, which the rename
+     * cannot catch because the extension already matches the stale type. */
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/uploads/photo.webp',
+      bytes: 64,
+      width: 10,
+      height: 10,
+    });
+    getStrategyFunctions.mockReturnValue({
+      handleImageUpload,
+      handleFileUpload: jest.fn().mockResolvedValue({
+        bytes: 64,
+        filename: 'photo.jpg',
+        filepath: '/uploads/photo.jpg',
+      }),
+    });
+    db.createFile.mockResolvedValueOnce({
+      file_id: 'inner-image',
+      type: 'image/webp',
+      filepath: '/uploads/photo.webp',
+      source: 'local',
+    });
+    const req = makeReq({ mimetype: 'image/jpeg', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: { agent_id: 'agent-abc', message_file: 'true', file_id: 'f-image' },
+    }).catch(() => {});
+
+    expect(db.createFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ file_id: 'f-image', type: 'image/webp' }),
+      true,
+    );
+  });
+
+  test('treats an explicit message_file of "false" as a permanent upload', async () => {
+    /* Multipart form values arrive as strings, so the truthy reading made "false" mean
+     * message attachment while the route had already classified it as permanent. The
+     * upload reported success and filed nothing against the agent. */
+    const { addAgentResourceFile } = require('~/models');
+    setupStoredFileUpload();
+
+    await processAgentFileUpload({
+      req: zipReq(),
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        message_file: 'false',
+        file_id: 'f-explicit-false',
+        agentTools: [EToolResources.execute_code],
+      },
+    }).catch(() => {});
+
+    expect(addAgentResourceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ tool_resource: EToolResources.execute_code }),
+    );
+  });
+
   test('skips a consumer whose capability is disabled', async () => {
     /* Otherwise the choice depends on the persisted tool order: code execution listed
      * first would be selected and then rejected, while file search could have kept it. */

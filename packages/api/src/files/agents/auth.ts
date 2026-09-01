@@ -1,5 +1,10 @@
 import { logger } from '@librechat/data-schemas';
-import { SystemRoles, ResourceType, PermissionBits } from 'librechat-data-provider';
+import {
+  SystemRoles,
+  ResourceType,
+  PermissionBits,
+  isMessageFileUpload,
+} from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { Types } from 'mongoose';
@@ -38,7 +43,7 @@ export async function checkAgentUploadAuth(
   const { userId, userRole, agentId, messageFile } = params;
   const { getAgent, checkPermission } = deps;
 
-  const isMessageAttachment = messageFile === true || messageFile === 'true';
+  const isMessageAttachment = isMessageFileUpload(messageFile);
   /* Any permanent upload against an agent can mutate that agent's resources, so it
    * needs edit permission whether or not the request names a tool resource: unified
    * uploads omit it and are promoted to a context resource during processing. Only

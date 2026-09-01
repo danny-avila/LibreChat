@@ -56,6 +56,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       search?: boolean;
       codeRouteKey?: string;
       searchNamespaces?: string[];
+      screenCodeLiveness?: boolean;
     },
   ) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
@@ -321,6 +322,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       search?: boolean;
       codeRouteKey?: string;
       searchNamespaces?: string[];
+      /** Set when no other query hydrates already-provisioned files this turn. */
+      screenCodeLiveness?: boolean;
     } = {
       code: true,
       search: true,
@@ -355,6 +358,23 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         });
       }
       missingConditions.push({ $nor: usableForRoute });
+
+      /* A usable reference is not a live one. Liveness is probed on the default route, so
+       * when this is the only hydration query running a record holding a default
+       * reference has to be loaded for that probe, or its dead session is never noticed
+       * and the tool runs without the file. */
+      if (routeKey === 'default' && resources.screenCodeLiveness) {
+        missingConditions.push({
+          $or: [
+            { 'metadata.codeEnvRef.executionRouteKey': 'default' },
+            {
+              'metadata.codeEnvRef': { $exists: true },
+              'metadata.codeEnvRef.executionRouteKey': { $exists: false },
+              'metadata.codeEnvRef.executionProfile': { $in: [null, 'default'] },
+            },
+          ],
+        });
+      }
     }
     if (resources.search) {
       /* The record-wide flag only says the file was embedded somewhere, so for a record

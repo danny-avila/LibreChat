@@ -785,6 +785,81 @@ describe('File Methods', () => {
       expect(results).toEqual([]);
     });
 
+    it('returns a default-route reference so liveness can screen it', async () => {
+      /* A usable reference is not a live one. With resendFiles off this is the only query
+       * that runs, so excluding it leaves an expired session unnoticed and the code tool
+       * running without the file. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const refId = uuidv4();
+      await makeFile(refId, ownerId, {
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          codeEnvRefs: {
+            default: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [refId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'default', screenCodeLiveness: true },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([refId]);
+    });
+
+    it('leaves a default reference alone when another query already hydrates it', async () => {
+      /* With resendFiles on, getToolFilesByIds loads provisioned files and the probe sees
+       * them there, so widening this query would only duplicate the read. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const refId = uuidv4();
+      await makeFile(refId, ownerId, {
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          codeEnvRefs: {
+            default: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [refId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'default', screenCodeLiveness: false },
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('leaves a default reference alone when the turn runs on another route', async () => {
+      /* Liveness is only probed on the default route, so on a stateful turn the record
+       * has nothing to be screened for and loading it would be wasted work. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const refId = uuidv4();
+      const statefulRef = {
+        kind: 'user',
+        id: 'u1',
+        storage_session_id: 's2',
+        file_id: 'r2',
+        executionRouteKey: 'stateful:a',
+      };
+      await makeFile(refId, ownerId, {
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          codeEnvRefs: { 'stateful:a': statefulRef },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [refId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'stateful:a', screenCodeLiveness: true },
+      );
+
+      expect(results).toEqual([]);
+    });
+
     it('surfaces a read failure rather than reporting nothing to provision', async () => {
       /* An empty list is indistinguishable from nothing needing provisioning, so a
        * swallowed error would let the tool run without the attachment. */
