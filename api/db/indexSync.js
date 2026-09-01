@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { isEnabled, FlowStateManager } = require('@librechat/api');
+const { isEnabled, FlowStateManager, runDistributedJob } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
 const { batchResetMeiliFlags } = require('./utils');
 
@@ -356,11 +356,7 @@ async function performSync(flowManager, flowId, flowType) {
 /**
  * Main index sync function that uses FlowStateManager to prevent concurrent execution
  */
-async function indexSync() {
-  if (!searchEnabled) {
-    return;
-  }
-
+async function runIndexSync() {
   logger.info('[indexSync] Starting index synchronization check...');
 
   // Get or create FlowStateManager instance
@@ -399,27 +395,39 @@ async function indexSync() {
 
     if (err.message.includes('not found')) {
       logger.debug('[indexSync] Creating indices...');
-      currentTimeout = setTimeout(async () => {
-        try {
-          const Message = mongoose.models.Message;
-          const Conversation = mongoose.models.Conversation;
-          if (!Message || !Conversation) {
-            throw new Error(
-              '[indexSync] Models not registered. Ensure createModels() has been called before indexSync.',
-            );
-          }
-          await Message.syncWithMeili();
-          await Conversation.syncWithMeili();
-        } catch (err) {
-          logger.error('[indexSync] Trouble creating indices, try restarting the server.', err);
+      await new Promise((resolve) => {
+        currentTimeout = setTimeout(resolve, 750);
+      });
+      try {
+        const Message = mongoose.models.Message;
+        const Conversation = mongoose.models.Conversation;
+        if (!Message || !Conversation) {
+          throw new Error(
+            '[indexSync] Models not registered. Ensure createModels() has been called before indexSync.',
+          );
         }
-      }, 750);
+        await Message.syncWithMeili();
+        await Conversation.syncWithMeili();
+      } catch (syncError) {
+        logger.error('[indexSync] Trouble creating indices, try restarting the server.', syncError);
+        throw syncError;
+      }
     } else if (err.message.includes('Meilisearch not configured')) {
       logger.info('[indexSync] Meilisearch not configured, search will be disabled.');
     } else {
       logger.error('[indexSync] error', err);
+      throw err;
     }
   }
+}
+
+async function indexSync() {
+  if (!searchEnabled) {
+    return;
+  }
+
+  const jobs = mongoose.connection.collection('distributedJobs');
+  return runDistributedJob(jobs, 'meili-index-sync', runIndexSync);
 }
 
 process.on('exit', () => {
