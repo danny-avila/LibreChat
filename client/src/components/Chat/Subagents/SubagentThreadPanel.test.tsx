@@ -690,9 +690,70 @@ describe('SubagentThreadPanel', () => {
 
     const composer = screen.getByLabelText('com_ui_message_input');
     expect(composer).toBeInTheDocument();
+    /** Stop is a command too: on an unaddressable task it would 404 and close
+     *  this task's controls for good, so the retained surface withholds it. It
+     *  occupies the send slot only while the field is empty. */
+    expect(screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }) != null).toBe(
+      invocations === 1,
+    );
+
     fireEvent.change(composer, { target: { value: 'Check the primary source.' } });
     fireEvent.keyDown(composer, { key: 'Enter' });
     expect(mockControlMutate).toHaveBeenCalledTimes(invocations);
+  });
+
+  /** Every door onto a command answers to the same gate — including the inline
+   *  controls a touch reader gets instead of the hovercard. */
+  it('withholds the inline actions while a dispatched task is unaddressable', () => {
+    mockCoarsePointer = true;
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'dispatched', messages: [], controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Check the primary source.' },
+    });
+    const queue = screen.getByRole('button', { name: 'com_ui_queue' });
+    expect(queue).toBeDisabled();
+    fireEvent.click(queue);
+    expect(mockControlMutate).not.toHaveBeenCalled();
+  });
+
+  /** While the panel is a focus-trapped modal the portaled list sits outside
+   *  the `aside` the trap knows, so Tab never reaches it — the actions come
+   *  inside the panel instead, hover or no hover. */
+  it('keeps the actions inside the panel while it is a modal', () => {
+    mockIsMobile = true;
+    mockCoarsePointer = false;
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Check the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+
+    expect(mockControlMutate).toHaveBeenCalledTimes(1);
+    expect(mockControlMutate.mock.calls[0][0].command.action).toBe('queue');
   });
 
   /** Queue and interrupt keep the chords main chat gives them instead of

@@ -120,9 +120,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
-  /** No hover means the send control's action list cannot be reached: a tap on
-   *  that anchor submits. Those readers get the same actions as controls of
-   *  their own instead. */
+  /** Two reasons the send control's action list cannot be used where it hangs.
+   *  Without hover, a tap on its anchor submits instead of opening it. And
+   *  while the panel is a focus-trapped modal, the list is portaled outside the
+   *  `aside` the trap knows, so Tab never reaches it. Either way those readers
+   *  get the same actions as controls of their own, inside the panel. */
   const coarsePointer = useMediaQuery('(hover: none)');
   const enterToSend = useRecoilValue(store.enterToSend);
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
@@ -1060,6 +1062,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   if (composerMode == null && composerSettling) {
     composerMode = retainedModeRef.current?.mode ?? (taskIsLive ? 'control' : null);
   }
+  const actionsInline = coarsePointer || isMobile;
   const composerPlaceholder = localize('com_endpoint_message_new', { 0: panelTitle });
   /** The send control names what IT does, distinct from the `Steer` row it
    *  offers — the same pairing main chat uses for its during-run send. */
@@ -1071,7 +1074,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   /** Handler and label travel as one value, so the Stop control can never
    *  render without an accessible name. */
   const stopProps: ComposerStopProps =
-    composerMode === 'control' && !controlPending
+    controlAvailable && !controlPending
       ? { onStop: cancelTask, stopLabel: localize('com_ui_subagent_cancel_task') }
       : {};
   const controlModeRef = useRef(false);
@@ -1120,7 +1123,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     } else if (modEnter === 'submit') {
       steerKbd = modSymbol;
     }
-    const blocked = controlPending || controlMessage.trim() === '';
+    /** The same gate the send button answers to: a retained surface over a task
+     *  the server cannot address yet must not offer a command through any of
+     *  its doors — every 404 here closes this task's controls for good. */
+    const blocked = !controlAvailable || controlPending || controlMessage.trim() === '';
     return [
       {
         key: 'steer',
@@ -1149,6 +1155,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     ];
   }, [
     composerMode,
+    controlAvailable,
     controlMessage,
     controlPending,
     enterToSend,
@@ -1507,10 +1514,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
                *  continuation is ordinary chat text bound for an ordinary
                *  composer, which caps nothing. */
               maxLength={composerMode === 'control' ? 4 * 1024 : undefined}
-              submitActions={coarsePointer ? [] : submitActions}
+              submitActions={actionsInline ? [] : submitActions}
               submitActionsLabel={localize('com_ui_during_run_actions')}
               actions={
-                coarsePointer
+                actionsInline
                   ? submitActions
                       .filter((action) => action.key !== 'steer')
                       .map((action) => (
