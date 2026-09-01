@@ -72,6 +72,8 @@ export namespace Agents {
     type?: ToolCallTypes.TOOL_CALL | 'tool_call';
     /** The name of the tool to be called */
     name: string;
+    /** Host-derived MCP server identity retained to disambiguate historical tool keys. */
+    mcpServerName?: string;
 
     /** The arguments to the tool call */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

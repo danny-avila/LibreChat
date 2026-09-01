@@ -372,7 +372,9 @@ describe('buildHistoricalToolNames', () => {
         },
       },
       { tool_calls: [{ name: 'lookup_mcp_foo_mcp_bar' }] },
-      { tool_calls: [{ name: 'gitlab-get_mcp_server_version_mcp_bar' }] },
+      {
+        tool_calls: [{ name: 'gitlab-get_mcp_server_version_mcp_bar', mcpServerName: 'bar' }],
+      },
     ];
 
     expect(buildRunToolSet(primary, null, null, messages)).toEqual(

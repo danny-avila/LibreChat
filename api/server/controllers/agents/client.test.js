@@ -6651,6 +6651,37 @@ describe('AgentClient - finalizeSubagentContent', () => {
     expect(buffer.size).toBe(0);
   });
 
+  it('stamps durable MCP server identity onto nested persisted tool calls', () => {
+    const client = makeClient(new Map());
+    client.options.agent.accessibleMcpServerNames = ['bar', 'foo_mcp_bar'];
+    client.options.agent.toolDefinitions = [
+      {
+        name: 'gitlab-get_mcp_server_version_mcp_bar',
+        serverName: 'bar',
+      },
+    ];
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          name: Constants.SUBAGENT,
+          subagent_content: [
+            {
+              type: 'tool_call',
+              tool_call: { name: 'gitlab-get_mcp_server_version_mcp_bar' },
+            },
+          ],
+        },
+      },
+    ];
+
+    client.stampMcpServerIdentities();
+
+    expect(client.contentParts[0].tool_call.subagent_content[0].tool_call.mcpServerName).toBe(
+      'bar',
+    );
+  });
+
   it('ignores tool_call parts whose name is not SUBAGENT', async () => {
     const buffer = await runSubagentEvents([
       event(

@@ -162,6 +162,8 @@ const {
   isEphemeralAgentId,
   removeNullishValues,
   stripLangChainTroubleshootingUrl,
+  normalizeServerName,
+  splitMCPToolKey,
   DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
@@ -505,6 +507,60 @@ class AgentClient extends BaseClient {
       }
     }
     buffer.clear();
+  }
+
+  /** Stamps host-resolved MCP identities onto persisted calls so future replay
+   * can distinguish delimiter-bearing tool names from longer server names. */
+  stampMcpServerIdentities() {
+    if (!Array.isArray(this.contentParts)) {
+      return;
+    }
+    const agents = collectReachableAgents([
+      this.options.agent,
+      ...(this.agentConfigs?.values() ?? []),
+    ]);
+    const serverByToolName = new Map();
+    const boundaryNames = new Set();
+    for (const agent of agents) {
+      for (const rawName of [
+        ...(agent.accessibleMcpServerNames ?? []),
+        ...(agent.historicalMcpServerNames ?? []),
+      ]) {
+        boundaryNames.add(rawName);
+        boundaryNames.add(normalizeServerName(rawName));
+      }
+      for (const definition of agent.toolDefinitions ?? []) {
+        if (typeof definition?.name === 'string' && typeof definition?.serverName === 'string') {
+          serverByToolName.set(definition.name, definition.serverName);
+        }
+      }
+      for (const [name, tool] of agent.toolRegistry ?? []) {
+        if (typeof tool?.mcpRawServerName === 'string') {
+          serverByToolName.set(name, tool.mcpRawServerName);
+        }
+      }
+    }
+    const knownNames = [...boundaryNames];
+    const stampPart = (part) => {
+      const toolCall = part?.tool_call;
+      if (!toolCall || typeof toolCall.name !== 'string') {
+        return;
+      }
+      let serverName = serverByToolName.get(toolCall.name);
+      if (serverName == null && toolCall.name.includes(Constants.mcp_delimiter)) {
+        const [toolName, parsedServerName] = splitMCPToolKey(toolCall.name, knownNames);
+        if (toolName && parsedServerName) {
+          serverName = parsedServerName;
+        }
+      }
+      if (typeof serverName === 'string') {
+        toolCall.mcpServerName = normalizeServerName(serverName);
+      }
+      if (Array.isArray(toolCall.subagent_content)) {
+        toolCall.subagent_content.forEach(stampPart);
+      }
+    };
+    this.contentParts.forEach(stampPart);
   }
 
   /**
@@ -4428,6 +4484,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      this.stampMcpServerIdentities();
       await this.settleActivityLabels();
 
       /** Flush subagent usage emits the sink fired without awaiting, so their
@@ -4863,6 +4920,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      this.stampMcpServerIdentities();
       await this.settleActivityLabels();
 
       if (this.pendingSubagentEmits.length > 0) {

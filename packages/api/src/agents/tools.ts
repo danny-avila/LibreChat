@@ -169,21 +169,33 @@ export interface RunToolSetConfig extends BuildToolSetConfig, ReachableAgent<Run
   readonly historicalMcpServerNames?: readonly string[];
 }
 
-function collectHistoricalToolCallNames(messages?: Iterable<unknown> | null): Set<string> {
-  const names = new Set<string>();
+interface HistoricalToolCallIdentity {
+  name: string;
+  mcpServerName?: string;
+}
+
+function collectHistoricalToolCalls(
+  messages?: Iterable<unknown> | null,
+): HistoricalToolCallIdentity[] {
+  const calls: HistoricalToolCallIdentity[] = [];
   const addCall = (value: unknown) => {
     if (value == null || typeof value !== 'object') {
       return;
     }
     const call = value as {
       name?: unknown;
+      mcpServerName?: unknown;
       function?: { name?: unknown };
-      tool_call?: { name?: unknown; subagent_content?: unknown };
+      tool_call?: { name?: unknown; mcpServerName?: unknown; subagent_content?: unknown };
       subagent_content?: unknown;
     };
     const name = call.name ?? call.function?.name ?? call.tool_call?.name;
     if (typeof name === 'string') {
-      names.add(name);
+      const mcpServerName = call.mcpServerName ?? call.tool_call?.mcpServerName;
+      calls.push({
+        name,
+        ...(typeof mcpServerName === 'string' ? { mcpServerName } : {}),
+      });
     }
     const nested = call.tool_call?.subagent_content ?? call.subagent_content;
     if (Array.isArray(nested)) {
@@ -210,7 +222,7 @@ function collectHistoricalToolCallNames(messages?: Iterable<unknown> | null): Se
       message.content.forEach(addCall);
     }
   }
-  return names;
+  return calls;
 }
 
 /** Builds the historical tool allowlist for the complete effective run topology. */
@@ -263,11 +275,19 @@ export function buildRunToolSet(
      * Resolve the longest known boundary so delimiter-bearing tool names remain valid
      * while a distinct longer server identity cannot masquerade as a selected suffix. */
     const boundaryNames = [...knownServerNames];
-    for (const name of collectHistoricalToolCallNames(historicalMessages)) {
+    for (const call of collectHistoricalToolCalls(historicalMessages)) {
+      const { name, mcpServerName } = call;
+      if (mcpServerName != null) {
+        if (wildcardServerNames.has(normalizeServerName(mcpServerName))) {
+          toolSet.add(name);
+        }
+        continue;
+      }
       const [toolName, serverName] = splitMCPToolKey(name, boundaryNames);
       if (
         serverName != null &&
         toolName.length > 0 &&
+        !toolName.includes(Constants.mcp_delimiter) &&
         wildcardServerNames.has(normalizeServerName(serverName))
       ) {
         toolSet.add(name);
