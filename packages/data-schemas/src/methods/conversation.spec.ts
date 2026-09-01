@@ -6802,5 +6802,47 @@ describe('Conversation Operations', () => {
       expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
       expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
     });
+
+    /* The tenant filter matches on an exact `tenantId`, so documents indexed before
+       tenancy existed - and documents still awaiting the v2 reindex - are excluded
+       while a tenant is active. That mirrors the Mongo side, which scopes the same
+       conversations out of the unsearched sidebar listing. */
+    it('excludes conversations without a tenantId, as the unsearched listing does', async () => {
+      const tenantId = 'tenant-a';
+      const untenantedId = uuidv4();
+      const tenantedId = uuidv4();
+      await Conversation.create({
+        conversationId: untenantedId,
+        user: 'user123',
+        title: 'Pre-tenancy keyword',
+        endpoint: EModelEndpoint.openAI,
+      });
+      await tenantStorage.run({ tenantId }, () =>
+        Conversation.create({
+          conversationId: tenantedId,
+          user: 'user123',
+          title: 'Tenant keyword',
+          endpoint: EModelEndpoint.openAI,
+        }),
+      );
+
+      const indexed = [{ conversationId: untenantedId }, { conversationId: tenantedId, tenantId }];
+      const searchIndex = (_query: string, { filter }: { filter: string }) => {
+        const scopedTenantId = /tenantId = "([^"]*)"/.exec(filter)?.[1];
+        return Promise.resolve({
+          hits: indexed.filter((doc) => !scopedTenantId || doc.tenantId === scopedTenantId),
+        });
+      };
+      Object.assign(Conversation, { meiliSearch: jest.fn(searchIndex) });
+      searchMessages.mockImplementation(searchIndex);
+
+      const searched = await tenantStorage.run({ tenantId }, () =>
+        getConvosByCursor('user123', { search: 'keyword' }),
+      );
+      const listed = await tenantStorage.run({ tenantId }, () => getConvosByCursor('user123'));
+
+      expect(searched?.conversations.map((c) => c.conversationId)).toEqual([tenantedId]);
+      expect(listed?.conversations.map((c) => c.conversationId)).toEqual([tenantedId]);
+    });
   });
 });
