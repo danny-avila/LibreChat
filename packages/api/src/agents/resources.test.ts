@@ -2327,6 +2327,76 @@ describe('primeResources', () => {
       expect(searchResource?.files?.map((f) => f.file_id) ?? []).not.toContain('embedded-context');
     });
 
+    it('re-embeds a foreign agent setup file attached as an ordinary message file', async () => {
+      /* Its vectors live under the other agent's entity, and the record-wide flag cannot
+       * say otherwise. Registering it for the user namespace on the strength of that flag
+       * leaves file_search querying a namespace holding none of its vectors, which returns
+       * nothing rather than failing. */
+      const foreignSetupFile = {
+        user: 'user1',
+        file_id: 'foreign-setup',
+        filename: 'handbook.pdf',
+        filepath: '/uploads/handbook.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: true,
+        usage: 0,
+        context: FileContext.agents,
+        metadata: { embeddedEntities: ['other-agent'] },
+      } as TFile;
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([foreignSetupFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.file_search]),
+      });
+
+      const searchResource = result.tool_resources?.[EToolResources.file_search];
+      expect(searchResource?.files?.map((f) => f.file_id) ?? []).not.toContain('foreign-setup');
+      expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual(['foreign-setup']);
+    });
+
+    it('registers a file already embedded in the user namespace without re-queueing it', async () => {
+      /* The converse: once an unscoped upload records the user namespace, the file is
+       * reachable through .files and must not be embedded again every turn. */
+      const userNamespaceFile = {
+        user: 'user1',
+        file_id: 'user-embedded',
+        filename: 'handbook.pdf',
+        filepath: '/uploads/handbook.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: true,
+        usage: 0,
+        context: FileContext.agents,
+        metadata: { embeddedEntities: ['other-agent', 'user1'] },
+      } as TFile;
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([userNamespaceFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.file_search]),
+      });
+
+      const searchResource = result.tool_resources?.[EToolResources.file_search];
+      expect(searchResource?.files?.map((f) => f.file_id) ?? []).toContain('user-embedded');
+      expect(result.provisionState?.vectorDBFiles ?? []).toEqual([]);
+    });
+
     it('re-embeds an agent context file recorded before namespaces were tracked', async () => {
       /* Records predating per-namespace tracking cannot say which agent holds their
        * vectors, so they are provisioned once for the agent that next uses them and carry

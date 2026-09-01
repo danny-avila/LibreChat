@@ -20,6 +20,7 @@ const {
   resolveUploadLLMDeliveryPath,
   isNativelyReadableText,
   resolveUploadDestination,
+  canToolResourceConsume,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -724,6 +725,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const destination = resolveUploadDestination({
     toolResource: tool_resource,
     deliveryPath: llmDeliveryPath,
+    mimeType: file.mimetype,
     agentTools: metadata.agentTools,
     hasAgent: agent_id != null,
     isMessageAttachment: messageAttachment,
@@ -736,7 +738,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   }
   effectiveToolResource = destination.toolResource;
 
-  if (effectiveToolResource === EToolResources.file_search && file.mimetype.startsWith('image')) {
+  if (effectiveToolResource && !canToolResourceConsume(effectiveToolResource, file.mimetype)) {
     throw new Error('Image uploads are not supported for file search tool resources');
   }
 

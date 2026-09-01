@@ -221,6 +221,18 @@ export function resolveUploadLLMDeliveryPath({
   return resolveDefaultUploadLLMDeliveryPath({ mimeType, endpointConfig, fileConfig, endpoint });
 }
 
+/**
+ * Whether a file tool can do anything with this type. `file_search` indexes extracted
+ * text, so an image gives it nothing to embed. Shared with the upload guard so selection
+ * and rejection cannot disagree about the same pairing.
+ */
+export function canToolResourceConsume(toolResource: string, mimeType: string): boolean {
+  if (toolResource === EToolResources.file_search) {
+    return !mimeType.startsWith('image');
+  }
+  return true;
+}
+
 /** Why an upload cannot be accepted, when nothing would be able to read it. */
 export type UploadRejection = 'no-agent-resource';
 
@@ -238,11 +250,13 @@ export type UploadRejection = 'no-agent-resource';
 export function resolveUploadDestination(params: {
   toolResource?: string | null;
   deliveryPath: TDefaultLLMDeliveryPath;
+  mimeType: string;
   agentTools?: string[];
   hasAgent: boolean;
   isMessageAttachment: boolean;
 }): { toolResource?: string; rejection?: UploadRejection } {
-  const { toolResource, deliveryPath, agentTools, hasAgent, isMessageAttachment } = params;
+  const { toolResource, deliveryPath, mimeType, agentTools, hasAgent, isMessageAttachment } =
+    params;
 
   if (toolResource) {
     return {
@@ -257,9 +271,12 @@ export function resolveUploadDestination(params: {
 
   /* Skills contribute file tools per turn without being stored on the agent, so this list
    * can name a consumer but its silence proves nothing. Used to file an upload, never to
-   * refuse one. */
+   * refuse one, and matched on what each tool can actually read so the choice does not
+   * depend on the order the agent happens to list its tools in. */
   const consumingTool = agentTools?.find(
-    (tool) => tool === EToolResources.execute_code || tool === EToolResources.file_search,
+    (tool) =>
+      (tool === EToolResources.execute_code || tool === EToolResources.file_search) &&
+      canToolResourceConsume(tool, mimeType),
   );
 
   if (!isMessageAttachment && deliveryPath === 'none' && consumingTool) {

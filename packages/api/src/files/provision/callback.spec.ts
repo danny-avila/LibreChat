@@ -269,7 +269,7 @@ describe('createProvisionFilesCallback', () => {
 
   it('shares embedding work across agents queueing the same search file', async () => {
     const shared = makeFile();
-    const { provisionFiles, provisionToVectorDB, updateFile } = buildHarness({
+    const { provisionFiles, provisionToVectorDB, addEmbeddedEntity } = buildHarness({
       contexts: [
         ['agent-a', { provisionState: state([], [{ ...shared }]) }],
         ['agent-b', { provisionState: state([], [{ ...shared }]) }],
@@ -282,7 +282,13 @@ describe('createProvisionFilesCallback', () => {
     ]);
 
     expect(provisionToVectorDB).toHaveBeenCalledTimes(1);
-    expect(updateFile).toHaveBeenCalledTimes(1);
+    /* Unscoped vectors land in the requesting user's namespace, so that is what gets
+     * recorded. Without it the file reads as unembedded and re-embeds every turn. */
+    expect(addEmbeddedEntity).toHaveBeenCalledTimes(1);
+    expect(addEmbeddedEntity).toHaveBeenCalledWith({
+      file_id: shared.file_id,
+      entityId: 'user-1',
+    });
   });
 
   it('retries a failed upload on a later tool call instead of replaying the rejection', async () => {

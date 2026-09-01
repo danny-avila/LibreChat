@@ -183,18 +183,20 @@ export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
   AGENT_SCOPED_FILE_CONTEXTS.has(file.context as string);
 
 /**
- * Whether this file's vectors exist in the namespace the active agent will search.
+ * Whether this file's vectors exist in the namespace about to be queried, named by the
+ * agent whose namespace it is or by the user for the unscoped one.
  *
- * Agent-scoped files are embedded under `entity_id: <agentId>`, and a duplicated agent
- * inherits the file id while searching its own namespace, so the record-wide `embedded`
- * flag cannot answer this for them. Records embedded before namespaces were tracked carry
- * no entity list and are re-embedded once per agent, which repairs the record as it goes.
+ * The record-wide `embedded` flag only says the file was embedded somewhere. An agent's
+ * setup file attached to a second agent is embedded under the first agent's entity, so
+ * trusting the flag registers it for a namespace that holds none of its vectors and the
+ * search returns nothing. Records embedded before namespaces were tracked carry no entity
+ * list and are re-embedded once per namespace, which repairs the record as it goes.
  */
-const isEmbeddedForNamespace = (file: TFile, agentId?: string): boolean => {
-  if (!isAgentScopedFile(file) || agentId == null) {
+const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
+  if (!isAgentScopedFile(file)) {
     return file.embedded === true;
   }
-  return file.metadata?.embeddedEntities?.includes(agentId) === true;
+  return namespaceId != null && file.metadata?.embeddedEntities?.includes(namespaceId) === true;
 };
 
 /**
@@ -251,6 +253,7 @@ const categorizeFileForToolResources = ({
   processedResourceFiles,
   agentScoped = false,
   agentId,
+  userId,
 }: {
   file: TFile;
   tool_resources: AgentToolResources;
@@ -260,6 +263,8 @@ const categorizeFileForToolResources = ({
   agentScoped?: boolean;
   /** The agent whose vector namespace this turn will search, when one is scoped. */
   agentId?: string;
+  /** Owner of the unscoped namespace, which is where anything not agent-scoped lands. */
+  userId?: string;
 }): void => {
   if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
     addFileToResource({
@@ -272,7 +277,7 @@ const categorizeFileForToolResources = ({
 
   /* Judged per namespace, not by the record-wide flag: registering a file this agent's
    * namespace never received would make search query for vectors that are not there. */
-  if (isEmbeddedForNamespace(file, agentScoped ? agentId : undefined)) {
+  if (isEmbeddedForNamespace(file, agentScoped ? agentId : userId)) {
     /** Agent-scoped files are embedded under `entity_id: agentId`, so they must be
      *  reconstructed as `file_ids`: fileSearch's primeFiles only marks those
      *  `fromAgent` and only `fromAgent` queries carry the entity_id that can find
@@ -498,10 +503,14 @@ const computeProvisionState = async ({
     }
 
     const isImage = file.type?.startsWith('image') ?? false;
+    /* Mirrors entityIdForFile in the provisioning callback: membership in the agent's own
+     * resources decides the namespace, so the queue asks about the namespace the upload
+     * will actually write to. */
+    const namespaceId = scopedIds.has(file.file_id) ? agentId : resourcePrincipal?.id;
     if (
       needsVectorDB &&
       !isImage &&
-      !isEmbeddedForNamespace(file, agentId) &&
+      !isEmbeddedForNamespace(file, namespaceId) &&
       !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
     ) {
       vectorDBFiles.push(file);
@@ -695,6 +704,7 @@ export const primeResources = async ({
           processedResourceFiles,
           agentScoped: agentId != null && isAgentScopedFile(file),
           agentId,
+          userId: resourcePrincipal?.id,
         });
 
         attachments.push(file);
@@ -754,6 +764,7 @@ export const primeResources = async ({
         tool_resources,
         requestFileSet,
         processedResourceFiles,
+        userId: resourcePrincipal?.id,
       });
 
       if (file.file_id && attachmentFileIds.has(file.file_id)) {

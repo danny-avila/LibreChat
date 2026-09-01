@@ -184,6 +184,11 @@ export function createProvisionFilesCallback({
         ? resolvedAgentId
         : undefined;
 
+    /** Which vector namespace holds the file after this upload. Unscoped uploads are
+     *  partitioned by the requesting user, so recording only agent namespaces would leave
+     *  a foreign setup file looking unembedded here forever, re-embedding every turn. */
+    const namespaceForFile = (file: TFile) => entityIdForFile(file) ?? req?.user?.id;
+
     /** Two agents may resolve different code deployments, where the same file genuinely
      *  needs uploading to each, so the destination is part of the sharing key. */
     const codeRouteKey =
@@ -309,8 +314,9 @@ export function createProvisionFilesCallback({
               const update = provisioned.fileUpdate;
               /* Vectors live under the entity that provisioned them, so the namespace is
                * recorded alongside the flag. Agents sharing a record, as a duplicate does
-               * with its source, each need their own embedding. */
-              const namespace = entityIdForFile(file);
+               * with its source, each need their own embedding, and an unscoped upload
+               * lands in the user's namespace rather than in none. */
+              const namespace = namespaceForFile(file);
               await persistWithRetry(
                 () =>
                   namespace != null
@@ -327,7 +333,7 @@ export function createProvisionFilesCallback({
           });
           if (result.embedded) {
             file.embedded = true;
-            const namespace = entityIdForFile(file);
+            const namespace = namespaceForFile(file);
             if (namespace != null) {
               const recorded = new Set(file.metadata?.embeddedEntities ?? []);
               recorded.add(namespace);
