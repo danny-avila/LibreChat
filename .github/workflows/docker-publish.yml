@@ -62,10 +62,13 @@ jobs:
         arch: ${{ fromJSON(inputs.arches) }}
 
     steps:
+      # Falls back to the caller's commit SHA rather than an empty ref, so every
+      # build leg of a run checks out the same immutable commit even if the
+      # branch advances mid-run.
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.checkout_ref }}
+          ref: ${{ inputs.checkout_ref || github.sha }}
 
       # No QEMU: the runner is already the target architecture.
       - name: Set up Docker Buildx
@@ -142,6 +145,12 @@ jobs:
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
+          # A full re-run (retry-docker-builds uses `rerun` when a job was
+          # cancelled) keeps the run id, and v4 refuses to upload over an existing
+          # artifact name. Overwrite instead of qualifying the name by
+          # run_attempt: `rerun-failed-jobs` re-runs the merge alone, which must
+          # still find the digests the earlier attempt's build legs uploaded.
+          overwrite: true
 
   merge:
     name: Merge manifests (${{ matrix.image.image_name }})
