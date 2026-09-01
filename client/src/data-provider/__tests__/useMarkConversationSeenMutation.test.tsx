@@ -217,6 +217,48 @@ describe('useMarkConversationSeenMutation', () => {
     await waitFor(() => expect(cached()?.lastSeenAt).toBe(SEEN_AT));
   });
 
+  it('restarts the reads it cancelled when the server declines the acknowledgement', async () => {
+    /* The rejection means the server holds a reply this tab has not read, and the refetch that
+       would have delivered it was cancelled on the way in. The optimistic write refreshed
+       `dataUpdatedAt`, so nothing refetches on its own and the newer reply would stay out of
+       the dot, the badge and the alerts. */
+    mockMarkSeen.mockResolvedValue({ modified: false });
+    const { result, queryClient } = setup(SEEN_AT);
+    queryClient.setQueryData([QueryKeys.conversation, CONVO_ID], {
+      conversationId: CONVO_ID,
+      title: 'Marked',
+      lastResponseAt: RESPONDED_AT,
+      lastSeenAt: SEEN_AT,
+    });
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+    });
+
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]);
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversation, CONVO_ID]);
+  });
+
+  it('leaves the caches alone when the acknowledgement is accepted', async () => {
+    mockMarkSeen.mockResolvedValue({ modified: true });
+    const { result, queryClient } = setup(SEEN_AT);
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+    });
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
   it('does not undo a newer acknowledgement when an older request fails last', async () => {
     /* Same ordering hazard as the success path: reply A's request can fail after reply B has
        already been acknowledged, and an unconditional rollback would take B with it. */

@@ -71,11 +71,16 @@ const playChime = () => {
 
 const canNotify = (): boolean => 'Notification' in window && Notification.permission === 'granted';
 
-const ANNOUNCED_KEY = 'replyAlerts:announced';
+type AlertChannel = 'sound' | 'notification';
+
+const ANNOUNCED_KEY: Record<AlertChannel, string> = {
+  sound: 'replyAlerts:announced:sound',
+  notification: 'replyAlerts:announced:notification',
+};
 const ANNOUNCED_LIMIT = 100;
 
 /**
- * Claims one reply announcement across every open tab.
+ * Claims one reply announcement for one channel across every open tab.
  *
  * Each tab polls on its own timer and keeps its own baseline, so without a shared record the
  * same reply would chime once per tab, seconds apart, and stack duplicate notifications.
@@ -84,10 +89,18 @@ const ANNOUNCED_LIMIT = 100;
  * A dead-heat between two timers can still double one alert, which was the failure mode
  * everywhere before; unavailable storage (private windows, quota) falls back to announcing
  * locally for the same reason.
+ *
+ * Per channel, because the toggles are per-tab snapshots: a tab holding only the sound setting
+ * and a tab holding only notifications are not duplicates of each other, and a single shared
+ * claim would let whichever reached the reply first silence the other channel entirely.
  */
-const claimReplyAnnouncement = (conversationId: string, lastResponseAt: string): boolean => {
+const claimReplyAnnouncement = (
+  channel: AlertChannel,
+  conversationId: string,
+  lastResponseAt: string,
+): boolean => {
   try {
-    const raw = window.localStorage.getItem(ANNOUNCED_KEY);
+    const raw = window.localStorage.getItem(ANNOUNCED_KEY[channel]);
     const parsed: unknown = raw != null ? JSON.parse(raw) : [];
     const entries = (Array.isArray(parsed) ? parsed : []) as Array<[string, string]>;
     if (entries.some(([id, stamp]) => id === conversationId && stamp === lastResponseAt)) {
@@ -97,7 +110,10 @@ const claimReplyAnnouncement = (conversationId: string, lastResponseAt: string):
       [conversationId, lastResponseAt],
       ...entries.filter(([id]) => id !== conversationId),
     ];
-    window.localStorage.setItem(ANNOUNCED_KEY, JSON.stringify(next.slice(0, ANNOUNCED_LIMIT)));
+    window.localStorage.setItem(
+      ANNOUNCED_KEY[channel],
+      JSON.stringify(next.slice(0, ANNOUNCED_LIMIT)),
+    );
     return true;
   } catch {
     return true;
@@ -204,28 +220,39 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
       return;
     }
 
-    /* Only a tab that will actually announce may claim. The toggles are per-tab snapshots
-       (`atomWithLocalStorage` writes storage without subscribing to it), so a tab holding
-       stale "off" values still runs this hook for the badge; letting it claim would consume
-       the reply while producing neither chime nor notification. The focus guard stays first,
-       so a focused tab never claims a reply it would not announce either. */
-    if (!soundEnabled && !(notificationsEnabled && canNotify())) {
-      return;
-    }
-    const announced = arrivals.filter((conversation) =>
-      claimReplyAnnouncement(conversation.conversationId, conversation.lastResponseAt),
-    );
-    if (announced.length === 0) {
+    /* Only a tab that will actually announce may claim, and only for the channel it will
+       announce on. The toggles are per-tab snapshots (`atomWithLocalStorage` writes storage
+       without subscribing to it), so a tab holding stale "off" values still runs this hook for
+       the badge; letting it claim would consume the reply while producing neither chime nor
+       notification. The focus guard stays first, so a focused tab never claims a reply it
+       would not announce either. */
+    const willNotify = notificationsEnabled && canNotify();
+    if (!soundEnabled && !willNotify) {
       return;
     }
 
+    /* Every arrival is claimed, not just the first: one chime covers the whole pass, and
+       leaving the rest unclaimed would hand another tab a reason to chime again for them. */
     if (soundEnabled) {
-      playChime();
+      const chimed = arrivals.filter((conversation) =>
+        claimReplyAnnouncement('sound', conversation.conversationId, conversation.lastResponseAt),
+      );
+      if (chimed.length > 0) {
+        playChime();
+      }
     }
 
-    if (!notificationsEnabled || !canNotify()) {
+    if (!willNotify) {
       return;
     }
+
+    const announced = arrivals.filter((conversation) =>
+      claimReplyAnnouncement(
+        'notification',
+        conversation.conversationId,
+        conversation.lastResponseAt,
+      ),
+    );
 
     for (const conversation of announced) {
       try {
