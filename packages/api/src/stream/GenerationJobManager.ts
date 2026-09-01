@@ -1163,7 +1163,20 @@ class GenerationJobManagerClass {
       return jobData;
     }
     const observedRuntime = this.runtimeState.get(jobData.streamId);
-    const runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+    let runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+    /** Preserve the pre-await object when one exists, but also admit a predecessor
+     * attachment created while terminal finalization is in flight. Every late
+     * read remains generation-fenced, so a successor runtime is never captured. */
+    const captureMatchingRuntime = (): RuntimeJobState | undefined => {
+      if (runtime) {
+        return runtime;
+      }
+      const candidate = this.runtimeState.get(jobData.streamId);
+      if (candidate?.createdAt === jobData.createdAt) {
+        runtime = candidate;
+      }
+      return runtime;
+    };
 
     const reconcileEvent = buildTerminalPersistenceReconcile(jobData);
     const serialized = JSON.stringify(reconcileEvent);
@@ -1174,22 +1187,29 @@ class GenerationJobManagerClass {
     );
     if (!recovered) {
       const currentJob = await this.jobStore.getJob(jobData.streamId);
-      if (runtime && currentJob?.createdAt !== jobData.createdAt) {
-        await this.reconcileFencedRuntimeHandoff(jobData.streamId, runtime, currentJob);
+      const predecessorRuntime = captureMatchingRuntime();
+      if (predecessorRuntime && currentJob?.createdAt !== jobData.createdAt) {
+        await this.reconcileFencedRuntimeHandoff(jobData.streamId, predecessorRuntime, currentJob);
       }
       return currentJob;
     }
 
-    if (runtime) {
-      runtime.finalEvent = reconcileEvent;
+    const recoveredRuntime = captureMatchingRuntime();
+    if (recoveredRuntime) {
+      recoveredRuntime.finalEvent = reconcileEvent;
     }
     try {
       await this.eventTransport.emitDone(jobData.streamId, reconcileEvent, jobData.createdAt);
     } catch (err) {
       if (err instanceof GenerationPublicationFencedError) {
         const currentJob = await this.jobStore.getJob(jobData.streamId);
-        if (runtime) {
-          await this.reconcileFencedRuntimeHandoff(jobData.streamId, runtime, currentJob);
+        const predecessorRuntime = captureMatchingRuntime();
+        if (predecessorRuntime) {
+          await this.reconcileFencedRuntimeHandoff(
+            jobData.streamId,
+            predecessorRuntime,
+            currentJob,
+          );
         } else {
           this.reconcileInactiveGeneration(jobData.streamId, jobData.createdAt, currentJob);
         }

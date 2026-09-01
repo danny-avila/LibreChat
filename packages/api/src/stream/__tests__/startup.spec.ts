@@ -3276,6 +3276,88 @@ describe('GenerationJobManager startup telemetry', () => {
     }
   });
 
+  it('reconnect-closes a predecessor that attaches during stale finalization', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false, cleanupOnComplete: false });
+    manager.initialize();
+    const streamId = 'stream-terminal-recovery-late-attachment';
+    const predecessor = await jobStore.createJob(streamId, 'user-1', streamId);
+    await jobStore.transitionStatusAndDrainSteers(streamId, {
+      from: 'running',
+      to: 'aborted',
+      expectCreatedAt: predecessor.createdAt,
+      patch: {
+        completedAt: Date.now() - 60_000,
+        terminalPersistencePending: true,
+        terminalPersistenceStartedAt: Date.now() - 60_000,
+      },
+    });
+    const finalize = jobStore.finalizeTerminalPersistence.bind(jobStore);
+    let finalizeEntered!: () => void;
+    const finalizationStarted = new Promise<void>((resolve) => {
+      finalizeEntered = resolve;
+    });
+    let releaseFinalize!: () => void;
+    const finalizeReleased = new Promise<void>((resolve) => {
+      releaseFinalize = resolve;
+    });
+    let successorCreatedAt = 0;
+    jest.spyOn(jobStore, 'finalizeTerminalPersistence').mockImplementation(async (...args) => {
+      finalizeEntered();
+      await finalizeReleased;
+      const finalized = await finalize(...args);
+      const successor = await jobStore.createJob(streamId, 'user-1', streamId);
+      successorCreatedAt = successor.createdAt;
+      return finalized;
+    });
+    jest.spyOn(eventTransport, 'emitDone').mockImplementation((_streamId, _event, generationId) => {
+      throw new GenerationPublicationFencedError('done', streamId, generationId);
+    });
+    const predecessorError = jest.fn();
+    const recovery = manager.getJob(streamId);
+    await finalizationStarted;
+    const pendingPredecessor = await jobStore.getJob(streamId);
+    const lateRuntime = await (
+      manager as unknown as {
+        getOrCreateRuntimeState: (
+          id: string,
+          job: typeof pendingPredecessor,
+        ) => Promise<{
+          createdAt: number;
+          abortController: AbortController;
+          localErrorHandlers: Set<(error: string) => void>;
+        } | null>;
+      }
+    ).getOrCreateRuntimeState(streamId, pendingPredecessor);
+    lateRuntime?.localErrorHandlers.add(predecessorError);
+    jest.useFakeTimers();
+
+    try {
+      expect(lateRuntime?.createdAt).toBe(predecessor.createdAt);
+      releaseFinalize();
+      const successor = await recovery;
+
+      expect(successor?.createdAt).toBe(successorCreatedAt);
+      expect(successor?.abortController.signal.aborted).toBe(false);
+      expect(predecessorError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+      );
+
+      expect(predecessorError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(successor?.abortController.signal.aborted).toBe(false);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+    } finally {
+      releaseFinalize();
+      jest.useRealTimers();
+      await manager.destroy();
+    }
+  });
+
   it('reconnect-closes the predecessor when a successor wins stale finalization', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const eventTransport = new InMemoryEventTransport();
