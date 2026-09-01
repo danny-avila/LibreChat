@@ -127,9 +127,13 @@ function SubagentControlHistory({
 export function SubagentActivityScrollSurface({
   children,
   padded = true,
+  headerInset = false,
 }: {
   children: React.ReactNode;
   padded?: boolean;
+  /** Clears the panel's overlay header, which floats above this surface so the
+   *  thread scrolls under it rather than starting below a solid bar. */
+  headerInset?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -172,7 +176,9 @@ export function SubagentActivityScrollSurface({
         className={cn('min-h-0 flex-1 overflow-y-auto', padded && 'px-4 py-4')}
         data-subagent-activity-scroll-surface
       >
-        <div ref={contentRef}>{children}</div>
+        <div ref={contentRef} className={cn(headerInset && 'pt-[52px]')}>
+          {children}
+        </div>
       </div>
       <CSSTransition
         in={!isAtBottom && scrollButtonPreference}
@@ -395,6 +401,7 @@ export default function SubagentActivity({
   state = 'ready',
   embedded = false,
   showPrompt = true,
+  headerInset = false,
   onCancelControl,
 }: {
   activity: ChildActivity;
@@ -402,6 +409,7 @@ export default function SubagentActivity({
   state?: 'ready' | 'loading' | 'error';
   embedded?: boolean;
   showPrompt?: boolean;
+  headerInset?: boolean;
   onCancelControl?: (controlId: string) => void;
 }) {
   const statusHeader = isAbnormalTerminalStatus(activity.status) ? (
@@ -431,7 +439,9 @@ export default function SubagentActivity({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {statusHeader}
-      <SubagentActivityScrollSurface>{content}</SubagentActivityScrollSurface>
+      <SubagentActivityScrollSurface headerInset={headerInset}>
+        {content}
+      </SubagentActivityScrollSurface>
     </div>
   );
 }

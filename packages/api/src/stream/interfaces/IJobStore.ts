@@ -1531,6 +1531,27 @@ export interface IJobStoreV2 extends IJobStore {
   clearSteers(streamId: string): Promise<void>;
 }
 
+export type GenerationTerminalEventType = 'done' | 'error';
+
+/** A terminal publication lost the generation fence to a replacement. This is
+ * an expected safety outcome: the successor owns all further stream output. */
+export class GenerationPublicationFencedError extends Error {
+  readonly code = 'GENERATION_PUBLICATION_FENCED';
+
+  constructor(
+    readonly eventType: GenerationTerminalEventType,
+    readonly streamId: string,
+    readonly generationId?: number,
+  ) {
+    super(
+      eventType === 'done'
+        ? 'Generation DONE publication was fenced by a replacement'
+        : 'Generation error publication was fenced by a replacement',
+    );
+    this.name = 'GenerationPublicationFencedError';
+  }
+}
+
 /**
  * Interface for pub/sub event transport.
  * Implementations can use EventEmitter, Redis Pub/Sub, etc.
