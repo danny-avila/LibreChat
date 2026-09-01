@@ -12,6 +12,8 @@ import type { ActivityPhaseSegment } from '~/utils/activityLabels';
 import {
   mapAttachments,
   getPartKeyIndex,
+  attachmentRenderKey,
+  buildAttachmentsByName,
   filterAttachmentsForPart,
   groupSequentialToolCalls,
 } from '~/utils';
@@ -22,8 +24,8 @@ import {
 } from '~/utils/activityLabels';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
-import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
@@ -215,6 +217,10 @@ type ContentPartsProps = {
     | undefined;
   /** Internal recursion guard for nested phase segments. */
   nestedActivityPhase?: boolean;
+  /** Internal signal that the parent phase card lifted this segment's
+   *  attachments into its own media row — the parts below must not render
+   *  them a second time inside the fold. */
+  hideAttachments?: boolean;
   /** Internal signal that this segment renders inside a completed phase card. */
   withinActivityPhase?: boolean;
   /** Internal signal that a phase card already carries this message's
@@ -264,6 +270,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   nestedActivityPhase = false,
   withinActivityPhase = false,
   cursorOwnedElsewhere = false,
+  hideAttachments = false,
   workspaceAttachmentsPartitioned = false,
   contentIndexOffset = 0,
   contentIndices,
@@ -300,6 +307,16 @@ const ContentPartsBody = memo(function ContentPartsBody({
     }
     return owners;
   }, [toolCallStepOwnersById, content]);
+  const attachmentsForPart = useCallback(
+    (part: TMessageContentParts): TAttachment[] | undefined =>
+      filterAttachmentsForPart(
+        attachmentMap[getToolCallId(part)],
+        getPartAgentId(part),
+        getPartStepId(part),
+        getSiblingStepIds(part, resolvedToolCallStepOwners),
+      ),
+    [attachmentMap, resolvedToolCallStepOwners],
+  );
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
@@ -329,6 +346,45 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const phaseSegments = useMemo(
     () => (nestedActivityPhase ? undefined : groupActivityPhases(content)),
     [nestedActivityPhase, content],
+  );
+  /** Every file a phase's parts produced, in transcript order, deduplicated
+   *  across parts that share a tool call. */
+  const collectPhaseAttachments = useCallback(
+    (parts: ReadonlyArray<TMessageContentParts | undefined>): TAttachment[] | undefined => {
+      const collected: TAttachment[] = [];
+      /** Position of each identity already collected, so a repeat REPLACES it
+       *  in place. A tool that writes the same file twice emits two records
+       *  and the later one carries the fresher lifecycle fields — status,
+       *  preview text, generated contents — which is why the attachment
+       *  renderer gives duplicates distinct keys and lets the latest win.
+       *  Hoisting makes this row the only surface for those files, so keeping
+       *  the first-seen record would pin a stale one on screen. */
+      const positionOf = new Map<string, number>();
+      for (const part of parts) {
+        if (part == null) {
+          continue;
+        }
+        for (const attachment of attachmentsForPart(part) ?? []) {
+          /** No identity means nothing to compare against — two rows that
+           *  cannot be told apart are two rows, so both are kept rather than
+           *  silently collapsed onto whichever arrived first. */
+          const identity = attachmentRenderKey(attachment);
+          if (identity == null) {
+            collected.push(attachment);
+            continue;
+          }
+          const at = positionOf.get(identity);
+          if (at != null) {
+            collected[at] = attachment;
+            continue;
+          }
+          positionOf.set(identity, collected.length);
+          collected.push(attachment);
+        }
+      }
+      return collected.length > 0 ? collected : undefined;
+    },
+    [attachmentsForPart],
   );
   const completedPhaseKeys = useMemo(() => {
     const indices = new Set<number>();
@@ -478,27 +534,23 @@ const ContentPartsBody = memo(function ContentPartsBody({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[localIdx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={filterAttachmentsForPart(
-            attachmentMap[getToolCallId(part)],
-            getPartAgentId(part),
-            getPartStepId(part),
-            getSiblingStepIds(part, resolvedToolCallStepOwners),
-          )}
+          partAttachments={attachmentsForPart(part)}
+          hideAttachments={hideAttachments}
         />
       );
     },
     [
-      attachmentMap,
+      attachmentsForPart,
       content,
       contentIndexOffset,
       localIndexByAbsolute,
       conversationId,
       effectiveIsSubmitting,
+      hideAttachments,
       isCreatedByUser,
       isLast,
       isLatestMessage,
       messageId,
-      resolvedToolCallStepOwners,
     ],
   );
 
@@ -518,19 +570,14 @@ const ContentPartsBody = memo(function ContentPartsBody({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[localIdx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={filterAttachmentsForPart(
-            attachmentMap[getToolCallId(part)],
-            getPartAgentId(part),
-            getPartStepId(part),
-            getSiblingStepIds(part, resolvedToolCallStepOwners),
-          )}
+          partAttachments={attachmentsForPart(part)}
           hideAttachments
           onToolExpand={onToolExpand}
         />
       );
     },
     [
-      attachmentMap,
+      attachmentsForPart,
       content,
       contentIndexOffset,
       localIndexByAbsolute,
@@ -540,7 +587,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
       isLast,
       isLatestMessage,
       messageId,
-      resolvedToolCallStepOwners,
     ],
   );
 
@@ -607,23 +653,19 @@ const ContentPartsBody = memo(function ContentPartsBody({
        * so preserve the first group's historic stable key and distinguish
        * later occurrences by sequence rather than a shifting content index. */
       const groupId = occurrence === 1 ? baseGroupId : `${baseGroupId}:occurrence:${occurrence}`;
-      const groupAttachments = group.parts.flatMap(
-        ({ part }) =>
-          filterAttachmentsForPart(
-            attachmentMap[getToolCallId(part)],
-            getPartAgentId(part),
-            getPartStepId(part),
-            getSiblingStepIds(part, resolvedToolCallStepOwners),
-          ) ?? [],
-      );
+      /** Hoisted a level higher when a phase card owns the media row, so the
+       *  same file is not offered by both the block and the card. */
+      const groupAttachments = hideAttachments
+        ? undefined
+        : group.parts.flatMap(({ part }) => attachmentsForPart(part) ?? []);
       return { ...group, groupId, groupAttachments };
     });
   }, [
     sequentialParts,
-    attachmentMap,
+    attachmentsForPart,
     fallbackScope,
+    hideAttachments,
     resolvedToolGroupOccurrences,
-    resolvedToolCallStepOwners,
   ]);
 
   /** The re-attribution node for a part resuming after a steer block, shared
@@ -739,6 +781,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       key: string,
       withinPhase = false,
       ownsCursor = false,
+      hoisted = false,
     ) => {
       return (
         <ContentPartsBody
@@ -757,6 +800,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           nestedActivityPhase
           withinActivityPhase={withinPhase}
           cursorOwnedElsewhere={cursorOwnedByCard}
+          hideAttachments={hoisted}
           workspaceAttachmentsPartitioned
           contentIndexOffset={segmentStartIndex}
           contentIndices={segmentIndices}
@@ -822,22 +866,19 @@ const ContentPartsBody = memo(function ContentPartsBody({
             const hasPendingApproval = segment.content.some(
               (part) => part != null && hasPendingApprovalInPart(part),
             );
-            /** `ToolCallGroup` hoists `groupAttachments` OUTSIDE its own panel
-             *  precisely so a generated image or file survives collapsing the
-             *  group. Folding that group into a card puts the hoist back
-             *  inside a disclosure and the output vanishes — and these never
-             *  appear in `segment.content`, so the visible-part allowlist
-             *  cannot catch them. */
-            const hasSpanAttachments = segment.content.some(
-              (part) =>
-                part != null &&
-                (filterAttachmentsForPart(
-                  attachmentMap[getToolCallId(part)],
-                  getPartAgentId(part),
-                  getPartStepId(part),
-                  getSiblingStepIds(part, resolvedToolCallStepOwners),
-                )?.length ?? 0) > 0,
-            );
+            /** The span's files, lifted out of the fold into their own row
+             *  under the header.
+             *
+             *  This is why a span carrying attachments no longer has to skip
+             *  folding. `ToolCallGroup` hoists `groupAttachments` outside its
+             *  own panel so generated output survives collapsing the group,
+             *  and folding that group into a card used to put the hoist back
+             *  inside a disclosure — so a synthesized span with any output
+             *  rendered unfolded rather than swallow it. Hoisting one level
+             *  further makes the card safe for exactly that content, and
+             *  agent runs that produce files are the ones with the longest
+             *  lists to fold. */
+            const phaseAttachments = collectPhaseAttachments(segment.content);
             /** A fold summarizes work that is DONE. An unresolved approval is
              *  the run asking the reader for something and blocking until it
              *  gets it — never put that behind a disclosure they have to find.
@@ -845,8 +886,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  resolves), but a subagent nested in an already-labeled group
              *  can raise one long after its parent's label filled. The span
              *  renders exactly as it would without the feature until it
-             *  clears, then folds. The same escape covers hoisted tool output. */
-            if (synthesized && (hasPendingApproval || hasSpanAttachments)) {
+             *  clears, then folds. */
+            if (synthesized && hasPendingApproval) {
               return renderSegment(
                 segment.content,
                 absoluteIndexAt(segment.startIndex),
@@ -859,6 +900,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 key={`activity-phase-${cardKey}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
+                attachments={phaseAttachments}
                 hasPendingApproval={hasPendingApproval}
                 animateEntrance={
                   /** Never for a synthesized card. The entrance mounts a card
@@ -891,6 +933,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
                   `phase-content-${cardKey}`,
                   true,
                   ownsCursor,
+                  true,
                 )}
               </ActivityPhaseGroup>
             );
@@ -1015,7 +1058,27 @@ const ContentPartsBody = memo(function ContentPartsBody({
 });
 
 const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
-  return <ContentPartsBody {...props} />;
+  const { attachments } = props;
+  /** Published once for the whole message so every markdown block below —
+   *  including the ones nested inside phase cards — resolves a bare
+   *  `![DTI](5_dti.png)` against the files this turn actually produced.
+   *
+   *  `buildAttachmentsByName` indexes only what an `<img>` can display, so a
+   *  `![report](report.csv)` keeps its download chip instead of resolving to a
+   *  picture element that shows nothing.
+   *
+   *  Memoized in two steps on purpose. `useAttachments` hands back a fresh
+   *  `[]` whenever its inputs move, and a turn with no files is the common
+   *  case — indexing through the shared empty map keeps the context value
+   *  itself referentially stable there, so a churning array cannot push a new
+   *  value at every markdown block in the message. */
+  const attachmentsByName = useMemo(() => buildAttachmentsByName(attachments), [attachments]);
+  const media = useMemo(() => ({ attachmentsByName }), [attachmentsByName]);
+  return (
+    <MediaContext.Provider value={media}>
+      <ContentPartsBody {...props} />
+    </MediaContext.Provider>
+  );
 });
 
 export default ContentParts;
