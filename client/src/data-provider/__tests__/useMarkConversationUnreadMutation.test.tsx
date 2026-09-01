@@ -220,6 +220,32 @@ describe('useMarkConversationUnreadMutation', () => {
     await waitFor(() => expect(cached()?.lastSeenAt).toBe(SEEN_AT));
     await waitFor(() => expect(isConversationUnseen(cached())).toBe(false));
   });
+
+  it('keeps the row unread when an earlier request fails and the later one succeeds', async () => {
+    /* Activating the menu action twice before the first request settles: both write the same
+       optimistic state, so only the later request owns the row. A rollback from the first would
+       restore the catch-up, and the second's settlement would read that as a newer
+       acknowledgement and leave the row seen although the server marked it unread. */
+    const first = deferred();
+    const second = deferred();
+    mockMarkUnread.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result, cached } = setup(RESPONDED_AT, SEEN_AT);
+
+    await act(async () => {
+      const firstPending = result.current
+        .mutateAsync({ conversationId: CONVO_ID })
+        .catch(() => undefined);
+      await flush();
+      const secondPending = result.current.mutateAsync({ conversationId: CONVO_ID });
+      await flush();
+      first.reject(new Error('network down'));
+      second.resolve({ modified: true, lastResponseAt: RESPONDED_AT });
+      await Promise.all([firstPending, secondPending]);
+    });
+
+    expect(cached()?.lastSeenAt).toBeUndefined();
+    expect(isConversationUnseen(cached())).toBe(true);
+  });
 });
 
 /** Lets a test place work between the optimistic pass and the response callback. */

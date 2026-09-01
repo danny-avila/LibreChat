@@ -6,7 +6,18 @@
  * focus event it is about to cause, and the seen trigger consumes the flag instead of
  * acknowledging a reply nobody read.
  */
-let suppressNextFocus = false;
+let suppressedAt: number | null = null;
+
+/**
+ * How long the flag stays good for.
+ *
+ * `window.focus()` is a request, not a guarantee: a browser that refuses to raise the window
+ * produces no focus event at all, and an unbounded flag would then be spent on the next genuine
+ * focus, minutes later, silently withholding that conversation's acknowledgement. A focus the
+ * click did cause arrives in the same task or the one after it, so anything beyond a couple of
+ * seconds belongs to the user rather than to the notification.
+ */
+const SUPPRESSION_TTL_MS = 2_000;
 
 /** Only meaningful while the window is unfocused, which is the only time alerts fire; a click
  *  that raises no focus event would otherwise leave the flag set for a later, genuine one. */
@@ -14,13 +25,14 @@ export const suppressFocusAcknowledgement = (): void => {
   if (document.hasFocus()) {
     return;
   }
-  suppressNextFocus = true;
+  suppressedAt = Date.now();
 };
 
 export const consumeFocusSuppression = (): boolean => {
-  if (!suppressNextFocus) {
+  if (suppressedAt === null) {
     return false;
   }
-  suppressNextFocus = false;
-  return true;
+  const isLive = Date.now() - suppressedAt < SUPPRESSION_TTL_MS;
+  suppressedAt = null;
+  return isLive;
 };

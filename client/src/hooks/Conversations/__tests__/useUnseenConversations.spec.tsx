@@ -162,6 +162,56 @@ describe('useUnseenConversations', () => {
     ]);
   });
 
+  it('keeps a manual marker out of the alerts baseline', () => {
+    /* The reply that later lands on a conversation flagged before it had one is stamped with
+       `$max`, so a marker written in the same moment survives as the value. Baselining the
+       marker would make that reply look like a stamp the tab had already accounted for, and it
+       would arrive without a chime or a notification. */
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([
+          {
+            conversationId: 'flagged-a',
+            title: 'F',
+            updatedAt: RESPONDED_AT,
+            lastResponseAt: RESPONDED_AGAIN_AT,
+          },
+        ]),
+      );
+    });
+
+    expect(result.current?.unseen).toHaveLength(1);
+    expect(result.current?.stamps).toEqual([]);
+
+    /* The reply arrives and moves `updatedAt` with it, retaining the marker as its stamp. */
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([
+          {
+            conversationId: 'flagged-a',
+            title: 'F',
+            updatedAt: RESPONDED_AGAIN_AT,
+            lastResponseAt: RESPONDED_AGAIN_AT,
+          },
+        ]),
+      );
+    });
+
+    expect(result.current?.unseen).toEqual([
+      {
+        conversationId: 'flagged-a',
+        title: 'F',
+        lastResponseAt: RESPONDED_AGAIN_AT,
+        flagged: false,
+      },
+    ]);
+    expect(result.current?.stamps).toEqual([['flagged-a', RESPONDED_AGAIN_AT]]);
+  });
+
   it('counts a conversation held in both caches once', () => {
     const { result, queryClient } = setup();
     const convo = { conversationId: 'both', title: 'B', lastResponseAt: RESPONDED_AT };

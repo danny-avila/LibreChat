@@ -382,6 +382,37 @@ describe('useConversationSeen', () => {
     });
   });
 
+  it('expires a suppression whose focus event never arrived', () => {
+    /* `window.focus()` is a request: a browser that leaves the window in the background raises
+       no focus event, and an unbounded flag would then be spent on the next genuine focus,
+       withholding that conversation's acknowledgement for no reason. */
+    const { result } = setup({ lastResponseAt: RESPONDED_AT });
+
+    act(() => result.current(true));
+    mockMarkSeen.mockClear();
+
+    const now = jest.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1_000);
+      act(() => {
+        hasFocus.mockReturnValue(false);
+        suppressFocusAcknowledgement();
+      });
+      now.mockReturnValue(1_000 + 5_000);
+      act(() => {
+        hasFocus.mockReturnValue(true);
+        window.dispatchEvent(new Event('focus'));
+      });
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      lastResponseAt: RESPONDED_AT,
+    });
+  });
+
   it('retries a failed acknowledgement when the user returns to the tab', () => {
     const { result } = setup({ lastResponseAt: RESPONDED_AT });
 

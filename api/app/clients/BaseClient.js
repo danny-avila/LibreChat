@@ -1256,6 +1256,21 @@ class BaseClient {
     );
 
     if (this.skipSaveConvo) {
+      /* The secondary response of an override pair persists its message but deliberately skips
+         the conversation-field save, so the stamp below is never reached. The reply still has
+         to light the indicator: the primary response's stamp is older whenever this one
+         finishes later, and absent altogether when the primary failed. Best effort, because a
+         missed indicator must not fail a reply that is already persisted. */
+      /* `user` is the same id the message was just saved under; `reqCtx` only carries it when
+         the request object is present, which the direct-save paths do not guarantee. */
+      const stampUserId = reqCtx.userId ?? user ?? this.user;
+      if (message.isCreatedByUser === false && reqCtx.isTemporary !== true && stampUserId) {
+        try {
+          await db.stampConvoLastResponse(stampUserId, message.conversationId);
+        } catch (error) {
+          logger.error('[BaseClient] Failed to stamp reply on skipped conversation save', error);
+        }
+      }
       return { message: savedMessage };
     }
 

@@ -271,6 +271,25 @@ const cancelConvoReadFetches = (
 };
 
 /**
+ * Restarts the reads that `cancelConvoReadFetches` stopped.
+ *
+ * "Whatever triggered the fetch triggers it again" only holds while something still asks: a
+ * rejected acknowledgement means the server holds a newer reply than the one this tab observed,
+ * and the fetch that would have delivered it was cancelled on the way in. The optimistic write
+ * refreshed `dataUpdatedAt` on its way through, so the list reads as fresh for the rest of its
+ * stale window and nothing refetches: the newer reply would stay out of the dot, the tab badge
+ * and the alerts until an unrelated refetch happened to run.
+ */
+const refreshConvoReadCaches = (queryClient: QueryClient, conversationId: string): void => {
+  queryClient.invalidateQueries([QueryKeys.allConversations]);
+  queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+  const pointKey = [QueryKeys.conversation, conversationId];
+  if (queryClient.getQueryData(pointKey) !== undefined) {
+    queryClient.invalidateQueries(pointKey);
+  }
+};
+
+/**
  * Writes a settled catch-up back, but only when it is safe to.
  *
  * Requests for two replies can be in flight at once, and the first to return is not always the
@@ -342,6 +361,11 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
            re-arming the same request. */
         const settled = data.modified ? context?.acknowledged : context?.previous;
         settleCatchUp(queryClient, vars.conversationId, settled, context?.acknowledged);
+        if (!data.modified) {
+          /* Rejected means the server has since stamped a reply this tab has not read, so the
+             cache it just restored is known to be behind. */
+          refreshConvoReadCaches(queryClient, vars.conversationId);
+        }
       },
       onError: (_error, vars, context) => {
         /* The seen triggers gate on the cache, so a failed request has to put the old
@@ -353,6 +377,33 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
       },
     },
   );
+};
+
+/**
+ * The newest mark-unread write per conversation.
+ *
+ * Two clicks before the first request settles both write the same optimistic state, so value
+ * comparison alone cannot tell whose write the cache holds: the first request failing would
+ * restore the catch-up it captured, and the second's settlement would then read that restored
+ * value as a newer acknowledgement and leave the row seen although the server marked it unread.
+ * Only the latest write owns the cache; earlier ones settle silently.
+ */
+const unreadWriteOwners = new Map<string, number>();
+let unreadWriteSequence = 0;
+
+const claimUnreadWrite = (conversationId: string): number => {
+  unreadWriteSequence += 1;
+  unreadWriteOwners.set(conversationId, unreadWriteSequence);
+  return unreadWriteSequence;
+};
+
+const ownsUnreadWrite = (conversationId: string, token: number | undefined): boolean =>
+  token !== undefined && unreadWriteOwners.get(conversationId) === token;
+
+const releaseUnreadWrite = (conversationId: string, token: number | undefined): void => {
+  if (ownsUnreadWrite(conversationId, token)) {
+    unreadWriteOwners.delete(conversationId);
+  }
 };
 
 /**
@@ -383,6 +434,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
           lastResponseAt: previous?.lastResponseAt,
           lastSeenAt: previous?.lastSeenAt,
           optimisticResponseAt,
+          token: claimUnreadWrite(vars.conversationId),
         };
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
@@ -392,6 +444,12 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         return context;
       },
       onSuccess: (data, vars, context) => {
+        /* A second click captured this pass's optimistic state as its own baseline, so its
+           request now owns the row: settling an earlier one against a cache it no longer wrote
+           would undo the newer request's work. */
+        if (!ownsUnreadWrite(vars.conversationId, context?.token)) {
+          return;
+        }
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
         /* Nothing matched: the conversation is gone, deleted on another device or between the
            access check and the write. Keeping the optimistic dot would leave a row that no
@@ -453,6 +511,13 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         }));
       },
       onError: (_error, vars, context) => {
+        /* A later click owns the row once it has captured this pass's optimistic state as its
+           own baseline: rolling back here would restore a catch-up the newer request is about
+           to be judged against, and its settlement would then read the restored value as a
+           newer acknowledgement and leave the row seen although the server marked it unread. */
+        if (!ownsUnreadWrite(vars.conversationId, context?.token)) {
+          return;
+        }
         /* Only while the cache still holds what this mutation wrote. A newer reply can be
            merged by the watcher or the SSE path while the request is open, and restoring the
            pre-mutation stamps over it would make that genuinely new reply read as seen with
@@ -469,6 +534,9 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
           lastResponseAt: context?.lastResponseAt,
           lastSeenAt: context?.lastSeenAt,
         }));
+      },
+      onSettled: (_data, _error, vars, context) => {
+        releaseUnreadWrite(vars.conversationId, context?.token);
       },
     },
   );

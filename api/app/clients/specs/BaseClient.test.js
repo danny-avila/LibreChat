@@ -36,6 +36,7 @@ jest.mock('~/models', () => ({
   getConvoTitle: jest.fn(),
   getConvo: jest.fn(),
   saveConvo: jest.fn(),
+  stampConvoLastResponse: jest.fn(),
   deleteConvos: jest.fn(),
   getPreset: jest.fn(),
   getPresets: jest.fn(),
@@ -50,7 +51,14 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-const { getConvo, getFiles, getMessages, saveConvo, saveMessage } = require('~/models');
+const {
+  getConvo,
+  getFiles,
+  getMessages,
+  saveConvo,
+  saveMessage,
+  stampConvoLastResponse,
+} = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -1544,6 +1552,50 @@ describe('BaseClient', () => {
       /* A user turn stamping this would light the unseen dot the moment they press Enter. */
       expect(userTurn[1].lastResponseAt).toBeUndefined();
       expect(reply[1].lastResponseAt).toBeInstanceOf(Date);
+    });
+
+    test('stamps the reply of a response that skips the conversation save', async () => {
+      /* The secondary response of an override pair persists its message and returns before the
+         conversation-field save. Without its own stamp, a reply that finishes after the primary
+         one, or is the only one that persisted, would never light an indicator. */
+      const saveOptions = TestClient.getSaveOptions();
+      TestClient.skipSaveConvo = true;
+      saveConvo.mockClear();
+      stampConvoLastResponse.mockClear();
+
+      await TestClient.saveMessageToDatabase(
+        { conversationId: 'convo-override', messageId: 'm4', isCreatedByUser: true, text: 'hi' },
+        saveOptions,
+        'user-override',
+      );
+      await TestClient.saveMessageToDatabase(
+        { conversationId: 'convo-override', messageId: 'm5', isCreatedByUser: false, text: 'yo' },
+        saveOptions,
+        'user-override',
+      );
+
+      TestClient.skipSaveConvo = false;
+      expect(saveConvo).not.toHaveBeenCalled();
+      expect(stampConvoLastResponse).toHaveBeenCalledTimes(1);
+      expect(stampConvoLastResponse).toHaveBeenCalledWith('user-override', 'convo-override');
+    });
+
+    test('never fails a persisted reply because its indicator stamp failed', async () => {
+      const saveOptions = TestClient.getSaveOptions();
+      TestClient.skipSaveConvo = true;
+      stampConvoLastResponse.mockClear();
+      stampConvoLastResponse.mockRejectedValueOnce(new Error('mongo is down'));
+
+      await expect(
+        TestClient.saveMessageToDatabase(
+          { conversationId: 'convo-override', messageId: 'm6', isCreatedByUser: false, text: 'yo' },
+          saveOptions,
+          'user-override',
+        ),
+      ).resolves.toBeDefined();
+      expect(stampConvoLastResponse).toHaveBeenCalledTimes(1);
+
+      TestClient.skipSaveConvo = false;
     });
 
     test('keeps the unseen timestamps out of the user turn’s unsetFields', async () => {

@@ -15,6 +15,7 @@ import {
   updateConvoInAllQueries,
   findConvoInAllQueries,
   isConversationUnseen,
+  applyServerReplyStamp,
   removeConvoFromAllQueries,
   addConversationToAllConversationsQueries,
 } from './convos';
@@ -686,6 +687,67 @@ describe('Conversation Utilities', () => {
         queryClient.setQueryData(['allConversations'], {
           pages: [{ conversations: [convoA], nextCursor: null }],
           pageParams: [],
+        });
+      });
+
+      describe('applyServerReplyStamp', () => {
+        const REPLY_AT = '2024-01-03T12:00:00Z';
+        const NEWER_REPLY_AT = '2024-01-04T12:00:00Z';
+
+        beforeEach(() => {
+          queryClient.setQueryData(['allConversations'], {
+            pages: [{ conversations: [convoB, convoA], nextCursor: null }],
+            pageParams: [],
+          });
+        });
+
+        const rows = () =>
+          queryClient.getQueryData<InfiniteData<any>>(['allConversations'])!.pages[0].conversations;
+
+        it('carries the row to the top when the reply advanced its activity date', () => {
+          /* Another conversation took the top while this one streamed; leaving the completed
+             one behind would show it at its run-start date and position. */
+          applyServerReplyStamp(queryClient, 'a', {
+            lastResponseAt: REPLY_AT,
+            updatedAt: REPLY_AT,
+          });
+
+          expect(rows()[0]).toMatchObject({
+            conversationId: 'a',
+            lastResponseAt: REPLY_AT,
+            updatedAt: REPLY_AT,
+          });
+        });
+
+        it('leaves the order alone when the payload carries no activity date', () => {
+          applyServerReplyStamp(queryClient, 'a', { lastResponseAt: REPLY_AT });
+
+          expect(rows()[0].conversationId).toBe('b');
+          expect(rows()[1]).toMatchObject({
+            conversationId: 'a',
+            lastResponseAt: REPLY_AT,
+            updatedAt: convoA.updatedAt,
+          });
+        });
+
+        it('drops a stamp older than the one already cached', () => {
+          /* Two responses finishing out of order: the newer stamp is already in the cache from
+             an away poll or a completion merge, and writing the older one back would let that
+             newer reply arrive a second time. */
+          applyServerReplyStamp(queryClient, 'a', {
+            lastResponseAt: NEWER_REPLY_AT,
+            updatedAt: NEWER_REPLY_AT,
+          });
+          applyServerReplyStamp(queryClient, 'a', {
+            lastResponseAt: REPLY_AT,
+            updatedAt: REPLY_AT,
+          });
+
+          expect(rows()[0]).toMatchObject({
+            conversationId: 'a',
+            lastResponseAt: NEWER_REPLY_AT,
+            updatedAt: NEWER_REPLY_AT,
+          });
         });
       });
 

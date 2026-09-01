@@ -691,6 +691,42 @@ function findPinnedCandidate(
 }
 
 /**
+ * Applies the stamps a completed run reported to the sidebar caches.
+ *
+ * The list is a separate cache from the conversation the chat itself holds, and nothing else
+ * writes to it once a run completes. Only the server's own values are written: the seen
+ * acknowledgement is bound to whatever stamp the client observed, so inventing one from the
+ * browser clock would offer the server a value it cannot match.
+ *
+ * Two responses to one conversation can finish out of order, and an away poll or a completion
+ * merge can have delivered the newer stamp already, so an older one is dropped rather than
+ * written: walking the read state backwards would let the newer reply arrive a second time.
+ * The reply also moved `updatedAt` server-side, and another conversation can have taken the top
+ * of the list while this one streamed, so the row is carried to its new position rather than
+ * left at the date and place its run started with.
+ */
+export function applyServerReplyStamp(
+  queryClient: QueryClient,
+  conversationId: string,
+  { lastResponseAt, updatedAt }: { lastResponseAt: string; updatedAt?: string },
+): void {
+  const cached = findConvoInAllQueries(queryClient, conversationId);
+  if (cached?.lastResponseAt != null && lastResponseAt < cached.lastResponseAt) {
+    return;
+  }
+  updateConvoInAllQueries(
+    queryClient,
+    conversationId,
+    (convo) => ({
+      ...convo,
+      lastResponseAt,
+      updatedAt: updatedAt ?? convo.updatedAt,
+    }),
+    updatedAt != null && updatedAt > (cached?.updatedAt ?? ''),
+  );
+}
+
+/**
  * Flags the sidebar owns rather than the chat: `isShared` is derived per list request from
  * the shared-links collection, and `pinned` is set by the pin mutation alone. Neither is
  * carried by the single-conversation payloads callers swap in wholesale, so an omitted flag
