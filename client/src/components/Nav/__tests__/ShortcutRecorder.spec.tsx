@@ -1,14 +1,15 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { bindingHash } from '~/utils/shortcuts';
 import { RecorderInfo, RecorderPill, useShortcutRecorder } from '../ShortcutRecorder';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
-function Harness() {
+function Harness({ bindingMap = new Map() }: { bindingMap?: Map<string, string> }) {
   const state = useShortcutRecorder({
     initial: null,
-    bindingMap: new Map(),
+    bindingMap,
     ownerId: 'test-action',
     getActionLabel: (id) => id,
     onSave: jest.fn(),
@@ -39,5 +40,15 @@ describe('ShortcutRecorder', () => {
     expect(screen.getByText('com_shortcut_recorder_needs_modifier')).toHaveClass(
       'text-text-destructive',
     );
+  });
+
+  it('uses the semantic warning border when a shortcut conflicts', () => {
+    const binding = { meta: false, ctrl: true, alt: false, shift: false, key: 'A' };
+    render(<Harness bindingMap={new Map([[bindingHash(binding), 'other-action']])} />);
+
+    const recorder = screen.getByRole('textbox', { name: 'Shortcut recorder' });
+    fireEvent.keyDown(recorder, { key: 'a', ctrlKey: true });
+
+    expect(recorder).toHaveClass('border-status-warning-border');
   });
 });

@@ -247,12 +247,17 @@ describe.each([
 });
 
 /** The meter paints segments on `surface-tertiary`; the swatch and popover chrome
- *  sit on `surface-secondary`. Both have to clear the 3:1 mark-contrast floor. */
+ *  sit on `surface-secondary`; checked capability badges sit on `surface-chat`.
+ *  All have to clear the 3:1 mark-contrast floor. */
 const seriesTokens = Array.from(
   { length: 7 },
   (_, index) => `rgb-series-${index + 1}` as keyof IThemeRGB,
 );
-const seriesSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-tertiary', 'rgb-surface-secondary'];
+const seriesSurfaces: Array<keyof IThemeRGB> = [
+  'rgb-surface-tertiary',
+  'rgb-surface-secondary',
+  'rgb-surface-chat',
+];
 const WCAG_MARK_MIN = 3;
 
 describe('categorical series scale', () => {
@@ -310,7 +315,7 @@ describe.each([
   ['high contrast light', highContrastLightTheme],
   ['high contrast dark', highContrastDarkTheme],
 ])('%s series contrast', (_name, theme: IThemeRGB) => {
-  it('keeps every series slot at the 3:1 mark floor on the track and the panel', () => {
+  it('keeps every series slot at the 3:1 mark floor on its consumer surfaces', () => {
     const failures = seriesTokens.flatMap((token) =>
       seriesSurfaces.flatMap((surface) => {
         const ratio = contrast(toRgb(theme, token), toRgb(theme, surface));

@@ -167,7 +167,7 @@ export function RecorderPill({
     state;
   let stateBorder = 'border-border-medium';
   if (hasConflict) {
-    stateBorder = 'border-amber-500/60';
+    stateBorder = 'border-status-warning-border';
   } else if (showInvalid) {
     stateBorder = 'animate-shortcut-shake border-border-destructive';
   }
