@@ -32,7 +32,7 @@ jest.mock('@librechat/api', () => ({
       if (!agentId) {
         return next();
       }
-      const agent = await mockGetAgent({ id: agentId });
+      const agent = await mockGetAgent({ id: agentId }, { _id: 1 });
       if (!agent) {
         return allowMissingAgent ? next() : res.status(404).json({ error: 'Agent not found.' });
       }
@@ -132,7 +132,7 @@ describe('agent memory partition authorization', () => {
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: 'Agent not found.' });
-    expect(mockGetAgent).toHaveBeenCalledWith({ id: 'attacker-partition' });
+    expect(mockGetAgent).toHaveBeenCalledWith({ id: 'attacker-partition' }, { _id: 1 });
     expect(mockGetUserMemories).not.toHaveBeenCalled();
     expect(mockCreateMemory).not.toHaveBeenCalled();
   });

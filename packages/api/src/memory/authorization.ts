@@ -21,7 +21,7 @@ interface CheckPermissionParams {
 }
 
 interface AgentMemoryPartitionAccessDependencies {
-  getAgent: (query: { id: string }) => Promise<Pick<IAgent, '_id'> | null>;
+  getAgent: (query: { id: string }, projection: { _id: 1 }) => Promise<Pick<IAgent, '_id'> | null>;
   getRoleByName: CheckAccessParams['getRoleByName'];
   hasCapability: (
     user: IUser,
@@ -34,6 +34,7 @@ interface AgentMemoryPartitionAccessParams extends AgentMemoryPartitionAccessDep
   req: Request;
   user: IUser;
   agentId: string;
+  allowMissingAgent?: boolean;
 }
 
 interface AgentMemoryPartitionMiddlewareParams extends AgentMemoryPartitionAccessDependencies {
@@ -49,13 +50,14 @@ export async function getAgentMemoryPartitionAccess({
   req,
   user,
   agentId,
+  allowMissingAgent = false,
   getAgent,
   getRoleByName,
   hasCapability,
   checkPermission,
 }: AgentMemoryPartitionAccessParams): Promise<AgentMemoryPartitionAccess> {
   const [agent, canManageAgents, canUseAgents] = await Promise.all([
-    getAgent({ id: agentId }),
+    getAgent({ id: agentId }, { _id: 1 }),
     hasCapability(user, ResourceCapabilityMap[ResourceType.AGENT]).catch(() => false),
     checkAccess({
       req,
@@ -66,11 +68,11 @@ export async function getAgentMemoryPartitionAccess({
     }).catch(() => false),
   ]);
 
+  if (!canUseAgents && !(allowMissingAgent && !agent)) {
+    return 'denied';
+  }
   if (!agent) {
     return 'not_found';
-  }
-  if (!canUseAgents) {
-    return 'denied';
   }
   if (canManageAgents) {
     return 'allowed';
@@ -107,6 +109,7 @@ export function createAgentMemoryPartitionMiddleware({
         req,
         user: req.user as IUser,
         agentId,
+        allowMissingAgent,
         ...dependencies,
       });
       if (agentAccess === 'not_found') {

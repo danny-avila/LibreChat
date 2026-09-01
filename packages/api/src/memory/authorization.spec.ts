@@ -10,7 +10,10 @@ import {
 
 const user = { id: new Types.ObjectId().toString(), role: 'USER' } as IUser;
 const agent = { _id: new Types.ObjectId() };
-const req = {} as Request;
+
+function createRequest(): Request {
+  return {} as Request;
+}
 
 function createRole(canUseAgents: boolean): IRole {
   return {
@@ -58,13 +61,14 @@ describe('getAgentMemoryPartitionAccess', () => {
     dependencies.getAgent.mockReturnValue(agentPromise);
 
     const accessPromise = getAgentMemoryPartitionAccess({
-      req,
+      req: createRequest(),
       user,
       agentId: 'agent-1',
       ...dependencies,
     });
 
     expect(dependencies.getAgent).toHaveBeenCalledTimes(1);
+    expect(dependencies.getAgent).toHaveBeenCalledWith({ id: 'agent-1' }, { _id: 1 });
     expect(dependencies.hasCapability).toHaveBeenCalledTimes(1);
     expect(dependencies.getRoleByName).toHaveBeenCalledTimes(1);
 
@@ -76,7 +80,12 @@ describe('getAgentMemoryPartitionAccess', () => {
     const dependencies = createDependencies({ canUseAgents: false });
 
     await expect(
-      getAgentMemoryPartitionAccess({ req, user, agentId: 'agent-1', ...dependencies }),
+      getAgentMemoryPartitionAccess({
+        req: createRequest(),
+        user,
+        agentId: 'agent-1',
+        ...dependencies,
+      }),
     ).resolves.toBe('denied');
     expect(dependencies.checkPermission).not.toHaveBeenCalled();
   });
@@ -85,7 +94,12 @@ describe('getAgentMemoryPartitionAccess', () => {
     const dependencies = createDependencies({ canManageAgents: true, canViewAgent: false });
 
     await expect(
-      getAgentMemoryPartitionAccess({ req, user, agentId: 'agent-1', ...dependencies }),
+      getAgentMemoryPartitionAccess({
+        req: createRequest(),
+        user,
+        agentId: 'agent-1',
+        ...dependencies,
+      }),
     ).resolves.toBe('allowed');
     expect(dependencies.checkPermission).not.toHaveBeenCalled();
   });
@@ -94,7 +108,12 @@ describe('getAgentMemoryPartitionAccess', () => {
     const dependencies = createDependencies({ canViewAgent: false });
 
     await expect(
-      getAgentMemoryPartitionAccess({ req, user, agentId: 'agent-1', ...dependencies }),
+      getAgentMemoryPartitionAccess({
+        req: createRequest(),
+        user,
+        agentId: 'agent-1',
+        ...dependencies,
+      }),
     ).resolves.toBe('denied');
     expect(dependencies.checkPermission).toHaveBeenCalledWith(
       expect.objectContaining({ resourceId: agent._id }),
@@ -106,20 +125,40 @@ describe('getAgentMemoryPartitionAccess', () => {
     dependencies.getAgent.mockResolvedValue(null);
 
     await expect(
-      getAgentMemoryPartitionAccess({ req, user, agentId: 'missing-agent', ...dependencies }),
+      getAgentMemoryPartitionAccess({
+        req: createRequest(),
+        user,
+        agentId: 'missing-agent',
+        ...dependencies,
+      }),
     ).resolves.toBe('not_found');
     expect(dependencies.checkPermission).not.toHaveBeenCalled();
   });
 
+  it('does not disclose missing agents when the role cannot use agents', async () => {
+    const dependencies = createDependencies({ canUseAgents: false });
+    dependencies.getAgent.mockResolvedValue(null);
+
+    await expect(
+      getAgentMemoryPartitionAccess({
+        req: createRequest(),
+        user,
+        agentId: 'missing-agent',
+        ...dependencies,
+      }),
+    ).resolves.toBe('denied');
+    expect(dependencies.checkPermission).not.toHaveBeenCalled();
+  });
+
   it('allows deletion middleware to clean up a missing agent partition', async () => {
-    const dependencies = createDependencies();
+    const dependencies = createDependencies({ canUseAgents: false });
     dependencies.getAgent.mockResolvedValue(null);
     const middleware = createAgentMemoryPartitionMiddleware({
       source: 'query',
       allowMissingAgent: true,
       ...dependencies,
     });
-    const request = { user, query: { agentId: 'missing-agent' } } as Request;
+    const request = { user, query: { agentId: 'missing-agent' } } as unknown as Request;
     const response = createResponse();
     const next = jest.fn();
 
@@ -135,7 +174,7 @@ describe('getAgentMemoryPartitionAccess', () => {
       source: 'body',
       ...dependencies,
     });
-    const request = { user, body: { agentId: 'agent-1' } } as Request;
+    const request = { user, body: { agentId: 'agent-1' } } as unknown as Request;
     const response = createResponse();
     const next = jest.fn();
 
