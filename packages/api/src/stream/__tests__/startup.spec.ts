@@ -3319,6 +3319,82 @@ describe('GenerationJobManager startup telemetry', () => {
     }
   });
 
+  it('retires a predecessor when a local successor handoff frame is lost', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false, cleanupOnComplete: false });
+    manager.initialize();
+    const streamId = 'stream-local-successor-handoff-lost';
+    const predecessor = await manager.createJob(streamId, 'user-1', streamId);
+    const predecessorDone = jest.fn();
+    const predecessorError = jest.fn();
+    jest.spyOn(eventTransport, 'emitDone').mockImplementation(() => undefined);
+    jest.useFakeTimers();
+    const predecessorSubscription = await manager.subscribe(
+      streamId,
+      () => undefined,
+      predecessorDone,
+      predecessorError,
+    );
+
+    try {
+      const successor = await manager.createJob(streamId, 'user-1', streamId);
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(successor.createdAt).toBeGreaterThan(predecessor.createdAt);
+      expect(predecessorDone).not.toHaveBeenCalled();
+      expect(predecessorError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+      );
+
+      expect(predecessorError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats()).toMatchObject({
+        runtimeStateSize: 1,
+        fencedRuntimeRetirements: 0,
+      });
+      await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+        createdAt: successor.createdAt,
+      });
+    } finally {
+      jest.useRealTimers();
+      predecessorSubscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('records abort proof when stored-terminal discovery stops a predecessor', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = Object.assign(new InMemoryEventTransport(), {
+      recordAbortAcknowledgement: jest.fn().mockResolvedValue(true),
+    });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: true, cleanupOnComplete: false });
+    manager.initialize();
+    const streamId = 'stream-successor-discovery-abort-proof';
+    const predecessor = await manager.createJob(streamId, 'user-1', streamId);
+    const predecessorSubscription = await manager.subscribe(streamId, () => undefined);
+    const successor = await jobStore.createJob(streamId, 'user-1', streamId);
+
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(successor.createdAt).toBeGreaterThan(predecessor.createdAt);
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(eventTransport.recordAbortAcknowledgement).toHaveBeenCalledWith(
+        streamId,
+        predecessor.createdAt,
+      );
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+    } finally {
+      predecessorSubscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
   it('closes an already-live subscriber when abort finalization storage fails', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const manager = new GenerationJobManagerClass();

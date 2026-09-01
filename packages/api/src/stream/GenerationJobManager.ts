@@ -1122,6 +1122,17 @@ class GenerationJobManagerClass {
     this.reconcileInactiveGeneration(streamId, createdAt, currentJob, observedRuntime);
   }
 
+  private reconcileDiscoveredSuccessor(
+    streamId: string,
+    runtime: RuntimeJobState,
+    successor: SerializableJobData,
+  ): void {
+    const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
+    this.recordFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
+    this.reconcileInactiveGeneration(streamId, runtime.createdAt, successor, runtime);
+    this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+  }
+
   /** Promotes a terminal claim whose persistence owner disappeared to a conservative
    * terminal payload. The store CAS races safely with a slow owner: whichever
    * side finalizes first chooses the only payload subscribers may consume. */
@@ -4912,8 +4923,7 @@ class GenerationJobManagerClass {
         let terminalJob = await this.jobStore.getJob(streamId);
         if (terminalJob?.createdAt !== runtime.createdAt) {
           if (terminalJob) {
-            this.reconcileInactiveGeneration(streamId, runtime.createdAt, terminalJob, runtime);
-            this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+            this.reconcileDiscoveredSuccessor(streamId, runtime, terminalJob);
           } else {
             queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
           }
@@ -4926,8 +4936,7 @@ class GenerationJobManagerClass {
           terminalJob = await this.recoverStaleTerminalPersistence(terminalJob);
           if (terminalJob?.createdAt !== runtime.createdAt) {
             if (terminalJob) {
-              this.reconcileInactiveGeneration(streamId, runtime.createdAt, terminalJob, runtime);
-              this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+              this.reconcileDiscoveredSuccessor(streamId, runtime, terminalJob);
             } else {
               queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
             }
@@ -6354,9 +6363,11 @@ class GenerationJobManagerClass {
   }
 
   private preserveFencedRuntimeUntilHandoff(streamId: string, runtime: RuntimeJobState): void {
+    const currentRuntime = this.runtimeState.get(streamId);
     if (
       this.shuttingDown ||
-      this.runtimeState.get(streamId) !== runtime ||
+      (currentRuntime !== runtime &&
+        (currentRuntime == null || currentRuntime.createdAt <= runtime.createdAt)) ||
       this.fencedRuntimeRetirements.has(runtime)
     ) {
       return;
@@ -7987,13 +7998,17 @@ class GenerationJobManagerClass {
         } catch (err) {
           if (err instanceof GenerationPublicationFencedError) {
             const currentJob = await this.jobStore.getJob(streamId);
-            this.reconcileInactiveGeneration(
-              streamId,
-              observedRuntime.createdAt,
-              currentJob,
-              observedRuntime,
-            );
-            this.preserveFencedRuntimeUntilHandoff(streamId, observedRuntime);
+            if (currentJob) {
+              this.reconcileDiscoveredSuccessor(streamId, observedRuntime, currentJob);
+            } else {
+              this.reconcileInactiveGeneration(
+                streamId,
+                observedRuntime.createdAt,
+                currentJob,
+                observedRuntime,
+              );
+              this.preserveFencedRuntimeUntilHandoff(streamId, observedRuntime);
+            }
             continue;
           }
           logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
