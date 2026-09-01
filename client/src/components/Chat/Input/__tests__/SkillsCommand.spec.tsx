@@ -24,21 +24,27 @@ const mockSetEphemeralAgent = jest.fn();
 const mockSetPendingManualSkills = jest.fn();
 const mockShowSkillsPopover = { current: true };
 
+jest.mock('jotai', () => ({
+  ...jest.requireActual('jotai'),
+  useAtomValue: jest.fn((atom: unknown) =>
+    atom === 'show-skills-popover' ? mockShowSkillsPopover.current : undefined,
+  ),
+  useSetAtom: jest.fn((atom: unknown) =>
+    atom === 'show-skills-popover' ? mockSetShowSkillsPopover : jest.fn(),
+  ),
+}));
+
+jest.mock('../skillsState', () => ({
+  showSkillsPopoverFamily: () => 'show-skills-popover',
+}));
+
 jest.mock('recoil', () => {
   const actual = jest.requireActual('recoil');
   return {
     ...actual,
-    useRecoilValue: jest.fn((atom: unknown) => {
-      if (atom === 'show-skills-popover') {
-        return mockShowSkillsPopover.current;
-      }
-      return undefined;
-    }),
+    useRecoilValue: jest.fn(() => undefined),
     useRecoilState: jest.fn(() => [null, jest.fn()]),
     useSetRecoilState: jest.fn((atom: unknown) => {
-      if (atom === 'show-skills-popover') {
-        return mockSetShowSkillsPopover;
-      }
       if (atom === 'ephemeral-agent') {
         return mockSetEphemeralAgent;
       }
@@ -53,7 +59,6 @@ jest.mock('recoil', () => {
 jest.mock('~/store', () => ({
   __esModule: true,
   default: {
-    showSkillsPopoverFamily: () => 'show-skills-popover',
     pendingManualSkillsByConvoId: () => 'pending-manual-skills',
   },
   ephemeralAgentByConvoId: () => 'ephemeral-agent',

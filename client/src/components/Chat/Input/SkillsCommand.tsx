@@ -1,7 +1,8 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ScrollText } from 'lucide-react';
+import { useSetRecoilState } from 'recoil';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { AutoSizer, List } from 'react-virtualized';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Input, Spinner, useCombobox } from '@librechat/client';
 import { SkillsScope, resolveAgentSkillsScope } from 'librechat-data-provider';
 import type { TSkillSummary } from 'librechat-data-provider';
@@ -9,6 +10,7 @@ import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import { useLocalize, useSkillActiveState } from '~/hooks';
 import { useSkillsInfiniteQuery } from '~/data-provider';
+import { showSkillsPopoverFamily } from './skillsState';
 import { useAgentsMapContext } from '~/Providers';
 import { ephemeralAgentByConvoId } from '~/store';
 import { isEphemeralAgent } from '~/common';
@@ -87,7 +89,7 @@ function SkillsCommandContent({
   agentId?: string | null;
 }) {
   const localize = useLocalize();
-  const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
+  const setShowSkillsPopover = useSetAtom(showSkillsPopoverFamily(index));
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const setPendingManualSkills = useSetRecoilState(
     store.pendingManualSkillsByConvoId(conversationId),
@@ -382,7 +384,7 @@ const SkillsCommand = memo(function SkillsCommand({
   conversationId: string;
   agentId?: string | null;
 }) {
-  const show = useRecoilValue(store.showSkillsPopoverFamily(index));
+  const show = useAtomValue(showSkillsPopoverFamily(index));
   if (!show) {
     return null;
   }
