@@ -1,8 +1,9 @@
 const express = require('express');
-const { ResourceCapabilityMap } = require('@librechat/data-schemas');
 const {
   Tokenizer,
   generateCheckAccess,
+  getMemoryAgentIdParam,
+  createAgentMemoryPartitionMiddleware,
   blockFilteredMemoryContent,
   projectStoredMemories,
   createMemoryManagementHandlers,
@@ -68,58 +69,31 @@ const opaqueMemoryHandlers = createMemoryManagementHandlers({
 
 router.use(requireJwtAuth);
 
-/** Normalizes the optional agent partition param; undefined = shared personal pool */
-const getAgentIdParam = (value) =>
-  typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
-
-/** Resolves whether the requester can use a client-selected agent partition. */
-const getAgentPartitionAccess = async (user, agentId) => {
-  const agent = await getAgent({ id: agentId });
-  if (!agent) {
-    return 'not_found';
-  }
-
-  let canManageAgents = false;
-  try {
-    canManageAgents = await hasCapability(user, ResourceCapabilityMap[ResourceType.AGENT]);
-  } catch (_error) {
-    canManageAgents = false;
-  }
-  if (canManageAgents) {
-    return 'allowed';
-  }
-
-  const canViewAgent = await checkPermission({
-    userId: user.id,
-    role: user.role,
-    resourceType: ResourceType.AGENT,
-    resourceId: agent._id,
-    requiredPermission: PermissionBits.VIEW,
-  });
-  return canViewAgent ? 'allowed' : 'denied';
+const agentPartitionDependencies = {
+  getAgent,
+  getRoleByName,
+  hasCapability,
+  checkPermission,
 };
-
-const validateAgentPartition = (source) => async (req, res, next) => {
-  const agentId = getAgentIdParam(req[source]?.agentId);
-  if (!agentId) {
-    return next();
-  }
-
-  try {
-    const agentAccess = await getAgentPartitionAccess(req.user, agentId);
-    if (agentAccess === 'not_found') {
-      return res.status(404).json({ error: 'Agent not found.' });
-    }
-    if (agentAccess === 'denied') {
-      return res.status(403).json({ error: 'Agent access denied.' });
-    }
-    return next();
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to validate agent access.' });
-  }
-};
-
-const validateQueryAgentPartition = validateAgentPartition('query');
+const validateBodyAgentPartition = createAgentMemoryPartitionMiddleware({
+  source: 'body',
+  ...agentPartitionDependencies,
+});
+const validateQueryAgentPartition = createAgentMemoryPartitionMiddleware({
+  source: 'query',
+  ...agentPartitionDependencies,
+});
+const validateDeletedAgentPartition = createAgentMemoryPartitionMiddleware({
+  source: 'query',
+  allowMissingAgent: true,
+  ...agentPartitionDependencies,
+});
+const createMemoryMiddleware = [
+  memoryPayloadLimit,
+  checkMemoryCreate,
+  validateBodyAgentPartition,
+  configMiddleware,
+];
 const updateMemoryMiddleware = [
   memoryPayloadLimit,
   checkMemoryUpdate,
@@ -202,9 +176,9 @@ router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
  * Body: { key: string, value: string }
  * Returns 201 and { created: true, memory: <createdDoc> } when successful.
  */
-router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async (req, res) => {
+router.post('/', createMemoryMiddleware, async (req, res) => {
   const { key, value } = req.body;
-  const agentId = getAgentIdParam(req.body.agentId);
+  const agentId = getMemoryAgentIdParam(req.body.agentId);
 
   if (typeof key !== 'string' || key.trim() === '') {
     return res.status(400).json({ error: 'Key is required and must be a non-empty string.' });
@@ -212,20 +186,6 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
 
   if (typeof value !== 'string' || value.trim() === '') {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
-  }
-
-  try {
-    if (agentId) {
-      const agentAccess = await getAgentPartitionAccess(req.user, agentId);
-      if (agentAccess === 'not_found') {
-        return res.status(404).json({ error: 'Agent not found.' });
-      }
-      if (agentAccess === 'denied') {
-        return res.status(403).json({ error: 'Agent access denied.' });
-      }
-    }
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to validate agent access.' });
   }
 
   const appConfig = req.config;
@@ -336,7 +296,7 @@ router.patch(
 router.delete(
   '/id/:id',
   checkMemoryDelete,
-  validateQueryAgentPartition,
+  validateDeletedAgentPartition,
   opaqueMemoryHandlers.deleteById,
 );
 
@@ -349,7 +309,7 @@ router.delete(
 router.patch('/:key', updateMemoryMiddleware, async (req, res) => {
   const { key: urlKey } = req.params;
   const { key: bodyKey, value } = req.body || {};
-  const agentId = getAgentIdParam(req.query.agentId);
+  const agentId = getMemoryAgentIdParam(req.query.agentId);
 
   if (typeof value !== 'string' || value.trim() === '') {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
@@ -436,9 +396,9 @@ router.patch('/:key', updateMemoryMiddleware, async (req, res) => {
  * Deletes a memory entry for the authenticated user.
  * Returns 200 and { deleted: true } when successful.
  */
-router.delete('/:key', checkMemoryDelete, validateQueryAgentPartition, async (req, res) => {
+router.delete('/:key', checkMemoryDelete, validateDeletedAgentPartition, async (req, res) => {
   const { key } = req.params;
-  const agentId = getAgentIdParam(req.query.agentId);
+  const agentId = getMemoryAgentIdParam(req.query.agentId);
 
   try {
     const result = await deleteMemory({ userId: req.user.id, key, agentId });

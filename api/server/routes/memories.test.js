@@ -4,6 +4,7 @@ const request = require('supertest');
 const mockGetAllUserMemories = jest.fn();
 const mockGetUserMemories = jest.fn();
 const mockCreateMemory = jest.fn();
+const mockDeleteMemory = jest.fn();
 const mockProjectStoredMemories = jest.fn((memories) => memories);
 const mockSetMemoryById = jest.fn();
 const mockDeleteMemoryById = jest.fn();
@@ -21,15 +22,37 @@ jest.mock('@librechat/api', () => ({
   extractMemoryContent: jest.fn(() => []),
   projectStoredMemories: (...args) => mockProjectStoredMemories(...args),
   blockFilteredMemoryContent: jest.fn(() => false),
+  getMemoryAgentIdParam: (value) =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined,
+  createAgentMemoryPartitionMiddleware:
+    ({ source, allowMissingAgent = false }) =>
+    async (req, res, next) => {
+      const value = req[source]?.agentId;
+      const agentId = typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+      if (!agentId) {
+        return next();
+      }
+      const agent = await mockGetAgent({ id: agentId });
+      if (!agent) {
+        return allowMissingAgent ? next() : res.status(404).json({ error: 'Agent not found.' });
+      }
+      if (await mockHasCapability(req.user, 'manage:agents')) {
+        return next();
+      }
+      const allowed = await mockCheckPermission({
+        userId: req.user.id,
+        role: req.user.role,
+        resourceType: 'agent',
+        resourceId: agent._id,
+        requiredPermission: 1,
+      });
+      return allowed ? next() : res.status(403).json({ error: 'Agent access denied.' });
+    },
   createMemoryManagementHandlers: jest.fn(() => ({
     updateById: (...args) => mockOpaqueUpdateById(...args),
     deleteById: (...args) => mockOpaqueDeleteById(...args),
   })),
   contentFilterBlockResponse: jest.fn(),
-}));
-
-jest.mock('@librechat/data-schemas', () => ({
-  ResourceCapabilityMap: { agent: 'manage:agents' },
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -60,7 +83,7 @@ jest.mock('~/models', () => ({
   toggleUserMemories: jest.fn(),
   getRoleByName: jest.fn(),
   createMemory: (...args) => mockCreateMemory(...args),
-  deleteMemory: jest.fn(),
+  deleteMemory: (...args) => mockDeleteMemory(...args),
   setMemory: jest.fn(),
   setMemoryById: (...args) => mockSetMemoryById(...args),
   deleteMemoryById: (...args) => mockDeleteMemoryById(...args),
@@ -185,6 +208,33 @@ describe('agent memory partition authorization', () => {
     expect(response.body).toEqual({ error: 'Agent access denied.' });
     expect(mockOpaqueUpdateById).not.toHaveBeenCalled();
     expect(mockOpaqueDeleteById).not.toHaveBeenCalled();
+  });
+
+  it('allows deleting a user-owned partition after its agent is removed', async () => {
+    mockGetAgent.mockResolvedValue(null);
+    mockDeleteMemory.mockResolvedValue({ ok: true });
+
+    const response = await request(buildApp()).delete(
+      '/api/memories/timezone?agentId=removed-agent',
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockDeleteMemory).toHaveBeenCalledWith({
+      userId: 'user-1',
+      key: 'timezone',
+      agentId: 'removed-agent',
+    });
+  });
+
+  it('allows deleting a user-owned opaque memory after its agent is removed', async () => {
+    mockGetAgent.mockResolvedValue(null);
+
+    const response = await request(buildApp()).delete(
+      '/api/memories/id/507f1f77bcf86cd799439011?agentId=removed-agent',
+    );
+
+    expect(response.status).toBe(202);
+    expect(mockOpaqueDeleteById).toHaveBeenCalledTimes(1);
   });
 });
 
