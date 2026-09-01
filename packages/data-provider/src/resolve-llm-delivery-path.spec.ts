@@ -1,5 +1,6 @@
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 import {
+  resolveUploadDestination,
   resolveDefaultLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
 } from './resolve-llm-delivery-path';
@@ -281,5 +282,71 @@ describe('resolveDefaultLLMDeliveryPath', () => {
       'audio/*': 'provider',
       'application/pdf': 'provider',
     });
+  });
+});
+
+describe('resolveUploadDestination', () => {
+  const base = { mimeType: 'application/zip', hasAgent: true, isMessageAttachment: false };
+
+  it('keeps an explicit resource and normalizes ocr to context', () => {
+    expect(
+      resolveUploadDestination({ ...base, toolResource: 'ocr', deliveryPath: 'text' }).toolResource,
+    ).toBe('context');
+    expect(
+      resolveUploadDestination({ ...base, toolResource: 'file_search', deliveryPath: 'none' })
+        .toolResource,
+    ).toBe('file_search');
+  });
+
+  it('promotes a text-routed upload to context', () => {
+    expect(resolveUploadDestination({ ...base, deliveryPath: 'text' }).toolResource).toBe(
+      'context',
+    );
+  });
+
+  it('refuses a type no enabled tool can read', () => {
+    expect(
+      resolveUploadDestination({ ...base, deliveryPath: 'none', agentTools: [] }).rejection,
+    ).toBe('no-consumer');
+  });
+
+  it('does not judge an unknown tool set', () => {
+    /* An ephemeral agent has no record, so its tools are unknown rather than absent. */
+    expect(resolveUploadDestination({ ...base, deliveryPath: 'none' }).rejection).toBe(
+      'no-agent-resource',
+    );
+    expect(
+      resolveUploadDestination({ ...base, deliveryPath: 'none', isMessageAttachment: true })
+        .rejection,
+    ).toBeUndefined();
+  });
+
+  it('files a permanent upload under the tool that will consume it', () => {
+    expect(
+      resolveUploadDestination({ ...base, deliveryPath: 'none', agentTools: ['execute_code'] })
+        .toolResource,
+    ).toBe('execute_code');
+  });
+
+  it('refuses a permanent upload that would land on no agent resource', () => {
+    expect(
+      resolveUploadDestination({
+        ...base,
+        mimeType: 'image/png',
+        deliveryPath: 'provider',
+        agentTools: [],
+      }).rejection,
+    ).toBe('no-agent-resource');
+  });
+
+  it('leaves a message attachment unclaimed', () => {
+    expect(
+      resolveUploadDestination({
+        ...base,
+        mimeType: 'image/png',
+        deliveryPath: 'provider',
+        isMessageAttachment: true,
+      }),
+    ).toEqual({});
   });
 });

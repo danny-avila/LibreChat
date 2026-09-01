@@ -204,3 +204,62 @@ export function resolveUploadLLMDeliveryPath({
   }
   return resolveDefaultUploadLLMDeliveryPath({ mimeType, endpointConfig, fileConfig, endpoint });
 }
+
+/** Why an upload cannot be accepted, when nothing would be able to read it. */
+export type UploadRejection = 'no-consumer' | 'no-agent-resource';
+
+/**
+ * Where a unified upload will end up, and whether it can be accepted at all.
+ *
+ * An upload has to be readable by something: the model, an extraction step, or a file
+ * tool. A permanent one has to land on an agent resource too, or storing it succeeds
+ * while leaving the agent no reference to it. Both outcomes are decided here rather than
+ * discovered later, so a request that would change nothing is refused with a reason.
+ *
+ * `agentTools` is undefined when no agent record backs the upload, as for an ephemeral
+ * agent that exists only for the request. An unknown tool set is not judged.
+ */
+export function resolveUploadDestination(params: {
+  toolResource?: string | null;
+  deliveryPath: TDefaultLLMDeliveryPath;
+  mimeType: string;
+  agentTools?: string[];
+  hasAgent: boolean;
+  isMessageAttachment: boolean;
+}): { toolResource?: string; rejection?: UploadRejection } {
+  const { toolResource, deliveryPath, mimeType, agentTools, hasAgent, isMessageAttachment } =
+    params;
+
+  if (toolResource) {
+    return {
+      toolResource:
+        toolResource === EToolResources.ocr ? EToolResources.context : (toolResource as string),
+    };
+  }
+
+  if (deliveryPath === 'text') {
+    return { toolResource: EToolResources.context };
+  }
+
+  const consumingTool = agentTools?.find(
+    (tool) => tool === EToolResources.execute_code || tool === EToolResources.file_search,
+  );
+
+  if (deliveryPath === 'none' && !hasTextExtractionPath(mimeType)) {
+    /* An administrator who routes a readable type to none has chosen tool-only access
+     * deliberately and is warned about it at boot, so only unreadable types are refused. */
+    if (agentTools != null && consumingTool == null) {
+      return { rejection: 'no-consumer' };
+    }
+  }
+
+  if (!isMessageAttachment && deliveryPath === 'none' && consumingTool) {
+    return { toolResource: consumingTool };
+  }
+
+  if (hasAgent && !isMessageAttachment) {
+    return { rejection: 'no-agent-resource' };
+  }
+
+  return {};
+}

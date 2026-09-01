@@ -2985,7 +2985,10 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     const deferredOnly = { file_id: 'deferred', filename: 'b.csv', bytes: 100 };
     const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
 
-    filterFilesByEndpointRuntimeConfig.mockReturnValue([shared]);
+    /* Delivery keeps the shared file; the deferred pass keeps both. */
+    filterFilesByEndpointRuntimeConfig
+      .mockReturnValueOnce([shared])
+      .mockReturnValueOnce([shared, deferredOnly]);
     const getDeferredProvisionFiles = jest.fn().mockResolvedValue([shared, deferredOnly]);
     const getConvoFiles = jest.fn().mockResolvedValue(['shared', 'deferred']);
     const getToolFilesByIds = jest.fn().mockResolvedValue([shared]);
@@ -3011,10 +3014,27 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
       },
     );
 
-    const deferredCall = filterFilesByEndpointRuntimeConfig.mock.calls.find(
-      ([, params]) => (params as { consumedBytes?: number }).consumedBytes !== undefined,
+    const chargedToDeferred = filterFilesByEndpointRuntimeConfig.mock.calls
+      .map(([, params]) => (params as { consumedBytes?: number }).consumedBytes)
+      .find((bytes) => bytes !== undefined);
+    /* The only delivered file is also the shared one, and the deferred pass charges its
+     * own list as it walks it, so nothing is carried in. */
+    expect(chargedToDeferred).toBe(0);
+
+    /* The persistent screening runs inside the callback, and must see the two unique
+     * files rather than three. */
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const lastCall = primeResources.mock.calls[primeResources.mock.calls.length - 1];
+    const screen = lastCall?.[0].screenPersistentFiles as (
+      files: unknown[],
+    ) => unknown[];
+    filterFilesByEndpointRuntimeConfig.mockClear();
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce([]);
+    screen([]);
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ consumedBytes: 500 }),
     );
-    expect((deferredCall?.[1] as { consumedBytes: number }).consumedBytes).toBe(0);
   });
 
   it('screens persistent agent files under the remaining size allowance and content policy', async () => {
