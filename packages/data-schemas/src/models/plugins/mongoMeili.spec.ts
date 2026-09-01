@@ -1340,9 +1340,7 @@ describe('Meilisearch Mongoose plugin', () => {
     });
 
     test('reindexes documents from an older indexed schema version', async () => {
-      const conversationModel = createConversationModel(
-        mongoose,
-      ) as unknown as SchemaWithMeiliMethods;
+      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
       await conversationModel.deleteMany({});
 
       await conversationModel.collection.insertOne({
