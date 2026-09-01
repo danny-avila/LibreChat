@@ -1,4 +1,5 @@
 import { memo, useCallback } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
@@ -20,6 +21,7 @@ import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
+import { composerLiftFamily } from './Input/Composer/state';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
@@ -43,7 +45,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
   /** Room an open composer popover needs below the composer; see the atom. */
-  const composerLift = useRecoilValue(store.composerLiftFamily(index));
+  const composerLift = useAtomValue(composerLiftFamily(index));
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },

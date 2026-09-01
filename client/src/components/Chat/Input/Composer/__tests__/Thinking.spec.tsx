@@ -76,14 +76,17 @@ jest.mock('~/Providers', () => ({
     jest.requireActual<typeof import('react')>('react').useContext(mockChatContext),
 }));
 
-function renderInComposer({ disabled = false }: { disabled?: boolean } = {}) {
+function renderInComposer({
+  disabled = false,
+  index = 0,
+}: { disabled?: boolean; index?: number } = {}) {
   const textareaRef = createRef<HTMLTextAreaElement>();
   const onComposerClick = jest.fn(() => textareaRef.current?.focus());
   const tree = () => (
     <mockChatContext.Provider value={{ conversation: mockConversation }}>
       <div onClick={onComposerClick}>
         <textarea ref={textareaRef} aria-label="Message input" />
-        <Thinking index={0} disabled={disabled} hasAddedConversation={false} />
+        <Thinking index={index} disabled={disabled} hasAddedConversation={false} />
       </div>
     </mockChatContext.Provider>
   );
@@ -113,6 +116,13 @@ describe('Thinking', () => {
 
     expect(disclosure).toBeDisabled();
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+  });
+
+  it('marks its portal with the owning split-pane index', () => {
+    renderInComposer({ index: 1 });
+    fireEvent.click(screen.getByTestId('composer-thinking-button'));
+
+    expect(document.querySelector('[data-chat-pane-portal="1"]')).toBeInTheDocument();
   });
 
   it('routes numeric budgets through the shared reasoning control', () => {

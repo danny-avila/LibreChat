@@ -354,6 +354,69 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
       });
     });
 
+    it('uses a custom-backed agent provider default when validating its override', async () => {
+      mockGetEndpointsConfig.mockResolvedValue({
+        ClaudeProxy: {
+          type: EModelEndpoint.custom,
+          customParams: { defaultParamsEndpoint: EModelEndpoint.anthropic },
+        },
+      });
+      mockAgentBuildOptions.mockReturnValueOnce({
+        endpoint: EModelEndpoint.agents,
+        model_parameters: { model: 'claude-sonnet-4-6', effort: 'low' },
+        agent: Promise.resolve({ provider: 'ClaudeProxy', model: 'claude-sonnet-4-6' }),
+      });
+      const req = createReq(
+        {
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'agent-custom',
+          reasoningOverride: { key: 'effort', value: 'high' },
+        },
+        { modelSpecs: null },
+      );
+      req.baseUrl = '/api/agents/chat';
+
+      await buildEndpointOption(req, createRes(), jest.fn());
+
+      expect(req.body.endpointOption.model_parameters.effort).toBe('high');
+    });
+
+    it('rejects an override for a reasoning field owned by an enforced model spec', async () => {
+      mockGetEndpointsConfig.mockResolvedValue({});
+      const req = createReq(
+        {
+          endpoint: EModelEndpoint.openAI,
+          spec: 'locked-reasoning',
+          model: 'gpt-5.1',
+          reasoningOverride: { key: 'reasoning_effort', value: 'high' },
+        },
+        {
+          modelSpecs: {
+            enforce: true,
+            list: [
+              {
+                name: 'locked-reasoning',
+                preset: {
+                  endpoint: EModelEndpoint.openAI,
+                  model: 'gpt-5.1',
+                  reasoning_effort: 'low',
+                },
+              },
+            ],
+          },
+        },
+      );
+      req.baseUrl = '/api/agents/chat';
+      const res = createRes();
+      const next = jest.fn();
+      const { handleError } = require('@librechat/api');
+
+      await buildEndpointOption(req, res, next);
+
+      expect(handleError).toHaveBeenCalledWith(res, { text: 'Invalid reasoning override' });
+      expect(next).not.toHaveBeenCalled();
+    });
+
     it('rejects a malformed override before building endpoint options', async () => {
       mockGetEndpointsConfig.mockResolvedValue({});
       const req = createReq(

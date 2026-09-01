@@ -56,6 +56,14 @@ jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry })
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: null }),
 }));
+jest.mock('~/Providers/AgentsMapContext', () => ({
+  useAgentsMapContext: () => ({
+    'agent-1': {
+      provider: 'openAI',
+      model: 'gpt-5.1',
+    },
+  }),
+}));
 jest.mock('~/store', () => ({
   __esModule: true,
   default: {
@@ -383,7 +391,7 @@ describe('useChatFunctions regenerate', () => {
   it('replays the original user turn reasoning override on regenerate', () => {
     const parent = {
       ...userMessage('user-reasoning'),
-      reasoningOverride: { key: 'effort', value: 'max' },
+      reasoningOverride: { key: 'reasoning_effort', value: 'high' },
     } as TMessage;
     const response = assistantMessage('assistant-reasoning', parent.messageId);
     const { result, setSubmission } = renderAsk([parent, response]);
@@ -394,6 +402,20 @@ describe('useChatFunctions regenerate', () => {
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(submission.userMessage.reasoningOverride).toEqual(parent.reasoningOverride);
+  });
+
+  it('drops a replayed reasoning override that the selected model no longer supports', () => {
+    const parent = {
+      ...userMessage('user-reasoning'),
+      reasoningOverride: { key: 'effort', value: 'max' },
+    } as TMessage;
+    const response = assistantMessage('assistant-reasoning', parent.messageId);
+    const { result, setSubmission } = renderAsk([parent, response]);
+
+    act(() => result.current.regenerate(response));
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toBeUndefined();
   });
 });
 

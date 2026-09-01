@@ -1,12 +1,13 @@
 import React from 'react';
-import { RecoilRoot, useRecoilValue } from 'recoil';
+import { getDefaultStore } from 'jotai';
+import { RecoilRoot } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { PaletteEntry } from '~/hooks/Input/usePaletteEntries';
 import type { AttachEntry } from '~/hooks/Input/useAttachItems';
 import Palette from '../Palette';
-import store from '~/store';
+import { composerLiftFamily } from '../state';
 
 /**
  * The palette's row model: what the list is made of, in what order, and what a
@@ -127,9 +128,10 @@ function renderPalette(
         }) as DOMRect,
     );
   }
+  const liftStore = getDefaultStore();
+  liftStore.set(composerLiftFamily(0), 0);
   const view = render(
     <RecoilRoot>
-      <LiftObserver />
       {/* Stands in for the composer box, whose own click handler focuses the
           textarea. The popup is portaled but still a React descendant of it, so
           this is the handler a row's click bubbles into. */}
@@ -151,12 +153,7 @@ function renderPalette(
     </RecoilRoot>,
   );
   fireEvent.click(screen.getByTestId('composer-palette-button'));
-  return view;
-}
-
-function LiftObserver() {
-  const lift = useRecoilValue(store.composerLiftFamily(0));
-  return <output data-testid="composer-lift">{lift}</output>;
+  return { ...view, liftStore };
 }
 
 /** Row labels in list order, headers included, as the user reads them. The
@@ -204,12 +201,24 @@ describe('Palette', () => {
     document.body.append(portalMain);
   });
 
-  afterEach(() => portalMain.remove());
+  afterEach(() => {
+    portalMain.remove();
+    jest.restoreAllMocks();
+  });
 
-  it('recalculates the landing lift when the visual viewport changes', async () => {
+  it('recalculates the landing lift when the visual viewport changes', () => {
+    jest.spyOn(window, 'requestAnimationFrame').mockReturnValue(0);
     mockPopupHeight = 100;
     let viewportHeight = 700;
-    const viewport = new EventTarget();
+    const resizeListeners: EventListener[] = [];
+    const viewport = {
+      addEventListener: jest.fn((type: string, listener: EventListener) => {
+        if (type === 'resize') {
+          resizeListeners.push(listener);
+        }
+      }),
+      removeEventListener: jest.fn(),
+    };
     Object.defineProperties(viewport, {
       height: { get: () => viewportHeight },
       offsetTop: { value: 0 },
@@ -218,16 +227,27 @@ describe('Palette', () => {
       configurable: true,
       value: viewport,
     });
-    renderPalette({ anchorBottom: 650 });
-    await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('70'));
+    const { liftStore } = renderPalette({ anchorBottom: 650 });
+    expect(liftStore.get(composerLiftFamily(0))).toBe(70);
 
     viewportHeight = 600;
-    act(() => viewport.dispatchEvent(new Event('resize')));
+    const updateLift = resizeListeners[0];
+    expect(updateLift).toBeDefined();
+    act(() => updateLift?.(new Event('resize')));
 
-    await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('170'));
+    expect(liftStore.get(composerLiftFamily(0))).toBe(170);
   });
 
-  it('rebases the lift when the window layout moves the composer', async () => {
+  it('rebases the lift when the window layout moves the composer', () => {
+    jest.spyOn(window, 'requestAnimationFrame').mockReturnValue(0);
+    const resizeListeners: EventListener[] = [];
+    const addEventListener = window.addEventListener.bind(window);
+    jest.spyOn(window, 'addEventListener').mockImplementation((type, listener, options) => {
+      if (type === 'resize' && typeof listener === 'function') {
+        resizeListeners.push(listener);
+      }
+      addEventListener(type, listener, options);
+    });
     mockPopupHeight = 100;
     let anchorBottom = 650;
     Object.defineProperty(window, 'innerHeight', {
@@ -235,13 +255,17 @@ describe('Palette', () => {
       writable: true,
       value: 700,
     });
-    renderPalette({ anchorBottom: () => anchorBottom });
-    await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('70'));
+    const { liftStore } = renderPalette({ anchorBottom: () => anchorBottom });
+    expect(liftStore.get(composerLiftFamily(0))).toBe(70);
 
     anchorBottom = 600;
-    act(() => window.dispatchEvent(new Event('resize')));
+    const handleLayoutResize = resizeListeners.find((listener) =>
+      listener.toString().includes('baselineRef'),
+    );
+    expect(handleLayoutResize).toBeDefined();
+    act(() => handleLayoutResize?.(new Event('resize')));
 
-    await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('90'));
+    expect(liftStore.get(composerLiftFamily(0))).toBe(90);
   });
 
   it('does not advertise its cancel state as the upload shortcut target', () => {

@@ -66,12 +66,14 @@ function setup({
   isSubmitting = false,
   filesLoading = false,
   deferComposerReset = false,
+  disabled = false,
 }: {
   autoSendText?: number;
   draft?: string;
   isSubmitting?: boolean;
   filesLoading?: boolean;
   deferComposerReset?: boolean;
+  disabled?: boolean;
 } = {}) {
   let text = draft;
   let uploading = filesLoading;
@@ -102,6 +104,7 @@ function setup({
         isSubmitting,
         filesLoading: uploading,
         deferComposerReset,
+        disabled,
       };
       return useDictation(dictationOptions);
     },
@@ -192,6 +195,20 @@ describe('useDictation', () => {
 
     expect(mockStop).toHaveBeenCalledTimes(1);
     expect(result.current.transcribing).toBe(true);
+  });
+
+  it('refuses both direct and shortcut starts while the host disables speech', () => {
+    const { result } = setup({ disabled: true });
+
+    act(() => result.current.start());
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyL', shiftKey: true, altKey: true }),
+      );
+    });
+
+    expect(result.current.startDisabled).toBe(true);
+    expect(mockStart).not.toHaveBeenCalled();
   });
 
   it('leaves a plain stop in the composer', async () => {

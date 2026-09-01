@@ -447,6 +447,9 @@ describe('useSteerRecovery', () => {
         result.current.recovery.retry('local-ctx');
       });
       await flush();
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ quotes: ['carried quote'] }),
+      );
       expect(result.current.chips).toEqual([
         expect.objectContaining({
           steerId: 'srv-ctx',

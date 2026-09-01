@@ -36,12 +36,6 @@ export type RestoreToComposer = (
 interface QueueProps {
   steering: SteeringControls;
   conversationId: string;
-  /** Returns whether the composer took the words; see `editToComposer`. */
-  onEditToComposer: (
-    text: string,
-    files?: TMessage['files'],
-    context?: QueuedMessageContext,
-  ) => boolean;
   onRestoreToComposer: RestoreToComposer;
 }
 
@@ -59,7 +53,6 @@ interface QueueRowProps {
   /** Owned by the rail, so the keys are stated once rather than once per row,
    *  and scoped to THIS rail, so a split view has one hint per pane. */
   reorderHintId: string;
-  onEditToComposer: QueueProps['onEditToComposer'];
   onRestoreToComposer: RestoreToComposer;
   onAnnounce: (message: string) => void;
 }
@@ -73,7 +66,6 @@ function QueueRow({
   conversationId,
   interruptPending,
   reorderHintId,
-  onEditToComposer,
   onRestoreToComposer,
   onAnnounce,
 }: QueueRowProps) {
@@ -199,10 +191,18 @@ function QueueRow({
         /* Same order as the trash below: dropped only once the words are
            somewhere else. A paused question owns the composer, and removing
            the row anyway would leave the message nowhere at all. */
-        const taken = onEditToComposer(message.text, message.files, {
-          quotes: message.quotes,
-          manualSkills: message.manualSkills,
-        });
+        const taken = onRestoreToComposer(
+          message.text,
+          message.files,
+          {
+            quotes: message.quotes,
+            manualSkills: message.manualSkills,
+            ...(message.reasoningOverride != null && {
+              reasoningOverride: message.reasoningOverride,
+            }),
+          },
+          conversationId,
+        );
         if (taken) {
           steering.removeQueued(message.id);
           return true;
@@ -210,7 +210,7 @@ function QueueRow({
         showToast({ message: localize('com_ui_queue_edit_blocked'), status: 'warning' });
         return false;
       }),
-    [handOff, steering, message, onEditToComposer, showToast, localize],
+    [handOff, steering, message, onRestoreToComposer, conversationId, showToast, localize],
   );
 
   const removeToComposer = useCallback(
@@ -226,7 +226,13 @@ function QueueRow({
         const restored = onRestoreToComposer(
           message.text,
           message.files,
-          { quotes: message.quotes, manualSkills: message.manualSkills },
+          {
+            quotes: message.quotes,
+            manualSkills: message.manualSkills,
+            ...(message.reasoningOverride != null && {
+              reasoningOverride: message.reasoningOverride,
+            }),
+          },
           conversationId,
         );
         if (restored) {
@@ -416,7 +422,7 @@ function QueueRow({
  * the front with no visible effect, so the button disables itself for that
  * case instead of pretending to act.
  */
-function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer }: QueueProps) {
+function Queue({ steering, conversationId, onRestoreToComposer }: QueueProps) {
   const localize = useLocalize();
   /* Per rail, not per module: split view mounts two composers at once, and a
      shared constant id would duplicate the element and point every handle's
@@ -477,7 +483,6 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
             conversationId={conversationId}
             interruptPending={interruptPending}
             reorderHintId={reorderHintId}
-            onEditToComposer={onEditToComposer}
             onRestoreToComposer={onRestoreToComposer}
             onAnnounce={setAnnouncement}
           />

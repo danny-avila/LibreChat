@@ -10,12 +10,15 @@ import {
   QueryKeys,
   ContentTypes,
   EModelEndpoint,
+  ReasoningParameterFormat,
   getEndpointField,
   isAgentsEndpoint,
   parseCompactConvo,
   replaceSpecialVars,
   isAssistantsEndpoint,
   getDefaultParamsEndpoint,
+  isReasoningOverrideSupported,
+  resolveReasoningSettingForTarget,
 } from 'librechat-data-provider';
 import type {
   TMessage,
@@ -38,7 +41,10 @@ import {
   getRouteChatProjectId,
   stripStreamedIndexStamps,
 } from '~/utils';
-import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
+import {
+  getReasoningStateKey,
+  pendingReasoningOverrideFamily,
+} from '~/components/Chat/Input/Composer/state';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -46,6 +52,7 @@ import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
+import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 
 /** A revalidating cache younger than this is locally authoritative (the run
  * that just streamed wrote it) and stays sendable; older ones wait for the
@@ -222,6 +229,7 @@ export default function useChatFunctions({
   const queryClient = useQueryClient();
   const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
+  const agentsMap = useAgentsMapContext();
   const isTemporary = useRecoilValue(store.isTemporary);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
@@ -292,8 +300,8 @@ export default function useChatFunctions({
   );
 
   const drainPendingReasoning = useCallback(
-    (convoId: string): TMessage['reasoningOverride'] => {
-      const reasoningAtom = pendingReasoningOverrideFamily(convoId);
+    (stateKey: string): TMessage['reasoningOverride'] => {
+      const reasoningAtom = pendingReasoningOverrideFamily(stateKey);
       const reasoningOverride = reasoningStore.get(reasoningAtom);
       if (reasoningOverride != null) {
         reasoningStore.set(reasoningAtom, undefined);
@@ -408,6 +416,10 @@ export default function useChatFunctions({
     setShowStopButton(false);
 
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
+    const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+    const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
     /**
      * Manual skill selection resolution:
      *  - Explicit `overrideManualSkills` wins (regenerate / save-and-submit
@@ -449,7 +461,31 @@ export default function useChatFunctions({
     }
     let reasoningOverride = overrideReasoning ?? undefined;
     if (overrideReasoning === undefined && !isRegenerate && !isContinued && !isEdited) {
-      reasoningOverride = drainPendingReasoning(conversationId ?? Constants.NEW_CONVO);
+      reasoningOverride = drainPendingReasoning(getReasoningStateKey(conversationId, index));
+    }
+    if (reasoningOverride != null) {
+      const isAgent = isAgentsEndpoint(endpoint);
+      const savedAgent =
+        isAgent && conversation?.agent_id ? agentsMap?.[conversation.agent_id] : undefined;
+      const effectiveEndpoint = isAgent ? savedAgent?.provider : endpoint;
+      const effectiveModel = isAgent ? savedAgent?.model : conversation?.model;
+      const effectiveEndpointType = getEndpointField(endpointsConfig, effectiveEndpoint, 'type');
+      const customParams =
+        effectiveEndpoint == null ? undefined : endpointsConfig?.[effectiveEndpoint]?.customParams;
+      const supportedSetting =
+        effectiveEndpoint == null ||
+        customParams?.reasoningFormat === ReasoningParameterFormat.disabled
+          ? undefined
+          : resolveReasoningSettingForTarget({
+              endpoint: effectiveEndpointType ?? effectiveEndpoint,
+              model: effectiveModel,
+              isAgent,
+              defaultParamsEndpoint: customParams?.defaultParamsEndpoint,
+              paramDefinitions: customParams?.paramDefinitions,
+            });
+      if (!isReasoningOverrideSupported(reasoningOverride, supportedSetting)) {
+        reasoningOverride = undefined;
+      }
     }
     const isEditOrContinue = isEdited || isContinued;
 
@@ -522,11 +558,7 @@ export default function useChatFunctions({
       thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
     }
 
-    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-    const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
-    const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
     const iconURL = conversation?.iconURL;
-    const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
 
     /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
