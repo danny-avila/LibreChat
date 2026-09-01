@@ -2637,6 +2637,82 @@ describe('primeResources', () => {
       expect(result.provisionState).toBeUndefined();
     });
 
+    it('queues a permanent code resource on a turn that attaches nothing', async () => {
+      /* A promoted code upload waits for the route the turn resolves, so it carries no
+       * sandbox reference. Without loading the agent's own code resources here, its first
+       * code call runs without the file it was uploaded for. */
+      const codeResourceFile = {
+        user: 'user1',
+        file_id: 'permanent-code',
+        filename: 'bundle.zip',
+        filepath: '/uploads/bundle.zip',
+        object: 'file',
+        type: 'application/zip',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+        context: FileContext.agents,
+        metadata: { legacyUploadChoice: false },
+      } as TFile;
+      mockGetFiles.mockResolvedValue([codeResourceFile]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {
+          [EToolResources.execute_code]: { file_ids: ['permanent-code'] },
+        },
+        attachments: undefined,
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toEqual(['permanent-code']);
+    });
+
+    it('reprovisions the destination a chooser upload was actually filed under', async () => {
+      /* A duplicated agent inherits the file id but not its vectors, and the marker says
+       * the upload was a chooser one without saying which destination it chose. Blanket
+       * suppression leaves search querying a namespace holding nothing. */
+      const inherited = {
+        user: 'user1',
+        file_id: 'inherited-search',
+        filename: 'handbook.pdf',
+        filepath: '/uploads/handbook.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        embedded: true,
+        usage: 0,
+        context: FileContext.agents,
+        metadata: { legacyUploadChoice: true, embeddedEntities: ['original-agent'] },
+      } as TFile;
+      mockGetFiles.mockResolvedValue([inherited]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {
+          [EToolResources.file_search]: { file_ids: ['inherited-search'] },
+        },
+        attachments: undefined,
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.file_search, EToolResources.execute_code]),
+      });
+
+      expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
+        'inherited-search',
+      ]);
+      /* And only that destination: code was declined at upload. */
+      expect(result.provisionState?.codeEnvFiles ?? []).toEqual([]);
+    });
+
     it('keeps a type the sandbox cannot take out of the code queue', async () => {
       /* Uploading it aborts the whole tool batch over a file that was only ever meant for
        * provider delivery. */

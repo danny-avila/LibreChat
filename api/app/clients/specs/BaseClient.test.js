@@ -2962,6 +2962,8 @@ describe('BaseClient', () => {
       TestClient.options = {
         endpoint: EModelEndpoint.openAI,
       };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
       TestClient.addImageURLs = jest.fn(async (message, files) => {
         message.image_urls = ['encoded-image'];
         return files;
@@ -2974,7 +2976,29 @@ describe('BaseClient', () => {
       TestClient.addAudios = jest.fn(async (_message, files) => files);
     });
 
+    /* The stored path is an upload-time inference, so delivery re-resolves it for the
+     * endpoint running the turn. A test asserting a route has to configure that route
+     * rather than rely on the stored value alone. */
+    const routeTo = (path, ...mimeTypes) => {
+      TestClient.options.req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [EModelEndpoint.openAI]: {
+                defaultLLMDeliveryPath: {
+                  overrides: Object.fromEntries(mimeTypes.map((mime) => [mime, path])),
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+    };
+
     test('keeps a none image in returned files without adding image URLs', async () => {
+      routeTo('none', 'image/*');
       const message = {};
       const file = {
         user: 'user1',
@@ -2994,7 +3018,52 @@ describe('BaseClient', () => {
       expect(TestClient.addImageURLs).not.toHaveBeenCalled();
     });
 
+    test('re-resolves a path stored under a different provider', async () => {
+      /* Audio uploaded under Google stores `provider`, but the OpenAI encoder emits no
+       * audio payload, so honoring that inference delivers neither media nor text. */
+      routeTo('text', 'audio/*');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'foreign-audio',
+        filename: 'note.mp3',
+        filepath: '/uploads/note.mp3',
+        type: 'audio/mpeg',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addAudios).not.toHaveBeenCalled();
+    });
+
+    test('keeps an explicit chooser decision even under a different provider', async () => {
+      /* A legacy chooser upload records the user's own decision, which is not this
+       * endpoint's to re-derive. */
+      routeTo('text', 'audio/*');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'chosen-audio',
+        filename: 'note.mp3',
+        filepath: '/uploads/note.mp3',
+        type: 'audio/mpeg',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+        metadata: { legacyUploadChoice: true },
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addAudios).toHaveBeenCalled();
+    });
+
     test('keeps a none PDF in returned files without adding documents', async () => {
+      routeTo('none', 'application/pdf');
       const message = {};
       const file = {
         user: 'user1',

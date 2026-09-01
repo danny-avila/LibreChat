@@ -391,6 +391,7 @@ const computeProvisionState = async ({
   agentId,
   codeRouteKey,
   agentScopedFileIds,
+  persistedResourceMembership,
 }: {
   req?: ServerRequest;
   attachments: Array<TFile>;
@@ -404,6 +405,8 @@ const computeProvisionState = async ({
   checkSessionsAlive?: TCheckSessionsAlive;
   loadCodeApiKey?: TLoadCodeApiKey;
   legacyFileUploadUX?: boolean;
+  /** Which resource each persisted file is filed under, before categorization mutates it. */
+  persistedResourceMembership?: ReadonlyMap<EToolResources, ReadonlySet<string>>;
 }): Promise<ProvisionState | undefined> => {
   if (!enabledToolResources || enabledToolResources.size === 0 || attachments.length === 0) {
     return undefined;
@@ -414,11 +417,29 @@ const computeProvisionState = async ({
    * a missing reference would read those declines as work to do. The decision belongs to
    * the file, not to this request: the endpoint deciding this turn need not be the one it
    * was uploaded under. Records predating the marker have only the setting to go on. */
-  const wasDeclinedElsewhere = (file: TFile): boolean => {
+  const cameFromChooser = (file: TFile): boolean => {
     const choice = file.metadata?.legacyUploadChoice;
     return choice == null ? legacyFileUploadUX === true : choice;
   };
-  const provisionable = attachments.filter((file) => file != null && !wasDeclinedElsewhere(file));
+
+  /** A chooser upload may still be provisioned for the destination it was filed under,
+   *  which is how an inherited search file gets vectors in a duplicated agent's namespace.
+   *  The destinations it carries no reference for were declined, not deferred. */
+  const allowsResource = (file: TFile, resourceType: EToolResources): boolean => {
+    if (!cameFromChooser(file)) {
+      return true;
+    }
+    return (
+      file.file_id != null &&
+      persistedResourceMembership?.get(resourceType)?.has(file.file_id) === true
+    );
+  };
+  const provisionable = attachments.filter(
+    (file) =>
+      file != null &&
+      (allowsResource(file, EToolResources.execute_code) ||
+        allowsResource(file, EToolResources.file_search)),
+  );
   if (provisionable.length === 0) {
     return undefined;
   }
@@ -497,7 +518,11 @@ const computeProvisionState = async ({
 
     /* Same question the search branch asks, and the same consequence: uploading a type
      * the sandbox refuses aborts the tool batch over a file meant for the model. */
-    if (needsCodeEnv && canToolResourceConsume(EToolResources.execute_code, file.type ?? '')) {
+    if (
+      needsCodeEnv &&
+      allowsResource(file, EToolResources.execute_code) &&
+      canToolResourceConsume(EToolResources.execute_code, file.type ?? '')
+    ) {
       const legacyRef = file.metadata?.codeEnvRef;
       const isDefaultRoute = legacyRef != null && codeEnvRouteKey(legacyRef) === 'default';
       /* Liveness was probed on the default route, so it answers only for a turn running
@@ -551,6 +576,7 @@ const computeProvisionState = async ({
      * tool when extraction refuses it. */
     if (
       needsVectorDB &&
+      allowsResource(file, EToolResources.file_search) &&
       canToolResourceConsume(EToolResources.file_search, file.type ?? '') &&
       !isEmbeddedForNamespace(file, namespaceId) &&
       !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
@@ -703,6 +729,38 @@ export const primeResources = async ({
       persistedResourceFileIds.add(fileId);
     }
 
+    /** The agent's own tool resource files are provisioning candidates in their own right.
+     *  A promoted code upload waits for the route the turn resolves, and an inherited
+     *  search file may hold no vectors in this agent's namespace, so both have to be
+     *  loaded even on a turn that attaches nothing. They are candidates only: delivery
+     *  still follows the context ids below. */
+    const toolResourceFileIds = new Set<string>();
+    /** Which resource each persisted file is filed under, read before categorization
+     *  mutates tool_resources. A legacy upload's selected destination is the only one it
+     *  may be provisioned for; the rest were declined. */
+    const persistedResourceMembership = new Map<EToolResources, Set<string>>();
+    const provisionableResources = [
+      {
+        type: EToolResources.execute_code,
+        ids: tool_resources[EToolResources.execute_code]?.file_ids,
+      },
+      {
+        type: EToolResources.file_search,
+        ids: tool_resources[EToolResources.file_search]?.file_ids,
+      },
+    ];
+    for (const { type, ids } of provisionableResources) {
+      persistedResourceMembership.set(type, new Set(ids ?? []));
+      if (enabledToolResources?.has(type) !== true) {
+        continue;
+      }
+      for (const fileId of ids ?? []) {
+        toolResourceFileIds.add(fileId);
+        persistedResourceFileIds.add(fileId);
+      }
+    }
+    const resourceProvisionCandidates: Array<TFile> = [];
+
     if (shouldLoadContext) {
       delete tool_resources[EToolResources.context];
     }
@@ -754,6 +812,10 @@ export const primeResources = async ({
         attachmentFileIds.add(file.file_id);
       }
 
+      if (toolResourceFileIds.has(file.file_id)) {
+        resourceProvisionCandidates.push(file);
+      }
+
       if (imageEditFileIdSet.has(file.file_id)) {
         addFileToResource({
           file,
@@ -770,7 +832,10 @@ export const primeResources = async ({
        *  provisioning here too, so a turn with no new attachment still primes them. */
       const contextProvisionState = await computeProvisionState({
         req,
-        attachments: withDeferredCandidates(attachments, provisionCandidates),
+        attachments: withDeferredCandidates(attachments, [
+          ...(provisionCandidates ?? []),
+          ...resourceProvisionCandidates,
+        ]),
         resourcePrincipal,
         enabledToolResources,
         tool_resources,
@@ -781,6 +846,7 @@ export const primeResources = async ({
         agentId,
         codeRouteKey,
         agentScopedFileIds: persistedResourceFileIds,
+        persistedResourceMembership,
       });
       return {
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -829,7 +895,10 @@ export const primeResources = async ({
 
     const provisionState = await computeProvisionState({
       req,
-      attachments: withDeferredCandidates(attachments, provisionCandidates),
+      attachments: withDeferredCandidates(attachments, [
+        ...(provisionCandidates ?? []),
+        ...resourceProvisionCandidates,
+      ]),
       resourcePrincipal,
       enabledToolResources,
       tool_resources,
@@ -840,6 +909,7 @@ export const primeResources = async ({
       agentId,
       codeRouteKey,
       agentScopedFileIds: persistedResourceFileIds,
+      persistedResourceMembership,
     });
 
     return {
