@@ -633,4 +633,64 @@ describe('Multer Configuration', () => {
       expect(getAppConfig).toHaveBeenCalled();
     });
   });
+
+  describe('agent uploads and provider allowlists', () => {
+    const configWithWiderProvider = () => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      return mergeFileConfig({
+        endpoints: {
+          agents: { supportedMimeTypes: ['^application/pdf$'] },
+          'Custom Provider': { supportedMimeTypes: ['^application/pdf$', '^video/mp4$'] },
+        },
+      });
+    };
+
+    it('accepts a type only the agent provider allows', (done) => {
+      /* This filter is synchronous and runs before the agent read, so narrowing to the
+       * agents entry would make the later provider check able to reject but never
+       * permit. The route validates again under the resolved provider. */
+      const fileFilter = createFileFilter(configWithWiderProvider());
+      mockReq.body = { endpoint: 'agents' };
+
+      fileFilter(
+        mockReq,
+        { ...mockFile, originalname: 'clip.mp4', mimetype: 'video/mp4' },
+        (err, accepted) => {
+          expect(err).toBeNull();
+          expect(accepted).toBe(true);
+          done();
+        },
+      );
+    });
+
+    it('still refuses a type no configured endpoint allows', (done) => {
+      const fileFilter = createFileFilter(configWithWiderProvider());
+      mockReq.body = { endpoint: 'agents' };
+
+      fileFilter(
+        mockReq,
+        { ...mockFile, originalname: 'installer.exe', mimetype: 'application/x-msdownload' },
+        (err, accepted) => {
+          expect(err).toBeTruthy();
+          expect(accepted).toBe(false);
+          done();
+        },
+      );
+    });
+
+    it('keeps a non-agent endpoint judged by its own allowlist alone', (done) => {
+      const fileFilter = createFileFilter(configWithWiderProvider());
+      mockReq.body = { endpoint: 'agents-lookalike' };
+
+      fileFilter(
+        mockReq,
+        { ...mockFile, originalname: 'clip.mp4', mimetype: 'video/mp4' },
+        (err, accepted) => {
+          expect(err).toBeTruthy();
+          expect(accepted).toBe(false);
+          done();
+        },
+      );
+    });
+  });
 });

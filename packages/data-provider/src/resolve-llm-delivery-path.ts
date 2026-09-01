@@ -6,7 +6,7 @@ import {
   isKnownProviderIdentifier,
   isMediaSupportedProvider,
 } from './schemas';
-import { isBedrockDocumentType, retrievalMimeTypes, codeInterpreterMimeTypes } from './file-config';
+import { isBedrockDocumentType, codeInterpreterMimeTypes } from './file-config';
 import { EToolResources } from './types/assistants';
 
 /** Audio and video reach the model only through the media encoders, which support a
@@ -222,14 +222,20 @@ export function resolveUploadLLMDeliveryPath({
 }
 
 /**
- * Whether a file tool can do anything with this type, judged by the same lists the client
- * offers destinations from. `file_search` indexes extracted text, so it takes neither an
- * image nor an archive the vector store cannot read, while code execution accepts a wider
- * set. Shared with the upload guard so selection and rejection cannot disagree.
+ * Whether a file tool can do anything with this type. `file_search` indexes extracted
+ * text, so it needs a type some step can turn into text and cannot use media, whose
+ * extraction paths are OCR and speech rather than the vector store. Code execution is
+ * judged by the list the client offers it from. Shared by upload-time selection and
+ * deferred provisioning so the two cannot queue a file the other would refuse.
  */
 export function canToolResourceConsume(toolResource: string, mimeType: string): boolean {
   if (toolResource === EToolResources.file_search) {
-    return !mimeType.startsWith('image') && matchesMimeList(mimeType, retrievalMimeTypes);
+    return (
+      !mimeType.startsWith('image') &&
+      !mimeType.startsWith('audio') &&
+      !mimeType.startsWith('video') &&
+      hasTextExtractionPath(mimeType)
+    );
   }
   if (toolResource === EToolResources.execute_code) {
     return matchesMimeList(mimeType, codeInterpreterMimeTypes);

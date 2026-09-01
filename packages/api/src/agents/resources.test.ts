@@ -2637,6 +2637,36 @@ describe('primeResources', () => {
       expect(result.provisionState).toBeUndefined();
     });
 
+    it('keeps a type the vector store cannot read out of the search queue', async () => {
+      /* Queueing it sends it to RAG on the next search call, and extraction refusing it
+       * aborts the tool over a file that was never a search candidate. */
+      const archive = {
+        user: 'user1',
+        file_id: 'archive-file',
+        filename: 'bundle.zip',
+        filepath: '/uploads/bundle.zip',
+        object: 'file',
+        type: 'application/zip',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+      } as TFile;
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([archive]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.file_search]),
+      });
+
+      expect(result.provisionState?.vectorDBFiles ?? []).toEqual([]);
+    });
+
     it('queues a deferred candidate for provisioning without delivering it again', async () => {
       process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
       const deferred = makeCodeFile({ file_id: 'deferred-file' });

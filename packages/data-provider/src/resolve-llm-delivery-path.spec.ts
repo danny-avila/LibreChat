@@ -465,7 +465,12 @@ describe('canToolResourceConsume', () => {
      * treating everything non-image as searchable sent it to RAG to be rejected. */
     expect(canToolResourceConsume('file_search', 'image/png')).toBe(false);
     expect(canToolResourceConsume('file_search', 'application/zip')).toBe(false);
+    expect(canToolResourceConsume('file_search', 'video/mp4')).toBe(false);
+    expect(canToolResourceConsume('file_search', 'audio/mpeg')).toBe(false);
     expect(canToolResourceConsume('file_search', 'application/pdf')).toBe(true);
+    /* The vector store handles more than the historical retrieval list, and a data file
+     * is a normal thing to search. */
+    expect(canToolResourceConsume('file_search', 'text/csv')).toBe(true);
     expect(canToolResourceConsume('execute_code', 'application/zip')).toBe(true);
     expect(canToolResourceConsume('execute_code', 'image/png')).toBe(true);
   });

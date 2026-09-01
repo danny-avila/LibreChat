@@ -99,11 +99,16 @@ function AttachFileChat({
     () => (disableInputs || endpointFileConfig?.disabled) ?? false,
     [disableInputs, endpointFileConfig?.disabled],
   );
+  /* A saved agent's policy lives under its provider, so nothing is resolved for it until
+   * that provider is known; until then endpointFileConfig is the generic agents entry. */
+  const isPolicyResolved =
+    isFileConfigLoaded && (!isAgents || !conversation?.agent_id || agentProvider != null);
+
   /* Resolved here rather than in the menu: an unresolved config reads as unified, which
    * would show the wrong uploader on a legacy deployment. */
   const isUnifiedMode = useMemo(
-    () => isUnifiedUploadMode(endpointFileConfig, isFileConfigLoaded),
-    [endpointFileConfig, isFileConfigLoaded],
+    () => isUnifiedUploadMode(endpointFileConfig, isPolicyResolved),
+    [endpointFileConfig, isPolicyResolved],
   );
 
   if (isAssistants && endpointSupportsFiles && !isUploadDisabled) {
@@ -123,7 +128,7 @@ function AttachFileChat({
         /* Inert until the config resolves: the menu is an action, not just a display, and
          * offering the chooser here submits an explicit destination a unified deployment
          * would have inferred. The drag and paste paths hold for the same reason. */
-        disabled={disableInputs || !isFileConfigLoaded}
+        disabled={disableInputs || !isPolicyResolved}
         endpointType={endpointType}
         conversationId={conversationId}
         agentId={conversation?.agent_id}

@@ -507,6 +507,9 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     height,
     tenantId: req.user.tenantId,
     llmDeliveryPath,
+    /* The image route persists through here directly, so the choice has to be recorded
+     * on this path too. Absent, a later turn substitutes its own endpoint's mode. */
+    metadata: { legacyUploadChoice: endpointConfig?.legacyFileUploadUX === true },
   };
 
   /* Callers asking for the file are converting an image for a record of their own, under
