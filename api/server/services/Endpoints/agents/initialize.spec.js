@@ -968,6 +968,9 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs.agent.lazySubagentConfigs[0].historicalToolNames).toEqual([
       `${Constants.mcp_all}${Constants.mcp_delimiter}warehouse`,
     ]);
+    expect(agentClientArgs.agent.lazySubagentConfigs[0].historicalMcpServerNames).toEqual([
+      'warehouse',
+    ]);
     await expect(
       agentClientArgs.agent.lazySubagentConfigs[0].resolve({
         signal: new AbortController().signal,

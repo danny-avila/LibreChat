@@ -73,10 +73,21 @@ describe('agent tool history formatting', () => {
           {
             type: ContentTypes.TOOL_CALL,
             tool_call: {
-              id: 'query-1',
-              name: 'run_query_mcp_warehouse',
+              id: 'subagent-1',
+              name: `${Constants.SUBAGENT}`,
               args: '{}',
-              output: '{"rows":1}',
+              output: 'Finished the query',
+              subagent_content: [
+                {
+                  type: ContentTypes.TOOL_CALL,
+                  tool_call: {
+                    id: 'query-1',
+                    name: 'run_query_mcp_warehouse',
+                    args: '{}',
+                    output: '{"rows":1}',
+                  },
+                },
+              ],
             },
           },
         ],

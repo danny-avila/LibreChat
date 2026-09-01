@@ -1,4 +1,9 @@
-import { Constants, normalizeActionToolName, normalizeServerName } from 'librechat-data-provider';
+import {
+  Constants,
+  normalizeActionToolName,
+  normalizeServerName,
+  splitMCPToolKey,
+} from 'librechat-data-provider';
 import {
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
@@ -160,6 +165,8 @@ export function buildToolSet(agentConfig: BuildToolSetConfig | null | undefined)
 
 export interface RunToolSetConfig extends BuildToolSetConfig, ReachableAgent<RunToolSetConfig> {
   readonly edges?: readonly GraphEdge[];
+  readonly accessibleMcpServerNames?: readonly string[];
+  readonly historicalMcpServerNames?: readonly string[];
 }
 
 function collectHistoricalToolCallNames(messages?: Iterable<unknown> | null): Set<string> {
@@ -171,11 +178,16 @@ function collectHistoricalToolCallNames(messages?: Iterable<unknown> | null): Se
     const call = value as {
       name?: unknown;
       function?: { name?: unknown };
-      tool_call?: { name?: unknown };
+      tool_call?: { name?: unknown; subagent_content?: unknown };
+      subagent_content?: unknown;
     };
     const name = call.name ?? call.function?.name ?? call.tool_call?.name;
     if (typeof name === 'string') {
       names.add(name);
+    }
+    const nested = call.tool_call?.subagent_content ?? call.subagent_content;
+    if (Array.isArray(nested)) {
+      nested.forEach(addCall);
     }
   };
 
@@ -219,31 +231,47 @@ export function buildRunToolSet(
   }
 
   const toolSet = new Set<string>([`${Constants.SUBAGENT}`, 'conditional_transfer']);
-  const wildcardSuffixes = new Set<string>();
+  const wildcardServerNames = new Set<string>();
+  const knownServerNames = new Set<string>();
   for (const name of hostGeneratedToolNames ?? []) {
     toolSet.add(name);
   }
   for (const agent of agents) {
+    for (const rawName of [
+      ...(agent.accessibleMcpServerNames ?? []),
+      ...(agent.historicalMcpServerNames ?? []),
+    ]) {
+      knownServerNames.add(rawName);
+      knownServerNames.add(normalizeServerName(rawName));
+    }
     for (const name of buildToolSet(agent)) {
       toolSet.add(name);
       const wildcardPrefix = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
       if (name.startsWith(wildcardPrefix)) {
         const rawServerName = name.slice(wildcardPrefix.length);
         if (rawServerName) {
-          wildcardSuffixes.add(`${Constants.mcp_delimiter}${normalizeServerName(rawServerName)}`);
+          wildcardServerNames.add(normalizeServerName(rawServerName));
+          knownServerNames.add(rawServerName);
+          knownServerNames.add(normalizeServerName(rawServerName));
         }
       }
     }
   }
 
-  /** A wildcard authorizes every callable under one exact normalized server suffix.
-   * Re-derive only matching names from persisted structured calls so replay remains
-   * durable after the MCP catalog expires without trusting arbitrary history names. */
-  for (const name of collectHistoricalToolCallNames(historicalMessages)) {
-    if (
-      [...wildcardSuffixes].some((suffix) => name.length > suffix.length && name.endsWith(suffix))
-    ) {
-      toolSet.add(name);
+  if (wildcardServerNames.size > 0) {
+    /** A wildcard authorizes every callable under one exact normalized server identity.
+     * Resolve the longest known boundary and fail closed when the remaining tool half
+     * still contains a delimiter, which could hide a removed longer server name. */
+    const boundaryNames = [...knownServerNames];
+    for (const name of collectHistoricalToolCallNames(historicalMessages)) {
+      const [toolName, serverName] = splitMCPToolKey(name, boundaryNames);
+      if (
+        serverName != null &&
+        !toolName.includes(Constants.mcp_delimiter) &&
+        wildcardServerNames.has(normalizeServerName(serverName))
+      ) {
+        toolSet.add(name);
+      }
     }
   }
 

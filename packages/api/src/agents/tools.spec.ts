@@ -346,7 +346,9 @@ describe('buildHistoricalToolNames', () => {
   it('accepts only historical calls covered by an MCP wildcard server suffix', () => {
     const primary = {
       id: 'primary',
+      accessibleMcpServerNames: ['bar', 'foo_mcp_bar', 'Connector: Company'],
       toolDefinitions: [
+        { name: `${Constants.mcp_all}${Constants.mcp_delimiter}bar` },
         { name: `${Constants.mcp_all}${Constants.mcp_delimiter}Connector: Company` },
       ],
     };
@@ -355,6 +357,12 @@ describe('buildHistoricalToolNames', () => {
         content: [
           { tool_call: { name: 'search_mcp_Connector__Company' } },
           { tool_call: { name: 'search_mcp_attacker' } },
+          {
+            tool_call: {
+              name: 'subagent',
+              subagent_content: [{ tool_call: { name: 'run_query_mcp_bar' } }],
+            },
+          },
         ],
       },
       {
@@ -363,18 +371,34 @@ describe('buildHistoricalToolNames', () => {
           tool_calls: [{ function: { name: 'legacy_mcp_Connector__Company' } }],
         },
       },
+      { tool_calls: [{ name: 'lookup_mcp_foo_mcp_bar' }] },
     ];
 
     expect(buildRunToolSet(primary, null, null, messages)).toEqual(
       new Set([
         'subagent',
         'conditional_transfer',
+        `${Constants.mcp_all}${Constants.mcp_delimiter}bar`,
         `${Constants.mcp_all}${Constants.mcp_delimiter}Connector: Company`,
         'search_mcp_Connector__Company',
+        'run_query_mcp_bar',
         'lookup_mcp_Connector__Company',
         'legacy_mcp_Connector__Company',
       ]),
     );
+  });
+
+  it('does not inspect history when the run has no MCP wildcard', () => {
+    const message = {};
+    Object.defineProperty(message, 'content', {
+      get: () => {
+        throw new Error('history should not be inspected');
+      },
+    });
+
+    expect(() =>
+      buildRunToolSet({ toolDefinitions: [{ name: 'web' }] }, null, null, [message]),
+    ).not.toThrow();
   });
 });
 

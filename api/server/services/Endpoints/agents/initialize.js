@@ -1038,6 +1038,7 @@ const initializeClient = async ({
       includeReasoningHistory: getIncludeReasoningHistory(agent),
       alwaysApplySkillPrimes,
       historicalToolNames,
+      historicalMcpServerNames: rawMcpServerNames,
     };
   };
 
@@ -1273,6 +1274,7 @@ const initializeClient = async ({
         includeReasoningHistory: metadata.includeReasoningHistory,
         alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
         historicalToolNames: metadata.historicalToolNames,
+        historicalMcpServerNames: metadata.historicalMcpServerNames,
         lazySubagentConfigs: lazyChildren,
         subagentAgentConfigs: eagerChildren,
         subagentGraphMemberMetadata,
