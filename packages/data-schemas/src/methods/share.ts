@@ -10,8 +10,8 @@ import {
 } from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
-import { CLIENT_MESSAGE_SELECT } from './message';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
+import { CLIENT_MESSAGE_SELECT } from './message';
 import logger from '~/config/winston';
 
 class ShareServiceError extends Error {
