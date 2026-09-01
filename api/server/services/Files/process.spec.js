@@ -2456,6 +2456,59 @@ describe('unreachable unified uploads', () => {
   });
 });
 
+describe('native text fallback', () => {
+  /* The text matcher has to admit the type, or processing refuses before reaching the
+   * reader at all. This mirrors a deployment whose text config accepts these types. */
+  beforeEach(() => {
+    mergeFileConfig.mockReturnValue(
+      makeFileConfig({ textSupportedMimeTypes: [/^image\/png$/, /^text\/plain$/] }),
+    );
+    setupStoredFileUpload();
+  });
+
+  test('does not read a raster image as text when no extractor handles it', async () => {
+    /* An administrator can route images to text; without OCR nothing parses them, and
+     * reading the bytes directly would store mojibake as the file's text. */
+    const { parseText } = require('@librechat/api');
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        message_file: 'true',
+        file_id: 'f-png',
+        tool_resource: 'context',
+      },
+    }).catch(() => {});
+
+    const call = parseText.mock.calls.at(-1)?.[0];
+    expect(call?.allowNativeFallback).toBe(false);
+  });
+
+  test('still reads a text file directly', async () => {
+    const { parseText } = require('@librechat/api');
+    const req = makeReq({ mimetype: 'text/plain', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        message_file: 'true',
+        file_id: 'f-txt',
+        tool_resource: 'context',
+      },
+    }).catch(() => {});
+
+    const call = parseText.mock.calls.at(-1)?.[0];
+    expect(call?.allowNativeFallback).toBe(true);
+  });
+});
+
 describe('permanent unified uploads and unknown tool sets', () => {
   const zipReq = () => {
     const req = makeReq({ mimetype: 'application/zip', ocrConfig: null });

@@ -61,6 +61,7 @@ export default function useDragHelpers() {
         agent?.provider,
       );
       const cfg = queryClient.getQueryData<t.TFileConfig>([QueryKeys.fileConfig]);
+      let isUnifiedMode = false;
       if (cfg) {
         const endpointCfg = getEndpointFileConfig({
           fileConfig: mergeFileConfig(cfg),
@@ -71,10 +72,19 @@ export default function useDragHelpers() {
           showToast({ message: localize('com_ui_attach_error_disabled'), status: 'error' });
           return;
         }
+        isUnifiedMode = endpointCfg?.legacyFileUploadUX !== true;
       }
 
       /** Assistants do not use the upload-option flow */
       if (isAssistantsRef.current) {
+        routeFilesRef.current(item.files);
+        return;
+      }
+
+      /* Unified mode decides the destination from the file itself, so a drop must not
+       * present the chooser the attach button no longer shows. Offering it here would let
+       * the same file be delivered differently depending on how it was added. */
+      if (isUnifiedMode) {
         routeFilesRef.current(item.files);
         return;
       }

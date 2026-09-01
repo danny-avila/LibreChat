@@ -740,6 +740,27 @@ describe('File Methods', () => {
       expect(results.map((file) => file.file_id)).toEqual([deferredId]);
     });
 
+    it('surfaces a read failure rather than reporting nothing to provision', async () => {
+      /* An empty list is indistinguishable from nothing needing provisioning, so a
+       * swallowed error would let the tool run without the attachment. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const failing = createFileMethods({
+        ...mongoose,
+        models: {
+          ...mongoose.models,
+          File: {
+            find: () => {
+              throw new Error('mongo unavailable');
+            },
+          },
+        },
+      } as unknown as typeof mongoose);
+
+      await expect(
+        failing.getDeferredProvisionFiles([uuidv4()], { userId: ownerId.toString() }),
+      ).rejects.toThrow(/mongo unavailable/);
+    });
+
     it('still queues a file whose only code reference is for another route', async () => {
       const ownerId = new mongoose.Types.ObjectId();
       const otherRouteId = uuidv4();
