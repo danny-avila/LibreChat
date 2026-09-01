@@ -13,33 +13,6 @@ const ABSOLUTE_SOURCE_PATTERN = /^(?:[a-z][a-z\d+\-.]*:|\/\/)/i;
  */
 const SERVED_PATH_PATTERN = /^\/(?:images|api)\//i;
 
-/** A line that opens a code fence: up to three spaces of indent, then a run
- *  of three or more backticks or tildes. */
-const FENCE_OPEN_LINE = /^ {0,3}(`{3,}|~{3,})/;
-
-/** A line that CLOSES one: the same rules, plus nothing after the run but
- *  whitespace. A fence is not closed by its own delimiter appearing mid-line
- *  inside the code it contains, which is why this is matched per line against
- *  the whole line rather than searched for in the text. */
-const FENCE_CLOSE_LINE = /^ {0,3}(`{3,}|~{3,})[ \t\r]*$/;
-
-/**
- * A whole line that is nothing but one image: `![DTI](5_dti.png)`, optionally
- * with an angle-bracketed destination and a title. Anchoring to the entire
- * line with no leading whitespace is what makes this safe to act on — a
- * four-space-indented line is a code block, an escaped `\![` line starts with
- * the backslash, a `> ` line is a quote, and a reference wrapped in backticks
- * has them before the `!`. None of those can match, so none can be claimed.
- *
- * A title must use real delimiters. `![c](c.png unquoted)` is not an image at
- * all — the renderer prints it as text — so accepting arbitrary characters
- * after the destination would claim a file that nothing displayed.
- */
-const STANDALONE_IMAGE_LINE =
-  /^!\[[^\]\n]*\]\(\s*<?([^)>\s]+)>?(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)\s*$/;
-
-const EMPTY_MEDIA_NAMES: ReadonlySet<string> = new Set<string>();
-
 /** Shared instance so the overwhelmingly common "no attachments" turn keeps a
  *  referentially stable map, and every consumer memoized on it stays put. */
 const EMPTY_ATTACHMENTS_BY_NAME: ReadonlyMap<string, TAttachment> = new Map<string, TAttachment>();
@@ -202,59 +175,4 @@ export function resolveInlineMedia(
   }
   const key = mediaKeyFromSource(src);
   return key ? byName.get(key) : undefined;
-}
-
-/**
- * Filenames the given text certainly renders as images. Used to tell which
- * attachments the reader can already see in place, so a media row does not
- * repeat them.
- *
- * This recognizes ONE shape — an image alone on an unindented line, outside a
- * fence — rather than trying to rule out every context where markdown shows
- * image syntax as text. That inversion is the whole point. Deciding what does
- * NOT render means re-implementing CommonMark (fences of two markers and any
- * length, code spans with variable delimiters, escapes, indented blocks), and
- * every gap in that knowledge claims a file nothing rendered, which drops it
- * from the media row and leaves it visible nowhere at all.
- *
- * Recognizing what certainly DOES render inverts the failure: a shape not
- * matched here is simply not deduped, so it appears in the row as well as
- * inline. The cost of a miss is one duplicate; the cost of a false claim is an
- * invisible file. And the one shape recognized is what models actually write —
- * an image on its own line under a heading.
- *
- * Fence state is tracked across the same single pass rather than pre-stripped,
- * so a fence ends only where markdown ends it — on a line that is nothing but
- * a closing run — and never on its delimiter appearing inside a line of the
- * code it holds. An unterminated fence runs to the end, as the renderer does.
- *
- * `attachmentsByName` must be built from attachments that can actually render
- * as images; a name resolving to a `.csv` produces an `<img>` that shows
- * nothing, and claiming it would take the file's download chip away too.
- */
-export function collectInlineMediaNames(text: string | undefined): ReadonlySet<string> {
-  if (!text || !text.includes('](')) {
-    return EMPTY_MEDIA_NAMES;
-  }
-  const names = new Set<string>();
-  let openFence: string | undefined;
-  for (const line of text.split('\n')) {
-    if (openFence != null) {
-      const closer = FENCE_CLOSE_LINE.exec(line)?.[1];
-      if (closer != null && closer[0] === openFence[0] && closer.length >= openFence.length) {
-        openFence = undefined;
-      }
-      continue;
-    }
-    const opener = FENCE_OPEN_LINE.exec(line)?.[1];
-    if (opener != null) {
-      openFence = opener;
-      continue;
-    }
-    const key = mediaKeyFromSource(STANDALONE_IMAGE_LINE.exec(line)?.[1] ?? '');
-    if (key) {
-      names.add(key);
-    }
-  }
-  return names.size === 0 ? EMPTY_MEDIA_NAMES : names;
 }

@@ -2,7 +2,6 @@ import type { TAttachment } from 'librechat-data-provider';
 import {
   attachmentIdentity,
   buildAttachmentsByName,
-  collectInlineMediaNames,
   resolveInlineMedia,
   toAbsoluteFilePath,
 } from '~/utils/media';
@@ -116,99 +115,6 @@ describe('resolveInlineMedia', () => {
 
   it('survives a malformed escape rather than throwing', () => {
     expect(() => resolveInlineMedia('%E0%A4%A.png', byName)).not.toThrow();
-  });
-});
-
-describe('collectInlineMediaNames', () => {
-  it('collects every image the answer puts on its own line', () => {
-    const text = [
-      '## Your DTI',
-      '![DTI](5_dti.png)',
-      'See [the source](notes.md) for details.',
-      '![Payment breakdown](/mnt/data/1_payment.png "Where it goes")',
-      '![Balance](<2_balance.png>)',
-    ].join('\n\n');
-    expect([...collectInlineMediaNames(text)]).toEqual([
-      '5_dti.png',
-      '1_payment.png',
-      '2_balance.png',
-    ]);
-  });
-
-  it('ignores images the browser already resolves', () => {
-    expect(collectInlineMediaNames('![x](https://example.com/a.png)').size).toBe(0);
-  });
-
-  it('returns the shared empty set for text with no link syntax', () => {
-    expect(collectInlineMediaNames('no images here')).toBe(collectInlineMediaNames(undefined));
-  });
-
-  // Everything below is a shape we decline to claim. Each one costs at most a
-  // duplicate: the file still rides the media row. Claiming any of them would
-  // cost the file entirely, since none of them renders an image.
-  it.each([
-    ['a fenced block', '```md\n![DTI](5_dti.png)\n```\n'],
-    ['an unterminated fence', '```\n![DTI](5_dti.png)\n'],
-    ['a tilde fence', '~~~\n![DTI](5_dti.png)\n~~~'],
-    ['a four-backtick fence holding a shorter run', '````\n```\n![DTI](5_dti.png)\n```\n````'],
-    ['an inline code span', 'Write `![DTI](5_dti.png)` to embed it.'],
-    ['a double-backtick span', 'Write ``![DTI](5_dti.png)`` inline.'],
-    ['an escaped bang', '\\![DTI](5_dti.png)'],
-    ['a four-space indented code block', '    ![DTI](5_dti.png)'],
-    ['a tab-indented code block', '\t![DTI](5_dti.png)'],
-    ['a blockquote', '> ![DTI](5_dti.png)'],
-    ['a reference-style image', '![DTI][chart]'],
-    ['an unquoted trailing title', '![DTI](5_dti.png unquoted-title)'],
-    ['an unterminated quoted title', '![DTI](5_dti.png "dangling)'],
-    ['an explicitly addressed server path', '![DTI](/api/files/x/5_dti.png)'],
-    ['a fence whose delimiter appears mid-code-line', '```\nsome ``` text\n![DTI](5_dti.png)\n```'],
-    ['a fence closed only by a longer run', '```\n![DTI](5_dti.png)\n`````'],
-    ['a fence opened with up to three spaces of indent', '   ```\n![DTI](5_dti.png)\n   ```'],
-    ['a tilde fence that a backtick run cannot close', '~~~\n```\n![DTI](5_dti.png)\n~~~'],
-  ])('declines to claim %s', (_label, text) => {
-    expect(collectInlineMediaNames(text).size).toBe(0);
-  });
-
-  it('declines a reference sharing its line with prose', () => {
-    // This one does render. We still skip it: the row showing the chart twice
-    // is cheap, and widening the rule to partial lines reopens every context
-    // the line anchor closes.
-    expect(collectInlineMediaNames('Here it is: ![DTI](5_dti.png) — nice').size).toBe(0);
-  });
-
-  it('resumes claiming after a fence closes on its own line', () => {
-    const text = '```\n![DTI](5_dti.png)\n```\n\n![Balance](2_balance.png)';
-    expect([...collectInlineMediaNames(text)]).toEqual(['2_balance.png']);
-  });
-
-  it('does not close a fence on a shorter run than opened it', () => {
-    // ````` opens; ``` inside is content, so the image stays fenced.
-    const text = '`````\n```\n![DTI](5_dti.png)\n`````\n\n![Balance](2_balance.png)';
-    expect([...collectInlineMediaNames(text)]).toEqual(['2_balance.png']);
-  });
-
-  it('still claims a real image beside a fenced example of one', () => {
-    const text = '```md\n![DTI](5_dti.png)\n```\n\n![Balance](2_balance.png)';
-    expect([...collectInlineMediaNames(text)]).toEqual(['2_balance.png']);
-  });
-
-  it.each([
-    ['a double-quoted title', '![DTI](5_dti.png "Debt to income")'],
-    ['a single-quoted title', "![DTI](5_dti.png 'Debt to income')"],
-    ['a parenthesized title', '![DTI](5_dti.png (Debt to income))'],
-    ['an angle-bracketed destination with a title', '![DTI](<5_dti.png> "Debt to income")'],
-  ])('still claims %s', (_label, text) => {
-    expect([...collectInlineMediaNames(text)]).toEqual(['5_dti.png']);
-  });
-
-  it('claims a line carrying a trailing carriage return', () => {
-    expect([...collectInlineMediaNames('![DTI](5_dti.png)\r\n')]).toEqual(['5_dti.png']);
-  });
-
-  it('is stable across repeated calls', () => {
-    const text = '![a](a.png)\n\n![b](b.png)';
-    expect([...collectInlineMediaNames(text)]).toEqual(['a.png', 'b.png']);
-    expect([...collectInlineMediaNames(text)]).toEqual(['a.png', 'b.png']);
   });
 });
 

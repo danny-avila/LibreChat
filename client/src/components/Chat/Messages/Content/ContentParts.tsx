@@ -14,7 +14,6 @@ import {
   getPartKeyIndex,
   attachmentIdentity,
   buildAttachmentsByName,
-  collectInlineMediaNames,
   filterAttachmentsForPart,
   groupSequentialToolCalls,
 } from '~/utils';
@@ -23,7 +22,7 @@ import {
   lastCursorContentIdx,
   getActivityLabelText,
 } from '~/utils/activityLabels';
-import { MediaContext, MessageContext, SearchContext, useMediaContext } from '~/Providers';
+import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
@@ -39,20 +38,15 @@ import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
 
-/** The rendered string of a TEXT part, or `undefined` for anything else. */
-const getPartText = (part: TMessageContentParts | undefined): string | undefined => {
-  if (part == null || part.type !== ContentTypes.TEXT) {
-    return undefined;
-  }
-  return typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
-};
-
 /** An empty TEXT part — the placeholder some endpoints seed in
  * `initialResponse.content` before the model produces anything. */
-const isEmptyTextPart = (part: TMessageContentParts | undefined): boolean =>
-  getPartText(part)?.length === 0;
-
-const EMPTY_CLAIMED_MEDIA: ReadonlySet<string> = new Set<string>();
+const isEmptyTextPart = (part: TMessageContentParts | undefined): boolean => {
+  if (part == null || part.type !== ContentTypes.TEXT) {
+    return false;
+  }
+  const text = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+  return text.length === 0;
+};
 
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
@@ -294,7 +288,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
     [attachments, workspaceAttachmentsPartitioned],
   );
   const attachmentMap = useMemo(() => mapAttachments(inlineAttachments), [inlineAttachments]);
-  const { attachmentsByName } = useMediaContext();
   const resolvedToolCallStepOwners = useMemo(() => {
     if (toolCallStepOwnersById != null) {
       return toolCallStepOwnersById;
@@ -355,37 +348,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
     () => (nestedActivityPhase ? undefined : groupActivityPhases(content)),
     [nestedActivityPhase, content],
   );
-  /** Identities of the attachments the answer already renders inline, keyed by
-   *  the filename a markdown image names them with. Those are visible exactly
-   *  where the model placed them, so a phase's media row would only show the
-   *  same chart twice. Text INSIDE a phase card never claims anything — an
-   *  image behind a collapsed disclosure is precisely what the media row
-   *  exists to surface — and an unresolvable reference claims nothing, so a
-   *  model that gets the filename wrong costs the reader nothing. */
-  const claimedInlineMedia = useMemo(() => {
-    if (phaseSegments == null || attachmentsByName == null || attachmentsByName.size === 0) {
-      return EMPTY_CLAIMED_MEDIA;
-    }
-    const claimed = new Set<string>();
-    for (const segment of phaseSegments) {
-      if (segment.type === 'phase') {
-        continue;
-      }
-      for (const part of segment.content) {
-        for (const name of collectInlineMediaNames(getPartText(part))) {
-          const attachment = attachmentsByName.get(name);
-          const identity = attachment == null ? undefined : attachmentIdentity(attachment);
-          if (identity != null) {
-            claimed.add(identity);
-          }
-        }
-      }
-    }
-    return claimed;
-  }, [phaseSegments, attachmentsByName]);
-  /** Every file a phase's parts produced, minus what the answer already shows
-   *  inline, in transcript order and deduplicated across parts that share a
-   *  tool call. */
+  /** Every file a phase's parts produced, in transcript order, deduplicated
+   *  across parts that share a tool call. */
   const collectPhaseAttachments = useCallback(
     (parts: ReadonlyArray<TMessageContentParts | undefined>): TAttachment[] | undefined => {
       const collected: TAttachment[] = [];
@@ -410,9 +374,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
             collected.push(attachment);
             continue;
           }
-          if (claimedInlineMedia.has(identity)) {
-            continue;
-          }
           const at = positionOf.get(identity);
           if (at != null) {
             collected[at] = attachment;
@@ -424,7 +385,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       }
       return collected.length > 0 ? collected : undefined;
     },
-    [attachmentsForPart, claimedInlineMedia],
+    [attachmentsForPart],
   );
   const completedPhaseKeys = useMemo(() => {
     const indices = new Set<number>();

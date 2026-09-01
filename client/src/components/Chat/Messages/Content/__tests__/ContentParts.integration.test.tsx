@@ -878,53 +878,6 @@ describe('ContentParts integration: phase media row', () => {
     expect(rows[0].getAttribute('data-count')).toBe('2');
   });
 
-  it('drops a file the answer already renders inline', () => {
-    renderContentParts({
-      ...baseProps,
-      content: phaseContent('Here it is:\n\n![DTI](a.png)'),
-      attachments: phaseAttachments,
-    });
-
-    const rows = screen.getAllByTestId('attachment-group');
-    expect(rows).toHaveLength(1);
-    expect(rows[0].getAttribute('data-count')).toBe('1');
-  });
-
-  it('keeps a file whose reference shares a line with prose', () => {
-    // Only a reference alone on its own line is claimed, so this renders the
-    // chart inline AND leaves it in the row — a duplicate, never a vanishing.
-    renderContentParts({
-      ...baseProps,
-      content: phaseContent('Here it is: ![DTI](a.png) — nice'),
-      attachments: phaseAttachments,
-    });
-
-    expect(screen.getByTestId('attachment-group').getAttribute('data-count')).toBe('2');
-  });
-
-  it('keeps every file when the answer names one the run never produced', () => {
-    renderContentParts({
-      ...baseProps,
-      content: phaseContent('Here it is:\n\n![DTI](5_dti.png)'),
-      attachments: phaseAttachments,
-    });
-
-    expect(screen.getByTestId('attachment-group').getAttribute('data-count')).toBe('2');
-  });
-
-  it('does not let text inside the card claim a file away from the row', () => {
-    const content = [
-      makeTextPart('Charted it:\n\n![DTI](a.png)'),
-      makeMcpToolCall('t1'),
-      makeMcpToolCall('t2'),
-      makePhasePart(0, 3, 'Generated five mortgage charts'),
-    ];
-
-    renderContentParts({ ...baseProps, content, attachments: phaseAttachments });
-
-    expect(screen.getByTestId('attachment-group').getAttribute('data-count')).toBe('2');
-  });
-
   it('lifts the file of a lone tool call too, not just a grouped batch', () => {
     // One call never forms a ToolCallGroup, so this exercises Part -> ToolCall's
     // own `hideAttachments` rather than the group-level hoist.
@@ -938,26 +891,6 @@ describe('ContentParts integration: phase media row', () => {
     expect(
       within(screen.getByTestId('activity-phase-panel')).queryByTestId('attachment-group'),
     ).toBeNull();
-  });
-
-  it('keeps a non-image file the answer names as if it were an image', () => {
-    // `<img src=report.csv>` displays nothing, so claiming the CSV would cost
-    // the reader the download chip and give back a broken image.
-    const csv = {
-      filename: 'report.csv',
-      filepath: '/api/files/report.csv',
-      messageId: 'm1',
-      toolCallId: 't1',
-      conversationId: 'c1',
-    } as unknown as TAttachment;
-
-    renderContentParts({
-      ...baseProps,
-      content: phaseContent('Here it is:\n\n![report](report.csv)'),
-      attachments: [csv],
-    });
-
-    expect(screen.getByTestId('attachment-group').getAttribute('data-count')).toBe('1');
   });
 
   it('shows the latest record when a tool writes the same file twice', () => {
