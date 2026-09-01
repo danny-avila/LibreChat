@@ -76,6 +76,12 @@ function createDefaultValues(): MCPServerFormData {
       auth_type: 'none' as MCPServerFormData['auth']['auth_type'],
     },
     trust: false,
+    requiresOAuth: false,
+    headers: [],
+    customUserVars: [],
+    chatMenu: true,
+    serverInstructionsMode: 'none',
+    serverInstructionsCustom: '',
   };
 }
 
