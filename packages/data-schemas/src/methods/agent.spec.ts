@@ -8,6 +8,7 @@ import {
   PrincipalModel,
   PermissionBits,
   EToolResources,
+  SkillsScope,
   Constants,
   actionDelimiter,
 } from 'librechat-data-provider';
@@ -2562,6 +2563,36 @@ describe('Agent Methods', () => {
       const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
 
       expect(revertedAgent.code_environment_id).toBeUndefined();
+    });
+
+    test('should clear skill fields absent from a restored legacy version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Legacy Skill Scope Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [],
+        skills_enabled: true,
+      });
+      await updateAgent(
+        { id: agentId },
+        {
+          skills_enabled: false,
+          skill_authoring_enabled: true,
+          skills_scope: SkillsScope.none,
+        },
+      );
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.skills_enabled).toBe(true);
+      expect(revertedAgent.skills).toEqual([]);
+      expect(revertedAgent.skills_scope).toBeUndefined();
+      expect(revertedAgent.skill_authoring_enabled).toBeUndefined();
     });
 
     test('should prune deleted skill ids when reverting to an older version', async () => {
