@@ -27,10 +27,13 @@ function getOAuthToolCall(toolCalls: unknown): Record<string, unknown> | undefin
   if (!Array.isArray(toolCalls)) {
     return undefined;
   }
-  return toolCalls.find((toolCall) => {
+  for (const toolCall of toolCalls) {
     const candidate = getRecord(toolCall);
-    return typeof candidate?.name === 'string' && candidate.name.startsWith(OAUTH_TOOL_PREFIX);
-  }) as Record<string, unknown> | undefined;
+    if (typeof candidate?.name === 'string' && candidate.name.startsWith(OAUTH_TOOL_PREFIX)) {
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 function getPreferredString(primary: unknown, fallback: unknown): string | undefined {
