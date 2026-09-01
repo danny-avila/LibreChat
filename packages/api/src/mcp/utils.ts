@@ -609,6 +609,7 @@ export function redactServerSecrets(
     description: config.description,
     iconPath: config.iconPath,
     chatMenu: config.chatMenu,
+    hideWhenEmpty: config.hideWhenEmpty,
     requiresOAuth: config.requiresOAuth,
     capabilities: config.capabilities,
     tools: config.tools,

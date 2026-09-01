@@ -52,7 +52,8 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const [action, setAction] = useState<Action | undefined>(undefined);
   const [activePanel, setActivePanel] = useState<Panel>(Panel.builder);
   const [agent_id, setCurrentAgentId] = useState<string | undefined>(undefined);
-  const { availableMCPServers, isLoading, availableMCPServersMap } = useMCPServerManager();
+  const { availableMCPServers, isLoading, availableMCPServersMap, hiddenEmptyServers } =
+    useMCPServerManager();
   const { data: startupConfig } = useGetStartupConfig();
   const { data: actions } = useGetActionsQuery(EModelEndpoint.agents, {
     enabled: !isEphemeralAgent(agent_id),
@@ -91,6 +92,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
 
     if (mcpData?.servers) {
       for (const [serverName, serverData] of Object.entries(mcpData.servers)) {
+        /** `hideWhenEmpty` servers with a loaded-but-empty catalog are hidden here too. */
+        if (hiddenEmptyServers.has(serverName)) {
+          continue;
+        }
         // Get title and description from config with fallbacks
         const serverConfig = availableMCPServersMap?.[serverName];
         const serverStatus = connectionStatus?.[serverName];
@@ -136,7 +141,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
 
     // Add configured servers that don't have tools yet
     for (const mcpServerName of mcpServerNames) {
-      if (serversMap.has(mcpServerName)) {
+      if (serversMap.has(mcpServerName) || hiddenEmptyServers.has(mcpServerName)) {
         continue;
       }
       // Get title and description from config with fallbacks
@@ -171,7 +176,14 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     }
 
     return serversMap;
-  }, [mcpData, localize, mcpServerNames, connectionStatus, availableMCPServersMap]);
+  }, [
+    mcpData,
+    localize,
+    mcpServerNames,
+    connectionStatus,
+    availableMCPServersMap,
+    hiddenEmptyServers,
+  ]);
 
   const value: AgentPanelContextType = {
     mcp,

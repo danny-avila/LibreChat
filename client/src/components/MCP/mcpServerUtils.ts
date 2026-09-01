@@ -1,4 +1,4 @@
-import type { MCPServerStatus } from 'librechat-data-provider';
+import type { MCPServersResponse, MCPServerStatus } from 'librechat-data-provider';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
 
@@ -240,4 +240,56 @@ export function shouldShowActionButton(statusIconProps?: MCPServerStatusIconProp
   if (connectionState === 'connected') return hasCustomUserVars || requiresOAuth;
 
   return false;
+}
+
+/**
+ * Servers to hide from pickers because the current user's loaded tool catalog is empty.
+ *
+ * A server is hidden only when all of the following hold:
+ * - its config opts in via `hideWhenEmpty: true`;
+ * - the user's tool catalog for it was actually loaded (`catalogLoaded`), so a server whose
+ *   catalog is unknown (not yet connected, or OAuth pending) stays visible and reachable;
+ * - the loaded catalog contains zero tools.
+ */
+/**
+ * Full visibility decision for `hideWhenEmpty` servers, including the catalog's
+ * lifecycle states. Kept pure so the fail-open rule stays under test:
+ * - catalog query errored -> hide NOTHING (a timeout must not empty the picker);
+ * - catalog not yet loaded -> keep flagged servers out of the pickers (no
+ *   show-then-yank flash); they appear once the catalog proves them non-empty;
+ * - catalog loaded -> hide exactly the flagged servers with zero tools.
+ */
+export function resolveHiddenEmptyServers(
+  definitions: MCPServerDefinition[],
+  toolServers: MCPServersResponse['servers'] | undefined,
+  catalogErrored: boolean,
+): Set<string> {
+  const flagged = definitions.filter((d) => d.config?.hideWhenEmpty === true);
+  if (flagged.length === 0 || catalogErrored) {
+    return new Set();
+  }
+  if (!toolServers) {
+    return new Set(flagged.map((d) => d.serverName));
+  }
+  return getHiddenEmptyServers(definitions, toolServers);
+}
+
+export function getHiddenEmptyServers(
+  definitions: MCPServerDefinition[],
+  toolServers?: MCPServersResponse['servers'],
+): Set<string> {
+  const hidden = new Set<string>();
+  if (!toolServers) {
+    return hidden;
+  }
+  for (const definition of definitions) {
+    if (definition.config?.hideWhenEmpty !== true) {
+      continue;
+    }
+    const entry = toolServers[definition.serverName];
+    if (entry?.catalogLoaded === true && entry.tools.length === 0) {
+      hidden.add(definition.serverName);
+    }
+  }
+  return hidden;
 }

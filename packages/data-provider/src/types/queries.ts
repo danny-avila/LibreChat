@@ -142,6 +142,10 @@ export type MCPServer = {
   authenticated: boolean;
   authConfig: s.TPluginAuthConfig[];
   tools: MCPTool[];
+  /** True when the user's tool catalog for this server was actually loaded; an empty
+   * `tools` with `catalogLoaded: false` means the catalog is unknown (connection or
+   * OAuth pending), not that the server has no tools for the user. */
+  catalogLoaded?: boolean;
 };
 
 export type MCPServersResponse = {

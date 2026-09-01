@@ -250,6 +250,9 @@ const getMCPTools = async (req, res) => {
           authenticated: true,
           authConfig: [],
           tools: [],
+          /** Distinguishes "catalog loaded, zero tools" from "catalog unknown" (connection
+           * or OAuth pending) — clients must not treat the latter as an empty server. */
+          catalogLoaded: serverTools != null,
         };
 
         // Set authentication config once for the server
