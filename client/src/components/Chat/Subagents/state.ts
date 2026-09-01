@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { atomFamily } from 'jotai/utils';
-import { atom, useAtomValue } from 'jotai';
+import { atom, useAtomValue, useStore } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   PartMetadata,
@@ -450,9 +450,10 @@ export const subagentParentStreamOpenByToolCallId = atomFamily((_key: string) =>
 
 /**
  * Invocation atoms populated by either the parent generation stream or the selected detached
- * task stream, or created by a card that only ever reads one. The conversation host drains this
- * registry on navigation so every route into the family shares one cleanup boundary instead of
- * leaking members for the app lifetime.
+ * task stream. The conversation host drains this registry on navigation so both transports share
+ * one cleanup boundary instead of leaking detached-only atom-family members for the app lifetime.
+ * Members a card created by reading are not enrolled here — they are freed at that card's unmount
+ * instead, since the routes that render one do not all own this drain.
  */
 const registeredSubagentProgressKeys = new Set<string>();
 
@@ -484,15 +485,26 @@ export function removeSubagentProgressAtoms(invocationKey: string): void {
 }
 
 /**
- * Reads one invocation's live progress and enrols its key for cleanup. The
- * read is what creates the family member, so a card rendering a conversation
- * that finished streaming long ago — or a search result that never streams at
- * all — would otherwise hold one nothing ever drains.
+ * Reads one invocation's live progress, and frees the family member on unmount
+ * when the read is the only reason it exists.
+ *
+ * The read itself creates the member, and only the chat route owns the stream
+ * drain — a card rendered by a search result or by a conversation that finished
+ * streaming long ago would otherwise hold one for the life of the tab. The two
+ * guards are what keep that from taking live history with it: a key the stream
+ * registered belongs to the drain, and a member holding folded activity is the
+ * record of what the child did, so reopening its card still shows it.
  */
 export function useSubagentProgress(invocationKey: string): SubagentProgress | null {
-  useEffect(() => {
-    registerSubagentProgressKey(invocationKey);
-  }, [invocationKey]);
+  const store = useStore();
+  useEffect(
+    () => () => {
+      if (registeredSubagentProgressKeys.has(invocationKey)) return;
+      if (store.get(subagentProgressByToolCallId(invocationKey)) != null) return;
+      removeSubagentProgressAtoms(invocationKey);
+    },
+    [invocationKey, store],
+  );
   return useAtomValue(subagentProgressByToolCallId(invocationKey));
 }
 

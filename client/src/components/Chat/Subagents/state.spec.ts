@@ -1,10 +1,12 @@
-import { renderHook } from '@testing-library/react';
+import React from 'react';
 import { ContentTypes } from 'librechat-data-provider';
+import { act, renderHook } from '@testing-library/react';
+import { createStore, Provider as JotaiProvider } from 'jotai';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import {
   closeParentSubagentProgress,
-  listRegisteredSubagentProgressKeys,
   reduceSubagentProgress,
+  registerSubagentProgressKey,
   removeSubagentProgressAtoms,
   subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
@@ -420,16 +422,50 @@ describe('useSubagentProgress', () => {
     takeRegisteredSubagentProgressKeys();
   });
 
-  /** The read is what creates the family member. A card rendering a
-   *  conversation that finished streaming long ago never registers through the
-   *  stream, so without this the drain boundary cannot see its key. */
-  it('enrols the key it reads so the drain boundary can free it', () => {
-    const key = subagentProgressKey('historical-message', 'historical-call', 0);
-    expect(listRegisteredSubagentProgressKeys()).not.toContain(key);
-
-    const { result } = renderHook(() => useSubagentProgress(key));
-
+  /** Only the chat route owns the stream drain, so a card rendered anywhere
+   *  else has to clean up after itself. */
+  it('frees a member nothing but the read created', () => {
+    const key = subagentProgressKey('search-result', 'search-call', 0);
+    const { result, unmount } = renderHook(() => useSubagentProgress(key));
+    const held = subagentProgressByToolCallId(key);
     expect(result.current).toBeNull();
-    expect(listRegisteredSubagentProgressKeys()).toContain(key);
+
+    unmount();
+
+    expect(subagentProgressByToolCallId(key)).not.toBe(held);
+  });
+
+  /** The drain owns a streaming key; freeing it here would race that boundary. */
+  it('leaves a key the stream registered to the drain', () => {
+    const key = subagentProgressKey('live-message', 'live-call', 0);
+    registerSubagentProgressKey(key);
+    const { unmount } = renderHook(() => useSubagentProgress(key));
+    const held = subagentProgressByToolCallId(key);
+
+    unmount();
+
+    expect(subagentProgressByToolCallId(key)).toBe(held);
+  });
+
+  /** Folded activity is the record of what the child did: a reader going away
+   *  must not take it with them, or reopening the card shows nothing. */
+  it('keeps a member holding activity', () => {
+    const key = subagentProgressKey('finished-message', 'finished-call', 0);
+    const store = createStore();
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(JotaiProvider, { store }, children);
+    const { unmount } = renderHook(() => useSubagentProgress(key), { wrapper });
+    const held = subagentProgressByToolCallId(key);
+    act(() =>
+      store.set(
+        subagentProgressByToolCallId(key),
+        reduceSubagentProgress(null, [update({ phase: 'stop' })]),
+      ),
+    );
+
+    unmount();
+
+    expect(subagentProgressByToolCallId(key)).toBe(held);
+    expect(store.get(held)).not.toBeNull();
   });
 });
