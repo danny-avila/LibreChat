@@ -129,7 +129,7 @@ const getMeiliPrimaryKey = (value: unknown, primaryKey: string): string => {
   return String(value);
 };
 
-const prepareObjectForIndex = (object: Record<string, unknown>, primaryKey: string): void => {
+const prepareObjectForIndex = (object: MeiliIndexable, primaryKey: string): void => {
   if (primaryKey === 'conversationId' && object.conversationId != null) {
     const rawId = String(object.conversationId);
     object.originalConversationId = rawId;
