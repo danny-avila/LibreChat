@@ -28,6 +28,8 @@ const {
   buildCodeEnvDownloadQuery,
   claimCodeDestination,
   createCodeDestinationSet,
+  CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
+  CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
   CODE_API_EXPECTED_PROFILE_HEADER,
   sortCodeFilesByDestinationPriority,
 } = require('@librechat/api');
@@ -56,6 +58,136 @@ const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();
+
+/** Request-scoped references to buffers already fetched by artifact preflight.
+ * The request object is the ownership boundary, and WeakMap keeps completed
+ * requests from retaining generated-file bytes. */
+const preparedCodeOutputBuffers = new WeakMap();
+
+const codeOutputBufferKey = (routeKey, sessionId, fileId) => `${routeKey}\0${sessionId}\0${fileId}`;
+
+const getCodeOutputRouteKey = ({ executionRouteKey, codeApiBaseUrl, executionProfile }) =>
+  executionRouteKey ?? codeApiBaseUrl ?? executionProfile ?? 'default';
+
+const normalizeSandboxArtifactName = (filePath) => {
+  if (typeof filePath !== 'string' || filePath.length === 0) {
+    return null;
+  }
+  if (filePath.includes('\\')) {
+    return null;
+  }
+  const posixPath = filePath;
+  let relativePath = posixPath;
+  if (posixPath.startsWith('/mnt/data/')) {
+    relativePath = posixPath.slice('/mnt/data/'.length);
+  } else if (posixPath.startsWith('/')) {
+    return null;
+  }
+  if (relativePath.split('/').some((segment) => segment === '.' || segment === '..')) {
+    return null;
+  }
+  const normalized = path.posix.normalize(relativePath).replace(/^\.\//, '');
+  if (
+    normalized.length === 0 ||
+    normalized === '.' ||
+    normalized === '..' ||
+    normalized.startsWith('../')
+  ) {
+    return null;
+  }
+  return normalized;
+};
+
+const cachePreparedCodeOutputBuffer = ({
+  req,
+  id,
+  name,
+  session_id,
+  buffer,
+  codeApiBaseUrl,
+  executionProfile,
+  executionRouteKey,
+}) => {
+  if (
+    !req ||
+    (typeof req !== 'object' && typeof req !== 'function') ||
+    typeof id !== 'string' ||
+    typeof session_id !== 'string' ||
+    !Buffer.isBuffer(buffer)
+  ) {
+    return;
+  }
+  let cache = preparedCodeOutputBuffers.get(req);
+  if (!cache) {
+    cache = { buffers: new Map(), totalBytes: 0 };
+    preparedCodeOutputBuffers.set(req, cache);
+  }
+  const routeKey = getCodeOutputRouteKey({ executionRouteKey, codeApiBaseUrl, executionProfile });
+  const key = codeOutputBufferKey(routeKey, session_id, id);
+  const existing = cache.buffers.get(key);
+  if (existing) {
+    cache.totalBytes -= existing.buffer.length;
+    cache.buffers.delete(key);
+  }
+  if (buffer.length > CODE_OUTPUT_PREFLIGHT_MAX_BYTES) {
+    return;
+  }
+  while (
+    cache.buffers.size >= CODE_OUTPUT_PREFLIGHT_MAX_COUNT ||
+    cache.totalBytes + buffer.length > CODE_OUTPUT_PREFLIGHT_MAX_BYTES
+  ) {
+    const oldestKey = cache.buffers.keys().next().value;
+    if (oldestKey == null) {
+      break;
+    }
+    const oldest = cache.buffers.get(oldestKey);
+    cache.buffers.delete(oldestKey);
+    cache.totalBytes -= oldest.buffer.length;
+  }
+  cache.buffers.set(key, { name, buffer });
+  cache.totalBytes += buffer.length;
+};
+
+const getPreparedCodeOutputBuffer = ({
+  req,
+  file_path,
+  session_id,
+  files,
+  codeApiBaseUrl,
+  executionProfile,
+  executionRouteKey,
+}) => {
+  if (!req || (typeof req !== 'object' && typeof req !== 'function') || !Array.isArray(files)) {
+    return null;
+  }
+  const cache = preparedCodeOutputBuffers.get(req);
+  const requestedName = normalizeSandboxArtifactName(file_path);
+  if (!cache || !requestedName) {
+    return null;
+  }
+
+  const routeKey = getCodeOutputRouteKey({ executionRouteKey, codeApiBaseUrl, executionProfile });
+  for (const file of files) {
+    if (!file || typeof file.id !== 'string' || typeof file.name !== 'string') {
+      continue;
+    }
+    if (normalizeSandboxArtifactName(file.name) !== requestedName) {
+      continue;
+    }
+    const storageSessionId = file.storage_session_id ?? file.session_id ?? session_id;
+    if (typeof storageSessionId !== 'string') {
+      continue;
+    }
+    const key = codeOutputBufferKey(routeKey, storageSessionId, file.id);
+    const cached = cache.buffers.get(key);
+    if (cached && normalizeSandboxArtifactName(cached.name) === requestedName) {
+      cache.buffers.delete(key);
+      cache.totalBytes -= cached.buffer.length;
+      return cached.buffer;
+    }
+  }
+  return null;
+};
 
 class CodeOutputDownloadLimitError extends Error {
   constructor(maxBytes) {
@@ -140,6 +272,7 @@ const downloadCodeOutputBuffer = async ({
  * @param {number} [params.maxBytes] - Remaining aggregate inspection budget.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
  */
 const prepareCodeOutputForInspection = async ({
   req,
@@ -150,6 +283,7 @@ const prepareCodeOutputForInspection = async ({
   inspectContent = true,
   codeApiBaseUrl,
   executionProfile = 'default',
+  executionRouteKey,
 }) => {
   const { fileSizeLimit } = getCodeOutputFileSettings(req);
   const transportLimit =
@@ -161,6 +295,16 @@ const prepareCodeOutputForInspection = async ({
     maxBytes: transportLimit,
     codeApiBaseUrl,
     executionProfile,
+  });
+  cachePreparedCodeOutputBuffer({
+    req,
+    id,
+    name,
+    session_id,
+    buffer,
+    codeApiBaseUrl,
+    executionProfile,
+    executionRouteKey,
   });
   const safeName = sanitizeArtifactPath(name);
   const fallbackType = inferMimeType(name, '') || 'application/octet-stream';
@@ -1494,8 +1638,11 @@ async function readSandboxFile({
 }
 
 /**
- * Reads a small image file out of the code-execution sandbox as base64 so
- * `read_file` can surface it to vision-capable models. `readSandboxFile`'s
+ * Reads a small code artifact as base64 so `read_file` can surface it to
+ * vision-capable models. Reuses bytes fetched by the current request's
+ * artifact preflight when the requested path resolves to the exact returned
+ * file ref; otherwise falls back to the code-execution sandbox.
+ * `readSandboxFile`'s
  * `cat` round-trips stdout through codeapi's JSON transport, which lossily
  * replaces non-UTF-8 bytes and corrupts image data. The in-sandbox reader
  * base64-encodes the bytes instead, so the payload stays ASCII-safe across
@@ -1515,6 +1662,7 @@ async function readSandboxFile({
  * @param {string} [params.runtime_session_hint] - Per-conversation stateful runtime-session hint.
  * @param {number} [params.maxBytes] - In-sandbox size cap; larger files return `{ tooLarge, bytes }`.
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
+ * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
  * @returns {Promise<{base64: string, bytes: number}
  *   | {tooLarge: true, reason: 'size' | 'round_trips', bytes: number} | null>}
  *   `null` when codeapi is unavailable; throws on transport / read errors.
@@ -1526,9 +1674,27 @@ async function readSandboxImage({
   runtime_session_hint,
   codeApiBaseUrl,
   executionProfile,
+  executionRouteKey,
   maxBytes,
   req,
 }) {
+  const limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte;
+  const preparedBuffer = getPreparedCodeOutputBuffer({
+    req,
+    file_path,
+    session_id,
+    files,
+    codeApiBaseUrl,
+    executionProfile,
+    executionRouteKey,
+  });
+  if (preparedBuffer) {
+    if (preparedBuffer.length > limit) {
+      return { tooLarge: true, reason: 'size', bytes: preparedBuffer.length };
+    }
+    return { base64: preparedBuffer.toString('base64'), bytes: preparedBuffer.length };
+  }
+
   const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
   if (!baseURL) {
     return null;
@@ -1541,7 +1707,7 @@ async function readSandboxImage({
   return readWindowedSandboxImage({
     filePath: file_path,
     baseUrl: baseURL,
-    limit: typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte,
+    limit,
     readChunk: ({ code }) =>
       execSandboxImageChunk({
         baseURL,
