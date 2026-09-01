@@ -1785,7 +1785,6 @@ describe('Conversation Operations', () => {
       const scopedMethods = createConversationMethods(mongoose, {
         getMessages,
         deleteMessages,
-        searchMessages,
         deleteAgentQueuedTurns,
       });
 
@@ -1815,7 +1814,6 @@ describe('Conversation Operations', () => {
       const scopedMethods = createConversationMethods(mongoose, {
         getMessages,
         deleteMessages,
-        searchMessages,
         deleteAgentQueuedTurns: async () => Promise.reject(new Error('retirement unavailable')),
       });
 

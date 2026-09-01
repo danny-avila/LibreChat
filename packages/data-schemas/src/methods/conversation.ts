@@ -470,7 +470,8 @@ export interface ConversationMethods {
 }
 
 export interface ConversationMethodDeps
-  extends Pick<MessageMethods, 'getMessages' | 'deleteMessages' | 'searchMessages'> {
+  extends Pick<MessageMethods, 'getMessages' | 'deleteMessages'> {
+  searchMessages?: MessageMethods['searchMessages'];
   deleteAgentQueuedTurns?: (
     user: string,
     conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
