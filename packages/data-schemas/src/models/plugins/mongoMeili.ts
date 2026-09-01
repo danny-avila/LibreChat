@@ -112,7 +112,7 @@ const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
 
 /** Bump when the indexed document shape or projection changes. */
-export const MEILI_INDEX_SCHEMA_VERSION = 2;
+export const MEILI_INDEX_SCHEMA_VERSION = 3;
 
 /**
  * Encodes a conversation ID for use as a MeiliSearch document primary key.
@@ -137,17 +137,16 @@ const prepareObjectForIndex = (object: Record<string, unknown>, primaryKey: stri
   }
 };
 
-const normalizeSearchHit = (hit: MeiliIndexable, primaryKey: string): MeiliIndexable => {
+const normalizeSearchHit = (hit: MeiliIndexable, primaryKey: string): void => {
   if (primaryKey === 'conversationId') {
     const originalConversationId =
       typeof hit.originalConversationId === 'string'
         ? hit.originalConversationId
         : hit.conversationId;
     if (originalConversationId) {
-      return { ...hit, conversationId: originalConversationId };
+      hit.conversationId = originalConversationId;
     }
   }
-  return hit;
 };
 
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
@@ -761,8 +760,11 @@ const createMeiliMongooseModel = ({
                 `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
               );
             }
+            const documentsByMeiliId = new Map(
+              batch.results.map((doc) => [String(doc[primaryKey]), doc] as const),
+            );
             const toDeleteMongoIds = toDelete.map((id) => {
-              const matchingDoc = batch.results.find((d) => String(d[primaryKey]) === id);
+              const matchingDoc = documentsByMeiliId.get(id);
               return typeof matchingDoc?.originalConversationId === 'string'
                 ? matchingDoc.originalConversationId
                 : id;
@@ -821,7 +823,9 @@ const createMeiliMongooseModel = ({
             )
           : [];
 
-      data.hits = data.hits.map((hit) => normalizeSearchHit(hit, primaryKey));
+      for (const hit of data.hits) {
+        normalizeSearchHit(hit, primaryKey);
+      }
 
       if (populate) {
         const query: Record<string, unknown> = {};
