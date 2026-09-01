@@ -178,6 +178,15 @@ describe('sortCodeFilesByDestinationPriority', () => {
     ]);
   });
 
+  it('preserves holes instead of throwing on them', () => {
+    const dated = { file_id: 'a', createdAt: new Date('2026-01-01T00:00:00Z') };
+    expect(sortCodeFilesByDestinationPriority([null, dated, undefined])).toEqual([
+      dated,
+      null,
+      undefined,
+    ]);
+  });
+
   it('does not mutate its input', () => {
     const older = { file_id: 'a', createdAt: new Date('2026-01-01T00:00:00Z') };
     const newer = { file_id: 'b', createdAt: new Date('2026-02-01T00:00:00Z') };

@@ -3015,7 +3015,7 @@ describe('Code Process', () => {
       /* Generated outputs are never listed in the tool context — the model
        * already knows what it wrote — so only the displaced upload appears. */
       expect(toolContext).toContain('/mnt/data/data-2.csv');
-      expect(toolContext).not.toContain('/mnt/data/data.csv ');
+      expect(toolContext).not.toContain('/mnt/data/data.csv');
     });
 
     it('leaves a single file on its own filename', async () => {

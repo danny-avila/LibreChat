@@ -150,15 +150,18 @@ function toTime(value: Date | string | number | undefined): number {
  * default `getFiles` sort — is bumped by usage accounting and by re-upload,
  * so destinations keyed on it would shuffle between turns and silently
  * repoint paths that code written in an earlier turn still reads.
+ *
+ * Holes are tolerated and preserved rather than filtered: callers hand this
+ * a raw query result and keep their own per-entry guard.
  */
 export function sortCodeFilesByDestinationPriority<T extends CodeDestinationCandidate>(
-  files: T[],
-): T[] {
+  files: Array<T | null | undefined>,
+): Array<T | null | undefined> {
   return [...files].sort((a, b) => {
-    const delta = toTime(b.createdAt) - toTime(a.createdAt);
+    const delta = toTime(b?.createdAt) - toTime(a?.createdAt);
     if (delta !== 0) {
       return delta;
     }
-    return (a.file_id ?? '').localeCompare(b.file_id ?? '');
+    return (a?.file_id ?? '').localeCompare(b?.file_id ?? '');
   });
 }
