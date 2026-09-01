@@ -55,6 +55,18 @@ const TEXT_RECOVERABLE_MIME_TYPES: RegExp[] = [
   /^message\/rfc822$/,
 ];
 
+/**
+ * Types whose bytes are text already, so reading them directly is meaningful. Everything
+ * else needs a real extractor: decoding it as UTF-8 produces mojibake rather than content.
+ */
+export function isNativelyReadableText(mimeType: string): boolean {
+  return (
+    /^text\//.test(mimeType) ||
+    /^application\/(json|xml|sql|yaml|csv|typescript|x-sh|vnd\.coffeescript)$/.test(mimeType) ||
+    mimeType === 'message/rfc822'
+  );
+}
+
 export function hasTextExtractionPath(mimeType: string): boolean {
   return TEXT_RECOVERABLE_MIME_TYPES.some((pattern) => pattern.test(mimeType));
 }

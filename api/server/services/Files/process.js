@@ -19,6 +19,7 @@ const {
   getEndpointFileConfig,
   resolveUploadLLMDeliveryPath,
   hasTextExtractionPath,
+  isNativelyReadableText,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -1047,9 +1048,20 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       return await createTextFile({ text: configuredText.text });
     }
 
+    /* The native reader decodes whatever bytes it is given as UTF-8, which is meaningful
+     * only for types that are already text. For anything else, a raster image on a
+     * deployment without OCR being the case in point, it would store mojibake as the
+     * file's text, so a real extractor is required and its absence surfaces as an error
+     * rather than as nonsense content. */
     const { text } = await extractInspectableFileText({
       filters: appConfig?.filters,
-      extract: () => parseText({ req, file, file_id }),
+      extract: () =>
+        parseText({
+          req,
+          file,
+          file_id,
+          allowNativeFallback: isNativelyReadableText(file.mimetype),
+        }),
     });
     return await createTextFile({ text });
   }

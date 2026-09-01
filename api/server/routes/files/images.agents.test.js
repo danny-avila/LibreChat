@@ -564,6 +564,29 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     );
   });
 
+  it('sends a permanent agent image through the agent upload path', async () => {
+    /* The image pipeline always stores a message attachment and never files anything
+     * against the agent, so a permanent upload sent there would report success while
+     * leaving an orphan. */
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+    const app = createAppWithUser(authorId);
+
+    await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      file_id: uuidv4(),
+    });
+
+    expect(processAgentFileUpload).toHaveBeenCalled();
+    expect(processImageFile).not.toHaveBeenCalled();
+  });
+
   it('sends an image the config routes to text through the agent upload path', async () => {
     resolveEffectiveToolResource.mockResolvedValueOnce('context');
     const app = createAppWithUser(otherUserId);

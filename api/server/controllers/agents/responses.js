@@ -105,6 +105,7 @@ const {
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { createProvisionFilesCallback } = require('~/server/services/Files/provisionCallback');
+const { checkSessionsAlive, loadCodeApiKey } = require('~/server/services/Files/provision');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
@@ -725,6 +726,8 @@ const executeResponse = async (envelope, { req, res }) => {
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,
         getDeferredProvisionFiles: db.getDeferredProvisionFiles,
+        checkSessionsAlive,
+        loadCodeApiKey,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,

@@ -369,8 +369,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       const results = await getFiles(filter, sortOptions, selectFields);
       return results ?? [];
     } catch (error) {
+      /* An empty list here is indistinguishable from nothing needing provisioning, so the
+       * turn would build no provisioning state and let the tool run without the
+       * attachment. The callback aborts on missing inputs precisely to avoid that, so a
+       * read failure has to surface rather than be flattened into a benign answer. */
       logger.error('[getDeferredProvisionFiles] Error retrieving deferred files:', error);
-      return [];
+      throw error;
     }
   }
 
