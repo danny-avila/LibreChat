@@ -289,6 +289,7 @@ jest.mock('@librechat/api', () => ({
     alwaysApplyDedupedFromManual: 0,
   }),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
+  resolveRecursionLimit: jest.fn().mockReturnValue(50),
   // Responses API
   writeDone: jest.fn(),
   buildResponse: jest.fn().mockReturnValue({ id: 'resp_123', output: [] }),
@@ -706,6 +707,21 @@ describe('createResponse controller', () => {
     const { createRun } = require('@librechat/api');
     expect(createRun).toHaveBeenCalledWith(
       expect.objectContaining({ initialSessions: mockInitialSessions }),
+    );
+  });
+
+  it('invokes the graph with the resolved recursion limit rather than the SDK default', async () => {
+    const api = require('@librechat/api');
+    const processStream = jest.fn().mockResolvedValue(undefined);
+    api.createRun.mockResolvedValueOnce({ processStream });
+    api.resolveRecursionLimit.mockReturnValueOnce(123);
+
+    await createResponse(req, res);
+
+    expect(processStream).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ recursionLimit: 123 }),
+      expect.anything(),
     );
   });
 

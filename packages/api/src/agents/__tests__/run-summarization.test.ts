@@ -3132,12 +3132,24 @@ describe('ask_user_question run wiring', () => {
   const firstAgent = (config: Record<string, unknown>) =>
     (config.graphConfig as { agents: Array<Record<string, unknown>> }).agents[0];
 
+  /**
+   * Every run now carries a `PostToolBatch`-only registry for step-budget
+   * awareness, so registry presence no longer proves HITL wiring. What still
+   * distinguishes an approval-gated run is the `PreToolUse` policy hook, and
+   * `PostToolBatch` is deliberately outside the SDK's
+   * `RESULT_ALTERING_HOOK_EVENTS`, so it cannot disable eager tool prestart.
+   */
+  const hasToolApprovalPolicyHook = (config: Record<string, unknown>) =>
+    (config.hooks as { hasHookFor?: (event: string) => boolean } | undefined)?.hasHookFor?.(
+      'PreToolUse',
+    ) === true;
+
   it('attaches the checkpointer WITHOUT humanInTheLoop when hitlCapable and the ask tool is present (approval disabled)', async () => {
     const config = await runAndGetConfig(makeAgent({ tools: [askToolInstance] }), {
       hitlCapable: true,
     });
     expect(config).not.toHaveProperty('humanInTheLoop');
-    expect(config).not.toHaveProperty('hooks');
+    expect(hasToolApprovalPolicyHook(config)).toBe(false);
     expect(getCheckpointer(config)).toBeDefined();
     const agent = firstAgent(config);
     // The tool rides the in-graph direct path (graphTools) — never the

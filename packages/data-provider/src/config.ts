@@ -3346,6 +3346,15 @@ export enum Constants {
   SUBAGENT = 'subagent',
   /** Poll tool for retrieving the status/result of a backgrounded tool call. */
   CHECK_BACKGROUND_TASK = 'check_background_task',
+  /**
+   * `finish_reason` stamped on an assistant message whose turn ended because the
+   * agent exhausted its per-turn graph step budget (`recursionLimit`) rather than
+   * because the model chose to stop. Distinct from a user abort: nothing failed and
+   * nothing was cancelled, the turn simply ran out of room. The UI keys its
+   * "tool call limit reached" notice off this value. The hover Continue control
+   * is withheld for this reason because the notice already offers the way forward.
+   */
+  TOOL_CALL_LIMIT_FINISH_REASON = 'tool_call_limit',
 }
 
 /**
