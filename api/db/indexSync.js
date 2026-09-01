@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { MeiliSearch } = require('meilisearch');
+const { MeiliSearch, MeiliSearchTimeOutError } = require('meilisearch');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { isEnabled, FlowStateManager, runDistributedJob } = require('@librechat/api');
@@ -31,6 +31,23 @@ class MeiliSearchClient {
   }
 }
 
+async function waitForSuccessfulTask(client, taskUid, operation) {
+  while (true) {
+    try {
+      const task = await client.waitForTask(taskUid, { timeOutMs: 10_000, intervalMs: 100 });
+      if (task.status !== 'succeeded') {
+        throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
+      }
+      return;
+    } catch (error) {
+      if (error instanceof MeiliSearchTimeOutError) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 /**
  * Deletes documents from MeiliSearch index that are missing the user field
  * @param {import('meilisearch').Index} index - MeiliSearch index instance
@@ -59,7 +76,8 @@ async function deleteDocumentsWithoutUserField(index, indexName) {
         logger.info(
           `[indexSync] Deleting ${idsToDelete.length} documents without user field from ${indexName} index`,
         );
-        await index.deleteDocuments(idsToDelete);
+        const deletion = await index.deleteDocuments(idsToDelete);
+        await waitForSuccessfulTask(MeiliSearchClient.getInstance(), deletion.taskUid, indexName);
         deletedCount += idsToDelete.length;
       }
 
@@ -67,7 +85,7 @@ async function deleteDocumentsWithoutUserField(index, indexName) {
         break;
       }
 
-      offset += batchSize;
+      offset += searchResult.hits.length - idsToDelete.length;
     }
 
     if (deletedCount > 0) {
@@ -75,6 +93,7 @@ async function deleteDocumentsWithoutUserField(index, indexName) {
     }
   } catch (error) {
     logger.error(`[indexSync] Error deleting documents from ${indexName}:`, error);
+    throw error;
   }
 
   return deletedCount;
@@ -97,9 +116,10 @@ async function ensureFilterableAttributes(client) {
 
       if (!settings.filterableAttributes || !settings.filterableAttributes.includes('user')) {
         logger.info('[indexSync] Configuring messages index to filter by user...');
-        await messagesIndex.updateSettings({
+        const settingsTask = await messagesIndex.updateSettings({
           filterableAttributes: ['user'],
         });
+        await waitForSuccessfulTask(client, settingsTask.taskUid, 'messages settings');
         logger.info('[indexSync] Messages index configured for user filtering');
         settingsUpdated = true;
       }
@@ -119,6 +139,7 @@ async function ensureFilterableAttributes(client) {
     } catch (error) {
       if (error.code !== 'index_not_found') {
         logger.warn('[indexSync] Could not check/update messages index settings:', error.message);
+        throw error;
       }
     }
 
@@ -129,9 +150,10 @@ async function ensureFilterableAttributes(client) {
 
       if (!settings.filterableAttributes || !settings.filterableAttributes.includes('user')) {
         logger.info('[indexSync] Configuring convos index to filter by user...');
-        await convosIndex.updateSettings({
+        const settingsTask = await convosIndex.updateSettings({
           filterableAttributes: ['user'],
         });
+        await waitForSuccessfulTask(client, settingsTask.taskUid, 'convos settings');
         logger.info('[indexSync] Convos index configured for user filtering');
         settingsUpdated = true;
       }
@@ -151,6 +173,7 @@ async function ensureFilterableAttributes(client) {
     } catch (error) {
       if (error.code !== 'index_not_found') {
         logger.warn('[indexSync] Could not check/update convos index settings:', error.message);
+        throw error;
       }
     }
 
@@ -160,14 +183,22 @@ async function ensureFilterableAttributes(client) {
         const messagesIndex = client.index('messages');
         await deleteDocumentsWithoutUserField(messagesIndex, 'messages');
       } catch (error) {
-        logger.debug('[indexSync] Could not clean up messages:', error.message);
+        if (error.code === 'index_not_found') {
+          logger.debug('[indexSync] Messages index disappeared before cleanup');
+        } else {
+          throw error;
+        }
       }
 
       try {
         const convosIndex = client.index('convos');
         await deleteDocumentsWithoutUserField(convosIndex, 'convos');
       } catch (error) {
-        logger.debug('[indexSync] Could not clean up convos:', error.message);
+        if (error.code === 'index_not_found') {
+          logger.debug('[indexSync] Conversations index disappeared before cleanup');
+        } else {
+          throw error;
+        }
       }
 
       logger.info('[indexSync] Orphaned documents cleaned up without forcing resync.');
@@ -178,6 +209,7 @@ async function ensureFilterableAttributes(client) {
     }
   } catch (error) {
     logger.error('[indexSync] Error ensuring filterable attributes:', error);
+    throw error;
   }
 
   return { settingsUpdated, orphanedDocsFound: hasOrphanedDocs };
