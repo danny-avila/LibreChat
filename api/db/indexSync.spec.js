@@ -142,6 +142,22 @@ describe('performSync() - syncThreshold logic', () => {
     expect(mockLogger.error).toHaveBeenCalledWith('[indexSync] error', expect.any(Error));
   });
 
+  test('creates missing indexes immediately inside the distributed job', async () => {
+    const createFlowWithHandler = jest.fn().mockRejectedValue(new Error('index not found'));
+    const { FlowStateManager } = require('@librechat/api');
+    FlowStateManager.mockImplementationOnce(() => ({ createFlowWithHandler }));
+    mockGetLogStores.mockReturnValueOnce({});
+    Message.syncWithMeili.mockResolvedValue(undefined);
+    Conversation.syncWithMeili.mockResolvedValue(undefined);
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(mockRunDistributedJob).toHaveBeenCalledTimes(1);
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
+  });
+
   test('triggers sync when unindexed messages exceed syncThreshold', async () => {
     // Arrange: Set threshold before module load
     process.env.MEILI_SYNC_THRESHOLD = '1000';

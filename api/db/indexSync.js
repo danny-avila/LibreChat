@@ -8,7 +8,6 @@ const { batchResetMeiliFlags } = require('./utils');
 
 const searchEnabled = isEnabled(process.env.SEARCH);
 const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);
-let currentTimeout = null;
 
 const defaultSyncThreshold = 1000;
 const syncThreshold = process.env.MEILI_SYNC_THRESHOLD
@@ -348,9 +347,6 @@ async function runIndexSync() {
 
     if (err.message.includes('not found')) {
       logger.debug('[indexSync] Creating indices...');
-      await new Promise((resolve) => {
-        currentTimeout = setTimeout(resolve, 750);
-      });
       try {
         const Message = mongoose.models.Message;
         const Conversation = mongoose.models.Conversation;
@@ -382,10 +378,5 @@ async function indexSync() {
   const jobs = mongoose.connection.collection('distributedJobs');
   return runDistributedJob(jobs, 'meili-index-sync', runIndexSync);
 }
-
-process.on('exit', () => {
-  logger.debug('[indexSync] Clearing sync timeouts before exiting...');
-  clearTimeout(currentTimeout);
-});
 
 module.exports = indexSync;
