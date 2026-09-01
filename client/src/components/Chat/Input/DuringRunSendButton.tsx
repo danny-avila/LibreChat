@@ -29,11 +29,11 @@ type DuringRunSendButtonProps = {
 /**
  * The send button while a run is generating: it takes over the send/stop slot
  * (and `submitButtonRef`, so Enter's synthetic click routes here) whenever the
- * composer holds text — submitting steers or queues per the effective action.
+ * composer holds text: submitting steers or queues per the effective action.
  * Hovering it reveals the full action list with its shortcuts: steer, queue
  * (⌘/Ctrl+Enter routes to the non-default action), interrupt & steer
- * (⌘/Ctrl+Shift+Enter — stops writing now but keeps what is written), and
- * interrupt & send (⌥/Alt+Enter — discards the answer and starts over).
+ * (⌘/Ctrl+Shift+Enter: stops writing now but keeps what is written), and
+ * interrupt & send (⌥/Alt+Enter: discards the answer and starts over).
  * Clearing the composer restores the Stop button.
  */
 const DuringRunSendButton = React.memo(
@@ -126,7 +126,7 @@ const DuringRunSendButton = React.memo(
       label: localize('com_ui_steer'),
       kbd: steerKbd,
       icon: <Zap className="h-4 w-4 text-status-warning" aria-hidden="true" />,
-      // Gate on availability, not the default action — the row exists to
+      // Gate on availability, not the default action: the row exists to
       // override a queue-preferring default with an explicit steer.
       disabled: !steering.canSteer,
       onClick: () => runAction((text) => steering.steerFromComposer(text)),
@@ -173,7 +173,6 @@ const DuringRunSendButton = React.memo(
           <button
             ref={ref}
             aria-label={label}
-            id="during-run-send-button"
             disabled={!content || props.disabled === true}
             className={cn(
               'size-theme-control rounded-theme-control-round bg-text-primary p-theme-compact text-text-primary outline-offset-4 transition-all duration-theme-normal disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',

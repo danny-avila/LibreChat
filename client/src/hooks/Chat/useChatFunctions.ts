@@ -1,4 +1,6 @@
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useStore } from 'jotai';
 import { cloneDeep } from 'lodash';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -36,6 +38,7 @@ import {
   getRouteChatProjectId,
   stripStreamedIndexStamps,
 } from '~/utils';
+import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -160,12 +163,12 @@ export function getRegenerateSubmissionMessages({
 }): TMessage[] {
   if (targetResponseMessage?.messageId) {
     /**
-     * Remove the response being regenerated and its descendants only — NOT a
+     * Remove the response being regenerated and its descendants only: NOT a
      * flat `slice(0, targetIndex)`, which also drops unrelated sibling branches
      * that merely sit later in the array. That collapse made the optimistic
      * render briefly lose other branches mid-regenerate (visible flash, and the
-     * scroll jumping to the shrunken content). Keeping them holds the thread —
-     * and scroll — steady. This array is render-only; the server regenerates
+     * scroll jumping to the shrunken content). Keeping them holds the thread
+     * (and scroll) steady. This array is render-only; the server regenerates
      * from `parentMessageId`, so removing by subtree never affects the payload.
      */
     const removed = new Set<string>([targetResponseMessage.messageId]);
@@ -213,6 +216,7 @@ export default function useChatFunctions({
   setSubmission: SetterOrUpdater<TSubmission | null>;
 }) {
   const navigate = useNavigate();
+  const reasoningStore = useStore();
   const getSender = useGetSender();
   const { user } = useAuthContext();
   const queryClient = useQueryClient();
@@ -224,6 +228,25 @@ export default function useChatFunctions({
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
+
+  /**
+   * `ask` refuses while `isSubmitting`, but that Recoil value only reads true
+   * from the next commit onwards: a double Enter or a double click inside one
+   * browser task would both pass that check and start two generations. This
+   * ref closes the gap synchronously, matching the queue send lock shared by
+   * `useSteering` and `useQueueDrain`.
+   *
+   * Released on every commit that is not submitting rather than only on a
+   * `true -> false` transition: a start that never flips `isSubmitting` here
+   * (Assistants set it from the SSE handler, and a start that fails outright
+   * never sets it at all) would otherwise latch the composer shut for good.
+   */
+  const askInFlightRef = useRef(false);
+  useEffect(() => {
+    if (!isSubmitting) {
+      askInFlightRef.current = false;
+    }
+  });
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -268,6 +291,18 @@ export default function useChatFunctions({
     [],
   );
 
+  const drainPendingReasoning = useCallback(
+    (convoId: string): TMessage['reasoningOverride'] => {
+      const reasoningAtom = pendingReasoningOverrideFamily(convoId);
+      const reasoningOverride = reasoningStore.get(reasoningAtom);
+      if (reasoningOverride != null) {
+        reasoningStore.set(reasoningAtom, undefined);
+      }
+      return reasoningOverride;
+    },
+    [reasoningStore],
+  );
+
   const ask: TAskFunction = (
     {
       text,
@@ -288,6 +323,7 @@ export default function useChatFunctions({
       targetResponseMessageId,
       overrideManualSkills,
       overrideQuotes,
+      overrideReasoning,
       addedConvo,
       overrideClientRequestId,
       overrideRecoverySteerId,
@@ -305,6 +341,7 @@ export default function useChatFunctions({
      */
     const replayFileCount = overrideFiles?.length ?? 0;
     if (
+      askInFlightRef.current ||
       !!isSubmitting ||
       (!isRegenerate && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
     ) {
@@ -336,7 +373,7 @@ export default function useChatFunctions({
      * Warm-switch revalidation guard: a navigation invalidates the target's
      * cache and renders it while a background refetch reconciles. Deriving
      * parentMessageId from that cache could fork from an outdated tail, so
-     * refuse (composer keeps the text) until the refetch settles — but only
+     * refuse (composer keeps the text) until the refetch settles, but only
      * when the cache is actually old: a just-streamed cache (fresh
      * `dataUpdatedAt`) is locally authoritative, and gating it would block
      * rapid follow-ups during the post-run reconcile.
@@ -375,7 +412,7 @@ export default function useChatFunctions({
      * Manual skill selection resolution:
      *  - Explicit `overrideManualSkills` wins (regenerate / save-and-submit
      *    pass the original user message's persisted `manualSkills` so the
-     *    resubmitted turn primes the same skills — the pills are still
+     *    resubmitted turn primes the same skills: the pills are still
      *    visible to the user, it would be strange to quietly drop them).
      *  - Regenerate / continue / edit without an override → empty, and the
      *    compose-time atom is deliberately NOT drained (those flows replay
@@ -409,6 +446,10 @@ export default function useChatFunctions({
       } else if (!isRegenerate && !isContinued && !isEdited) {
         quotes = drainPendingQuotes(conversationId ?? Constants.NEW_CONVO);
       }
+    }
+    let reasoningOverride = overrideReasoning ?? undefined;
+    if (overrideReasoning === undefined && !isRegenerate && !isContinued && !isEdited) {
+      reasoningOverride = drainPendingReasoning(conversationId ?? Constants.NEW_CONVO);
     }
     const isEditOrContinue = isEdited || isContinued;
 
@@ -539,6 +580,7 @@ export default function useChatFunctions({
        * also merges these into the model-facing user text at request time.
        */
       quotes: quotes.length > 0 ? quotes : undefined,
+      reasoningOverride,
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
@@ -556,8 +598,8 @@ export default function useChatFunctions({
         markPasteSubmitted(file.temp_file_id);
       });
       // Caller-supplied overrideFiles were consumed elsewhere (queued
-      // during-run messages take theirs out of the composer at queue time,
-      // so clearing here would eat attachments staged for the user's NEXT send.
+      // during-run messages take theirs out of the composer at queue time);
+      // clearing here would eat attachments staged for the user's NEXT send.
       if (isRegenerate) {
         setFiles(new Map());
         setFilesToDelete({});
@@ -614,7 +656,7 @@ export default function useChatFunctions({
       /**
        * Seed the assistant placeholder with the turn's manually-invoked
        * skill names so `ContentParts` can render interim `SkillCall` cards
-       * from the very first render — no round-trip through the `created`
+       * from the very first render: no round-trip through the `created`
        * SSE event required. Rides along with every subsequent spread
        * (`useStepHandler` response construction, `updateContent` result
        * spreads) and drops out naturally at `finalHandler` when the
@@ -731,6 +773,10 @@ export default function useChatFunctions({
       setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
 
+    /** Armed at the point of no return: every refusal above returns before it,
+     *  so a rejected send never has to unwind the guard, and `ask` runs to
+     *  completion synchronously, which is the whole window it has to cover. */
+    askInFlightRef.current = true;
     setSubmissionStart(Date.now());
     setSubmission(submission);
     logger.dir('message_stream', submission, { depth: null });
@@ -763,6 +809,8 @@ export default function useChatFunctions({
           /** Carry the original user message's quoted excerpts forward so the
            *  regenerated response is sent the same referenced context. */
           overrideQuotes: parentMessage.quotes,
+          /** Replay the exact request-scoped reasoning selection used by this turn. */
+          overrideReasoning: parentMessage.reasoningOverride ?? null,
         },
       );
     } else {

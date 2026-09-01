@@ -1,10 +1,10 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
 import { FileSources } from 'librechat-data-provider';
+import { render, screen, fireEvent } from '@testing-library/react';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import DataTable from '../PanelTable';
 import { columns } from '../PanelColumns';
+import DataTable from '../PanelTable';
 
 const mockShowToast = jest.fn();
 const mockAddFile = jest.fn();
@@ -62,6 +62,18 @@ jest.mock('~/Providers', () => ({
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useUpdateFiles: () => ({ addFile: mockAddFile }),
+}));
+
+/* The attach logic moved into `useAttachExisting`, which reaches its
+   dependencies by their own paths rather than through the `~/hooks` barrel. */
+jest.mock('~/hooks/useLocalize', () => ({
+  __esModule: true,
+  default: () => (key: string) => key,
+}));
+
+jest.mock('~/hooks/Files/useUpdateFiles', () => ({
+  __esModule: true,
+  default: () => ({ addFile: mockAddFile }),
 }));
 
 jest.mock('~/data-provider', () => ({

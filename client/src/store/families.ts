@@ -305,6 +305,17 @@ const showSkillsPopoverFamily = atomFamily<boolean, string | number | null>({
 });
 
 /**
+ * How far, in pixels, the landing screen should raise itself so an open
+ * composer popover has room beneath the composer instead of pushing the page
+ * into a scrollbar. Written by the popover that needs the room, read by the
+ * layout that can give it.
+ */
+const composerLiftFamily = atomFamily<number, string | number | null>({
+  key: 'composerLiftByIndex',
+  default: 0,
+});
+
+/**
  * Per-conversation queue of skill names the user invoked manually via the
  * `$` popover for the next submission. Structured channel that the submit
  * pipeline (`useChatFunctions.ask`) drains and pins onto the user message's
@@ -381,6 +392,8 @@ export type PendingSteer = {
   /** Manual skill picks, carried for restoration only (a skill pick
    *  configures a NEW turn's run, so it never rides the steer POST). */
   manualSkills?: string[];
+  /** Full-generation setting carried for restoration only; it cannot alter a live steer. */
+  reasoningOverride?: TMessage['reasoningOverride'];
   /** Asked the run to seal generation at the next safe boundary rather than
    *  wait for a tool step. Labelling only — the server owns the behaviour and
    *  echoes what it actually armed. */
@@ -454,6 +467,8 @@ export type QueuedMessage = {
   /** Manual skill picks consumed from the composer at enqueue time; passed
    *  to `ask` as `overrideManualSkills` on drain. */
   manualSkills?: string[];
+  /** Request-scoped reasoning setting captured when this item was queued. */
+  reasoningOverride?: TMessage['reasoningOverride'];
   /** Front-inserted by "Interrupt & send": stays ahead of chronologically
    *  older items when leftover steers are merged back into the queue. */
   priority?: boolean;
@@ -827,6 +842,7 @@ export default {
   showPromptsPopoverFamily,
   showSkillsPopoverFamily,
   pendingComposerTextByConvoId,
+  composerLiftFamily,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
   pendingSteersByConvoId,

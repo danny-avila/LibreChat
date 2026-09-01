@@ -35,6 +35,7 @@ const {
   HITL_MESSAGE_FILTER_FIELDS,
   getEndpointFileConfig,
   stripReasoningLabelMetadata,
+  reasoningOverrideSchema,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -530,6 +531,12 @@ class BaseClient {
       const referencedQuotes = getReferencedQuotes(this.options.req?.body?.quotes);
       if (referencedQuotes != null) {
         userMessage.quotes = referencedQuotes;
+      }
+      const reasoningOverride = reasoningOverrideSchema.safeParse(
+        this.options.req?.body?.reasoningOverride,
+      );
+      if (reasoningOverride.success) {
+        userMessage.reasoningOverride = reasoningOverride.data;
       }
     }
 
