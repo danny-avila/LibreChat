@@ -1722,11 +1722,16 @@ class BaseClient {
 
     if (!this._mergedFileConfig) {
       this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
-      this._deliveryEndpoint = this.options.agent?.endpoint ?? this.options.endpoint;
+      /* An agent's file policy belongs to its provider, and the conversation's own type is
+       * the `agents` container, which getEndpointFileConfig prefers over the endpoint and
+       * so would answer with the generic entry instead of the provider's. */
+      const agentProvider = this.options.agent?.provider;
+      this._deliveryEndpoint =
+        agentProvider ?? this.options.agent?.endpoint ?? this.options.endpoint;
       this._endpointFileConfig = getEndpointFileConfig({
         fileConfig: this._mergedFileConfig,
         endpoint: this._deliveryEndpoint,
-        endpointType: this.options.endpointType,
+        endpointType: agentProvider != null ? undefined : this.options.endpointType,
       });
     }
 
@@ -1736,7 +1741,7 @@ class BaseClient {
      * explicit chooser decision is the user's and survives, and a record predating the
      * field keeps its legacy handling. */
     const deliveryPathFor = (file) =>
-      file.llmDeliveryPath == null || file.metadata?.legacyUploadChoice === true
+      file.llmDeliveryPath == null || file.metadata?.destinationChosen === true
         ? file.llmDeliveryPath
         : resolveUploadLLMDeliveryPath({
             /* Conversion changes the stored type, so re-resolution asks against the type

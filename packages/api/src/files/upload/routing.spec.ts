@@ -1,5 +1,5 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import { resolveUploadEndpoint } from './routing';
+import { resolveUploadEndpoint, resolveEffectiveToolResource } from './routing';
 import type { ServerRequest } from '~/types';
 
 describe('resolveUploadEndpoint', () => {
@@ -49,5 +49,32 @@ describe('resolveUploadEndpoint', () => {
 
     expect(endpoint).toBe(EModelEndpoint.openAI);
     expect(getAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveEffectiveToolResource Responses handling', () => {
+  const makeReq = () =>
+    ({
+      user: { id: 'user-1' },
+      file: { mimetype: 'application/pdf' },
+      config: { fileConfig: undefined },
+    }) as unknown as ServerRequest;
+
+  it('treats the multipart string form of the Responses flag as set', async () => {
+    /* Form data has no booleans, so the flag arrives as "true" and a strict comparison
+     * would route an Azure PDF to extracted text on a deployment that carries it. */
+    const withString = await resolveEffectiveToolResource({
+      req: makeReq(),
+      metadata: { endpoint: 'azureOpenAI', useResponsesApi: 'true' },
+      getAgent: jest.fn(),
+    });
+    const withoutFlag = await resolveEffectiveToolResource({
+      req: makeReq(),
+      metadata: { endpoint: 'azureOpenAI' },
+      getAgent: jest.fn(),
+    });
+
+    expect(withString).toBeUndefined();
+    expect(withoutFlag).toBe('context');
   });
 });

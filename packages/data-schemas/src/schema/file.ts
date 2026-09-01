@@ -142,11 +142,11 @@ const file: Schema<IMongoFile> = new Schema(
         type: [String],
         default: undefined,
       },
-      /** The user picked this file's destination from the legacy chooser, so the
-       *  destinations absent from the record were declined rather than deferred. Unlike
-       *  the endpoint setting, which the next turn may resolve differently, the choice
-       *  belongs to the file. */
-      legacyUploadChoice: {
+      /** The user named this file's destination, through the chooser or by requesting a
+       *  tool resource, so the destinations absent from the record were declined rather
+       *  than deferred. Unlike the endpoint setting, which the next turn may resolve
+       *  differently, the choice belongs to the file. */
+      destinationChosen: {
         type: Boolean,
         default: undefined,
       },

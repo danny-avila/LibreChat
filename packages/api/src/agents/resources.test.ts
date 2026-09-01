@@ -2553,7 +2553,7 @@ describe('primeResources', () => {
         bytes: 512,
         embedded: false,
         usage: 0,
-        metadata: { legacyUploadChoice: true },
+        metadata: { destinationChosen: true },
       } as TFile;
 
       const result = await primeResources({
@@ -2585,7 +2585,7 @@ describe('primeResources', () => {
         bytes: 512,
         embedded: false,
         usage: 0,
-        metadata: { legacyUploadChoice: false },
+        metadata: { destinationChosen: false },
       } as TFile;
 
       const result = await primeResources({
@@ -2637,6 +2637,44 @@ describe('primeResources', () => {
       expect(result.provisionState).toBeUndefined();
     });
 
+    it('removes a screened-out file id from the runtime tool resources', async () => {
+      /* The tool primers read these ids directly and re-check only access, so a record
+       * the screen rejected still reaches the Code API unless its id goes with it. */
+      const rejected = {
+        user: 'user1',
+        file_id: 'rejected-code',
+        filename: 'bundle.zip',
+        filepath: '/uploads/bundle.zip',
+        object: 'file',
+        type: 'application/zip',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+        context: FileContext.agents,
+      } as TFile;
+      mockGetFiles.mockResolvedValue([rejected]);
+      const tool_resources = {
+        [EToolResources.execute_code]: { file_ids: ['rejected-code'] },
+      };
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources,
+        attachments: undefined,
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        screenPersistentFiles: () => [],
+      });
+
+      expect(result.tool_resources?.[EToolResources.execute_code]?.file_ids ?? []).not.toContain(
+        'rejected-code',
+      );
+    });
+
     it('queues a permanent code resource on a turn that attaches nothing', async () => {
       /* A promoted code upload waits for the route the turn resolves, so it carries no
        * sandbox reference. Without loading the agent's own code resources here, its first
@@ -2652,7 +2690,7 @@ describe('primeResources', () => {
         embedded: false,
         usage: 0,
         context: FileContext.agents,
-        metadata: { legacyUploadChoice: false },
+        metadata: { destinationChosen: false },
       } as TFile;
       mockGetFiles.mockResolvedValue([codeResourceFile]);
 
@@ -2688,7 +2726,7 @@ describe('primeResources', () => {
         embedded: true,
         usage: 0,
         context: FileContext.agents,
-        metadata: { legacyUploadChoice: true, embeddedEntities: ['original-agent'] },
+        metadata: { destinationChosen: true, embeddedEntities: ['original-agent'] },
       } as TFile;
       mockGetFiles.mockResolvedValue([inherited]);
 
