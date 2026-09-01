@@ -34,6 +34,14 @@ export interface ComposerProps {
   /** Secondary controls, laid out inline-start of the send button. */
   actions?: ReactNode;
   /**
+   * Stops whatever this surface is running. When supplied, an empty field
+   * shows main chat's Stop in the send button's place — the same trade the
+   * main composer makes, so "nothing to send" and "stop what is running" never
+   * need two separate controls.
+   */
+  onStop?: () => void;
+  stopLabel?: string;
+  /**
    * The reader's "Press Enter to send" preference. When false, Enter inserts a
    * newline and ⌘/Ctrl+Enter submits — the same bargain the main chat composer
    * strikes, so a reader who turned the preference off cannot steer a run or
@@ -53,6 +61,10 @@ export interface ComposerProps {
   ) => ComposerKeyVerdict;
   className?: string;
 }
+
+/** Main chat's send/stop button shape, shared by both states of the slot. */
+const CONTROL_CLASS =
+  'size-theme-control rounded-theme-control-round bg-text-primary p-theme-compact text-text-primary outline-offset-4 transition-all duration-theme-normal disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10';
 
 /**
  * The chat composer at panel scale: one persistent surface with a text field, a
@@ -79,6 +91,8 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
       minRows = 1,
       maxRows = 6,
       actions,
+      onStop,
+      stopLabel,
       submitOnEnter = true,
       resolveKeyVerdict,
       className,
@@ -86,6 +100,9 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
     ref: Ref<HTMLTextAreaElement>,
   ) {
     const [isComposing, setIsComposing] = useState(false);
+    /** Nothing to send and something to stop: main chat swaps the same slot
+     *  rather than standing a second control beside it. */
+    const showStop = onStop != null && value.trim() === '';
 
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
       /**
@@ -140,28 +157,59 @@ const Composer: ForwardRefExoticComponent<ComposerProps & RefAttributes<HTMLText
           minRows={minRows}
           maxRows={maxRows}
           disabled={disabled}
-          className="w-full resize-none bg-transparent px-1.5 py-1 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none disabled:cursor-not-allowed"
+          /** Main chat's own field metrics (`ChatForm`'s `baseClasses`), so the
+           *  two composers stand the same height and their surfaces line up
+           *  when this panel is open beside the thread. */
+          className="m-0 w-full resize-none bg-transparent px-3 py-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none disabled:cursor-not-allowed md:py-3.5"
         />
         {/* The row holds its height whether or not it carries secondary actions,
           so the surface cannot resize as a run changes what it offers. */}
         <div className="flex min-h-9 flex-wrap items-center gap-1.5">
           {actions}
-          <TooltipAnchor
-            description={submitLabel}
-            className="ml-auto"
-            render={
-              <button
-                type="button"
-                aria-label={submitLabel}
-                disabled={disabled || !canSubmit}
-                onClick={onSubmit}
-                data-testid="composer-send-button"
-                className="size-theme-control rounded-theme-control-round bg-text-primary p-theme-compact text-text-primary outline-offset-4 transition-all duration-theme-normal disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10"
-              >
-                <SendIcon size={24} />
-              </button>
-            }
-          />
+          {showStop ? (
+            <TooltipAnchor
+              description={stopLabel ?? ''}
+              className="ml-auto"
+              render={
+                <button
+                  type="button"
+                  aria-label={stopLabel ?? ''}
+                  onClick={onStop}
+                  data-testid="composer-stop-button"
+                  className={CONTROL_CLASS}
+                >
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="icon-lg text-surface-primary"
+                    aria-hidden="true"
+                  >
+                    <rect x="7" y="7" width="10" height="10" rx="1.25" fill="currentColor" />
+                  </svg>
+                </button>
+              }
+            />
+          ) : (
+            <TooltipAnchor
+              description={submitLabel}
+              className="ml-auto"
+              render={
+                <button
+                  type="button"
+                  aria-label={submitLabel}
+                  disabled={disabled || !canSubmit}
+                  onClick={onSubmit}
+                  data-testid="composer-send-button"
+                  className={CONTROL_CLASS}
+                >
+                  <SendIcon size={24} />
+                </button>
+              }
+            />
+          )}
         </div>
       </div>
     );

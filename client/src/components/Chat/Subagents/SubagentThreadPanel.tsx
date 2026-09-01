@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
-import { ListEnd, OctagonX, X, Zap } from 'lucide-react';
+import { X } from 'lucide-react';
 import { dataService, ForkOptions } from 'librechat-data-provider';
 import {
   Alert,
@@ -58,6 +58,7 @@ import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
+import { isLiveSubagentStatus } from './status';
 import { renderAgentAvatar } from '~/utils';
 import store from '~/store';
 
@@ -973,9 +974,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const hasConversationProjection =
     selection.durable == null || threadView == null || Array.isArray(threadView.turns);
   const taskInaccessible = controlInaccessible || transientControl?.reason === 'task_inaccessible';
+  /** `dispatched` counts as live. The task is on its way to an executor, and a
+   *  reader who types into a run that has only just started means it for that
+   *  run — withdrawing the composer until the first token lands is the swap
+   *  this panel exists to avoid. */
   const controlAvailable =
     selection.durable != null &&
-    taskView?.status === 'running' &&
+    taskView != null &&
+    isLiveSubagentStatus(taskView.status) &&
     !taskInaccessible &&
     !controlsClosed;
   const controlPending =
@@ -1004,33 +1010,80 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   /** `control` steers the live run, `continue` carries the thread into a chat
    *  of the reader's own. Both compose into the same field, with the same
    *  placeholder the main chat composer shows for this agent. */
-  let composerMode: 'control' | 'continue' | null = null;
+  let liveComposerMode: 'control' | 'continue' | null = null;
   if (controlAvailable) {
-    composerMode = 'control';
+    liveComposerMode = 'control';
   } else if (canContinueAsChat) {
-    composerMode = 'continue';
+    liveComposerMode = 'continue';
   }
+  /** A delivery re-keys the query to its new task, and the task view blanks for
+   *  the render or two that takes — deliberately, so task-scoped fields are
+   *  never attributed to the wrong task. Presence must not follow it down: the
+   *  composer would unmount and remount within the same tenth of a second,
+   *  taking focus and the reader's half-typed words with it. The last mode this
+   *  thread showed carries the surface across that gap, holding submission
+   *  until the new task's own view arrives. */
+  const retainedModeRef = useRef<{ threadId: string; mode: 'control' | 'continue' } | null>(null);
+  if (liveComposerMode != null) {
+    retainedModeRef.current = { threadId, mode: liveComposerMode };
+  } else if (retainedModeRef.current != null && retainedModeRef.current.threadId !== threadId) {
+    retainedModeRef.current = null;
+  }
+  const composerSettling = liveComposerMode == null && taskView == null;
+  const composerMode =
+    liveComposerMode ?? (composerSettling ? retainedModeRef.current?.mode : null);
   const composerPlaceholder = localize('com_endpoint_message_new', { 0: panelTitle });
-  const composerCanSubmit =
+  const composerSubmitLabel =
     composerMode === 'control'
-      ? !controlPending && controlMessage.trim() !== ''
-      : !continueChat.isLoading;
+      ? localize('com_ui_steer')
+      : localize('com_ui_subagent_continue_new_chat');
+  const cancelTask = useCallback(() => submitControl('cancel'), [submitControl]);
+  /** Which control the next submission is, decided by the chord that asked for
+   *  it. Read at submission and reset immediately, so a pointer click — which
+   *  never passes through the key policy — always means the default. */
+  const pendingSubmitActionRef = useRef<SubagentControlAction>('steer');
+  const controlModeRef = useRef(false);
+  controlModeRef.current = composerMode === 'control';
+  let composerCanSubmit: boolean;
+  if (composerSettling) {
+    composerCanSubmit = false;
+  } else if (composerMode === 'control') {
+    composerCanSubmit = !controlPending && controlMessage.trim() !== '';
+  } else {
+    composerCanSubmit = !continueChat.isLoading;
+  }
   /** The main chat form's own Enter decision table, so a reader who rebound or
    *  unbound the submit shortcut gets the same contract here, and chords
    *  claimed by global shortcuts are left for the window handler. */
   const resolveKeyVerdict = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>, isComposing: boolean): ComposerKeyVerdict => {
+      /** A live run is exactly the condition main chat calls "during run", so
+       *  its during-run chords carry over verbatim: the default submits a
+       *  steer, ⌘/Ctrl+Enter takes the other queueing action, and the
+       *  interrupting chords interrupt. */
+      const duringRun = controlModeRef.current;
       const action = resolveComposerKeyDown(event, {
         isComposing,
-        isSubmitting: false,
-        allowSubmitWhileGenerating: false,
-        hasDuringRunModifier: false,
+        isSubmitting: duringRun,
+        allowSubmitWhileGenerating: duringRun,
+        hasDuringRunModifier: duringRun,
         shortcutsEnabled,
         enterToSend,
         submitOverride,
         yieldedChords,
       });
-      if (action === 'submit') return 'submit';
+      if (action === 'submit') {
+        pendingSubmitActionRef.current = 'steer';
+        return 'submit';
+      }
+      if (action === 'other') {
+        pendingSubmitActionRef.current = 'queue';
+        return 'submit';
+      }
+      if (action === 'interrupt' || action === 'preempt') {
+        pendingSubmitActionRef.current = 'interrupt';
+        return 'submit';
+      }
       if (action === 'newline') return 'newline';
       if (action === 'block') return 'block';
       return 'none';
@@ -1039,7 +1092,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   );
   const submitComposer = useCallback(() => {
     if (controlAvailable) {
-      submitControl('steer');
+      const action = pendingSubmitActionRef.current;
+      pendingSubmitActionRef.current = 'steer';
+      submitControl(action);
       return;
     }
     continueAsChat();
@@ -1133,7 +1188,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   let activityPanel: ReactNode;
   if (hasConversationProjection) {
     activityPanel = (
-      <SubagentActivityScrollSurface padded={false}>
+      <SubagentActivityScrollSurface padded={false} headerInset>
         {showUnavailableHistoryBoundary && (
           <div
             role="status"
@@ -1191,7 +1246,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     ((eventSummary?.tasks.length ?? 0) > 1 || eventSummary?.tasksTruncated === true)
   ) {
     activityPanel = (
-      <SubagentActivityScrollSurface padded={false}>
+      <SubagentActivityScrollSurface padded={false} headerInset>
         <div data-subagent-thread-timeline>
           {timelinePrefix}
           {visibleEventTasks.map(renderEventTask)}
@@ -1206,6 +1261,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         activity={activity}
         state={panelState}
         showPrompt={false}
+        headerInset
         onCancelControl={
           controlAvailable && !controlPending
             ? (controlId) => submitControl('cancel_message', controlId)
@@ -1222,9 +1278,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       aria-modal={isMobile || undefined}
       aria-label={localize('com_ui_subagent_thread_panel')}
       onKeyDown={handlePanelKeyDown}
-      className="flex h-full w-full flex-col overflow-hidden bg-surface-primary-alt text-text-primary"
+      className="relative flex h-full w-full flex-col overflow-hidden bg-surface-primary-alt text-text-primary"
     >
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border-light px-3">
+      {/* The main chat header's own shape: a 52px bar that floats over the
+          thread and fades into it, so the conversation scrolls under it and
+          more of it is on screen. Gradient stops track THIS surface rather
+          than the chat's, since the panel sits on its own background. */}
+      <header className="absolute top-0 z-10 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b from-surface-primary-alt via-surface-primary-alt/70 to-transparent p-2 font-semibold text-text-primary">
         {actorOptions.length > 1 ? (
           /* The agent builder's picker, so switching actors here reads as the
              same control as every other agent selection in the app — avatar,
@@ -1293,8 +1353,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       >
         {activityPanel}
       </ApprovalProvider>
-      {(showControlFooter || canContinueAsChat) && (
-        <div className="shrink-0 p-3 pt-2">
+      {(showControlFooter || composerMode != null) && (
+        /* The main chat form's own bottom rhythm: its composer clears the
+           viewport floor by the height of the disclaimer beneath it, and this
+           one clears it by the same, so the two surfaces end on one line when
+           the panel is open beside the thread. */
+        <div className="shrink-0 px-3 pb-10 pt-2">
           {transientControl?.status === 'failed' && (
             <Alert variant="error" className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1">
@@ -1316,20 +1380,20 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             </Alert>
           )}
           {composerMode != null && (
-            /* One surface across the run's whole life. A settled thread swaps
-               what Enter DOES, never the control the reader is looking at, so
-               nothing under the pointer moves as the run completes. */
+            /* One surface across the run's whole life, and one control on it:
+               submitting IS the steer, and with nothing to send the send button
+               becomes main chat's Stop, which cancels the task. Queue and
+               interrupt keep the chords main chat gives them rather than
+               spelling themselves out beside the field. */
             <Composer
               value={controlMessage}
               onChange={setControlMessage}
               onSubmit={submitComposer}
               canSubmit={composerCanSubmit}
               disabled={composerMode === 'control' && controlPending}
-              submitLabel={
-                composerMode === 'control'
-                  ? localize('com_ui_steer')
-                  : localize('com_ui_subagent_continue_new_chat')
-              }
+              submitLabel={composerSubmitLabel}
+              onStop={composerMode === 'control' && !controlPending ? cancelTask : undefined}
+              stopLabel={localize('com_ui_subagent_cancel_task')}
               ariaLabel={localize('com_ui_message_input')}
               placeholder={composerPlaceholder}
               submitOnEnter={enterToSend}
@@ -1338,45 +1402,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
                *  continuation is ordinary chat text bound for an ordinary
                *  composer, which caps nothing. */
               maxLength={composerMode === 'control' ? 4 * 1024 : undefined}
-              actions={
-                composerMode === 'control' ? (
-                  <>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={controlPending || controlMessage.trim() === ''}
-                      onClick={() => submitControl('queue')}
-                      className="rounded-full"
-                    >
-                      <ListEnd size={14} aria-hidden />
-                      {localize('com_ui_queue')}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={controlPending || controlMessage.trim() === ''}
-                      onClick={() => submitControl('interrupt')}
-                      className="rounded-full"
-                    >
-                      <Zap size={14} aria-hidden />
-                      {localize('com_ui_subagent_interrupt')}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      disabled={controlPending}
-                      onClick={() => submitControl('cancel')}
-                      className="rounded-full text-status-error"
-                    >
-                      <OctagonX size={14} aria-hidden />
-                      {localize('com_ui_subagent_cancel_task')}
-                    </Button>
-                  </>
-                ) : null
-              }
             />
           )}
         </div>

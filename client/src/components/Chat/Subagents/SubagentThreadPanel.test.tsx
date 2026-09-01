@@ -281,6 +281,8 @@ jest.mock('@librechat/client', () => ({
     submitOnEnter = true,
     resolveKeyVerdict,
     maxLength,
+    onStop,
+    stopLabel,
   }: {
     value: string;
     onChange: (value: string) => void;
@@ -297,6 +299,8 @@ jest.mock('@librechat/client', () => ({
       isComposing: boolean,
     ) => 'submit' | 'block' | 'newline' | 'none';
     maxLength?: number;
+    onStop?: () => void;
+    stopLabel?: string;
   }) => (
     <div>
       <textarea
@@ -315,14 +319,20 @@ jest.mock('@librechat/client', () => ({
         }}
       />
       {actions}
-      <button
-        type="button"
-        aria-label={submitLabel}
-        disabled={disabled === true || !canSubmit}
-        onClick={onSubmit}
-      >
-        {submitLabel}
-      </button>
+      {onStop != null && value.trim() === '' ? (
+        <button type="button" aria-label={stopLabel} onClick={onStop}>
+          {stopLabel}
+        </button>
+      ) : (
+        <button
+          type="button"
+          aria-label={submitLabel}
+          disabled={disabled === true || !canSubmit}
+          onClick={onSubmit}
+        >
+          {submitLabel}
+        </button>
+      )}
     </div>
   ),
   useMediaQuery: () => mockIsMobile,
@@ -591,6 +601,93 @@ describe('SubagentThreadPanel', () => {
     expect(mockControlMutate.mock.calls[0][0].command.action).toBe('steer');
   });
 
+  /** A delivery re-keys the query to its new task and the task view blanks for
+   *  the render or two that takes. Measured against the live panel, the
+   *  composer used to unmount and remount inside 10ms there — taking focus and
+   *  a half-typed steer with it. */
+  it('keeps the composer mounted while a delivery re-keys the task view', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    /** A fresh element each time: React bails out of an update whose element is
+     *  the very same object, so a reused tree would assert nothing. */
+    const tree = () => (
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>
+    );
+    const { rerender } = render(tree());
+
+    const composer = screen.getByLabelText('com_ui_message_input');
+    fireEvent.change(composer, { target: { value: 'Half-typed steer.' } });
+
+    /** The new task's view has not landed: `isPreviousData` withholds the task
+     *  view precisely so task-scoped fields are not misattributed. */
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isPreviousData: true,
+      isReadinessPending: false,
+    });
+    rerender(tree());
+
+    expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('Half-typed steer.');
+    /** Present, but not submittable until the new task's own view arrives. */
+    expect(screen.getByRole('button', { name: 'com_ui_steer' })).toBeDisabled();
+  });
+
+  /** A task on its way to an executor is live: withdrawing the composer until
+   *  the first token lands is the swap this panel exists to avoid. */
+  it('keeps the composer in control mode while the task is only dispatched', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'dispatched', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByLabelText('com_ui_message_input')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeInTheDocument();
+  });
+
+  /** Queue and interrupt keep the chords main chat gives them instead of
+   *  spelling themselves out beside the field. */
+  it.each([
+    ['queue', { key: 'Enter', ctrlKey: true }, 'queue'],
+    ['interrupt', { key: 'Enter', altKey: true }, 'interrupt'],
+    ['steer', { key: 'Enter' }, 'steer'],
+  ])('submits a %s from its chord', (_label, event, action) => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    const composer = screen.getByLabelText('com_ui_message_input');
+    fireEvent.change(composer, { target: { value: 'Check the primary source.' } });
+    fireEvent.keyDown(composer, event);
+
+    expect(mockControlMutate).toHaveBeenCalledTimes(1);
+    expect(mockControlMutate.mock.calls[0][0].command.action).toBe(action);
+  });
+
   it('submits one command invocation, blocks duplicate clicks, and shows its receipt', async () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: { ...completedView, status: 'running', controlReceipts: [] },
@@ -607,9 +704,9 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Check the primary source.' },
     });
-    const queue = screen.getByRole('button', { name: 'com_ui_queue' });
-    fireEvent.click(queue);
-    fireEvent.click(queue);
+    const composer = screen.getByLabelText('com_ui_message_input');
+    fireEvent.keyDown(composer, { key: 'Enter', ctrlKey: true });
+    fireEvent.keyDown(composer, { key: 'Enter', ctrlKey: true });
 
     expect(mockControlMutate).toHaveBeenCalledTimes(1);
     const [variables, callbacks] = mockControlMutate.mock.calls[0] as [
@@ -670,7 +767,7 @@ describe('SubagentThreadPanel', () => {
     });
 
     expect(screen.getByLabelText('com_ui_message_input')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'com_ui_steer' })).toBeDisabled();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
@@ -703,7 +800,7 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('com_ui_subagent_control_reason_invalid_command')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('com_ui_message_input')).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'com_ui_steer' })).toBeEnabled();
   });
 
   it('retains an ambiguous invocation across closing and reopening the panel', () => {
@@ -733,7 +830,10 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Use the primary source.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    fireEvent.keyDown(screen.getByLabelText('com_ui_message_input'), {
+      key: 'Enter',
+      ctrlKey: true,
+    });
     const firstCommand = mockControlMutate.mock.calls[0][0].command;
     act(() => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
@@ -762,7 +862,10 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Keep the same invocation.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    fireEvent.keyDown(screen.getByLabelText('com_ui_message_input'), {
+      key: 'Enter',
+      ctrlKey: true,
+    });
     const firstCommand = mockControlMutate.mock.calls[0][0].command;
     act(() => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
@@ -806,7 +909,10 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Retry after closing.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    fireEvent.keyDown(screen.getByLabelText('com_ui_message_input'), {
+      key: 'Enter',
+      ctrlKey: true,
+    });
     const firstCommand = mockControlMutate.mock.calls[0][0].command;
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
     act(() => {
@@ -1358,13 +1464,15 @@ describe('SubagentThreadPanel', () => {
       event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
     };
 
-    const tree = (
+    /** A fresh element each time: React bails out of an update whose element is
+     *  the very same object, so a reused tree would assert nothing. */
+    const tree = () => (
       <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
         <Observer />
         <SubagentThreadPanel selection={eventSelection} />
       </RecoilRoot>
     );
-    const { rerender } = render(tree);
+    const { rerender } = render(tree());
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Try that again.' },
@@ -1375,18 +1483,18 @@ describe('SubagentThreadPanel', () => {
 
     mockParentChildrenByThread = new Map([[actor.threadId, withNewerTask]]);
     mockParentChildrenByMessage = new Map([['parent-message', [withNewerTask]]]);
-    rerender(tree);
+    rerender(tree());
     if (submitAndFail) {
       act(() => mockForkMutate.mock.calls[0][1].onError());
     }
-    rerender(tree);
+    rerender(tree());
 
     expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('Try that again.');
     expect((active as ActiveSubagentPanel | null)?.durable?.taskId).toBe('task');
 
     /** Draft gone, nothing left to protect: the panel follows the actor again. */
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), { target: { value: '' } });
-    rerender(tree);
+    rerender(tree());
     expect((active as ActiveSubagentPanel | null)?.durable?.taskId).toBe('task-newer');
   });
 

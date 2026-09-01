@@ -178,6 +178,48 @@ describe('Composer', () => {
     expect(resolveKeyVerdict).toHaveBeenCalledWith(expect.anything(), false);
   });
 
+  /** Main chat's trade: one slot, showing Stop when there is nothing to send
+   *  and Send the moment there is. */
+  it('swaps the send control for Stop while the field is empty', () => {
+    const onSubmit = jest.fn();
+    const onStop = jest.fn();
+    const Hosted = () => {
+      const [value, setValue] = useState('');
+      return (
+        <Composer
+          value={value}
+          onChange={setValue}
+          onSubmit={onSubmit}
+          onStop={onStop}
+          stopLabel="Cancel task"
+          canSubmit
+          submitLabel="Steer"
+          ariaLabel="Message input"
+        />
+      );
+    };
+    render(<Hosted />);
+
+    expect(screen.queryByLabelText('Steer')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Cancel task'));
+    expect(onStop).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Message input'), {
+      target: { value: 'Try the file.' },
+    });
+    expect(screen.queryByLabelText('Cancel task')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Steer'));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the send control when the surface has nothing to stop', () => {
+    const onSubmit = jest.fn();
+    render(<Harness onSubmit={onSubmit} />);
+
+    expect(screen.getByLabelText('Send it')).toBeInTheDocument();
+    expect(screen.queryByTestId('composer-stop-button')).not.toBeInTheDocument();
+  });
+
   it('sends from the button and keeps the caller actions alongside it', () => {
     const onSubmit = jest.fn();
     render(<Harness onSubmit={onSubmit} />);
