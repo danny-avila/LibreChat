@@ -49,27 +49,25 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
     <div
       role="group"
       aria-labelledby={titleId}
-      className="my-2 flex w-full flex-col rounded-lg border border-border-light bg-surface-secondary p-3"
+      className="relative my-2 flex w-full flex-col rounded-xl border border-border-light bg-surface-secondary p-3"
     >
-      <div className="flex items-start justify-between gap-2">
-        <p
-          id={titleId}
-          className="flex min-w-0 items-center gap-2 text-sm font-medium text-text-primary"
-        >
-          <Gauge className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
-          {localize('com_ui_tool_call_limit_title')}
-        </p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={localize('com_ui_dismiss')}
-          className="shrink-0 text-text-secondary"
-          onClick={() => setDismissed(true)}
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={localize('com_ui_dismiss')}
+        className="absolute right-1.5 top-1.5 text-text-secondary focus-visible:ring-inset focus-visible:ring-offset-0"
+        onClick={() => setDismissed(true)}
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </Button>
+      <p
+        id={titleId}
+        className="flex min-w-0 items-center gap-2 pr-8 text-sm font-medium text-text-primary"
+      >
+        <Gauge className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+        {localize('com_ui_tool_call_limit_title')}
+      </p>
       <p className="mb-3 mt-1 text-sm text-text-secondary">
         {localize('com_ui_tool_call_limit_body')}
       </p>
