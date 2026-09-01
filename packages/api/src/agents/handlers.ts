@@ -4584,7 +4584,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 return {
                   toolCallId: tc.id,
                   status: 'success' as const,
-                  content: buildBackgroundCapacityContent(tc.name),
+                  content: buildBackgroundCapacityContent(tc.name, capacityAdmission.scope),
                 };
               }
               const capacityPermit =
@@ -4665,7 +4665,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 return {
                   toolCallId: tc.id,
                   status: 'success' as const,
-                  content: buildBackgroundCapacityContent(tc.name),
+                  content: buildBackgroundCapacityContent(tc.name, created.scope),
                 };
               }
               const { task, isNew } = created;

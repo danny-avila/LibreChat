@@ -680,6 +680,19 @@ export interface BackgroundTaskCapacityPermit {
   conversationId: string;
 }
 
+export type BackgroundTaskCapacityScope =
+  | 'conversation_running'
+  | 'conversation_retention'
+  | 'user_running'
+  | 'user_retention'
+  | 'global_running'
+  | 'global_retention';
+
+type BackgroundTaskCapacityRejection = {
+  atCapacity: true;
+  scope: BackgroundTaskCapacityScope;
+};
+
 const COMPLETED_TASK_TTL_MS = 60 * 60 * 1000;
 const IDLE_BUCKET_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
@@ -768,7 +781,8 @@ function toStoredArtifact(
       );
       return { chars: 0 };
     }
-    return { artifact, chars: size };
+    const storedArtifact: unknown = JSON.parse(serialized);
+    return { artifact: storedArtifact, chars: size };
   } catch {
     logger.warn(`[background] Dropping unmeasurable artifact for task ${taskId}.`);
     return { chars: 0 };
@@ -899,9 +913,9 @@ export class BackgroundTaskRegistryClass {
     let retainedGlobal = 0;
     for (const bucket of this.buckets.values()) {
       const isUser = bucket.userId === userId;
-      tasksGlobal += bucket.tasks.size;
+      tasksGlobal += bucket.tasks.size + bucket.capacityPermits.size;
       if (isUser) {
-        tasksForUser += bucket.tasks.size;
+        tasksForUser += bucket.tasks.size + bucket.capacityPermits.size;
       }
       for (const task of bucket.tasks.values()) {
         if (task.status === 'running') {
@@ -931,11 +945,15 @@ export class BackgroundTaskRegistryClass {
     };
   }
 
-  private atRunningCapacity(userId: string): boolean {
+  private runningCapacityScope(userId: string): 'user_running' | 'global_running' | undefined {
     const usage = this.aggregateUsage(userId);
-    return (
-      usage.runningForUser >= MAX_RUNNING_PER_USER || usage.runningGlobal >= MAX_RUNNING_GLOBAL
-    );
+    if (usage.runningForUser >= MAX_RUNNING_PER_USER) {
+      return 'user_running';
+    }
+    if (usage.runningGlobal >= MAX_RUNNING_GLOBAL) {
+      return 'global_running';
+    }
+    return undefined;
   }
 
   private evictOldestSettled(params: {
@@ -949,7 +967,11 @@ export class BackgroundTaskRegistryClass {
         continue;
       }
       for (const task of bucket.tasks.values()) {
-        if (task.status !== 'running' && task !== params.excludeTask) {
+        if (
+          task.status !== 'running' &&
+          task.harvestPending !== true &&
+          task !== params.excludeTask
+        ) {
           candidates.push({ bucket, task });
         }
       }
@@ -967,6 +989,25 @@ export class BackgroundTaskRegistryClass {
     }
   }
 
+  private makeBucketTaskRoom(bucket: TaskBucket): boolean {
+    if (bucket.tasks.size + bucket.capacityPermits.size < MAX_TASKS_PER_BUCKET) {
+      return true;
+    }
+    const settledOldestFirst = [...bucket.tasks.values()]
+      .filter((task) => task.status !== 'running' && task.harvestPending !== true)
+      .sort((a, b) => a.updatedAt - b.updatedAt);
+    let toEvict = bucket.tasks.size + bucket.capacityPermits.size - MAX_TASKS_PER_BUCKET + 1;
+    for (const task of settledOldestFirst) {
+      if (toEvict <= 0) {
+        break;
+      }
+      bucket.tasks.delete(task.id);
+      toEvict--;
+    }
+    this.sweepBucketTasks(bucket, Date.now());
+    return bucket.tasks.size + bucket.capacityPermits.size < MAX_TASKS_PER_BUCKET;
+  }
+
   private makeTaskRoom(userId: string): boolean {
     this.evictOldestSettled({
       userId,
@@ -977,6 +1018,12 @@ export class BackgroundTaskRegistryClass {
     });
     const usage = this.aggregateUsage(userId);
     return usage.tasksForUser < MAX_TASKS_PER_USER && usage.tasksGlobal < MAX_TASKS_GLOBAL;
+  }
+
+  private taskCapacityScope(userId: string): 'user_retention' | 'global_retention' {
+    return this.aggregateUsage(userId).tasksForUser >= MAX_TASKS_PER_USER
+      ? 'user_retention'
+      : 'global_retention';
   }
 
   private makeRetainedRoom(userId: string, task: BackgroundTask, chars: number): boolean {
@@ -1014,7 +1061,7 @@ export class BackgroundTaskRegistryClass {
   }):
     | { permit: BackgroundTaskCapacityPermit }
     | { task: BackgroundTask; isNew: false }
-    | { atCapacity: true } {
+    | BackgroundTaskCapacityRejection {
     const now = Date.now();
     this.sweep(now);
     const bucketKey = this.key(params.userId, params.conversationId);
@@ -1030,14 +1077,24 @@ export class BackgroundTaskRegistryClass {
       return { task: existing, isNew: false };
     }
     if (
-      (existingBucket != null &&
-        this.runningCount(existingBucket) + existingBucket.capacityPermits.size >=
-          MAX_RUNNING_PER_BUCKET) ||
-      this.atRunningCapacity(params.userId)
+      existingBucket != null &&
+      this.runningCount(existingBucket) + existingBucket.capacityPermits.size >=
+        MAX_RUNNING_PER_BUCKET
     ) {
-      return { atCapacity: true };
+      return { atCapacity: true, scope: 'conversation_running' };
     }
-    const bucket = existingBucket ?? this.getBucket(params.userId, params.conversationId, now);
+    const runningScope = this.runningCapacityScope(params.userId);
+    if (runningScope != null) {
+      return { atCapacity: true, scope: runningScope };
+    }
+    if (existingBucket != null && !this.makeBucketTaskRoom(existingBucket)) {
+      return { atCapacity: true, scope: 'conversation_retention' };
+    }
+    if (!this.makeTaskRoom(params.userId)) {
+      return { atCapacity: true, scope: this.taskCapacityScope(params.userId) };
+    }
+    const bucket =
+      this.buckets.get(bucketKey) ?? this.getBucket(params.userId, params.conversationId, now);
     const permit: BackgroundTaskCapacityPermit = {
       id: randomUUID(),
       userId: params.userId,
@@ -1086,7 +1143,7 @@ export class BackgroundTaskRegistryClass {
     harvestStarted?: boolean;
     liveArtifactPollRequired?: boolean;
     capacityPermit?: BackgroundTaskCapacityPermit;
-  }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
+  }): { task: BackgroundTask; isNew: boolean } | BackgroundTaskCapacityRejection {
     const now = Date.now();
     this.sweep(now);
     const bucketKey = this.key(params.userId, params.conversationId);
@@ -1124,40 +1181,29 @@ export class BackgroundTaskRegistryClass {
       bucket.capacityPermits.delete(params.capacityPermit.id);
     }
     /** Only *running* tasks gate dispatch. */
-    if (
-      params.capacityPermit == null &&
-      ((existingBucket != null &&
+    if (params.capacityPermit == null) {
+      if (
+        existingBucket != null &&
         this.runningCount(existingBucket) + existingBucket.capacityPermits.size >=
-          MAX_RUNNING_PER_BUCKET) ||
-        this.atRunningCapacity(params.userId))
-    ) {
-      return { atCapacity: true };
+          MAX_RUNNING_PER_BUCKET
+      ) {
+        return { atCapacity: true, scope: 'conversation_running' };
+      }
+      const runningScope = this.runningCapacityScope(params.userId);
+      if (runningScope != null) {
+        return { atCapacity: true, scope: runningScope };
+      }
+    }
+    if (existingBucket != null && !this.makeBucketTaskRoom(existingBucket)) {
+      return { atCapacity: true, scope: 'conversation_retention' };
     }
     if (!this.makeTaskRoom(params.userId)) {
-      return { atCapacity: true };
+      return { atCapacity: true, scope: this.taskCapacityScope(params.userId) };
     }
     /** Aggregate eviction may have removed `existingBucket` when its only
      * settled task was the oldest candidate. Never register into that detached map. */
     const bucket =
       this.buckets.get(bucketKey) ?? this.getBucket(params.userId, params.conversationId, now);
-    /** The total-tasks cap bounds memory but must NOT block new work: evict the
-     *  oldest SETTLED tasks to make room rather than rejecting (settled tasks
-     *  aren't removed by polling, so 200 quick calls would otherwise block for
-     *  up to the completed-TTL). Running is already capped, so room always frees. */
-    if (bucket.tasks.size >= MAX_TASKS_PER_BUCKET) {
-      const settledOldestFirst = [...bucket.tasks.values()]
-        .filter((t) => t.status !== 'running')
-        .sort((a, b) => a.updatedAt - b.updatedAt);
-      let toEvict = bucket.tasks.size - MAX_TASKS_PER_BUCKET + 1;
-      for (const stale of settledOldestFirst) {
-        if (toEvict <= 0) {
-          break;
-        }
-        bucket.tasks.delete(stale.id);
-        toEvict--;
-      }
-    }
-
     const task: BackgroundTask = {
       id: params.taskId ?? randomUUID(),
       toolName: params.toolName,
@@ -1576,12 +1622,30 @@ export function buildBackgroundHandleContent(
   });
 }
 
-/** Content returned when the per-conversation background running cap is hit. */
-export function buildBackgroundCapacityContent(toolName: string): string {
+/** Content returned when a background registry capacity limit is hit. */
+export function buildBackgroundCapacityContent(
+  toolName: string,
+  scope: BackgroundTaskCapacityScope = 'conversation_running',
+): string {
+  let message: string;
+  if (scope === 'user_running') {
+    message = `Too many background tasks are already active for this user (limit ${MAX_RUNNING_PER_USER}, including pending launch reservations). Wait for existing background work to settle, or run this call in the foreground.`;
+  } else if (scope === 'user_retention') {
+    message = `This user is retaining the maximum number of background tasks (${MAX_TASKS_PER_USER}), and pending result processing prevents safe eviction. Wait for background result processing to finish, or run this call in the foreground.`;
+  } else if (scope === 'global_running') {
+    message = `The server-wide background task registry is at capacity (running limit ${MAX_RUNNING_GLOBAL}). Retry later, or run this call in the foreground.`;
+  } else if (scope === 'global_retention') {
+    message = `The server-wide background task registry is retaining its maximum number of tasks (${MAX_TASKS_GLOBAL}), and pending result processing prevents safe eviction. Retry later, or run this call in the foreground.`;
+  } else if (scope === 'conversation_retention') {
+    message = `This conversation is retaining the maximum number of background tasks (${MAX_TASKS_PER_BUCKET}), and pending result processing prevents safe eviction. Wait for background result processing to finish, or run this call in the foreground.`;
+  } else {
+    message = `Too many background tasks are already running in this conversation (limit ${MAX_RUNNING_PER_BUCKET}). Poll ${CHECK_BACKGROUND_TASK_NAME} to collect finished results before dispatching more, or run this call in the foreground.`;
+  }
   return JSON.stringify({
     status: 'rejected',
     tool: toolName,
-    message: `Too many background tasks are already running in this conversation (limit ${MAX_RUNNING_PER_BUCKET}). Poll ${CHECK_BACKGROUND_TASK_NAME} to collect finished results before dispatching more, or run this call in the foreground.`,
+    scope,
+    message,
   });
 }
 

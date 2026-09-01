@@ -17,6 +17,7 @@ import {
   applyBackgroundToolCalls,
   synthesizeBackgroundToolOptions,
   registerBackgroundTaskTool,
+  buildBackgroundCapacityContent,
   buildBackgroundHandleContent,
   runCheckBackgroundTask,
   getBackgroundCodeDelivery,
@@ -1125,6 +1126,35 @@ describe('BackgroundTaskRegistryClass', () => {
     );
   });
 
+  it('retains only an artifact JSON projection without hidden object state', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u-hidden-artifact',
+      conversationId: 'c-hidden-artifact',
+      toolCallId: 'call_hidden_artifact',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    const artifact = { visible: 'safe' };
+    Object.defineProperty(artifact, 'hidden', {
+      value: 'x'.repeat(1_000_000),
+      enumerable: false,
+    });
+    registry.complete('u-hidden-artifact', 'c-hidden-artifact', created.task.id, {
+      content: 'done',
+      artifact,
+    });
+    const stored = registry.get(
+      'u-hidden-artifact',
+      'c-hidden-artifact',
+      created.task.id,
+    )?.artifact;
+    expect(stored).toEqual({ visible: 'safe' });
+    expect(stored).not.toBe(artifact);
+  });
+
   it('restores a claimed artifact after a failed delivery so a later claim retries', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -1225,7 +1255,17 @@ describe('BackgroundTaskRegistryClass', () => {
         toolCallId: 'call_rejected',
         toolName: 'search_mcp_docs',
       }),
-    ).toEqual({ atCapacity: true });
+    ).toEqual({ atCapacity: true, scope: 'user_running' });
+  });
+
+  it('describes aggregate capacity rejections without blaming the conversation', () => {
+    const content = JSON.parse(buildBackgroundCapacityContent('search', 'user_running')) as {
+      scope: string;
+      message: string;
+    };
+    expect(content.scope).toBe('user_running');
+    expect(content.message).toContain('for this user');
+    expect(content.message).not.toContain('in this conversation');
   });
 
   it('caps concurrent running tasks process-wide', () => {
@@ -1246,7 +1286,7 @@ describe('BackgroundTaskRegistryClass', () => {
         toolCallId: 'call_rejected',
         toolName: 'search_mcp_docs',
       }),
-    ).toEqual({ atCapacity: true });
+    ).toEqual({ atCapacity: true, scope: 'global_running' });
   });
 
   it('holds capacity permits before task registration and releases them explicitly', () => {
@@ -1267,7 +1307,7 @@ describe('BackgroundTaskRegistryClass', () => {
         toolCallId: 'call_rejected',
         runId: 'run-1',
       }),
-    ).toEqual({ atCapacity: true });
+    ).toEqual({ atCapacity: true, scope: 'conversation_running' });
     const first = permits[0];
     if (!('permit' in first)) {
       throw new Error('expected capacity permit');
@@ -1408,6 +1448,48 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u-reused-bucket', 'c-0', replacement.task.id)?.result).toBe('replacement');
   });
 
+  it('uses one local eviction to satisfy bucket and aggregate task caps', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let otherOldestId = '';
+    let targetOldestId = '';
+    for (let i = 0; i < 200; i++) {
+      const other = registry.create({
+        userId: 'u-local-first',
+        conversationId: 'c-other',
+        toolCallId: `call_other_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in other) {
+        throw new Error(`unexpected other capacity at ${i}`);
+      }
+      otherOldestId ||= other.task.id;
+      registry.complete('u-local-first', 'c-other', other.task.id, { content: 'other' });
+    }
+    for (let i = 0; i < 200; i++) {
+      const target = registry.create({
+        userId: 'u-local-first',
+        conversationId: 'c-target',
+        toolCallId: `call_target_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in target) {
+        throw new Error(`unexpected target capacity at ${i}`);
+      }
+      targetOldestId ||= target.task.id;
+      registry.complete('u-local-first', 'c-target', target.task.id, { content: 'target' });
+    }
+
+    const replacement = registry.create({
+      userId: 'u-local-first',
+      conversationId: 'c-target',
+      toolCallId: 'call_replacement',
+      toolName: 't',
+    });
+    expect('atCapacity' in replacement).toBe(false);
+    expect(registry.get('u-local-first', 'c-other', otherOldestId)).toBeDefined();
+    expect(registry.get('u-local-first', 'c-target', targetOldestId)).toBeUndefined();
+  });
+
   it('evicts by settlement time instead of dispatch time', () => {
     const registry = new BackgroundTaskRegistryClass();
     let now = Date.now();
@@ -1503,6 +1585,39 @@ describe('BackgroundTaskRegistryClass', () => {
     }
     expect(registry.get('u-payload', 'c-0', firstTaskId)).toBeUndefined();
     expect(registry.get('u-payload', 'c-17', latestTaskId)?.artifact).toBeDefined();
+  });
+
+  it('does not evict a completed task while its harvest is pending', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const first = registry.create({
+      userId: 'u-pending-harvest',
+      conversationId: 'c-first',
+      toolCallId: 'call_first',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    const second = registry.create({
+      userId: 'u-pending-harvest',
+      conversationId: 'c-second',
+      toolCallId: 'call_second',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    if ('atCapacity' in first || 'atCapacity' in second) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-pending-harvest', 'c-first', first.task.id, {
+      content: 'first',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+      harvestStarted: true,
+    });
+    registry.complete('u-pending-harvest', 'c-second', second.task.id, {
+      content: 'second',
+      artifact: { payload: 'b'.repeat(9_000_000) },
+      harvestStarted: true,
+    });
+    expect(registry.get('u-pending-harvest', 'c-first', first.task.id)?.artifact).toBeDefined();
+    expect(registry.get('u-pending-harvest', 'c-second', second.task.id)?.artifact).toBeUndefined();
   });
 
   it('scopes tasks by user and conversation', () => {
