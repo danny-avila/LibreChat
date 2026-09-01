@@ -13,6 +13,7 @@ import {
   REDIS_EVENT_REORDER_TIMEOUT_MS,
 } from '~/stream/internal/timing';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
+import { GenerationPublicationFencedError } from '~/stream/interfaces/IJobStore';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 
 /**
@@ -1335,10 +1336,18 @@ export class RedisEventTransport implements IEventTransport {
         true,
       );
       if (sequence === -1) {
-        throw new Error('Generation DONE publication was fenced by a replacement');
+        throw new GenerationPublicationFencedError('done', streamId, generationId);
       }
     } catch (err) {
-      logger.error(`[RedisEventTransport] Failed to publish done:`, err);
+      if (err instanceof GenerationPublicationFencedError) {
+        logger.warn(`[RedisEventTransport] Skipped stale terminal publication:`, {
+          streamId,
+          generationId,
+          eventType: err.eventType,
+        });
+      } else {
+        logger.error(`[RedisEventTransport] Failed to publish done:`, err);
+      }
       throw err;
     }
   }
@@ -1398,10 +1407,18 @@ export class RedisEventTransport implements IEventTransport {
         true,
       );
       if (sequence === -1) {
-        throw new Error('Generation error publication was fenced by a replacement');
+        throw new GenerationPublicationFencedError('error', streamId, generationId);
       }
     } catch (err) {
-      logger.error(`[RedisEventTransport] Failed to publish error:`, err);
+      if (err instanceof GenerationPublicationFencedError) {
+        logger.warn(`[RedisEventTransport] Skipped stale terminal publication:`, {
+          streamId,
+          generationId,
+          eventType: err.eventType,
+        });
+      } else {
+        logger.error(`[RedisEventTransport] Failed to publish error:`, err);
+      }
       throw err;
     }
   }
