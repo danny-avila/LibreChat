@@ -859,6 +859,32 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.attachments).toEqual(attachments);
   });
 
+  it('releases claimed artifact capacity before detached harvest attachments arrive', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u-artifact-budget',
+      conversationId: 'c-artifact-budget',
+      toolCallId: 'call_code_budget',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-artifact-budget', 'c-artifact-budget', created.task.id, {
+      content: 'stdout',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+    });
+    expect(
+      registry.claimArtifact('u-artifact-budget', 'c-artifact-budget', created.task.id),
+    ).toBeDefined();
+
+    const attachments = [{ payload: 'b'.repeat(8_000_000) }];
+    registry.attachHarvest('u-artifact-budget', 'c-artifact-budget', created.task.id, attachments);
+    expect(
+      registry.get('u-artifact-budget', 'c-artifact-budget', created.task.id)?.attachments,
+    ).toBe(attachments);
+  });
+
   it('revokeHarvest hands a pending artifact to the fallback path', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -1269,6 +1295,34 @@ describe('BackgroundTaskRegistryClass', () => {
     }
     expect(registry.get('u-aggregate', 'c-0', firstTaskId)).toBeUndefined();
     expect(registry.get('u-aggregate', 'c-400', latestTaskId)?.status).toBe('completed');
+  });
+
+  it('recreates a target bucket when aggregate eviction removes it', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let i = 0; i < 400; i++) {
+      const created = registry.create({
+        userId: 'u-reused-bucket',
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      registry.complete('u-reused-bucket', `c-${i}`, created.task.id, { content: 'x' });
+    }
+
+    const replacement = registry.create({
+      userId: 'u-reused-bucket',
+      conversationId: 'c-0',
+      toolCallId: 'call_replacement',
+      toolName: 't',
+    });
+    if ('atCapacity' in replacement) {
+      throw new Error('unexpected replacement capacity');
+    }
+    registry.complete('u-reused-bucket', 'c-0', replacement.task.id, { content: 'replacement' });
+    expect(registry.get('u-reused-bucket', 'c-0', replacement.task.id)?.result).toBe('replacement');
   });
 
   it('evicts oldest settled tasks at the process-wide cap', () => {

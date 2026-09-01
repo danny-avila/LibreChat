@@ -774,6 +774,7 @@ function toStoredArtifact(
 export class BackgroundTaskRegistryClass {
   private readonly buckets = new Map<string, TaskBucket>();
   private readonly retainedChars = new WeakMap<BackgroundTask, number>();
+  private readonly retainedArtifactChars = new WeakMap<BackgroundTask, number>();
   private lastGlobalSweepAt = 0;
 
   private key(userId: string, conversationId: string): string {
@@ -1103,7 +1104,10 @@ export class BackgroundTaskRegistryClass {
     if (!this.makeTaskRoom(params.userId)) {
       return { atCapacity: true };
     }
-    const bucket = existingBucket ?? this.getBucket(params.userId, params.conversationId, now);
+    /** Aggregate eviction may have removed `existingBucket` when its only
+     * settled task was the oldest candidate. Never register into that detached map. */
+    const bucket =
+      this.buckets.get(bucketKey) ?? this.getBucket(params.userId, params.conversationId, now);
     /** The total-tasks cap bounds memory but must NOT block new work: evict the
      *  oldest SETTLED tasks to make room rather than rejecting (settled tasks
      *  aren't removed by polling, so 200 quick calls would otherwise block for
@@ -1184,6 +1188,7 @@ export class BackgroundTaskRegistryClass {
         task,
         storedContent.length + (hasRetainedCapacity ? storedArtifact.chars : 0),
       );
+      this.retainedArtifactChars.set(task, hasRetainedCapacity ? storedArtifact.chars : 0);
     }
     return storedContent;
   }
@@ -1276,6 +1281,9 @@ export class BackgroundTaskRegistryClass {
     const artifact = task.artifact;
     task.artifactDelivered = true;
     task.artifact = undefined;
+    const artifactChars = this.retainedArtifactChars.get(task) ?? 0;
+    this.retainedChars.set(task, Math.max(0, (this.retainedChars.get(task) ?? 0) - artifactChars));
+    this.retainedArtifactChars.set(task, 0);
     return {
       toolName: task.toolName,
       toolCallId: task.toolCallId,
@@ -1300,8 +1308,17 @@ export class BackgroundTaskRegistryClass {
     }
     /** Same size bound as `complete()` — a restore path must not resurrect
      *  an artifact the memory cap already discarded. */
-    task.artifact = toStoredArtifact(taskId, artifact).artifact;
+    const storedArtifact = toStoredArtifact(taskId, artifact);
+    if (
+      storedArtifact.artifact == null ||
+      !this.makeRetainedRoom(userId, task, storedArtifact.chars)
+    ) {
+      return;
+    }
+    task.artifact = storedArtifact.artifact;
     task.artifactDelivered = false;
+    this.retainedChars.set(task, (this.retainedChars.get(task) ?? 0) + storedArtifact.chars);
+    this.retainedArtifactChars.set(task, storedArtifact.chars);
   }
 
   fail(
@@ -1320,6 +1337,7 @@ export class BackgroundTaskRegistryClass {
     if (task != null) {
       this.makeRetainedRoom(userId, task, additionalRetainedChars);
       this.retainedChars.set(task, storedError.length);
+      this.retainedArtifactChars.set(task, 0);
     }
     this.update(userId, conversationId, taskId, {
       status: 'error',
@@ -1404,6 +1422,7 @@ export class BackgroundTaskRegistryClass {
 
   /** Permanently removes a policy-rejected artifact and exposes only the raw-free policy error. */
   blockArtifact(userId: string, conversationId: string, taskId: string, error: string): void {
+    const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
     this.update(userId, conversationId, taskId, {
       status: 'error',
       error,
@@ -1415,6 +1434,10 @@ export class BackgroundTaskRegistryClass {
       artifactDelivered: false,
       artifactBlocked: true,
     });
+    if (task != null) {
+      this.retainedChars.set(task, error.length);
+      this.retainedArtifactChars.set(task, 0);
+    }
   }
 
   /**
@@ -1432,8 +1455,7 @@ export class BackgroundTaskRegistryClass {
     task.harvestStarted = undefined;
     task.harvestPending = undefined;
     if (task.artifact == null && artifact != null) {
-      task.artifact = toStoredArtifact(taskId, artifact).artifact;
-      task.artifactDelivered = false;
+      this.restoreArtifact(userId, conversationId, taskId, artifact);
     }
     task.updatedAt = Date.now();
   }
