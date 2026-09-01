@@ -655,6 +655,8 @@ export interface BackgroundTask {
 }
 
 interface TaskBucket {
+  key: string;
+  userId: string;
   tasks: Map<string, BackgroundTask>;
   /** toolCallId -> taskId, for dispatch idempotency across graph re-execution. */
   byToolCall: Map<string, string>;
@@ -675,8 +677,16 @@ const COMPLETED_TASK_TTL_MS = 60 * 60 * 1000;
 const IDLE_BUCKET_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
 const MAX_TASKS_PER_BUCKET = 200;
+/** Cross-conversation limits prevent one principal from multiplying the bucket allowance. */
+const MAX_RUNNING_PER_USER = 40;
+const MAX_RUNNING_GLOBAL = 200;
+const MAX_TASKS_PER_USER = 400;
+const MAX_TASKS_GLOBAL = 2_000;
 const MAX_RESULT_CHARS = 100_000;
 const MAX_ARTIFACT_CHARS = 10_000_000;
+/** JSON-character budgets bound large settled payloads independently of task metadata. */
+const MAX_RETAINED_CHARS_PER_USER = 16_000_000;
+const MAX_RETAINED_CHARS_GLOBAL = 64_000_000;
 const GLOBAL_SWEEP_INTERVAL_MS = 60 * 1000;
 
 /**
@@ -727,11 +737,15 @@ function toStoredContent(content: unknown): string {
 /**
  * Bounds retained artifact memory: an artifact is held for up to the completed
  * TTL, so a runaway payload (huge base64 blobs) is dropped rather than pinned.
- * Measurement failures (circular refs) keep the artifact.
+ * Measurement failures (such as circular references) drop the artifact because
+ * an unmeasurable value cannot safely participate in the aggregate budget.
  */
-function toStoredArtifact(taskId: string, artifact: unknown): unknown {
+function toStoredArtifact(
+  taskId: string,
+  artifact: unknown,
+): { artifact?: unknown; chars: number } {
   if (artifact == null) {
-    return undefined;
+    return { chars: 0 };
   }
   try {
     const size = JSON.stringify(artifact)?.length ?? 0;
@@ -739,12 +753,13 @@ function toStoredArtifact(taskId: string, artifact: unknown): unknown {
       logger.warn(
         `[background] Dropping oversized artifact for task ${taskId} (${size} chars > ${MAX_ARTIFACT_CHARS}).`,
       );
-      return undefined;
+      return { chars: 0 };
     }
+    return { artifact, chars: size };
   } catch {
-    /* unmeasurable artifact: keep it */
+    logger.warn(`[background] Dropping unmeasurable artifact for task ${taskId}.`);
+    return { chars: 0 };
   }
-  return artifact;
 }
 
 /**
@@ -758,6 +773,7 @@ function toStoredArtifact(taskId: string, artifact: unknown): unknown {
  */
 export class BackgroundTaskRegistryClass {
   private readonly buckets = new Map<string, TaskBucket>();
+  private readonly retainedChars = new WeakMap<BackgroundTask, number>();
   private lastGlobalSweepAt = 0;
 
   private key(userId: string, conversationId: string): string {
@@ -796,6 +812,9 @@ export class BackgroundTaskRegistryClass {
         continue;
       }
       this.sweepBucketTasks(bucket, now);
+      if (bucket.tasks.size === 0 && bucket.capacityPermits.size === 0) {
+        this.buckets.delete(bucketKey);
+      }
     }
   }
 
@@ -804,6 +823,8 @@ export class BackgroundTaskRegistryClass {
     let bucket = this.buckets.get(bucketKey);
     if (!bucket) {
       bucket = {
+        key: bucketKey,
+        userId,
         tasks: new Map(),
         byToolCall: new Map(),
         capacityPermits: new Map(),
@@ -829,6 +850,125 @@ export class BackgroundTaskRegistryClass {
     return running;
   }
 
+  private aggregateUsage(userId: string): {
+    runningForUser: number;
+    runningGlobal: number;
+    tasksForUser: number;
+    tasksGlobal: number;
+    retainedForUser: number;
+    retainedGlobal: number;
+  } {
+    let runningForUser = 0;
+    let runningGlobal = 0;
+    let tasksForUser = 0;
+    let tasksGlobal = 0;
+    let retainedForUser = 0;
+    let retainedGlobal = 0;
+    for (const bucket of this.buckets.values()) {
+      const isUser = bucket.userId === userId;
+      tasksGlobal += bucket.tasks.size;
+      if (isUser) {
+        tasksForUser += bucket.tasks.size;
+      }
+      for (const task of bucket.tasks.values()) {
+        if (task.status === 'running') {
+          runningGlobal++;
+          if (isUser) {
+            runningForUser++;
+          }
+        }
+        const retained = this.retainedChars.get(task) ?? 0;
+        retainedGlobal += retained;
+        if (isUser) {
+          retainedForUser += retained;
+        }
+      }
+      runningGlobal += bucket.capacityPermits.size;
+      if (isUser) {
+        runningForUser += bucket.capacityPermits.size;
+      }
+    }
+    return {
+      runningForUser,
+      runningGlobal,
+      tasksForUser,
+      tasksGlobal,
+      retainedForUser,
+      retainedGlobal,
+    };
+  }
+
+  private atRunningCapacity(userId: string): boolean {
+    const usage = this.aggregateUsage(userId);
+    return (
+      usage.runningForUser >= MAX_RUNNING_PER_USER || usage.runningGlobal >= MAX_RUNNING_GLOBAL
+    );
+  }
+
+  private evictOldestSettled(params: {
+    userId?: string;
+    excludeTask?: BackgroundTask;
+    whileOverLimit: () => boolean;
+  }): void {
+    const candidates: Array<{ bucket: TaskBucket; task: BackgroundTask }> = [];
+    for (const bucket of this.buckets.values()) {
+      if (params.userId != null && bucket.userId !== params.userId) {
+        continue;
+      }
+      for (const task of bucket.tasks.values()) {
+        if (task.status !== 'running' && task !== params.excludeTask) {
+          candidates.push({ bucket, task });
+        }
+      }
+    }
+    candidates.sort((a, b) => a.task.createdAt - b.task.createdAt);
+    for (const { bucket, task } of candidates) {
+      if (!params.whileOverLimit()) {
+        break;
+      }
+      bucket.tasks.delete(task.id);
+      this.sweepBucketTasks(bucket, Date.now());
+      if (bucket.tasks.size === 0 && bucket.capacityPermits.size === 0) {
+        this.buckets.delete(bucket.key);
+      }
+    }
+  }
+
+  private makeTaskRoom(userId: string): boolean {
+    this.evictOldestSettled({
+      userId,
+      whileOverLimit: () => this.aggregateUsage(userId).tasksForUser >= MAX_TASKS_PER_USER,
+    });
+    this.evictOldestSettled({
+      whileOverLimit: () => this.aggregateUsage(userId).tasksGlobal >= MAX_TASKS_GLOBAL,
+    });
+    const usage = this.aggregateUsage(userId);
+    return usage.tasksForUser < MAX_TASKS_PER_USER && usage.tasksGlobal < MAX_TASKS_GLOBAL;
+  }
+
+  private makeRetainedRoom(userId: string, task: BackgroundTask, chars: number): boolean {
+    this.evictOldestSettled({
+      userId,
+      excludeTask: task,
+      whileOverLimit: () => {
+        const usage = this.aggregateUsage(userId);
+        return usage.retainedForUser + chars > MAX_RETAINED_CHARS_PER_USER;
+      },
+    });
+    this.evictOldestSettled({
+      excludeTask: task,
+      whileOverLimit: () => {
+        const usage = this.aggregateUsage(userId);
+        return usage.retainedGlobal + chars > MAX_RETAINED_CHARS_GLOBAL;
+      },
+    });
+    const usage = this.aggregateUsage(userId);
+    return (
+      usage.retainedForUser + chars <= MAX_RETAINED_CHARS_PER_USER &&
+      usage.retainedGlobal + chars <= MAX_RETAINED_CHARS_GLOBAL
+    );
+  }
+
   /** Acquires process-local capacity before a caller persists launch authority.
    * The synchronous permit closes the capacity-rejection crash window without
    * making ordinary background tasks durable. */
@@ -844,17 +984,27 @@ export class BackgroundTaskRegistryClass {
     | { atCapacity: true } {
     const now = Date.now();
     this.sweep(now);
-    const bucket = this.getBucket(params.userId, params.conversationId, now);
-    this.sweepBucketTasks(bucket, now);
+    const bucketKey = this.key(params.userId, params.conversationId);
+    const existingBucket = this.buckets.get(bucketKey);
+    if (existingBucket != null) {
+      existingBucket.lastAccess = now;
+      this.sweepBucketTasks(existingBucket, now);
+    }
     const dedupeKey = this.dedupeKey(params);
-    const existingId = bucket.byToolCall.get(dedupeKey);
-    const existing = existingId == null ? undefined : bucket.tasks.get(existingId);
+    const existingId = existingBucket?.byToolCall.get(dedupeKey);
+    const existing = existingId == null ? undefined : existingBucket?.tasks.get(existingId);
     if (existing != null) {
       return { task: existing, isNew: false };
     }
-    if (this.runningCount(bucket) + bucket.capacityPermits.size >= MAX_RUNNING_PER_BUCKET) {
+    if (
+      (existingBucket != null &&
+        this.runningCount(existingBucket) + existingBucket.capacityPermits.size >=
+          MAX_RUNNING_PER_BUCKET) ||
+      this.atRunningCapacity(params.userId)
+    ) {
       return { atCapacity: true };
     }
+    const bucket = existingBucket ?? this.getBucket(params.userId, params.conversationId, now);
     const permit: BackgroundTaskCapacityPermit = {
       id: randomUUID(),
       userId: params.userId,
@@ -869,9 +1019,12 @@ export class BackgroundTaskRegistryClass {
   }
 
   releaseCapacity(permit: BackgroundTaskCapacityPermit): void {
-    this.buckets
-      .get(this.key(permit.userId, permit.conversationId))
-      ?.capacityPermits.delete(permit.id);
+    const bucketKey = this.key(permit.userId, permit.conversationId);
+    const bucket = this.buckets.get(bucketKey);
+    bucket?.capacityPermits.delete(permit.id);
+    if (bucket?.tasks.size === 0 && bucket.capacityPermits.size === 0) {
+      this.buckets.delete(bucketKey);
+    }
   }
 
   /**
@@ -903,13 +1056,17 @@ export class BackgroundTaskRegistryClass {
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
     const now = Date.now();
     this.sweep(now);
-    const bucket = this.getBucket(params.userId, params.conversationId, now);
-    this.sweepBucketTasks(bucket, now);
+    const bucketKey = this.key(params.userId, params.conversationId);
+    const existingBucket = this.buckets.get(bucketKey);
+    if (existingBucket != null) {
+      existingBucket.lastAccess = now;
+      this.sweepBucketTasks(existingBucket, now);
+    }
 
     const dedupeKey = this.dedupeKey(params);
-    const existingId = bucket.byToolCall.get(dedupeKey);
+    const existingId = existingBucket?.byToolCall.get(dedupeKey);
     if (existingId) {
-      const existing = bucket.tasks.get(existingId);
+      const existing = existingBucket?.tasks.get(existingId);
       if (existing) {
         if (params.capacityPermit != null) {
           this.releaseCapacity(params.capacityPermit);
@@ -919,6 +1076,10 @@ export class BackgroundTaskRegistryClass {
     }
 
     if (params.capacityPermit != null) {
+      if (existingBucket == null) {
+        throw new Error('Background task capacity permit is stale');
+      }
+      const bucket = existingBucket;
       const permit = bucket.capacityPermits.get(params.capacityPermit.id);
       if (
         params.capacityPermit.userId !== params.userId ||
@@ -932,10 +1093,17 @@ export class BackgroundTaskRegistryClass {
     /** Only *running* tasks gate dispatch. */
     if (
       params.capacityPermit == null &&
-      this.runningCount(bucket) + bucket.capacityPermits.size >= MAX_RUNNING_PER_BUCKET
+      ((existingBucket != null &&
+        this.runningCount(existingBucket) + existingBucket.capacityPermits.size >=
+          MAX_RUNNING_PER_BUCKET) ||
+        this.atRunningCapacity(params.userId))
     ) {
       return { atCapacity: true };
     }
+    if (!this.makeTaskRoom(params.userId)) {
+      return { atCapacity: true };
+    }
+    const bucket = existingBucket ?? this.getBucket(params.userId, params.conversationId, now);
     /** The total-tasks cap bounds memory but must NOT block new work: evict the
      *  oldest SETTLED tasks to make room rather than rejecting (settled tasks
      *  aren't removed by polling, so 200 quick calls would otherwise block for
@@ -993,15 +1161,30 @@ export class BackgroundTaskRegistryClass {
     result: { content: unknown; artifact?: unknown; harvestStarted?: boolean },
   ): string {
     const storedContent = toStoredContent(result.content);
+    const storedArtifact = toStoredArtifact(taskId, result.artifact);
+    const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
+    const retainedChars = storedContent.length + storedArtifact.chars;
+    const additionalRetainedChars = Math.max(
+      0,
+      retainedChars - (task == null ? 0 : (this.retainedChars.get(task) ?? 0)),
+    );
+    const hasRetainedCapacity =
+      task != null && this.makeRetainedRoom(userId, task, additionalRetainedChars);
     this.update(userId, conversationId, taskId, {
       status: 'completed',
       result: storedContent,
-      artifact: toStoredArtifact(taskId, result.artifact),
+      artifact: hasRetainedCapacity ? storedArtifact.artifact : undefined,
       ...(result.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       /** Marks that an artifact existed even after `claimArtifact` clears it,
        *  so re-polls keep the "produced an artifact" note. */
       artifactDelivered: false,
     });
+    if (task != null) {
+      this.retainedChars.set(
+        task,
+        storedContent.length + (hasRetainedCapacity ? storedArtifact.chars : 0),
+      );
+    }
     return storedContent;
   }
 
@@ -1020,7 +1203,17 @@ export class BackgroundTaskRegistryClass {
     if (attachments.length === 0) {
       return;
     }
+    const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
+    const measured = toStoredArtifact(taskId, attachments);
+    if (
+      task == null ||
+      measured.artifact == null ||
+      !this.makeRetainedRoom(userId, task, measured.chars)
+    ) {
+      return;
+    }
     this.update(userId, conversationId, taskId, { attachments });
+    this.retainedChars.set(task, (this.retainedChars.get(task) ?? 0) + measured.chars);
   }
 
   /** Marks completion-time inspection/persistence successful, unlocking artifact collection. */
@@ -1030,10 +1223,19 @@ export class BackgroundTaskRegistryClass {
     taskId: string,
     attachments: unknown[] = [],
   ): void {
+    const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
+    const measured = toStoredArtifact(taskId, attachments);
+    const canStoreAttachments =
+      task != null &&
+      measured.artifact != null &&
+      this.makeRetainedRoom(userId, task, measured.chars);
     this.update(userId, conversationId, taskId, {
       harvestPending: false,
-      ...(attachments.length > 0 ? { attachments } : {}),
+      ...(attachments.length > 0 && canStoreAttachments ? { attachments } : {}),
     });
+    if (task != null && attachments.length > 0 && canStoreAttachments) {
+      this.retainedChars.set(task, (this.retainedChars.get(task) ?? 0) + measured.chars);
+    }
   }
 
   /**
@@ -1098,7 +1300,7 @@ export class BackgroundTaskRegistryClass {
     }
     /** Same size bound as `complete()` — a restore path must not resurrect
      *  an artifact the memory cap already discarded. */
-    task.artifact = toStoredArtifact(taskId, artifact);
+    task.artifact = toStoredArtifact(taskId, artifact).artifact;
     task.artifactDelivered = false;
   }
 
@@ -1109,9 +1311,22 @@ export class BackgroundTaskRegistryClass {
     error: string,
     options?: { harvestStarted?: boolean },
   ): void {
+    const storedError = truncateMiddle(error, MAX_RESULT_CHARS);
+    const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
+    const additionalRetainedChars = Math.max(
+      0,
+      storedError.length - (task == null ? 0 : (this.retainedChars.get(task) ?? 0)),
+    );
+    if (task != null) {
+      this.makeRetainedRoom(userId, task, additionalRetainedChars);
+      this.retainedChars.set(task, storedError.length);
+    }
     this.update(userId, conversationId, taskId, {
       status: 'error',
-      error,
+      error: storedError,
+      result: undefined,
+      artifact: undefined,
+      attachments: undefined,
       ...(options?.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
     });
   }
@@ -1217,7 +1432,7 @@ export class BackgroundTaskRegistryClass {
     task.harvestStarted = undefined;
     task.harvestPending = undefined;
     if (task.artifact == null && artifact != null) {
-      task.artifact = artifact;
+      task.artifact = toStoredArtifact(taskId, artifact).artifact;
       task.artifactDelivered = false;
     }
     task.updatedAt = Date.now();
@@ -1234,6 +1449,10 @@ export class BackgroundTaskRegistryClass {
     }
     bucket.lastAccess = now;
     this.sweepBucketTasks(bucket, now);
+    if (bucket.tasks.size === 0 && bucket.capacityPermits.size === 0) {
+      this.buckets.delete(bucket.key);
+      return undefined;
+    }
     return bucket.tasks.get(taskId);
   }
 
@@ -1246,6 +1465,10 @@ export class BackgroundTaskRegistryClass {
     }
     bucket.lastAccess = now;
     this.sweepBucketTasks(bucket, now);
+    if (bucket.tasks.size === 0 && bucket.capacityPermits.size === 0) {
+      this.buckets.delete(bucket.key);
+      return [];
+    }
     return [...bucket.tasks.values()].sort((a, b) => a.createdAt - b.createdAt);
   }
 }

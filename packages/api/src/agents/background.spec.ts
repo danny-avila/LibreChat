@@ -1098,6 +1098,48 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(atCapacity).toBe(true);
   });
 
+  it('caps concurrent running tasks per user across conversations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let i = 0; i < 40; i++) {
+      const created = registry.create({
+        userId: 'u-cap',
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 'search_mcp_docs',
+      });
+      expect('atCapacity' in created).toBe(false);
+    }
+    expect(
+      registry.create({
+        userId: 'u-cap',
+        conversationId: 'c-rejected',
+        toolCallId: 'call_rejected',
+        toolName: 'search_mcp_docs',
+      }),
+    ).toEqual({ atCapacity: true });
+  });
+
+  it('caps concurrent running tasks process-wide', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let i = 0; i < 200; i++) {
+      const created = registry.create({
+        userId: `u-${i}`,
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 'search_mcp_docs',
+      });
+      expect('atCapacity' in created).toBe(false);
+    }
+    expect(
+      registry.create({
+        userId: 'u-rejected',
+        conversationId: 'c-rejected',
+        toolCallId: 'call_rejected',
+        toolName: 'search_mcp_docs',
+      }),
+    ).toEqual({ atCapacity: true });
+  });
+
   it('holds capacity permits before task registration and releases them explicitly', () => {
     const registry = new BackgroundTaskRegistryClass();
     const permits = Array.from({ length: 10 }, (_, index) =>
@@ -1205,6 +1247,75 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(next.isNew).toBe(true);
     // total held stays bounded (one evicted, one added)
     expect(registry.list('u1', 'c-full')).toHaveLength(200);
+  });
+
+  it('evicts oldest settled tasks at the per-user cap across conversations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let firstTaskId = '';
+    let latestTaskId = '';
+    for (let i = 0; i <= 400; i++) {
+      const created = registry.create({
+        userId: 'u-aggregate',
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      firstTaskId ||= created.task.id;
+      latestTaskId = created.task.id;
+      registry.complete('u-aggregate', `c-${i}`, created.task.id, { content: 'x' });
+    }
+    expect(registry.get('u-aggregate', 'c-0', firstTaskId)).toBeUndefined();
+    expect(registry.get('u-aggregate', 'c-400', latestTaskId)?.status).toBe('completed');
+  });
+
+  it('evicts oldest settled tasks at the process-wide cap', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let firstTaskId = '';
+    let latestTaskId = '';
+    for (let i = 0; i <= 2_000; i++) {
+      const created = registry.create({
+        userId: `u-${i}`,
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      firstTaskId ||= created.task.id;
+      latestTaskId = created.task.id;
+      registry.complete(`u-${i}`, `c-${i}`, created.task.id, { content: 'x' });
+    }
+    expect(registry.get('u-0', 'c-0', firstTaskId)).toBeUndefined();
+    expect(registry.get('u-2000', 'c-2000', latestTaskId)?.status).toBe('completed');
+  });
+
+  it('bounds retained payloads per user across conversations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let firstTaskId = '';
+    let latestTaskId = '';
+    for (let i = 0; i < 18; i++) {
+      const created = registry.create({
+        userId: 'u-payload',
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      firstTaskId ||= created.task.id;
+      latestTaskId = created.task.id;
+      registry.complete('u-payload', `c-${i}`, created.task.id, {
+        content: 'x',
+        artifact: { payload: 'x'.repeat(1_000_000) },
+      });
+    }
+    expect(registry.get('u-payload', 'c-0', firstTaskId)).toBeUndefined();
+    expect(registry.get('u-payload', 'c-17', latestTaskId)?.artifact).toBeDefined();
   });
 
   it('scopes tasks by user and conversation', () => {
