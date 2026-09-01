@@ -882,7 +882,7 @@ export function createAgentMethods(
       nextEnvironmentId,
       async () =>
         (await Agent.findOneAndUpdate(
-          currentAgent == null
+          currentAgent == null || nextEnvironmentId == null
             ? searchParameter
             : { ...searchParameter, _id: currentAgent._id, updatedAt: currentRevision },
           updateData,

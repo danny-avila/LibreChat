@@ -479,7 +479,7 @@ describe('code environment HTTP handlers', () => {
     expect(res.statusCode).toBe(500);
     expect(markRevocationPending).toHaveBeenCalledWith('code-generated');
     expect(markRevocationPending.mock.invocationCallOrder[0]).toBeLessThan(
-      fetchImpl.mock.invocationCallOrder.at(-1) ?? 0,
+      fetchImpl.mock.invocationCallOrder[fetchImpl.mock.invocationCallOrder.length - 1] ?? 0,
     );
   });
 
