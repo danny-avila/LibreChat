@@ -4,6 +4,7 @@ import {
   ResourceType,
   PermissionBits,
   isMessageFileUpload,
+  isEphemeralAgentId,
 } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
@@ -51,7 +52,10 @@ export async function checkAgentUploadAuth(
    * access a conversation already implies, but it cannot skip the check outright: the
    * upload is validated under the named agent's provider, and those responses describe a
    * record the caller may not be allowed to see. */
-  if (!agentId) {
+  /* An ephemeral id names no stored agent, so there is no record to authorize against and
+   * none for the provider resolution to read either. Requiring view access there refuses
+   * every attachment in an ephemeral conversation. Saved ids keep the check. */
+  if (!agentId || (isMessageAttachment && isEphemeralAgentId(agentId))) {
     return { allowed: true };
   }
   const requiredPermission = isMessageAttachment ? PermissionBits.VIEW : PermissionBits.EDIT;
