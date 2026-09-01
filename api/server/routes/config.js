@@ -291,7 +291,7 @@ router.get('/', async function (req, res) {
 
     const appConfig = await getAppConfig(getAppConfigOptionsFromUser(req.user));
 
-    const endpointsDropParamsMap = getEndpointsDropParamsMap(appConfig.endpoints);
+    const endpointsDropParamsMap = getEndpointsDropParamsMap(appConfig?.endpoints ?? {});
 
     const balanceConfig = getBalanceConfig(appConfig);
     const cloudFront = buildCloudFrontStartupConfig();
