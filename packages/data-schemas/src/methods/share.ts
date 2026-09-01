@@ -10,7 +10,6 @@ import {
 } from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
-import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import { CLIENT_MESSAGE_SELECT } from './message';
 import logger from '~/config/winston';
 
@@ -971,7 +970,6 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         try {
           const searchResults = await Conversation.meiliSearch(search, {
             filter: `user = "${user}"`,
-            limit: MEILI_SEARCH_LIMIT,
           });
 
           if (!searchResults?.hits?.length) {

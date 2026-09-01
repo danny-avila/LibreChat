@@ -17,7 +17,6 @@ import type {
 } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
-import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -27,6 +26,7 @@ jest.mock('~/config/winston', () => ({
   debug: jest.fn(),
 }));
 
+const MEILI_SEARCH_LIMIT = 1000;
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Conversation: mongoose.Model<IConversation>;
 let ChatProject: mongoose.Model<IChatProject>;

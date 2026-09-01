@@ -1,6 +1,6 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { logger, CLIENT_MESSAGE_SELECT, MEILI_SEARCH_LIMIT } = require('@librechat/data-schemas');
+const { logger, CLIENT_MESSAGE_SELECT } = require('@librechat/data-schemas');
 const {
   ContentTypes,
   feedbackSchema,
@@ -89,8 +89,7 @@ router.get('/', async (req, res) => {
       messageId,
       search,
     } = req.query;
-    const parsedPageSize = parseInt(pageSizeRaw, 10);
-    const pageSize = Number.isFinite(parsedPageSize) && parsedPageSize > 0 ? parsedPageSize : 25;
+    const pageSize = parseInt(pageSizeRaw, 10) || 25;
 
     let response;
     const sortField = ['endpoint', 'createdAt', 'updatedAt'].includes(sortBy)
@@ -138,16 +137,11 @@ router.get('/', async (req, res) => {
       }
       response = messageResult.value;
     } else if (search) {
-      const searchLimit = Math.min(pageSize, MEILI_SEARCH_LIMIT);
-      const searchResults = await db.searchMessages(
-        search,
-        { filter: `user = "${user}"`, limit: searchLimit },
-        true,
-      );
+      const searchResults = await db.searchMessages(search, { filter: `user = "${user}"` }, true);
 
       const messages = searchResults.hits || [];
 
-      const result = await db.getConvosQueried(req.user.id, messages, cursor, pageSize);
+      const result = await db.getConvosQueried(req.user.id, messages, cursor);
 
       const messageIds = [];
       const cleanedMessages = [];
