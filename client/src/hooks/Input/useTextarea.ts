@@ -74,6 +74,7 @@ export default function useTextarea({
     getOptions: getUploadOptions,
     uploadsDisabled,
     isConfigPending: isUploadConfigPending,
+    isConfigResolved: isUploadConfigResolved,
     isUnifiedMode,
   } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
@@ -320,7 +321,7 @@ export default function useTextarea({
 
         /* Before the config lands neither answer is safe, so the paste says so rather than
          * falling through to the chooser a unified deployment no longer shows. */
-        if (preferred == null && isUploadConfigPending) {
+        if (preferred == null && !isUploadConfigResolved) {
           showToast({ message: localize('com_ui_attach_error_pending'), status: 'warning' });
           setFilesLoading(false);
           return false;
@@ -364,6 +365,7 @@ export default function useTextarea({
       setFilesLoading,
       getUploadOptions,
       isUploadConfigPending,
+      isUploadConfigResolved,
       isUnifiedMode,
     ],
   );

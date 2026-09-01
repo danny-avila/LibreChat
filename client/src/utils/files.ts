@@ -562,14 +562,16 @@ const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
  */
 /**
  * Whether uploads route from the file itself rather than through the destination chooser.
- * The pending flag is required because an unresolved config falls back to the built-in
- * defaults, where the absent `legacyFileUploadUX` reads as unified and would show the
- * wrong uploader on a legacy deployment until the query lands.
+ * Answering it needs a config the server actually returned: without one the built-in
+ * defaults apply, and their absent `legacyFileUploadUX` reads as unified, which is the
+ * wrong uploader on a legacy deployment. A failed or paused query is as unresolved as a
+ * pending one, so the caller passes whether the fetch succeeded rather than whether it
+ * has stopped.
  */
 export const isUnifiedUploadMode = (
   endpointFileConfig: EndpointFileConfig | undefined,
-  isConfigPending: boolean,
-): boolean => !isConfigPending && endpointFileConfig?.legacyFileUploadUX !== true;
+  isConfigResolved: boolean,
+): boolean => isConfigResolved && endpointFileConfig?.legacyFileUploadUX !== true;
 
 export const getViableUploadOptions = (
   fileList: File[],

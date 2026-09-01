@@ -330,6 +330,23 @@ describe('resolveUploadDestination', () => {
     ).toBeUndefined();
   });
 
+  it('passes over a tool that cannot read the type, whatever order they are listed in', () => {
+    /* An archive: only code execution can take it, so search listed first must not win. */
+    for (const agentTools of [
+      ['file_search', 'execute_code'],
+      ['execute_code', 'file_search'],
+    ]) {
+      expect(
+        resolveUploadDestination({
+          ...base,
+          mimeType: 'application/zip',
+          deliveryPath: 'none',
+          agentTools,
+        }).toolResource,
+      ).toBe('execute_code');
+    }
+  });
+
   it('picks a consumer that can read the type, whatever order the tools are listed in', () => {
     /* file_search indexes extracted text and has nothing to do with an image, so choosing
      * it would make the upload fail on a rule the agent's tool order decided. */
@@ -443,9 +460,13 @@ describe('isNativelyReadableText', () => {
 });
 
 describe('canToolResourceConsume', () => {
-  it('keeps images away from file search and lets code execution take anything', () => {
+  it('judges each tool by the list the client offers it from', () => {
+    /* An archive is readable by the code interpreter and not by the vector store, so
+     * treating everything non-image as searchable sent it to RAG to be rejected. */
     expect(canToolResourceConsume('file_search', 'image/png')).toBe(false);
+    expect(canToolResourceConsume('file_search', 'application/zip')).toBe(false);
     expect(canToolResourceConsume('file_search', 'application/pdf')).toBe(true);
+    expect(canToolResourceConsume('execute_code', 'application/zip')).toBe(true);
     expect(canToolResourceConsume('execute_code', 'image/png')).toBe(true);
   });
 });

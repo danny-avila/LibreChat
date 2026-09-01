@@ -101,6 +101,7 @@ jest.mock('~/hooks/Files/useUploadOptions', () => ({
     getOptions: mockGetUploadOptions,
     uploadsDisabled: false,
     isConfigPending: mockIsUploadConfigPending,
+    isConfigResolved: !mockIsUploadConfigPending,
     isUnifiedMode: mockIsUnifiedMode,
   })),
 }));

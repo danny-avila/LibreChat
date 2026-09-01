@@ -30,21 +30,21 @@ export default function useDragHelpers() {
     [conversation?.endpoint],
   );
 
-  const { getOptions, isConfigPending } = useUploadOptions();
+  const { getOptions, isConfigResolved } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
 
   /** Use refs to avoid re-creating the drop handler */
   const conversationRef = useRef(conversation);
   const getOptionsRef = useRef(getOptions);
-  const isConfigPendingRef = useRef(isConfigPending);
+  const isConfigResolvedRef = useRef(isConfigResolved);
   const routeFilesRef = useRef(routeFiles);
   const openModalRef = useRef(openModal);
   const isAssistantsRef = useRef(isAssistants);
 
   conversationRef.current = conversation;
   getOptionsRef.current = getOptions;
-  isConfigPendingRef.current = isConfigPending;
+  isConfigResolvedRef.current = isConfigResolved;
   routeFilesRef.current = routeFiles;
   openModalRef.current = openModal;
   isAssistantsRef.current = isAssistants;
@@ -78,11 +78,11 @@ export default function useDragHelpers() {
       /* Neither answer is safe before the config lands: offering the chooser sends an
        * explicit destination on a unified deployment, and skipping it sends none on a
        * legacy one, which the server refuses. Say so instead of guessing. */
-      if (isConfigPendingRef.current) {
+      if (!isConfigResolvedRef.current) {
         showToast({ message: localize('com_ui_attach_error_pending'), status: 'warning' });
         return;
       }
-      const isUnifiedMode = isUnifiedUploadMode(endpointCfg, false);
+      const isUnifiedMode = isUnifiedUploadMode(endpointCfg, true);
 
       /** Assistants do not use the upload-option flow */
       if (isAssistantsRef.current) {

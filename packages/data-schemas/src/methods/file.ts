@@ -334,7 +334,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     }
 
     const missingConditions: FilterQuery<IMongoFile>[] = [];
-    if (resources.code) {
+    /* When no other query hydrates this turn's files, every code-eligible record has to
+     * be loaded, not only the unprovisioned ones: priming adds the provisioned ones to the
+     * tool resources, and the probe screens a default-route session for liveness. Left
+     * behind, a file the previous turn provisioned successfully is the one that goes
+     * missing, while one that failed is retried. */
+    const hydrateEveryCodeFile = resources.code === true && resources.screenCodeLiveness === true;
+    if (resources.code && !hydrateEveryCodeFile) {
       /* A reference for another deployment does not make the file usable here, and with
        * resendFiles off nothing downstream re-reads the record to notice, so eligibility
        * is judged against the route this turn will actually execute on. The legacy
@@ -358,23 +364,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         });
       }
       missingConditions.push({ $nor: usableForRoute });
-
-      /* A usable reference is not a live one. Liveness is probed on the default route, so
-       * when this is the only hydration query running a record holding a default
-       * reference has to be loaded for that probe, or its dead session is never noticed
-       * and the tool runs without the file. */
-      if (routeKey === 'default' && resources.screenCodeLiveness) {
-        missingConditions.push({
-          $or: [
-            { 'metadata.codeEnvRef.executionRouteKey': 'default' },
-            {
-              'metadata.codeEnvRef': { $exists: true },
-              'metadata.codeEnvRef.executionRouteKey': { $exists: false },
-              'metadata.codeEnvRef.executionProfile': { $in: [null, 'default'] },
-            },
-          ],
-        });
-      }
     }
     if (resources.search) {
       /* The record-wide flag only says the file was embedded somewhere, so for a record
@@ -396,7 +385,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         });
       }
     }
-    if (missingConditions.length === 0) {
+    if (!hydrateEveryCodeFile && missingConditions.length === 0) {
       return [];
     }
 
@@ -405,7 +394,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         {
           file_id: { $in: fileIds },
           context: { $ne: FileContext.execute_code },
-          $or: missingConditions,
+          ...(hydrateEveryCodeFile ? {} : { $or: missingConditions }),
         },
         ownerScope,
       );

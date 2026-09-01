@@ -832,9 +832,10 @@ describe('File Methods', () => {
       expect(results).toEqual([]);
     });
 
-    it('leaves a default reference alone when the turn runs on another route', async () => {
-      /* Liveness is only probed on the default route, so on a stateful turn the record
-       * has nothing to be screened for and loading it would be wasted work. */
+    it('returns a usable stateful reference so priming can add it to the tool resources', async () => {
+      /* Being provisioned already is not a reason to skip it: with no other query running,
+       * this is what puts the record into tool_resources. Omitting it drops the file the
+       * previous turn provisioned successfully while retrying the one that failed. */
       const ownerId = new mongoose.Types.ObjectId();
       const refId = uuidv4();
       const statefulRef = {
@@ -857,7 +858,7 @@ describe('File Methods', () => {
         { code: true, codeRouteKey: 'stateful:a', screenCodeLiveness: true },
       );
 
-      expect(results).toEqual([]);
+      expect(results.map((file) => file.file_id)).toEqual([refId]);
     });
 
     it('surfaces a read failure rather than reporting nothing to provision', async () => {

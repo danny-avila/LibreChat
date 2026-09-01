@@ -1091,6 +1091,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
+  let storedType = file.mimetype;
   const isImageFile = file.mimetype.startsWith('image');
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
@@ -1118,6 +1119,26 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
     // Vector status will be stored at root level, no need for metadata
     fileInfoMetadata = {};
+  } else if (isImage) {
+    /* The conversion is this file's storage step. Uploading the original first left a
+     * second object nothing references, and the record's size and dimensions describing
+     * bytes that were replaced. Only the storage fields are kept: the record below is
+     * built here, and its filename goes through the sanitizer. */
+    const converted = await processImageFile({
+      req,
+      file,
+      metadata: { file_id },
+      returnFile: true,
+    });
+    storedType = converted.type ?? storedType;
+    storageResult = {
+      bytes: converted.bytes,
+      filepath: converted.filepath,
+      storageKey: converted.storageKey,
+      storageRegion: converted.storageRegion,
+      height: converted.height,
+      width: converted.width,
+    };
   } else {
     // Standard single storage for non-RAG files
     const { handleFileUpload } = getStrategyFunctions(source);
@@ -1161,27 +1182,6 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       agent_id,
       tool_resource: effectiveToolResource,
       updatingUserId: req?.user?.id,
-    });
-  }
-
-  /* The stored bytes are the converted image, so the record has to name that format.
-   * Keeping the upload's type leaves reprovisioning sending, say, webp bytes under a
-   * .jpg name, which the sandbox decoder reads by extension. */
-  let storedType = file.mimetype;
-  if (isImage) {
-    const result = await processImageFile({
-      req,
-      file,
-      metadata: { file_id: v4() },
-      returnFile: true,
-    });
-    filepath = result.filepath;
-    storedType = result.type ?? storedType;
-    storageMetadata = getStorageMetadata({
-      filepath,
-      source: result.source,
-      storageKey: result.storageKey,
-      storageRegion: result.storageRegion,
     });
   }
 
