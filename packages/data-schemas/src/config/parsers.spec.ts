@@ -83,6 +83,16 @@ describe('redactMessage', () => {
     );
   });
 
+  it('redacts escaped JSON OAuth secret values through the closing quote', () => {
+    const secret = 'prefix"secret-tail\\suffix';
+    const message = `oauth failed: ${JSON.stringify({ refresh_token: secret, safe: 'visible' })}`;
+    const redacted = redactMessage(message);
+
+    expect(redacted).toBe('oauth failed: {"refresh_token":"[REDACTED]","safe":"visible"}');
+    expect(redacted).not.toContain('secret-tail');
+    expect(redacted).not.toContain('suffix');
+  });
+
   it('redacts complete JWTs, cookies, and URI userinfo', () => {
     const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZWNyZXQtdXNlciJ9.c2lnbmF0dXJlLXNlY3JldA';
     const message =
