@@ -2974,6 +2974,49 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     expect(getUserCodeFiles).not.toHaveBeenCalled();
   });
 
+  it('charges a file appearing in both sets against the allowance once', async () => {
+    /* An embedded attachment still missing the active code route is hydrated for delivery
+     * and returned as a provisioning candidate. Charging its bytes twice would spend an
+     * allowance the request never uses and drop a different candidate that fits. */
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const shared = { file_id: 'shared', filename: 'a.csv', bytes: 400 };
+    const deferredOnly = { file_id: 'deferred', filename: 'b.csv', bytes: 100 };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    filterFilesByEndpointRuntimeConfig.mockReturnValue([shared]);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([shared, deferredOnly]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['shared', 'deferred']);
+    const getToolFilesByIds = jest.fn().mockResolvedValue([shared]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      {
+        ...db,
+        getDeferredProvisionFiles,
+        getConvoFiles,
+        getToolFilesByIds,
+        getFiles: jest.fn().mockResolvedValue([shared, deferredOnly]),
+      },
+    );
+
+    const deferredCall = filterFilesByEndpointRuntimeConfig.mock.calls.find(
+      ([, params]) => (params as { consumedBytes?: number }).consumedBytes !== undefined,
+    );
+    expect((deferredCall?.[1] as { consumedBytes: number }).consumedBytes).toBe(0);
+  });
+
   it('screens persistent agent files under the remaining size allowance and content policy', async () => {
     /* These are read inside primeResources, so the caller never sees them. Both checks it
      * applied to this turn's other files have to reach them through the callback. */

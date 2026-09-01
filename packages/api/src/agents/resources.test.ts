@@ -10,7 +10,7 @@ import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
 import type { TGetFiles, TFilterFilesByAgentAccess } from './resources';
-import { primeResources, isAgentScopedFile } from './resources';
+import { primeResources } from './resources';
 
 // Mock logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -2426,14 +2426,32 @@ describe('primeResources', () => {
       expect(result.attachments?.map((f) => f?.file_id)).toContain('text-record');
     });
 
-    it('grants agent scope only to agent setup files', () => {
-      expect(isAgentScopedFile({ context: FileContext.agents })).toBe(true);
-      expect(isAgentScopedFile({ context: FileContext.execute_code })).toBe(false);
-      expect(isAgentScopedFile({ context: FileContext.message_attachment })).toBe(false);
-      expect(isAgentScopedFile({ context: FileContext.image_generation })).toBe(false);
-      expect(isAgentScopedFile({ context: FileContext.assistants_output })).toBe(false);
-      expect(isAgentScopedFile({ context: FileContext.unknown })).toBe(false);
-      expect(isAgentScopedFile({ context: undefined })).toBe(false);
+    it('grants agent scope only to the active agent own resource files', async () => {
+      /* A user who owns another agent's setup file can attach it here. Scoping it to this
+       * agent would provision it under an identity this agent's other users share, so the
+       * record's context is not enough: membership in this agent's resources decides. */
+      const foreignSetupFile = makeCodeFile({
+        file_id: 'foreign-agent-file',
+        context: FileContext.agents,
+      });
+      const ownSetupFile = makeCodeFile({ file_id: 'own-agent-file', context: FileContext.agents });
+      mockGetFiles.mockResolvedValue([ownSetupFile]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: { [EToolResources.context]: { file_ids: ['own-agent-file'] } },
+        attachments: Promise.resolve([foreignSetupFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+      });
+
+      const scoped = result.provisionState?.agentScopedFileIds;
+      expect(scoped?.has('own-agent-file')).toBe(true);
+      expect(scoped?.has('foreign-agent-file')).toBe(false);
     });
 
     it('rebuilds an embedded code output under files, not agent file_ids', async () => {

@@ -88,6 +88,11 @@ export type ProvisionState = {
   vectorDBFiles: TFile[];
   /** Set of file_ids confirmed alive in code env (from staleness check) */
   aliveFileIds: Set<string>;
+  /** The active agent's own resource files, which are the only ones provisioned under its
+   *  shared identity. A record carrying an agent context is not enough: a user may attach
+   *  another agent's setup file to this conversation, and provisioning it here would put
+   *  it in a namespace this agent's other users can read. */
+  agentScopedFileIds: Set<string>;
 };
 
 /**
@@ -167,7 +172,15 @@ export const addFileToResource = ({
  *  requesting user: provisioning those under a shared agent would copy one user's
  *  private file into a sandbox every other user of that agent can read. An allowlist
  *  fails safe, since an unrecognized context provisions per user rather than leaking. */
+
+/** Whether a file's existing vectors live under the agent's identity rather than the
+ *  user's. This reads where content already is, which the record's context records.
+ *  Where new provisioning may write is a separate question, answered by membership in
+ *  the active agent's resources. */
 const AGENT_SCOPED_FILE_CONTEXTS = new Set<string>([FileContext.agents]);
+
+export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
+  AGENT_SCOPED_FILE_CONTEXTS.has(file.context as string);
 
 /**
  * Whether this file's vectors exist in the namespace the active agent will search.
@@ -191,10 +204,6 @@ const isEmbeddedForNamespace = (file: TFile, agentId?: string): boolean => {
  */
 const hasCodeRefForRoute = (file: TFile, routeKey: string): boolean =>
   getCodeEnvRefs(file.metadata).some(([key]) => key === routeKey);
-
-/** Whether a file's tool provisioning is scoped to the agent rather than the user. */
-export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
-  AGENT_SCOPED_FILE_CONTEXTS.has(file.context as string);
 
 /** Mirrors the lazy provisioning writer: agent-scoped search files live in
  *  `file_ids`, which is the only shape fileSearch treats as agent-owned. */
@@ -358,11 +367,13 @@ const computeProvisionState = async ({
   legacyFileUploadUX,
   agentId,
   codeRouteKey,
+  agentScopedFileIds,
 }: {
   req?: ServerRequest;
   attachments: Array<TFile>;
   agentId?: string;
   codeRouteKey?: string;
+  agentScopedFileIds?: ReadonlySet<string>;
   resourcePrincipal?: Pick<IUser, 'id' | 'role'>;
   enabledToolResources?: Set<EToolResources>;
   tool_resources: AgentToolResources;
@@ -428,6 +439,7 @@ const computeProvisionState = async ({
   }
 
   const activeCodeRouteKey = codeRouteKey ?? 'default';
+  const scopedIds = agentScopedFileIds ?? new Set<string>();
   const codeEnvFiles: TFile[] = [];
   const vectorDBFiles: TFile[] = [];
 
@@ -499,7 +511,12 @@ const computeProvisionState = async ({
   if (codeEnvFiles.length === 0 && vectorDBFiles.length === 0) {
     return undefined;
   }
-  return { codeEnvFiles, vectorDBFiles, aliveFileIds: aliveFileIds ?? new Set() };
+  return {
+    codeEnvFiles,
+    vectorDBFiles,
+    aliveFileIds: aliveFileIds ?? new Set(),
+    agentScopedFileIds: new Set(scopedIds),
+  };
 };
 
 export const primeResources = async ({
@@ -711,6 +728,7 @@ export const primeResources = async ({
         legacyFileUploadUX,
         agentId,
         codeRouteKey,
+        agentScopedFileIds: persistedResourceFileIds,
       });
       return {
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -768,6 +786,7 @@ export const primeResources = async ({
       legacyFileUploadUX,
       agentId,
       codeRouteKey,
+      agentScopedFileIds: persistedResourceFileIds,
     });
 
     return {

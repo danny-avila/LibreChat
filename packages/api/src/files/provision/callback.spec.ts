@@ -28,8 +28,17 @@ function makeFile(overrides: Partial<TFile> = {}): TFile {
   } as TFile;
 }
 
-function state(codeEnvFiles: TFile[], vectorDBFiles: TFile[]): ProvisionState {
-  return { codeEnvFiles, vectorDBFiles, aliveFileIds: new Set<string>() };
+function state(
+  codeEnvFiles: TFile[],
+  vectorDBFiles: TFile[],
+  agentScopedFileIds: string[] = [],
+): ProvisionState {
+  return {
+    codeEnvFiles,
+    vectorDBFiles,
+    aliveFileIds: new Set<string>(),
+    agentScopedFileIds: new Set(agentScopedFileIds),
+  };
 }
 
 function buildHarness({
@@ -91,6 +100,28 @@ function buildHarness({
 }
 
 describe('createProvisionFilesCallback', () => {
+  it('scopes only the agent own resource files to its identity', async () => {
+    /* A user can attach another agent's setup file to this conversation. Uploading it under
+     * this agent would place it in a namespace this agent's other users share, so the
+     * upload identity comes from membership in this agent's resources. */
+    const own = makeFile({ file_id: 'own-file', context: FileContext.agents });
+    const foreign = makeFile({ file_id: 'foreign-file', context: FileContext.agents });
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([own, foreign], [], ['own-file']) }]],
+    });
+
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+
+    const byFile = new Map(
+      provisionToCodeEnv.mock.calls.map(([args]) => [
+        (args as { file: TFile }).file.file_id,
+        (args as { entity_id?: string }).entity_id,
+      ]),
+    );
+    expect(byFile.get('own-file')).toBe('agent-a');
+    expect(byFile.get('foreign-file')).toBeUndefined();
+  });
+
   it('provisions once for the request when two agents queue the same file', async () => {
     const shared = makeFile();
     const contexts: Array<[string, ProvisionToolContext]> = [
