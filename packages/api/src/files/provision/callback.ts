@@ -334,7 +334,13 @@ export function createProvisionFilesCallback({
               EToolResources.file_search,
               entityIdForFile(file) !== undefined,
             );
+            return;
           }
+          /* Resolving with embedded false is a normal outcome of the service, returned
+           * when the vector store declines the file, and it means the same thing as a
+           * throw: the vectors are not there. Treated as a failure so the file stays
+           * queued and search does not proceed without it. */
+          throw new Error(`Vector store did not embed "${file.filename}" (${file.file_id})`);
         }),
       );
       results.forEach((result, index) => {
