@@ -6619,6 +6619,14 @@ describe('Conversation Operations', () => {
           endpoint: EModelEndpoint.openAI,
         });
       });
+      await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+        await Conversation.create({
+          conversationId,
+          user: 'user123',
+          title: 'Other tenant conversation',
+          endpoint: EModelEndpoint.openAI,
+        });
+      });
 
       const meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
       Object.assign(Conversation, { meiliSearch });

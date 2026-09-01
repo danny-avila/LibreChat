@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import _ from 'lodash';
 import { parseTextParts } from 'librechat-data-provider';
 import { MeiliSearch, MeiliSearchTimeOutError } from 'meilisearch';
@@ -29,9 +30,13 @@ interface MongoMeiliOptions {
 
 interface MeiliIndexable {
   [key: string]: unknown;
+  conversationId?: string;
+  originalConversationId?: string;
+  tenantId?: string | null;
   _meiliIndex?: boolean;
   _meiliIndexAttempted?: boolean;
   _meiliIndexVersion?: string;
+  _meiliIndexSchemaVersion?: number;
   _meiliCleanupVersion?: number;
 }
 
@@ -48,6 +53,7 @@ interface _DocumentWithMeiliIndex extends Document {
   _meiliIndex?: boolean;
   _meiliIndexAttempted?: boolean;
   _meiliIndexVersion?: string;
+  _meiliIndexSchemaVersion?: number;
   _meiliCleanupVersion?: number;
   isTemporary?: boolean;
   expiredAt?: Date | null;
@@ -107,14 +113,143 @@ const getSyncConfig = () => ({
 const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
 
-const preserveOriginalConversationId = (object: Record<string, unknown>): void => {
-  const conversationId = object.conversationId;
-  if (typeof conversationId !== 'string' || !conversationId.includes('|')) {
+const MEILI_CONVERSATION_ID_PREFIX = 'lc_';
+/** Bump when the indexed document shape or key encoding changes. */
+export const MEILI_INDEX_SCHEMA_VERSION = 2;
+
+type MeiliConversationIdentity = {
+  conversationId: string;
+  tenantId?: string | null;
+};
+
+export const encodeMeiliConversationId = (
+  conversationId: string,
+  tenantId?: string | null,
+): string =>
+  `${MEILI_CONVERSATION_ID_PREFIX}${Buffer.from(
+    JSON.stringify({ conversationId, tenantId: tenantId ?? null }),
+    'utf8',
+  ).toString('base64url')}`;
+
+const decodeMeiliConversationId = (value: unknown): MeiliConversationIdentity | undefined => {
+  if (typeof value !== 'string' || !value.startsWith(MEILI_CONVERSATION_ID_PREFIX)) {
+    return undefined;
+  }
+
+  try {
+    const encoded = value.slice(MEILI_CONVERSATION_ID_PREFIX.length);
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as {
+      conversationId?: unknown;
+      tenantId?: unknown;
+    };
+    if (
+      typeof decoded.conversationId !== 'string' ||
+      (decoded.tenantId !== null && typeof decoded.tenantId !== 'string')
+    ) {
+      return undefined;
+    }
+    return {
+      conversationId: decoded.conversationId,
+      tenantId: decoded.tenantId,
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+const getMeiliPrimaryKey = (
+  value: unknown,
+  primaryKey: string,
+  tenantId?: unknown,
+  tenantAware = false,
+): string => {
+  const stringValue = String(value);
+  if (primaryKey !== 'conversationId') {
+    return stringValue;
+  }
+  const scopedTenantId = tenantAware && tenantId != null ? String(tenantId) : undefined;
+  return encodeMeiliConversationId(stringValue, scopedTenantId);
+};
+
+const getConversationIdentity = (
+  value: unknown,
+  tenantId?: unknown,
+  originalValue?: unknown,
+): MeiliConversationIdentity | undefined => {
+  const decoded = decodeMeiliConversationId(value);
+  if (decoded) {
+    return {
+      ...decoded,
+      ...(typeof originalValue === 'string' && { conversationId: originalValue }),
+    };
+  }
+  if (typeof originalValue === 'string') {
+    return {
+      conversationId: originalValue,
+      ...(tenantId == null ? {} : { tenantId: String(tenantId) }),
+    };
+  }
+  return value == null
+    ? undefined
+    : {
+        conversationId: String(value),
+        ...(tenantId == null ? {} : { tenantId: String(tenantId) }),
+      };
+};
+
+const buildConversationQuery = (
+  identities: MeiliConversationIdentity[],
+): Record<string, unknown> => {
+  const clauses = identities.map(({ conversationId, tenantId }) => ({
+    conversationId,
+    ...(tenantId === undefined ? {} : { tenantId: tenantId ?? null }),
+  }));
+  if (clauses.length === 0) {
+    return { conversationId: { $in: [] } };
+  }
+  if (clauses.length === 1) {
+    return clauses[0];
+  }
+  return { $or: clauses };
+};
+
+const prepareObjectForIndex = (
+  object: Record<string, unknown>,
+  primaryKey: string,
+  tenantAware: boolean,
+): void => {
+  if (primaryKey !== 'conversationId' || object.conversationId == null) {
     return;
   }
 
+  const conversationId = String(object.conversationId);
   object.originalConversationId = conversationId;
-  object.conversationId = conversationId.replace(/\|/g, '--');
+  object.conversationId = getMeiliPrimaryKey(
+    conversationId,
+    primaryKey,
+    object.tenantId,
+    tenantAware,
+  );
+};
+
+const normalizeSearchHit = (
+  hit: MeiliIndexable,
+  primaryKey: string,
+): MeiliIndexable => {
+  if (primaryKey !== 'conversationId') {
+    return hit;
+  }
+
+  const decoded = decodeMeiliConversationId(hit.conversationId);
+  const originalConversationId =
+    typeof hit.originalConversationId === 'string'
+      ? hit.originalConversationId
+      : decoded?.conversationId;
+  if (!originalConversationId) {
+    return hit;
+  }
+
+  return { ...hit, conversationId: originalConversationId };
 };
 
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
@@ -304,6 +439,7 @@ const createMeiliMongooseModel = ({
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
+  const tenantAware = attributesToIndex.includes('tenantId');
 
   const loadLatestDocument = async (
     doc: DocumentWithMeiliIndex,
@@ -314,6 +450,7 @@ const createMeiliMongooseModel = ({
       '+_meiliIndex',
       '+_meiliIndexAttempted',
       '+_meiliIndexVersion',
+      '+_meiliIndexSchemaVersion',
       'isTemporary',
       'expiredAt',
       'unfinished',
@@ -324,7 +461,12 @@ const createMeiliMongooseModel = ({
 
   const deleteDocumentAndWait = async (doc: DocumentWithMeiliIndex): Promise<void> => {
     const deletion = await index.deleteDocument(
-      String(doc[primaryKey as keyof DocumentWithMeiliIndex]),
+      getMeiliPrimaryKey(
+        doc[primaryKey as keyof DocumentWithMeiliIndex],
+        primaryKey,
+        doc.tenantId,
+        tenantAware,
+      ),
     );
     const deletionTask = await client.waitForTask(deletion.taskUid, {
       timeOutMs: meiliRequestTimeoutMs,
@@ -388,7 +530,13 @@ const createMeiliMongooseModel = ({
         // eslint-disable-next-line no-restricted-syntax -- versioned internal bookkeeping must not re-enter document middleware
         const acknowledgement = await doc.collection.updateOne(
           { _id: doc._id as Types.ObjectId, _meiliIndexVersion: version },
-          { $set: { _meiliIndex: true, _meiliCleanupVersion: meiliCleanupVersion } },
+          {
+            $set: {
+              _meiliIndex: true,
+              _meiliCleanupVersion: meiliCleanupVersion,
+              _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+            },
+          },
         );
         if (acknowledgement.matchedCount > 0) {
           return;
@@ -422,23 +570,37 @@ const createMeiliMongooseModel = ({
     static async getSyncProgress(this: SchemaWithMeiliMethods): Promise<SyncProgress> {
       const indexableQuery = getIndexableQuery();
       const excludedIndexedQuery = getExcludedIndexedQuery();
-      const [totalDocuments, indexedDocuments, pendingIndexing, pendingCleanup] = await Promise.all(
-        [
+      const needsIndexingQuery: FilterQuery<unknown> = {
+        $and: [
+          indexableQuery,
+          {
+            $or: [
+              { _meiliIndex: { $ne: true }, _meiliIndexAttempted: true },
+              {
+                _meiliIndex: true,
+                _meiliIndexSchemaVersion: { $ne: MEILI_INDEX_SCHEMA_VERSION },
+              },
+            ],
+          },
+        ],
+      };
+      const [totalDocuments, indexedDocuments, pendingIndexing, pendingCleanup] =
+        await Promise.all([
           this.countDocuments(indexableQuery),
           this.countDocuments({
-            ...indexableQuery,
-            _meiliIndex: true,
+            $and: [
+              indexableQuery,
+              {
+                _meiliIndex: true,
+                _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+              },
+            ],
           }),
-          this.countDocuments({
-            ...indexableQuery,
-            _meiliIndex: { $ne: true },
-            _meiliIndexAttempted: true,
-          }),
+          this.countDocuments(needsIndexingQuery),
           excludedIndexedQuery == null
             ? Promise.resolve(0)
             : this.countDocuments(excludedIndexedQuery),
-        ],
-      );
+        ]);
 
       return {
         totalProcessed: indexedDocuments,
@@ -451,7 +613,7 @@ const createMeiliMongooseModel = ({
 
     /**
      * Synchronizes data between the MongoDB collection and the MeiliSearch index by
-     * incrementally indexing only non-temporary documents where `_meiliIndex` is not `true`.
+     * incrementally indexing only non-temporary documents that are unindexed or stale.
      * */
     static async syncWithMeili(this: SchemaWithMeiliMethods): Promise<void> {
       const startTime = Date.now();
@@ -484,8 +646,18 @@ const createMeiliMongooseModel = ({
       while (hasMore) {
         const indexableQuery = getIndexableQuery();
         const query: FilterQuery<unknown> = {
-          ...indexableQuery,
-          _meiliIndex: { $ne: true },
+          $and: [
+            indexableQuery,
+            {
+              $or: [
+                { _meiliIndex: { $ne: true } },
+                {
+                  _meiliIndex: true,
+                  _meiliIndexSchemaVersion: { $ne: MEILI_INDEX_SCHEMA_VERSION },
+                },
+              ],
+            },
+          ],
         };
 
         try {
@@ -540,7 +712,7 @@ const createMeiliMongooseModel = ({
       // Format documents for MeiliSearch
       const formattedDocs = documents.map((doc) => {
         const object = _.omitBy(_.pick(doc, attributesToIndex), (_v, k) => k.startsWith('$'));
-        preserveOriginalConversationId(object);
+        prepareObjectForIndex(object, primaryKey, tenantAware);
         return object;
       });
 
@@ -560,7 +732,13 @@ const createMeiliMongooseModel = ({
         // original conversation/message timestamps (fixes sidebar chronological sort).
         await this.updateMany(
           { _id: { $in: docsIds } },
-          { $set: { _meiliIndex: true, _meiliCleanupVersion: meiliCleanupVersion } },
+          {
+            $set: {
+              _meiliIndex: true,
+              _meiliCleanupVersion: meiliCleanupVersion,
+              _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+            },
+          },
           { timestamps: false },
         );
       } catch (error) {
@@ -583,17 +761,18 @@ const createMeiliMongooseModel = ({
       const { batchSize, delayMs } = syncConfig;
       while (true) {
         const pendingExcludedDocuments = await this.find(excludedIndexedQuery)
-          .select(primaryKey)
+          .select(`${primaryKey} tenantId`)
           .limit(batchSize)
           .lean();
         if (pendingExcludedDocuments.length === 0) {
           break;
         }
 
-        const pendingIds = pendingExcludedDocuments.map(
-          (doc: Record<string, unknown>) => doc[primaryKey],
+        const deletion = await index.deleteDocuments(
+          pendingExcludedDocuments.map((doc: Record<string, unknown>) =>
+            getMeiliPrimaryKey(doc[primaryKey], primaryKey, doc.tenantId, tenantAware),
+          ),
         );
-        const deletion = await index.deleteDocuments(pendingIds.map(String));
         const deletionTask = await client.waitForTask(deletion.taskUid, {
           timeOutMs: 10000,
           intervalMs: 100,
@@ -604,7 +783,16 @@ const createMeiliMongooseModel = ({
           );
         }
         await this.updateMany(
-          { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
+          {
+            $and: [
+              excludedIndexedQuery,
+              {
+                _id: {
+                  $in: pendingExcludedDocuments.map((doc: Record<string, unknown>) => doc._id),
+                },
+              },
+            ],
+          },
           {
             $set: { _meiliCleanupVersion: meiliCleanupVersion },
             $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
@@ -644,22 +832,45 @@ const createMeiliMongooseModel = ({
             break;
           }
 
-          const meiliIds = batch.results.map((doc) => doc[primaryKey]);
-          const query: Record<string, unknown> = {};
-          query[primaryKey] = { $in: meiliIds };
+          const meiliIds = batch.results.map((doc) => String(doc[primaryKey]));
+          const mongoIdentitiesByMeiliId = new Map<
+            string,
+            MeiliConversationIdentity | undefined
+          >(
+            batch.results.map((doc, index) => [
+              meiliIds[index],
+              primaryKey === 'conversationId'
+                ? getConversationIdentity(
+                    doc[primaryKey],
+                    doc.tenantId,
+                    doc.originalConversationId,
+                  )
+                : undefined,
+            ] as const),
+          );
+          const query: Record<string, unknown> =
+            primaryKey === 'conversationId'
+              ? buildConversationQuery(
+                  [...mongoIdentitiesByMeiliId.values()].filter(
+                    (identity): identity is MeiliConversationIdentity => identity !== undefined,
+                  ),
+                )
+              : { [primaryKey]: { $in: meiliIds } };
 
-          const existingDocs = await this.find({ ...query, ...getIndexableQuery() })
-            .select(primaryKey)
+          const existingDocs = await this.find({ $and: [query, getIndexableQuery()] })
+            .select(tenantAware ? `${primaryKey} tenantId` : primaryKey)
             .lean();
 
           const existingIds = new Set(
-            existingDocs.map((doc: Record<string, unknown>) => doc[primaryKey]),
+            existingDocs.map((doc: Record<string, unknown>) =>
+              getMeiliPrimaryKey(doc[primaryKey], primaryKey, doc.tenantId, tenantAware),
+            ),
           );
 
           // Delete documents that don't exist in MongoDB
           const toDelete = meiliIds.filter((id) => !existingIds.has(id));
           if (toDelete.length > 0) {
-            const deletion = await index.deleteDocuments(toDelete.map(String));
+            const deletion = await index.deleteDocuments(toDelete);
             const deletionTask = await client.waitForTask(deletion.taskUid, {
               timeOutMs: 10000,
               intervalMs: 100,
@@ -669,14 +880,30 @@ const createMeiliMongooseModel = ({
                 `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
               );
             }
-            await this.updateMany(
-              { [primaryKey]: { $in: toDelete } },
-              {
-                $set: { _meiliCleanupVersion: meiliCleanupVersion },
-                $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
-              },
-              { timestamps: false },
-            );
+            const identitiesToReset = toDelete
+              .map((id) => mongoIdentitiesByMeiliId.get(id))
+              .filter(
+                (identity): identity is MeiliConversationIdentity => identity !== undefined,
+              );
+            if (primaryKey === 'conversationId' && identitiesToReset.length > 0) {
+              await this.updateMany(
+                { $and: [buildConversationQuery(identitiesToReset)] },
+                {
+                  $set: { _meiliCleanupVersion: meiliCleanupVersion },
+                  $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
+                },
+                { timestamps: false },
+              );
+            } else if (primaryKey !== 'conversationId' && toDelete.length > 0) {
+              await this.updateMany(
+                { [primaryKey]: { $in: toDelete } },
+                {
+                  $set: { _meiliCleanupVersion: meiliCleanupVersion },
+                  $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
+                },
+                { timestamps: false },
+              );
+            }
             logger.debug(`[cleanupMeiliIndex] Deleted ${toDelete.length} orphaned documents`);
           }
           // if fetch documents request returns less documents than limit, all documents are processed
@@ -713,10 +940,27 @@ const createMeiliMongooseModel = ({
       populate: boolean,
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
       const data = await index.search(q, params);
+      const conversationIdentities =
+        primaryKey === 'conversationId'
+          ? data.hits
+              .map((hit) =>
+                getConversationIdentity(
+                  hit[primaryKey],
+                  hit.tenantId,
+                  hit.originalConversationId,
+                ),
+              )
+              .filter(
+                (identity): identity is MeiliConversationIdentity => identity !== undefined,
+              )
+          : [];
+      data.hits = data.hits.map((hit) => normalizeSearchHit(hit, primaryKey));
 
       if (populate) {
-        const query: Record<string, unknown> = {};
-        query[primaryKey] = _.map(data.hits, (hit) => hit[primaryKey]);
+        const query: Record<string, unknown> =
+          primaryKey === 'conversationId'
+            ? buildConversationQuery(conversationIdentities)
+            : { [primaryKey]: _.map(data.hits, (hit) => hit[primaryKey]) };
 
         const projection = Object.keys(this.schema.obj).reduce<Record<string, number>>(
           (results, key) => {
@@ -757,7 +1001,7 @@ const createMeiliMongooseModel = ({
         k.startsWith('$'),
       );
 
-      preserveOriginalConversationId(object);
+      prepareObjectForIndex(object, primaryKey, tenantAware);
 
       if (object.content && Array.isArray(object.content)) {
         /** Search indexes the full conversational record, steered words included. */
@@ -814,7 +1058,14 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        await index.deleteDocument(String(this[primaryKey as keyof DocumentWithMeiliIndex]));
+        await index.deleteDocument(
+          getMeiliPrimaryKey(
+            this[primaryKey as keyof DocumentWithMeiliIndex],
+            primaryKey,
+            this.tenantId,
+            tenantAware,
+          ),
+        );
         next();
       } catch (error) {
         logger.error('[deleteObjectFromMeili] Error deleting document from Meili:', error);
@@ -917,6 +1168,12 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       type: String,
       required: false,
       select: false,
+    },
+    _meiliIndexSchemaVersion: {
+      type: Number,
+      required: false,
+      select: false,
+      default: MEILI_INDEX_SCHEMA_VERSION,
     },
     _meiliCleanupVersion: {
       type: Number,
@@ -1162,13 +1419,20 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         const deletedConvos = await mongoose
           .model('Conversation')
           .find(conditions as FilterQuery<unknown>)
-          .select('conversationId')
+          .select('conversationId tenantId')
           .lean();
 
         // Process deletions in batches
         await processBatch(deletedConvos, batchSize, delayMs, async (batch) => {
           const promises = batch.map((convo: Record<string, unknown>) =>
-            convoIndex.deleteDocument(convo.conversationId as string),
+            convoIndex.deleteDocument(
+              getMeiliPrimaryKey(
+                convo.conversationId,
+                'conversationId',
+                convo.tenantId,
+                tenantAware,
+              ),
+            ),
           );
           await Promise.all(promises);
         });
