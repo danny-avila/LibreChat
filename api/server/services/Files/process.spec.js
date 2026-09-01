@@ -2744,6 +2744,26 @@ describe('permanent unified uploads and unknown tool sets', () => {
     );
   });
 
+  test('names the destination that refused the file, not file search', async () => {
+    /* The message is the only thing telling the reader which tool rejected the upload,
+     * and reporting an image sent to file search for an audio file sent to the code
+     * interpreter describes neither the file nor the destination. */
+    const req = makeReq({ mimetype: 'audio/mpeg', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await expect(
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'f-audio',
+        },
+      }),
+    ).rejects.toThrow(/audio\/mpeg.*code interpreter/i);
+  });
+
   test('refuses a permanent upload that would land on no agent resource', async () => {
     /* Delivered straight to the model, with no agent resource to hold it, storing it
      * would report success while leaving the agent without a reference. */

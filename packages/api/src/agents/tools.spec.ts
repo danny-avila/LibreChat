@@ -6,6 +6,7 @@
  */
 jest.mock('@librechat/agents', () => ({
   CODE_EXECUTION_TOOLS: new Set(['execute_code', 'bash_tool']),
+  Constants: { READ_FILE: 'read_file', WRITE_FILE: 'write_file' },
   ReadFileToolDefinition: {
     name: 'read_file',
     description: 'read skill files using {skillName}/{filePath} and SKILL.md',

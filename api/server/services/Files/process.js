@@ -707,6 +707,16 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
  * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
+/** Reader-facing names for the destinations an upload can be rejected against. */
+const TOOL_RESOURCE_LABELS = {
+  [EToolResources.execute_code]: 'the code interpreter',
+  [EToolResources.code_interpreter]: 'the code interpreter',
+  [EToolResources.file_search]: 'file search',
+  [EToolResources.context]: 'text context',
+  [EToolResources.image_edit]: 'image editing',
+  [EToolResources.ocr]: 'OCR',
+};
+
 /** Capability gate for each tool that can consume a file kept off the model path. */
 const CONSUMER_CAPABILITIES = [
   [EToolResources.execute_code, AgentCapabilities.execute_code],
@@ -811,7 +821,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   effectiveToolResource = destination.toolResource;
 
   if (effectiveToolResource && !canToolResourceConsume(effectiveToolResource, file.mimetype)) {
-    throw new Error('Image uploads are not supported for file search tool resources');
+    throw new Error(
+      `Files of type ${file.mimetype} cannot be read by ${TOOL_RESOURCE_LABELS[effectiveToolResource] ?? effectiveToolResource}.`,
+    );
   }
 
   if (!messageAttachment && !agent_id) {

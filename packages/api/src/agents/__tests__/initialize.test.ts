@@ -2825,6 +2825,52 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     return { agent, req, res, loadTools, db };
   }
 
+  it('provisions code files for a skill tool that never names execute_code', async () => {
+    /**
+     * `bash_tool` reads the code environment but is not an `EToolResources` key, so an
+     * agent that gets it only through a skill built no provisioning state and invoked
+     * the tool against an empty sandbox. Execution-time eligibility already counted it.
+     */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const getSkillByName = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'sandbox-skill',
+      body: 'body of sandbox-skill',
+      author: { toString: () => req.user!.id } as unknown as import('mongoose').Types.ObjectId,
+      allowedTools: ['bash_tool'],
+    });
+    mockGetThreadData.mockReturnValue({ messageIds: ['msgN'], fileIds: ['file-1'] });
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['sandbox-skill'],
+      },
+      {
+        ...db,
+        getCodeGeneratedFiles,
+        getSkillByName,
+        listSkillsByAccess: async () => ({ skills: [], has_more: false, after: null }),
+      },
+    );
+
+    expect(getCodeGeneratedFiles).toHaveBeenCalledTimes(1);
+  });
+
   it('passes threadFileIds (not threadMessageIds) to getCodeGeneratedFiles', async () => {
     const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
 

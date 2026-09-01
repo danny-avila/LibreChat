@@ -10,7 +10,6 @@ import {
   Constants,
   EToolResources,
   mergeFileConfig,
-  isAgentsEndpoint,
   isAssistantsEndpoint,
   getEndpointFileConfig,
   defaultAssistantsVersion,
@@ -38,7 +37,7 @@ import {
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
-import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
+import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
 import { useChatContext } from '~/Providers/ChatContext';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useClientResize from './useClientResize';
@@ -150,7 +149,6 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, conversation } = fileState;
-  const agentsMap = useAgentsMapContext();
   const filesRef = useRef(files);
   filesRef.current = files;
   const fileSetter = params?.fileSetter ?? setFiles;
@@ -217,29 +215,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     () => endpointOverride ?? conversation?.endpoint ?? 'default',
     [endpointOverride, conversation?.endpoint],
   );
-  /** An agent's file policy lives under its provider, which is the entry the server now
-   *  validates against. Resolving `agents` here instead rejects a provider-supported file
-   *  before it ever reaches that check, or measures it against the wrong limits. */
-  const agentProvider = useMemo(() => {
-    if (endpointOverride != null || !isAgentsEndpoint(conversation?.endpoint)) {
-      return undefined;
-    }
-    const agentId = conversation?.agent_id;
-    return agentId != null && agentId !== '' ? agentsMap?.[agentId]?.provider : undefined;
-  }, [endpointOverride, conversation?.endpoint, conversation?.agent_id, agentsMap]);
-
-  /** The conversation's own setting when it has one, otherwise the saved agent's, which
-   *  is where a saved Azure agent keeps it. */
-  const usesResponsesApi = useMemo(() => {
-    if (conversation?.useResponsesApi !== undefined) {
-      return conversation.useResponsesApi;
-    }
-    const agentId = conversation?.agent_id;
-    if (agentId == null || agentId === '') {
-      return undefined;
-    }
-    return agentsMap?.[agentId]?.model_parameters?.useResponsesApi;
-  }, [conversation?.useResponsesApi, conversation?.agent_id, agentsMap]);
+  const uploadTarget = useAgentUploadTarget(conversation);
+  /** An agent's file policy lives under its provider, which is the entry the server
+   *  validates against. An explicit override names its own endpoint and keeps it. */
+  const agentProvider = endpointOverride != null ? undefined : uploadTarget.agentProvider;
+  const agentEndpointType = endpointOverride != null ? undefined : uploadTarget.endpointType;
+  const usesResponsesApi = uploadTarget.useResponsesApi;
 
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -524,7 +505,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     const endpointFileConfig = getEndpointFileConfig({
       endpoint: agentProvider ?? endpoint,
       fileConfig: currentFileConfig,
-      endpointType: agentProvider != null ? undefined : endpointType,
+      endpointType: agentProvider != null ? agentEndpointType : endpointType,
     });
     /** The source remains visible until success, so exclude only its matching entry from this
      * upload's validation tallies. All other callers validate against the complete file map. */

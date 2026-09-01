@@ -6,7 +6,7 @@ import type { CodeEnvFile } from '@librechat/agents';
 import type { CodeEnvRefUpdate, CodeExecutionRoute, ProvisionService } from './service';
 import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
-import { CREATE_FILE_TOOL_NAME } from '~/agents/tools';
+import { isCodeFileToolName } from '~/agents/tools';
 
 /** Deferred database write produced by a successful provisioning call. */
 interface FileUpdate {
@@ -149,19 +149,9 @@ export function createProvisionFilesCallback({
     }
 
     const { provisionState } = ctx;
-    /** Code execution expands into the sandbox file tools (+ their PTC variants);
-     *  the legacy execute_code/run_tools_with_code names are kept for back-compat.
-     *  edit_file and write_file read their target from the code environment, so a
-     *  turn that starts with one of them must provision first. */
-    const needsCode =
-      toolNames.includes(Constants.EXECUTE_CODE) ||
-      toolNames.includes(Constants.PROGRAMMATIC_TOOL_CALLING) ||
-      toolNames.includes(Constants.BASH_TOOL) ||
-      toolNames.includes(Constants.READ_FILE) ||
-      toolNames.includes(Constants.EDIT_FILE) ||
-      toolNames.includes(Constants.WRITE_FILE) ||
-      toolNames.includes(CREATE_FILE_TOOL_NAME) ||
-      toolNames.includes(Constants.BASH_PROGRAMMATIC_TOOL_CALLING);
+    /** The same set that decides whether an agent wants code-file provisioning at all,
+     *  so a tool cannot be eligible in one place and unrecognized in the other. */
+    const needsCode = toolNames.some(isCodeFileToolName);
     /** Programmatic tool calling orchestrates nested tools whose names never reach
      *  this predicate, so a file_search reachable only through PTC would otherwise
      *  run before its attachments were embedded. Provision when PTC is invoked. */
