@@ -3,6 +3,7 @@ import { ScrollText } from 'lucide-react';
 import { AutoSizer, List } from 'react-virtualized';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Input, Spinner, useCombobox } from '@librechat/client';
+import { SkillsScope, resolveAgentSkillsScope } from 'librechat-data-provider';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
@@ -99,9 +100,8 @@ function SkillsCommandContent({
      `resolveAgentScopedSkillIds`: ephemeral agents always see the full
      catalog (picking any skill flips `ephemeralAgent.skills = true` and
      activates for the turn); persisted agents gate on the builder's
-     `skills_enabled` master toggle — off or unset means opt-out, on with
-     an empty allowlist means full catalog, on with a non-empty allowlist
-     means narrow to those ids. Persisted agents fail closed during the
+     `skills_enabled` master toggle and explicit catalog scope. Legacy agents
+     without a scope retain empty allowlist = full catalog. Persisted agents fail closed during the
      `agentsMap` hydration window so the user cannot pick a skill the
      backend will then refuse, and again when the map is authoritative
      but the agent isn't in it (deleted, or VIEW revoked mid-session).
@@ -121,7 +121,14 @@ function SkillsCommandContent({
     if (agent.skills_enabled !== true) {
       return [];
     }
-    return Array.isArray(agent.skills) && agent.skills.length > 0 ? agent.skills : undefined;
+    const scope = resolveAgentSkillsScope(agent.skills, agent.skills_enabled, agent.skills_scope);
+    if (scope === SkillsScope.none) {
+      return [];
+    }
+    if (scope === SkillsScope.all) {
+      return undefined;
+    }
+    return agent.skills ?? [];
   }, [agentId, agentsMap]);
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =

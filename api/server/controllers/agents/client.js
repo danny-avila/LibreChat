@@ -428,6 +428,8 @@ class AgentClient extends BaseClient {
             subagents: agent.subagents,
             memory_scope: agent.memory_scope,
             skills_enabled: agent.skills_enabled,
+            skill_authoring_enabled: agent.skill_authoring_enabled,
+            skills_scope: agent.skills_scope,
             skills: agent.skills,
             backgroundToolNames: agent.backgroundToolNames,
             intentToolNames: agent.intentToolNames,

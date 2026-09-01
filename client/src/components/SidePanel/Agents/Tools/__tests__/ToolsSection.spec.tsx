@@ -1,5 +1,6 @@
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
+import { SkillsScope } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { AgentItem } from '../items/types';
 import ToolsSection from '../ToolsSection';
@@ -89,10 +90,14 @@ jest.mock('@librechat/client', () => ({
   Switch: ({
     id,
     checked,
+    disabled,
+    'aria-labelledby': ariaLabelledBy,
     onCheckedChange,
   }: {
     id?: string;
     checked?: boolean;
+    disabled?: boolean;
+    'aria-labelledby'?: string;
     onCheckedChange?: (value: boolean) => void;
   }) => (
     <button
@@ -100,6 +105,8 @@ jest.mock('@librechat/client', () => ({
       id={id}
       role="switch"
       aria-checked={checked}
+      aria-labelledby={ariaLabelledBy}
+      disabled={disabled}
       onClick={() => onCheckedChange?.(!checked)}
     />
   ),
@@ -140,7 +147,7 @@ describe('ToolsSection', () => {
   test('renders a separate Skills section', () => {
     render(<ToolsSection agentId="a" />);
     expect(screen.getByText('com_ui_skills')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'com_ui_add_skills' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_add_skills' })).not.toBeInTheDocument();
   });
 
   test('renders Add button that opens the marketplace dialog', () => {
@@ -232,25 +239,74 @@ describe('ToolsSection', () => {
 });
 
 describe('use all skills toggle', () => {
-  test('renders off inside the Skills section by default', () => {
+  const enableSwitch = () => screen.getByRole('switch', { name: 'com_ui_skills_enable' });
+  const useAllSwitch = () => screen.getByRole('switch', { name: 'com_ui_skills_use_all' });
+
+  test('renders both controls off inside the Skills section by default', () => {
     render(<ToolsSection agentId="a" />);
+    expect(screen.getByText('com_ui_skills_enable')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_skills_enable_hint')).toBeInTheDocument();
     expect(screen.getByText('com_ui_skills_use_all')).toBeInTheDocument();
     expect(screen.getByText('com_ui_skills_use_all_hint')).toBeInTheDocument();
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+    expect(enableSwitch()).toHaveAttribute('aria-checked', 'false');
+    expect(useAllSwitch()).toHaveAttribute('aria-checked', 'false');
+    expect(useAllSwitch()).toBeDisabled();
+  });
+
+  test('enables skills with an empty authoring-only catalog', () => {
+    render(<ToolsSection agentId="a" />);
+    fireEvent.click(enableSwitch());
+    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skill_authoring_enabled', true, {
+      shouldDirty: true,
+    });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_scope', SkillsScope.none, {
+      shouldDirty: true,
+    });
+  });
+
+  test('restores the full catalog when the master switch is re-enabled', () => {
+    mockFormValues = {
+      skills: [],
+      skills_enabled: false,
+      skill_authoring_enabled: false,
+      skills_scope: SkillsScope.all,
+    };
+    render(<ToolsSection agentId="a" />);
+    fireEvent.click(enableSwitch());
+    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', true, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skill_authoring_enabled', false, {
+      shouldDirty: true,
+    });
+    expect(mockSetValue).not.toHaveBeenCalledWith(
+      'skills_scope',
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   test('turning it on clears the selection and enables the master flag', () => {
-    mockFormValues = { skills: ['s1'], skills_enabled: true };
+    mockFormValues = {
+      skills: ['s1'],
+      skills_enabled: true,
+      skills_scope: SkillsScope.selected,
+    };
     render(<ToolsSection agentId="a" />);
-    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.click(useAllSwitch());
     expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
     expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', true, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skill_authoring_enabled', false, {
+      shouldDirty: true,
+    });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_scope', SkillsScope.all, {
+      shouldDirty: true,
+    });
   });
 
   test('while on, hides Add and the skill list and shows the All badge', () => {
-    mockFormValues = { skills: [], skills_enabled: true };
+    mockFormValues = { skills: [], skills_enabled: true, skills_scope: SkillsScope.all };
     render(<ToolsSection agentId="a" />);
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    expect(useAllSwitch()).toHaveAttribute('aria-checked', 'true');
     expect(screen.queryByRole('button', { name: 'com_ui_add_skills' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /com_ui_skills_empty/ })).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_all_proper')).toBeInTheDocument();
@@ -263,34 +319,59 @@ describe('use all skills toggle', () => {
   });
 
   test('turning it off restores the previously selected skills', () => {
-    mockFormValues = { skills: ['s1'], skills_enabled: true };
+    mockFormValues = {
+      skills: ['s1'],
+      skills_enabled: true,
+      skills_scope: SkillsScope.selected,
+    };
     const { rerender } = render(<ToolsSection agentId="a" />);
-    fireEvent.click(screen.getByRole('switch'));
-    mockFormValues = { skills: [], skills_enabled: true };
+    fireEvent.click(useAllSwitch());
+    mockFormValues = { skills: [], skills_enabled: true, skills_scope: SkillsScope.all };
     rerender(<ToolsSection agentId="a" />);
     mockSetValue.mockClear();
-    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.click(useAllSwitch());
     expect(mockSetValue).toHaveBeenCalledWith('skills', ['s1'], { shouldDirty: true });
-    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', true, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skill_authoring_enabled', false, {
+      shouldDirty: true,
+    });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_scope', SkillsScope.selected, {
+      shouldDirty: true,
+    });
   });
 
   test('does not restore a stash from a different agent', () => {
-    mockFormValues = { skills: ['s1'], skills_enabled: true };
+    mockFormValues = {
+      skills: ['s1'],
+      skills_enabled: true,
+      skills_scope: SkillsScope.selected,
+    };
     const { rerender } = render(<ToolsSection agentId="a" />);
-    fireEvent.click(screen.getByRole('switch'));
-    mockFormValues = { skills: [], skills_enabled: true };
+    fireEvent.click(useAllSwitch());
+    mockFormValues = { skills: [], skills_enabled: true, skills_scope: SkillsScope.all };
     rerender(<ToolsSection agentId="b" />);
     mockSetValue.mockClear();
-    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.click(useAllSwitch());
     expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
     expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skill_authoring_enabled', true, {
+      shouldDirty: true,
+    });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_scope', SkillsScope.none, {
+      shouldDirty: true,
+    });
   });
 
-  test('turning it off with nothing stashed disables the master flag', () => {
-    mockFormValues = { skills: [], skills_enabled: true };
+  test('turning use-all off with nothing stashed keeps authoring enabled', () => {
+    mockFormValues = { skills: [], skills_enabled: true, skills_scope: SkillsScope.all };
     render(<ToolsSection agentId="a" />);
-    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.click(useAllSwitch());
     expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
     expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skill_authoring_enabled', true, {
+      shouldDirty: true,
+    });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_scope', SkillsScope.none, {
+      shouldDirty: true,
+    });
   });
 });

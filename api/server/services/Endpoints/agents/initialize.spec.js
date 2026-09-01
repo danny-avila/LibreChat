@@ -549,6 +549,41 @@ describe('initializeClient — processAgent ACL gate', () => {
     expect(initializeParams.skillAuthoringAvailable).toBe(true);
   });
 
+  it('enables standalone authoring without exposing the persisted agent skill catalog', async () => {
+    const endpointOption = makeEndpointOption();
+    endpointOption.agent = Promise.resolve({
+      id: PRIMARY_ID,
+      name: 'Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+      skills: [],
+      skills_enabled: false,
+      skill_authoring_enabled: true,
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(true);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+
+    const initializeParams = mockInitializeAgent.mock.calls[0][0];
+    expect(initializeParams.accessibleSkillIds).toEqual([]);
+    expect(initializeParams.skillAuthoringAvailable).toBe(true);
+  });
+
   it('loads model validation and skill permissions without serial waits', async () => {
     const models = deferred();
     const createPermission = deferred();

@@ -41,6 +41,7 @@ const {
 const {
   Time,
   Tools,
+  SkillsScope,
   CacheKeys,
   Constants,
   FileSources,
@@ -241,10 +242,26 @@ const blockFilteredAgentContent = async (req, res, agentData) => {
 
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
   const skillScopeEnabled = agent.skills_enabled === true;
+  const configuredScope = agent.skills_scope;
   delete agent.skills_enabled;
+  delete agent.skills_scope;
 
   if (!skillScopeEnabled) {
     delete agent.skills;
+    return agent;
+  }
+
+  if (configuredScope === SkillsScope.none) {
+    delete agent.skills;
+    agent.skills_enabled = true;
+    agent.skills_scope = SkillsScope.none;
+    return agent;
+  }
+
+  if (configuredScope === SkillsScope.all) {
+    delete agent.skills;
+    agent.skills_enabled = true;
+    agent.skills_scope = SkillsScope.all;
     return agent;
   }
 
@@ -253,6 +270,9 @@ const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
     // Empty allowlist means the viewer's full accessible catalog.
     delete agent.skills;
     agent.skills_enabled = true;
+    if (configuredScope === SkillsScope.selected) {
+      agent.skills_scope = SkillsScope.selected;
+    }
     return agent;
   }
 
@@ -262,11 +282,18 @@ const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
 
   if (visibleSkills.length === 0) {
     delete agent.skills;
+    if (configuredScope === SkillsScope.selected) {
+      agent.skills_enabled = true;
+      agent.skills_scope = SkillsScope.selected;
+    }
     return agent;
   }
 
   agent.skills = visibleSkills;
   agent.skills_enabled = true;
+  if (configuredScope === SkillsScope.selected) {
+    agent.skills_scope = SkillsScope.selected;
+  }
   return agent;
 };
 
