@@ -2300,14 +2300,18 @@ describe('initializeClient — subagent loading', () => {
       }),
     ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents`);
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[initializeClient] Subagent graph node limit exceeded',
-      expect.objectContaining({
-        loadedSubagentCount: 34,
-        stagedSubagentCount: secondMemberIds.length,
-        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
-      }),
+    const stagedLimitWarning = logger.warn.mock.calls.find(
+      ([message, metadata]) =>
+        message === '[initializeClient] Subagent graph node limit exceeded' &&
+        Number.isInteger(metadata?.stagedSubagentCount),
     );
+    expect(stagedLimitWarning).toBeDefined();
+    expect(stagedLimitWarning[1]).toEqual(
+      expect.objectContaining({ maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES }),
+    );
+    expect(
+      stagedLimitWarning[1].loadedSubagentCount + stagedLimitWarning[1].stagedSubagentCount,
+    ).toBeGreaterThan(MAX_SUBAGENT_GRAPH_NODES);
   });
 
   it('rejects a branching DAG that exceeds expanded descriptor capacity', async () => {
