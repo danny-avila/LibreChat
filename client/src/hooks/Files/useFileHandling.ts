@@ -35,9 +35,9 @@ import {
   validateFileDuplicates,
 } from '~/utils';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
+import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
-import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
 import { useChatContext } from '~/Providers/ChatContext';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useClientResize from './useClientResize';

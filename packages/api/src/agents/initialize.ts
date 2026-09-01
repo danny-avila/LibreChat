@@ -80,6 +80,12 @@ import {
   getThreadData,
 } from '~/utils';
 import {
+  isCodeFileToolName,
+  registerCodeExecutionTools,
+  registerFileAuthoringTools,
+  isFileAuthoringToolDefinition,
+} from './tools';
+import {
   normalizeServerName,
   requiresEphemeralUserConnection,
   splitMCPToolKey,
@@ -90,12 +96,6 @@ import {
   resolveCodeExecutionContext,
   type CodeExecutionContext,
 } from './execution';
-import {
-  isCodeFileToolName,
-  registerCodeExecutionTools,
-  registerFileAuthoringTools,
-  isFileAuthoringToolDefinition,
-} from './tools';
 import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
@@ -744,7 +744,7 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
       search?: boolean;
       codeRouteKey?: string;
       searchNamespaces?: string[];
-      screenCodeLiveness?: boolean;
+      hydrateProvisioned?: boolean;
     },
   ) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
@@ -1231,8 +1231,9 @@ export async function initializeAgent(
               (id): id is string => typeof id === 'string',
             ),
             /* With resendFiles on, getToolFilesByIds already loads provisioned files and
-             * the staleness probe sees them. Off, this query is the only one that runs. */
-            screenCodeLiveness: !resendFiles,
+             * both priming and the staleness probe see them. Off, this query is the only
+             * one that runs, for search as well as for code. */
+            hydrateProvisioned: !resendFiles,
           }) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
     ]);

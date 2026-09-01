@@ -10,8 +10,8 @@ import {
 } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
-import { useGetFileConfig } from '~/data-provider';
 import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
+import { useGetFileConfig } from '~/data-provider';
 import { isUnifiedUploadMode } from '~/utils';
 import AttachFileMenu from './AttachFileMenu';
 import AttachFile from './AttachFile';

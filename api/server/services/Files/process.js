@@ -23,6 +23,7 @@ const {
   canToolResourceConsume,
   isMessageFileUpload,
   isResponsesApiUpload,
+  isSpeechProviderConfigured,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -483,7 +484,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     fileConfig,
     endpoint: configEndpoint,
     useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
-    sttConfigured: appConfig?.speech?.stt != null,
+    sttConfigured: isSpeechProviderConfigured(appConfig?.speech?.stt),
   });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
@@ -781,7 +782,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     fileConfig,
     endpoint,
     useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
-    sttConfigured: appConfig?.speech?.stt != null,
+    sttConfigured: isSpeechProviderConfigured(appConfig?.speech?.stt),
   });
 
   /* Destination and acceptability are one decision, made by shared policy rather than
