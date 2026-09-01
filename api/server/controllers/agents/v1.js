@@ -267,7 +267,8 @@ const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
 
   const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
   if (configuredSkills.length === 0) {
-    // Empty allowlist means the viewer's full accessible catalog.
+    // Legacy empty allowlists mean the viewer's full accessible catalog;
+    // explicit selected scope remains an intentionally empty catalog.
     delete agent.skills;
     agent.skills_enabled = true;
     if (configuredScope === SkillsScope.selected) {

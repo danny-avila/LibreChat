@@ -149,7 +149,7 @@ describe('skillsSelectionTransition', () => {
     expect(skillsSelectionTransition(['s1'], true, false, SkillsScope.selected)).toEqual({});
   });
 
-  test('clearing the selection keeps skills enabled with an empty catalog', () => {
+  test('clearing the selection keeps the capability enabled in authoring-only mode', () => {
     expect(skillsSelectionTransition([], true, false, SkillsScope.selected)).toEqual({
       enabled: false,
       authoringEnabled: true,
