@@ -542,6 +542,48 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
       },
     ]);
   });
+
+  it('falls through to per-skill upload when codeEnvRef version is stale', async () => {
+    const listSkillFiles = jest.fn().mockResolvedValue([
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+        codeEnvRef: {
+          kind: 'skill',
+          id: SKILL_ID.toString(),
+          storage_session_id: 'session-stale',
+          file_id: 'file-stale',
+          version: SKILL_VERSION - 1, // stale: one version behind
+        },
+      },
+    ]);
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      storage_session_id: 'session-fresh',
+      files: [{ fileId: 'file-fresh', filename: 'skills/brand-guidelines/references/style.md' }],
+    });
+    const getStrategyFunctions = jest.fn().mockReturnValue({
+      getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from('style'))),
+    });
+    const getSessionInfo = jest.fn();
+    const deps = makeDeps({
+      codeEnvAvailable: true,
+      listSkillFiles,
+      batchUploadCodeEnvFiles,
+      getStrategyFunctions,
+      getSessionInfo,
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    const result = await primeInvokedSkills(deps);
+
+    expect(getSessionInfo).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(1);
+    const codeSession = result.initialSessions?.get('execute_code');
+    expect(codeSession?.files?.[0]?.version).toBe(SKILL_VERSION);
+  });
 });
 
 describe('primeInvokedSkillsForProfiles', () => {
@@ -833,6 +875,44 @@ describe('primeSkillFiles — resource identity propagation', () => {
         version: SKILL_VERSION,
       },
     ]);
+  });
+
+  it('reuploads cached refs from an older skill version', async () => {
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      storage_session_id: 'session-fresh',
+      files: [
+        { fileId: 'file-fresh', filename: 'skills/brand-guidelines/references/style.md' },
+        { fileId: 'skill-md', filename: 'skills/brand-guidelines/SKILL.md' },
+      ],
+    });
+    const getSessionInfo = jest.fn();
+    const deps = makeSkillFilesDeps({
+      skillFiles: [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 256,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'session-stale',
+            file_id: 'file-stale',
+            version: SKILL_VERSION - 1,
+          },
+        },
+      ],
+      batchUploadCodeEnvFiles,
+      getSessionInfo,
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    const result = await primeSkillFiles(deps);
+
+    expect(getSessionInfo).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(1);
+    expect(result?.files[0]).toEqual(expect.objectContaining({ version: SKILL_VERSION }));
   });
 
   it('reuploads a cached ref that belongs to the other execution profile', async () => {

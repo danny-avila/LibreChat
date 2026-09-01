@@ -96,6 +96,7 @@ export enum QueryKeys {
   parentSubagents = 'parentSubagents',
   subagentThread = 'subagentThread',
   codeEnvironments = 'codeEnvironments',
+  agentQueuedTurns = 'agentQueuedTurns',
 }
 
 // Dynamic query keys that require parameters
@@ -105,6 +106,8 @@ export const DynamicQueryKeys = {
 
 export enum MutationKeys {
   subagentControl = 'subagentControl',
+  enqueueAgentQueuedTurn = 'enqueueAgentQueuedTurn',
+  cancelAgentQueuedTurn = 'cancelAgentQueuedTurn',
   updateLangfuseConnection = 'updateLangfuseConnection',
   testLangfuseConnection = 'testLangfuseConnection',
   createAgentApiKey = 'createAgentApiKey',

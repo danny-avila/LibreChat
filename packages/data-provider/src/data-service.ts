@@ -6,6 +6,7 @@ import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
 import { uploadEventStream } from './upload';
 import * as mcp from './types/mcpServers';
+import * as qt from './types/queuedTurns';
 import * as sch from './types/schedules';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
@@ -89,7 +90,9 @@ export function getFavorites(): Promise<q.TUserFavorite[]> {
 }
 
 export function updateFavorites(favorites: q.TUserFavorite[]): Promise<q.TUserFavorite[]> {
-  return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
+  return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, {
+    favorites,
+  });
 }
 
 /** Tool favorites — starred marketplace items (builtins, tools, MCP servers, skills). */
@@ -152,7 +155,10 @@ export function updateSharedLink(
   targetMessageId?: string,
   snapshotFiles?: boolean,
 ): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId, snapshotFiles });
+  return request.patch(endpoints.updateSharedLink(shareId), {
+    targetMessageId,
+    snapshotFiles,
+  });
 }
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
@@ -899,7 +905,9 @@ export function forkSharedConversation(
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
-  return request.deleteWithOptions(endpoints.deleteConversation(), { data: { arg: payload } });
+  return request.deleteWithOptions(endpoints.deleteConversation(), {
+    data: { arg: payload },
+  });
 }
 
 export function clearAllConversations(): Promise<unknown> {
@@ -961,7 +969,9 @@ export function assignConversationToProject(
   payload: t.TAssignConversationToProjectRequest,
 ): Promise<t.TAssignConversationToProjectResponse> {
   const { conversationId, projectId } = payload;
-  return request.put(endpoints.projectConversation(conversationId), { projectId });
+  return request.put(endpoints.projectConversation(conversationId), {
+    projectId,
+  });
 }
 
 export function pinConversation(
@@ -984,7 +994,9 @@ export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown
     throw new Error('conversationId is required');
   }
 
-  return request.put(endpoints.messages({ conversationId, messageId }), { text });
+  return request.put(endpoints.messages({ conversationId, messageId }), {
+    text,
+  });
 }
 
 export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
@@ -993,7 +1005,10 @@ export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<
     throw new Error('conversationId is required');
   }
 
-  return request.put(endpoints.messages({ conversationId, messageId }), { text, index });
+  return request.put(endpoints.messages({ conversationId, messageId }), {
+    text,
+    index,
+  });
 }
 
 export const editArtifact = async ({
@@ -1123,6 +1138,25 @@ export function listSkills(params?: sk.TSkillListRequest): Promise<sk.TSkillList
 
 export function getSchedules(): Promise<sch.TSchedulesResponse> {
   return request.get(endpoints.schedules());
+}
+
+export function enqueueAgentQueuedTurn(
+  payload: qt.TEnqueueAgentQueuedTurnRequest,
+): Promise<qt.TEnqueueAgentQueuedTurnResponse> {
+  return request.post(endpoints.agentQueuedTurns(), payload);
+}
+
+export function listAgentQueuedTurns(
+  conversationId: string,
+  clientRequestIds?: string[],
+): Promise<qt.TListAgentQueuedTurnsResponse> {
+  return request.get(endpoints.agentQueuedTurnsByConversation(conversationId, clientRequestIds));
+}
+
+export function cancelAgentQueuedTurn(
+  queuedTurnId: string,
+): Promise<qt.TCancelAgentQueuedTurnResponse> {
+  return request.delete(endpoints.agentQueuedTurn(queuedTurnId));
 }
 
 export function getSchedule(id: string): Promise<sch.TSchedule> {
@@ -1465,7 +1499,10 @@ export const updateMemory = (
   originalKey?: string,
   agentId?: string,
 ): Promise<q.UpdateMemoryResponse> => {
-  return request.patch(endpoints.memory(originalKey || key, agentId), { key, value });
+  return request.patch(endpoints.memory(originalKey || key, agentId), {
+    key,
+    value,
+  });
 };
 
 export const updateMemoryById = (

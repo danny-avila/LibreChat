@@ -1,11 +1,14 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { act, fireEvent, render as rtlRender, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import type { ChildActivity } from './adapters';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
+import { ChatSurfaceHarness } from 'test/harness';
 
-const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: RecoilRoot });
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+  <ChatSurfaceHarness>{children}</ChatSurfaceHarness>
+);
+const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: Wrapper });
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -287,7 +290,7 @@ describe('SubagentActivity', () => {
     expect(screen.getByTestId('tool-approval')).toBeInTheDocument();
   });
 
-  it('marks bounded tool details as shortened without claiming history is missing', () => {
+  it('renders bounded tool details without any shortening caption', () => {
     render(
       <SubagentActivity
         activity={{
@@ -307,7 +310,9 @@ describe('SubagentActivity', () => {
     );
 
     expect(screen.queryByText('bounded input')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_activity_details_truncated')).toBeInTheDocument();
+    expect(
+      screen.queryByText('com_ui_subagent_activity_details_truncated'),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
   });
 

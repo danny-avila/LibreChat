@@ -906,6 +906,18 @@ export class InMemoryJobStore implements IJobStoreV2 {
     return false;
   }
 
+  async getIdempotencyClaim(key: string): Promise<IdempotencyClaimValue | null> {
+    const existing = this.idempotencyClaims.get(key);
+    if (existing == null) {
+      return null;
+    }
+    if (existing.expiresAt <= Date.now()) {
+      this.idempotencyClaims.delete(key);
+      return null;
+    }
+    return { ...existing.value };
+  }
+
   async takeoverIdempotencyKey(
     key: string,
     expected: IdempotencyClaimValue,

@@ -523,20 +523,30 @@ function sendSettledGeneration(
   conversationId,
   startupTelemetry,
   generationProtocolVersion,
+  generationCreatedAt,
 ) {
   startupTelemetry?.end('deduplicated');
   if (generationProtocolVersion < GENERATION_PROTOCOL_V2) {
     return sendGenerationJson(
       res,
       200,
-      { streamId, conversationId, status: 'resumed' },
+      {
+        streamId,
+        conversationId,
+        ...(generationCreatedAt != null && { generationCreatedAt }),
+        status: 'resumed',
+      },
       generationProtocolVersion,
     );
   }
   return sendGenerationJson(
     res,
     200,
-    { conversationId, status: 'settled' },
+    {
+      conversationId,
+      ...(generationCreatedAt != null && { generationCreatedAt }),
+      status: 'settled',
+    },
     generationProtocolVersion,
   );
 }
@@ -753,6 +763,55 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     req._isAgentTrigger === true &&
     !isNewConvo &&
     (parentMessageId !== Constants.NO_PARENT || isBoundEventContinuation);
+  const queuedTurnAdmissionSource = isTriggerContinuation
+    ? req.body?.agentContinuationAdmission
+    : undefined;
+  const hasQueuedTurnAdmissionSource = queuedTurnAdmissionSource != null;
+  const verifyQueuedTurnAdmission = async (generationId, generationCreatedAt) => {
+    if (!hasQueuedTurnAdmissionSource) {
+      return true;
+    }
+    if (
+      typeof clientRequestId !== 'string' ||
+      !Number.isSafeInteger(generationCreatedAt) ||
+      generationCreatedAt < 0
+    ) {
+      return false;
+    }
+    try {
+      const {
+        verifyAgentQueuedTurnExecutionAdmission,
+      } = require('~/server/services/Agents/triggers');
+      const confirmed = await verifyAgentQueuedTurnExecutionAdmission(queuedTurnAdmissionSource, {
+        userId,
+        ...(tenantId != null && { tenantId }),
+        conversationId,
+        clientRequestId,
+        generationId,
+        generationCreatedAt,
+      });
+      return confirmed === true;
+    } catch (error) {
+      logger.warn(
+        '[ResumableAgentController] Deduplicated queued-turn admission is not confirmed',
+        error,
+      );
+      return false;
+    }
+  };
+  const rejectUnconfirmedQueuedTurnAdmission = () => {
+    res.set('Retry-After', '1');
+    startupTelemetry?.end('deduplicated');
+    return sendGenerationJson(
+      res,
+      503,
+      {
+        code: 'SERVER_NOT_READY',
+        error: 'Queued turn execution is still being confirmed. Please retry shortly.',
+      },
+      generationProtocolVersion,
+    );
+  };
 
   if (
     await isUnpersistedPreliminaryParent({
@@ -942,6 +1001,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               ? GENERATION_PROTOCOL_V2
               : 1,
           );
+          if (
+            !(await verifyQueuedTurnAdmission(
+              existingLiveGeneration.streamId,
+              existingLiveGeneration.startedAt,
+            ))
+          ) {
+            return rejectUnconfirmedQueuedTurnAdmission();
+          }
           startupTelemetry?.end('deduplicated');
           return sendGenerationJson(
             res,
@@ -1006,12 +1073,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // generation (usually fast completion + cleanup), never an abandoned
         // pre-create lease that may be taken over and billed again. There is no
         // attachable stream; the settled response refetches persisted history.
+        if (!(await verifyQueuedTurnAdmission(existingStreamId, claim.existing.startedAt))) {
+          return rejectUnconfirmedQueuedTurnAdmission();
+        }
         return sendSettledGeneration(
           res,
           existingStreamId,
           claim.existing.conversationId,
           startupTelemetry,
           generationProtocolVersion,
+          claim.existing.startedAt,
         );
       }
       if (!liveJob && isLegacyTokenlessClaim && claimAgeMs >= IDEMPOTENCY_STARTUP_GRACE_MS) {
@@ -1020,6 +1091,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
          * attach/refetch path: this covers fast completion without starting a
          * second billed generation, while an abandoned pre-create claim ages
          * out under the old server's bounded TTL. */
+        if (!(await verifyQueuedTurnAdmission(existingStreamId, claim.existing.startedAt))) {
+          return rejectUnconfirmedQueuedTurnAdmission();
+        }
         return sendSettledGeneration(
           res,
           existingStreamId,
@@ -1108,6 +1182,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           (startedAt != null && liveJob.createdAt !== startedAt) ||
           (liveClientRequestId != null && liveClientRequestId !== clientRequestId);
         if (replacedGeneration) {
+          if (!(await verifyQueuedTurnAdmission(existingStreamId, startedAt))) {
+            return rejectUnconfirmedQueuedTurnAdmission();
+          }
           // streamId === conversationId, so a later turn reuses the same route.
           // Never pair this stale POST's optimistic submission with that newer
           // job's SSE snapshot. If the replacement is still active, distinguish
@@ -1141,6 +1218,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             claim.existing.conversationId,
             startupTelemetry,
             generationProtocolVersion,
+            claim.existing.startedAt,
           );
         }
         if (liveClientRequestId == null && !isLegacyTokenlessClaim) {
@@ -1164,6 +1242,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           clientRequestId,
           streamId: existingStreamId,
         });
+        if (!(await verifyQueuedTurnAdmission(existingStreamId, liveJob.createdAt))) {
+          return rejectUnconfirmedQueuedTurnAdmission();
+        }
         startupTelemetry?.end('deduplicated');
         return sendGenerationJson(
           res,
@@ -1421,6 +1502,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     startupTelemetry?.mark('job_created');
     generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
     jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+    req.turnStartedAt = jobCreatedAt;
     providerExecutionId = job.metadata?.providerExecutionId;
 
     /** Authentication can precede a slow admission path. Recheck the durable
@@ -1518,7 +1600,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         status: 409,
       });
     }
-
     acceptAgentStartupTelemetry(req, streamId);
     startupTelemetry?.mark('metadata_persisted');
     req._resumableStreamId = streamId;
@@ -1543,14 +1624,29 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       recoveredSteerCommitted = true;
     };
 
-    // Send JSON response IMMEDIATELY so client can connect to SSE stream
-    // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
-    sendGenerationJson(
-      res,
-      200,
-      { streamId, conversationId, generationCreatedAt: jobCreatedAt, status: 'started' },
-      generationProtocolVersion,
-    );
+    // Ordinary clients receive the stream id immediately so they can attach
+    // before tool loading emits events. Source-owned loopback work delays only
+    // until its provider invocation and Mongo receipt exist.
+    let generationStartResponseSent = false;
+    const sendGenerationStarted = () => {
+      if (generationStartResponseSent || res.headersSent) {
+        return;
+      }
+      generationStartResponseSent = true;
+      sendGenerationJson(
+        res,
+        200,
+        { streamId, conversationId, generationCreatedAt: jobCreatedAt, status: 'started' },
+        generationProtocolVersion,
+      );
+    };
+    /** Ordinary clients need the stream id before tool discovery. A queued
+     * source instead keeps its local loopback response open until the provider
+     * invocation exists, so an accepted HTTP result can never retire text that
+     * died between job creation and provider startup. */
+    if (!hasQueuedTurnAdmissionSource) {
+      sendGenerationStarted();
+    }
 
     await attachConversationCreatedAt(req, conversationId, conversationAnchorPromise).then(() =>
       startupTelemetry?.mark('conversation_resolved'),
@@ -2298,6 +2394,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             })
           : client.sendMessage(text, messageOptions);
 
+        if (hasQueuedTurnAdmissionSource) {
+          const {
+            settleAgentQueuedTurnExecutionAdmission,
+          } = require('~/server/services/Agents/triggers');
+          await settleAgentQueuedTurnExecutionAdmission(queuedTurnAdmissionSource, {
+            userId,
+            ...(tenantId != null && { tenantId }),
+            conversationId,
+            clientRequestId,
+            generationId: streamId,
+            generationCreatedAt: jobCreatedAt,
+          });
+          sendGenerationStarted();
+        }
+
         if (titleEligible && titleTiming === 'immediate') {
           immediateTitlePromise = addTitle(req, {
             text: text || getAttachmentTitleText(req.body.files),
@@ -2780,6 +2891,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
         acceptsTitleEvents = false;
         resolveConvoReady();
+        if (!res.headersSent) {
+          sendGenerationJson(
+            res,
+            500,
+            { error: error.message || 'Failed to start generation' },
+            generationProtocolVersion,
+          );
+        }
         try {
           await recordEventActorPersistenceFailure(error);
         } catch (reconciliationError) {
@@ -2899,6 +3018,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
         );
         startupTelemetry?.end('error', err);
+        if (!res.headersSent) {
+          sendGenerationJson(
+            res,
+            500,
+            { error: err.message || 'Failed to start generation' },
+            generationProtocolVersion,
+          );
+        }
         let errorFinalized = false;
         if (!pausePersistenceFailed) {
           errorFinalized =

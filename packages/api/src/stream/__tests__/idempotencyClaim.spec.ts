@@ -64,6 +64,20 @@ describe('InMemoryJobStore.claimIdempotencyKey', () => {
     await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
   });
 
+  it('reads an idempotency receipt without creating a missing claim', async () => {
+    const receipt = {
+      streamId: 's1',
+      conversationId: 'c1',
+      claimToken: 'token-1',
+      claimedAt: 1,
+      startedAt: 2,
+    };
+    await expect(store.getIdempotencyClaim('user:missing')).resolves.toBeNull();
+    await store.claimIdempotencyKey('user:existing', receipt, 1200);
+    await expect(store.getIdempotencyClaim('user:existing')).resolves.toEqual(receipt);
+    await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
+  });
+
   it('does not report an expired claim as existing', async () => {
     jest.useFakeTimers();
     try {
@@ -232,6 +246,27 @@ describe('GenerationJobManager start-generation claim', () => {
     await expect(manager.hasGenerationClaim('user-1', 'req-1')).resolves.toBe(true);
     await expect(manager.hasGenerationClaim('user-1', 'req-2')).resolves.toBe(false);
     await expect(manager.hasGenerationClaim('user-2', 'req-1')).resolves.toBe(false);
+  });
+
+  it('reads durable admission evidence after the live job is gone', async () => {
+    await store.claimIdempotencyKey(
+      '{stream-a}:user-1:req-1',
+      {
+        streamId: 'stream-a',
+        conversationId: 'convo-a',
+        claimToken: 'claim-token',
+        claimedAt: 1,
+        startedAt: 42,
+      },
+      1200,
+    );
+
+    await expect(
+      manager.getGenerationAdmissionEvidence('user-1', 'req-1', 'stream-a', 'convo-a'),
+    ).resolves.toEqual({ generationId: 'stream-a', generationCreatedAt: 42 });
+    await expect(
+      manager.getGenerationAdmissionEvidence('user-1', 'req-2', 'stream-a', 'convo-a'),
+    ).resolves.toBeNull();
   });
 
   it('claims the exact legacy key before the same-slot primary with staggered TTLs', async () => {

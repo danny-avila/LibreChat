@@ -71,24 +71,6 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     minTags: 0,
     maxTags: 4,
   },
-  imageDetail: {
-    key: 'imageDetail',
-    label: 'com_endpoint_plug_image_detail',
-    labelCode: true,
-    description: 'com_endpoint_openai_detail',
-    descriptionCode: true,
-    type: 'enum',
-    default: ImageDetail.auto,
-    component: 'slider',
-    options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
-    enumMappings: {
-      [ImageDetail.low]: 'com_ui_low',
-      [ImageDetail.auto]: 'com_ui_auto',
-      [ImageDetail.high]: 'com_ui_high',
-    },
-    optionType: 'conversation',
-    columnSpan: 2,
-  },
 };
 
 const createDefinition = (
@@ -147,6 +129,26 @@ export const librechat = {
     placeholderCode: true,
     optionType: 'model',
   } as const,
+  /** Controls how LibreChat encodes image content blocks, not a provider request
+   * parameter — so it belongs to this group and is stripped from model options. */
+  imageDetail: {
+    key: 'imageDetail',
+    label: 'com_endpoint_plug_image_detail',
+    labelCode: true,
+    description: 'com_endpoint_openai_detail',
+    descriptionCode: true,
+    type: 'enum',
+    default: ImageDetail.auto,
+    component: 'slider',
+    options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
+    enumMappings: {
+      [ImageDetail.low]: 'com_ui_low',
+      [ImageDetail.auto]: 'com_ui_auto',
+      [ImageDetail.high]: 'com_ui_high',
+    },
+    optionType: 'conversation',
+    columnSpan: 2,
+  } as SettingDefinition,
   fileTokenLimit: {
     key: 'fileTokenLimit',
     label: 'com_ui_file_token_limit',
@@ -887,7 +889,7 @@ const openAI: SettingsConfiguration = [
   openAIParams.presence_penalty,
   baseDefinitions.stop,
   librechat.resendFiles,
-  baseDefinitions.imageDetail,
+  librechat.imageDetail,
   openAIParams.web_search,
   openAIParams.reasoning_effort,
   openAIParams.useResponsesApi,
@@ -920,7 +922,7 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.presence_penalty,
   baseDefinitions.stop,
   librechat.resendFiles,
-  baseDefinitions.imageDetail,
+  librechat.imageDetail,
   openAIParams.reasoning_effort,
   openAIParams.reasoning_summary,
   openAIParams.reasoning_mode,
