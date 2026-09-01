@@ -1,4 +1,5 @@
 const express = require('express');
+const { ResourceCapabilityMap } = require('@librechat/data-schemas');
 const {
   Tokenizer,
   generateCheckAccess,
@@ -12,7 +13,8 @@ const {
   ResourceType,
   Permissions,
 } = require('librechat-data-provider');
-const { findAccessibleResources } = require('~/server/services/PermissionService');
+const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const {
   getAllUserMemories,
   getUserMemories,
@@ -23,6 +25,7 @@ const {
   setMemory,
   setMemoryById,
   deleteMemoryById,
+  getAgent,
   getAgents,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
@@ -68,6 +71,33 @@ router.use(requireJwtAuth);
 /** Normalizes the optional agent partition param; undefined = shared personal pool */
 const getAgentIdParam = (value) =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+
+/** Resolves whether the requester can use a client-selected agent partition. */
+const getAgentPartitionAccess = async (user, agentId) => {
+  const agent = await getAgent({ id: agentId });
+  if (!agent) {
+    return 'not_found';
+  }
+
+  let canManageAgents = false;
+  try {
+    canManageAgents = await hasCapability(user, ResourceCapabilityMap[ResourceType.AGENT]);
+  } catch (_error) {
+    canManageAgents = false;
+  }
+  if (canManageAgents) {
+    return 'allowed';
+  }
+
+  const canViewAgent = await checkPermission({
+    userId: user.id,
+    role: user.role,
+    resourceType: ResourceType.AGENT,
+    resourceId: agent._id,
+    requiredPermission: PermissionBits.VIEW,
+  });
+  return canViewAgent ? 'allowed' : 'denied';
+};
 
 /** Resolves agent display names for agent-partitioned memories, restricted
  *  to agents the requester can VIEW — `agentId` is caller-supplied on write,
@@ -154,6 +184,20 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
 
   if (typeof value !== 'string' || value.trim() === '') {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
+  }
+
+  try {
+    if (agentId) {
+      const agentAccess = await getAgentPartitionAccess(req.user, agentId);
+      if (agentAccess === 'not_found') {
+        return res.status(404).json({ error: 'Agent not found.' });
+      }
+      if (agentAccess === 'denied') {
+        return res.status(403).json({ error: 'Agent access denied.' });
+      }
+    }
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to validate agent access.' });
   }
 
   const appConfig = req.config;
