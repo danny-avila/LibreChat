@@ -2230,6 +2230,52 @@ describe('primeResources', () => {
       expect(statefulFile.metadata?.codeEnvRefs?.['stateful:abc']).toEqual(statefulRef);
     });
 
+    it('keeps a usable stateful reference when the default session behind it died', async () => {
+      /* Liveness is probed on the default route only, so a dead default session says
+       * nothing about the stateful deployment this turn runs on. Re-uploading there is
+       * redundant, and a failure would abort a tool call the existing file could serve. */
+      const defaultRef = {
+        kind: 'user' as const,
+        id: 'user1',
+        storage_session_id: 'sess-default',
+        file_id: 'remote-default',
+      };
+      const statefulRef = {
+        kind: 'user' as const,
+        id: 'user1',
+        storage_session_id: 'sess-stateful',
+        file_id: 'remote-stateful',
+        executionProfile: 'stateful' as const,
+        executionRouteKey: 'stateful:abc',
+      };
+      const bothRoutesFile = makeCodeFile({
+        file_id: 'both-routes-file',
+        metadata: {
+          codeEnvRef: defaultRef,
+          codeEnvRefs: { default: defaultRef, 'stateful:abc': statefulRef },
+        },
+      });
+      const checkSessionsAlive = jest.fn().mockResolvedValue(new Set<string>());
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([bothRoutesFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive,
+        codeRouteKey: 'stateful:abc',
+      });
+
+      expect(checkSessionsAlive).not.toHaveBeenCalled();
+      expect(result.provisionState?.codeEnvFiles ?? []).toEqual([]);
+      expect(bothRoutesFile.metadata?.codeEnvRefs?.['stateful:abc']).toEqual(statefulRef);
+    });
+
     it('queues a file whose only reference names another code route', async () => {
       /* Priming resolves the active route alone, so a reference to a different deployment
        * would leave the sandbox call without the attachment. */

@@ -692,6 +692,33 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
  * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
+/** Capability gate for each tool that can consume a file kept off the model path. */
+const CONSUMER_CAPABILITIES = [
+  [EToolResources.execute_code, AgentCapabilities.execute_code],
+  [EToolResources.file_search, AgentCapabilities.file_search],
+];
+
+/**
+ * Narrows an agent's tools to those this deployment will actually honor. Filing a file
+ * under a disabled capability fails the upload on a rule the agent's tool order picked.
+ */
+const filterEnabledConsumers = async (req, agentTools) => {
+  if (!agentTools?.length) {
+    return agentTools;
+  }
+  const candidates = CONSUMER_CAPABILITIES.filter(([resource]) => agentTools.includes(resource));
+  if (candidates.length === 0) {
+    return agentTools;
+  }
+  const enabled = await Promise.all(
+    candidates.map(([, capability]) => checkCapability(req, capability)),
+  );
+  const disabled = new Set(
+    candidates.filter((_, index) => !enabled[index]).map(([resource]) => resource),
+  );
+  return disabled.size > 0 ? agentTools.filter((tool) => !disabled.has(tool)) : agentTools;
+};
+
 const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   // TODO: check and potentially fix — deferred/provider files may be orphaned if effectiveToolResource is undefined
   const { file } = req;
@@ -726,7 +753,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     toolResource: tool_resource,
     deliveryPath: llmDeliveryPath,
     mimeType: file.mimetype,
-    agentTools: metadata.agentTools,
+    agentTools: await filterEnabledConsumers(req, metadata.agentTools),
     hasAgent: agent_id != null,
     isMessageAttachment: messageAttachment,
   });

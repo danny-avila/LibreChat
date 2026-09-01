@@ -51,7 +51,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   getDeferredProvisionFiles: (
     fileIds: string[],
     ownerScope: FileOwnerScope,
-    resources?: { code?: boolean; search?: boolean; codeRouteKey?: string },
+    resources?: {
+      code?: boolean;
+      search?: boolean;
+      codeRouteKey?: string;
+      searchNamespaces?: string[];
+    },
   ) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
     filename: string;
@@ -311,7 +316,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function getDeferredProvisionFiles(
     fileIds: string[],
     ownerScope: FileOwnerScope,
-    resources: { code?: boolean; search?: boolean; codeRouteKey?: string } = {
+    resources: {
+      code?: boolean;
+      search?: boolean;
+      codeRouteKey?: string;
+      searchNamespaces?: string[];
+    } = {
       code: true,
       search: true,
     },
@@ -347,7 +357,24 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       missingConditions.push({ $nor: usableForRoute });
     }
     if (resources.search) {
-      missingConditions.push({ embedded: { $ne: true } });
+      /* The record-wide flag only says the file was embedded somewhere, so for a record
+       * whose vectors live in an agent namespace it cannot answer whether the namespace
+       * this turn searches has them. Membership is not known here, so a record missing
+       * from any candidate namespace is loaded and judged later, where it is. */
+      const namespaces = resources.searchNamespaces ?? [];
+      if (namespaces.length === 0) {
+        missingConditions.push({ embedded: { $ne: true } });
+      } else {
+        missingConditions.push({
+          $or: [
+            { context: { $ne: FileContext.agents }, embedded: { $ne: true } },
+            ...namespaces.map((namespace) => ({
+              context: FileContext.agents,
+              'metadata.embeddedEntities': { $ne: namespace },
+            })),
+          ],
+        });
+      }
     }
     if (missingConditions.length === 0) {
       return [];
