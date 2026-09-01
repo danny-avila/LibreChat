@@ -1,9 +1,14 @@
+import { useAtomValue } from 'jotai';
 import { useRef, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
+import {
+  unseenTabBadgeAtom,
+  replyNotificationsAtom,
+  replyNotificationSoundAtom,
+} from './replyNotificationSettings';
 import {
   isNotFoundError,
   findConvoInAllQueries,
@@ -11,7 +16,6 @@ import {
   isConvoInAggregateCaches,
 } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
-import store from '~/store';
 
 const AWAY_POLL_MS = 30_000;
 /**
@@ -186,9 +190,9 @@ const mergeTimestamps = async (
  */
 export default function useReplyWatcher() {
   const queryClient = useQueryClient();
-  const notificationsEnabled = useRecoilValue(store.replyNotifications);
-  const soundEnabled = useRecoilValue(store.replyNotificationSound);
-  const badgeEnabled = useRecoilValue(store.unseenTabBadge);
+  const notificationsEnabled = useAtomValue(replyNotificationsAtom);
+  const soundEnabled = useAtomValue(replyNotificationSoundAtom);
+  const badgeEnabled = useAtomValue(unseenTabBadgeAtom);
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = activeJobsData?.activeJobIds;
   const runningRef = useRef<Set<string> | null>(null);

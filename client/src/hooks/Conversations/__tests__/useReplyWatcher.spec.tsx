@@ -1,14 +1,17 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
+import { Provider as JotaiProvider, createStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
-import type { MutableSnapshot } from 'recoil';
 import type { ConversationCursorData } from '~/utils/convos';
+import {
+  unseenTabBadgeAtom,
+  replyNotificationsAtom,
+  replyNotificationSoundAtom,
+} from '../replyNotificationSettings';
 import useReplyWatcher from '../useReplyWatcher';
 import { isConversationUnseen } from '~/utils';
-import store from '~/store';
 
 const mockGetConversationById = jest.fn();
 const mockListConversations = jest.fn();
@@ -46,15 +49,14 @@ function setup(toggles: Toggles = {}) {
     pageParams: [null],
   });
 
-  const initialize = (snapshot: MutableSnapshot) => {
-    snapshot.set(store.replyNotifications, notifications);
-    snapshot.set(store.replyNotificationSound, sound);
-    snapshot.set(store.unseenTabBadge, badge);
-  };
+  const settings = createStore();
+  settings.set(replyNotificationsAtom, notifications);
+  settings.set(replyNotificationSoundAtom, sound);
+  settings.set(unseenTabBadgeAtom, badge);
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <RecoilRoot initializeState={initialize}>{children}</RecoilRoot>
+      <JotaiProvider store={settings}>{children}</JotaiProvider>
     </QueryClientProvider>
   );
 

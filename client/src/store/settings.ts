@@ -60,16 +60,6 @@ const localStorageAtoms = {
   newChatSwitchToHistory: atomWithLocalStorage('newChatSwitchToHistory', true),
   chatTitleInTab: atomWithLocalStorage(CHAT_TITLE_IN_TAB_KEY, true),
 
-  /**
-   * Reply-notification settings. These stay per-device rather than syncing with the account:
-   * browser notification permission and audio output are properties of the machine you are
-   * sitting at, so wanting a chime on a laptop implies nothing about wanting one on a phone.
-   * The seen state they react to does sync.
-   */
-  unseenTabBadge: atomWithLocalStorage('unseenTabBadge', true),
-  replyNotifications: atomWithLocalStorage('replyNotifications', false),
-  replyNotificationSound: atomWithLocalStorage('replyNotificationSound', false),
-
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
   /** What Enter does while a run is generating: steer (inject mid-run) or queue (send after). */

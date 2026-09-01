@@ -238,6 +238,27 @@ describe('useConversationSeen', () => {
     );
   });
 
+  it('withholds the acknowledgement when the messages revalidation failed', async () => {
+    /* A failed refetch returns the query to `idle` while the stale tree stays on screen, so
+       waiting only for the fetch to stop would credit a reply that never loaded. */
+    const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
+    mockMarkSeen.mockClear();
+
+    await act(async () => {
+      await queryClient
+        .prefetchQuery([QueryKeys.messages, CONVO_ID], () =>
+          Promise.reject(new Error('network down')),
+        )
+        .catch(() => undefined);
+    });
+
+    expect(queryClient.getQueryState([QueryKeys.messages, CONVO_ID])?.status).toBe('error');
+
+    act(() => result.current(true));
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
   it('re-measures the committed tree instead of trusting the old bottom report', async () => {
     /* The revalidated reply can extend past the viewport, and the fetch settles before React
        commits it: the stale near-bottom flag belongs to the old tree and must not acknowledge

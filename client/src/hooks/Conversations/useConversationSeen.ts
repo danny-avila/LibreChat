@@ -53,12 +53,16 @@ export default function useConversationSeen(
        background, and that tree's end marker reports the bottom of a reply the user has not
        seen. Acknowledging then would clear the indicator for a message that never rendered,
        so the check waits out the fetch; its success is a cache event the subscription below
-       turns into the re-check. */
-    const messagesFetchStatus = queryClient.getQueryState([
-      QueryKeys.messages,
-      conversationId,
-    ])?.fetchStatus;
-    if (messagesFetchStatus != null && messagesFetchStatus !== 'idle') {
+       turns into the re-check.
+       A failed revalidation returns the query to `idle` while keeping the stale tree on
+       screen, so waiting for the fetch to stop is not enough: the acknowledgement waits for a
+       fetch that actually succeeded. A query with no state at all is the direct-URL open,
+       whose own load is covered by the same subscription. */
+    const messagesQueryState = queryClient.getQueryState([QueryKeys.messages, conversationId]);
+    if (messagesQueryState != null && messagesQueryState.fetchStatus !== 'idle') {
+      return;
+    }
+    if (messagesQueryState?.status === 'error') {
       return;
     }
     const cached = findConvoInAllQueries(queryClient, conversationId);
