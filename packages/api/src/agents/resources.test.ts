@@ -2637,6 +2637,36 @@ describe('primeResources', () => {
       expect(result.provisionState).toBeUndefined();
     });
 
+    it('keeps a type the sandbox cannot take out of the code queue', async () => {
+      /* Uploading it aborts the whole tool batch over a file that was only ever meant for
+       * provider delivery. */
+      const clip = {
+        user: 'user1',
+        file_id: 'clip-file',
+        filename: 'clip.mp4',
+        filepath: '/uploads/clip.mp4',
+        object: 'file',
+        type: 'video/mp4',
+        bytes: 4096,
+        embedded: false,
+        usage: 0,
+      } as TFile;
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([clip]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+      });
+
+      expect(result.provisionState?.codeEnvFiles ?? []).toEqual([]);
+    });
+
     it('keeps a type the vector store cannot read out of the search queue', async () => {
       /* Queueing it sends it to RAG on the next search call, and extraction refusing it
        * aborts the tool over a file that was never a search candidate. */

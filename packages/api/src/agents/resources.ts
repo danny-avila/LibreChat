@@ -495,7 +495,9 @@ const computeProvisionState = async ({
       continue;
     }
 
-    if (needsCodeEnv) {
+    /* Same question the search branch asks, and the same consequence: uploading a type
+     * the sandbox refuses aborts the tool batch over a file meant for the model. */
+    if (needsCodeEnv && canToolResourceConsume(EToolResources.execute_code, file.type ?? '')) {
       const legacyRef = file.metadata?.codeEnvRef;
       const isDefaultRoute = legacyRef != null && codeEnvRouteKey(legacyRef) === 'default';
       /* Liveness was probed on the default route, so it answers only for a turn running
