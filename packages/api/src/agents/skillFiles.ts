@@ -137,6 +137,14 @@ const uploadSlots = createConcurrencyLimiter(SKILL_UPLOAD_CONCURRENCY);
 const inflightPrimes = new Map<string, Promise<PrimeSkillFilesResult | null>>();
 
 type SkillUploadFiles = Array<{ stream: NodeJS.ReadableStream; filename: string }>;
+type SkillCodeEnvRef = Extract<CodeEnvRef, { kind: 'skill' }>;
+
+function isCurrentSkillRef(
+  ref: CodeEnvRef | undefined,
+  skillVersion: number,
+): ref is SkillCodeEnvRef {
+  return ref?.kind === 'skill' && ref.version === skillVersion;
+}
 
 function getRetryAfterMs(error: unknown): number | null {
   if (!isAxiosError(error) || error.response?.status !== 429) {
@@ -433,7 +441,7 @@ async function executePrimeSkillFiles(
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
     const allHaveRefs = skillFiles.every((sf) => {
       const ref = getCodeEnvRefForProfile(sf, executionRouteKey);
-      return ref !== undefined && ref.version === skill.version;
+      return isCurrentSkillRef(ref, skill.version);
     });
     if (allHaveRefs) {
       const refsBySession = new Map<string, CodeEnvRef>();
@@ -762,7 +770,8 @@ export async function primeInvokedSkills(
         })),
       );
       const resolvedWithRef = allResolved.filter(
-        (x) => x.ref !== undefined && x.ref.version === x.skill.version,
+        (entry): entry is typeof entry & { ref: SkillCodeEnvRef } =>
+          isCurrentSkillRef(entry.ref, entry.skill.version),
       );
 
       // Only use cache when ALL files have refs (no partial persistence)
