@@ -23,10 +23,11 @@ describe('buildAttachmentsByName', () => {
 
   it('keeps resolving when one stored file surfaces under two calls', () => {
     // Inherited across steps, or a regeneration that updated the record in
-    // place. One file, so nothing is ambiguous.
+    // place. One file, so nothing is ambiguous — and the later record wins,
+    // since that is the one carrying the fresher lifecycle fields.
     const first = attachment({ file_id: 'f1', toolCallId: 't1' } as Partial<TAttachment>);
     const again = attachment({ file_id: 'f1', toolCallId: 't2' } as Partial<TAttachment>);
-    expect(buildAttachmentsByName([first, again]).get('5_dti.png')).toBe(first);
+    expect(buildAttachmentsByName([first, again]).get('5_dti.png')).toBe(again);
   });
 
   it.each([
@@ -58,18 +59,48 @@ describe('buildAttachmentsByName', () => {
     expect(byName.get('other.png')).toBe(other);
   });
 
-  it('indexes whatever the caller passes — images being the caller contract', () => {
-    // ContentParts filters through `isImageAttachment` before calling: an
-    // `<img>` aimed at a CSV renders nothing, and claiming it would strip the
-    // file's download chip out of the media row too.
+  it('skips a file no <img> can display', () => {
+    // An `<img>` aimed at a CSV renders nothing; the file keeps its download
+    // chip instead.
     const csv = attachment({ filename: 'report.csv', filepath: '/api/files/report.csv' });
-    const images = [csv].filter((a) => a.filename?.endsWith('.png'));
-    expect(buildAttachmentsByName(images).has('report.csv')).toBe(false);
+    expect(buildAttachmentsByName([csv]).size).toBe(0);
+  });
+
+  it('indexes an image fallback that carries no dimensions', () => {
+    // An oversized output falls back to a download URL with an image name and
+    // no width/height. `<Image>` needs those to reserve layout space; a
+    // markdown `<img>` does not, and the URL serves the picture fine.
+    const fallback = attachment({ width: undefined, height: undefined } as Partial<TAttachment>);
+    expect(buildAttachmentsByName([fallback]).get('5_dti.png')).toBe(fallback);
+  });
+
+  it('resolves the latest record of one rewritten file', () => {
+    // A tool rewriting one path reuses its file_id; the later record carries
+    // the newer URL, so keeping the first would resolve to a stale one.
+    const first = attachment({ file_id: 'f1', filepath: '/api/f/a.png' } as Partial<TAttachment>);
+    const rewritten = attachment({
+      file_id: 'f1',
+      filepath: '/api/f/a.png?v=2',
+    } as Partial<TAttachment>);
+    expect(buildAttachmentsByName([first, rewritten]).get('5_dti.png')).toBe(rewritten);
   });
 
   it('skips attachments with nothing to point at', () => {
     expect(buildAttachmentsByName([attachment({ filepath: undefined })]).size).toBe(0);
     expect(buildAttachmentsByName([attachment({ filename: undefined })]).size).toBe(0);
+  });
+
+  it('keeps resolving after a rewritten file, without reading it as ambiguous', () => {
+    const first = attachment({ file_id: 'f1', filepath: '/api/f/a.png' } as Partial<TAttachment>);
+    const rewritten = attachment({
+      file_id: 'f1',
+      filepath: '/api/f/a.png?v=2',
+    } as Partial<TAttachment>);
+    const third = attachment({
+      file_id: 'f1',
+      filepath: '/api/f/a.png?v=3',
+    } as Partial<TAttachment>);
+    expect(buildAttachmentsByName([first, rewritten, third]).get('5_dti.png')).toBe(third);
   });
 
   it('returns one shared instance when nothing is indexable', () => {

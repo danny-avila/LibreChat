@@ -1,3 +1,4 @@
+import { imageExtRegex } from 'librechat-data-provider';
 import type { TAttachment, TFile } from 'librechat-data-provider';
 
 /** Sources the browser already resolves on its own. */
@@ -84,6 +85,13 @@ export function attachmentIdentity(attachment: TAttachment): string | undefined 
  * it does today, and the media row, which never lost either file, is where
  * both stay visible.
  *
+ * Only files an `<img>` can display are indexed — an image extension and a
+ * fetchable path. Deliberately NOT `isImageAttachment`, which additionally
+ * demands width and height: those exist so `<Image>` can reserve layout space,
+ * and a markdown `<img>` needs neither. Requiring them would drop the
+ * download-fallback an oversized output produces, which carries an image name
+ * and a working URL and displays perfectly well.
+ *
  * Identity is the stored file (`file_id ?? filepath`), not the call that
  * emitted it. One file surfacing under two calls — inherited across steps, or
  * a regeneration that updated the record in place — is one file and still
@@ -99,7 +107,7 @@ export function buildAttachmentsByName(
   const byName = new Map<string, TAttachment>();
   const ambiguous = new Set<string>();
   for (const attachment of attachments ?? []) {
-    if (!attachment?.filepath) {
+    if (!attachment?.filepath || !imageExtRegex.test(attachment.filename ?? '')) {
       continue;
     }
     const key = mediaNameKey(attachment.filename ?? '');
@@ -107,12 +115,16 @@ export function buildAttachmentsByName(
       continue;
     }
     const claimed = byName.get(key);
-    if (claimed == null) {
-      byName.set(key, attachment);
-    } else if (fileKeyOf(claimed) !== fileKeyOf(attachment)) {
+    if (claimed != null && fileKeyOf(claimed) !== fileKeyOf(attachment)) {
       ambiguous.add(key);
       byName.delete(key);
+      continue;
     }
+    /** New, or a fresher record of the SAME file — a tool rewriting one path
+     *  reuses its `file_id` and the later record carries the newer URL, so
+     *  keeping the first would resolve to a stale one. Matches what
+     *  `collectPhaseAttachments` and the attachment renderer both do. */
+    byName.set(key, attachment);
   }
   return byName.size === 0 ? EMPTY_ATTACHMENTS_BY_NAME : byName;
 }

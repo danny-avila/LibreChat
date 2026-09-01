@@ -26,7 +26,6 @@ import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceCh
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
-import { isImageAttachment } from './Parts/attachmentTypes';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
@@ -1064,22 +1063,16 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
    *  including the ones nested inside phase cards — resolves a bare
    *  `![DTI](5_dti.png)` against the files this turn actually produced.
    *
-   *  Only files that can render as images are indexed. Markdown emits an
-   *  `<img>` for `![report](report.csv)` too, and an `<img>` pointed at a CSV
-   *  displays nothing — resolving that would replace a working download chip
-   *  with a broken image, and claiming it would take the chip out of the media
-   *  row as well. `isImageAttachment` is the same predicate the attachment
-   *  renderer uses to decide what it can draw, so the two cannot disagree.
+   *  `buildAttachmentsByName` indexes only what an `<img>` can display, so a
+   *  `![report](report.csv)` keeps its download chip instead of resolving to a
+   *  picture element that shows nothing.
    *
    *  Memoized in two steps on purpose. `useAttachments` hands back a fresh
    *  `[]` whenever its inputs move, and a turn with no files is the common
    *  case — indexing through the shared empty map keeps the context value
    *  itself referentially stable there, so a churning array cannot push a new
    *  value at every markdown block in the message. */
-  const attachmentsByName = useMemo(
-    () => buildAttachmentsByName(attachments?.filter(isImageAttachment)),
-    [attachments],
-  );
+  const attachmentsByName = useMemo(() => buildAttachmentsByName(attachments), [attachments]);
   const media = useMemo(() => ({ attachmentsByName }), [attachmentsByName]);
   return (
     <MediaContext.Provider value={media}>
