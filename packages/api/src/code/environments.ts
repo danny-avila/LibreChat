@@ -32,6 +32,10 @@ export type CodeEnvironmentRegistration = {
   baseURL: string;
   controlPlaneId: string;
   workerId?: string;
+  workerPrincipal?: {
+    type: 'deployment' | 'tenant' | 'user' | 'role' | 'group';
+    id: string;
+  };
 };
 
 export type AccessibleCodeEnvironmentConfiguration = {
@@ -41,6 +45,7 @@ export type AccessibleCodeEnvironmentConfiguration = {
   baseURL: string;
   controlPlaneId: string;
   owner: 'principal';
+  workerId?: string;
 };
 
 type CachedAccessibleCodeEnvironmentConfiguration = AccessibleCodeEnvironmentConfiguration & {
@@ -49,6 +54,7 @@ type CachedAccessibleCodeEnvironmentConfiguration = AccessibleCodeEnvironmentCon
 
 const ENVIRONMENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const WORKER_PRINCIPAL_ID_PATTERN = /^\S(?:.{0,254}\S)?$/;
 const CONFIGURATION_CACHE_TTL_MS = 5_000;
 const CONFIGURATION_CACHE_REVISION_PREFIX = 'revision';
 const CONFIGURATION_CACHE_REGISTERED_PREFIX = 'registered';
@@ -64,6 +70,14 @@ type CodeEnvironmentRegistryOptions = {
   configurationCache?: CodeEnvironmentConfigurationCache;
 };
 
+export function normalizeCodeEnvironmentName(input: string): string {
+  const name = input.trim();
+  if (name.length < 1 || name.length > 100) {
+    throw new Error('Code environment name must contain between 1 and 100 characters');
+  }
+  return name;
+}
+
 export class CodeEnvironmentValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -73,7 +87,7 @@ export class CodeEnvironmentValidationError extends Error {
 
 function normalizeRegistration(input: CodeEnvironmentRegistration): CodeEnvironmentRegistration {
   const id = input.id.trim();
-  const name = input.name.trim();
+  const name = normalizeCodeEnvironmentName(input.name);
   const baseURL = input.baseURL.trim().replace(/\/+$/, '');
   const controlPlaneId = input.controlPlaneId.trim();
   const workerId = input.workerId?.trim();
@@ -93,6 +107,12 @@ function normalizeRegistration(input: CodeEnvironmentRegistration): CodeEnvironm
   }
   if (workerId != null && !WORKER_ID_PATTERN.test(workerId)) {
     throw new CodeEnvironmentValidationError('Code environment worker id is invalid');
+  }
+  if (
+    input.workerPrincipal != null &&
+    !WORKER_PRINCIPAL_ID_PATTERN.test(input.workerPrincipal.id)
+  ) {
+    throw new CodeEnvironmentValidationError('Code environment worker principal is invalid');
   }
   return { ...input, id, name, baseURL, controlPlaneId, workerId };
 }
@@ -181,6 +201,7 @@ export function createCodeEnvironmentRegistry(
       baseURL: environment.baseURL,
       controlPlaneId: environment.controlPlaneId,
       workerId: environment.workerId,
+      workerPrincipal: environment.workerPrincipal,
       createdBy: new Types.ObjectId(actor.userId),
     });
     try {
@@ -226,7 +247,12 @@ export function createCodeEnvironmentRegistry(
   async function findAccessible(actor: CodeEnvironmentPrincipalContext) {
     const principals = actor.principals ?? (await methods.getUserPrincipals(actor));
     const ids = await findAccessibleResourceIds(principals);
-    return await methods.findCodeEnvironmentsByIds(ids);
+    const environments = await methods.findCodeEnvironmentsByIds(ids);
+    const userId = actor.userId.toString();
+    return environments.filter(
+      (environment) =>
+        environment.workerPrincipal?.type !== 'user' || environment.workerPrincipal.id === userId,
+    );
   }
 
   async function listAccessible(
@@ -258,15 +284,23 @@ export function createCodeEnvironmentRegistry(
     const load = async (): Promise<CachedAccessibleCodeEnvironmentConfiguration[]> => {
       const ids = await findAccessibleResourceIds(principals);
       const environments = await methods.findCodeEnvironmentsByIds(ids);
-      return environments.map((environment) => ({
-        resourceId: environment._id.toString(),
-        id: environment.environmentId,
-        name: environment.name,
-        type: environment.type,
-        baseURL: environment.baseURL,
-        controlPlaneId: environment.controlPlaneId,
-        owner: 'principal',
-      }));
+      const userId = actor.userId.toString();
+      return environments
+        .filter(
+          (environment) =>
+            environment.workerPrincipal?.type !== 'user' ||
+            environment.workerPrincipal.id === userId,
+        )
+        .map((environment) => ({
+          resourceId: environment._id.toString(),
+          id: environment.environmentId,
+          name: environment.name,
+          type: environment.type,
+          baseURL: environment.baseURL,
+          controlPlaneId: environment.controlPlaneId,
+          owner: 'principal',
+          workerId: environment.workerId,
+        }));
     };
     if (configurationCache == null) return (await load()).map(toPublicConfiguration);
 

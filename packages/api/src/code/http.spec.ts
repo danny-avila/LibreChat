@@ -37,6 +37,315 @@ describe('code environment HTTP handlers', () => {
     expect(register).not.toHaveBeenCalled();
   });
 
+  test('pairs a generated worker to the authenticated user and persists its private route', async () => {
+    const register = jest.fn().mockResolvedValue({
+      resourceId: '68b2f0c498f24c1e78fa0111',
+      id: 'code-generated',
+      name: 'Personal VM',
+      type: 'attached',
+    });
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        protocolVersion: 1,
+        workerId: 'code-generated',
+        code: 'a'.repeat(32),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    });
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            environments: [
+              {
+                id: 'shared-code-api',
+                name: 'Shared Code API',
+                type: 'attached',
+                baseURL: 'https://code.librechat.example/v1',
+                owner: 'deployment',
+                pairing: {
+                  allowPrincipalWorkers: true,
+                  tokenEnv: 'CODE_ADMIN_TOKEN',
+                },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue(appConfig),
+      registry: { register, listAccessible: jest.fn() },
+      createEnvironmentId: () => 'code-generated',
+      readSecret: jest.fn(() => 'administrator-token'),
+      resolveTenantId: jest.fn(() => 'tenant-1'),
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
+      fetchImpl,
+    });
+    const req = {
+      user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+      body: {
+        name: 'Personal VM',
+        controlPlaneId: 'shared-code-api',
+        workerId: 'attacker-worker',
+        baseURL: 'https://attacker.example',
+      },
+    };
+    const res = response();
+
+    await handlers.pair(req as never, res as never);
+
+    expect(res.statusCode).toBe(201);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.librechat.example/v1/bridge/pairings',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer administrator-token' }),
+        body: JSON.stringify({
+          workerId: 'code-generated',
+          binding: {
+            tenantId: 'tenant-1',
+            principal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
+          },
+        }),
+      }),
+    );
+    expect(register).toHaveBeenCalledWith({
+      actor: {
+        userId: '68b2f0c498f24c1e78fa0001',
+        role: 'USER',
+        idOnTheSource: null,
+      },
+      environment: {
+        id: 'code-generated',
+        name: 'Personal VM',
+        type: 'attached',
+        baseURL: 'https://code.librechat.example/v1',
+        workerId: 'code-generated',
+        controlPlaneId: 'shared-code-api',
+        workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
+      },
+    });
+    expect(res.body).toEqual({
+      environment: expect.objectContaining({ id: 'code-generated' }),
+      pairing: expect.objectContaining({ workerId: 'code-generated', code: 'a'.repeat(32) }),
+    });
+  });
+
+  test('rejects self-service pairing without principal-aware Code API auth', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(),
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      principalAuthEnabled: jest.fn(() => false),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('does not pair through a control plane removed from the caller effective config', async () => {
+    const fetchImpl = jest.fn();
+    const baseConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'self-service',
+                name: 'Self-service',
+                type: 'attached',
+                baseURL: 'https://code.librechat.example',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const effectiveConfig = {
+      endpoints: { [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [] } } },
+    } as unknown as AppConfig;
+    const getAppConfig = jest.fn(async (options) =>
+      options.baseOnly === true ? baseConfig : effectiveConfig,
+    );
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      readSecret: jest.fn(() => 'administrator-token'),
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER', tenantId: 'tenant-1' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(getAppConfig).toHaveBeenCalledWith({
+      role: 'USER',
+      userId: '68b2f0c498f24c1e78fa0001',
+      idOnTheSource: undefined,
+      tenantId: 'tenant-1',
+      failClosed: true,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('fails closed when effective pairing policy cannot be loaded', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(async (options) => {
+        if (options.baseOnly === true) return {} as AppConfig;
+        throw new Error('authorization unavailable');
+      }),
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('authorizes pairing effectively but resolves destinations and secrets from deployment config', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        protocolVersion: 1,
+        workerId: 'code-generated',
+        code: 'a'.repeat(32),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    });
+    const deploymentConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'self-service',
+                name: 'Self-service',
+                type: 'attached',
+                baseURL: 'https://code.librechat.example',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const effectiveConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'self-service',
+                name: 'Override attempt',
+                type: 'attached',
+                baseURL: 'https://attacker.example',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true, tokenEnv: 'DATABASE_URL' },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig;
+    const readSecret = jest.fn((name) =>
+      name === 'CODE_ADMIN_TOKEN' ? 'administrator-token' : 'database-secret',
+    );
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(async (options) =>
+        options.baseOnly === true ? deploymentConfig : effectiveConfig,
+      ),
+      registry: {
+        register: jest.fn().mockResolvedValue({ id: 'code-generated' }),
+        listAccessible: jest.fn(),
+      },
+      createEnvironmentId: () => 'code-generated',
+      readSecret,
+      resolveTenantId: jest.fn(() => 'tenant-1'),
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(201);
+    expect(readSecret).toHaveBeenCalledWith('CODE_ADMIN_TOKEN');
+    expect(readSecret).not.toHaveBeenCalledWith('DATABASE_URL');
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.librechat.example/bridge/pairings',
+      expect.any(Object),
+    );
+  });
+
+  test('validates JWT signing before creating upstream pairing state', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn(),
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(() => {
+        throw new Error('invalid signing key');
+      }),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'self-service' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   test('registers against an operator-configured control plane and ignores client URLs', async () => {
     const register = jest.fn().mockResolvedValue({
       resourceId: '68b2f0c498f24c1e78fa0111',
@@ -95,25 +404,30 @@ describe('code environment HTTP handlers', () => {
         baseURL: 'https://code.librechat.example',
         controlPlaneId: 'shared-code-api',
         workerId: 'deployment-worker',
+        workerPrincipal: { type: 'deployment', id: 'shared-code-api' },
       },
     });
   });
 
-  test('returns a generic 500 for operational registration failures', async () => {
-    const register = jest.fn().mockRejectedValue(new Error('mongo connection details'));
+  test('does not register a fixed environment on a self-service-only control plane', async () => {
+    const register = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {
           [EModelEndpoint.agents]: {
             statefulCodeSessions: {
+              allowedEnvironments: ['user'],
               environments: [
                 {
-                  id: 'shared-code-api',
-                  name: 'Shared Code API',
+                  id: 'self-service',
+                  name: 'Self-service',
                   type: 'attached',
                   baseURL: 'https://code.librechat.example',
                   owner: 'deployment',
-                  pairing: { workerId: 'deployment-worker' },
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_ADMIN_TOKEN',
+                  },
                 },
               ],
             },
@@ -126,52 +440,105 @@ describe('code environment HTTP handlers', () => {
 
     await handlers.register(
       {
-        user: { id: '68b2f0c498f24c1e78fa0001' },
-        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'ADMIN' },
+        body: { name: 'Invalid fixed route', controlPlaneId: 'self-service' },
       } as never,
       res as never,
     );
 
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Code environment registration failed' });
+    expect(res.statusCode).toBe(404);
+    expect(register).not.toHaveBeenCalled();
   });
 
-  test('returns 400 for validated registration input failures', async () => {
-    const register = jest
-      .fn()
-      .mockRejectedValue(new CodeEnvironmentValidationError('Code environment id is invalid'));
+  test('validates a pairing name before creating upstream state', async () => {
+    const fetchImpl = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {
           [EModelEndpoint.agents]: {
             statefulCodeSessions: {
+              allowedEnvironments: ['user'],
               environments: [
                 {
-                  id: 'shared-code-api',
-                  name: 'Shared Code API',
+                  id: 'self-service',
+                  name: 'Self-service',
                   type: 'attached',
                   baseURL: 'https://code.librechat.example',
                   owner: 'deployment',
-                  pairing: { workerId: 'deployment-worker' },
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_ADMIN_TOKEN',
+                  },
                 },
               ],
             },
           },
         },
       } as AppConfig),
-      registry: { register, listAccessible: jest.fn() },
+      registry: { register: jest.fn(), listAccessible: jest.fn() },
+      readSecret: jest.fn(() => 'administrator-token'),
+      principalAuthEnabled: jest.fn(() => true),
+      principalAuthReady: jest.fn(),
+      fetchImpl,
     });
     const res = response();
 
-    await handlers.register(
+    await handlers.pair(
       {
-        user: { id: '68b2f0c498f24c1e78fa0001' },
-        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'x'.repeat(101), controlPlaneId: 'self-service' },
       } as never,
       res as never,
     );
 
     expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Code environment id is invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    {
+      error: new Error('mongo connection details'),
+      status: 500,
+      body: { error: 'Code environment registration failed' },
+    },
+    {
+      error: new CodeEnvironmentValidationError('Code environment id is invalid'),
+      status: 400,
+      body: { error: 'Code environment id is invalid' },
+    },
+  ])('classifies registration failure with status $status', async ({ error, status, body }) => {
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example',
+                  owner: 'deployment',
+                  pairing: { workerId: 'deployment-worker' },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: { register: jest.fn().mockRejectedValue(error), listAccessible: jest.fn() },
+    });
+    const res = response();
+
+    await handlers.register(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(status);
+    expect(res.body).toEqual(body);
   });
 });

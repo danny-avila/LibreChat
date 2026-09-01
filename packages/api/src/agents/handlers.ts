@@ -389,6 +389,7 @@ export interface ToolExecuteOptions {
     read_only?: boolean;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -400,6 +401,7 @@ export interface ToolExecuteOptions {
     route?: {
       baseUrl?: string;
       executionProfile?: CodeExecutionContext['executionProfile'];
+      bridgeWorkerId?: string;
     },
   ) => Promise<string | null>;
   /** 23-hour freshness check */
@@ -450,6 +452,7 @@ export interface ToolExecuteOptions {
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
     executionRouteKey?: string;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
@@ -471,6 +474,7 @@ export interface ToolExecuteOptions {
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
     executionRouteKey?: string;
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
@@ -556,6 +560,7 @@ function getCodeExecutionContext(
 function codeExecutionRequestParams(context?: CodeExecutionContext): {
   codeApiBaseUrl?: string;
   executionProfile?: CodeExecutionContext['executionProfile'];
+  bridgeWorkerId?: string;
   executionRouteKey?: string;
   runtime_session_hint?: string;
 } {
@@ -566,6 +571,7 @@ function codeExecutionRequestParams(context?: CodeExecutionContext): {
     codeApiBaseUrl: context.baseUrl,
     executionProfile: context.executionProfile,
     ...(context.executionRouteKey ? { executionRouteKey: context.executionRouteKey } : {}),
+    ...(context.bridgeWorkerId ? { bridgeWorkerId: context.bridgeWorkerId } : {}),
     ...(context.runtimeSessionHint ? { runtime_session_hint: context.runtimeSessionHint } : {}),
   };
 }

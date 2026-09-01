@@ -50,6 +50,7 @@ describe('code environment registry', () => {
         type: 'attached',
         baseURL: 'https://code.example.com',
         controlPlaneId: 'shared-code-api',
+        workerId: 'danny-worker',
       },
     });
 
@@ -81,6 +82,7 @@ describe('code environment registry', () => {
         baseURL: 'https://code.example.com',
         controlPlaneId: 'shared-code-api',
         owner: 'principal',
+        workerId: 'danny-worker',
       },
     ]);
   });
@@ -141,6 +143,40 @@ describe('code environment registry', () => {
         idOnTheSource: null,
       }),
     ).resolves.toEqual([roleEnvironment, groupEnvironment]);
+  });
+
+  test('keeps a user-bound worker private even if its ACL is granted to a role', async () => {
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const access = new AccessControlService(mongoose);
+    const ownerId = new Types.ObjectId();
+    const teammateId = new Types.ObjectId();
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'owner-worker',
+        name: 'Owner worker',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        workerId: 'owner-worker',
+        controlPlaneId: 'shared-code-api',
+        workerPrincipal: { type: 'user', id: ownerId.toString() },
+      },
+    });
+    await access.grantPermission({
+      principalType: PrincipalType.ROLE,
+      principalId: 'CODE_USER',
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment.resourceId,
+      accessRoleId: AccessRoleIds.CODE_ENVIRONMENT_VIEWER,
+      grantedBy: ownerId,
+    });
+
+    await expect(
+      registry.listAccessible({ userId: teammateId, role: 'CODE_USER', idOnTheSource: null }),
+    ).resolves.toEqual([]);
+    await expect(
+      registry.listAccessible({ userId: ownerId, role: 'USER', idOnTheSource: null }),
+    ).resolves.toEqual([environment]);
   });
 
   test('removes creator-owned environment records and grants when the user is deleted', async () => {

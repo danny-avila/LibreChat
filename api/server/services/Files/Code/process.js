@@ -26,11 +26,11 @@ const {
   getStorageMetadata,
   getCodeExecutionBaseUrl,
   buildCodeEnvDownloadQuery,
+  codeExecutionHeaders,
   claimCodeDestination,
   createCodeDestinationSet,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
-  CODE_API_EXPECTED_PROFILE_HEADER,
   sortCodeFilesByDestinationPriority,
 } = require('@librechat/api');
 const {
@@ -218,9 +218,10 @@ const downloadCodeOutputBuffer = async ({
   maxBytes,
   codeApiBaseUrl,
   executionProfile = 'default',
+  bridgeWorkerId,
 }) => {
   const baseURL = codeApiBaseUrl ?? getCodeExecutionBaseUrl(executionProfile);
-  const authHeaders = await getCodeApiAuthHeaders(req);
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   const downloadQuery = buildCodeEnvDownloadQuery({ kind: 'user', id: req.user.id });
   let response;
   try {
@@ -231,7 +232,7 @@ const downloadCodeOutputBuffer = async ({
       headers: {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
-        [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile,
+        ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -272,6 +273,7 @@ const downloadCodeOutputBuffer = async ({
  * @param {number} [params.maxBytes] - Remaining aggregate inspection budget.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
  * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
  */
 const prepareCodeOutputForInspection = async ({
@@ -283,6 +285,7 @@ const prepareCodeOutputForInspection = async ({
   inspectContent = true,
   codeApiBaseUrl,
   executionProfile = 'default',
+  bridgeWorkerId,
   executionRouteKey,
 }) => {
   const { fileSizeLimit } = getCodeOutputFileSettings(req);
@@ -295,6 +298,7 @@ const prepareCodeOutputForInspection = async ({
     maxBytes: transportLimit,
     codeApiBaseUrl,
     executionProfile,
+    bridgeWorkerId,
   });
   cachePreparedCodeOutputBuffer({
     req,
@@ -655,6 +659,7 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
  * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
+ * @param {string} [params.bridgeWorkerId] - Trusted bridge worker selected for this execution.
  * @param {Buffer} [params.preparedBuffer] - Bytes downloaded during a
  *   no-write content inspection preflight.
  * @param {boolean} [params.downloadFallback] - Return the bounded download
@@ -674,6 +679,7 @@ const processCodeOutput = async ({
   codeApiBaseUrl,
   executionProfile = 'default',
   executionRouteKey = executionProfile,
+  bridgeWorkerId,
   preparedBuffer,
   downloadFallback,
 }) => {
@@ -711,6 +717,7 @@ const processCodeOutput = async ({
         maxBytes: fileSizeLimit,
         codeApiBaseUrl,
         executionProfile,
+        bridgeWorkerId,
       }));
 
     // Enforce file size limit
@@ -1123,7 +1130,7 @@ function checkIfActive(dateString) {
  *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
  *   codeapi resolves the sessionKey from the request's auth context.
  * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
- * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful'}} [route]
+ * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
  *   Trusted host-selected Code API route.
  *
  * @returns {Promise<string|null>}
@@ -1133,7 +1140,7 @@ function checkIfActive(dateString) {
 async function getSessionInfo(ref, req, route = {}) {
   try {
     const baseURL = route.baseUrl ?? getCodeBaseURL();
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
     /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
      * middleware (post-Phase C). The middleware reconstructs the
      * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
@@ -1152,7 +1159,10 @@ async function getSessionInfo(ref, req, route = {}) {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
         ...(route.executionProfile
-          ? { [CODE_API_EXPECTED_PROFILE_HEADER]: route.executionProfile }
+          ? codeExecutionHeaders({
+              executionProfile: route.executionProfile,
+              bridgeWorkerId: route.bridgeWorkerId,
+            })
           : {}),
       },
       httpAgent: codeServerHttpAgent,
@@ -1283,8 +1293,9 @@ const primeFiles = async (options) => {
     codeApiBaseUrl,
     executionProfile = 'default',
     executionRouteKey = executionProfile,
+    bridgeWorkerId,
   } = options;
-  const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile };
+  const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile, bridgeWorkerId };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
@@ -1431,6 +1442,7 @@ const primeFiles = async (options) => {
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
           codeApiBaseUrl,
           executionProfile,
+          bridgeWorkerId,
         });
 
         /**
@@ -1580,6 +1592,7 @@ async function readSandboxFile({
   runtime_session_hint,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
   req,
 }) {
   const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
@@ -1605,7 +1618,7 @@ async function readSandboxFile({
   }
 
   try {
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
     const response = await axios({
       method: 'post',
       url: `${baseURL}/exec`,
@@ -1614,7 +1627,7 @@ async function readSandboxFile({
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
-        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+        ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -1663,6 +1676,7 @@ async function readSandboxFile({
  * @param {number} [params.maxBytes] - In-sandbox size cap; larger files return `{ tooLarge, bytes }`.
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
  * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
+ * @param {string} [params.bridgeWorkerId] - Trusted bridge worker selected for this execution.
  * @returns {Promise<{base64: string, bytes: number}
  *   | {tooLarge: true, reason: 'size' | 'round_trips', bytes: number} | null>}
  *   `null` when codeapi is unavailable; throws on transport / read errors.
@@ -1674,6 +1688,7 @@ async function readSandboxImage({
   runtime_session_hint,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
   executionRouteKey,
   maxBytes,
   req,
@@ -1716,6 +1731,7 @@ async function readSandboxImage({
         session_id,
         runtime_session_hint,
         executionProfile,
+        bridgeWorkerId,
         files,
         req,
         rateLimit,
@@ -1737,6 +1753,7 @@ async function execSandboxImageChunk({
   session_id,
   runtime_session_hint,
   executionProfile,
+  bridgeWorkerId,
   files,
   req,
   rateLimit,
@@ -1762,7 +1779,7 @@ async function execSandboxImageChunk({
           `[readSandboxImage] Rate-limited reading "${file_path}"; retrying in ${waitMs}ms`,
         ),
       attempt: async () => {
-        const authHeaders = await getCodeApiAuthHeaders(req);
+        const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
         return axios({
           method: 'post',
           url: `${baseURL}/exec`,
@@ -1771,7 +1788,7 @@ async function execSandboxImageChunk({
             'Content-Type': 'application/json',
             'User-Agent': 'LibreChat/1.0',
             ...authHeaders,
-            ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+            ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
           },
           httpAgent: codeServerHttpAgent,
           httpsAgent: codeServerHttpsAgent,
@@ -1811,6 +1828,7 @@ async function writeSandboxFile({
   runtime_session_hint,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
   req,
 }) {
   const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
@@ -1854,7 +1872,7 @@ async function writeSandboxFile({
   }
 
   try {
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
     const response = await axios({
       method: 'post',
       url: `${baseURL}/exec`,
@@ -1863,7 +1881,7 @@ async function writeSandboxFile({
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
-        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+        ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,

@@ -1,4 +1,8 @@
-import { resolveCodeExecutionContext } from './execution';
+import {
+  codeExecutionAuthHeaders,
+  codeExecutionHeaders,
+  resolveCodeExecutionContext,
+} from './execution';
 
 jest.mock('@librechat/agents', () => ({
   Constants: { EXECUTE_CODE: 'execute_code' },
@@ -113,6 +117,7 @@ describe('resolveCodeExecutionContext', () => {
           name: 'My VM',
           type: 'attached',
           baseURL: 'https://bridge.example/v1/',
+          workerId: 'opaque-worker-id',
           owner: 'deployment',
         },
       ],
@@ -126,10 +131,106 @@ describe('resolveCodeExecutionContext', () => {
         environmentId: 'my-vm',
         environmentType: 'attached',
         executionProfile: 'stateful',
+        bridgeWorkerId: 'opaque-worker-id',
       }),
     );
     expect(context.runtimeSessionHint).toMatch(/^v3:[a-f0-9]{12}:agent-user:/);
     expect(context.executionRouteKey).toMatch(/^stateful:[a-f0-9]{32}$/);
+  });
+
+  it('routes a deployment worker declared in pairing metadata', () => {
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environmentId: 'deployment-vm',
+      environments: [
+        {
+          id: 'deployment-vm',
+          name: 'Deployment VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1',
+          owner: 'deployment',
+          pairing: {
+            workerId: 'deployment-worker',
+            allowPrincipalWorkers: false,
+            tokenEnv: 'CODE_ADMIN_TOKEN',
+          },
+        },
+      ],
+      userId: 'user-1',
+    });
+
+    expect(context.bridgeWorkerId).toBe('deployment-worker');
+    expect(codeExecutionHeaders(context)).toMatchObject({
+      'X-LibreChat-Code-Worker-ID': 'deployment-worker',
+    });
+  });
+
+  it('does not execute a pairing-only control plane', () => {
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+    const environments = [
+      {
+        id: 'self-service',
+        name: 'Self-service',
+        type: 'attached' as const,
+        baseURL: 'https://bridge.example/v1',
+        default: true,
+        owner: 'deployment' as const,
+        pairing: {
+          allowPrincipalWorkers: true,
+          tokenEnv: 'CODE_ADMIN_TOKEN',
+        },
+      },
+    ];
+
+    expect(
+      resolveCodeExecutionContext({ statefulSessions: true, environments, userId: 'user-1' }),
+    ).toEqual(
+      expect.objectContaining({
+        baseUrl: 'http://code-stateful.test/v1',
+        environmentId: undefined,
+        bridgeWorkerId: undefined,
+      }),
+    );
+    expect(() =>
+      resolveCodeExecutionContext({
+        statefulSessions: true,
+        environmentId: 'self-service',
+        environments,
+        userId: 'user-1',
+      }),
+    ).toThrow('Stateful code environment "self-service" is not configured');
+  });
+
+  it('adds the server-selected worker to execution auth without replacing authentication', async () => {
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environmentId: 'my-vm',
+      environments: [
+        {
+          id: 'my-vm',
+          name: 'My VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1',
+          owner: 'principal',
+          workerId: 'opaque-worker-id',
+        },
+      ],
+      userId: 'user-1',
+    });
+
+    expect(codeExecutionHeaders(context)).toEqual({
+      'X-CodeAPI-Expected-Profile': 'stateful',
+      'X-LibreChat-Code-Worker-ID': 'opaque-worker-id',
+    });
+    const authHeaders = jest.fn(async (workerId?: string) => ({
+      Authorization: `Bearer user-token-for-${workerId ?? 'default'}`,
+    }));
+    await expect(codeExecutionAuthHeaders(authHeaders, context)).resolves.toEqual({
+      Authorization: 'Bearer user-token-for-opaque-worker-id',
+      'X-CodeAPI-Expected-Profile': 'stateful',
+      'X-LibreChat-Code-Worker-ID': 'opaque-worker-id',
+    });
+    expect(authHeaders).toHaveBeenCalledWith('opaque-worker-id');
   });
 
   it('namespaces configured deployments independently of the shared wire profile', () => {
@@ -154,6 +255,32 @@ describe('resolveCodeExecutionContext', () => {
 
     expect(first.executionProfile).toBe('stateful');
     expect(replacement.executionProfile).toBe('stateful');
+    expect(first.runtimeSessionHint).toBe(replacement.runtimeSessionHint);
+    expect(first.executionRouteKey).not.toBe(replacement.executionRouteKey);
+    expect(first.codeSessionKey).not.toBe(replacement.codeSessionKey);
+  });
+
+  it('namespaces replacement workers independently under a stable environment route', () => {
+    const environment = (workerId: string) => ({
+      id: 'personal-vm',
+      name: 'Personal VM',
+      type: 'attached' as const,
+      baseURL: 'https://bridge.example/v1',
+      default: true,
+      owner: 'principal' as const,
+      workerId,
+    });
+    const first = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [environment('worker-a')],
+      userId: 'user-1',
+    });
+    const replacement = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [environment('worker-b')],
+      userId: 'user-1',
+    });
+
     expect(first.runtimeSessionHint).toBe(replacement.runtimeSessionHint);
     expect(first.executionRouteKey).not.toBe(replacement.executionRouteKey);
     expect(first.codeSessionKey).not.toBe(replacement.codeSessionKey);

@@ -271,6 +271,42 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(await Agent.countDocuments()).toBe(0);
     });
 
+    test('rejects a pairing-only control plane as a code environment id', async () => {
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'personal-workers',
+                  name: 'Personal workers',
+                  type: 'attached',
+                  baseURL: 'https://code.example.com/v1',
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      };
+      mockReq.body = {
+        name: 'Invalid Control Plane Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        stateful_code_sessions: true,
+        code_environment_id: 'personal-workers',
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(await Agent.countDocuments()).toBe(0);
+    });
+
     test('should block configured agent instruction content before persistence', async () => {
       mockReq.config = {
         filters: {

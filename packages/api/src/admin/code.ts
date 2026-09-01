@@ -55,7 +55,11 @@ function pairingConfig(environment: ConfiguredCodeEnvironment):
   if (environment.type !== 'attached' || environment.owner !== 'deployment') {
     return undefined;
   }
-  return environment.pairing;
+  const pairing = environment.pairing;
+  if (pairing?.workerId == null) {
+    return undefined;
+  }
+  return { workerId: pairing.workerId, tokenEnv: pairing.tokenEnv };
 }
 
 function bridgeUrl(environment: ConfiguredCodeEnvironment, path: string): string {

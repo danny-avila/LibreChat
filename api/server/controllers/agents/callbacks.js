@@ -1094,6 +1094,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
           codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
           executionProfile: metadata.codeExecutionContext?.executionProfile,
           executionRouteKey: metadata.codeExecutionContext?.executionRouteKey,
+          bridgeWorkerId: metadata.codeExecutionContext?.bridgeWorkerId,
           preparedBuffer,
           downloadFallback,
         });
@@ -1439,6 +1440,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
           executionProfile: metadata.codeExecutionContext?.executionProfile,
           executionRouteKey: metadata.codeExecutionContext?.executionRouteKey,
+          bridgeWorkerId: metadata.codeExecutionContext?.bridgeWorkerId,
           preparedBuffer,
           downloadFallback,
         });

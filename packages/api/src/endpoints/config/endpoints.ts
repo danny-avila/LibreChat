@@ -75,14 +75,21 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
       const clientStatefulCodeSessions = statefulCodeSessions
         ? {
             allowedEnvironments: statefulCodeSessions.allowedEnvironments,
-            environments: statefulCodeSessions.environments?.map(
-              ({ id, name, type, default: isDefault }) => ({
+            environments: statefulCodeSessions.environments
+              ?.filter(
+                (environment) =>
+                  !(
+                    environment.pairing?.allowPrincipalWorkers === true &&
+                    environment.pairing.workerId == null &&
+                    environment.workerId == null
+                  ),
+              )
+              .map(({ id, name, type, default: isDefault }) => ({
                 id,
                 name,
                 type,
                 default: isDefault,
-              }),
-            ),
+              })),
           }
         : undefined;
       mergedConfig[EModelEndpoint.agents] = {

@@ -88,6 +88,10 @@ jest.mock('@librechat/api', () => {
       profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
     ),
     CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
+    codeExecutionHeaders: ({ executionProfile, bridgeWorkerId }) => ({
+      'X-CodeAPI-Expected-Profile': executionProfile,
+      ...(bridgeWorkerId ? { 'X-LibreChat-Code-Worker-ID': bridgeWorkerId } : {}),
+    }),
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
     /**
@@ -561,7 +565,7 @@ describe('Code Process', () => {
 
       await processCodeOutput(baseParams);
 
-      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq, undefined);
       expect(mockAxios).toHaveBeenCalledWith(
         expect.objectContaining({
           method: 'get',
@@ -1038,13 +1042,17 @@ describe('Code Process', () => {
           ...baseParams,
           codeApiBaseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
           executionRouteKey,
         });
 
         expect(mockAxios).toHaveBeenCalledWith(
           expect.objectContaining({
             url: expect.stringContaining('https://code-stateful.example.com/download/'),
-            headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+            headers: expect.objectContaining({
+              'X-CodeAPI-Expected-Profile': 'stateful',
+              'X-LibreChat-Code-Worker-ID': 'personal-worker-1',
+            }),
           }),
         );
         expect(result.filepath).toContain('execution_profile=stateful');
@@ -1458,7 +1466,7 @@ describe('Code Process', () => {
           mockReq,
         );
 
-        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq, undefined);
         expect(mockAxios).toHaveBeenCalledWith(
           expect.objectContaining({
             method: 'get',
@@ -1907,12 +1915,14 @@ describe('Code Process', () => {
           file_path: '/mnt/data/x.txt',
           codeApiBaseUrl: 'https://stateful-code.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
           runtime_session_hint: 'v1:user',
         });
 
         const call = mockAxios.mock.calls[0][0];
         expect(call.url).toBe('https://stateful-code.example.com/exec');
         expect(call.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+        expect(call.headers['X-LibreChat-Code-Worker-ID']).toBe('personal-worker-1');
         expect(call.data.runtime_session_hint).toBe('v1:user');
       });
 
@@ -1978,7 +1988,7 @@ describe('Code Process', () => {
 
         await readSandboxFile({ file_path: '/mnt/data/x.txt', req: mockReq });
 
-        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq, undefined);
         expect(mockAxios).toHaveBeenCalledWith(
           expect.objectContaining({
             method: 'post',
@@ -2455,6 +2465,7 @@ describe('Code Process', () => {
         agentId: 'agent-id',
         codeApiBaseUrl: 'https://stateful-code.example.com',
         executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
       });
 
       expect(mockAxios).not.toHaveBeenCalled();
@@ -2462,6 +2473,7 @@ describe('Code Process', () => {
         expect.objectContaining({
           codeApiBaseUrl: 'https://stateful-code.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
         }),
       );
       expect(updateFile).toHaveBeenCalledWith(
