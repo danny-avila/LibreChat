@@ -1163,6 +1163,8 @@ export function createAgentMethods(
     if (includeSkillConfig) {
       projection.skills = 1;
       projection.skills_enabled = 1;
+      projection.skill_authoring_enabled = 1;
+      projection.skills_scope = 1;
     }
 
     let query = Agent.find(baseQuery, projection).sort({ updatedAt: -1, _id: 1 });
@@ -1244,13 +1246,16 @@ export function createAgentMethods(
       }
     }
 
-    const restoresDeploymentDefault = !Object.prototype.hasOwnProperty.call(
-      revertToVersion,
-      'code_environment_id',
-    );
-    const revertUpdate = restoresDeploymentDefault
-      ? { $set: revertToVersion, $unset: { code_environment_id: 1 } }
-      : { $set: revertToVersion };
+    const unsetOnRestore: Record<string, 1> = {};
+    for (const field of ['code_environment_id', 'skills_scope', 'skill_authoring_enabled']) {
+      if (!Object.prototype.hasOwnProperty.call(revertToVersion, field)) {
+        unsetOnRestore[field] = 1;
+      }
+    }
+    const revertUpdate =
+      Object.keys(unsetOnRestore).length > 0
+        ? { $set: revertToVersion, $unset: unsetOnRestore }
+        : { $set: revertToVersion };
     const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
       new: true,
     }).lean<IAgent>();
