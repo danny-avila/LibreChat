@@ -26,6 +26,7 @@ export * from './initialize';
 export * from './legacy';
 export * from './lazySubagents';
 export * from './memory';
+export * from './mcpIdentity';
 export * from './orphans';
 export * from './migration';
 export * from './parameters';

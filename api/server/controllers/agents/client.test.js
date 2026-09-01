@@ -6693,7 +6693,12 @@ describe('AgentClient - finalizeSubagentContent', () => {
             index: 0,
             stepDetails: {
               type: 'tool_calls',
-              tool_calls: [{ id: 'inner_1', name: 'lookup_mcp_foo_mcp_bar', args: '{}' }],
+              tool_calls: [
+                {
+                  id: 'inner_1',
+                  function: { name: 'lookup_mcp_foo_mcp_bar', arguments: '{}' },
+                },
+              ],
             },
           }),
           memberAgentId: 'member',
@@ -6713,9 +6718,6 @@ describe('AgentClient - finalizeSubagentContent', () => {
     client.finalizeSubagentContent();
     const inner = client.contentParts[0].tool_call.subagent_content[0].tool_call;
     expect(resolveMcpServerName).toHaveBeenCalledWith('lookup_mcp_foo_mcp_bar', 'member');
-    expect(inner.mcpServerName).toBe('bar');
-
-    client.stampMcpServerIdentities();
     expect(inner.mcpServerName).toBe('bar');
 
     const emptyMemberResolver = jest.fn(() => 'bar');

@@ -800,6 +800,7 @@ const initializeClient = async ({
   const skippedAgentIds = new Set(discoveredSkippedIds ?? []);
 
   const lazyMetadataByAgentId = new Map();
+  const lazyMetadataLoadsByAgentId = new Map();
   /** Request-scoped cache: lazy descriptors sharing the same Skill ACL scope
    * reuse one history-only always-apply lookup without initializing tools,
    * files, model clients, or MCP connections. */
@@ -1063,15 +1064,22 @@ const initializeClient = async ({
     if (skippedAgentIds.has(agentId)) return null;
     const cached = lazyMetadataByAgentId.get(agentId);
     if (cached) return cached;
+    let loading = lazyMetadataLoadsByAgentId.get(agentId);
+    if (!loading) {
+      loading = (async () => {
+        const agent = await db.getAgentWithVersionCount({ id: agentId });
+        if (!agent || !(await hasSubagentViewAccess(agent, agentId))) {
+          skippedAgentIds.add(agentId);
+          return null;
+        }
+        const metadata = await toLazySubagentMetadata(agent);
+        lazyMetadataByAgentId.set(agentId, metadata);
+        return metadata;
+      })();
+      lazyMetadataLoadsByAgentId.set(agentId, loading);
+    }
     try {
-      const agent = await db.getAgentWithVersionCount({ id: agentId });
-      if (!agent || !(await hasSubagentViewAccess(agent, agentId))) {
-        skippedAgentIds.add(agentId);
-        return null;
-      }
-      const metadata = await toLazySubagentMetadata(agent);
-      lazyMetadataByAgentId.set(agentId, metadata);
-      return metadata;
+      return await loading;
     } catch (error) {
       if (isFatalAgentInitializationError(error)) {
         throw error;
@@ -1079,6 +1087,10 @@ const initializeClient = async ({
       logger.error(`[initializeClient] Error loading subagent metadata ${agentId}:`, error);
       skippedAgentIds.add(agentId);
       return null;
+    } finally {
+      if (lazyMetadataLoadsByAgentId.get(agentId) === loading) {
+        lazyMetadataLoadsByAgentId.delete(agentId);
+      }
     }
   };
 
@@ -1236,92 +1248,95 @@ const initializeClient = async ({
     }
     const nextAncestors = new Set(ancestors);
     nextAncestors.add(agent.id);
-    const descriptors = [];
-    for (const subagentId of subagentIds) {
-      if (skippedAgentIds.has(subagentId) || nextAncestors.has(subagentId)) continue;
-      if (subagentId !== primaryConfig.id) {
-        assertSubagentGraphRoom(subagentId);
-      }
-      const existing =
-        subagentId === primaryConfig.id ? primaryConfig : agentConfigs.get(subagentId);
-      if (existing) {
-        countExpandedSubagentDescriptor(subagentId);
+    const descriptors = await Promise.all(
+      subagentIds.map(async (subagentId) => {
+        if (skippedAgentIds.has(subagentId) || nextAncestors.has(subagentId)) return null;
+        const existing =
+          subagentId === primaryConfig.id ? primaryConfig : agentConfigs.get(subagentId);
+        if (existing) {
+          if (subagentId !== primaryConfig.id) {
+            assertSubagentGraphRoom(subagentId);
+            subagentGraphIds.add(subagentId);
+          }
+          countExpandedSubagentDescriptor(subagentId);
+          const existingChildren = await buildLazySubagentDescriptors(
+            existing,
+            depth + 1,
+            nextAncestors,
+          );
+          existing.lazySubagentConfigs = existingChildren.filter((child) => child.configId);
+          existing.subagentAgentConfigs = existingChildren.filter((child) => !child.configId);
+          return existing;
+        }
+        const metadata = await loadSubagentMetadata(subagentId);
+        if (!metadata) return null;
         if (subagentId !== primaryConfig.id) {
+          assertSubagentGraphRoom(subagentId);
           subagentGraphIds.add(subagentId);
         }
-        const existingChildren = await buildLazySubagentDescriptors(
-          existing,
+        countExpandedSubagentDescriptor(subagentId);
+        const childDescriptors = await buildLazySubagentDescriptors(
+          metadata,
           depth + 1,
           nextAncestors,
         );
-        existing.lazySubagentConfigs = existingChildren.filter((child) => child.configId);
-        existing.subagentAgentConfigs = existingChildren.filter((child) => !child.configId);
-        descriptors.push(existing);
-        continue;
-      }
-      const metadata = await loadSubagentMetadata(subagentId);
-      if (!metadata) continue;
-      countExpandedSubagentDescriptor(subagentId);
-      subagentGraphIds.add(subagentId);
-      const childDescriptors = await buildLazySubagentDescriptors(
-        metadata,
-        depth + 1,
-        nextAncestors,
-      );
-      const lazyChildren = childDescriptors.filter((child) => child.configId);
-      const eagerChildren = childDescriptors.filter((child) => !child.configId);
-      const subagentGraphMemberMetadata = await loadGraphMemberCapabilityMetadata(metadata);
-      descriptors.push({
-        id: metadata.id,
-        name: metadata.name,
-        description: metadata.description,
-        provider: metadata.provider,
-        model: metadata.model,
-        model_parameters: metadata.model_parameters,
-        recursion_limit: metadata.recursion_limit,
-        memory_scope: metadata.memory_scope,
-        memoryToolsRegistered: metadata.memoryToolsRegistered,
-        subagents: metadata.subagents,
-        configId: metadata.configId,
-        codeEnvAvailable: metadata.codeEnvAvailable,
-        statefulCodeSessions: metadata.statefulCodeSessions,
-        statefulCodeEnvironment: metadata.statefulCodeEnvironment,
-        codeExecutionContext: metadata.codeExecutionContext,
-        codeSessionKey: metadata.codeSessionKey,
-        includeReasoningHistory: metadata.includeReasoningHistory,
-        alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
-        historicalToolNames: metadata.historicalToolNames,
-        historicalMcpServerNames: metadata.historicalMcpServerNames,
-        lazySubagentConfigs: lazyChildren,
-        subagentAgentConfigs: eagerChildren,
-        subagentGraphMemberMetadata,
-        resolve: async (context) =>
-          initializeLazySubagent({
-            agentId: metadata.id,
-            configId: metadata.configId,
-            context,
-            lazyChildren,
-          }).then(async (config) => {
-            config.subagentAgentConfigs = eagerChildren;
-            graphMemberConfigsById.set(config.id, config);
-            await resolveGraphSubagentsFor(config, context.signal);
-            return config;
-          }),
-      });
-    }
-    return descriptors;
+        const lazyChildren = childDescriptors.filter((child) => child.configId);
+        const eagerChildren = childDescriptors.filter((child) => !child.configId);
+        const subagentGraphMemberMetadata = await loadGraphMemberCapabilityMetadata(metadata);
+        return {
+          id: metadata.id,
+          name: metadata.name,
+          description: metadata.description,
+          provider: metadata.provider,
+          model: metadata.model,
+          model_parameters: metadata.model_parameters,
+          recursion_limit: metadata.recursion_limit,
+          memory_scope: metadata.memory_scope,
+          memoryToolsRegistered: metadata.memoryToolsRegistered,
+          subagents: metadata.subagents,
+          configId: metadata.configId,
+          codeEnvAvailable: metadata.codeEnvAvailable,
+          statefulCodeSessions: metadata.statefulCodeSessions,
+          statefulCodeEnvironment: metadata.statefulCodeEnvironment,
+          codeExecutionContext: metadata.codeExecutionContext,
+          codeSessionKey: metadata.codeSessionKey,
+          includeReasoningHistory: metadata.includeReasoningHistory,
+          alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
+          historicalToolNames: metadata.historicalToolNames,
+          historicalMcpServerNames: metadata.historicalMcpServerNames,
+          lazySubagentConfigs: lazyChildren,
+          subagentAgentConfigs: eagerChildren,
+          subagentGraphMemberMetadata,
+          resolve: async (context) =>
+            initializeLazySubagent({
+              agentId: metadata.id,
+              configId: metadata.configId,
+              context,
+              lazyChildren,
+            }).then(async (config) => {
+              config.subagentAgentConfigs = eagerChildren;
+              graphMemberConfigsById.set(config.id, config);
+              await resolveGraphSubagentsFor(config, context.signal);
+              return config;
+            }),
+        };
+      }),
+    );
+    return descriptors.filter(Boolean);
   };
 
   const resolveSubagentTrees = async (rootConfigs) => {
     expandedSubagentDescriptorState.rootAgentIds = rootConfigs
       .filter((config) => config?.id)
       .map((config) => config.id);
-    for (const config of rootConfigs) {
-      if (!config?.id) continue;
-      const descriptors = await buildLazySubagentDescriptors(config);
-      config.lazySubagentConfigs = descriptors.filter((child) => child.configId);
-      config.subagentAgentConfigs = descriptors.filter((child) => !child.configId);
-    }
+    await Promise.all(
+      rootConfigs.map(async (config) => {
+        if (!config?.id) return;
+        const descriptors = await buildLazySubagentDescriptors(config);
+        config.lazySubagentConfigs = descriptors.filter((child) => child.configId);
+        config.subagentAgentConfigs = descriptors.filter((child) => !child.configId);
+      }),
+    );
   };
 
   const rootSubagentConfigs = [primaryConfig, ...agentConfigs.values()];

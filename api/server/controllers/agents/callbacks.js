@@ -327,7 +327,7 @@ function subagentPhaseToGraphEvent(event) {
 /**
  * Folds a single {@link SubagentUpdateEvent} into the given content
  * aggregator. Silent no-op for phases outside the aggregator's domain.
- * @param {{ aggregateContent: Function }} aggregator
+ * @param {{ aggregateContent: Function, contentParts?: Array, stepMap?: Map }} aggregator
  * @param {SubagentUpdateEvent} event
  */
 function feedSubagentAggregator(aggregator, event) {
@@ -339,22 +339,16 @@ function feedSubagentAggregator(aggregator, event) {
    * public content shape, so host-only routing metadata is not copied. Restore
    * the server-owned identity by call id after that projection; otherwise the
    * persistence fallback has to parse an ambiguous delimiter-bearing name. */
-  const identities = new Map(
-    (event.data?.stepDetails?.tool_calls ?? [])
-      .filter(
-        (toolCall) =>
-          typeof toolCall?.id === 'string' && typeof toolCall?.mcpServerName === 'string',
-      )
-      .map((toolCall) => [toolCall.id, toolCall.mcpServerName]),
-  );
-  if (identities.size === 0 || !Array.isArray(aggregator.contentParts)) {
+  const toolCalls = event.data?.stepDetails?.tool_calls ?? [];
+  const stepIndex = aggregator.stepMap?.get(event.data?.id)?.index;
+  if (!Number.isInteger(stepIndex) || !Array.isArray(aggregator.contentParts)) {
     return;
   }
-  for (const part of aggregator.contentParts) {
-    const toolCall = part?.tool_call;
-    const serverName = identities.get(toolCall?.id);
-    if (serverName) {
-      toolCall.mcpServerName = serverName;
+  for (let index = 0; index < toolCalls.length; index++) {
+    const source = toolCalls[index];
+    const target = aggregator.contentParts[stepIndex + index]?.tool_call;
+    if (target?.id === source?.id && typeof source?.mcpServerName === 'string') {
+      target.mcpServerName = source.mcpServerName;
     }
   }
 }
@@ -522,8 +516,12 @@ function getDefaultHandlers({
        */
       handle: async (event, data, metadata) => {
         for (const toolCall of data?.stepDetails?.tool_calls ?? []) {
+          const toolName = toolCall?.name ?? toolCall?.function?.name;
+          if (toolCall?.name == null && typeof toolName === 'string') {
+            toolCall.name = toolName;
+          }
           const serverName = resolveMcpServerName?.(
-            toolCall?.name,
+            toolName,
             metadata?.agent_id ?? metadata?.agentId,
           );
           if (serverName) {
@@ -738,7 +736,11 @@ function getDefaultHandlers({
           ? data.memberAgentId
           : data?.subagentAgentId;
       for (const toolCall of data?.data?.stepDetails?.tool_calls ?? []) {
-        const serverName = resolveMcpServerName?.(toolCall?.name, memberAgentId);
+        const toolName = toolCall?.name ?? toolCall?.function?.name;
+        if (toolCall?.name == null && typeof toolName === 'string') {
+          toolCall.name = toolName;
+        }
+        const serverName = resolveMcpServerName?.(toolName, memberAgentId);
         if (serverName) {
           toolCall.mcpServerName = serverName;
         }

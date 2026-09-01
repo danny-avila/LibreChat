@@ -1204,6 +1204,103 @@ describe('initializeClient — subagent loading', () => {
     }
   });
 
+  it('loads independent lazy Skill scopes concurrently', async () => {
+    const secondSubagentId = 'agent_subagent_parallel_skill_2';
+    const skills = [];
+    for (const name of ['parallel-skill-one', 'parallel-skill-two']) {
+      const { skill } = await createSkill({
+        name,
+        description: `${name} description`,
+        body: `# ${name}\n`,
+        alwaysApply: true,
+        author: testUser._id,
+        authorName: testUser.name,
+      });
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: testUser._id,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.SKILL,
+        resourceId: skill._id,
+        permBits: PermissionBits.VIEW,
+        grantedBy: testUser._id,
+      });
+      skills.push(skill);
+    }
+    for (const [id, skill] of [
+      [SUBAGENT_ID, skills[0]],
+      [secondSubagentId, skills[1]],
+    ]) {
+      const agent = await createAgent({
+        id,
+        name: id,
+        provider: 'openai',
+        model: 'gpt-4',
+        author: testUser._id,
+        tools: [],
+        skills_enabled: true,
+        skills: [skill._id.toString()],
+      });
+      await grantView(agent);
+    }
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: {
+          enabled: true,
+          allowSelf: false,
+          agent_ids: [SUBAGENT_ID, secondSubagentId],
+        },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('skills');
+    const skillDbMethods = getSkillDbMethods();
+    const listAlwaysApplySkills = skillDbMethods.listAlwaysApplySkills.bind(skillDbMethods);
+    let activeQueries = 0;
+    let maxActiveQueries = 0;
+    const bothQueriesStarted = deferred();
+    const waitForBothQueries = async () => {
+      let timer;
+      await Promise.race([
+        bothQueriesStarted.promise,
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, 1000);
+        }),
+      ]);
+      clearTimeout(timer);
+    };
+    const listAlwaysApplySkillsSpy = jest
+      .spyOn(skillDbMethods, 'listAlwaysApplySkills')
+      .mockImplementation(async (...args) => {
+        activeQueries += 1;
+        maxActiveQueries = Math.max(maxActiveQueries, activeQueries);
+        if (activeQueries === 2) {
+          bothQueriesStarted.resolve();
+        }
+        await waitForBothQueries();
+        try {
+          return await listAlwaysApplySkills(...args);
+        } finally {
+          activeQueries -= 1;
+        }
+      });
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
+
+      expect(listAlwaysApplySkillsSpy).toHaveBeenCalledTimes(2);
+      expect(maxActiveQueries).toBe(2);
+      expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(2);
+    } finally {
+      listAlwaysApplySkillsSpy.mockRestore();
+    }
+  });
+
   it('rejects a disallowed lazy subagent scope before exposing it for prewarm', async () => {
     const subAgent = await createAgent({
       id: SUBAGENT_ID,
