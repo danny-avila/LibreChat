@@ -22,9 +22,9 @@ import {
   lastCursorContentIdx,
   getActivityLabelText,
 } from '~/utils/activityLabels';
-import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { isImageAttachment } from './Parts/attachmentTypes';
 import PendingSkillCall from './Parts/PendingSkillCall';
