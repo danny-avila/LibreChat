@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import ContentParts from '../ContentParts';
 
@@ -71,7 +71,11 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('../Parts', () => ({
   AttachmentGroup: ({ attachments }: { attachments?: TAttachment[] }) => (
-    <div data-testid="attachment-group" data-count={attachments?.length ?? 0} />
+    <div
+      data-testid="attachment-group"
+      data-count={attachments?.length ?? 0}
+      data-paths={(attachments ?? []).map((a) => a.filepath).join(',')}
+    />
   ),
   ExecuteCode: () => <div data-testid="execute-code" />,
   ImageGen: () => <div data-testid="image-gen" />,
@@ -713,18 +717,26 @@ describe('ContentParts — synthesized activity folds', () => {
     );
   });
 
-  it('refuses to fold a span whose tool output is hoisted outside its group', () => {
-    /** `ToolCallGroup` renders `groupAttachments` outside its own panel so a
-     *  generated image survives collapsing the group. A fold would put that
-     *  hoist back inside a disclosure. */
+  it('folds a span whose tool output is hoisted, carrying the output outside', () => {
+    /** This span used to refuse to fold: `ToolCallGroup` renders
+     *  `groupAttachments` outside its own panel so a generated image survives
+     *  collapsing the group, and folding put that hoist back inside a
+     *  disclosure. The card now lifts those files one level further, into its
+     *  own row outside the fold, so the span folds like any other — which
+     *  matters because runs that produce files are the ones with the longest
+     *  lists to fold. */
     renderContentParts({
       ...baseProps,
       content: labeledRun(),
       attachments: [imageAttachment('t2', 'chart.png')],
     });
 
-    expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
-    expect(screen.getByRole('button', { name: FIRST })).toBeInTheDocument();
+    expect(screen.getByTestId('activity-phase-panel')).toBeInTheDocument();
+    const row = screen.getByTestId('attachment-group');
+    expect(row.getAttribute('data-count')).toBe('1');
+    expect(
+      within(screen.getByTestId('activity-phase-panel')).queryByTestId('attachment-group'),
+    ).toBeNull();
   });
 
   it('keeps the reader’s card open when the message takes its server id', () => {
@@ -822,5 +834,150 @@ describe('ContentParts — synthesized activity folds', () => {
 
     expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
     expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
+  });
+});
+
+describe('ContentParts integration: phase media row', () => {
+  const baseProps = {
+    messageId: 'msg1',
+    isCreatedByUser: false,
+    isLast: true,
+    isSubmitting: false,
+    isLatestMessage: true,
+  };
+
+  /** Two labeled calls the server has claimed as one phase, plus whatever the
+   *  answer says afterwards. */
+  const phaseContent = (answer?: string): TMessageContentParts[] => [
+    makeMcpToolCall('t1'),
+    makeMcpToolCall('t2'),
+    makePhasePart(0, 2, 'Generated five mortgage charts'),
+    ...(answer == null ? [] : [makeTextPart(answer)]),
+  ];
+  const phaseAttachments = [imageAttachment('t1', 'a.png'), imageAttachment('t2', 'b.png')];
+
+  it("lifts a phase's files into a media row the fold cannot hide", () => {
+    renderContentParts({ ...baseProps, content: phaseContent(), attachments: phaseAttachments });
+
+    const rows = screen.getAllByTestId('attachment-group');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute('data-count')).toBe('2');
+    // The row is a sibling of the collapsed card, not a child of its panel.
+    expect(
+      within(screen.getByTestId('activity-phase-panel')).queryByTestId('attachment-group'),
+    ).toBeNull();
+  });
+
+  it('still shows one row once the reader expands the phase', () => {
+    renderContentParts({ ...baseProps, content: phaseContent(), attachments: phaseAttachments });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generated five mortgage charts' }));
+
+    const rows = screen.getAllByTestId('attachment-group');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute('data-count')).toBe('2');
+  });
+
+  it('drops a file the answer already renders inline', () => {
+    renderContentParts({
+      ...baseProps,
+      content: phaseContent('Here it is:\n\n![DTI](a.png)'),
+      attachments: phaseAttachments,
+    });
+
+    const rows = screen.getAllByTestId('attachment-group');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute('data-count')).toBe('1');
+  });
+
+  it('keeps a file whose reference shares a line with prose', () => {
+    // Only a reference alone on its own line is claimed, so this renders the
+    // chart inline AND leaves it in the row — a duplicate, never a vanishing.
+    renderContentParts({
+      ...baseProps,
+      content: phaseContent('Here it is: ![DTI](a.png) — nice'),
+      attachments: phaseAttachments,
+    });
+
+    expect(screen.getByTestId('attachment-group').getAttribute('data-count')).toBe('2');
+  });
+
+  it('keeps every file when the answer names one the run never produced', () => {
+    renderContentParts({
+      ...baseProps,
+      content: phaseContent('Here it is:\n\n![DTI](5_dti.png)'),
+      attachments: phaseAttachments,
+    });
+
+    expect(screen.getByTestId('attachment-group').getAttribute('data-count')).toBe('2');
+  });
+
+  it('does not let text inside the card claim a file away from the row', () => {
+    const content = [
+      makeTextPart('Charted it:\n\n![DTI](a.png)'),
+      makeMcpToolCall('t1'),
+      makeMcpToolCall('t2'),
+      makePhasePart(0, 3, 'Generated five mortgage charts'),
+    ];
+
+    renderContentParts({ ...baseProps, content, attachments: phaseAttachments });
+
+    expect(screen.getByTestId('attachment-group').getAttribute('data-count')).toBe('2');
+  });
+
+  it('lifts the file of a lone tool call too, not just a grouped batch', () => {
+    // One call never forms a ToolCallGroup, so this exercises Part -> ToolCall's
+    // own `hideAttachments` rather than the group-level hoist.
+    const content = [makeMcpToolCall('t1'), makePhasePart(0, 1, 'Rendered the chart')];
+
+    renderContentParts({ ...baseProps, content, attachments: [imageAttachment('t1', 'a.png')] });
+
+    const rows = screen.getAllByTestId('attachment-group');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute('data-count')).toBe('1');
+    expect(
+      within(screen.getByTestId('activity-phase-panel')).queryByTestId('attachment-group'),
+    ).toBeNull();
+  });
+
+  it('keeps a non-image file the answer names as if it were an image', () => {
+    // `<img src=report.csv>` displays nothing, so claiming the CSV would cost
+    // the reader the download chip and give back a broken image.
+    const csv = {
+      filename: 'report.csv',
+      filepath: '/api/files/report.csv',
+      messageId: 'm1',
+      toolCallId: 't1',
+      conversationId: 'c1',
+    } as unknown as TAttachment;
+
+    renderContentParts({
+      ...baseProps,
+      content: phaseContent('Here it is:\n\n![report](report.csv)'),
+      attachments: [csv],
+    });
+
+    expect(screen.getByTestId('attachment-group').getAttribute('data-count')).toBe('1');
+  });
+
+  it('shows the latest record when a tool writes the same file twice', () => {
+    // Both records name one stored file; the later carries the fresher
+    // lifecycle fields. Hoisting makes this row the only surface for it, so a
+    // first-seen dedup would pin the stale record on screen.
+    const stale = { ...imageAttachment('t1', 'a.png'), file_id: 'f1' } as TAttachment;
+    const fresh = { ...stale, filepath: '/files/a.png?v=2' } as TAttachment;
+    const content = [makeMcpToolCall('t1'), makePhasePart(0, 1, 'Redrew the chart')];
+
+    renderContentParts({ ...baseProps, content, attachments: [stale, fresh] });
+
+    const row = screen.getByTestId('attachment-group');
+    expect(row.getAttribute('data-count')).toBe('1');
+    expect(row.getAttribute('data-paths')).toBe('/files/a.png?v=2');
+  });
+
+  it('renders no row for a phase that produced nothing', () => {
+    renderContentParts({ ...baseProps, content: phaseContent() });
+
+    expect(screen.queryByTestId('attachment-group')).toBeNull();
   });
 });
