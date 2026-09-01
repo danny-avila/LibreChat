@@ -19,6 +19,7 @@ let mockSkills: Array<Record<string, unknown>>;
 let mockAgentsMap: Record<string, Record<string, unknown>>;
 let mockSkillsActive: boolean;
 let mockUser: { personalization?: { memories?: boolean } } | undefined;
+let mockSkillsQuery: Record<string, unknown>;
 
 jest.mock('~/hooks', () => ({
   useHasAccess: ({ permissionType }: { permissionType: string }) =>
@@ -42,13 +43,7 @@ jest.mock('~/Providers', () => ({
 }));
 
 jest.mock('~/data-provider', () => ({
-  useSkillsInfiniteQuery: () => ({
-    data: { pages: [{ skills: mockSkills }] },
-    isError: false,
-    hasNextPage: false,
-    isFetchingNextPage: false,
-    fetchNextPage: jest.fn(),
-  }),
+  useSkillsInfiniteQuery: () => mockSkillsQuery,
 }));
 
 const toggle = (state: unknown, isPinned = false): ToggleFixture => ({
@@ -140,6 +135,41 @@ describe('usePaletteEntries', () => {
     mockSkills = [];
     mockAgentsMap = {};
     mockSkillsActive = true;
+    mockSkillsQuery = {
+      get data() {
+        return { pages: [{ skills: mockSkills }] };
+      },
+      isError: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: jest.fn(),
+      refetch: jest.fn(),
+    };
+  });
+
+  it('retries a failed catalog walk when the palette opens again', () => {
+    const refetch = jest.fn();
+    mockSkillsQuery = {
+      data: undefined,
+      isError: true,
+      hasNextPage: true,
+      isFetchingNextPage: false,
+      fetchNextPage: jest.fn(),
+      refetch,
+    };
+    const { rerender } = renderHook(
+      ({ revision }) =>
+        usePaletteEntries({
+          conversationId: 'convo-1',
+          catalogEnabled: true,
+          catalogOpenRevision: revision,
+        }),
+      { wrapper, initialProps: { revision: 1 } },
+    );
+
+    expect(refetch).not.toHaveBeenCalled();
+    rerender({ revision: 2 });
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
   it('offers nothing before the badge row has a context to read', () => {

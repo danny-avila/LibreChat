@@ -1,22 +1,17 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useAtom } from 'jotai';
-import keyBy from 'lodash/keyBy';
 import * as Popover from '@radix-ui/react-popover';
 import { Button, Input, Slider } from '@librechat/client';
 import { BrainCircuit, ChevronDown, X } from 'lucide-react';
 import {
   Constants,
   ReasoningParameterFormat,
-  agentParamSettings,
-  applyModelAwareDefaults,
   clampSettingRange,
   getEndpointField,
-  getSettingsKeys,
   isAgentsEndpoint,
   isAssistantsEndpoint,
-  paramSettings,
   reasoningOverrideSchema,
-  resolveReasoningSetting,
+  resolveReasoningSettingForTarget,
 } from 'librechat-data-provider';
 import type {
   Agent,
@@ -26,7 +21,7 @@ import type {
 } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import { useGetAgentByIdQuery, useGetEndpointsQuery } from '~/data-provider';
-import { pendingReasoningOverrideFamily } from './Composer/state';
+import { getReasoningStateKey, pendingReasoningOverrideFamily } from './Composer/state';
 import { useAgentsMapContext } from '~/Providers';
 import { formatTokens } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -264,7 +259,8 @@ export function useComposerReasoning({
   const endpointsQuery = useGetEndpointsQuery();
   const endpointsConfig = useMemo(() => endpointsQuery.data ?? {}, [endpointsQuery.data]);
   const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
-  const [value, setValue] = useAtom(pendingReasoningOverrideFamily(conversationId));
+  const reasoningStateKey = getReasoningStateKey(conversationId, index);
+  const [value, setValue] = useAtom(pendingReasoningOverrideFamily(reasoningStateKey));
   const endpoint = conversation?.endpointType ?? conversation?.endpoint ?? '';
   const agent = (fetchedAgent ?? agentsMap?.[conversation?.agent_id ?? '']) as Agent | undefined;
   const isAgent = isAgentsEndpoint(endpoint);
@@ -272,24 +268,16 @@ export function useComposerReasoning({
   const model = isAgent ? (agent?.model ?? '') : (conversation?.model ?? '');
   const endpointType = getEndpointField(endpointsConfig, provider, 'type');
 
-  const settings = useMemo(() => {
+  const setting = useMemo(() => {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
-    const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
-    const defaultEndpoint = customParams.defaultParamsEndpoint ?? endpointKey;
-    const baseSettings = isAgent
-      ? (agentParamSettings[combinedKey] ?? agentParamSettings[defaultEndpoint] ?? [])
-      : (paramSettings[combinedKey] ?? paramSettings[defaultEndpoint] ?? []);
-    const overrides = keyBy(customParams.paramDefinitions ?? [], 'key');
-    return applyModelAwareDefaults(baseSettings, defaultEndpoint, model).map((setting) => {
-      const override = overrides[setting.key] as SettingDefinition | undefined;
-      return override == null ? setting : { ...setting, ...override };
+    return resolveReasoningSettingForTarget({
+      endpoint: endpointType ?? provider,
+      model,
+      isAgent,
+      defaultParamsEndpoint: customParams.defaultParamsEndpoint,
+      paramDefinitions: customParams.paramDefinitions,
     });
   }, [endpointType, endpointsConfig, isAgent, model, provider]);
-
-  const setting = useMemo(
-    () => resolveReasoningSetting({ endpoint: endpointType ?? provider, model, settings }),
-    [endpointType, model, provider, settings],
-  );
   const settingFingerprint =
     setting == null
       ? ''

@@ -5,7 +5,10 @@ import type { TMessage } from 'librechat-data-provider';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { ExtendedFile, FileSetter } from '~/common';
 import type { useChatFormContext } from '~/Providers';
-import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
+import {
+  getReasoningStateKey,
+  pendingReasoningOverrideFamily,
+} from '~/components/Chat/Input/Composer/state';
 import store from '~/store';
 
 export interface ComposerRestore {
@@ -29,6 +32,7 @@ export interface ComposerRestore {
 }
 
 interface UseComposerRestoreParams {
+  index?: number;
   conversationId: string;
   methods: ReturnType<typeof useChatFormContext>;
   files: Map<string, ExtendedFile>;
@@ -48,6 +52,7 @@ interface UseComposerRestoreParams {
  * component holding half a dozen other concerns makes impossible to test.
  */
 export default function useComposerRestore({
+  index = 0,
   conversationId,
   methods,
   files,
@@ -56,6 +61,7 @@ export default function useComposerRestore({
   answerModeActive,
 }: UseComposerRestoreParams): ComposerRestore {
   const reasoningStore = useStore();
+  const reasoningStateKey = getReasoningStateKey(conversationId, index);
   /** Chip "Edit message" restore: quote chips, skill picks, and the reasoning
    *  override merge back into their compose-time atoms. */
   const restoreComposerContext = useRecoilCallback(
@@ -73,10 +79,10 @@ export default function useComposerRestore({
           ]);
         }
         if (reasoningOverride != null) {
-          reasoningStore.set(pendingReasoningOverrideFamily(conversationId), reasoningOverride);
+          reasoningStore.set(pendingReasoningOverrideFamily(reasoningStateKey), reasoningOverride);
         }
       },
-    [conversationId, reasoningStore],
+    [conversationId, reasoningStateKey, reasoningStore],
   );
 
   /** Read at call time rather than captured, so both the synchronous edit below
@@ -159,8 +165,9 @@ export default function useComposerRestore({
       (convoId: string) =>
         snapshot.getLoadable(store.pendingQuotesByConvoId(convoId)).getValue().length > 0 ||
         snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId)).getValue().length > 0 ||
-        reasoningStore.get(pendingReasoningOverrideFamily(convoId)) != null,
-    [reasoningStore],
+        reasoningStore.get(pendingReasoningOverrideFamily(getReasoningStateKey(convoId, index))) !=
+          null,
+    [index, reasoningStore],
   );
 
   /**

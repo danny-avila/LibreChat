@@ -108,7 +108,10 @@ const ChatForm = memo(function ChatForm({
   const measuredRowCountRef = useRef(1);
 
   const SpeechToText = useRecoilValue(store.speechToText);
+  const speechSettingsInitialized = useRecoilValue(store.speechSettingsInitialized);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
+  const enterToSend = useRecoilValue(store.enterToSend);
+  const showComposerTips = useRecoilValue(store.showComposerTips);
   const chatDirection = useRecoilValue(store.chatDirection);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
@@ -266,7 +269,8 @@ const ChatForm = memo(function ChatForm({
       }),
     [submitMessage],
   );
-  const { editToComposer, restoreReclaimedSteer } = useComposerRestore({
+  const { restoreReclaimedSteer } = useComposerRestore({
+    index,
     conversationId,
     methods,
     files,
@@ -379,6 +383,8 @@ const ChatForm = memo(function ChatForm({
   const attachTarget = useAttachTarget(conversation, disableInputs);
   const { submitText: submitAnswerText } = answerMode;
   const dictationAnswerModeActive = answerMode.composerAnswers;
+  const speechDisabled =
+    !speechSettingsInitialized || disableInputs || isNotAppendable || answerMode.composerLocked;
   /** The same gate `onSubmit` applies: while a question pause is live the
    *  composer IS the answer box, so a dictated turn has to answer it rather
    *  than start a turn the paused run would drop. */
@@ -402,6 +408,7 @@ const ChatForm = memo(function ChatForm({
     /* A dictated question answer is cleared by answer mode only after the
        resume succeeds. A transient failure must leave the transcript intact. */
     deferComposerReset: dictationAnswerModeActive,
+    disabled: speechDisabled,
   });
   const uploadingCount = useMemo(() => {
     let count = 0;
@@ -568,7 +575,6 @@ const ChatForm = memo(function ChatForm({
             <Queue
               steering={steering}
               conversationId={conversationId}
-              onEditToComposer={editToComposer}
               onRestoreToComposer={restoreReclaimedSteer}
             />
           )}
@@ -733,7 +739,7 @@ const ChatForm = memo(function ChatForm({
                   showTools={showTools}
                   isSubmitting={isSubmitting}
                   showSpeech={SpeechToText}
-                  speechDisabled={disableInputs || isNotAppendable || answerMode.composerLocked}
+                  speechDisabled={speechDisabled}
                   dictation={dictation}
                   actionSlot={actionSlot}
                   hasAddedConversation={addedConvo != null}
@@ -747,6 +753,8 @@ const ChatForm = memo(function ChatForm({
               would lay out as a narrow column beside the box. */}
           <Hints
             index={index}
+            enterToSend={enterToSend}
+            showTips={showComposerTips}
             hasText={(textValue?.trim() ?? '') !== ''}
             isSubmitting={isSubmitting}
             duringRunActive={steering.duringRunActive}

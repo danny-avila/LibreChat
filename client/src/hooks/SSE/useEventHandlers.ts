@@ -45,7 +45,10 @@ import {
   queueTitleGeneration,
   markTitleGenerationProcessed,
 } from '~/data-provider';
-import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
+import {
+  getReasoningStateKey,
+  pendingReasoningOverrideFamily,
+} from '~/components/Chat/Input/Composer/state';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
@@ -365,10 +368,13 @@ export default function useEventHandlers({
           set(store.pendingQuotesByConvoId(convoId), quotes);
         }
         if (reasoningOverride != null) {
-          reasoningStore.set(pendingReasoningOverrideFamily(convoId), reasoningOverride);
+          const reasoningAtom = pendingReasoningOverrideFamily(
+            getReasoningStateKey(convoId, runIndex),
+          );
+          reasoningStore.set(reasoningAtom, (current) => current ?? reasoningOverride);
         }
       },
-    [reasoningStore],
+    [reasoningStore, runIndex],
   );
 
   const lastAnnouncementTimeRef = useRef(Date.now());

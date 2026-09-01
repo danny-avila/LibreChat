@@ -108,8 +108,9 @@ function renderQueue(
         <Queue
           steering={steeringOverride}
           conversationId={CONVO_ID}
-          onEditToComposer={handlers.onEditToComposer ?? jest.fn()}
-          onRestoreToComposer={handlers.onRestoreToComposer ?? jest.fn()}
+          onRestoreToComposer={
+            handlers.onRestoreToComposer ?? handlers.onEditToComposer ?? jest.fn()
+          }
         />
       </DndProvider>
     </RecoilRoot>,
@@ -270,16 +271,28 @@ describe('Queue', () => {
 
   it('returns a trashed message to the composer before dropping it', async () => {
     const onRestore = jest.fn().mockReturnValue(true);
-    renderQueue([queued({ id: 'q1', files: [{ file_id: 'f1' }] as never })], steering, {
-      onRestoreToComposer: onRestore,
-    });
+    renderQueue(
+      [
+        queued({
+          id: 'q1',
+          files: [{ file_id: 'f1' }] as never,
+          reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+        }),
+      ],
+      steering,
+      { onRestoreToComposer: onRestore },
+    );
     await act(async () => {
       fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
     });
     expect(onRestore).toHaveBeenCalledWith(
       'follow up on this',
       [{ file_id: 'f1' }],
-      { quotes: [], manualSkills: [] },
+      {
+        quotes: [],
+        manualSkills: [],
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+      },
       CONVO_ID,
     );
     expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
@@ -308,16 +321,31 @@ describe('Queue', () => {
 
   it('hands the whole message to the composer to edit', async () => {
     const onEdit = jest.fn().mockReturnValue(true);
-    renderQueue([queued({ id: 'q1', quotes: ['a quote'], manualSkills: ['writer'] })], steering, {
-      onEditToComposer: onEdit,
-    });
+    renderQueue(
+      [
+        queued({
+          id: 'q1',
+          quotes: ['a quote'],
+          manualSkills: ['writer'],
+          reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+        }),
+      ],
+      steering,
+      { onEditToComposer: onEdit },
+    );
     await act(async () => {
       fireEvent.click(screen.getByLabelText('com_ui_edit_message'));
     });
-    expect(onEdit).toHaveBeenCalledWith('follow up on this', [], {
-      quotes: ['a quote'],
-      manualSkills: ['writer'],
-    });
+    expect(onEdit).toHaveBeenCalledWith(
+      'follow up on this',
+      [],
+      {
+        quotes: ['a quote'],
+        manualSkills: ['writer'],
+        reasoningOverride: { key: 'reasoning_effort', value: ReasoningEffort.high },
+      },
+      CONVO_ID,
+    );
     expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
   });
 
@@ -337,33 +365,55 @@ describe('Queue', () => {
     );
   });
 
+  it('waits for discard before using the conversation-guarded edit restore', async () => {
+    let settleDiscard: (value: boolean) => void = () => undefined;
+    mockDiscardQueued.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        settleDiscard = resolve;
+      }),
+    );
+    const onRestore = jest.fn().mockReturnValue(true);
+    renderQueue([queued({ id: 'q1' })], steering, { onRestoreToComposer: onRestore });
+
+    fireEvent.click(screen.getByLabelText('com_ui_edit_message'));
+    expect(onRestore).not.toHaveBeenCalled();
+
+    await act(async () => settleDiscard(true));
+    expect(onRestore).toHaveBeenCalledWith(
+      'follow up on this',
+      [],
+      { quotes: [], manualSkills: [] },
+      CONVO_ID,
+    );
+  });
+
   /* The drain takes the head at run end, and both handoffs above span an await
      before the row is dropped. Claiming the row for the whole handoff is what
      stops the drain sending a message the user is taking back. */
   describe('claiming a row for the handoff', () => {
     afterEach(() => releaseQueuedIntent('q1'));
 
-    it.each([
-      ['com_ui_edit_message', 'onEditToComposer'] as const,
-      ['com_ui_remove_queued', 'onRestoreToComposer'] as const,
-    ])('holds the row across %s and lets it go afterwards', async (label, handler) => {
-      let settleDiscard: (value: boolean) => void = () => undefined;
-      mockDiscardQueued.mockReturnValueOnce(
-        new Promise<boolean>((resolve) => {
-          settleDiscard = resolve;
-        }),
-      );
-      renderQueue([queued({ id: 'q1' })], steering, {
-        [handler]: jest.fn().mockReturnValue(true),
-      });
+    it.each(['com_ui_edit_message', 'com_ui_remove_queued'] as const)(
+      'holds the row across %s and lets it go afterwards',
+      async (label) => {
+        let settleDiscard: (value: boolean) => void = () => undefined;
+        mockDiscardQueued.mockReturnValueOnce(
+          new Promise<boolean>((resolve) => {
+            settleDiscard = resolve;
+          }),
+        );
+        renderQueue([queued({ id: 'q1' })], steering, {
+          onRestoreToComposer: jest.fn().mockReturnValue(true),
+        });
 
-      fireEvent.click(screen.getByLabelText(label));
-      expect(hasQueuedIntent('q1')).toBe(true);
+        fireEvent.click(screen.getByLabelText(label));
+        expect(hasQueuedIntent('q1')).toBe(true);
 
-      await act(async () => settleDiscard(true));
-      expect(hasQueuedIntent('q1')).toBe(false);
-      expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
-    });
+        await act(async () => settleDiscard(true));
+        expect(hasQueuedIntent('q1')).toBe(false);
+        expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+      },
+    );
 
     it('lets the row go when the handoff is refused', async () => {
       renderQueue([queued({ id: 'q1' })], steering, {
@@ -389,12 +439,7 @@ describe('Queue', () => {
             ])
           }
         >
-          <Queue
-            steering={steering}
-            conversationId={CONVO_ID}
-            onEditToComposer={jest.fn()}
-            onRestoreToComposer={jest.fn()}
-          />
+          <Queue steering={steering} conversationId={CONVO_ID} onRestoreToComposer={jest.fn()} />
         </RecoilRoot>
         <RecoilRoot
           initializeState={({ set }) =>
@@ -404,12 +449,7 @@ describe('Queue', () => {
             ])
           }
         >
-          <Queue
-            steering={steering}
-            conversationId={CONVO_ID}
-            onEditToComposer={jest.fn()}
-            onRestoreToComposer={jest.fn()}
-          />
+          <Queue steering={steering} conversationId={CONVO_ID} onRestoreToComposer={jest.fn()} />
         </RecoilRoot>
       </DndProvider>,
     );
@@ -442,12 +482,7 @@ describe('Queue', () => {
       >
         <Driver />
         <DndProvider backend={HTML5Backend}>
-          <Queue
-            steering={steering}
-            conversationId={CONVO_ID}
-            onEditToComposer={jest.fn()}
-            onRestoreToComposer={jest.fn()}
-          />
+          <Queue steering={steering} conversationId={CONVO_ID} onRestoreToComposer={jest.fn()} />
         </DndProvider>
       </RecoilRoot>,
     );

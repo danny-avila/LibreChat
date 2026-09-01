@@ -14,14 +14,10 @@ const {
   ReasoningParameterFormat,
   isAgentsEndpoint,
   parseCompactConvo,
-  paramSettings,
-  agentParamSettings,
   reasoningOverrideSchema,
-  resolveReasoningSetting,
-  clampSettingRange,
-  applyModelAwareDefaults,
+  resolveReasoningSettingForTarget,
+  isReasoningOverrideSupported,
   getDefaultParamsEndpoint,
-  getSettingsKeys,
 } = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
@@ -100,6 +96,7 @@ async function buildEndpointOption(req, res, next) {
 
   const appConfig = req.config;
   let appliedModelSpecPrivateFields = new Set();
+  let enforcedModelSpecFields = new Set();
   if (appConfig.modelSpecs?.list?.length && appConfig.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
     const { list } = appConfig.modelSpecs;
@@ -130,6 +127,7 @@ async function buildEndpointOption(req, res, next) {
       });
     }
     const { modelSpec: currentModelSpec } = modelSpecResolution;
+    enforcedModelSpecFields = new Set(Object.keys(currentModelSpec.preset));
 
     try {
       const result = applyModelSpecPreset({
@@ -198,7 +196,10 @@ async function buildEndpointOption(req, res, next) {
 
     const reasoningOverride = reasoningOverrideResult?.data;
     if (reasoningOverride != null) {
-      if (appliedModelSpecPrivateFields.has(reasoningOverride.key)) {
+      if (
+        appliedModelSpecPrivateFields.has(reasoningOverride.key) ||
+        enforcedModelSpecFields.has(reasoningOverride.key)
+      ) {
         return handleError(res, { text: 'Invalid reasoning override' });
       }
       const loadedAgent = await req.body.endpointOption.agent;
@@ -212,46 +213,15 @@ async function buildEndpointOption(req, res, next) {
         return handleError(res, { text: 'Invalid reasoning override' });
       }
       const customSettings = customParams?.paramDefinitions;
-      const [combinedSettingsKey, endpointSettingsKey] = getSettingsKeys(
-        effectiveEndpoint,
-        effectiveModel,
-      );
-      const baseSettings =
-        agentParamSettings[combinedSettingsKey] ??
-        agentParamSettings[endpointSettingsKey] ??
-        paramSettings[combinedSettingsKey] ??
-        paramSettings[endpointSettingsKey] ??
-        paramSettings[defaultParamsEndpoint] ??
-        [];
-      const customSettingsByKey = new Map(
-        (customSettings ?? []).map((setting) => [setting.key, setting]),
-      );
-      const modelAwareSettings = applyModelAwareDefaults(
-        baseSettings,
-        defaultParamsEndpoint ?? endpointSettingsKey,
-        effectiveModel,
-      ).map((setting) => {
-        const override = customSettingsByKey.get(setting.key);
-        return override == null ? setting : { ...setting, ...override };
-      });
-      const supportedSetting = resolveReasoningSetting({
+      const supportedSetting = resolveReasoningSettingForTarget({
         endpoint: effectiveEndpoint,
         model: effectiveModel,
-        settings: modelAwareSettings,
+        isAgent: isAgents,
+        defaultParamsEndpoint: customParams?.defaultParamsEndpoint ?? defaultParamsEndpoint,
+        paramDefinitions: customSettings,
       });
 
-      if (supportedSetting?.key !== reasoningOverride.key) {
-        return handleError(res, { text: 'Invalid reasoning override' });
-      }
-
-      const valueSupported =
-        typeof reasoningOverride.value === 'number'
-          ? supportedSetting.range == null ||
-            clampSettingRange(reasoningOverride.value, supportedSetting.range) ===
-              reasoningOverride.value
-          : supportedSetting.options == null ||
-            supportedSetting.options.includes(reasoningOverride.value);
-      if (!valueSupported) {
+      if (!isReasoningOverrideSupported(reasoningOverride, supportedSetting)) {
         return handleError(res, { text: 'Invalid reasoning override' });
       }
       const modelParameters = req.body.endpointOption.model_parameters ?? {};

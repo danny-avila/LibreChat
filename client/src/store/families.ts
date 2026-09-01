@@ -305,17 +305,6 @@ const showSkillsPopoverFamily = atomFamily<boolean, string | number | null>({
 });
 
 /**
- * How far, in pixels, the landing screen should raise itself so an open
- * composer popover has room beneath the composer instead of pushing the page
- * into a scrollbar. Written by the popover that needs the room, read by the
- * layout that can give it.
- */
-const composerLiftFamily = atomFamily<number, string | number | null>({
-  key: 'composerLiftByIndex',
-  default: 0,
-});
-
-/**
  * Per-conversation queue of skill names the user invoked manually via the
  * `$` popover for the next submission. Structured channel that the submit
  * pipeline (`useChatFunctions.ask`) drains and pins onto the user message's
@@ -842,7 +831,6 @@ export default {
   showPromptsPopoverFamily,
   showSkillsPopoverFamily,
   pendingComposerTextByConvoId,
-  composerLiftFamily,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
   pendingSteersByConvoId,

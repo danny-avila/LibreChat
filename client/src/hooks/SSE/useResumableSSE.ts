@@ -1177,12 +1177,7 @@ export default function useResumableSSE(
           snapshot
             .getLoadable(store.activeGenerationProtocolVersionByConvoId(conversationId))
             .getValue();
-        const statuses =
-          options?.statuses ??
-          (generationProtocolVersion === GENERATION_PROTOCOL_VERSION
-            ? ABORT_SWEEP_STATUSES
-            : undefined);
-        const activeStatuses = statuses ?? RUN_ENDED_STATUSES;
+        const activeStatuses = options?.statuses ?? RUN_ENDED_STATUSES;
         const excluded = new Set(options?.excludeSteerIds ?? []);
         const accepted = selectLocalSteersForQueue(
           chips,

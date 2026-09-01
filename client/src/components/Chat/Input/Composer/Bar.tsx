@@ -262,13 +262,18 @@ function Bar({
      is only walked for composers whose palette was actually used, and closing
      it keeps the pages cached rather than refetching per open. */
   const [catalogWanted, setCatalogWanted] = useState(false);
-  const onPaletteOpen = useCallback(() => setCatalogWanted(true), []);
+  const [catalogOpenRevision, setCatalogOpenRevision] = useState(0);
+  const onPaletteOpen = useCallback(() => {
+    setCatalogWanted(true);
+    setCatalogOpenRevision((revision) => revision + 1);
+  }, []);
   const allEntries = usePaletteEntries({
     conversationId,
     agentId,
     enabled: showTools || agentId != null,
     toolsEnabled: showTools,
     catalogEnabled: catalogWanted,
+    catalogOpenRevision,
   });
 
   /* Servers with required variables open this before they can be selected; it

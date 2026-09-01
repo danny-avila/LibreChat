@@ -47,7 +47,10 @@ import {
   mergeRestagedQuotes,
 } from '~/utils';
 import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '~/utils/queueIntent';
-import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
+import {
+  getReasoningStateKey,
+  pendingReasoningOverrideFamily,
+} from '~/components/Chat/Input/Composer/state';
 import { markComposerFilesTaken } from '~/utils/composerFiles';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useLatestMessage } from '~/hooks/Messages';
@@ -237,8 +240,7 @@ export function hasLiveToolApproval(
       return false;
     }
     const toolCall = part[ContentTypes.TOOL_CALL] as
-      | { approval?: unknown; output?: string | null }
-      | undefined;
+      { approval?: unknown; output?: string | null } | undefined;
     return toolCall?.approval != null && (toolCall.output?.length ?? 0) === 0;
   });
 }
@@ -550,8 +552,9 @@ export default function useSteering({
   /** v1 gates the during-run UI to the primary composer, like the HITL popover. */
   const enabled = steerable && index === 0;
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
+  const reasoningStateKey = getReasoningStateKey(conversationId, index);
   const queuedMessages = useRecoilValue(store.queuedMessagesByConvoId(queueKey));
-  const pendingReasoningOverride = useAtomValue(pendingReasoningOverrideFamily(queueKey));
+  const pendingReasoningOverride = useAtomValue(pendingReasoningOverrideFamily(reasoningStateKey));
   const setQueuedMessages = useSetRecoilState(store.queuedMessagesByConvoId(queueKey));
   const knownClientRequestIds = useMemo(
     () =>
@@ -1214,7 +1217,7 @@ export default function useSteering({
           .getLoadable(store.pendingManualSkillsByConvoId(conversationId))
           .getValue();
         const reasoningOverride = reasoningStore.get(
-          pendingReasoningOverrideFamily(conversationId),
+          pendingReasoningOverrideFamily(reasoningStateKey),
         );
         if (quotes.length > 0) {
           reset(store.pendingQuotesByConvoId(conversationId));
@@ -1223,7 +1226,7 @@ export default function useSteering({
           reset(store.pendingManualSkillsByConvoId(conversationId));
         }
         if (reasoningOverride != null) {
-          reasoningStore.set(pendingReasoningOverrideFamily(conversationId), undefined);
+          reasoningStore.set(pendingReasoningOverrideFamily(reasoningStateKey), undefined);
         }
         return {
           ...(quotes.length > 0 && { quotes }),
@@ -1231,7 +1234,7 @@ export default function useSteering({
           ...(reasoningOverride != null && { reasoningOverride }),
         };
       },
-    [conversationId, reasoningStore],
+    [conversationId, reasoningStateKey, reasoningStore],
   );
 
   /** Quotes-only drain for composer-origin steers: the excerpts ride the steer

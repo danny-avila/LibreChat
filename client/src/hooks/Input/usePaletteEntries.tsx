@@ -73,17 +73,16 @@ export interface PaletteEntry {
 }
 
 /** Accumulates skill pages so client-side search covers the full catalog. */
-function useAllSkills(enabled: boolean): TSkillSummary[] {
-  const { data, isError, fetchNextPage, hasNextPage, isFetchingNextPage } = useSkillsInfiniteQuery(
-    { limit: 50 },
-    { enabled },
-  );
+function useAllSkills(enabled: boolean, openRevision: number): TSkillSummary[] {
+  const { data, isError, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
+    useSkillsInfiniteQuery({ limit: 50 }, { enabled });
 
   /* Circuit breaker: once any page request fails, stop auto-fetching so a
      transient API error does not turn into an unbounded retry loop. A later
      successful fetch (React Query refetching in the background, or the user
      reopening the palette) re-arms pagination; a repeat failure re-trips it. */
   const blockedRef = useRef(false);
+  const previousOpenRevisionRef = useRef(openRevision);
   useEffect(() => {
     if (isError) {
       blockedRef.current = true;
@@ -91,6 +90,17 @@ function useAllSkills(enabled: boolean): TSkillSummary[] {
       blockedRef.current = false;
     }
   }, [isError, data]);
+
+  useEffect(() => {
+    if (previousOpenRevisionRef.current === openRevision) {
+      return;
+    }
+    previousOpenRevisionRef.current = openRevision;
+    if (enabled && isError) {
+      blockedRef.current = false;
+      void refetch();
+    }
+  }, [enabled, isError, openRevision, refetch]);
 
   useEffect(() => {
     if (blockedRef.current || isError || !enabled) {
@@ -121,6 +131,7 @@ export default function usePaletteEntries({
   enabled = true,
   toolsEnabled = enabled,
   catalogEnabled = true,
+  catalogOpenRevision = 0,
 }: {
   conversationId: string;
   agentId?: string | null;
@@ -133,6 +144,8 @@ export default function usePaletteEntries({
    *  palette has actually been opened: following every cursor on mount pulled
    *  a deployment's whole catalog into every composer that was merely visited. */
   catalogEnabled?: boolean;
+  /** Increments on each palette open so a failed catalog walk can retry. */
+  catalogOpenRevision?: number;
 }): PaletteEntry[] {
   const localize = useLocalize();
   const context = useBadgeRowContext();
@@ -180,7 +193,7 @@ export default function usePaletteEntries({
   const canUseMemory = useHasMemoryAccess() && user?.personalization?.memories !== false;
 
   const skillsListable = enabled && canUseSkills && skillsEnabled;
-  const allSkills = useAllSkills(skillsListable && catalogEnabled);
+  const allSkills = useAllSkills(skillsListable && catalogEnabled, catalogOpenRevision);
 
   /* Mirrors backend `resolveAgentScopedSkillIds`: ephemeral agents see the full
      catalog; persisted agents gate on `skills_enabled` and fail closed while

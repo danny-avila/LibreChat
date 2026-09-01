@@ -44,6 +44,7 @@ export default function useDictation({
   isSubmitting,
   filesLoading = false,
   deferComposerReset = false,
+  disabled = false,
 }: {
   ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
@@ -55,6 +56,8 @@ export default function useDictation({
   /** The accepted submission owns composer cleanup asynchronously. Keep this
    *  take spent while leaving its transcript until that owner confirms it. */
   deferComposerReset?: boolean;
+  /** Host-owned speech and composer gates, including settings hydration. */
+  disabled?: boolean;
 }): Dictation {
   const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
@@ -221,7 +224,7 @@ export default function useDictation({
   const [discarded, setDiscarded] = useState(false);
 
   const start = useCallback(() => {
-    if (isLoading === true || settling) {
+    if (disabled || isLoading === true || settling) {
       /* Do not re-arm the canceled take before its late callback arrives. */
       return;
     }
@@ -232,7 +235,7 @@ export default function useDictation({
     setPendingSend(false);
     existingTextRef.current = getValues('text') || '';
     startRecording();
-  }, [getValues, isLoading, settling, startRecording]);
+  }, [disabled, getValues, isLoading, settling, startRecording]);
 
   /* Only a running take can be stopped. The bar disables these controls once a
      transcription is in flight, and this is the same rule stated where the mode
@@ -275,6 +278,7 @@ export default function useDictation({
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if (
+        disabled ||
         speechToText !== true ||
         event.code !== 'KeyL' ||
         !event.shiftKey ||
@@ -293,7 +297,7 @@ export default function useDictation({
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [speechToText, start, stopToComposer]);
+  }, [disabled, speechToText, start, stopToComposer]);
 
   /* Memoized so `memo(Bar)` has something that can compare equal: a fresh
      object here re-rendered the whole bar on every keystroke in the composer. */
@@ -301,13 +305,24 @@ export default function useDictation({
     () => ({
       active,
       transcribing: !discarded && (isLoading === true || settling),
-      startDisabled: isLoading === true || settling,
+      startDisabled: disabled || isLoading === true || settling,
       elapsed,
       start,
       cancel,
       stopToComposer,
       stopAndSend,
     }),
-    [active, discarded, isLoading, settling, elapsed, start, cancel, stopToComposer, stopAndSend],
+    [
+      active,
+      discarded,
+      disabled,
+      isLoading,
+      settling,
+      elapsed,
+      start,
+      cancel,
+      stopToComposer,
+      stopAndSend,
+    ],
   );
 }

@@ -17,8 +17,10 @@ import {
   anthropicSettings,
 } from './types';
 import { supportsAdaptiveThinking, supportsPromptCache } from './bedrock';
-import { SettingDefinition, SettingsConfiguration } from './generate';
-import { getModelKey } from './schemas';
+import { clampSettingRange } from './generate';
+import type { SettingDefinition, SettingsConfiguration } from './generate';
+import { getModelKey, getSettingsKeys } from './schemas';
+import type { TReasoningOverride } from './schemas';
 
 // Base definitions
 const baseDefinitions: Record<string, SettingDefinition> = {
@@ -1348,6 +1350,73 @@ export function resolveReasoningSetting({
     (resolved, key) => resolved ?? findReasoningSetting(settings, key),
     undefined,
   );
+}
+
+/** Builds the effective reasoning definition shared by the composer and the
+ * server. Custom definitions refine the provider defaults instead of replacing
+ * the rest of the settings list. */
+export function resolveReasoningSettingForTarget({
+  endpoint,
+  model,
+  isAgent = false,
+  defaultParamsEndpoint,
+  paramDefinitions,
+}: {
+  endpoint: string;
+  model?: string | null;
+  isAgent?: boolean;
+  defaultParamsEndpoint?: string | null;
+  paramDefinitions?: Partial<SettingDefinition>[] | null;
+}): SettingDefinition | undefined {
+  if (!model) {
+    return undefined;
+  }
+
+  const [combinedSettingsKey, endpointSettingsKey] = getSettingsKeys(endpoint, model);
+  const effectiveDefaultParamsEndpoint = defaultParamsEndpoint ?? endpointSettingsKey;
+  const baseSettings = isAgent
+    ? (agentParamSettings[combinedSettingsKey] ??
+      agentParamSettings[effectiveDefaultParamsEndpoint] ??
+      agentParamSettings[endpointSettingsKey] ??
+      paramSettings[combinedSettingsKey] ??
+      paramSettings[effectiveDefaultParamsEndpoint] ??
+      paramSettings[endpointSettingsKey] ??
+      [])
+    : (paramSettings[combinedSettingsKey] ??
+      paramSettings[effectiveDefaultParamsEndpoint] ??
+      paramSettings[endpointSettingsKey] ??
+      []);
+  const customSettingsByKey = new Map(
+    (paramDefinitions ?? []).flatMap((setting) =>
+      setting.key == null ? [] : ([[setting.key, setting]] as const),
+    ),
+  );
+  const settings = applyModelAwareDefaults(baseSettings, effectiveDefaultParamsEndpoint, model).map(
+    (setting) => {
+      const override = customSettingsByKey.get(setting.key);
+      return override == null ? setting : { ...setting, ...override };
+    },
+  );
+
+  return resolveReasoningSetting({ endpoint, model, settings });
+}
+
+/** Confirms that a stored one-shot override still belongs to the selected
+ * model and remains inside its advertised enum or numeric range. */
+export function isReasoningOverrideSupported(
+  reasoningOverride: TReasoningOverride,
+  setting: SettingDefinition | undefined,
+): boolean {
+  if (setting?.key !== reasoningOverride.key) {
+    return false;
+  }
+  if (typeof reasoningOverride.value === 'number') {
+    return (
+      setting.range == null ||
+      clampSettingRange(reasoningOverride.value, setting.range) === reasoningOverride.value
+    );
+  }
+  return setting.options == null || setting.options.includes(reasoningOverride.value);
 }
 
 /**

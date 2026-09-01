@@ -2,6 +2,8 @@ import type { SettingDefinition } from './generate';
 import {
   paramSettings,
   resolveReasoningSetting,
+  resolveReasoningSettingForTarget,
+  isReasoningOverrideSupported,
   applyModelAwareDefaults,
 } from './parameterSettings';
 import { BedrockProviders, EModelEndpoint } from './types';
@@ -239,6 +241,65 @@ describe('resolveReasoningSetting', () => {
         settings,
       })?.key,
     ).toBe('thinkingBudget');
+  });
+});
+
+describe('resolveReasoningSettingForTarget', () => {
+  it('uses a custom-backed agent default parameter surface', () => {
+    expect(
+      resolveReasoningSettingForTarget({
+        endpoint: 'ClaudeProxy',
+        model: 'claude-sonnet-4-6',
+        isAgent: true,
+        defaultParamsEndpoint: EModelEndpoint.anthropic,
+      })?.key,
+    ).toBe('effort');
+  });
+
+  it('prefers a custom endpoint default over the generic custom surface', () => {
+    expect(
+      resolveReasoningSettingForTarget({
+        endpoint: EModelEndpoint.custom,
+        model: 'claude-sonnet-4-6',
+        defaultParamsEndpoint: EModelEndpoint.anthropic,
+      })?.key,
+    ).toBe('effort');
+  });
+
+  it('merges a deployment-owned reasoning definition into provider defaults', () => {
+    expect(
+      resolveReasoningSettingForTarget({
+        endpoint: EModelEndpoint.custom,
+        model: 'deployment-model',
+        paramDefinitions: [
+          {
+            key: 'reasoning_effort',
+            type: 'enum',
+            options: ['low', 'high'],
+          } as SettingDefinition,
+        ],
+      })?.options,
+    ).toEqual(['low', 'high']);
+  });
+});
+
+describe('isReasoningOverrideSupported', () => {
+  it('rejects a stale key and a model-specific value outside its range', () => {
+    const setting = {
+      key: 'thinkingBudget',
+      type: 'number',
+      range: { min: -1, positiveMin: 128, max: 32768, step: 128 },
+    } as SettingDefinition;
+
+    expect(isReasoningOverrideSupported({ key: 'reasoning_effort', value: 'high' }, setting)).toBe(
+      false,
+    );
+    expect(isReasoningOverrideSupported({ key: 'thinkingBudget', value: 64000 }, setting)).toBe(
+      false,
+    );
+    expect(isReasoningOverrideSupported({ key: 'thinkingBudget', value: 32768 }, setting)).toBe(
+      true,
+    );
   });
 });
 

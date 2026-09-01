@@ -8,7 +8,7 @@ import React, {
   useLayoutEffect,
 } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import { AutoSizer, List } from 'react-virtualized';
 import { Star, Plus, Search, ChevronDown } from 'lucide-react';
 import { FileUpload, IconButton, TooltipAnchor } from '@librechat/client';
@@ -32,7 +32,7 @@ import useAttachItems from '~/hooks/Input/useAttachItems';
 import { isMacPlatform } from '~/utils/shortcuts';
 import { getFileType, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
+import { composerLiftFamily } from './state';
 
 const HEADER_HEIGHT = 26;
 const ROW_HEIGHT = 34;
@@ -241,7 +241,8 @@ function Palette({
   const listRef = useRef<List>(null);
   const listBodyRef = useRef<HTMLDivElement>(null);
   const disclosureRef = useRef<HTMLButtonElement>(null);
-  const setLift = useSetRecoilState(store.composerLiftFamily(index));
+  const liftAtom = useMemo(() => composerLiftFamily(index), [index]);
+  const setLift = useSetAtom(liftAtom);
   const { ref: popoverRef, height: popupHeight } = useElementSize<HTMLDivElement>();
   const reducedMotion = useReducedMotion();
 
@@ -290,7 +291,6 @@ function Palette({
     [setLift],
   );
   useEffect(() => () => applyLift(0), [applyLift]);
-
   const baselineRef = useRef<number | null>(null);
   const updateLift = useCallback(() => {
     if (!mounted) {

@@ -17,6 +17,7 @@ const RESIZE_MS = 190;
 const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
 
 interface ThinkingControlProps {
+  index: number;
   setting: SettingDefinition;
   conversation: TConversation | null;
   value?: TReasoningOverride;
@@ -25,6 +26,7 @@ interface ThinkingControlProps {
 }
 
 function ThinkingControl({
+  index,
   setting,
   conversation,
   value,
@@ -159,6 +161,7 @@ function ThinkingControl({
       </Ariakit.PopoverDisclosure>
       <Ariakit.Popover
         portal
+        data-chat-pane-portal={index}
         gutter={8}
         unmountOnHide
         onClick={(event) => event.stopPropagation()}
@@ -224,6 +227,7 @@ function Thinking({ index, disabled, hasAddedConversation }: ThinkingProps) {
 
   return (
     <ThinkingControl
+      index={index}
       setting={reasoning.setting}
       conversation={conversation ?? null}
       value={reasoning.value}
