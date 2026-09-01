@@ -1812,9 +1812,7 @@ describe('Meilisearch Mongoose plugin', () => {
     });
 
     test('cleanupMeiliIndex preserves pipe-containing conversation IDs with originalConversationId', async () => {
-      const conversationModel = createConversationModel(
-        mongoose,
-      ) as unknown as SchemaWithMeiliMethods;
+      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
       await conversationModel.deleteMany({});
 
       const existingPipeConvoId = 'convo|with|pipe';
@@ -2590,9 +2588,7 @@ describe('Meilisearch Mongoose plugin', () => {
     });
 
     test('deleteObjectFromMeili uses toMeiliConversationKey for conversationId', async () => {
-      const conversationModel = createConversationModel(
-        mongoose,
-      ) as unknown as SchemaWithMeiliMethods;
+      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
       const convo = await conversationModel.create({
         conversationId: 'delete|with|pipes',
         user: new mongoose.Types.ObjectId(),
@@ -2609,9 +2605,7 @@ describe('Meilisearch Mongoose plugin', () => {
     });
 
     test('deleteMany hook deletes documents using toMeiliConversationKey', async () => {
-      const conversationModel = createConversationModel(
-        mongoose,
-      ) as unknown as SchemaWithMeiliMethods;
+      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
       await conversationModel.create({
         conversationId: 'batch|del|pipe',
         user: new mongoose.Types.ObjectId(),
@@ -2626,9 +2620,7 @@ describe('Meilisearch Mongoose plugin', () => {
     });
 
     test('normalizes search hits back to originalConversationId', async () => {
-      const conversationModel = createConversationModel(
-        mongoose,
-      ) as unknown as SchemaWithMeiliMethods;
+      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
       const conversationId = 'search|with|pipes';
       mockSearch.mockResolvedValue({
         hits: [
