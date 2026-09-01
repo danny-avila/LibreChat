@@ -2414,45 +2414,27 @@ describe('startExpiredFileSweep', () => {
   });
 });
 
-describe('unreachable unified uploads', () => {
-  const makeUnreachableReq = () => {
+describe('uploads with no consumer on the agent record', () => {
+  test('accepts a type the record shows no tool for', async () => {
+    /* Skills contribute file search and code execution for a turn without being written
+     * to agent.tools, so an empty list is not evidence that nothing will read the file.
+     * Reaching storage, which this suite leaves unwired, proves it was not refused. */
     const req = makeReq({ mimetype: 'application/zip', ocrConfig: null });
     req.body.endpoint = EModelEndpoint.agents;
-    return req;
-  };
+    getStrategyFunctions.mockClear();
 
-  test('refuses a type no tool can consume', async () => {
-    /* Nothing extracts a zip, so with neither code nor search enabled it would sit in the
-     * composer unreadable while the model answered as though it were available. */
-    await expect(
-      processAgentFileUpload({
-        req: makeUnreachableReq(),
-        res: mockRes,
-        metadata: {
-          agent_id: 'agent-abc',
-          message_file: 'true',
-          file_id: 'file-uuid-zip',
-          agentTools: [],
-        },
-      }),
-    ).rejects.toThrow(/code interpreter or file search/i);
-  });
-
-  test('lets it past the guard when a file tool can consume it', async () => {
-    /* Storage is not wired up in this suite, so the upload still fails further along.
-     * What matters is that it is no longer refused for having no consumer. */
-    const error = await processAgentFileUpload({
-      req: makeUnreachableReq(),
+    await processAgentFileUpload({
+      req,
       res: mockRes,
       metadata: {
         agent_id: 'agent-abc',
         message_file: 'true',
         file_id: 'file-uuid-zip',
-        agentTools: [EToolResources.execute_code],
+        agentTools: [],
       },
-    }).catch((thrown) => thrown);
+    }).catch(() => {});
 
-    expect(String(error?.message ?? '')).not.toMatch(/code interpreter or file search/i);
+    expect(getStrategyFunctions).toHaveBeenCalled();
   });
 });
 

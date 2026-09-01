@@ -724,17 +724,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const destination = resolveUploadDestination({
     toolResource: tool_resource,
     deliveryPath: llmDeliveryPath,
-    mimeType: file.mimetype,
     agentTools: metadata.agentTools,
     hasAgent: agent_id != null,
     isMessageAttachment: messageAttachment,
   });
 
-  if (destination.rejection === 'no-consumer') {
-    throw new Error(
-      `Files of type ${file.mimetype} are not sent to the model and can only be used by the code interpreter or file search. Enable one of those tools for this agent, or upload a supported file type.`,
-    );
-  }
   if (destination.rejection === 'no-agent-resource') {
     throw new Error(
       `Files of type ${file.mimetype} cannot be saved to an agent on their own. Attach the file to a message, or enable the code interpreter or file search so the agent has somewhere to keep it.`,
