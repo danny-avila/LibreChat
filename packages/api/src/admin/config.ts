@@ -1,17 +1,31 @@
-import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
+import {
+  logger,
+  BASE_CONFIG_PRINCIPAL_ID,
+  canonicalizeResetPaths,
+  fieldPathPolicyError,
+  indexedArrayPathError,
+  isForbiddenAdminConfigPath,
+  isValidFieldPath,
+  sanitizeAdminConfigOverrides,
+} from '@librechat/data-schemas';
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
-  INTERFACE_PERMISSION_FIELDS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
-  PERMISSION_SUB_KEYS,
   hasProcessMCPServerConfig,
   isProcessMCPServerConfig,
   isProcessMCPServerField,
 } from 'librechat-data-provider';
-import type { AppConfig, ConfigSection, IConfig, SystemCapability } from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  ConfigRevisionSnapshot,
+  ConfigSection,
+  FindConfigByPrincipalOptions,
+  IConfig,
+  SystemCapability,
+} from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
@@ -30,8 +44,15 @@ import {
   redactConfigSecrets,
 } from './secrets';
 
-const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
+type ConfigRevisionCause = 'save' | 'import' | 'reset' | 'restore';
+type ConfigMutationOp =
+  | { kind: 'fields'; resetPaths: string[]; fields: Record<string, unknown>; priority: number }
+  | { kind: 'replace'; overrides: Record<string, unknown>; priority: number }
+  | { kind: 'delete' }
+  | { kind: 'restore'; revisionId: string };
+
 const MAX_PATCH_ENTRIES = 100;
+const MAX_PATCH_MUTATIONS = 100;
 const DEFAULT_PRIORITY = 10;
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
@@ -73,15 +94,112 @@ function hasLangfuseHeadersOverride(rawOverrides: Record<string, unknown>): bool
   return Object.keys(rawLangfuse).some((key) => key === 'headers' || key.startsWith('headers.'));
 }
 
-export function isValidFieldPath(path: string): boolean {
+type AtomicFieldEntry = { fieldPath: string; value: unknown };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseAtomicFieldEntries(
+  value: unknown,
+): { ok: true; entries: AtomicFieldEntry[] } | { ok: false; error: string } {
+  if (value === undefined) {
+    return { ok: true, entries: [] };
+  }
+  if (!Array.isArray(value)) {
+    return { ok: false, error: 'entries must be an array' };
+  }
+  const entries: AtomicFieldEntry[] = [];
+  for (const entry of value) {
+    if (!isPlainObject(entry)) {
+      return { ok: false, error: 'each entry must be an object with fieldPath and value' };
+    }
+    if (typeof entry.fieldPath !== 'string') {
+      return { ok: false, error: 'each entry must include a fieldPath string' };
+    }
+    const fieldPathError = fieldPathPolicyError(entry.fieldPath);
+    if (fieldPathError) {
+      return { ok: false, error: fieldPathError };
+    }
+    if (!Object.prototype.hasOwnProperty.call(entry, 'value')) {
+      return { ok: false, error: 'each entry must include a value property' };
+    }
+    entries.push({ fieldPath: entry.fieldPath, value: entry.value });
+  }
+  return { ok: true, entries };
+}
+
+function parseAtomicResetPaths(
+  value: unknown,
+): { ok: true; resetPaths: string[] } | { ok: false; error: string } {
+  if (value === undefined) {
+    return { ok: true, resetPaths: [] };
+  }
+  if (!Array.isArray(value)) {
+    return { ok: false, error: 'resetPaths must be an array' };
+  }
+  for (const path of value) {
+    if (typeof path !== 'string') {
+      return { ok: false, error: 'each resetPaths element must be a string' };
+    }
+    const fieldPathError = fieldPathPolicyError(path);
+    if (fieldPathError) {
+      return { ok: false, error: fieldPathError };
+    }
+  }
+  return { ok: true, resetPaths: value };
+}
+
+function validateAtomicMutationProperties(
+  body: Record<string, unknown>,
+): { ok: true } | { ok: false; error: string } {
+  if ('entries' in body && body.entries !== undefined && !Array.isArray(body.entries)) {
+    return { ok: false, error: 'entries must be an array' };
+  }
+  if ('resetPaths' in body && body.resetPaths !== undefined && !Array.isArray(body.resetPaths)) {
+    return { ok: false, error: 'resetPaths must be an array' };
+  }
+  if ('overrides' in body && body.overrides !== undefined && !isPlainObject(body.overrides)) {
+    return { ok: false, error: 'overrides must be an object' };
+  }
+  if (
+    'deleteDocument' in body &&
+    body.deleteDocument !== undefined &&
+    typeof body.deleteDocument !== 'boolean'
+  ) {
+    return { ok: false, error: 'deleteDocument must be a boolean' };
+  }
+  if ('restoreRevisionId' in body && body.restoreRevisionId !== undefined) {
+    if (typeof body.restoreRevisionId !== 'string' || body.restoreRevisionId.length === 0) {
+      return { ok: false, error: 'restoreRevisionId must be a non-empty string' };
+    }
+  }
+  return { ok: true };
+}
+
+export { isValidFieldPath } from '@librechat/data-schemas';
+
+function isConfigVersionConflict(error: unknown): error is { currentVersion: number | null } {
   return (
-    typeof path === 'string' &&
-    path.length > 0 &&
-    !path.startsWith('.') &&
-    !path.endsWith('.') &&
-    !path.includes('..') &&
-    !path.includes('$') &&
-    !UNSAFE_SEGMENTS.test(path)
+    typeof error === 'object' &&
+    error != null &&
+    (error as { name?: string }).name === 'ConfigVersionConflictError'
+  );
+}
+
+function isConfigRevisionNotFound(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error != null &&
+    (error as { name?: string }).name === 'ConfigRevisionNotFoundError'
+  );
+}
+
+function isTransactionRequired(error: unknown): error is Error {
+  return (
+    typeof error === 'object' &&
+    error != null &&
+    (error as { name?: string }).name === 'TransactionRequiredError'
   );
 }
 
@@ -106,35 +224,35 @@ function isProcessMCPServerFieldPath(fieldPath: string, value: unknown): boolean
   return isProcessMCPServerField(field) || (field === 'type' && value === 'stdio');
 }
 
-/**
- * Returns true if `fieldPath` targets an interface permission field or permission sub-key.
- *
- * - `"interface.prompts"` → true (boolean permission field)
- * - `"interface.agents.use"` → true (permission sub-key)
- * - `"interface.mcpServers"` → true (entire composite field)
- * - `"interface.mcpServers.use"` → true (permission sub-key)
- * - `"interface.mcpServers.placeholder"` → false (UI-only sub-key)
- * - `"interface.peoplePicker.users"` → true (all peoplePicker sub-keys are permissions)
- * - `"interface.modelSelect"` → false (UI-only field)
- */
-function isInterfacePermissionPath(fieldPath: string): boolean {
-  const parts = fieldPath.split('.');
-  if (parts[0] !== 'interface' || parts.length < 2) {
-    return false;
+function isBlockedFieldPath(fieldPath: string): boolean {
+  return isBaseOnlyFieldPath(fieldPath) || isForbiddenAdminConfigPath(fieldPath);
+}
+
+function sanitizeConfigOverrides(overrides: Record<string, unknown>): Partial<TCustomConfig> {
+  const normalized = { ...overrides };
+  delete normalized.interfaceConfig;
+  if (
+    'interface' in normalized &&
+    (normalized.interface == null ||
+      typeof normalized.interface !== 'object' ||
+      Array.isArray(normalized.interface))
+  ) {
+    delete normalized.interface;
   }
-  if (!INTERFACE_PERMISSION_FIELDS.has(parts[1])) {
-    return false;
+  const sanitized = sanitizeAdminConfigOverrides(normalized) as Record<string, unknown>;
+  if (
+    sanitized.interface != null &&
+    typeof sanitized.interface === 'object' &&
+    !Array.isArray(sanitized.interface)
+  ) {
+    const interfaceConfig = sanitized.interface as Record<string, unknown>;
+    for (const field of RUNTIME_CONFIG_INTERFACE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(interfaceConfig, field)) {
+        interfaceConfig[field] = normalizeRuntimeInterfaceValue(field, interfaceConfig[field]);
+      }
+    }
   }
-  // "interface.<permField>" with no sub-key → permission (blocks the whole field),
-  // EXCEPT dual-purpose runtime fields (e.g. schedules) whose bare top-level value
-  // is a runtime enable toggle, not a permission — those must pass through so admin
-  // field patches/tombstones can set or clear them (their .use/.create permission
-  // sub-keys are still blocked below).
-  if (parts.length === 2) {
-    return !RUNTIME_CONFIG_INTERFACE_FIELDS.has(parts[1]);
-  }
-  // "interface.<permField>.<subKey>" → only block if sub-key is a permission bit
-  return PERMISSION_SUB_KEYS.has(parts[2]);
+  return sanitized as Partial<TCustomConfig>;
 }
 
 /**
@@ -171,7 +289,7 @@ export interface AdminConfigDeps {
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    options?: { includeInactive?: boolean },
+    options?: FindConfigByPrincipalOptions,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   upsertConfig: (
@@ -188,7 +306,7 @@ export interface AdminConfigDeps {
     principalId: string | Types.ObjectId,
     principalModel: PrincipalModel,
     fields: Record<string, unknown>,
-    priority: number,
+    priority?: number,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   tombstoneConfigField: (
@@ -196,7 +314,7 @@ export interface AdminConfigDeps {
     principalId: string | Types.ObjectId,
     principalModel: PrincipalModel,
     fieldPath: string,
-    priority: number,
+    priority?: number,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   unsetConfigField: (
@@ -218,6 +336,19 @@ export interface AdminConfigDeps {
     session?: ClientSession,
     options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
+  mutateConfigWithRevision: (params: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    principalModel: PrincipalModel;
+    expectedVersion: number | null;
+    op: ConfigMutationOp;
+    cause: ConfigRevisionCause;
+    actor: { actorId: string; actorEmail?: string; tenantId: string };
+  }) => Promise<{
+    changed: boolean;
+    config: IConfig | null;
+    revision: ConfigRevisionSnapshot | null;
+  }>;
   hasConfigCapability: (
     user: CapabilityUser,
     section: ConfigSection | null,
@@ -411,6 +542,12 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   return safeConfig;
 }
 
+function redactRevisionForResponse(revision: ConfigRevisionSnapshot): ConfigRevisionSnapshot {
+  const safeRevision = JSON.parse(JSON.stringify(revision)) as ConfigRevisionSnapshot;
+  redactConfigSecrets(safeRevision.overrides);
+  return safeRevision;
+}
+
 function preservePatchedConfigSecretFields(
   fields: Record<string, unknown>,
   existingOverrides?: unknown,
@@ -436,6 +573,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   deleteConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
   deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
   toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  mutateConfigAtomic: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const {
     listAllConfigs,
@@ -446,6 +584,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     unsetConfigField,
     deleteConfig,
     toggleConfigActive,
+    mutateConfigWithRevision,
     hasConfigCapability,
     hasAnyConfigReadAccess = async () => false,
     getReadableConfigSections = async (u, sections) => {
@@ -623,17 +762,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const filteredOverrides = {
-        ...(overrides as Record<string, unknown>),
-      } as Partial<TCustomConfig>;
-      for (const section of BASE_ONLY_OVERRIDE_SECTIONS) {
-        if (section in filteredOverrides) {
-          delete (filteredOverrides as Record<string, unknown>)[section];
-          logger.warn(
-            `[adminConfig] Stripping base-only config section "${section}" - configure it in librechat.yaml instead`,
-          );
-        }
-      }
+      const filteredOverrides = sanitizeConfigOverrides(rawOverrides);
       for (const key of Object.keys(filteredOverrides)) {
         const section = getTopLevelSection(key);
         if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
@@ -641,45 +770,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           logger.warn(
             `[adminConfig] Stripping dedicated tenant-wide config section "${key}" from the generic config API`,
           );
-        }
-      }
-      const iface = (overrides as Record<string, unknown>).interface;
-      if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
-        const filteredIface: Record<string, unknown> = {};
-        for (const [field, rawVal] of Object.entries(iface as Record<string, unknown>)) {
-          const val = normalizeRuntimeInterfaceValue(field, rawVal);
-          if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
-            filteredIface[field] = val;
-          } else if (val != null && typeof val === 'object' && !Array.isArray(val)) {
-            // Composite permission field (e.g. mcpServers): strip permission
-            // sub-keys but preserve UI-only sub-keys like placeholder/trustCheckbox.
-            const uiOnly: Record<string, unknown> = {};
-            for (const [sub, subVal] of Object.entries(val as Record<string, unknown>)) {
-              if (!PERMISSION_SUB_KEYS.has(sub)) {
-                uiOnly[sub] = subVal;
-              } else {
-                logger.warn(
-                  `[adminConfig] Stripping interface permission sub-field "${field}.${sub}" — use role permissions instead`,
-                );
-              }
-            }
-            if (Object.keys(uiOnly).length > 0) {
-              filteredIface[field] = uiOnly;
-            }
-          } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
-            // Dual-purpose field: the boolean form is a runtime disable, not a
-            // permission toggle, so preserve it (e.g. schedules: false).
-            filteredIface[field] = val;
-          } else {
-            logger.warn(
-              `[adminConfig] Stripping interface permission field "${field}" — use role permissions instead`,
-            );
-          }
-        }
-        if (Object.keys(filteredIface).length > 0) {
-          (filteredOverrides as Record<string, unknown>).interface = filteredIface;
-        } else {
-          delete (filteredOverrides as Record<string, unknown>).interface;
         }
       }
 
@@ -781,16 +871,23 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
-      const { entries, priority } = req.body as {
-        entries?: Array<{ fieldPath: string; value: unknown }>;
-        priority?: number;
-      };
+      const rawBody: unknown = req.body;
+      if (!isPlainObject(rawBody)) {
+        return res.status(400).json({ error: 'request body must be a JSON object' });
+      }
+
+      const { priority } = rawBody;
+      const parsedEntries = parseAtomicFieldEntries(rawBody.entries);
+      if (!parsedEntries.ok) {
+        return res.status(400).json({ error: parsedEntries.error });
+      }
+      const entries = parsedEntries.entries;
 
       if (priority != null && (typeof priority !== 'number' || priority < 0)) {
         return res.status(400).json({ error: 'priority must be a non-negative number' });
       }
 
-      if (!Array.isArray(entries) || entries.length === 0) {
+      if (entries.length === 0) {
         return res.status(400).json({ error: 'entries array is required and must not be empty' });
       }
 
@@ -826,6 +923,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             error: `Cannot patch protected secret ancestor as an array: ${entry.fieldPath}`,
           });
         }
+        const indexedErr = indexedArrayPathError(entry.fieldPath);
+        if (indexedErr) {
+          return res.status(400).json({ error: indexedErr });
+        }
       }
 
       const user = getCapabilityUser(req);
@@ -839,21 +940,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           value: normalizeInterfaceFieldPatch(entry.fieldPath, entry.value),
         }))
         .filter((entry) => {
-          if (isBaseOnlyFieldPath(entry.fieldPath)) {
+          if (isBlockedFieldPath(entry.fieldPath)) {
             logger.warn(
-              `[adminConfig] Stripping base-only config field "${entry.fieldPath}" - configure it in librechat.yaml instead`,
+              `[adminConfig] Stripping protected config field "${entry.fieldPath}" — use canonical YAML UI fields only`,
             );
             return false;
           }
           if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
             logger.warn(
               `[adminConfig] Stripping dedicated tenant-wide config field "${entry.fieldPath}" from the generic config API`,
-            );
-            return false;
-          }
-          if (isInterfacePermissionPath(entry.fieldPath)) {
-            logger.warn(
-              `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
             );
             return false;
           }
@@ -901,15 +996,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           `[adminConfig] Ignoring caller-supplied priority on section-scoped patch to ${principalType}/${principalId}: only broad manage:configs may modify document priority`,
         );
       }
-      const requestedPriority = hasBroadManage ? priority : undefined;
+      const requestedPriority = hasBroadManage ? (priority as number | undefined) : undefined;
 
       const hasObjectValuedSecretPatch = Object.entries(fields).some(([fieldPath, value]) =>
         isConfigSecretPreservablePatch(fieldPath, value),
       );
-      const existing =
-        requestedPriority == null || hasObjectValuedSecretPatch
-          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-          : null;
+      const existing = hasObjectValuedSecretPatch
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : null;
       const encryptedFields = encryptConfigSecretFields(fields);
       const preservedFields = preservePatchedConfigSecretFields(
         encryptedFields,
@@ -921,7 +1015,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalId,
         principalModel(principalType),
         preservedFields,
-        requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        requestedPriority,
       );
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
@@ -968,6 +1062,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (secretInputError) {
         return res.status(400).json({ error: secretInputError });
       }
+      const tombstoneIndexedErr = indexedArrayPathError(fieldPath);
+      if (tombstoneIndexedErr) {
+        return res.status(400).json({ error: tombstoneIndexedErr });
+      }
 
       const user = getCapabilityUser(req);
       if (!user) {
@@ -991,16 +1089,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
-      if (isBaseOnlyFieldPath(fieldPath)) {
+      if (isBlockedFieldPath(fieldPath)) {
         logger.warn(
-          `[adminConfig] Ignoring tombstone for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
-        );
-        return res.status(200).json({ message: 'No actionable field path provided' });
-      }
-
-      if (isInterfacePermissionPath(fieldPath)) {
-        logger.warn(
-          `[adminConfig] Ignoring tombstone for interface permission field "${fieldPath}" — use role permissions instead`,
+          `[adminConfig] Ignoring tombstone for protected config field "${fieldPath}" — use canonical YAML UI fields only`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
@@ -1018,11 +1109,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const existing =
-        requestedPriority == null
-          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-          : null;
-
       let config: IConfig | null = null;
       for (const path of getConfigSecretMutationPaths(fieldPath)) {
         const fieldConfig = await writeConfigTombstone(
@@ -1030,7 +1116,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           principalId,
           principalModel(principalType),
           path,
-          requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+          requestedPriority,
         );
         if (fieldConfig) {
           config = fieldConfig;
@@ -1073,6 +1159,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (secretInputError) {
         return res.status(400).json({ error: secretInputError });
       }
+      const unsetIndexedErr = indexedArrayPathError(fieldPath);
+      if (unsetIndexedErr) {
+        return res.status(400).json({ error: unsetIndexedErr });
+      }
 
       const user = getCapabilityUser(req);
       if (!user) {
@@ -1096,9 +1186,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
-      if (isBaseOnlyFieldPath(fieldPath)) {
+      if (isBlockedFieldPath(fieldPath)) {
         logger.warn(
-          `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+          `[adminConfig] Ignoring delete for protected config field "${fieldPath}" — use canonical YAML UI fields only`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
@@ -1106,13 +1196,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
         logger.warn(
           `[adminConfig] Ignoring dedicated tenant-wide config delete "${fieldPath}" in the generic config API`,
-        );
-        return res.status(200).json({ message: 'No actionable field path provided' });
-      }
-
-      if (isInterfacePermissionPath(fieldPath)) {
-        logger.warn(
-          `[adminConfig] Ignoring delete for interface permission field "${fieldPath}" — use role permissions instead`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
@@ -1257,6 +1340,375 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     }
   }
 
+  /**
+   * POST /:principalType/:principalId/atomic
+   * Compare-and-set mutation that snapshots the predecessor and inserts a finalized
+   * config revision in the same Mongo transaction, then invalidates caches.
+   */
+  async function mutateConfigAtomic(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const { principalType, principalId } = req.params as {
+        principalType: string;
+        principalId: string;
+      };
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+      }
+      if (principalType !== PrincipalType.ROLE || principalId !== BASE_CONFIG_PRINCIPAL_ID) {
+        return res.status(400).json({
+          error: 'Atomic config revisions are only supported for the base configuration',
+        });
+      }
+
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const rawBody: unknown = req.body;
+      if (!isPlainObject(rawBody)) {
+        return res.status(400).json({ error: 'request body must be a JSON object' });
+      }
+      const body = rawBody;
+
+      const propertyValidation = validateAtomicMutationProperties(body);
+      if (!propertyValidation.ok) {
+        return res.status(400).json({ error: propertyValidation.error });
+      }
+
+      const { expectedVersion, priority } = body;
+      if (
+        expectedVersion != null &&
+        (typeof expectedVersion !== 'number' ||
+          !Number.isInteger(expectedVersion) ||
+          expectedVersion < 0)
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'expectedVersion must be a non-negative integer or null' });
+      }
+      if (!('expectedVersion' in body)) {
+        return res.status(400).json({ error: 'expectedVersion is required' });
+      }
+      if (priority != null && (typeof priority !== 'number' || priority < 0)) {
+        return res.status(400).json({ error: 'priority must be a non-negative number' });
+      }
+
+      const parsedEntries = parseAtomicFieldEntries(body.entries);
+      if (!parsedEntries.ok) {
+        return res.status(400).json({ error: parsedEntries.error });
+      }
+      const parsedResets = parseAtomicResetPaths(body.resetPaths);
+      if (!parsedResets.ok) {
+        return res.status(400).json({ error: parsedResets.error });
+      }
+      const entries = parsedEntries.entries;
+      const rawResetPaths = parsedResets.resetPaths;
+      if (entries.length + rawResetPaths.length > MAX_PATCH_MUTATIONS) {
+        return res.status(400).json({
+          error: `combined entries and resetPaths exceed maximum of ${MAX_PATCH_MUTATIONS}`,
+        });
+      }
+
+      const CAUSES = new Set(['save', 'import', 'reset', 'restore']);
+      if (body.cause != null && (typeof body.cause !== 'string' || !CAUSES.has(body.cause))) {
+        return res.status(400).json({ error: 'cause must be one of save, import, reset, restore' });
+      }
+
+      const hasEntries = entries.length > 0;
+      const hasResets = rawResetPaths.length > 0;
+      const hasOverrides = isPlainObject(body.overrides);
+      const deleteDocument = body.deleteDocument === true;
+      const restoreRevisionId =
+        typeof body.restoreRevisionId === 'string' && body.restoreRevisionId.length > 0
+          ? body.restoreRevisionId
+          : undefined;
+      const modeCount =
+        Number(hasEntries || hasResets) +
+        Number(hasOverrides) +
+        Number(deleteDocument) +
+        Number(Boolean(restoreRevisionId));
+      if (
+        modeCount !== 1 &&
+        !(hasEntries && hasResets && !hasOverrides && !deleteDocument && !restoreRevisionId)
+      ) {
+        if (!hasEntries && !hasResets && !hasOverrides && !deleteDocument && !restoreRevisionId) {
+          return res.status(400).json({
+            error: 'Provide resetPaths, entries, overrides, deleteDocument, or restoreRevisionId',
+          });
+        }
+        if (deleteDocument && (hasEntries || hasResets || hasOverrides || restoreRevisionId)) {
+          return res
+            .status(400)
+            .json({ error: 'deleteDocument cannot be combined with field mutations' });
+        }
+        if (hasOverrides && (hasEntries || hasResets || restoreRevisionId)) {
+          return res
+            .status(400)
+            .json({ error: 'overrides cannot be combined with entries or resetPaths' });
+        }
+        if (restoreRevisionId && (hasEntries || hasResets || hasOverrides || deleteDocument)) {
+          return res
+            .status(400)
+            .json({ error: 'restoreRevisionId cannot be combined with other mutations' });
+        }
+      }
+
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+      if (deleteDocument || hasOverrides || restoreRevisionId) {
+        if (!hasBroadManage) {
+          return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+      }
+
+      let op: ConfigMutationOp;
+      if (restoreRevisionId) {
+        op = { kind: 'restore', revisionId: restoreRevisionId };
+      } else if (deleteDocument) {
+        op = { kind: 'delete' };
+      } else if (hasOverrides) {
+        const rawOverrides = body.overrides as Record<string, unknown>;
+        if (
+          hasProcessMCPServerConfig(rawOverrides.mcpServers) ||
+          hasProcessMCPServerConfig(rawOverrides.mcpConfig)
+        ) {
+          return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
+        }
+        if (hasLangfuseHeadersOverride(rawOverrides)) {
+          return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
+        }
+        const sanitizedOverrides = sanitizeConfigOverrides(rawOverrides) as Record<string, unknown>;
+        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
+          delete sanitizedOverrides[section];
+        }
+        for (const section of getConfigSecretSections()) {
+          const secretInputError = getConfigSecretInputError(section, sanitizedOverrides[section]);
+          if (secretInputError) {
+            return res.status(400).json({ error: secretInputError });
+          }
+        }
+        const existing = await findConfigByPrincipal(principalType, principalId, {
+          includeInactive: true,
+          ...(user.tenantId !== undefined ? { tenantId: user.tenantId } : {}),
+        });
+        const encryptedOverrides = encryptConfigSecrets(sanitizedOverrides);
+        op = {
+          kind: 'replace',
+          overrides: preserveConfigSecrets(encryptedOverrides, existing?.overrides),
+          priority: hasBroadManage
+            ? ((priority as number | null | undefined) ?? existing?.priority ?? DEFAULT_PRIORITY)
+            : DEFAULT_PRIORITY,
+        };
+      } else {
+        if (entries.length > MAX_PATCH_ENTRIES) {
+          return res
+            .status(400)
+            .json({ error: `entries array exceeds maximum of ${MAX_PATCH_ENTRIES}` });
+        }
+        for (const entry of entries) {
+          if (!isValidFieldPath(entry.fieldPath)) {
+            return res
+              .status(400)
+              .json({ error: `Invalid or unsafe field path: ${entry.fieldPath}` });
+          }
+          if (isProcessMCPServerFieldPath(entry.fieldPath, entry.value)) {
+            return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
+          }
+          if (isLangfuseHeadersFieldPath(entry.fieldPath)) {
+            return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
+          }
+          if (isConfigSecretDescendantPath(entry.fieldPath)) {
+            return res
+              .status(400)
+              .json({ error: `Cannot patch inside protected secret path: ${entry.fieldPath}` });
+          }
+          const secretInputError = getConfigSecretInputError(entry.fieldPath, entry.value);
+          if (secretInputError) {
+            return res.status(400).json({ error: secretInputError });
+          }
+          if (Array.isArray(entry.value) && isConfigSecretAncestorPath(entry.fieldPath)) {
+            return res.status(400).json({
+              error: `Cannot patch protected secret ancestor as an array: ${entry.fieldPath}`,
+            });
+          }
+          const indexedErr = indexedArrayPathError(entry.fieldPath);
+          if (indexedErr) {
+            return res.status(400).json({ error: indexedErr });
+          }
+        }
+        for (const path of rawResetPaths) {
+          if (!isValidFieldPath(path)) {
+            return res.status(400).json({ error: `Invalid or unsafe field path: ${path}` });
+          }
+          if (isProcessMCPServerFieldPath(path, undefined)) {
+            return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
+          }
+          if (isLangfuseHeadersFieldPath(path)) {
+            return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
+          }
+          const secretInputError = getConfigSecretInputError(path, undefined);
+          if (secretInputError) {
+            return res.status(400).json({ error: secretInputError });
+          }
+          const indexedErr = indexedArrayPathError(path);
+          if (indexedErr) {
+            return res.status(400).json({ error: indexedErr });
+          }
+        }
+
+        const validResets = canonicalizeResetPaths(
+          rawResetPaths
+            .filter(
+              (path) =>
+                !isBlockedFieldPath(path) &&
+                !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(path)),
+            )
+            .flatMap(getConfigSecretMutationPaths),
+        );
+        const seen = new Set<string>();
+        const rawFields: Record<string, unknown> = {};
+        for (const entry of entries.map((item) => ({
+          ...item,
+          value: normalizeInterfaceFieldPatch(item.fieldPath, item.value),
+        }))) {
+          if (isBlockedFieldPath(entry.fieldPath)) {
+            continue;
+          }
+          if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
+            continue;
+          }
+          if (seen.has(entry.fieldPath)) {
+            return res.status(400).json({ error: `Duplicate fieldPath: ${entry.fieldPath}` });
+          }
+          seen.add(entry.fieldPath);
+          rawFields[entry.fieldPath] = entry.value;
+        }
+
+        const requestedSections = [
+          ...new Set([
+            ...Object.keys(rawFields).map((fieldPath) => getTopLevelSection(fieldPath)),
+            ...validResets.map((path) => getTopLevelSection(path)),
+          ]),
+        ];
+
+        if (!hasBroadManage && requestedSections.length > 0) {
+          const requestedAllowed = await Promise.all(
+            requestedSections.map((section) =>
+              hasConfigCapability(user, section as ConfigSection, 'manage'),
+            ),
+          );
+          const requestedDenied = requestedSections.find((_, i) => !requestedAllowed[i]);
+          if (requestedDenied) {
+            return res
+              .status(403)
+              .json({ error: `Insufficient permissions for config section: ${requestedDenied}` });
+          }
+        }
+
+        const existing = await findConfigByPrincipal(principalType, principalId, {
+          includeInactive: true,
+          ...(user.tenantId !== undefined ? { tenantId: user.tenantId } : {}),
+        });
+        const fields = preservePatchedConfigSecretFields(
+          encryptConfigSecretFields(rawFields),
+          existing?.overrides,
+        );
+
+        if (Object.keys(fields).length === 0 && validResets.length === 0) {
+          if (!hasBroadManage) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+          }
+          const liveVersion = existing == null ? null : (existing.configVersion ?? 0);
+          if (expectedVersion !== liveVersion) {
+            return res.status(409).json({
+              error: 'Config version conflict',
+              currentVersion: liveVersion,
+            });
+          }
+          return res.status(200).json({ message: 'No actionable field entries provided' });
+        }
+
+        op = {
+          kind: 'fields',
+          resetPaths: validResets,
+          fields,
+          priority: hasBroadManage
+            ? ((priority as number | null | undefined) ?? existing?.priority ?? DEFAULT_PRIORITY)
+            : (existing?.priority ?? DEFAULT_PRIORITY),
+        };
+      }
+
+      const cause: ConfigRevisionCause = (() => {
+        if (op.kind === 'restore') {
+          return 'restore';
+        }
+        if (op.kind === 'delete') {
+          return 'reset';
+        }
+        if (op.kind === 'replace') {
+          return 'import';
+        }
+        return Object.keys(op.fields).length === 0 ? 'reset' : 'save';
+      })();
+
+      const { config, revision, changed } = await mutateConfigWithRevision({
+        principalType,
+        principalId,
+        principalModel: principalModel(principalType),
+        expectedVersion: (expectedVersion as number | null | undefined) ?? null,
+        op,
+        cause,
+        actor: {
+          actorId: user.id,
+          actorEmail: (req.user as { email?: string } | undefined)?.email,
+          tenantId: user.tenantId ?? '',
+        },
+      });
+
+      try {
+        await invalidateConfigCaches?.(user.tenantId);
+      } catch (err) {
+        logger.error('[adminConfig] Cache invalidation failed after atomic mutate:', err);
+      }
+
+      if (!changed || revision == null) {
+        return res.status(200).json({
+          changed: false,
+          configVersion: null,
+          revisionId: null,
+        });
+      }
+
+      if (!hasBroadManage) {
+        return res.status(200).json({
+          changed: true,
+          configVersion: config?.configVersion ?? null,
+          revisionId: revision.id,
+        });
+      }
+      return res.status(200).json({
+        changed: true,
+        config: config ? redactConfigForResponse(config) : config,
+        revision: redactRevisionForResponse(revision),
+      });
+    } catch (error) {
+      if (isConfigVersionConflict(error)) {
+        return res.status(409).json({
+          error: 'Config version conflict',
+          currentVersion: error.currentVersion,
+        });
+      }
+      if (isConfigRevisionNotFound(error)) {
+        return res.status(404).json({ error: 'Revision not found' });
+      }
+      if (isTransactionRequired(error)) {
+        return res.status(503).json({ error: (error as Error).message });
+      }
+      logger.error('[adminConfig] mutateConfigAtomic error:', error);
+      return res.status(500).json({ error: 'Failed to mutate config' });
+    }
+  }
+
   return {
     listConfigs,
     getBaseConfig,
@@ -1267,5 +1719,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     deleteConfigField,
     deleteConfigOverrides,
     toggleConfig,
+    mutateConfigAtomic,
   };
 }

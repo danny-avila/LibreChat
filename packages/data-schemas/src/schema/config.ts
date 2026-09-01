@@ -46,6 +46,7 @@ const configSchema: Schema<IConfig> = new Schema<IConfig>(
     tenantId: {
       type: String,
       index: true,
+      default: null,
     },
   },
   { timestamps: true },

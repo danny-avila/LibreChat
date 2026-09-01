@@ -3,11 +3,15 @@ import {
   BASE_ONLY_CONFIG_SECTIONS,
   INTERFACE_PERMISSION_FIELDS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
-  PERMISSION_SUB_KEYS,
   isProcessMCPServerConfig,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
+import {
+  sanitizeAdminConfigOverrides,
+  sanitizeAdminConfigTombstones,
+  INTERFACE_PERMISSION_UI_SHAPES,
+} from '~/admin/configOverrides';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 
 type AnyObject = { [key: string]: unknown };
@@ -17,7 +21,6 @@ const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 /** Filters are a fail-closed security boundary even during mixed-package rollouts. */
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(['filters', ...BASE_ONLY_CONFIG_SECTIONS]);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
-
 /**
  * Paths within the config tree where arrays of objects should be merged by
  * a key field rather than replaced wholesale. `deepMerge` matches items by
@@ -291,21 +294,21 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
   let merged = { ...baseConfig };
   for (const config of sorted) {
     const isBasePrincipal = config.principalId?.toString() === BASE_CONFIG_PRINCIPAL_ID;
-    if (Array.isArray(config.tombstones)) {
-      for (const path of config.tombstones) {
-        if (
-          typeof path === 'string' &&
-          !isBaseOnlyOverridePath(path) &&
-          (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
-        ) {
-          merged = deleteConfigPath(merged, remapOverridePath(path));
-        }
+    for (const path of sanitizeAdminConfigTombstones(config.tombstones)) {
+      if (
+        !isBaseOnlyOverridePath(path) &&
+        (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
+      ) {
+        merged = deleteConfigPath(merged, remapOverridePath(path));
       }
     }
 
     if (config.overrides && typeof config.overrides === 'object') {
+      const sanitizedOverrides = sanitizeAdminConfigOverrides(
+        config.overrides as Record<string, unknown>,
+      );
       const remapped: AnyObject = {};
-      for (const [key, value] of Object.entries(config.overrides)) {
+      for (const [key, value] of Object.entries(sanitizedOverrides)) {
         if (
           BASE_ONLY_OVERRIDE_SECTIONS.has(key) ||
           (!isBasePrincipal && BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(key))
@@ -328,26 +331,27 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
           for (const [field, fieldVal] of Object.entries(value as AnyObject)) {
             if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
               filtered[field] = fieldVal;
+            } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+              filtered[field] = fieldVal;
             } else if (
               fieldVal != null &&
               typeof fieldVal === 'object' &&
               !Array.isArray(fieldVal)
             ) {
-              // Composite permission field (e.g. mcpServers): strip permission
-              // sub-keys but preserve UI-only sub-keys like placeholder/trustCheckbox.
-              const uiOnly: AnyObject = {};
-              for (const [sub, subVal] of Object.entries(fieldVal as AnyObject)) {
-                if (!PERMISSION_SUB_KEYS.has(sub)) {
-                  uiOnly[sub] = subVal;
+              // Composite permission field (e.g. mcpServers): keep only
+              // field-specific UI-only sub-keys after sanitization.
+              const shape = INTERFACE_PERMISSION_UI_SHAPES[field];
+              if (shape != null && shape !== true) {
+                const uiOnly: AnyObject = {};
+                for (const [sub, subVal] of Object.entries(fieldVal as AnyObject)) {
+                  if (Object.prototype.hasOwnProperty.call(shape, sub)) {
+                    uiOnly[sub] = subVal;
+                  }
+                }
+                if (Object.keys(uiOnly).length > 0) {
+                  filtered[field] = uiOnly;
                 }
               }
-              if (Object.keys(uiOnly).length > 0) {
-                filtered[field] = uiOnly;
-              }
-            } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
-              // Dual-purpose field: the boolean form is a runtime disable, not a
-              // permission toggle, so preserve it (e.g. schedules: false).
-              filtered[field] = fieldVal;
             }
             // other boolean permission fields (e.g. runCode: false) are fully stripped
           }

@@ -9,8 +9,10 @@ services:
     ports:
       - 3080:3080
     depends_on:
-      - mongodb
-      - rag_api
+      mongodb:
+        condition: service_healthy
+      rag_api:
+        condition: service_started
     restart: always
     extra_hosts:
     - "host.docker.internal:host-gateway"
@@ -19,7 +21,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - NODE_ENV=production
-      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat?replicaSet=rs0
       - MEILI_HOST=http://meilisearch:7700
       - LIBRECHAT_TEMP_CREDENTIALS_PATH=/app/data/.env.temp
       - RAG_PORT=${RAG_PORT:-8000}
@@ -46,13 +48,17 @@ services:
     image: registry.librechat.ai/clickhouse/librechat-admin-panel:latest
     container_name: admin-panel
     depends_on:
-      - api
+      api:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
     restart: always
     environment:
       - PORT=3000
       # Plain expansion (not :?) so `docker compose down`/`pull` still run when this is unset.
       # The panel itself refuses to start without it; set ADMIN_PANEL_SESSION_SECRET in .env.
       - SESSION_SECRET=${ADMIN_PANEL_SESSION_SECRET}
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat?replicaSet=rs0
       - API_SERVER_URL=http://api:3080
       - VITE_API_BASE_URL=${DOMAIN_CLIENT:-http://localhost}
       - SESSION_COOKIE_SECURE=${ADMIN_PANEL_SESSION_COOKIE_SECURE:-false}
@@ -77,7 +83,13 @@ services:
     restart: always
     volumes:
       - ./data-node:/data/db
-    command: mongod --noauth
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --quiet
+      interval: 5s
+      timeout: 30s
+      retries: 30
+      start_period: 10s
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.35.1

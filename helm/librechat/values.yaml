@@ -363,8 +363,23 @@ additionalConfigMaps: {}
 #   # ... add more ConfigMaps as needed
 
 # MongoDB Parameters
+# IMPORTANT: The admin panel routes every base-config save, import, reset,
+# delete, and restore through a transactional atomic endpoint. With the default
+# standalone architecture all base-config editing fails at runtime with a 503
+# "requires a MongoDB replica set" error. This includes ordinary saves, not
+# just rollback. To enable base-config editing with the admin panel, opt in to
+# a single-node replica set:
+#   mongodb.architecture=replicaset
+#   mongodb.replicaCount=1
+#   mongodb.replicaSetName=rs0
+#   mongodb.arbiter.enabled=false
+# Existing installations: read helm/librechat/readme.md first for migration
+# and backup requirements before switching topology.
+# Default remains standalone to preserve existing PVC/workload shape for
+# deployments that do not use the admin panel for base-config editing.
 mongodb:
   enabled: true
+  architecture: standalone
   # Bitnami moved versioned image tags to docker.io/bitnamilegacy on 2025-08-28.
   # See https://github.com/bitnami/charts/issues/35164
   image:

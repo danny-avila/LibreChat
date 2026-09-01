@@ -220,11 +220,18 @@ jobs:
         run: |
           set -u
           docker network create lc-smoke
-          docker run -d --name lc-mongo --network lc-smoke mongo:8.0.20
+          docker run -d --name lc-mongo --network lc-smoke mongo:8.0.20 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec lc-mongo mongosh --quiet --eval 'try { rs.status() } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"lc-mongo:27017"}]}) }' >/dev/null 2>&1 || true
+            if docker exec lc-mongo mongosh --quiet --eval 'quit(rs.status().ok ? 0 : 1)' >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
           docker run -d --name lc-api --network lc-smoke -p 3080:3080 \
             -e HOST=0.0.0.0 -e PORT=3080 \
             -e NODE_ENV=production \
-            -e MONGO_URI=mongodb://lc-mongo:27017/LibreChat \
+            -e MONGO_URI=mongodb://lc-mongo:27017/LibreChat?replicaSet=rs0 \
             -e CREDS_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
             -e CREDS_IV=0123456789abcdef0123456789abcdef \
             -e JWT_SECRET=docker-smoke-jwt-secret \

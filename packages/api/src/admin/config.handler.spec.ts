@@ -69,6 +69,11 @@ function createHandlers(overrides = {}) {
     unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
     toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+    mutateConfigWithRevision: jest.fn().mockResolvedValue({
+      changed: true,
+      config: { _id: 'c1', configVersion: 6, overrides: { cache: true } },
+      revision: { id: 'rev-1', status: 'final', configVersion: 5 },
+    }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
     hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(true),
@@ -944,28 +949,7 @@ describe('createAdminConfigHandlers', () => {
         'admin',
         expect.anything(),
         'mcpServers.github',
-        10,
-      );
-    });
-
-    it('uses the existing config priority when priority is omitted', async () => {
-      const { handlers, deps } = createHandlers({
-        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', priority: 42 }),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { fieldPath: 'mcpServers.github' },
-      });
-      const res = mockRes();
-
-      await handlers.tombstoneConfigField(req, res);
-
-      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
-        'role',
-        'admin',
-        expect.anything(),
-        'mcpServers.github',
-        42,
+        undefined,
       );
     });
 
@@ -1028,6 +1012,31 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
     });
 
+    it('blocks protected ancestor and alias tombstones', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'interface' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.message).toBeDefined();
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+
+      const aliasReq = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'interfaceConfig.prompts' },
+      });
+      const aliasRes = mockRes();
+      await handlers.tombstoneConfigField(aliasReq, aliasRes);
+      expect(aliasRes.statusCode).toBe(200);
+      expect(aliasRes.body!.message).toBeDefined();
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+    });
+
     it('rejects unsafe field paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -1044,6 +1053,28 @@ describe('createAdminConfigHandlers', () => {
   });
 
   describe('patchConfigField', () => {
+    it('rejects malformed entries before mutation', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { entries: [null] },
+      });
+      const res = mockRes();
+      await handlers.patchConfigField(req, res);
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.error).toBe('each entry must be an object with fieldPath and value');
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+
+      const req2 = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { entries: [{ fieldPath: 'cache' }] },
+      });
+      const res2 = mockRes();
+      await handlers.patchConfigField(req2, res2);
+      expect(res2.statusCode).toBe(400);
+      expect(res2.body?.error).toBe('each entry must include a value property');
+    });
+
     it('returns 403 when user lacks capability for section', async () => {
       const { handlers } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
@@ -1115,6 +1146,29 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['interface.schedules']).toEqual({ maxPerUser: 2 });
+    });
+
+    it('strips protected ancestor and alias field entries', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            { fieldPath: 'interface', value: null },
+            { fieldPath: 'interfaceConfig.prompts', value: false },
+            { fieldPath: 'interface.modelSelect', value: false },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields.interface).toBeUndefined();
+      expect(patchedFields['interfaceConfig.prompts']).toBeUndefined();
+      expect(patchedFields['interface.modelSelect']).toBe(false);
     });
 
     it('preserves skillSync field entries in patches', async () => {
@@ -1396,9 +1450,6 @@ describe('createAdminConfigHandlers', () => {
     it('ignores request-supplied priority when caller lacks broad manage:configs', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
-        findConfigByPrincipal: jest
-          .fn()
-          .mockResolvedValue({ _id: 'c1', priority: 7, overrides: {} }),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -1413,13 +1464,13 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
-      expect(priorityArg).toBe(7);
+      expect(priorityArg).toBeUndefined();
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
-    it('falls back to default priority when no existing doc and caller lacks broad manage', async () => {
+    it('omits priority when no existing doc and caller lacks broad manage:configs', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
-        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -1434,7 +1485,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
-      expect(priorityArg).toBe(10);
+      expect(priorityArg).toBeUndefined();
     });
 
     it('honors request-supplied priority when caller holds broad manage:configs', async () => {
@@ -1478,12 +1529,9 @@ describe('createAdminConfigHandlers', () => {
       expect(priorityArg).toBe(0);
     });
 
-    it('preserves existing priority 0 for section-scoped callers', async () => {
+    it('omits priority for section-scoped callers even when existing priority is 0', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
-        findConfigByPrincipal: jest
-          .fn()
-          .mockResolvedValue({ _id: 'c1', priority: 0, overrides: {} }),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -1498,7 +1546,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
-      expect(priorityArg).toBe(0);
+      expect(priorityArg).toBeUndefined();
     });
   });
 
@@ -1506,9 +1554,6 @@ describe('createAdminConfigHandlers', () => {
     it('ignores request-supplied priority when caller lacks broad manage:configs', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
-        findConfigByPrincipal: jest
-          .fn()
-          .mockResolvedValue({ _id: 'c1', priority: 7, overrides: {} }),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -1520,13 +1565,13 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const [, , , , priorityArg] = deps.tombstoneConfigField.mock.calls[0];
-      expect(priorityArg).toBe(7);
+      expect(priorityArg).toBeUndefined();
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
-    it('falls back to default priority when no existing doc and caller lacks broad manage', async () => {
+    it('omits priority when no existing doc and caller lacks broad manage:configs', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
-        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -1538,7 +1583,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const [, , , , priorityArg] = deps.tombstoneConfigField.mock.calls[0];
-      expect(priorityArg).toBe(10);
+      expect(priorityArg).toBeUndefined();
     });
 
     it('honors request-supplied priority when caller holds broad manage:configs', async () => {
@@ -2229,6 +2274,9 @@ describe('createAdminConfigHandlers', () => {
         unsetConfigField: jest.fn(),
         deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
         toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+        mutateConfigWithRevision: jest
+          .fn()
+          .mockResolvedValue({ config: null, revision: { id: 'rev1' } }),
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       };
       const handlers = createAdminConfigHandlers(deps);
@@ -2433,5 +2481,580 @@ describe('createAdminConfigHandlers', () => {
         expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: false }));
       }
     });
+  });
+});
+
+describe('mutateConfigAtomic', () => {
+  it('requires expectedVersion', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: { entries: [{ fieldPath: 'cache', value: true }], cause: 'save' },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-object request body', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: 'not-an-object',
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe('request body must be a JSON object');
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed entries before mutation', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [null],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe('each entry must be an object with fieldPath and value');
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed resetPaths before mutation', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'cache', value: true }],
+        resetPaths: 'cache',
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe('resetPaths must be an array');
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed operation properties before mode detection', async () => {
+    const { handlers, deps } = createHandlers();
+    const cases = [
+      {
+        body: {
+          expectedVersion: 0,
+          entries: [{ fieldPath: 'cache', value: true }],
+          overrides: 'invalid',
+        },
+        error: 'overrides must be an object',
+      },
+      {
+        body: {
+          expectedVersion: 0,
+          entries: [{ fieldPath: 'cache', value: true }],
+          deleteDocument: 'true',
+        },
+        error: 'deleteDocument must be a boolean',
+      },
+      {
+        body: {
+          expectedVersion: 0,
+          entries: [{ fieldPath: 'cache', value: true }],
+          restoreRevisionId: 123,
+        },
+        error: 'restoreRevisionId must be a non-empty string',
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: testCase.body,
+      });
+      const res = mockRes();
+      await handlers.mutateConfigAtomic(req, res);
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.error).toBe(testCase.error);
+    }
+
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the restore revision is missing', async () => {
+    const { handlers, deps } = createHandlers({
+      mutateConfigWithRevision: jest.fn().mockRejectedValue(
+        Object.assign(new Error('Revision not found'), {
+          name: 'ConfigRevisionNotFoundError',
+          revisionId: '11111111-1111-4111-8111-111111111111',
+        }),
+      ),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        restoreRevisionId: '11111111-1111-4111-8111-111111111111',
+        cause: 'restore',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({ error: 'Revision not found' });
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects field entries without an explicit value property', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'cache' }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe('each entry must include a value property');
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('accepts explicit null and falsy entry values', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [
+          { fieldPath: 'cache', value: null },
+          { fieldPath: 'registration.enabled', value: false },
+        ],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: { cache: null, 'registration.enabled': false },
+        }),
+      }),
+    );
+  });
+
+  it('rejects process-backed MCP fields before an atomic mutation', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        entries: [{ fieldPath: 'mcpServers.injected.command', value: '/bin/sh' }],
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      error: 'Process-backed MCP servers can only be configured in librechat.yaml',
+    });
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects Langfuse request headers before an atomic mutation', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        entries: [{ fieldPath: 'langfuse.headers.X-Proxy-Token', value: 'secret' }],
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      error: 'Langfuse request headers can only be configured in librechat.yaml',
+    });
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('encrypts atomic secret fields and redacts config and revision responses', async () => {
+    const secret = 'sk-atomic-secret';
+    const mutateConfigWithRevision = jest.fn(async ({ op }) => {
+      const fields = op.kind === 'fields' ? op.fields : {};
+      const overrides = {
+        ocr: {
+          apiKey: fields['ocr.apiKey'],
+          apiKeyPreview: fields['ocr.apiKeyPreview'],
+        },
+      };
+      return {
+        changed: true,
+        config: { _id: 'c1', configVersion: 6, overrides },
+        revision: { id: 'rev-1', status: 'final', configVersion: 5, overrides },
+      };
+    });
+    const { handlers, deps } = createHandlers({ mutateConfigWithRevision });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        entries: [{ fieldPath: 'ocr.apiKey', value: secret }],
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const mutation = deps.mutateConfigWithRevision.mock.calls[0][0];
+    expect(mutation.op).toEqual(
+      expect.objectContaining({
+        kind: 'fields',
+        fields: expect.objectContaining({
+          'ocr.apiKey': `v3:test:${secret}`,
+          'ocr.apiKeyPreview': expect.any(String),
+        }),
+      }),
+    );
+    expect(JSON.stringify(res.body)).not.toContain(secret);
+    expect(JSON.stringify(res.body)).not.toContain('v3:test:');
+    expect(res.body?.config).toEqual(
+      expect.objectContaining({
+        overrides: { ocr: { apiKeyPreview: expect.any(String) } },
+      }),
+    );
+    expect(res.body?.revision).toEqual(
+      expect.objectContaining({
+        overrides: { ocr: { apiKeyPreview: expect.any(String) } },
+      }),
+    );
+  });
+
+  it('rejects a single oversized deeply nested reset path', async () => {
+    const { handlers, deps } = createHandlers();
+    const deepResetPath = Array.from({ length: 33 }, (_, index) => `seg${index}`).join('.');
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        resetPaths: [deepResetPath],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toMatch(/maximum depth of 32 segments/);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized combined entries and resetPaths', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: Array.from({ length: 51 }, (_, index) => ({
+          fieldPath: `field${index}`,
+          value: true,
+        })),
+        resetPaths: Array.from({ length: 50 }, (_, index) => `reset${index}`),
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe('combined entries and resetPaths exceed maximum of 100');
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 on version conflict', async () => {
+    const { handlers } = createHandlers({
+      mutateConfigWithRevision: jest.fn().mockRejectedValue(
+        Object.assign(new Error('Config version conflict'), {
+          name: 'ConfigVersionConflictError',
+          currentVersion: 7,
+        }),
+      ),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        entries: [{ fieldPath: 'cache', value: true }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Config version conflict', currentVersion: 7 });
+  });
+
+  it('applies fields mutation then invalidates caches', async () => {
+    const invalidateConfigCaches = jest.fn().mockResolvedValue(undefined);
+    const { handlers, deps } = createHandlers({ invalidateConfigCaches });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        resetPaths: ['registration.enabled'],
+        entries: [{ fieldPath: 'cache', value: true }],
+        cause: 'save',
+        priority: 0,
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedVersion: 5,
+        cause: 'save',
+        op: expect.objectContaining({
+          kind: 'fields',
+          resetPaths: ['registration.enabled'],
+          fields: { cache: true },
+        }),
+      }),
+    );
+    expect(invalidateConfigCaches).toHaveBeenCalled();
+    expect(res.body).toEqual({
+      changed: true,
+      config: { _id: 'c1', configVersion: 6, overrides: { cache: true } },
+      revision: { id: 'rev-1', status: 'final', configVersion: 5 },
+    });
+  });
+
+  it('strips protected ancestor and alias entries/reset paths in atomic fields mode', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        resetPaths: ['interface', 'interfaceConfig.prompts', 'registration.enabled'],
+        entries: [
+          { fieldPath: 'interface', value: null },
+          { fieldPath: 'interfaceConfig.prompts', value: false },
+          { fieldPath: 'cache', value: true },
+        ],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          resetPaths: ['registration.enabled'],
+          fields: { cache: true },
+        }),
+      }),
+    );
+  });
+
+  it('allows actionable fields when blocked reset paths are stripped before section grants', async () => {
+    const { handlers, deps } = createHandlers({
+      hasConfigCapability: jest.fn().mockImplementation((_user, section: string | null) => {
+        if (section == null) {
+          return Promise.resolve(false);
+        }
+        return Promise.resolve(section === 'registration');
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        resetPaths: ['interface'],
+        entries: [{ fieldPath: 'registration.enabled', value: false }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          resetPaths: [],
+          fields: { 'registration.enabled': false },
+        }),
+      }),
+    );
+    expect(res.body).toEqual({ changed: true, configVersion: 6, revisionId: 'rev-1' });
+    expect(res.body).not.toHaveProperty('config');
+    expect(res.body).not.toHaveProperty('revision');
+  });
+
+  it('returns 403 for protected-only no-op atomic fields requests without section grants', async () => {
+    const { handlers, deps } = createHandlers({
+      hasConfigCapability: jest.fn().mockResolvedValue(false),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        resetPaths: ['interface'],
+        entries: [{ fieldPath: 'interfaceConfig.prompts', value: false }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(403);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 on stale expectedVersion for protected-only no-op with broad manage', async () => {
+    const { handlers, deps } = createHandlers({
+      hasConfigCapability: jest.fn().mockImplementation((_user, section: string | null) => {
+        if (section == null) {
+          return Promise.resolve(true);
+        }
+        return Promise.resolve(false);
+      }),
+      findConfigByPrincipal: jest.fn().mockResolvedValue({ configVersion: 3, priority: 10 }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 1,
+        resetPaths: ['interface'],
+        entries: [{ fieldPath: 'interfaceConfig.prompts', value: false }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Config version conflict', currentVersion: 3 });
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-base principals', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'group', principalId: 'g1' },
+      body: { expectedVersion: 1, entries: [{ fieldPath: 'cache', value: true }], cause: 'save' },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('strips interface permission fields from atomic replace overrides', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        cause: 'import',
+        overrides: {
+          cache: true,
+          interface: { prompts: false, modelSelect: true },
+        },
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'replace',
+          overrides: { cache: true, interface: { modelSelect: true } },
+        }),
+      }),
+    );
+  });
+
+  it('strips non-object interface and internal aliases from atomic replace overrides', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        cause: 'import',
+        overrides: {
+          cache: true,
+          interface: null,
+          interfaceConfig: { prompts: false },
+        },
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'replace',
+          overrides: { cache: true },
+        }),
+      }),
+    );
+  });
+
+  it('forwards restoreRevisionId as a restore operation', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        cause: 'restore',
+        restoreRevisionId: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: { kind: 'restore', revisionId: '11111111-1111-4111-8111-111111111111' },
+        cause: 'restore',
+      }),
+    );
+  });
+
+  it('derives cause from the mutation mode instead of the client label', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        cause: 'save',
+        restoreRevisionId: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({ cause: 'restore' }),
+    );
   });
 });

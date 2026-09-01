@@ -13,7 +13,13 @@ data:
   MEILI_HOST: http://{{ include "meilisearch.fullname" .Subcharts.meilisearch }}.{{ .Release.Namespace | lower }}.svc.cluster.local:7700
   {{- end }}
   {{- if and (not (dig "configEnv" "MONGO_URI" "" .Values.librechat)) .Values.mongodb.enabled }}
-  MONGO_URI: mongodb://{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ .Release.Namespace | lower }}.svc.cluster.local:27017/LibreChat
+  {{- $mongoNs := .Release.Namespace | lower }}
+  {{- $mongoName := include "mongodb.fullname" .Subcharts.mongodb }}
+  {{- if eq (default "standalone" .Values.mongodb.architecture) "replicaset" }}
+  MONGO_URI: mongodb://{{ $mongoName }}-0.{{ $mongoName }}-headless.{{ $mongoNs }}.svc.cluster.local:27017/LibreChat?replicaSet={{ .Values.mongodb.replicaSetName | default "rs0" }}
+  {{- else }}
+  MONGO_URI: mongodb://{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ $mongoNs }}.svc.cluster.local:27017/LibreChat
+  {{- end }}
   {{- end }}
   {{- if and (not (dig "configEnv" "USE_REDIS" "" .Values.librechat)) .Values.redis.enabled }}
   USE_REDIS: "true"

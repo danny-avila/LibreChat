@@ -1,6 +1,7 @@
 require('../config/credentials');
 
 const telemetry = require('./telemetry');
+const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -11,7 +12,7 @@ const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, ensureConfigIndexes } = require('@librechat/data-schemas');
 const {
   isEnabled,
   issueCsp,
@@ -175,6 +176,7 @@ const startServer = async () => {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
   await connectDb();
+  await ensureConfigIndexes(mongoose);
 
   logger.info('Connected to MongoDB');
   indexSync().catch((err) => {

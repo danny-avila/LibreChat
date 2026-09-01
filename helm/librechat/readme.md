@@ -37,6 +37,33 @@ kind: Secret
 
 4. Fill out values.yaml and apply the Chart to the Cluster
 
+## MongoDB upgrade note (standalone -> replicaset)
+
+The bundled Bitnami MongoDB dependency defaults to `standalone` to preserve
+existing upgrade behavior. Switching an existing release from standalone to
+replicaset changes the Mongo workload shape from a Deployment to a StatefulSet
+and uses a differently named PVC (`datadir-<release>-mongodb-0`), which does
+not automatically reuse the standalone PVC (`<release>-mongodb`).
+
+Before enabling replica set mode on an existing release:
+
+1. Back up MongoDB data.
+2. Plan and validate a migration to the new StatefulSet PVC layout.
+3. Test restore/rollback in a non-production environment.
+
+For fresh installs that need transactions (for admin config rollback), use a
+single data-node replica set and explicitly disable the arbiter:
+
+```yaml
+mongodb:
+  enabled: true
+  architecture: replicaset
+  replicaCount: 1
+  replicaSetName: rs0
+  arbiter:
+    enabled: false
+```
+
 ## Admin Panel SSO
 
 Set `librechat.adminPanelUrl` to the admin panel base URL used for OAuth/SSO

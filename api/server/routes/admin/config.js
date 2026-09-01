@@ -27,6 +27,7 @@ const handlers = createAdminConfigHandlers({
   toggleConfigActive: db.toggleConfigActive,
   hasAnyConfigReadAccess,
   getReadableConfigSections,
+  mutateConfigWithRevision: db.mutateConfigWithRevision,
   hasConfigCapability,
   hasCapability,
   getAppConfig,
@@ -44,5 +45,6 @@ router.post('/:principalType/:principalId/fields/tombstone', handlers.tombstoneC
 router.delete('/:principalType/:principalId/fields', handlers.deleteConfigField);
 router.delete('/:principalType/:principalId', handlers.deleteConfigOverrides);
 router.patch('/:principalType/:principalId/active', handlers.toggleConfig);
+router.post('/:principalType/:principalId/atomic', handlers.mutateConfigAtomic);
 
 module.exports = router;
