@@ -125,6 +125,7 @@ describe('code environment HTTP handlers', () => {
         type: 'attached',
         baseURL: 'https://code.librechat.example/v1',
         workerId: 'code-generated',
+        controlPlaneId: 'shared-code-api',
         workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
       },
     });

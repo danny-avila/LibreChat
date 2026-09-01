@@ -278,6 +278,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           type: 'attached',
           baseURL: controlPlane.baseURL,
           workerId,
+          controlPlaneId: controlPlane.id,
           workerPrincipal: { type: 'user', id: principal.userId.toString() },
         },
       });

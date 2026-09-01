@@ -3,10 +3,15 @@ const { limiterCache } = require('@librechat/api');
 
 let configuredCodeEnvironmentPairingLimiter;
 
+function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : fallback;
+}
+
 const codeEnvironmentPairingLimiter = (req, res, next) => {
   if (configuredCodeEnvironmentPairingLimiter == null) {
-    const max = Number(process.env.CODE_ENVIRONMENT_PAIRING_USER_MAX ?? 5);
-    const windowInMinutes = Number(process.env.CODE_ENVIRONMENT_PAIRING_USER_WINDOW ?? 60);
+    const max = positiveInteger(process.env.CODE_ENVIRONMENT_PAIRING_USER_MAX, 5);
+    const windowInMinutes = positiveInteger(process.env.CODE_ENVIRONMENT_PAIRING_USER_WINDOW, 60);
 
     configuredCodeEnvironmentPairingLimiter = rateLimit({
       windowMs: windowInMinutes * 60 * 1000,
