@@ -1751,6 +1751,7 @@ class BaseClient {
             fileConfig: this._mergedFileConfig,
             endpoint: this._deliveryEndpoint,
             useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+            sttConfigured: this.options.req?.config?.speech?.stt != null,
           });
 
     for (const file of attachments) {

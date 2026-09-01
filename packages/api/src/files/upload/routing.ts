@@ -118,6 +118,7 @@ export async function resolveEffectiveToolResource({
     fileConfig,
     endpoint,
     useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi),
+    sttConfigured: req.config?.speech?.stt != null,
   });
   return path === 'text' ? EToolResources.context : undefined;
 }

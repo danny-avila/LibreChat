@@ -103,6 +103,7 @@ export function resolveDefaultLLMDeliveryPath(
   globalConfig?: TDefaultLLMDeliveryPathConfig,
   endpoint?: string,
   useResponsesApi?: boolean,
+  sttConfigured?: boolean,
 ): TDefaultLLMDeliveryPath {
   const wildcard = mimeType.split('/')[0] + '/*';
 
@@ -153,6 +154,12 @@ export function resolveDefaultLLMDeliveryPath(
    * Documents keep the narrower rule: an unidentified endpoint is usually OpenAI- or
    * Anthropic-compatible, both of which do carry them. */
   const isMedia = mimeType.startsWith('audio/') || mimeType.startsWith('video/');
+  /* Audio's text path is transcription, so on a deployment with no speech provider it is
+   * not recoverable at all. Routing it to text there sends the upload to a service that
+   * is not there and fails it outright. Unknown is left alone; only an explicit absence
+   * closes the path. */
+  const canRecoverText = (type: string): boolean =>
+    type.startsWith('audio/') && sttConfigured === false ? false : hasTextExtractionPath(type);
   const canJudgeCapability = isMedia ? namedEndpoint : providerKnown;
   if (
     systemDefault === 'provider' &&
@@ -164,7 +171,7 @@ export function resolveDefaultLLMDeliveryPath(
      * any well-formed MIME type, so routing it to text ends in the raw bytes being
      * decoded as UTF-8 and handed to the model. Keep it off the model path instead; the
      * file is still stored and still reachable by tools. */
-    return hasTextExtractionPath(mimeType) ? 'text' : 'none';
+    return canRecoverText(mimeType) ? 'text' : 'none';
   }
 
   /** Bedrock's Converse document path natively accepts more than PDF, so on that
@@ -183,7 +190,7 @@ export function resolveDefaultLLMDeliveryPath(
    * off the model path instead; the file is still stored and reachable by tools. An
    * explicit configuration above has already returned, so this governs the system default
    * alone. */
-  if (systemDefault === 'text' && !hasTextExtractionPath(mimeType)) {
+  if (systemDefault === 'text' && !canRecoverText(mimeType)) {
     return 'none';
   }
 
@@ -200,12 +207,14 @@ export function resolveDefaultUploadLLMDeliveryPath({
   fileConfig,
   endpoint,
   useResponsesApi,
+  sttConfigured,
 }: {
   mimeType: string;
   endpointConfig?: EndpointFileConfig;
   fileConfig?: FileConfig;
   endpoint?: string;
   useResponsesApi?: boolean;
+  sttConfigured?: boolean;
 }): TDefaultLLMDeliveryPath {
   if (endpointConfig?.legacyFileUploadUX === true) {
     return 'provider';
@@ -216,6 +225,7 @@ export function resolveDefaultUploadLLMDeliveryPath({
     fileConfig?.defaultLLMDeliveryPath,
     endpoint,
     useResponsesApi,
+    sttConfigured,
   );
 }
 
@@ -227,6 +237,7 @@ export function resolveUploadLLMDeliveryPath({
   fileConfig,
   endpoint,
   useResponsesApi,
+  sttConfigured,
 }: {
   toolResource?: string | null;
   mimeType: string;
@@ -234,6 +245,7 @@ export function resolveUploadLLMDeliveryPath({
   fileConfig?: FileConfig;
   endpoint?: string;
   useResponsesApi?: boolean;
+  sttConfigured?: boolean;
 }): TDefaultLLMDeliveryPath {
   if (toolResource === EToolResources.context || toolResource === EToolResources.ocr) {
     return 'text';
@@ -247,6 +259,7 @@ export function resolveUploadLLMDeliveryPath({
     fileConfig,
     endpoint,
     useResponsesApi,
+    sttConfigured,
   });
 }
 
