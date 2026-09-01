@@ -518,7 +518,8 @@ export function createConversationMethods(
     fieldsToSelect: string | null = 'conversationId user',
   ) {
     try {
-      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const Conversation = mongoose.models.Conversation as Model<IConversation> &
+        Pick<SchemaWithMeiliMethods, 'meiliSearch'>;
       return await Conversation.findOne({ conversationId }, fieldsToSelect).lean<IConversation>();
     } catch (error) {
       logger.error('[searchConversation] Error searching conversation', error);
@@ -2637,14 +2638,13 @@ export function createConversationMethods(
 
     if (search) {
       try {
-        const ConversationMeili = mongoose.models.Conversation as SchemaWithMeiliMethods;
         const searchParams: SearchParams = {
           filter: `user = "${escapeMeiliFilterValue(user)}"`,
           limit: MEILI_SEARCH_LIMIT,
           attributesToRetrieve: ['conversationId', 'originalConversationId'],
         };
         const [convoResults, messageHits] = await Promise.all([
-          ConversationMeili.meiliSearch(search, searchParams),
+          Conversation.meiliSearch(search, searchParams),
           deps?.searchMessages
             ? deps.searchMessages(search, searchParams).then(
                 (results) => (Array.isArray(results.hits) ? results.hits : []),
