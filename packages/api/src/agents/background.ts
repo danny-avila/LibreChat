@@ -667,6 +667,13 @@ interface TaskBucket {
   lastAccess: number;
 }
 
+interface RetainedPayloadUsage {
+  result: number;
+  artifact: number;
+  attachments: number;
+  error: number;
+}
+
 export interface BackgroundTaskCapacityPermit {
   id: string;
   userId: string;
@@ -730,7 +737,8 @@ function nextDispatchStamp(now: number): number {
 }
 
 function toStoredContent(content: unknown): string {
-  const asString = typeof content === 'string' ? content : JSON.stringify(content ?? '');
+  const serialized = typeof content === 'string' ? content : JSON.stringify(content ?? '');
+  const asString = serialized ?? String(content ?? '');
   return truncateMiddle(asString, MAX_RESULT_CHARS);
 }
 
@@ -748,7 +756,12 @@ function toStoredArtifact(
     return { chars: 0 };
   }
   try {
-    const size = JSON.stringify(artifact)?.length ?? 0;
+    const serialized = JSON.stringify(artifact);
+    if (serialized == null) {
+      logger.warn(`[background] Dropping unmeasurable artifact for task ${taskId}.`);
+      return { chars: 0 };
+    }
+    const size = serialized.length;
     if (size > MAX_ARTIFACT_CHARS) {
       logger.warn(
         `[background] Dropping oversized artifact for task ${taskId} (${size} chars > ${MAX_ARTIFACT_CHARS}).`,
@@ -773,8 +786,7 @@ function toStoredArtifact(
  */
 export class BackgroundTaskRegistryClass {
   private readonly buckets = new Map<string, TaskBucket>();
-  private readonly retainedChars = new WeakMap<BackgroundTask, number>();
-  private readonly retainedArtifactChars = new WeakMap<BackgroundTask, number>();
+  private readonly retainedUsage = new WeakMap<BackgroundTask, RetainedPayloadUsage>();
   private lastGlobalSweepAt = 0;
 
   private key(userId: string, conversationId: string): string {
@@ -851,6 +863,26 @@ export class BackgroundTaskRegistryClass {
     return running;
   }
 
+  private payloadUsage(task: BackgroundTask): RetainedPayloadUsage {
+    return (
+      this.retainedUsage.get(task) ?? {
+        result: 0,
+        artifact: 0,
+        attachments: 0,
+        error: 0,
+      }
+    );
+  }
+
+  private payloadChars(task: BackgroundTask): number {
+    const usage = this.payloadUsage(task);
+    return usage.result + usage.artifact + usage.attachments + usage.error;
+  }
+
+  private updatePayloadUsage(task: BackgroundTask, patch: Partial<RetainedPayloadUsage>): void {
+    this.retainedUsage.set(task, { ...this.payloadUsage(task), ...patch });
+  }
+
   private aggregateUsage(userId: string): {
     runningForUser: number;
     runningGlobal: number;
@@ -878,7 +910,7 @@ export class BackgroundTaskRegistryClass {
             runningForUser++;
           }
         }
-        const retained = this.retainedChars.get(task) ?? 0;
+        const retained = this.payloadChars(task);
         retainedGlobal += retained;
         if (isUser) {
           retainedForUser += retained;
@@ -922,7 +954,7 @@ export class BackgroundTaskRegistryClass {
         }
       }
     }
-    candidates.sort((a, b) => a.task.createdAt - b.task.createdAt);
+    candidates.sort((a, b) => a.task.updatedAt - b.task.updatedAt);
     for (const { bucket, task } of candidates) {
       if (!params.whileOverLimit()) {
         break;
@@ -1115,7 +1147,7 @@ export class BackgroundTaskRegistryClass {
     if (bucket.tasks.size >= MAX_TASKS_PER_BUCKET) {
       const settledOldestFirst = [...bucket.tasks.values()]
         .filter((t) => t.status !== 'running')
-        .sort((a, b) => a.createdAt - b.createdAt);
+        .sort((a, b) => a.updatedAt - b.updatedAt);
       let toEvict = bucket.tasks.size - MAX_TASKS_PER_BUCKET + 1;
       for (const stale of settledOldestFirst) {
         if (toEvict <= 0) {
@@ -1149,13 +1181,14 @@ export class BackgroundTaskRegistryClass {
     conversationId: string,
     taskId: string,
     patch: Partial<BackgroundTask>,
-  ): void {
+  ): boolean {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
     if (!task || (task.artifactBlocked === true && patch.artifactBlocked !== true)) {
-      return;
+      return false;
     }
     Object.assign(task, patch, { updatedAt: Date.now() });
+    return true;
   }
 
   complete(
@@ -1165,30 +1198,37 @@ export class BackgroundTaskRegistryClass {
     result: { content: unknown; artifact?: unknown; harvestStarted?: boolean },
   ): string {
     const storedContent = toStoredContent(result.content);
-    const storedArtifact = toStoredArtifact(taskId, result.artifact);
     const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
-    const retainedChars = storedContent.length + storedArtifact.chars;
-    const additionalRetainedChars = Math.max(
-      0,
-      retainedChars - (task == null ? 0 : (this.retainedChars.get(task) ?? 0)),
+    if (task == null || task.status !== 'running' || task.artifactBlocked === true) {
+      return storedContent;
+    }
+    const storedArtifact = toStoredArtifact(taskId, result.artifact);
+    const usage = this.payloadUsage(task);
+    const desiredChars = storedContent.length + storedArtifact.chars;
+    const currentChars = usage.result + usage.artifact;
+    const hasRetainedCapacity = this.makeRetainedRoom(
+      userId,
+      task,
+      Math.max(0, desiredChars - currentChars),
     );
-    const hasRetainedCapacity =
-      task != null && this.makeRetainedRoom(userId, task, additionalRetainedChars);
-    this.update(userId, conversationId, taskId, {
+    const artifact = hasRetainedCapacity ? storedArtifact.artifact : undefined;
+    const artifactChars = hasRetainedCapacity ? storedArtifact.chars : 0;
+    const updated = this.update(userId, conversationId, taskId, {
       status: 'completed',
       result: storedContent,
-      artifact: hasRetainedCapacity ? storedArtifact.artifact : undefined,
+      artifact,
+      error: undefined,
       ...(result.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       /** Marks that an artifact existed even after `claimArtifact` clears it,
        *  so re-polls keep the "produced an artifact" note. */
       artifactDelivered: false,
     });
-    if (task != null) {
-      this.retainedChars.set(
-        task,
-        storedContent.length + (hasRetainedCapacity ? storedArtifact.chars : 0),
-      );
-      this.retainedArtifactChars.set(task, hasRetainedCapacity ? storedArtifact.chars : 0);
+    if (updated) {
+      this.updatePayloadUsage(task, {
+        result: storedContent.length,
+        artifact: artifactChars,
+        error: 0,
+      });
     }
     return storedContent;
   }
@@ -1209,16 +1249,17 @@ export class BackgroundTaskRegistryClass {
       return;
     }
     const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
-    const measured = toStoredArtifact(taskId, attachments);
-    if (
-      task == null ||
-      measured.artifact == null ||
-      !this.makeRetainedRoom(userId, task, measured.chars)
-    ) {
+    if (task == null || task.status !== 'completed' || task.artifactBlocked === true) {
       return;
     }
-    this.update(userId, conversationId, taskId, { attachments });
-    this.retainedChars.set(task, (this.retainedChars.get(task) ?? 0) + measured.chars);
+    const measured = toStoredArtifact(taskId, attachments);
+    const additionalChars = Math.max(0, measured.chars - this.payloadUsage(task).attachments);
+    if (measured.artifact == null || !this.makeRetainedRoom(userId, task, additionalChars)) {
+      return;
+    }
+    if (this.update(userId, conversationId, taskId, { attachments })) {
+      this.updatePayloadUsage(task, { attachments: measured.chars });
+    }
   }
 
   /** Marks completion-time inspection/persistence successful, unlocking artifact collection. */
@@ -1229,17 +1270,19 @@ export class BackgroundTaskRegistryClass {
     attachments: unknown[] = [],
   ): void {
     const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
+    if (task == null || task.status !== 'completed' || task.artifactBlocked === true) {
+      return;
+    }
     const measured = toStoredArtifact(taskId, attachments);
+    const additionalChars = Math.max(0, measured.chars - this.payloadUsage(task).attachments);
     const canStoreAttachments =
-      task != null &&
-      measured.artifact != null &&
-      this.makeRetainedRoom(userId, task, measured.chars);
-    this.update(userId, conversationId, taskId, {
+      measured.artifact != null && this.makeRetainedRoom(userId, task, additionalChars);
+    const updated = this.update(userId, conversationId, taskId, {
       harvestPending: false,
       ...(attachments.length > 0 && canStoreAttachments ? { attachments } : {}),
     });
-    if (task != null && attachments.length > 0 && canStoreAttachments) {
-      this.retainedChars.set(task, (this.retainedChars.get(task) ?? 0) + measured.chars);
+    if (updated && attachments.length > 0 && canStoreAttachments) {
+      this.updatePayloadUsage(task, { attachments: measured.chars });
     }
   }
 
@@ -1281,9 +1324,7 @@ export class BackgroundTaskRegistryClass {
     const artifact = task.artifact;
     task.artifactDelivered = true;
     task.artifact = undefined;
-    const artifactChars = this.retainedArtifactChars.get(task) ?? 0;
-    this.retainedChars.set(task, Math.max(0, (this.retainedChars.get(task) ?? 0) - artifactChars));
-    this.retainedArtifactChars.set(task, 0);
+    this.updatePayloadUsage(task, { artifact: 0 });
     return {
       toolName: task.toolName,
       toolCallId: task.toolCallId,
@@ -1303,7 +1344,12 @@ export class BackgroundTaskRegistryClass {
   restoreArtifact(userId: string, conversationId: string, taskId: string, artifact: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.artifactBlocked === true || task.artifact != null) {
+    if (
+      !task ||
+      task.status !== 'completed' ||
+      task.artifactBlocked === true ||
+      task.artifact != null
+    ) {
       return;
     }
     /** Same size bound as `complete()` — a restore path must not resurrect
@@ -1317,8 +1363,8 @@ export class BackgroundTaskRegistryClass {
     }
     task.artifact = storedArtifact.artifact;
     task.artifactDelivered = false;
-    this.retainedChars.set(task, (this.retainedChars.get(task) ?? 0) + storedArtifact.chars);
-    this.retainedArtifactChars.set(task, storedArtifact.chars);
+    this.updatePayloadUsage(task, { artifact: storedArtifact.chars });
+    task.updatedAt = Date.now();
   }
 
   fail(
@@ -1330,16 +1376,11 @@ export class BackgroundTaskRegistryClass {
   ): void {
     const storedError = truncateMiddle(error, MAX_RESULT_CHARS);
     const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
-    const additionalRetainedChars = Math.max(
-      0,
-      storedError.length - (task == null ? 0 : (this.retainedChars.get(task) ?? 0)),
-    );
-    if (task != null) {
-      this.makeRetainedRoom(userId, task, additionalRetainedChars);
-      this.retainedChars.set(task, storedError.length);
-      this.retainedArtifactChars.set(task, 0);
+    if (task == null || task.status !== 'running' || task.artifactBlocked === true) {
+      return;
     }
-    this.update(userId, conversationId, taskId, {
+    this.makeRetainedRoom(userId, task, storedError.length);
+    const updated = this.update(userId, conversationId, taskId, {
       status: 'error',
       error: storedError,
       result: undefined,
@@ -1347,6 +1388,14 @@ export class BackgroundTaskRegistryClass {
       attachments: undefined,
       ...(options?.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
     });
+    if (updated) {
+      this.retainedUsage.set(task, {
+        result: 0,
+        artifact: 0,
+        attachments: 0,
+        error: storedError.length,
+      });
+    }
   }
 
   markCompletionWakeup(
@@ -1423,9 +1472,14 @@ export class BackgroundTaskRegistryClass {
   /** Permanently removes a policy-rejected artifact and exposes only the raw-free policy error. */
   blockArtifact(userId: string, conversationId: string, taskId: string, error: string): void {
     const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
-    this.update(userId, conversationId, taskId, {
+    if (task == null) {
+      return;
+    }
+    const storedError = truncateMiddle(error, MAX_RESULT_CHARS);
+    this.makeRetainedRoom(userId, task, Math.max(0, storedError.length - this.payloadChars(task)));
+    const updated = this.update(userId, conversationId, taskId, {
       status: 'error',
-      error,
+      error: storedError,
       result: undefined,
       artifact: undefined,
       attachments: undefined,
@@ -1434,9 +1488,13 @@ export class BackgroundTaskRegistryClass {
       artifactDelivered: false,
       artifactBlocked: true,
     });
-    if (task != null) {
-      this.retainedChars.set(task, error.length);
-      this.retainedArtifactChars.set(task, 0);
+    if (updated) {
+      this.retainedUsage.set(task, {
+        result: 0,
+        artifact: 0,
+        attachments: 0,
+        error: storedError.length,
+      });
     }
   }
 

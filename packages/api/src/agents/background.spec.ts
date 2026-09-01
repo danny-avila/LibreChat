@@ -885,6 +885,34 @@ describe('BackgroundTaskRegistryClass', () => {
     ).toBe(attachments);
   });
 
+  it('replaces retained attachments without double-counting their payload', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u-attachment-replace',
+      conversationId: 'c-attachment-replace',
+      toolCallId: 'call_attachment_replace',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-attachment-replace', 'c-attachment-replace', created.task.id, {
+      content: 'stdout',
+    });
+    const first = [{ payload: 'a'.repeat(9_000_000) }];
+    const replacement = [{ payload: 'b'.repeat(9_000_000) }];
+    registry.attachHarvest('u-attachment-replace', 'c-attachment-replace', created.task.id, first);
+    registry.attachHarvest(
+      'u-attachment-replace',
+      'c-attachment-replace',
+      created.task.id,
+      replacement,
+    );
+    expect(
+      registry.get('u-attachment-replace', 'c-attachment-replace', created.task.id)?.attachments,
+    ).toBe(replacement);
+  });
+
   it('revokeHarvest hands a pending artifact to the fallback path', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -970,6 +998,41 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(JSON.stringify(task)).not.toContain('raw failure');
   });
 
+  it('does not account payloads from rejected late completion updates', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const blocked = registry.create({
+      userId: 'u-blocked-accounting',
+      conversationId: 'c-blocked',
+      toolCallId: 'call_blocked',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in blocked) {
+      throw new Error('unexpected capacity');
+    }
+    registry.blockArtifact('u-blocked-accounting', 'c-blocked', blocked.task.id, 'blocked');
+    registry.complete('u-blocked-accounting', 'c-blocked', blocked.task.id, {
+      content: 'late',
+      artifact: { payload: 'a'.repeat(10_000_000 - 20) },
+    });
+
+    const next = registry.create({
+      userId: 'u-blocked-accounting',
+      conversationId: 'c-next',
+      toolCallId: 'call_next',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in next) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-blocked-accounting', 'c-next', next.task.id, {
+      content: 'next',
+      artifact: { payload: 'b'.repeat(8_000_000) },
+    });
+    expect(registry.get('u-blocked-accounting', 'c-blocked', blocked.task.id)?.error).toBe(
+      'blocked',
+    );
+  });
+
   it('keeps abort-resistant tasks nonterminal instead of exposing false timeout evidence', () => {
     jest.useFakeTimers();
     try {
@@ -1040,6 +1103,26 @@ describe('BackgroundTaskRegistryClass', () => {
     const stored = registry.get('u1', 'c1', created.task.id)?.result ?? '';
     expect(stored.length).toBeLessThanOrEqual(100_000);
     expect(stored).toContain('[truncated: 150000 chars exceeded 100000 limit]');
+  });
+
+  it('drops artifacts whose JSON serialization returns undefined', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u-unmeasurable',
+      conversationId: 'c-unmeasurable',
+      toolCallId: 'call_unmeasurable',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-unmeasurable', 'c-unmeasurable', created.task.id, {
+      content: 'done',
+      artifact: { payload: 'x'.repeat(1_000_000), toJSON: () => undefined },
+    });
+    expect(registry.get('u-unmeasurable', 'c-unmeasurable', created.task.id)?.artifact).toBe(
+      undefined,
+    );
   });
 
   it('restores a claimed artifact after a failed delivery so a later claim retries', () => {
@@ -1323,6 +1406,56 @@ describe('BackgroundTaskRegistryClass', () => {
     }
     registry.complete('u-reused-bucket', 'c-0', replacement.task.id, { content: 'replacement' });
     expect(registry.get('u-reused-bucket', 'c-0', replacement.task.id)?.result).toBe('replacement');
+  });
+
+  it('evicts by settlement time instead of dispatch time', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let now = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const slow = registry.create({
+        userId: 'u-settlement-order',
+        conversationId: 'c-slow',
+        toolCallId: 'call_slow',
+        toolName: 't',
+      });
+      if ('atCapacity' in slow) {
+        throw new Error('unexpected slow-task capacity');
+      }
+
+      let oldestSettledId = '';
+      for (let i = 0; i < 399; i++) {
+        now++;
+        const fast = registry.create({
+          userId: 'u-settlement-order',
+          conversationId: `c-fast-${i}`,
+          toolCallId: `call_fast_${i}`,
+          toolName: 't',
+        });
+        if ('atCapacity' in fast) {
+          throw new Error(`unexpected fast-task capacity at ${i}`);
+        }
+        oldestSettledId ||= fast.task.id;
+        registry.complete('u-settlement-order', `c-fast-${i}`, fast.task.id, {
+          content: 'fast',
+        });
+      }
+
+      now += 1_000;
+      registry.complete('u-settlement-order', 'c-slow', slow.task.id, { content: 'slow' });
+      now++;
+      const replacement = registry.create({
+        userId: 'u-settlement-order',
+        conversationId: 'c-replacement',
+        toolCallId: 'call_replacement',
+        toolName: 't',
+      });
+      expect('atCapacity' in replacement).toBe(false);
+      expect(registry.get('u-settlement-order', 'c-slow', slow.task.id)?.result).toBe('slow');
+      expect(registry.get('u-settlement-order', 'c-fast-0', oldestSettledId)).toBeUndefined();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('evicts oldest settled tasks at the process-wide cap', () => {
