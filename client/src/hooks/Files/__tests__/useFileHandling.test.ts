@@ -62,7 +62,7 @@ const makeSizedFile = (name: string, type: string, size: number): File => {
   return file;
 };
 
-let mockConversation: Record<string, string | null | undefined> = {};
+let mockConversation: Record<string, string | boolean | null | undefined> = {};
 let mockFileConfig: ReturnType<typeof mergeFileConfig> | null = null;
 let mockIsConfigPending = false;
 let mockIsTemporary = false;
