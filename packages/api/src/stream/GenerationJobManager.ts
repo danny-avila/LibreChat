@@ -1158,6 +1158,16 @@ class GenerationJobManagerClass {
     try {
       await this.eventTransport.emitDone(jobData.streamId, reconcileEvent, jobData.createdAt);
     } catch (err) {
+      if (err instanceof GenerationPublicationFencedError) {
+        const currentJob = await this.jobStore.getJob(jobData.streamId);
+        this.reconcileInactiveGeneration(
+          jobData.streamId,
+          jobData.createdAt,
+          currentJob,
+          runtime,
+        );
+        return currentJob;
+      }
       logger.error(
         `[GenerationJobManager] Failed to publish stale terminal-persistence recovery ${jobData.streamId}:`,
         err,
@@ -1629,10 +1639,12 @@ class GenerationJobManagerClass {
       }
     } catch (err) {
       delivered = false;
-      logger.error(
-        `[GenerationJobManager] Failed to notify replaced generation ${streamId}@${predecessorCreatedAt}:`,
-        err,
-      );
+      if (!(err instanceof GenerationPublicationFencedError)) {
+        logger.error(
+          `[GenerationJobManager] Failed to notify replaced generation ${streamId}@${predecessorCreatedAt}:`,
+          err,
+        );
+      }
     }
     return delivered;
   }
@@ -3793,16 +3805,16 @@ class GenerationJobManagerClass {
               `[GenerationJobManager] Failed to publish terminal error for ${streamId}:`,
               publishError,
             );
-          }
-          if (runtime && this.runtimeState.get(streamId) === runtime) {
-            for (const notify of [...runtime.localErrorHandlers]) {
-              try {
-                notify(terminalError);
-              } catch (notifyError) {
-                logger.error(
-                  `[GenerationJobManager] Failed to notify terminal error for ${streamId}:`,
-                  notifyError,
-                );
+            if (runtime && this.runtimeState.get(streamId) === runtime) {
+              for (const notify of [...runtime.localErrorHandlers]) {
+                try {
+                  notify(terminalError);
+                } catch (notifyError) {
+                  logger.error(
+                    `[GenerationJobManager] Failed to notify terminal error for ${streamId}:`,
+                    notifyError,
+                  );
+                }
               }
             }
           }
@@ -7702,16 +7714,18 @@ class GenerationJobManagerClass {
         runtime.approvalExpiryPublished = true;
       }
     } catch (err) {
-      logger.error(`[GenerationJobManager] Failed to publish expired approval ${streamId}`, err);
-      if (runtime?.createdAt === createdAt) {
-        for (const notify of [...runtime.localErrorHandlers]) {
-          try {
-            notify(APPROVAL_EXPIRED_ERROR);
-          } catch (notifyError) {
-            logger.error(
-              `[GenerationJobManager] Failed to notify expired approval ${streamId}`,
-              notifyError,
-            );
+      if (!(err instanceof GenerationPublicationFencedError)) {
+        logger.error(`[GenerationJobManager] Failed to publish expired approval ${streamId}`, err);
+        if (runtime?.createdAt === createdAt) {
+          for (const notify of [...runtime.localErrorHandlers]) {
+            try {
+              notify(APPROVAL_EXPIRED_ERROR);
+            } catch (notifyError) {
+              logger.error(
+                `[GenerationJobManager] Failed to notify expired approval ${streamId}`,
+                notifyError,
+              );
+            }
           }
         }
       }
@@ -7950,7 +7964,9 @@ class GenerationJobManagerClass {
           );
           observedRuntime.startupTelemetry?.mark('first_response_event_queued');
         } catch (err) {
-          logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
+          if (!(err instanceof GenerationPublicationFencedError)) {
+            logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
+          }
         }
       }
       // emitError() is asynchronous; a replacement may have appeared while

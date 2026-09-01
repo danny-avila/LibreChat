@@ -3029,6 +3029,31 @@ describe('GenerationJobManager startup telemetry', () => {
     await manager.destroy();
   });
 
+  it('does not invoke local error fallback when terminal error publication is fenced', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = Object.assign(new InMemoryEventTransport(), {
+      emitError: jest.fn(async (streamId: string, _error: string, generationId?: number) => {
+        throw new GenerationPublicationFencedError('error', streamId, generationId);
+      }),
+    });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false, cleanupOnComplete: false });
+    manager.initialize();
+    const streamId = 'stream-error-publish-fenced';
+    const job = await manager.createJob(streamId, 'user-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+
+    await expect(manager.completeJob(streamId, 'stale provider failure', job.createdAt)).resolves.toBe(
+      true,
+    );
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(job.abortController.signal.aborted).toBe(true);
+    subscription?.unsubscribe();
+    await manager.destroy();
+  });
+
   it('finishes abort runtime cleanup but retains its durable final when publication throws', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const eventTransport = Object.assign(new InMemoryEventTransport(), {
@@ -3181,6 +3206,55 @@ describe('GenerationJobManager startup telemetry', () => {
     });
     subscription?.unsubscribe();
     await manager.destroy();
+  });
+
+  it('returns the successor when stale terminal recovery publication is fenced', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false, cleanupOnComplete: false });
+    manager.initialize();
+    const streamId = 'stream-terminal-recovery-replaced';
+    const predecessor = await manager.createJob(streamId, 'user-1', streamId);
+    const predecessorDone = jest.fn();
+    const predecessorSubscription = await manager.subscribe(
+      streamId,
+      () => undefined,
+      predecessorDone,
+    );
+    await jobStore.transitionStatusAndDrainSteers(streamId, {
+      from: 'running',
+      to: 'aborted',
+      expectCreatedAt: predecessor.createdAt,
+      patch: {
+        completedAt: Date.now() - 60_000,
+        terminalPersistencePending: true,
+        terminalPersistenceStartedAt: Date.now() - 60_000,
+      },
+    });
+    const finalize = jobStore.finalizeTerminalPersistence.bind(jobStore);
+    let successorCreatedAt = 0;
+    jest.spyOn(jobStore, 'finalizeTerminalPersistence').mockImplementation(async (...args) => {
+      const finalized = await finalize(...args);
+      const successor = await jobStore.createJob(streamId, 'user-1', streamId);
+      successorCreatedAt = successor.createdAt;
+      return finalized;
+    });
+    jest.spyOn(eventTransport, 'emitDone').mockImplementation((_streamId, _event, generationId) => {
+      throw new GenerationPublicationFencedError('done', streamId, generationId);
+    });
+
+    try {
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        createdAt: expect.any(Number),
+        status: 'running',
+      });
+      expect((await manager.getJob(streamId))?.createdAt).toBe(successorCreatedAt);
+      expect(predecessorDone).not.toHaveBeenCalled();
+    } finally {
+      predecessorSubscription?.unsubscribe();
+      await manager.destroy();
+    }
   });
 
   it('closes an already-live subscriber when abort finalization storage fails', async () => {
