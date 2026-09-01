@@ -82,6 +82,7 @@ import {
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
+import { projectPendingMCPOAuthPrompts } from '~/mcp/oauth/resume';
 import { sanitizeJobMetadata } from './metadata';
 
 /** Terminal error surfaced to a client still attached when its approval window lapses. */
@@ -7567,6 +7568,7 @@ class GenerationJobManagerClass {
       model: jobData.model,
       titleEvent,
       replayEvents,
+      pendingOAuthPrompts: projectPendingMCPOAuthPrompts(replayEvents, effectiveRunSteps),
       collectedUsage,
       contextUsage,
       // Carry the live pending approval in the resume contract so a reloading /
