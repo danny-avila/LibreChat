@@ -477,7 +477,12 @@ describe('Meilisearch Mongoose plugin', () => {
 
     await waitForMock(mockUpdateDocuments);
     expect(mockUpdateDocuments).toHaveBeenCalledWith(
-      [expect.objectContaining({ conversationId: 'abc--def--ghi' })],
+      [
+        expect.objectContaining({
+          conversationId: 'abc--def--ghi',
+          originalConversationId: conversationId,
+        }),
+      ],
       { primaryKey: 'conversationId' },
     );
   });
@@ -1163,8 +1168,9 @@ describe('Meilisearch Mongoose plugin', () => {
       mockAddDocumentsInBatches.mockClear();
       mockAddDocuments.mockClear();
 
+      const conversationId = 'abc|def|ghi';
       await conversationModel.collection.insertOne({
-        conversationId: new mongoose.Types.ObjectId(),
+        conversationId,
         user: new mongoose.Types.ObjectId(),
         title: 'Test Conversation',
         endpoint: EModelEndpoint.openAI,
@@ -1176,9 +1182,16 @@ describe('Meilisearch Mongoose plugin', () => {
       await conversationModel.syncWithMeili();
 
       // Verify addDocumentsInBatches was called with explicit primaryKey
-      expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(expect.any(Array), undefined, {
-        primaryKey: 'conversationId',
-      });
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            conversationId: 'abc--def--ghi',
+            originalConversationId: conversationId,
+          }),
+        ],
+        undefined,
+        { primaryKey: 'conversationId' },
+      );
     });
 
     test('a transient document-write failure retries without delaying MongoDB persistence', async () => {

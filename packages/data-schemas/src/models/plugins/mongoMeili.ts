@@ -107,6 +107,16 @@ const getSyncConfig = () => ({
 const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
 
+const preserveOriginalConversationId = (object: Record<string, unknown>): void => {
+  const conversationId = object.conversationId;
+  if (typeof conversationId !== 'string' || !conversationId.includes('|')) {
+    return;
+  }
+
+  object.originalConversationId = conversationId;
+  object.conversationId = conversationId.replace(/\|/g, '--');
+};
+
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 const previouslyIndexedFlagKey = 'meiliPreviouslyIndexed';
 const meiliCleanupVersion = 1;
@@ -528,9 +538,11 @@ const createMeiliMongooseModel = ({
       }
 
       // Format documents for MeiliSearch
-      const formattedDocs = documents.map((doc) =>
-        _.omitBy(_.pick(doc, attributesToIndex), (_v, k) => k.startsWith('$')),
-      );
+      const formattedDocs = documents.map((doc) => {
+        const object = _.omitBy(_.pick(doc, attributesToIndex), (_v, k) => k.startsWith('$'));
+        preserveOriginalConversationId(object);
+        return object;
+      });
 
       try {
         const docsIds = documents.map((doc) => doc._id);
@@ -745,13 +757,7 @@ const createMeiliMongooseModel = ({
         k.startsWith('$'),
       );
 
-      if (
-        object.conversationId &&
-        typeof object.conversationId === 'string' &&
-        object.conversationId.includes('|')
-      ) {
-        object.conversationId = object.conversationId.replace(/\|/g, '--');
-      }
+      preserveOriginalConversationId(object);
 
       if (object.content && Array.isArray(object.content)) {
         /** Search indexes the full conversational record, steered words included. */
@@ -1012,11 +1018,20 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       }
     }
 
+    const filterableAttributes = ['user'];
+    if (hasSchemaPath(schema, 'tenantId')) {
+      filterableAttributes.push('tenantId');
+    }
+
     try {
       await index.updateSettings({
-        filterableAttributes: ['user'],
+        filterableAttributes,
       });
-      logger.debug(`[mongoMeili] Updated index ${indexName} settings to make 'user' filterable`);
+      logger.debug(
+        `[mongoMeili] Updated index ${indexName} settings to make ${filterableAttributes.join(
+          ' and ',
+        )} filterable`,
+      );
     } catch (settingsError) {
       logger.error(`[mongoMeili] Error updating index settings for ${indexName}:`, settingsError);
     }

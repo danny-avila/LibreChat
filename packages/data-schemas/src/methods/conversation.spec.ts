@@ -6522,7 +6522,7 @@ describe('Conversation Operations', () => {
       const searchParams = {
         filter: 'user = "user123"',
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       };
       expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
       expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
@@ -6571,7 +6571,7 @@ describe('Conversation Operations', () => {
       const searchParams = {
         filter: 'user = "user123"',
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       };
       expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
       expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
@@ -6580,6 +6580,62 @@ describe('Conversation Operations', () => {
       expect(convoIds).toContain(overlapMatch.conversationId);
       expect(convoIds).toContain(titleOnlyMatch.conversationId);
       expect(convoIds).toContain(messageOnlyMatch.conversationId);
+    });
+
+    it('uses the original conversation ID when MeiliSearch escapes pipes', async () => {
+      const conversationId = 'conv|with|pipes';
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        title: 'Unrelated title',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      Object.assign(Conversation, {
+        meiliSearch: jest.fn().mockResolvedValue({ hits: [] }),
+      });
+      searchMessages.mockResolvedValue({
+        hits: [
+          {
+            conversationId: 'conv--with--pipes',
+            originalConversationId: conversationId,
+          },
+        ],
+      });
+
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+
+      expect(result?.conversations.map((c) => c.conversationId)).toEqual([conversationId]);
+    });
+
+    it('scopes both search indexes to the active tenant', async () => {
+      const tenantId = 'tenant-a';
+      const conversationId = uuidv4();
+      await tenantStorage.run({ tenantId }, async () => {
+        await Conversation.create({
+          conversationId,
+          user: 'user123',
+          title: 'Tenant conversation',
+          endpoint: EModelEndpoint.openAI,
+        });
+      });
+
+      const meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
+      Object.assign(Conversation, { meiliSearch });
+      searchMessages.mockResolvedValue({ hits: [{ conversationId }] });
+
+      const result = await tenantStorage.run({ tenantId }, () =>
+        getConvosByCursor('user123', { search: 'keyword' }),
+      );
+
+      const searchParams = {
+        filter: 'user = "user123" AND tenantId = "tenant-a"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
+      };
+      expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+      expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
+      expect(result?.conversations.map((c) => c.conversationId)).toEqual([conversationId]);
     });
 
     it('should return an empty result when neither titles nor messages match', async () => {

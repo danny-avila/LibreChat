@@ -41,12 +41,24 @@ import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
+import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const MAX_AGENT_EVENT_ACTOR_SUSPENSION_BYTES = 64 * 1_024;
 /** MeiliSearch's default `pagination.maxTotalHits` ceiling. */
 const MEILI_SEARCH_LIMIT = 1000;
+const escapeMeiliFilterValue = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+const getConversationSearchId = (hit: {
+  conversationId?: unknown;
+  originalConversationId?: unknown;
+}): string | undefined => {
+  if (typeof hit.originalConversationId === 'string') {
+    return hit.originalConversationId;
+  }
+  return typeof hit.conversationId === 'string' ? hit.conversationId : undefined;
+};
 
 function validateAgentEventActorSuspension(
   conversationId: string,
@@ -2630,10 +2642,15 @@ export function createConversationMethods(
     if (search) {
       try {
         const ConversationMeili = mongoose.models.Conversation as SchemaWithMeiliMethods;
+        const tenantId = getTenantId();
+        const tenantFilter =
+          tenantId && tenantId !== SYSTEM_TENANT_ID
+            ? ` AND tenantId = "${escapeMeiliFilterValue(tenantId)}"`
+            : '';
         const searchParams: SearchParams = {
-          filter: `user = "${user}"`,
+          filter: `user = "${user}"${tenantFilter}`,
           limit: MEILI_SEARCH_LIMIT,
-          attributesToRetrieve: ['conversationId'],
+          attributesToRetrieve: ['conversationId', 'originalConversationId'],
         };
         const [convoResults, messageHits] = await Promise.all([
           ConversationMeili.meiliSearch(search, searchParams),
@@ -2652,13 +2669,15 @@ export function createConversationMethods(
         ]);
         const matchingIds = new Set<string>();
         for (const hit of convoResults.hits ?? []) {
-          if (typeof hit.conversationId === 'string') {
-            matchingIds.add(hit.conversationId);
+          const conversationId = getConversationSearchId(hit);
+          if (conversationId) {
+            matchingIds.add(conversationId);
           }
         }
         for (const hit of messageHits) {
-          if (typeof hit.conversationId === 'string') {
-            matchingIds.add(hit.conversationId);
+          const conversationId = getConversationSearchId(hit);
+          if (conversationId) {
+            matchingIds.add(conversationId);
           }
         }
         if (!matchingIds.size) {
