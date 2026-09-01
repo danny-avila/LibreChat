@@ -224,6 +224,14 @@ describe('Delete user CLI', () => {
     );
   });
 
+  it('preserves code environment records when revocation marking fails', async () => {
+    mockRevokeUserCodeEnvironmentWorkers.mockRejectedValueOnce(new Error('mongo unavailable'));
+
+    expect(await runCli()).toBe(0);
+
+    expect(mockMethods.deleteUserCodeEnvironments).not.toHaveBeenCalled();
+  });
+
   it('deletes nothing and releases both fences when provider drain fails', async () => {
     mockGetCleanupBlockingJobIdsForUser.mockResolvedValueOnce(['stream-1']);
     mockAbortJob.mockRejectedValueOnce(new Error('provider drain failed'));

@@ -4,13 +4,29 @@ import { ResourceType } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
 import type { CodeEnvironmentDocument } from '~/types';
 import type { IAclEntry } from '~/types';
+import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 
 const CODE_ENVIRONMENT_TOMBSTONES = 'code_environment_tombstones';
+const REFERENCE_LEASE_MS = 2 * 60_000;
+const REMOVAL_LEASE_MS = 2 * 60_000;
 
 type CodeEnvironmentTombstone = {
   _id: string;
+  tenantId: string;
+  environmentId: string;
   deletedAt: Date;
 };
+
+function tenantScope(tenantId?: string): string {
+  const resolved = tenantId ?? getTenantId();
+  return resolved == null || resolved === SYSTEM_TENANT_ID ? '' : resolved;
+}
+
+function tombstoneId(environmentId: string, tenantId?: string): string {
+  return createHash('sha256')
+    .update(`librechat-code-environment-tombstone\0${tenantScope(tenantId)}\0${environmentId}`)
+    .digest('hex');
+}
 
 function tombstones(mongoose: typeof import('mongoose')) {
   const db = mongoose.connection.db;
@@ -34,6 +50,7 @@ export type CodeEnvironmentReferenceReservation = {
 };
 
 export class CodeEnvironmentReferenceError extends Error {
+  readonly statusCode = 409;
   constructor(environmentId: string) {
     super(`Code environment is being removed: ${environmentId}`);
     this.name = 'CodeEnvironmentReferenceError';
@@ -50,16 +67,23 @@ export async function reserveCodeEnvironmentReference(
     | undefined;
   if (CodeEnvironment == null) return undefined;
   const reservationId = new Types.ObjectId().toHexString();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + REFERENCE_LEASE_MS);
   const reserved = await CodeEnvironment.findOneAndUpdate(
-    { environmentId, deletionStartedAt: { $exists: false } },
-    { $addToSet: { pendingAgentReferences: reservationId } },
+    {
+      environmentId,
+      registrationPendingAt: { $exists: false },
+      deletionCommittedAt: { $exists: false },
+      deletionStartedAt: { $exists: false },
+    },
+    { $push: { pendingAgentReferences: { reservationId, expiresAt } } },
     { new: true },
   ).lean<CodeEnvironmentDocument>();
   if (reserved != null) return { environmentId, reservationId };
 
   const [persisted, tombstone] = await Promise.all([
     CodeEnvironment.exists({ environmentId }),
-    tombstones(mongoose).findOne({ _id: environmentId }),
+    tombstones(mongoose).findOne({ _id: tombstoneId(environmentId) }),
   ]);
   if (persisted != null || tombstone != null) {
     throw new CodeEnvironmentReferenceError(environmentId);
@@ -79,7 +103,7 @@ export async function releaseCodeEnvironmentReference(
   if (CodeEnvironment == null) return;
   await CodeEnvironment.updateOne(
     { environmentId: reservation.environmentId },
-    { $pull: { pendingAgentReferences: reservation.reservationId } },
+    { $pull: { pendingAgentReferences: { reservationId: reservation.reservationId } } },
   );
 }
 
@@ -87,10 +111,7 @@ type CreateCodeEnvironmentInput = Pick<
   CodeEnvironmentDocument,
   'environmentId' | 'name' | 'type' | 'baseURL' | 'controlPlaneId' | 'createdBy'
 > &
-  Pick<
-    Partial<CodeEnvironmentDocument>,
-    'workerId' | 'revocationTokenEnv' | 'workerPrincipal'
-  >;
+  Pick<Partial<CodeEnvironmentDocument>, 'workerId' | 'revocationTokenEnv' | 'workerPrincipal'>;
 
 export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')): {
   createCodeEnvironment: (input: CreateCodeEnvironmentInput) => Promise<CodeEnvironmentDocument>;
@@ -112,10 +133,12 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     id: string | Types.ObjectId,
   ) => Promise<CodeEnvironmentDocument | null>;
   discardCodeEnvironmentById: (id: string | Types.ObjectId) => Promise<void>;
+  completeCodeEnvironmentRegistration: (id: string | Types.ObjectId) => Promise<void>;
   beginCodeEnvironmentRemoval: (
     id: string | Types.ObjectId,
   ) => Promise<CodeEnvironmentDocument | null>;
-  cancelCodeEnvironmentRemoval: (id: string | Types.ObjectId) => Promise<void>;
+  cancelCodeEnvironmentRemoval: (id: string | Types.ObjectId, leaseId: string) => Promise<void>;
+  commitCodeEnvironmentRemoval: (id: string | Types.ObjectId, leaseId: string) => Promise<void>;
   deleteUserCodeEnvironments: (userId: string | Types.ObjectId) => Promise<number>;
 } {
   const model = () => mongoose.models.CodeEnvironment as Model<CodeEnvironmentDocument>;
@@ -123,17 +146,19 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   async function createCodeEnvironment(
     input: CreateCodeEnvironmentInput,
   ): Promise<CodeEnvironmentDocument> {
-    if ((await tombstones(mongoose).findOne({ _id: input.environmentId })) != null) {
+    if ((await tombstones(mongoose).findOne({ _id: tombstoneId(input.environmentId) })) != null) {
       throw new Error(`Code environment id was previously retired: ${input.environmentId}`);
     }
-    return (await model().create(input)).toObject() as CodeEnvironmentDocument;
+    return (
+      await model().create({ ...input, registrationPendingAt: new Date() })
+    ).toObject() as CodeEnvironmentDocument;
   }
 
   async function createCodeEnvironmentWithinOwnerLimit(
     input: CreateCodeEnvironmentInput,
     maxOwned: number,
   ): Promise<CodeEnvironmentDocument | null> {
-    if ((await tombstones(mongoose).findOne({ _id: input.environmentId })) != null) {
+    if ((await tombstones(mongoose).findOne({ _id: tombstoneId(input.environmentId) })) != null) {
       throw new Error(`Code environment id was previously retired: ${input.environmentId}`);
     }
     const existing = await model()
@@ -160,6 +185,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
             ...input,
             _id: ownerSlotId(input.createdBy, ownerSlot),
             ownerSlot,
+            registrationPendingAt: new Date(),
           })
         ).toObject() as CodeEnvironmentDocument;
       } catch (error) {
@@ -216,8 +242,14 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     const environment = await model().findById(id).lean<CodeEnvironmentDocument>();
     if (environment == null) return null;
     await tombstones(mongoose).updateOne(
-      { _id: environment.environmentId },
-      { $setOnInsert: { deletedAt: new Date() } },
+      { _id: tombstoneId(environment.environmentId, environment.tenantId) },
+      {
+        $setOnInsert: {
+          tenantId: tenantScope(environment.tenantId),
+          environmentId: environment.environmentId,
+          deletedAt: new Date(),
+        },
+      },
       { upsert: true },
     );
     return await model().findByIdAndDelete(id).lean<CodeEnvironmentDocument>();
@@ -227,27 +259,89 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     await model().deleteOne({ _id: id });
   }
 
+  async function completeCodeEnvironmentRegistration(id: string | Types.ObjectId): Promise<void> {
+    const result = await model().updateOne(
+      { _id: id, registrationPendingAt: { $exists: true } },
+      { $unset: { registrationPendingAt: 1 } },
+    );
+    if (result.matchedCount !== 1) {
+      throw new Error('Code environment registration could not be committed');
+    }
+  }
+
   async function beginCodeEnvironmentRemoval(
     id: string | Types.ObjectId,
   ): Promise<CodeEnvironmentDocument | null> {
+    const now = new Date();
+    const leaseId = new Types.ObjectId().toHexString();
     return await model()
       .findOneAndUpdate(
         {
           _id: id,
-          deletionStartedAt: { $exists: false },
-          $or: [
-            { pendingAgentReferences: { $exists: false } },
-            { pendingAgentReferences: { $size: 0 } },
+          deletionCommittedAt: { $exists: false },
+          $and: [
+            {
+              $or: [
+                { deletionStartedAt: { $exists: false } },
+                { deletionLeaseExpiresAt: { $lte: now } },
+              ],
+            },
+            {
+              $or: [
+                { pendingAgentReferences: { $exists: false } },
+                { pendingAgentReferences: { $size: 0 } },
+                {
+                  pendingAgentReferences: {
+                    $not: { $elemMatch: { expiresAt: { $gt: now } } },
+                  },
+                },
+              ],
+            },
           ],
         },
-        { $set: { deletionStartedAt: new Date() } },
+        {
+          $set: {
+            deletionStartedAt: now,
+            deletionLeaseId: leaseId,
+            deletionLeaseExpiresAt: new Date(now.getTime() + REMOVAL_LEASE_MS),
+          },
+          $pull: { pendingAgentReferences: { expiresAt: { $lte: now } } },
+        },
         { new: true },
       )
       .lean<CodeEnvironmentDocument>();
   }
 
-  async function cancelCodeEnvironmentRemoval(id: string | Types.ObjectId): Promise<void> {
-    await model().updateOne({ _id: id }, { $unset: { deletionStartedAt: 1 } });
+  async function cancelCodeEnvironmentRemoval(
+    id: string | Types.ObjectId,
+    leaseId: string,
+  ): Promise<void> {
+    await model().updateOne(
+      { _id: id, deletionLeaseId: leaseId, deletionCommittedAt: { $exists: false } },
+      {
+        $unset: {
+          deletionStartedAt: 1,
+          deletionLeaseId: 1,
+          deletionLeaseExpiresAt: 1,
+        },
+      },
+    );
+  }
+
+  async function commitCodeEnvironmentRemoval(
+    id: string | Types.ObjectId,
+    leaseId: string,
+  ): Promise<void> {
+    const result = await model().updateOne(
+      { _id: id, deletionLeaseId: leaseId },
+      {
+        $set: { deletionCommittedAt: new Date() },
+        $unset: { deletionLeaseExpiresAt: 1 },
+      },
+    );
+    if (result.matchedCount !== 1) {
+      throw new Error('Code environment removal lease was lost');
+    }
   }
 
   /** Delete unreferenced creator-owned records and grants after user removal.
@@ -259,44 +353,47 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
       .find({
         createdBy: creatorId,
         revocationPendingAt: { $exists: false },
-        deletionStartedAt: { $exists: false },
-        $or: [
-          { pendingAgentReferences: { $exists: false } },
-          { pendingAgentReferences: { $size: 0 } },
-        ],
+        deletionCommittedAt: { $exists: false },
       })
-      .select('_id environmentId')
-      .lean<Array<Pick<CodeEnvironmentDocument, '_id' | 'environmentId'>>>();
+      .select('_id')
+      .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
     if (environments.length === 0) return 0;
 
     const Agent = mongoose.models.Agent;
-    const referenced = new Set<string>(
-      Agent == null
-        ? []
-        : await Agent.distinct('code_environment_id', {
-            code_environment_id: { $in: environments.map(({ environmentId }) => environmentId) },
-          }),
-    );
-    const deletable = environments.filter(({ environmentId }) => !referenced.has(environmentId));
-    if (deletable.length === 0) return 0;
-
-    const resourceIds = deletable.map((environment) => environment._id);
-    await Promise.all(
-      deletable.map(({ environmentId }) =>
-        tombstones(mongoose).updateOne(
-          { _id: environmentId },
-          { $setOnInsert: { deletedAt: new Date() } },
-          { upsert: true },
-        ),
-      ),
-    );
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    await AclEntry.deleteMany({
-      resourceType: ResourceType.CODE_ENVIRONMENT,
-      resourceId: { $in: resourceIds },
-    });
-    const result = await model().deleteMany({ _id: { $in: resourceIds } });
-    return result.deletedCount ?? 0;
+    let deleted = 0;
+    for (const candidate of environments) {
+      const claimed = await beginCodeEnvironmentRemoval(candidate._id);
+      if (claimed == null || claimed.deletionLeaseId == null) continue;
+      const referenced =
+        Agent != null &&
+        (await Agent.exists({ code_environment_id: claimed.environmentId })) != null;
+      if (referenced) {
+        await cancelCodeEnvironmentRemoval(candidate._id, claimed.deletionLeaseId);
+        continue;
+      }
+      await tombstones(mongoose).updateOne(
+        { _id: tombstoneId(claimed.environmentId, claimed.tenantId) },
+        {
+          $setOnInsert: {
+            tenantId: tenantScope(claimed.tenantId),
+            environmentId: claimed.environmentId,
+            deletedAt: new Date(),
+          },
+        },
+        { upsert: true },
+      );
+      await AclEntry.deleteMany({
+        resourceType: ResourceType.CODE_ENVIRONMENT,
+        resourceId: candidate._id,
+      });
+      const result = await model().deleteOne({
+        _id: candidate._id,
+        deletionLeaseId: claimed.deletionLeaseId,
+      });
+      deleted += result.deletedCount ?? 0;
+    }
+    return deleted;
   }
 
   return {
@@ -308,8 +405,10 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     findCodeEnvironmentsByCreator,
     deleteCodeEnvironmentById,
     discardCodeEnvironmentById,
+    completeCodeEnvironmentRegistration,
     beginCodeEnvironmentRemoval,
     cancelCodeEnvironmentRemoval,
+    commitCodeEnvironmentRemoval,
     deleteUserCodeEnvironments,
   };
 }

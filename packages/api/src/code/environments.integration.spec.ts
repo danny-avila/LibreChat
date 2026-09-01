@@ -1,10 +1,10 @@
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createMethods, createModels } from '@librechat/data-schemas';
+import { createMethods, createModels, tenantStorage } from '@librechat/data-schemas';
 import { AccessRoleIds, PrincipalType, ResourceType } from 'librechat-data-provider';
+import { reconcileCodeEnvironmentLifecycle, revokeUserCodeEnvironmentWorkers } from './lifecycle';
 import { AccessControlService } from '~/acl/accessControlService';
 import { createCodeEnvironmentRegistry } from './environments';
-import { revokeUserCodeEnvironmentWorkers } from './lifecycle';
 
 function createSharedCache() {
   const values = new Map<string, unknown>();
@@ -285,6 +285,63 @@ describe('code environment registry', () => {
     ).resolves.toEqual([]);
   });
 
+  test('reconciles an interrupted removal after the remote lifecycle has started', async () => {
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const ownerId = new Types.ObjectId();
+    await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'interrupted-removal',
+        name: 'Interrupted removal',
+        type: 'attached',
+        baseURL: 'https://code.example.com/v1',
+        workerId: 'interrupted-removal',
+        controlPlaneId: 'self-service',
+        revocationTokenEnv: 'CODE_ADMIN_TOKEN',
+        workerPrincipal: { type: 'user', id: ownerId.toString() },
+      },
+    });
+    const beforeDelete = jest.fn().mockResolvedValue(undefined);
+    const commit = jest
+      .spyOn(mongoose.models.CodeEnvironment, 'updateOne')
+      .mockRejectedValueOnce(new Error('mongo unavailable after revoke'));
+
+    await expect(
+      registry.remove({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environmentId: 'interrupted-removal',
+        beforeDelete,
+      }),
+    ).rejects.toThrow('mongo unavailable after revoke');
+    expect(beforeDelete).toHaveBeenCalledTimes(1);
+    await expect(
+      registry.listAccessible({ userId: ownerId, role: 'USER', idOnTheSource: null }),
+    ).resolves.toEqual([]);
+
+    commit.mockRestore();
+    await mongoose.models.CodeEnvironment.updateOne(
+      { environmentId: 'interrupted-removal' },
+      { $set: { deletionLeaseExpiresAt: new Date(Date.now() - 1_000) } },
+    );
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ protocolVersion: 1, revoked: true }),
+    });
+    await reconcileCodeEnvironmentLifecycle({
+      mongoose,
+      readSecret: () => 'administrator-token',
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.example.com/v1/bridge/workers/interrupted-removal/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    await expect(
+      mongoose.models.CodeEnvironment.findOne({ environmentId: 'interrupted-removal' }),
+    ).resolves.toBeNull();
+  });
+
   test('fences removal while an agent write is reserving the environment', async () => {
     const registry = createCodeEnvironmentRegistry(mongoose);
     const methods = createMethods(mongoose);
@@ -418,10 +475,10 @@ describe('code environment registry', () => {
       }),
     ).resolves.toBe(1);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    await expect(createMethods(mongoose).deleteUserCodeEnvironments(ownerId)).resolves.toBe(1);
+    await expect(createMethods(mongoose).deleteUserCodeEnvironments(ownerId)).resolves.toBe(0);
     await expect(
-      mongoose.models.CodeEnvironment.findOne({ environmentId: 'worker-ok' }),
-    ).resolves.toBeNull();
+      mongoose.models.CodeEnvironment.findOne({ environmentId: 'worker-ok' }).lean(),
+    ).resolves.toMatchObject({ deletionCommittedAt: expect.any(Date) });
     await expect(
       mongoose.models.CodeEnvironment.findOne({ environmentId: 'worker-unreachable' }).lean(),
     ).resolves.toMatchObject({
@@ -429,6 +486,23 @@ describe('code environment registry', () => {
       revocationAttempts: 1,
       revocationLastError: 'Code bridge lifecycle request failed',
     });
+
+    const retryFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ protocolVersion: 1, revoked: true }),
+    });
+    await reconcileCodeEnvironmentLifecycle({
+      mongoose,
+      readSecret: () => 'administrator-token',
+      fetchImpl: retryFetch,
+    });
+    expect(retryFetch).toHaveBeenCalledWith(
+      'https://worker-unreachable.example.com/v1/bridge/workers/worker-unreachable/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    await expect(
+      mongoose.models.CodeEnvironment.findOne({ environmentId: 'worker-unreachable' }),
+    ).resolves.toBeNull();
   });
 
   test('removes creator-owned environment records and grants when the user is deleted', async () => {
@@ -655,6 +729,49 @@ describe('code environment registry', () => {
     ).resolves.toBe(0);
   });
 
+  test('reconciles a pending registration when ACL rollback fails', async () => {
+    const rollback = jest
+      .spyOn(AccessControlService.prototype, 'removeAllPermissions')
+      .mockRejectedValueOnce(new Error('acl store unavailable'));
+    const registry = createCodeEnvironmentRegistry(mongoose, {
+      configurationCache: {
+        get: jest.fn(),
+        set: jest.fn().mockRejectedValue(new Error('redis unavailable')),
+      },
+    });
+    const ownerId = new Types.ObjectId();
+
+    await expect(
+      registry.register({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environment: {
+          id: 'pending-rollback-vm',
+          name: 'Pending rollback VM',
+          type: 'attached',
+          baseURL: 'https://code.example.com',
+          controlPlaneId: 'shared-code-api',
+        },
+      }),
+    ).rejects.toThrow('redis unavailable');
+    await expect(
+      mongoose.models.CodeEnvironment.findOne({ environmentId: 'pending-rollback-vm' }).lean(),
+    ).resolves.toMatchObject({ registrationPendingAt: expect.any(Date) });
+
+    rollback.mockRestore();
+    await mongoose.models.CodeEnvironment.updateOne(
+      { environmentId: 'pending-rollback-vm' },
+      { $set: { registrationPendingAt: new Date(Date.now() - 10 * 60_000) } },
+    );
+    await reconcileCodeEnvironmentLifecycle({ mongoose });
+
+    await expect(
+      mongoose.models.CodeEnvironment.countDocuments({ environmentId: 'pending-rollback-vm' }),
+    ).resolves.toBe(0);
+    await expect(
+      mongoose.models.AclEntry.countDocuments({ resourceType: ResourceType.CODE_ENVIRONMENT }),
+    ).resolves.toBe(0);
+  });
+
   test('preserves a creator-owned environment referenced by another surviving agent', async () => {
     const registry = createCodeEnvironmentRegistry(mongoose);
     const methods = createMethods(mongoose);
@@ -687,5 +804,68 @@ describe('code environment registry', () => {
     await expect(
       mongoose.models.AclEntry.countDocuments({ resourceId: environment.resourceId }),
     ).resolves.toBeGreaterThan(0);
+  });
+
+  test('recovers expired agent reservations and removal leases', async () => {
+    const methods = createMethods(mongoose);
+    const ownerId = new Types.ObjectId();
+    const environment = await createCodeEnvironmentRegistry(mongoose).register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'expired-lifecycle-leases',
+        name: 'Expired lifecycle leases',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    const expiredAt = new Date(Date.now() - 1_000);
+    await mongoose.models.CodeEnvironment.updateOne(
+      { _id: environment.resourceId },
+      {
+        $set: {
+          deletionStartedAt: expiredAt,
+          deletionLeaseId: 'abandoned-removal',
+          deletionLeaseExpiresAt: expiredAt,
+          pendingAgentReferences: [{ reservationId: 'abandoned-reference', expiresAt: expiredAt }],
+        },
+      },
+    );
+
+    const claimed = await methods.beginCodeEnvironmentRemoval(environment.resourceId);
+
+    expect(claimed).toMatchObject({
+      deletionLeaseId: expect.any(String),
+      pendingAgentReferences: [],
+    });
+    expect(claimed?.deletionLeaseId).not.toBe('abandoned-removal');
+  });
+
+  test('scopes retired environment ids to their tenant', async () => {
+    const ownerId = new Types.ObjectId();
+    const input = {
+      environmentId: 'tenant-reusable-id',
+      name: 'Tenant VM',
+      type: 'attached' as const,
+      baseURL: 'https://code.example.com',
+      controlPlaneId: 'shared-code-api',
+      createdBy: ownerId,
+    };
+
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      const methods = createMethods(mongoose);
+      const created = await methods.createCodeEnvironment(input);
+      await methods.deleteCodeEnvironmentById(created._id);
+      await expect(methods.createCodeEnvironment(input)).rejects.toThrow(
+        'Code environment id was previously retired',
+      );
+    });
+
+    await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+      await expect(createMethods(mongoose).createCodeEnvironment(input)).resolves.toMatchObject({
+        environmentId: 'tenant-reusable-id',
+        tenantId: 'tenant-b',
+      });
+    });
   });
 });

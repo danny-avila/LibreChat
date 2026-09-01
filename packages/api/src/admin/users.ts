@@ -205,9 +205,11 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         return res.status(404).json({ error: 'User not found' });
       }
       userDeleted = true;
+      let codeEnvironmentCleanupSafe = true;
       try {
         await revokeUserCodeEnvironmentWorkers?.(id);
       } catch (error) {
+        codeEnvironmentCleanupSafe = false;
         logger.error('[adminUsers] failed to revoke code environment workers:', id, error);
       }
       await purgeAgentTriggerDeliveriesForUser(id);
@@ -225,7 +227,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
       const objectId = new Types.ObjectId(id);
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.USER, id),
-        deleteUserCodeEnvironments(objectId),
+        ...(codeEnvironmentCleanupSafe ? [deleteUserCodeEnvironments(objectId)] : []),
         deleteAclEntries({ principalType: PrincipalType.USER, principalId: objectId }),
       ]);
       for (const r of cleanupResults) {

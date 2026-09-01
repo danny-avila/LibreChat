@@ -473,6 +473,7 @@ const deleteUserController = async (req, res) => {
       throw new Error('User disappeared before account deletion could commit');
     }
     userDeleted = true;
+    let codeEnvironmentCleanupSafe = true;
     try {
       await revokeUserCodeEnvironmentWorkers({
         mongoose,
@@ -480,12 +481,15 @@ const deleteUserController = async (req, res) => {
         appConfig: deletionAppConfig,
       });
     } catch (error) {
+      codeEnvironmentCleanupSafe = false;
       logger.error('[deleteUserController] Failed to revoke code environment workers', error);
     }
-    try {
-      await db.deleteUserCodeEnvironments(user.id);
-    } catch (error) {
-      logger.error('[deleteUserController] Failed to delete code environments', error);
+    if (codeEnvironmentCleanupSafe) {
+      try {
+        await db.deleteUserCodeEnvironments(user.id);
+      } catch (error) {
+        logger.error('[deleteUserController] Failed to delete code environments', error);
+      }
     }
     await invalidateCodeEnvironmentConfigCache(user.tenantId).catch((error) => {
       logger.error('[deleteUserController] code environment cache invalidation failed:', error);

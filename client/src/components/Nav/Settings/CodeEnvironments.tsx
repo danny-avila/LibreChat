@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Button,
   Input,
@@ -65,6 +65,14 @@ export default function CodeEnvironments() {
   const [pairing, setPairing] = useState<CodeEnvironmentPairingResponse['pairing']>();
   const controlPlanes = query.data?.controlPlanes ?? [];
   const selectedControlPlane = controlPlaneId || controlPlanes[0]?.id || '';
+
+  useEffect(() => {
+    if (pairing == null) return;
+    const remaining = Date.parse(pairing.expiresAt) - Date.now();
+    const delay = Number.isFinite(remaining) ? Math.max(0, remaining) : 0;
+    const timeout = window.setTimeout(() => setPairing(undefined), delay);
+    return () => window.clearTimeout(timeout);
+  }, [pairing]);
 
   const pair = () => {
     const trimmedName = name.trim();

@@ -477,6 +477,19 @@ describe('createAdminUsersHandlers', () => {
       expect(json).toHaveBeenCalledWith({ message: 'User was deleted successfully.' });
     });
 
+    it('preserves code environment records when revocation marking fails', async () => {
+      const deps = createDeps({
+        revokeUserCodeEnvironmentWorkers: jest.fn().mockRejectedValue(new Error('mongo down')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(deps.deleteUserById).toHaveBeenCalledWith(validUserId);
+      expect(deps.deleteUserCodeEnvironments).not.toHaveBeenCalled();
+    });
+
     it('does not cascade when user is not found', async () => {
       const result: UserDeleteResult = { deletedCount: 0, message: '' };
       const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });

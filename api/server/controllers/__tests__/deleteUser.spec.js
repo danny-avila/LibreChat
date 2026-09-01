@@ -255,7 +255,7 @@ describe('deleteUserController - 2FA enforcement', () => {
     );
   });
 
-  it('finishes committed account deletion when a personal code worker cannot be revoked', async () => {
+  it('preserves code environment records when revocation marking fails after deletion', async () => {
     const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
@@ -267,7 +267,7 @@ describe('deleteUserController - 2FA enforcement', () => {
     expect(mockBeginAgentTriggerUserDeletion).toHaveBeenCalledTimes(1);
     expect(mockDeleteMessages).toHaveBeenCalled();
     expect(mockDeleteUserById).toHaveBeenCalledWith('user1');
-    expect(mockDeleteUserCodeEnvironments).toHaveBeenCalledWith('user1');
+    expect(mockDeleteUserCodeEnvironments).not.toHaveBeenCalled();
     expect(mockCancelAgentTriggerUserPurge).not.toHaveBeenCalled();
     expect(mockCancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
   });

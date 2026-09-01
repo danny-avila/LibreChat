@@ -50,12 +50,24 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
       min: 0,
     },
     pendingAgentReferences: {
-      type: [String],
+      type: [
+        new Schema(
+          {
+            reservationId: { type: String, required: true },
+            expiresAt: { type: Date, required: true },
+          },
+          { _id: false },
+        ),
+      ],
       default: undefined,
     },
     deletionStartedAt: {
       type: Date,
     },
+    deletionLeaseId: { type: String },
+    deletionLeaseExpiresAt: { type: Date },
+    deletionCommittedAt: { type: Date },
+    registrationPendingAt: { type: Date },
     revocationPendingAt: {
       type: Date,
     },
@@ -66,6 +78,8 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
     revocationLastError: {
       type: String,
     },
+    revocationLeaseId: { type: String },
+    revocationLeaseExpiresAt: { type: Date },
     workerId: {
       type: String,
     },

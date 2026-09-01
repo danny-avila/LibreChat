@@ -1,8 +1,193 @@
-import { EModelEndpoint } from 'librechat-data-provider';
-import { createMethods, logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
+import { EModelEndpoint, ResourceType } from 'librechat-data-provider';
+import { createMethods, logger, runAsSystem } from '@librechat/data-schemas';
+import type { AppConfig, CodeEnvironmentDocument } from '@librechat/data-schemas';
 import type { CodeBridgeFetch } from './bridge';
 import { readCodeBridgeSecret, revokeCodeBridgeWorker } from './bridge';
+
+const RECONCILE_INTERVAL_MS = 60_000;
+const RECONCILE_LEASE_MS = 2 * 60_000;
+const REGISTRATION_STALE_MS = 5 * 60_000;
+let reconcileTimer: NodeJS.Timeout | undefined;
+let reconcileInFlight: Promise<void> | undefined;
+
+export async function reconcileCodeEnvironmentLifecycle({
+  mongoose,
+  readSecret = readCodeBridgeSecret,
+  fetchImpl,
+  limit = 25,
+}: {
+  mongoose: typeof import('mongoose');
+  readSecret?: (name: string) => string | undefined;
+  fetchImpl?: CodeBridgeFetch;
+  limit?: number;
+}): Promise<void> {
+  await runAsSystem(async () => {
+    const CodeEnvironment = mongoose.models.CodeEnvironment;
+    const AclEntry = mongoose.models.AclEntry;
+    if (CodeEnvironment == null || AclEntry == null) return;
+    const methods = createMethods(mongoose);
+    const now = new Date();
+    await CodeEnvironment.updateMany(
+      {},
+      { $pull: { pendingAgentReferences: { expiresAt: { $lte: now } } } },
+    );
+    const expiredRemovals = await CodeEnvironment.find({
+      deletionCommittedAt: { $exists: false },
+      deletionLeaseExpiresAt: { $lte: now },
+    })
+      .limit(limit)
+      .select('_id')
+      .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
+    for (const candidate of expiredRemovals) {
+      const environment = await methods.beginCodeEnvironmentRemoval(candidate._id);
+      if (environment == null || environment.deletionLeaseId == null) continue;
+      const leaseId = environment.deletionLeaseId;
+      if (environment.workerPrincipal?.type !== 'user' || environment.workerId == null) {
+        await methods.cancelCodeEnvironmentRemoval(environment._id, leaseId);
+        continue;
+      }
+      const tokenEnv = environment.revocationTokenEnv;
+      const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
+      if (!token) continue;
+      try {
+        await revokeCodeBridgeWorker({
+          baseURL: environment.baseURL,
+          token,
+          workerId: environment.workerId,
+          fetchImpl,
+        });
+        await methods.commitCodeEnvironmentRemoval(environment._id, leaseId);
+        await AclEntry.deleteMany({
+          resourceType: ResourceType.CODE_ENVIRONMENT,
+          resourceId: environment._id,
+        });
+        await methods.deleteCodeEnvironmentById(environment._id);
+      } catch (error) {
+        logger.error('[code-environments] interrupted removal reconciliation failed:', error);
+      }
+    }
+    const staleRegistration = new Date(Date.now() - REGISTRATION_STALE_MS);
+    const pendingRegistrations = await CodeEnvironment.find({
+      registrationPendingAt: { $lte: staleRegistration },
+    })
+      .limit(limit)
+      .lean<CodeEnvironmentDocument[]>();
+    for (const environment of pendingRegistrations) {
+      const tokenEnv = environment.revocationTokenEnv;
+      const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
+      if (environment.workerId != null) {
+        if (!token) continue;
+        try {
+          await revokeCodeBridgeWorker({
+            baseURL: environment.baseURL,
+            token,
+            workerId: environment.workerId,
+            fetchImpl,
+          });
+        } catch {
+          continue;
+        }
+      }
+      await AclEntry.deleteMany({
+        resourceType: ResourceType.CODE_ENVIRONMENT,
+        resourceId: environment._id,
+      });
+      await CodeEnvironment.deleteOne({
+        _id: environment._id,
+        registrationPendingAt: environment.registrationPendingAt,
+      });
+    }
+
+    const committedDeletions = await CodeEnvironment.find({
+      deletionCommittedAt: { $exists: true },
+    })
+      .limit(limit)
+      .lean<CodeEnvironmentDocument[]>();
+    for (const environment of committedDeletions) {
+      await AclEntry.deleteMany({
+        resourceType: ResourceType.CODE_ENVIRONMENT,
+        resourceId: environment._id,
+      });
+      await methods.deleteCodeEnvironmentById(environment._id);
+    }
+
+    const candidates = await CodeEnvironment.find({ revocationPendingAt: { $exists: true } })
+      .limit(limit)
+      .select('_id')
+      .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
+    for (const candidate of candidates) {
+      const now = new Date();
+      const leaseId = new mongoose.Types.ObjectId().toHexString();
+      const environment = await CodeEnvironment.findOneAndUpdate(
+        {
+          _id: candidate._id,
+          revocationPendingAt: { $exists: true },
+          $or: [
+            { revocationLeaseExpiresAt: { $exists: false } },
+            { revocationLeaseExpiresAt: { $lte: now } },
+          ],
+        },
+        {
+          $set: {
+            revocationLeaseId: leaseId,
+            revocationLeaseExpiresAt: new Date(now.getTime() + RECONCILE_LEASE_MS),
+          },
+          $inc: { revocationAttempts: 1 },
+        },
+        { new: true },
+      ).lean<CodeEnvironmentDocument>();
+      if (environment == null || environment.workerId == null) continue;
+      const tokenEnv = environment.revocationTokenEnv;
+      const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
+      try {
+        if (!token) throw new Error('Code environment revocation token is unavailable');
+        await revokeCodeBridgeWorker({
+          baseURL: environment.baseURL,
+          token,
+          workerId: environment.workerId,
+          fetchImpl,
+        });
+        await AclEntry.deleteMany({
+          resourceType: ResourceType.CODE_ENVIRONMENT,
+          resourceId: environment._id,
+        });
+        await methods.deleteCodeEnvironmentById(environment._id);
+      } catch (error) {
+        const message = (error instanceof Error ? error.message : 'Worker revocation failed').slice(
+          0,
+          500,
+        );
+        await CodeEnvironment.updateOne(
+          { _id: environment._id, revocationLeaseId: leaseId },
+          {
+            $set: { revocationLastError: message },
+            $unset: { revocationLeaseId: 1, revocationLeaseExpiresAt: 1 },
+          },
+        );
+      }
+    }
+  });
+}
+
+export function startCodeEnvironmentLifecycleReconciler(
+  options: Parameters<typeof reconcileCodeEnvironmentLifecycle>[0],
+): void {
+  if (reconcileTimer != null) return;
+  const run = (): void => {
+    if (reconcileInFlight != null) return;
+    const current = reconcileCodeEnvironmentLifecycle(options)
+      .catch((error) => {
+        logger.error('[code-environments] lifecycle reconciliation failed:', error);
+      })
+      .finally(() => {
+        if (reconcileInFlight === current) reconcileInFlight = undefined;
+      });
+    reconcileInFlight = current;
+  };
+  run();
+  reconcileTimer = setInterval(run, RECONCILE_INTERVAL_MS);
+  reconcileTimer.unref();
+}
 
 export async function revokeUserCodeEnvironmentWorkers({
   mongoose,
@@ -74,6 +259,7 @@ export async function revokeUserCodeEnvironmentWorkers({
       await CodeEnvironment?.updateOne(
         { _id: target._id },
         {
+          $set: { deletionCommittedAt: new Date() },
           $unset: {
             revocationPendingAt: 1,
             revocationAttempts: 1,

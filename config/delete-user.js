@@ -238,16 +238,22 @@ async function gracefulExit(code = 0) {
       throw new Error('User disappeared before account deletion could commit');
     }
     userDeleted = true;
-    await revokeUserCodeEnvironmentWorkers({
-      mongoose,
-      userId: uid,
-      appConfig: deletionAppConfig,
-    }).catch((error) =>
-      console.error('Failed to revoke code environment workers after account deletion:', error),
-    );
-    await runAsSystem(() => methods.deleteUserCodeEnvironments(uid)).catch((error) =>
-      console.error('Failed to delete code environment records after account deletion:', error),
-    );
+    let codeEnvironmentCleanupSafe = true;
+    try {
+      await revokeUserCodeEnvironmentWorkers({
+        mongoose,
+        userId: uid,
+        appConfig: deletionAppConfig,
+      });
+    } catch (error) {
+      codeEnvironmentCleanupSafe = false;
+      console.error('Failed to revoke code environment workers after account deletion:', error);
+    }
+    if (codeEnvironmentCleanupSafe) {
+      await runAsSystem(() => methods.deleteUserCodeEnvironments(uid)).catch((error) =>
+        console.error('Failed to delete code environment records after account deletion:', error),
+      );
+    }
     await runAsSystem(() => methods.deleteAgentTriggerDeliveriesByUser(uid));
   } finally {
     // RESTORE BEFORE RELEASING THE FENCE. While the user-deletion fence is still armed, new

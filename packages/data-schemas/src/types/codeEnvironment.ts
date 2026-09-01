@@ -8,11 +8,20 @@ export type CodeEnvironment = {
   controlPlaneId: string;
   createdBy: Types.ObjectId;
   ownerSlot?: number;
-  pendingAgentReferences?: string[];
+  pendingAgentReferences?: Array<{
+    reservationId: string;
+    expiresAt: Date;
+  }>;
   deletionStartedAt?: Date;
+  deletionLeaseId?: string;
+  deletionLeaseExpiresAt?: Date;
+  deletionCommittedAt?: Date;
+  registrationPendingAt?: Date;
   revocationPendingAt?: Date;
   revocationAttempts?: number;
   revocationLastError?: string;
+  revocationLeaseId?: string;
+  revocationLeaseExpiresAt?: Date;
   workerId?: string;
   revocationTokenEnv?: string;
   workerPrincipal?: {

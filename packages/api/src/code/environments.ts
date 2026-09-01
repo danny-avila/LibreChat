@@ -255,18 +255,24 @@ export function createCodeEnvironmentRegistry(
       }
       const summary = toSummary(created, true);
       await invalidateAccessibleConfigurations();
+      await methods.completeCodeEnvironmentRegistration(created._id);
       return summary;
     } catch (error) {
-      const cleanup = await Promise.allSettled([
-        access.removeAllPermissions({
+      let permissionsRemoved = false;
+      try {
+        await access.removeAllPermissions({
           resourceType: ResourceType.CODE_ENVIRONMENT,
           resourceId: created._id,
-        }),
-        methods.discardCodeEnvironmentById(created._id),
-      ]);
-      for (const result of cleanup) {
-        if (result.status === 'rejected') {
-          logger.error('[codeEnvironments] registration rollback failed:', result.reason);
+        });
+        permissionsRemoved = true;
+      } catch (cleanupError) {
+        logger.error('[codeEnvironments] registration ACL rollback failed:', cleanupError);
+      }
+      if (permissionsRemoved) {
+        try {
+          await methods.discardCodeEnvironmentById(created._id);
+        } catch (cleanupError) {
+          logger.error('[codeEnvironments] registration record rollback failed:', cleanupError);
         }
       }
       throw error;
@@ -288,7 +294,10 @@ export function createCodeEnvironmentRegistry(
     const userId = actor.userId.toString();
     return environments.filter(
       (environment) =>
-        environment.workerPrincipal?.type !== 'user' || environment.workerPrincipal.id === userId,
+        environment.registrationPendingAt == null &&
+        environment.deletionStartedAt == null &&
+        environment.deletionCommittedAt == null &&
+        (environment.workerPrincipal?.type !== 'user' || environment.workerPrincipal.id === userId),
     );
   }
 
@@ -327,28 +336,41 @@ export function createCodeEnvironmentRegistry(
       ...configuration
     }: CachedAccessibleCodeEnvironmentConfiguration): AccessibleCodeEnvironmentConfiguration =>
       configuration;
-    const load = async (): Promise<CachedAccessibleCodeEnvironmentConfiguration[]> => {
+    const load = async (): Promise<{
+      configurations: CachedAccessibleCodeEnvironmentConfiguration[];
+      hasPendingRegistration: boolean;
+    }> => {
       const ids = await findAccessibleResourceIds(principals);
       const environments = await methods.findCodeEnvironmentsByIds(ids);
       const userId = actor.userId.toString();
-      return environments
-        .filter(
-          (environment) =>
-            environment.workerPrincipal?.type !== 'user' ||
-            environment.workerPrincipal.id === userId,
-        )
-        .map((environment) => ({
-          resourceId: environment._id.toString(),
-          id: environment.environmentId,
-          name: environment.name,
-          type: environment.type,
-          baseURL: environment.baseURL,
-          controlPlaneId: environment.controlPlaneId,
-          owner: 'principal',
-          workerId: environment.workerId,
-        }));
+      return {
+        hasPendingRegistration: environments.some(
+          (environment) => environment.registrationPendingAt != null,
+        ),
+        configurations: environments
+          .filter(
+            (environment) =>
+              environment.registrationPendingAt == null &&
+              environment.deletionStartedAt == null &&
+              environment.deletionCommittedAt == null &&
+              (environment.workerPrincipal?.type !== 'user' ||
+                environment.workerPrincipal.id === userId),
+          )
+          .map((environment) => ({
+            resourceId: environment._id.toString(),
+            id: environment.environmentId,
+            name: environment.name,
+            type: environment.type,
+            baseURL: environment.baseURL,
+            controlPlaneId: environment.controlPlaneId,
+            owner: 'principal',
+            workerId: environment.workerId,
+          })),
+      };
     };
-    if (configurationCache == null) return (await load()).map(toPublicConfiguration);
+    if (configurationCache == null) {
+      return (await load()).configurations.map(toPublicConfiguration);
+    }
 
     const tenant = tenantCacheKey();
     const revision = String((await configurationCache.get(revisionKey())) ?? '0');
@@ -377,10 +399,15 @@ export function createCodeEnvironmentRegistry(
         .map(toPublicConfiguration);
     }
 
-    const configurations = await load();
+    const { configurations, hasPendingRegistration } = await load();
     const currentRevision = String((await configurationCache.get(revisionKey())) ?? '0');
     if (currentRevision !== revision) {
       return await listAccessibleConfigurations(actor);
+    }
+    // Registration commits after its first revision write so a failed rollback remains hidden and
+    // recoverable. Do not cache that transient empty view under the new revision.
+    if (hasPendingRegistration) {
+      return configurations.map(toPublicConfiguration);
     }
     await configurationCache.set(key, configurations, CONFIGURATION_CACHE_TTL_MS);
     return configurations.map(toPublicConfiguration);
@@ -415,33 +442,44 @@ export function createCodeEnvironmentRegistry(
     if (removal == null) {
       throw new CodeEnvironmentInUseError(environmentId);
     }
+    const removalLeaseId = removal.deletionLeaseId;
+    if (removalLeaseId == null) {
+      throw new Error('Code environment removal lease is unavailable');
+    }
+    let deletionCommitted = false;
+    let externalLifecycleStarted = false;
     try {
       const Agent = mongoose.models.Agent;
       if (Agent != null && (await Agent.exists({ code_environment_id: environmentId })) != null) {
         throw new CodeEnvironmentInUseError(environmentId);
       }
-      await beforeDelete?.({
-        ...toSummary(environment),
-        baseURL: environment.baseURL,
-        workerId: environment.workerId,
-        controlPlaneId: environment.controlPlaneId,
-        revocationTokenEnv: environment.revocationTokenEnv,
-        workerPrincipal: environment.workerPrincipal,
+      if (beforeDelete != null) {
+        // From this point onward the remote outcome may be committed even if the request fails.
+        // Keep the local fence for idempotent reconciliation instead of reopening a dead worker.
+        externalLifecycleStarted = true;
+        await beforeDelete({
+          ...toSummary(environment),
+          baseURL: environment.baseURL,
+          workerId: environment.workerId,
+          controlPlaneId: environment.controlPlaneId,
+          revocationTokenEnv: environment.revocationTokenEnv,
+          workerPrincipal: environment.workerPrincipal,
+        });
+      }
+      await methods.commitCodeEnvironmentRemoval(environment._id, removalLeaseId);
+      deletionCommitted = true;
+      await access.removeAllPermissions({
+        resourceType: ResourceType.CODE_ENVIRONMENT,
+        resourceId: environment._id,
       });
       const deleted = await methods.deleteCodeEnvironmentById(environment._id);
       if (deleted == null) return null;
-      try {
-        await access.removeAllPermissions({
-          resourceType: ResourceType.CODE_ENVIRONMENT,
-          resourceId: environment._id,
-        });
-      } catch (error) {
-        logger.warn('[code-environments] environment deleted with orphaned ACL entries', error);
-      }
       await invalidateAccessibleConfigurations();
       return toSummary(deleted, true);
     } catch (error) {
-      await methods.cancelCodeEnvironmentRemoval(environment._id);
+      if (!deletionCommitted && !externalLifecycleStarted) {
+        await methods.cancelCodeEnvironmentRemoval(environment._id, removalLeaseId);
+      }
       throw error;
     }
   }

@@ -247,6 +247,73 @@ describe('code environment HTTP handlers', () => {
     );
   });
 
+  test('revokes an issued pairing when the post-issue principal check is unavailable', async () => {
+    const register = jest.fn();
+    const principalIsActive = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error('user store unavailable'));
+    const fetchImpl = jest.fn(
+      async (input: string | URL | Request) =>
+        ({
+          ok: true,
+          json: async () =>
+            String(input).endsWith('/bridge/pairings')
+              ? {
+                  protocolVersion: 1,
+                  workerId: 'code-generated',
+                  code: 'a'.repeat(32),
+                  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+                }
+              : { protocolVersion: 1, revoked: true },
+        }) as Response,
+    );
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example/v1',
+                  owner: 'deployment',
+                  pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: { register, listAccessible: jest.fn(), remove: jest.fn() },
+      createEnvironmentId: () => 'code-generated',
+      readSecret: () => 'administrator-token',
+      principalAuthEnabled: () => true,
+      principalAuthReady: jest.fn(),
+      principalIsActive,
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(register).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      'https://code.librechat.example/v1/bridge/workers/code-generated/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   test('rejects self-service pairing without principal-aware Code API auth', async () => {
     const fetchImpl = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({

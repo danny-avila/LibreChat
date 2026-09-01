@@ -323,14 +323,29 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       return pairingErrorResponse(error, res);
     }
 
-    if (!(await principalIsActive(principal.userId.toString()))) {
-      await revokeCodeBridgeWorker({
-        baseURL: controlPlane.baseURL,
-        token,
-        workerId,
-        fetchImpl: deps.fetchImpl,
-      });
-      return res.status(409).json({ error: 'Account deletion is already in progress' });
+    let activeAfterPairing = false;
+    let principalCheckUnavailable = false;
+    try {
+      activeAfterPairing = await principalIsActive(principal.userId.toString());
+    } catch (error) {
+      principalCheckUnavailable = true;
+      logger.error('[codeEnvironments] post-pairing principal check failed:', error);
+    }
+    if (!activeAfterPairing) {
+      try {
+        await revokeCodeBridgeWorker({
+          baseURL: controlPlane.baseURL,
+          token,
+          workerId,
+          fetchImpl: deps.fetchImpl,
+        });
+      } catch (error) {
+        logger.error('[codeEnvironments] orphaned pairing compensation failed:', error);
+        return res.status(502).json({ error: 'Code worker pairing could not be compensated' });
+      }
+      return principalCheckUnavailable
+        ? res.status(503).json({ error: 'Account status could not be confirmed' })
+        : res.status(409).json({ error: 'Account deletion is already in progress' });
     }
 
     try {
@@ -348,15 +363,15 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           workerPrincipal: { type: 'user', id: principal.userId.toString() },
         },
       });
-      if (!(await principalIsActive(principal.userId.toString()))) {
-        await revokeCodeBridgeWorker({
-          baseURL: controlPlane.baseURL,
-          token,
-          workerId,
-          fetchImpl: deps.fetchImpl,
-        });
+      let activeAfterRegistration = false;
+      try {
+        activeAfterRegistration = await principalIsActive(principal.userId.toString());
+      } catch (error) {
+        logger.error('[codeEnvironments] post-registration principal check failed:', error);
+      }
+      if (!activeAfterRegistration) {
         await deps.registry.remove({ actor: principal, environmentId: workerId });
-        return res.status(409).json({ error: 'Account deletion is already in progress' });
+        return res.status(409).json({ error: 'Account is unavailable for code worker pairing' });
       }
       return res.status(201).json({
         environment,
