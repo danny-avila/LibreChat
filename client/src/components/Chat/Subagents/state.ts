@@ -484,27 +484,42 @@ export function removeSubagentProgressAtoms(invocationKey: string): void {
   subagentParentStreamOpenByToolCallId.remove(invocationKey);
 }
 
+/** How many mounted readers hold each invocation's member. Removing one while
+ *  a reader still has it is not merely wasteful: that reader stays subscribed
+ *  to the removed atom, the next write lands on the member the family makes to
+ *  replace it, and the two never meet again. */
+const subagentProgressReaders = new Map<string, number>();
+
 /**
- * Reads one invocation's live progress, and frees the family member on unmount
- * when the read is the only reason it exists.
+ * Reads one invocation's live progress, and frees the family member once the
+ * last reader lets go and nothing else has a claim on it.
  *
  * The read itself creates the member, and only the chat route owns the stream
  * drain — a card rendered by a search result or by a conversation that finished
- * streaming long ago would otherwise hold one for the life of the tab. The two
- * guards are what keep that from taking live history with it: a key the stream
- * registered belongs to the drain, and a member holding folded activity is the
- * record of what the child did, so reopening its card still shows it.
+ * streaming long ago would otherwise hold one for the life of the tab. Three
+ * things have to be true before one is freed: no reader is left, no stream
+ * registered the key (that member belongs to the drain), and it holds no folded
+ * activity (that member is the record of what the child did).
  */
 export function useSubagentProgress(invocationKey: string): SubagentProgress | null {
   const store = useStore();
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    subagentProgressReaders.set(
+      invocationKey,
+      (subagentProgressReaders.get(invocationKey) ?? 0) + 1,
+    );
+    return () => {
+      const remaining = (subagentProgressReaders.get(invocationKey) ?? 1) - 1;
+      if (remaining > 0) {
+        subagentProgressReaders.set(invocationKey, remaining);
+        return;
+      }
+      subagentProgressReaders.delete(invocationKey);
       if (registeredSubagentProgressKeys.has(invocationKey)) return;
       if (store.get(subagentProgressByToolCallId(invocationKey)) != null) return;
       removeSubagentProgressAtoms(invocationKey);
-    },
-    [invocationKey, store],
-  );
+    };
+  }, [invocationKey, store]);
   return useAtomValue(subagentProgressByToolCallId(invocationKey));
 }
 

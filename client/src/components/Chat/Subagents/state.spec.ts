@@ -435,6 +435,22 @@ describe('useSubagentProgress', () => {
     expect(subagentProgressByToolCallId(key)).not.toBe(held);
   });
 
+  /** A panel opened before the first event reads the same still-empty member as
+   *  the card that spawned it. Freeing it when the panel closes leaves the card
+   *  subscribed to a member the next SSE write will not land on. */
+  it('keeps a member a second reader still holds', () => {
+    const key = subagentProgressKey('shared-message', 'shared-call', 0);
+    const card = renderHook(() => useSubagentProgress(key));
+    const panel = renderHook(() => useSubagentProgress(key));
+    const held = subagentProgressByToolCallId(key);
+
+    panel.unmount();
+    expect(subagentProgressByToolCallId(key)).toBe(held);
+
+    card.unmount();
+    expect(subagentProgressByToolCallId(key)).not.toBe(held);
+  });
+
   /** The drain owns a streaming key; freeing it here would race that boundary. */
   it('leaves a key the stream registered to the drain', () => {
     const key = subagentProgressKey('live-message', 'live-call', 0);
