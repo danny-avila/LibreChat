@@ -477,6 +477,7 @@ function FavoritesList({
                       type="model"
                       onSelectEndpoint={onSelectEndpoint}
                       onRemoveFocus={handleRemoveFocus}
+                      endpointsConfig={endpointsConfig}
                     />
                   </DraggableFavoriteItem>
                 );

@@ -1,14 +1,15 @@
 import { useMemo } from 'react';
-import { getSettingsKeys } from 'librechat-data-provider';
+import { getSettingsKeys, presetSettings } from 'librechat-data-provider';
 import type { SettingDefinition } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
-import { presetSettings } from 'librechat-data-provider';
+import { getModelLabel } from '~/utils';
 
 export default function OpenAISettings({
   conversation,
   setOption,
   models,
+  modelLabels,
   readonly,
 }: TModelSelectProps) {
   const parameters = useMemo(() => {
@@ -44,7 +45,16 @@ export default function OpenAISettings({
     };
 
     if (key === 'model') {
-      return <Component {...props} options={models} />;
+      return (
+        <Component
+          {...props}
+          options={models}
+          items={models.map((model) => ({
+            label: getModelLabel(modelLabels, model) ?? model,
+            value: model,
+          }))}
+        />
+      );
     }
 
     return <Component {...props} />;
