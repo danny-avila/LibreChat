@@ -114,6 +114,10 @@ export interface SharedMessagesResult {
   messages: Array<SharedMessage>;
   shareId: string;
   title?: string;
+  /** The conversation's configured sender label (`modelLabel`, else the deprecated
+   * `chatGptLabel`), so the share view can withhold the model on hover as the chat
+   * view does. Absent when the conversation has no label. */
+  modelLabel?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }

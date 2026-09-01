@@ -845,6 +845,14 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         return null;
       }
 
+      /** The share view has no conversation in scope, so the configured sender label
+       *  travels with the payload; the server resolves the deprecated fallback here. */
+      const Conversation = mongoose.models.Conversation as Model<t.IConversation>;
+      const labels = (await Conversation.findOne({ conversationId: share.conversationId })
+        .select('modelLabel chatGptLabel')
+        .lean()) as Pick<t.IConversation, 'modelLabel' | 'chatGptLabel'> | null;
+      const modelLabel = labels?.modelLabel || labels?.chatGptLabel || undefined;
+
       /** Filtered messages based on targetMessageId if present (branch-specific sharing) */
       let messagesToShare: t.IMessage[] = share.messages;
       if (share.targetMessageId) {
@@ -891,6 +899,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const result: t.SharedMessagesResult = {
         shareId: resolvedShareId,
         title: share.title,
+        ...(modelLabel ? { modelLabel } : {}),
         createdAt: share.createdAt,
         updatedAt: share.updatedAt,
         conversationId: newConvoId,

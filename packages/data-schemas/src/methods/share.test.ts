@@ -103,6 +103,8 @@ describe('Share Methods', () => {
         conversationId: { type: String, required: true },
         title: String,
         user: String,
+        modelLabel: String,
+        chatGptLabel: String,
       },
       { timestamps: true },
     );
@@ -512,6 +514,41 @@ describe('Share Methods', () => {
   });
 
   describe('getSharedMessages', () => {
+    const shareWithLabels = async (labels: { modelLabel?: string; chatGptLabel?: string }) => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      await Conversation.create({ conversationId, user: userId, title: 'Labelled', ...labels });
+      const msg = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Reply',
+        isCreatedByUser: false,
+        model: 'z-ai/glm-5.3-flash',
+        parentMessageId: Constants.NO_PARENT,
+      });
+      await SharedLink.create({ shareId, conversationId, user: userId, messages: [msg._id] });
+      return shareMethods.getSharedMessages(shareId);
+    };
+
+    test('carries the conversation modelLabel so the share view can withhold the model', async () => {
+      const result = await shareWithLabels({ modelLabel: 'Acme Assistant' });
+      expect(result?.modelLabel).toBe('Acme Assistant');
+    });
+
+    test('falls back to the deprecated chatGptLabel when modelLabel is empty', async () => {
+      const result = await shareWithLabels({ modelLabel: '', chatGptLabel: 'Legacy label' });
+      expect(result?.modelLabel).toBe('Legacy label');
+    });
+
+    test('omits modelLabel when the conversation has no label', async () => {
+      const result = await shareWithLabels({});
+      expect(result).toBeDefined();
+      expect(result?.modelLabel).toBeUndefined();
+      expect(result).not.toHaveProperty('modelLabel');
+    });
+
     test('should retrieve and anonymize shared messages', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;

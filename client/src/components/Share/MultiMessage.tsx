@@ -6,13 +6,19 @@ import type { TMessageProps } from '~/common';
 import Message from './Message';
 import store from '~/store';
 
+export type SharedMessageProps = TMessageProps & {
+  /** Configured sender label of the shared conversation; no conversation is in scope here. */
+  modelLabel?: string | null;
+};
+
 export default function MultiMessage({
   // messageId is used recursively here
   messageId,
   messagesTree,
   currentEditId,
   setCurrentEditId,
-}: TMessageProps) {
+  modelLabel,
+}: SharedMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
   const setSiblingIdxRev = (value: number) => {
@@ -49,6 +55,7 @@ export default function MultiMessage({
       siblingIdx={messagesTree.length - siblingIdx - 1}
       siblingCount={messagesTree.length}
       setSiblingIdx={setSiblingIdxRev}
+      modelLabel={modelLabel}
     />
   );
 }
