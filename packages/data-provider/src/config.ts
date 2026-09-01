@@ -1248,6 +1248,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     }),
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
+    requiredMcpServers: z.array(z.string().min(1)).optional(),
     /**
      * Forces the endpoint to use a provider's native client / request format
      * instead of the default OpenAI-compatible client. Currently supports

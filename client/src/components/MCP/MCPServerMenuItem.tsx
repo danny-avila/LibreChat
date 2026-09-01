@@ -1,5 +1,5 @@
-import { Check } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
+import { Check, Lock } from 'lucide-react';
 import { MCPIcon } from '@librechat/client';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
@@ -20,6 +20,7 @@ interface MCPServerMenuItemProps {
   isInitializing?: (serverName: string) => boolean;
   statusIconProps?: MCPServerStatusIconProps | null;
   onToggle: (serverName: string) => void;
+  isRequired?: boolean;
 }
 
 export default function MCPServerMenuItem({
@@ -29,6 +30,7 @@ export default function MCPServerMenuItem({
   isInitializing,
   statusIconProps,
   onToggle,
+  isRequired = false,
 }: MCPServerMenuItemProps) {
   const localize = useLocalize();
   const displayName = server.config?.title || server.serverName;
@@ -46,7 +48,11 @@ export default function MCPServerMenuItem({
       name="mcp-servers"
       value={server.serverName}
       checked={isSelected}
-      onChange={() => onToggle(server.serverName)}
+      onChange={() => {
+        if (!isRequired) {
+          onToggle(server.serverName);
+        }
+      }}
       aria-label={accessibleLabel}
       className={cn(
         'group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2',
@@ -82,6 +88,7 @@ export default function MCPServerMenuItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-sm font-medium text-text-primary">{displayName}</span>
+          {isRequired && <Lock className="h-3.5 w-3.5 flex-shrink-0 text-text-secondary" />}
         </div>
         {server.config?.description && (
           <p className="truncate text-xs text-text-secondary">{server.config.description}</p>

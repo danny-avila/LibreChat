@@ -17,6 +17,7 @@ const defaultMcpServerManager = {
     { serverName: 'server-b', config: { title: 'Server B', description: 'Second server' } },
   ],
   connectionStatus: {},
+  requiredServerSet: new Set<string>(),
   isInitializing: () => false,
   getConfigDialogProps: () => null,
   toggleServerSelection: mockToggleServerSelection,
@@ -152,5 +153,35 @@ describe('MCPSubMenu', () => {
     mockMcpServerManager = { ...defaultMcpServerManager, isPinned: false };
     renderSubMenu();
     expect(screen.getByRole('button', { name: /com_ui_pin/i })).toBeInTheDocument();
+  });
+
+  it('renders required servers as locked and prevents deselection', async () => {
+    const user = userEvent.setup();
+
+    mockMcpServerManager = {
+      ...defaultMcpServerManager,
+      mcpValues: ['server-a'],
+      requiredServerSet: new Set(['server-a']),
+    };
+
+    renderSubMenu();
+
+    await user.click(screen.getByText('MCP Servers'));
+
+    const menu = screen.getByRole('menu', {
+      name: /com_ui_mcp_servers/i,
+    });
+
+    const requiredServer = within(menu).getByRole('menuitemcheckbox', {
+      name: /Server A/i,
+    });
+
+    expect(requiredServer).toHaveAttribute('aria-checked', 'true');
+
+    expect(requiredServer.querySelector('.lucide-lock')).toBeInTheDocument();
+
+    await user.click(requiredServer);
+
+    expect(mockToggleServerSelection).not.toHaveBeenCalled();
   });
 });
