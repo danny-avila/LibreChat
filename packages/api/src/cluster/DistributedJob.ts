@@ -63,6 +63,17 @@ async function tryAcquire(
   }
 }
 
+/**
+ * Runs one logical job across replicas under a renewable MongoDB lease.
+ *
+ * The lease owner alone executes `handler`; followers poll until they can take
+ * over or observe a still-valid completion marker. A follower returns
+ * `undefined` when another replica already completed the job, while the owner
+ * returns the handler result. Completion and failure transitions are fenced by
+ * owner and unexpired lease. By default, losing the lease terminates the
+ * process so stale work cannot continue; callers may override `onLeaseLost`
+ * only when they can provide an equally safe fail-stop action.
+ */
 export async function runDistributedJob<T>(
   collection: Collection<DistributedJobState>,
   jobId: string,
