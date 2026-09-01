@@ -3044,9 +3044,9 @@ describe('GenerationJobManager startup telemetry', () => {
     const onError = jest.fn();
     const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
 
-    await expect(manager.completeJob(streamId, 'stale provider failure', job.createdAt)).resolves.toBe(
-      true,
-    );
+    await expect(
+      manager.completeJob(streamId, 'stale provider failure', job.createdAt),
+    ).resolves.toBe(true);
 
     expect(onError).not.toHaveBeenCalled();
     expect(job.abortController.signal.aborted).toBe(true);

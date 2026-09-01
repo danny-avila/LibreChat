@@ -1160,12 +1160,7 @@ class GenerationJobManagerClass {
     } catch (err) {
       if (err instanceof GenerationPublicationFencedError) {
         const currentJob = await this.jobStore.getJob(jobData.streamId);
-        this.reconcileInactiveGeneration(
-          jobData.streamId,
-          jobData.createdAt,
-          currentJob,
-          runtime,
-        );
+        this.reconcileInactiveGeneration(jobData.streamId, jobData.createdAt, currentJob, runtime);
         return currentJob;
       }
       logger.error(
