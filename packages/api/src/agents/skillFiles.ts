@@ -1,5 +1,4 @@
 import { Readable } from 'stream';
-import { isAxiosError } from 'axios';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import {
@@ -19,10 +18,10 @@ import {
   inspectContent,
   UninspectableFileError,
 } from '~/protection';
+import { createConcurrencyLimiter, getCodeApiRetryAfterMs, getSafeErrorMetadata } from '~/utils';
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
 import { getCodeExecutionRouteKey, type CodeExecutionContext } from './execution';
-import { createConcurrencyLimiter, getSafeErrorMetadata } from '~/utils';
 import { assertSkillFileContentAllowed } from '~/skills/protection';
 import { createSkillContentDigest } from './compatibility';
 import { extractInvokedSkillsFromPayload } from './run';
@@ -139,17 +138,13 @@ const uploadSlots = createConcurrencyLimiter(SKILL_UPLOAD_CONCURRENCY);
 const inflightPrimes = new Map<string, Promise<PrimeSkillFilesResult | null>>();
 
 type SkillUploadFiles = Array<{ stream: NodeJS.ReadableStream; filename: string }>;
+type SkillCodeEnvRef = Extract<CodeEnvRef, { kind: 'skill' }>;
 
-function getRetryAfterMs(error: unknown): number | null {
-  if (!isAxiosError(error) || error.response?.status !== 429) {
-    return null;
-  }
-  const header = error.response.headers?.['retry-after'];
-  const seconds = Number(Array.isArray(header) ? header[0] : header);
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return null;
-  }
-  return seconds * 1000;
+function isCurrentSkillRef(
+  ref: CodeEnvRef | undefined,
+  skillVersion: number,
+): ref is SkillCodeEnvRef {
+  return ref?.kind === 'skill' && ref.version === skillVersion;
 }
 
 /** Single retry on 429, honoring Retry-After up to MAX_RETRY_AFTER_MS.
@@ -158,7 +153,7 @@ async function retryOn429<T>(attempt: () => Promise<T>, label: string): Promise<
   try {
     return await attempt();
   } catch (error) {
-    const retryAfterMs = getRetryAfterMs(error);
+    const retryAfterMs = getCodeApiRetryAfterMs(error);
     if (retryAfterMs == null || retryAfterMs > MAX_RETRY_AFTER_MS) {
       throw error;
     }
@@ -429,12 +424,14 @@ async function executePrimeSkillFiles(
    * previous prime. Check freshness against codeapi for every distinct
    * storage session; if all are still active, reuse without
    * re-uploading. The skill version is part of the ref — when the
-   * skill is edited, the upsert clears the ref and forces a fresh
-   * upload on the next prime. */
+   * skill version has been bumped (e.g. by a SKILL.md edit), stale
+   * refs are treated as cache misses and the files are re-uploaded
+   * under the new version's session key. */
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
-    const allHaveRefs = skillFiles.every(
-      (sf) => getCodeEnvRefForProfile(sf, executionRouteKey) !== undefined,
-    );
+    const allHaveRefs = skillFiles.every((sf) => {
+      const ref = getCodeEnvRefForProfile(sf, executionRouteKey);
+      return isCurrentSkillRef(ref, skill.version);
+    });
     if (allHaveRefs) {
       const refsBySession = new Map<string, CodeEnvRef>();
       for (const sf of skillFiles) {
@@ -756,12 +753,16 @@ export async function primeInvokedSkills(
     if (!inspectStoredSkillFileContent && deps.getSessionInfo && deps.checkIfActive) {
       const allResolved = fileListResults.flatMap((r) =>
         r.files.map((f) => ({
+          skill: r.skill,
           skillName: r.skill.name,
           file: f,
           ref: getCodeEnvRefForProfile(f, executionRouteKey),
         })),
       );
-      const resolvedWithRef = allResolved.filter((x) => x.ref !== undefined);
+      const resolvedWithRef = allResolved.filter(
+        (entry): entry is typeof entry & { ref: SkillCodeEnvRef } =>
+          isCurrentSkillRef(entry.ref, entry.skill.version),
+      );
 
       // Only use cache when ALL files have refs (no partial persistence)
       if (resolvedWithRef.length > 0 && resolvedWithRef.length === allResolved.length) {

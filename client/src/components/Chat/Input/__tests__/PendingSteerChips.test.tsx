@@ -163,6 +163,67 @@ describe('PendingSteerChips — queued primary availability', () => {
   });
 });
 
+describe('PendingSteerChips — terminal server state', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('shows a durable rejection as failed work', () => {
+    renderChips([
+      {
+        id: 'rejected-turn',
+        text: 'could not be admitted',
+        createdAt: 1,
+        server: { status: 'rejected', errorCode: 'ADMISSION_FAILED' },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_queued_turn_failed')).toBeInTheDocument();
+  });
+
+  it('shows indeterminate admission as non-actionable reconciliation work', () => {
+    renderChips([
+      {
+        id: 'indeterminate-turn',
+        text: 'external result unknown',
+        createdAt: 1,
+        server: {
+          id: 'server-indeterminate-1',
+          status: 'indeterminate',
+          errorCode: 'ADMISSION_INDETERMINATE',
+        },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_queued_turn_reconciliation_required')).toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_remove_queued')).toBeDisabled();
+    expect(screen.queryByText('com_ui_send_now')).toBeNull();
+  });
+
+  it('dismisses an expired ambiguous receipt without restoring or resending it', () => {
+    renderChips([
+      {
+        id: 'uncertain-turn',
+        text: 'delivery outcome unknown',
+        createdAt: 1,
+        server: {
+          status: 'uncertain',
+          uncertainSince: 1,
+          reconciliationExpired: true,
+        },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_steer_delivery_unconfirmed')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('com_ui_dismiss_unconfirmed_delivery'));
+
+    expect(mockRemoveQueued).toHaveBeenCalledWith('uncertain-turn');
+    expect(mockDiscardQueued).not.toHaveBeenCalled();
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+});
+
 describe('PendingSteerChips — queued trash', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -238,6 +299,32 @@ describe('PendingSteerChips — queued trash', () => {
       CONVO_ID,
     );
     expect(mockRemoveQueued).toHaveBeenCalledWith('q-recovered');
+  });
+
+  it('discards a dead server row before restoring and removing it', async () => {
+    const dead = {
+      id: 'q-dead',
+      text: 'recover dead work',
+      createdAt: 1,
+      clientRequestId: 'client-dead',
+      server: {
+        id: 'server-dead',
+        status: 'rejected' as const,
+        errorCode: 'ADMISSION_FAILED',
+      },
+    };
+    renderChips([dead]);
+
+    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+
+    await waitFor(() => expect(mockDiscardQueued).toHaveBeenCalledWith(dead));
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      'recover dead work',
+      undefined,
+      { quotes: undefined, manualSkills: undefined },
+      CONVO_ID,
+    );
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q-dead');
   });
 
   it('offers Edit for a recovered row and leaves it untouched when discard is refused', async () => {

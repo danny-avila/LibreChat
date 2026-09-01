@@ -42,8 +42,8 @@
   "peerDependencies": {
     "@ariakit/react": "^0.4.29",
     "@ariakit/react-components": "^0.1.2",
-    "@dicebear/collection": "^9.4.1",
-    "@dicebear/core": "^9.4.1",
+    "@dicebear/collection": "^9.4.3",
+    "@dicebear/core": "^9.4.3",
     "@headlessui/react": "^2.1.2",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "1.0.2",

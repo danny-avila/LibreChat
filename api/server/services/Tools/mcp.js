@@ -40,13 +40,20 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
  * @param {Array<{ serverName: string, serverConfig: object }>} params.servers
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO discovery, built at the request boundary so this layer never receives the raw Express request.
  * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
+ * @param {AbortSignal} [params.signal] - Cancels queued and in-flight catalog reads when the request ends.
  */
-async function loadMCPServerCatalogs({ user, servers, upstreamTokenProvider, oboIdentityContext }) {
+async function loadMCPServerCatalogs({
+  user,
+  servers,
+  upstreamTokenProvider,
+  oboIdentityContext,
+  signal,
+}) {
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
   const mcpManager = getMCPManager();
   return loadCatalogs(
-    { user, servers },
+    { user, servers, signal },
     {
       loadUserMCPAuthMap: (userId, serverNames) =>
         getUserMCPAuthMap({
@@ -67,8 +74,8 @@ async function loadMCPServerCatalogs({ user, servers, upstreamTokenProvider, obo
         }),
       formatServerTools: formatMCPServerTools,
       getCachedServerTools: getMCPServerTools,
-      getServerToolFunctionsSnapshot: (userId, serverName, serverConfig) =>
-        mcpManager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig),
+      getServerToolFunctionsSnapshot: (userId, serverName, serverConfig, options) =>
+        mcpManager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig, options),
       cacheServerTools: cacheMCPServerTools,
     },
   );

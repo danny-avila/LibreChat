@@ -440,9 +440,7 @@ const loadTools = async ({
       );
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
-        dynamicToolContextMap[tool] = buildWebSearchDynamicContext(
-          options.req?.conversationCreatedAt,
-        );
+        dynamicToolContextMap[tool] = buildWebSearchDynamicContext(options.req?.turnStartedAt);
         return createSearchTool({
           ...result.authResult,
           httpAgent,

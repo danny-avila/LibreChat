@@ -1,6 +1,7 @@
 import {
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
   logger,
   runAsSystem,
 } from '@librechat/data-schemas';
@@ -11,6 +12,7 @@ import type {
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryEngine,
+  AgentTriggerDeliveryEngineDeps,
   AgentTriggerDeliveryEngineOptions,
   AgentTriggerDeliveryRecord,
   AgentTriggerDeliveryStore,
@@ -54,6 +56,7 @@ export interface AgentTriggerServiceDeps {
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
   supportsDetachedActionCompletion?: () => boolean;
+  settleSourceBeforeDeadLetter?: AgentTriggerDeliveryEngineDeps['settleSourceBeforeDeadLetter'];
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -180,6 +183,7 @@ function createDeliveryStore(
         ...input,
         workerCapabilities: [
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
           ...(supportsDetachedActionCompletion()
             ? [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1]
             : []),
@@ -272,7 +276,9 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       ((principal) => generateAgentTriggerToken(principal.userId, AGENT_TRIGGER_TOKEN_TTL)),
     ...(deps.fetch != null && { fetch: deps.fetch }),
     ...(deps.getTimezone != null && { getTimezone: deps.getTimezone }),
-    ...(deps.prepareContinue != null && { prepareContinue: deps.prepareContinue }),
+    ...(deps.prepareContinue != null && {
+      prepareContinue: deps.prepareContinue,
+    }),
     ...(deps.timeoutMs != null && { timeoutMs: deps.timeoutMs }),
   });
 
@@ -304,7 +310,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
 
   const dispatchForActivePrincipal = async (
     envelope: unknown,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; attempt?: number; maxAttempts?: number },
   ): Promise<AgentTriggerExecutionResult> => {
     const parsed = parseAgentTriggerEnvelope(envelope);
     await requireActivePrincipal(parsed.principal.userId);
@@ -342,16 +348,52 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       return purgeRecoveryPromise;
     }
     const methods = deps.methods;
+    /** Independent maintenance operations fail alone: a rejection is logged
+     * and counted as zero progress instead of aborting the pass, so one broken
+     * cleanup (e.g. an engine-specific query rejection) can never starve the
+     * others. Batch-receipt recovery is NOT independent: lane reclamation
+     * consumes the lane-cleanup markers, and running it against a
+     * half-recovered batch clears a request that a later successful recovery
+     * can no longer re-arm, retaining the lane permanently — so reclamation
+     * still waits for a batch-recovery pass that did not fail. */
+    const isolated = (label: string, run: () => Promise<number>): Promise<number> =>
+      run().catch((error) => {
+        logger.error(
+          `[agent-triggers] durable delivery maintenance step failed (${label}):`,
+          error,
+        );
+        return 0;
+      });
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, recoveredBatches, expiredLegacyActorReceipts] =
+      const [purgedUsers, publishedLanes, batchRecovery, expiredLegacyActorReceipts] =
         await Promise.all([
-          methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
-          methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
-          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit),
-          methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
-            Promise.resolve(0),
+          isolated('user purges', () => methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit)),
+          isolated('lane publications', () =>
+            methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+          ),
+          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit).then(
+            (count) => ({ succeeded: true as const, count }),
+            (error) => {
+              logger.error(
+                '[agent-triggers] durable delivery maintenance step failed (batch receipts):',
+                error,
+              );
+              return { succeeded: false as const, count: 0 };
+            },
+          ),
+          isolated(
+            'legacy actor receipts',
+            () =>
+              methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
+              Promise.resolve(0),
+          ),
         ]);
-      const reclaimedLanes = await methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit);
+      const recoveredBatches = batchRecovery.count;
+      const reclaimedLanes = batchRecovery.succeeded
+        ? await isolated('lane reclamation', () =>
+            methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
+          )
+        : 0;
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
@@ -440,6 +482,9 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
           {
             store: createDeliveryStore(methods, supportsDetachedActionCompletion),
             dispatch: dispatchForActivePrincipal,
+            ...(deps.settleSourceBeforeDeadLetter != null && {
+              settleSourceBeforeDeadLetter: deps.settleSourceBeforeDeadLetter,
+            }),
           },
           deps.deliveryOptions,
         );

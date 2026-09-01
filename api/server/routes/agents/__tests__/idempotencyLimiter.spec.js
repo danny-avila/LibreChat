@@ -67,6 +67,11 @@ jest.mock('~/server/controllers/agents/steer', () => {
   controller.SteerArmController = (_req, _res, next) => next();
   return controller;
 });
+jest.mock('~/server/controllers/agents/queuedTurns', () => ({
+  AgentQueuedTurnEnqueueController: (_req, res) => res.status(202).json({ queued: true }),
+  AgentQueuedTurnListController: (_req, res) => res.status(200).json({ queuedTurns: [] }),
+  AgentQueuedTurnCancelController: (_req, res) => res.status(200).json({ cancelled: true }),
+}));
 jest.mock('~/models', () => ({}));
 jest.mock('~/server/services/Schedules', () => ({}));
 
@@ -82,15 +87,16 @@ describe('start-generation idempotency before message limiters', () => {
     mockExemptSchedule.mockReturnValue(false);
   });
 
-  it('lets a confirmed retry reach the controller without consuming either limiter', async () => {
+  it('keeps a confirmed retry behind the shared IP limiter', async () => {
     mockHasGenerationClaim.mockResolvedValue(true);
+    mockIpLimiter.mockImplementationOnce((_req, _res, next) => next());
 
     const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-1' });
 
     expect(response.status).toBe(201);
     expect(mockRetryProbeLimiter).toHaveBeenCalledTimes(1);
     expect(mockRetryLimiter).toHaveBeenCalledTimes(1);
-    expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockIpLimiter).toHaveBeenCalledTimes(1);
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 
@@ -135,12 +141,9 @@ describe('start-generation idempotency before message limiters', () => {
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['an agent-trigger delivery', mockExemptAgentTrigger],
-    ['a scheduled delivery', mockExemptSchedule],
-  ])('keeps %s outside the human retry bucket', async (_label, exemption) => {
+  it('keeps an agent-trigger delivery outside the human retry bucket', async () => {
     mockHasGenerationClaim.mockResolvedValue(true);
-    exemption.mockReturnValue(true);
+    mockExemptAgentTrigger.mockReturnValue(true);
 
     const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-4' });
 
@@ -148,6 +151,45 @@ describe('start-generation idempotency before message limiters', () => {
     expect(mockRetryProbeLimiter).not.toHaveBeenCalled();
     expect(mockRetryLimiter).not.toHaveBeenCalled();
     expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it('keeps a scheduled delivery outside the user retry bucket', async () => {
+    mockHasGenerationClaim.mockResolvedValue(true);
+    mockExemptSchedule.mockReturnValue(true);
+
+    const response = await request(app).post('/agents/chat').send({ clientRequestId: 'request-4' });
+
+    expect(response.status).toBe(429);
+    expect(response.body).toEqual({ limited: 'ip' });
+    expect(mockRetryProbeLimiter).not.toHaveBeenCalled();
+    expect(mockRetryLimiter).not.toHaveBeenCalled();
+    expect(mockIpLimiter).toHaveBeenCalledTimes(1);
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it('keeps read-only queued-turn polling outside message admission limiters', async () => {
+    const responses = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        request(app).get('/agents/chat/queued-turns').query({ conversationId: 'conversation-1' }),
+      ),
+    );
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    expect(responses[0].body).toEqual({ queuedTurns: [] });
+    expect(mockIpLimiter).not.toHaveBeenCalled();
+    expect(mockUserLimiter).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['enqueue', () => request(app).post('/agents/chat/queued-turns').send({ text: 'next' })],
+    ['cancel', () => request(app).delete('/agents/chat/queued-turns/queued-turn-1')],
+  ])('keeps queued-turn %s mutations behind message admission limiters', async (_label, send) => {
+    const response = await send();
+
+    expect(response.status).toBe(429);
+    expect(response.body).toEqual({ limited: 'ip' });
+    expect(mockIpLimiter).toHaveBeenCalledTimes(1);
     expect(mockUserLimiter).not.toHaveBeenCalled();
   });
 });

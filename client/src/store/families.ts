@@ -74,7 +74,11 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
     ({ onSet, node }) => {
       onSet(async (newValue, oldValue) => {
         const index = Number(node.key.split('__')[1]);
-        logger.log('conversation', 'Setting conversation:', { index, newValue, oldValue });
+        logger.log('conversation', 'Setting conversation:', {
+          index,
+          newValue,
+          oldValue,
+        });
         if (newValue?.assistant_id != null && newValue.assistant_id) {
           localStorage.setItem(
             `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,
@@ -329,6 +333,25 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
 });
 
 /**
+ * Text handed to a conversation's composer by a surface the user is leaving —
+ * today, a subagent thread continued into a chat of its own, where the panel
+ * and its composer unmount as the destination opens.
+ *
+ * Keyed by conversation rather than by composer index because the handoff
+ * outlives the navigation that carries it: a first visit resolves its record
+ * before the route moves, so the destination's composer mounts commits later.
+ * `useTextarea` drains it when that conversation's composer is on screen.
+ *
+ * Deliberately in memory rather than in the composer draft store: nothing the
+ * user has not sent should be written to storage they asked not to use, and
+ * draft restoration is itself gated on the Save Drafts preference.
+ */
+const pendingComposerTextByConvoId = atomFamily<string | undefined, string>({
+  key: 'pendingComposerTextByConvoId',
+  default: undefined,
+});
+
+/**
  * A steer message submitted mid-run. Server truth: `sending` covers the POST
  * in flight, `pending` means the server queued it (awaiting its injection
  * boundary — the next tool batch, or the next safe token boundary when
@@ -392,9 +415,33 @@ export type QueuedMessage = {
   id: string;
   text: string;
   createdAt: number;
-  /** Stable only for this queued recovery attempt and its transport retries.
-   * A failed generation re-converts the durable source with a fresh key. */
+  /** Server authority for an Agent queued turn. Absence means the row remains
+   * on the legacy mounted-client drain path (including a definite old-server
+   * fallback). `uncertain` is deliberately still server-owned: falling back
+   * after an ambiguous POST could submit the same words twice. */
+  server?: {
+    id?: string;
+    status: 'sending' | 'uncertain' | 'indeterminate' | 'rejected' | 'queued' | 'claimed';
+    errorCode?: string;
+    errorMessage?: string;
+    /** Observation time for a transport-ambiguous enqueue. The logical item
+     * may be much older than the request that just became uncertain. */
+    uncertainSince?: number;
+    /** The bounded reconciliation window elapsed without authoritative
+     * evidence. The outcome remains ambiguous and must never become resendable. */
+    reconciliationExpired?: boolean;
+    /** Current one-based projection; server sequence remains the stable
+     * fallback when predecessors settle and positions close up. */
+    position?: number;
+    revision?: number;
+  };
+  /** Stable identity for server enqueue/retry. Recovered steer rows also use
+   * it to dismiss their parked source; a later recovery attempt gets a fresh
+   * identity. */
   clientRequestId?: string;
+  /** Exact visible branch leaf captured when this turn entered the server
+   * queue. The server revalidates it before admitting the fresh successor. */
+  parentMessageId?: string;
   /** Correlation used only to durably dismiss/reclaim the parked source. */
   recoveryClientSteerId?: string;
   recoverySteerId?: string;
@@ -428,6 +475,29 @@ export type QueuedMessageOrigin = {
  */
 const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   key: 'queuedMessagesByConvoId',
+  default: [],
+});
+
+export type SettledQueuedTurnReceipt = {
+  clientRequestId: string;
+  status: 'admitted' | 'admitted_pending_boundary' | 'indeterminate' | 'cancelled' | 'dead';
+  effectivePredecessorCreatedAt?: number;
+  rootPredecessor?: true;
+  boundaryConsumed?: boolean;
+};
+
+/** Monotonic client knowledge of terminal server queue receipts. Admission
+ * records preserve boundary multiplicity by request identity. Other terminal
+ * records exist only while their original enqueue callback is outstanding. */
+const settledQueuedTurnReceiptsByConvoId = atomFamily<SettledQueuedTurnReceipt[], string>({
+  key: 'settledQueuedTurnReceiptsByConvoId',
+  default: [],
+});
+
+/** Enqueue callbacks that can still race newer GET/cancellation evidence.
+ * Entries retire as soon as that one callback settles. */
+const pendingQueuedTurnEnqueueIdsByConvoId = atomFamily<string[], string>({
+  key: 'pendingQueuedTurnEnqueueIdsByConvoId',
   default: [],
 });
 
@@ -756,10 +826,13 @@ export default {
   useClearSubmissionState,
   showPromptsPopoverFamily,
   showSkillsPopoverFamily,
+  pendingComposerTextByConvoId,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
+  settledQueuedTurnReceiptsByConvoId,
+  pendingQueuedTurnEnqueueIdsByConvoId,
   runEndByIndex,
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,
