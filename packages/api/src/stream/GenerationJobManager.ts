@@ -4910,11 +4910,17 @@ class GenerationJobManagerClass {
         }
 
         let terminalJob = await this.jobStore.getJob(streamId);
+        if (terminalJob?.createdAt !== runtime.createdAt) {
+          return;
+        }
         if (
           terminalJob?.terminalPersistencePending === true &&
           ['complete', 'error', 'aborted'].includes(terminalJob.status)
         ) {
           terminalJob = await this.recoverStaleTerminalPersistence(terminalJob);
+          if (terminalJob?.createdAt !== runtime.createdAt) {
+            return;
+          }
           if (terminalJob?.terminalPersistencePending === true) {
             const startedAt =
               terminalJob.terminalPersistenceStartedAt ??
@@ -7959,9 +7965,17 @@ class GenerationJobManagerClass {
           );
           observedRuntime.startupTelemetry?.mark('first_response_event_queued');
         } catch (err) {
-          if (!(err instanceof GenerationPublicationFencedError)) {
-            logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
+          if (err instanceof GenerationPublicationFencedError) {
+            const currentJob = await this.jobStore.getJob(streamId);
+            this.reconcileInactiveGeneration(
+              streamId,
+              observedRuntime.createdAt,
+              currentJob,
+              observedRuntime,
+            );
+            continue;
           }
+          logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
         }
       }
       // emitError() is asynchronous; a replacement may have appeared while

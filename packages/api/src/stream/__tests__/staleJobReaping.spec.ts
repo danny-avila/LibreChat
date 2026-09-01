@@ -418,4 +418,57 @@ describe('GenerationJobManager - generation abort on reaping', () => {
       await manager.destroy();
     }
   });
+
+  it('keeps the predecessor subscription attached when reaper publication is fenced', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+    const { GenerationPublicationFencedError } = await import('../interfaces/IJobStore');
+
+    jest.useFakeTimers();
+    try {
+      const store = new InMemoryJobStore({ ttlAfterComplete: 0, staleJobTimeout: 1000 });
+      const transport = new InMemoryEventTransport();
+      const manager = new GenerationJobManagerClass();
+      manager.configure({ jobStore: store, eventTransport: transport, isRedis: false });
+      manager.initialize();
+
+      const streamId = 'replacement-during-reaper-publication';
+      const predecessor = await manager.createJob(streamId, 'user-1', streamId);
+      const onDone = jest.fn();
+      const onError = jest.fn();
+      const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+      let successorCreatedAt = 0;
+      jest.spyOn(transport, 'emitError').mockImplementation(async () => {
+        const successor = await store.createJob(streamId, 'user-1', streamId);
+        successorCreatedAt = successor.createdAt;
+        throw new GenerationPublicationFencedError('error', streamId, predecessor.createdAt);
+      });
+
+      await jest.advanceTimersByTimeAsync(2000);
+      await (
+        manager as unknown as {
+          cleanup: () => Promise<void>;
+        }
+      ).cleanup();
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(transport.getSubscriberCount(streamId)).toBe(1);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+      await transport.emitDone(
+        streamId,
+        { final: true, generationCreatedAt: successorCreatedAt },
+        predecessor.createdAt,
+      );
+      expect(onDone).toHaveBeenCalledWith({
+        final: true,
+        generationCreatedAt: successorCreatedAt,
+      });
+
+      subscription?.unsubscribe();
+      await manager.destroy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

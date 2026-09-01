@@ -3257,6 +3257,58 @@ describe('GenerationJobManager startup telemetry', () => {
     }
   });
 
+  it('does not deliver a terminal successor through a predecessor recovery callback', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false, cleanupOnComplete: false });
+    manager.initialize();
+    const streamId = 'stream-terminal-recovery-successor-error';
+    const predecessor = await manager.createJob(streamId, 'user-1', streamId);
+    const predecessorDone = jest.fn();
+    const predecessorError = jest.fn();
+    const predecessorSubscription = await manager.subscribe(
+      streamId,
+      () => undefined,
+      predecessorDone,
+      predecessorError,
+    );
+    await jobStore.transitionStatusAndDrainSteers(streamId, {
+      from: 'running',
+      to: 'aborted',
+      expectCreatedAt: predecessor.createdAt,
+      patch: {
+        completedAt: Date.now() - 60_000,
+        terminalPersistencePending: true,
+        terminalPersistenceStartedAt: Date.now() - 60_000,
+      },
+    });
+    const finalize = jobStore.finalizeTerminalPersistence.bind(jobStore);
+    jest.spyOn(jobStore, 'finalizeTerminalPersistence').mockImplementation(async (...args) => {
+      const finalized = await finalize(...args);
+      const successor = await jobStore.createJob(streamId, 'user-1', streamId);
+      await jobStore.updateJob(
+        streamId,
+        { status: 'error', error: 'successor provider failure', completedAt: Date.now() },
+        successor.createdAt,
+      );
+      return finalized;
+    });
+    jest.spyOn(eventTransport, 'emitDone').mockImplementation((_streamId, _event, generationId) => {
+      throw new GenerationPublicationFencedError('done', streamId, generationId);
+    });
+
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(predecessorDone).not.toHaveBeenCalled();
+      expect(predecessorError).not.toHaveBeenCalled();
+    } finally {
+      predecessorSubscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
   it('closes an already-live subscriber when abort finalization storage fails', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const manager = new GenerationJobManagerClass();
