@@ -1618,6 +1618,89 @@ describe('BackgroundTaskRegistryClass', () => {
     });
     expect(registry.get('u-pending-harvest', 'c-first', first.task.id)?.artifact).toBeDefined();
     expect(registry.get('u-pending-harvest', 'c-second', second.task.id)?.artifact).toBeUndefined();
+    expect(registry.get('u-pending-harvest', 'c-second', second.task.id)?.result).toBeUndefined();
+  });
+
+  it('drops terminal errors when non-evictable payloads exhaust the user budget', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const first = registry.create({
+      userId: 'u-error-budget',
+      conversationId: 'c-first',
+      toolCallId: 'call_first',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    const second = registry.create({
+      userId: 'u-error-budget',
+      conversationId: 'c-second',
+      toolCallId: 'call_second',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    const failing = registry.create({
+      userId: 'u-error-budget',
+      conversationId: 'c-failing',
+      toolCallId: 'call_failing',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in first || 'atCapacity' in second || 'atCapacity' in failing) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-error-budget', 'c-first', first.task.id, {
+      content: 'a',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+      harvestStarted: true,
+    });
+    registry.complete('u-error-budget', 'c-second', second.task.id, {
+      content: 'b',
+      artifact: { payload: 'b'.repeat(6_999_900) },
+      harvestStarted: true,
+    });
+    registry.fail('u-error-budget', 'c-failing', failing.task.id, 'e'.repeat(100_000));
+    const failed = registry.get('u-error-budget', 'c-failing', failing.task.id);
+    expect(failed?.status).toBe('error');
+    expect(failed?.error).toBeUndefined();
+  });
+
+  it('finishes an empty harvest without evicting payload capacity', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const first = registry.create({
+      userId: 'u-empty-harvest',
+      conversationId: 'c-first',
+      toolCallId: 'call_first',
+      toolName: 'execute_code',
+    });
+    const second = registry.create({
+      userId: 'u-empty-harvest',
+      conversationId: 'c-second',
+      toolCallId: 'call_second',
+      toolName: 'execute_code',
+    });
+    const empty = registry.create({
+      userId: 'u-empty-harvest',
+      conversationId: 'c-empty',
+      toolCallId: 'call_empty',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    if ('atCapacity' in first || 'atCapacity' in second || 'atCapacity' in empty) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-empty-harvest', 'c-first', first.task.id, {
+      content: 'a',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+    });
+    registry.complete('u-empty-harvest', 'c-second', second.task.id, {
+      content: 'b',
+      artifact: { payload: 'b'.repeat(6_999_970) },
+    });
+    registry.complete('u-empty-harvest', 'c-empty', empty.task.id, {
+      content: '',
+      harvestStarted: true,
+    });
+    registry.finishHarvest('u-empty-harvest', 'c-empty', empty.task.id);
+    expect(registry.get('u-empty-harvest', 'c-first', first.task.id)).toBeDefined();
+    expect(registry.get('u-empty-harvest', 'c-empty', empty.task.id)?.harvestPending).toBe(false);
   });
 
   it('scopes tasks by user and conversation', () => {

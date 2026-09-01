@@ -1257,11 +1257,12 @@ export class BackgroundTaskRegistryClass {
       task,
       Math.max(0, desiredChars - currentChars),
     );
+    const retainedContent = hasRetainedCapacity ? storedContent : undefined;
     const artifact = hasRetainedCapacity ? storedArtifact.artifact : undefined;
     const artifactChars = hasRetainedCapacity ? storedArtifact.chars : 0;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'completed',
-      result: storedContent,
+      result: retainedContent,
       artifact,
       error: undefined,
       ...(result.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
@@ -1271,7 +1272,7 @@ export class BackgroundTaskRegistryClass {
     });
     if (updated) {
       this.updatePayloadUsage(task, {
-        result: storedContent.length,
+        result: retainedContent?.length ?? 0,
         artifact: artifactChars,
         error: 0,
       });
@@ -1317,6 +1318,10 @@ export class BackgroundTaskRegistryClass {
   ): void {
     const task = this.buckets.get(this.key(userId, conversationId))?.tasks.get(taskId);
     if (task == null || task.status !== 'completed' || task.artifactBlocked === true) {
+      return;
+    }
+    if (attachments.length === 0) {
+      this.update(userId, conversationId, taskId, { harvestPending: false });
       return;
     }
     const measured = toStoredArtifact(taskId, attachments);
@@ -1425,10 +1430,11 @@ export class BackgroundTaskRegistryClass {
     if (task == null || task.status !== 'running' || task.artifactBlocked === true) {
       return;
     }
-    this.makeRetainedRoom(userId, task, storedError.length);
+    const hasRetainedCapacity = this.makeRetainedRoom(userId, task, storedError.length);
+    const retainedError = hasRetainedCapacity ? storedError : undefined;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'error',
-      error: storedError,
+      error: retainedError,
       result: undefined,
       artifact: undefined,
       attachments: undefined,
@@ -1439,7 +1445,7 @@ export class BackgroundTaskRegistryClass {
         result: 0,
         artifact: 0,
         attachments: 0,
-        error: storedError.length,
+        error: retainedError?.length ?? 0,
       });
     }
   }
@@ -1522,10 +1528,15 @@ export class BackgroundTaskRegistryClass {
       return;
     }
     const storedError = truncateMiddle(error, MAX_RESULT_CHARS);
-    this.makeRetainedRoom(userId, task, Math.max(0, storedError.length - this.payloadChars(task)));
+    const hasRetainedCapacity = this.makeRetainedRoom(
+      userId,
+      task,
+      Math.max(0, storedError.length - this.payloadChars(task)),
+    );
+    const retainedError = hasRetainedCapacity ? storedError : undefined;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'error',
-      error: storedError,
+      error: retainedError,
       result: undefined,
       artifact: undefined,
       attachments: undefined,
@@ -1539,7 +1550,7 @@ export class BackgroundTaskRegistryClass {
         result: 0,
         artifact: 0,
         attachments: 0,
-        error: storedError.length,
+        error: retainedError?.length ?? 0,
       });
     }
   }
