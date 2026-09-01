@@ -2240,7 +2240,7 @@ describe('GenerationJobManager startup telemetry', () => {
     }
   });
 
-  it('treats a replacement-fenced terminal publication as a superseded warning', async () => {
+  it('treats a replacement-fenced terminal publication as a superseded outcome', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const eventTransport = new InMemoryEventTransport();
     jest.spyOn(eventTransport, 'emitDone').mockImplementation((streamId, _event, generationId) => {
@@ -2270,10 +2270,7 @@ describe('GenerationJobManager startup telemetry', () => {
         persistenceFailed: false,
         publicationFenced: true,
       });
-      expect(warn).toHaveBeenCalledWith(
-        `[GenerationJobManager] Terminal publication superseded for ${streamId}`,
-        expect.any(GenerationPublicationFencedError),
-      );
+      expect(warn).not.toHaveBeenCalled();
       expect(error).not.toHaveBeenCalled();
 
       await manager.finishTerminalJob(claim!);

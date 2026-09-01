@@ -3694,10 +3694,6 @@ class GenerationJobManagerClass {
       await this.eventTransport.emitDone(streamId, publicationEvent, createdAt);
     } catch (publicationError) {
       if (publicationError instanceof GenerationPublicationFencedError) {
-        logger.warn(
-          `[GenerationJobManager] Terminal publication superseded for ${streamId}`,
-          publicationError,
-        );
         return {
           finalEvent: publicationEvent,
           persistenceFailed,
@@ -3792,12 +3788,7 @@ class GenerationJobManagerClass {
           }
           await this.eventTransport.emitError(streamId, terminalError, createdAt);
         } catch (publishError) {
-          if (publishError instanceof GenerationPublicationFencedError) {
-            logger.warn(
-              `[GenerationJobManager] Terminal error publication superseded for ${streamId}`,
-              publishError,
-            );
-          } else {
+          if (!(publishError instanceof GenerationPublicationFencedError)) {
             logger.error(
               `[GenerationJobManager] Failed to publish terminal error for ${streamId}:`,
               publishError,
