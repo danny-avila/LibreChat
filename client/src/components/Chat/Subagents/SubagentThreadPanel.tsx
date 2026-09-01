@@ -1,15 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
-import { X } from 'lucide-react';
+import { ListEnd, X, Zap } from 'lucide-react';
 import { dataService, ForkOptions } from 'librechat-data-provider';
-import {
-  Alert,
-  Button,
-  Composer,
-  ControlCombobox,
-  useMediaQuery,
-  useToastContext,
-} from '@librechat/client';
 import {
   useRecoilCallback,
   useRecoilState,
@@ -17,15 +9,25 @@ import {
   useResetRecoilState,
   useSetRecoilState,
 } from 'recoil';
+import {
+  Alert,
+  Button,
+  Composer,
+  ControlCombobox,
+  TooltipAnchor,
+  useMediaQuery,
+  useToastContext,
+} from '@librechat/client';
 import type {
   ParentSubagentTaskSummary,
   SubagentControlAction,
   SubagentControlReceipt,
   SubagentControlRequest,
 } from 'librechat-data-provider';
+import type { ComposerKeyVerdict, ComposerStopProps } from '@librechat/client';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
-import type { ComposerKeyVerdict } from '@librechat/client';
 import type { ActiveSubagentPanel, SubagentControlUiState } from '~/store/subagents';
+import type { ComposerKeyAction } from '~/utils/shortcuts';
 import type { OptionWithIcon } from '~/common';
 import {
   adaptDurableThreadActivity,
@@ -96,6 +98,16 @@ const failedControlReason = (
   if (retryable) return 'owner_unavailable';
   return 'invalid_command';
 };
+
+/** Which control a during-run verdict asks for. `submit` is whatever the
+ *  reader's own key policy treats as the default — with Enter-to-send off that
+ *  is ⌘/Ctrl+Enter, which is why the chord is never read raw. */
+const CONTROL_FOR_ACTION = {
+  submit: 'steer',
+  other: 'queue',
+  interrupt: 'interrupt',
+  preempt: 'interrupt',
+} as const satisfies Partial<Record<ComposerKeyAction, SubagentControlAction>>;
 
 const failedControlLocaleKey = (reason?: string) => {
   if (reason === 'task_inaccessible') return 'com_ui_subagent_control_reason_task_inaccessible';
@@ -1038,11 +1050,17 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       ? localize('com_ui_steer')
       : localize('com_ui_subagent_continue_new_chat');
   const cancelTask = useCallback(() => submitControl('cancel'), [submitControl]);
-  /** Which control the next submission is, decided by the chord that asked for
-   *  it. Read at submission and reset immediately, so a pointer click — which
-   *  never passes through the key policy — always means the default. */
-  const pendingSubmitActionRef = useRef<SubagentControlAction>('steer');
+  /** Handler and label travel as one value, so the Stop control can never
+   *  render without an accessible name. */
+  const stopProps: ComposerStopProps =
+    composerMode === 'control' && !controlPending
+      ? { onStop: cancelTask, stopLabel: localize('com_ui_subagent_cancel_task') }
+      : {};
   const controlModeRef = useRef(false);
+  const chordControlRef = useRef<{
+    event: ReactKeyboardEvent<HTMLTextAreaElement>;
+    control: SubagentControlAction;
+  } | null>(null);
   controlModeRef.current = composerMode === 'control';
   let composerCanSubmit: boolean;
   if (composerSettling) {
@@ -1072,16 +1090,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         submitOverride,
         yieldedChords,
       });
-      if (action === 'submit') {
-        pendingSubmitActionRef.current = 'steer';
-        return 'submit';
-      }
-      if (action === 'other') {
-        pendingSubmitActionRef.current = 'queue';
-        return 'submit';
-      }
-      if (action === 'interrupt' || action === 'preempt') {
-        pendingSubmitActionRef.current = 'interrupt';
+      const control = CONTROL_FOR_ACTION[action as keyof typeof CONTROL_FOR_ACTION];
+      if (control != null) {
+        /** Bound to THIS event, so a chord the composer then refuses leaves
+         *  nothing a later pointer click could pick up. */
+        chordControlRef.current = { event, control };
         return 'submit';
       }
       if (action === 'newline') return 'newline';
@@ -1090,15 +1103,21 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     },
     [enterToSend, shortcutsEnabled, submitOverride, yieldedChords],
   );
-  const submitComposer = useCallback(() => {
-    if (controlAvailable) {
-      const action = pendingSubmitActionRef.current;
-      pendingSubmitActionRef.current = 'steer';
-      submitControl(action);
-      return;
-    }
-    continueAsChat();
-  }, [continueAsChat, controlAvailable, submitControl]);
+  /** The submitting event decides which control this is, so a chord that was
+   *  refused (empty field, settling, a command already in flight) leaves
+   *  nothing behind for the next pointer click to pick up. */
+  const submitComposer = useCallback(
+    (event?: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (!controlAvailable) {
+        continueAsChat();
+        return;
+      }
+      const chord = chordControlRef.current;
+      chordControlRef.current = null;
+      submitControl(event != null && chord?.event === event ? chord.control : 'steer');
+    },
+    [continueAsChat, controlAvailable, submitControl],
+  );
   const selectActor = useCallback(
     (nextThreadId: string) => {
       const next = eventSiblings.find((child) => child.threadId === nextThreadId);
@@ -1392,8 +1411,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               canSubmit={composerCanSubmit}
               disabled={composerMode === 'control' && controlPending}
               submitLabel={composerSubmitLabel}
-              onStop={composerMode === 'control' && !controlPending ? cancelTask : undefined}
-              stopLabel={localize('com_ui_subagent_cancel_task')}
+              {...stopProps}
               ariaLabel={localize('com_ui_message_input')}
               placeholder={composerPlaceholder}
               submitOnEnter={enterToSend}
@@ -1402,6 +1420,48 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
                *  continuation is ordinary chat text bound for an ordinary
                *  composer, which caps nothing. */
               maxLength={composerMode === 'control' ? 4 * 1024 : undefined}
+              /** Queue and interrupt keep a pointer of their own. They carry no
+               *  word label — the tooltip and the accessible name say what they
+               *  are — but a touch reader, or one whose shortcuts are off or
+               *  rebound, still has to be able to reach them. */
+              actions={
+                composerMode === 'control' ? (
+                  <>
+                    <TooltipAnchor
+                      description={localize('com_ui_queue')}
+                      render={
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={localize('com_ui_queue')}
+                          disabled={controlPending || controlMessage.trim() === ''}
+                          onClick={() => submitControl('queue')}
+                          className="size-9 rounded-full text-text-secondary hover:text-text-primary"
+                        >
+                          <ListEnd size={16} aria-hidden />
+                        </Button>
+                      }
+                    />
+                    <TooltipAnchor
+                      description={localize('com_ui_subagent_interrupt')}
+                      render={
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={localize('com_ui_subagent_interrupt')}
+                          disabled={controlPending || controlMessage.trim() === ''}
+                          onClick={() => submitControl('interrupt')}
+                          className="size-9 rounded-full text-text-secondary hover:text-text-primary"
+                        >
+                          <Zap size={16} aria-hidden />
+                        </Button>
+                      }
+                    />
+                  </>
+                ) : null
+              }
             />
           )}
         </div>

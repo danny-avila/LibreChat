@@ -223,6 +223,9 @@ jest.mock('@librechat/client', () => ({
     <button {...props}>{children}</button>
   ),
   Skeleton: () => null,
+  /** Renders the anchored control itself; the tooltip text is the control's
+   *  accessible name here, which is what the assertions read. */
+  TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
   ControlCombobox: ({
     items,
     setValue,
@@ -286,7 +289,7 @@ jest.mock('@librechat/client', () => ({
   }: {
     value: string;
     onChange: (value: string) => void;
-    onSubmit: () => void;
+    onSubmit: (event?: React.KeyboardEvent<HTMLTextAreaElement>) => void;
     canSubmit: boolean;
     submitLabel: string;
     ariaLabel: string;
@@ -315,7 +318,9 @@ jest.mock('@librechat/client', () => ({
             resolveKeyVerdict?.(event, false) ?? mockComposerVerdict(event, submitOnEnter);
           if (verdict !== 'submit') return;
           event.preventDefault();
-          if (canSubmit && value.trim() !== '') onSubmit();
+          /** The real composer hands the submitting event to the host, which is
+           *  how a chord picks its control; a pointer click passes nothing. */
+          if (canSubmit && value.trim() !== '') onSubmit(event);
         }}
       />
       {actions}
@@ -328,7 +333,7 @@ jest.mock('@librechat/client', () => ({
           type="button"
           aria-label={submitLabel}
           disabled={disabled === true || !canSubmit}
-          onClick={onSubmit}
+          onClick={() => onSubmit()}
         >
           {submitLabel}
         </button>
@@ -683,6 +688,62 @@ describe('SubagentThreadPanel', () => {
     const composer = screen.getByLabelText('com_ui_message_input');
     fireEvent.change(composer, { target: { value: 'Check the primary source.' } });
     fireEvent.keyDown(composer, event);
+
+    expect(mockControlMutate).toHaveBeenCalledTimes(1);
+    expect(mockControlMutate.mock.calls[0][0].command.action).toBe(action);
+  });
+
+  /** A chord the composer refuses must leave nothing behind: the next pointer
+   *  click carries no event and therefore always means the default steer. */
+  it('does not let a refused chord decide a later pointer submission', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    const composer = screen.getByLabelText('com_ui_message_input');
+    /** Refused: the field is empty, so the composer never submits it. */
+    fireEvent.keyDown(composer, { key: 'Enter', altKey: true });
+    expect(mockControlMutate).not.toHaveBeenCalled();
+
+    fireEvent.change(composer, { target: { value: 'Check the primary source.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+
+    expect(mockControlMutate).toHaveBeenCalledTimes(1);
+    expect(mockControlMutate.mock.calls[0][0].command.action).toBe('steer');
+  });
+
+  /** Queue and interrupt keep a pointer of their own — a touch reader, or one
+   *  whose shortcuts are off or rebound, still has to reach them. */
+  it.each([
+    ['com_ui_queue', 'queue'],
+    ['com_ui_subagent_interrupt', 'interrupt'],
+  ])('offers %s to a pointer', (label, action) => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
+      target: { value: 'Check the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: label }));
 
     expect(mockControlMutate).toHaveBeenCalledTimes(1);
     expect(mockControlMutate.mock.calls[0][0].command.action).toBe(action);
