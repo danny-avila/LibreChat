@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext } from 'react';
 import { useSetAtom } from 'jotai';
 import type { ReactNode } from 'react';
 import type { ComposerBindings } from '~/hooks/Input/useComposerBindings';
-import type { ActiveSubagentPanel } from '~/store/subagents';
-import { activeSubagentPanel } from '~/store/subagents';
+import type { ActiveSubagentPanel } from './state';
+import { activeSubagentPanel } from './state';
 
 /**
  * Everything this feature needs from the application hosting it, and nothing

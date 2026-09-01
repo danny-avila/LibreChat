@@ -9,7 +9,11 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
-import { activeSubagentPanel, subagentProgressByToolCallId, subagentProgressKey } from '~/store';
+import {
+  activeSubagentPanel,
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/components/Chat/Subagents/state';
 import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
 import { useOpenSubagentPanel } from '~/components/Chat/Subagents/surface';
 import { MessageContext } from '~/Providers/MessageContext';

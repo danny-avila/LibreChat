@@ -8,8 +8,8 @@ import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRo
 import { useChatSurface, useOpenSubagentPanel } from './surface';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import { eventSubagentSelection } from './eventSelection';
-import { activeSubagentPanel } from '~/store/subagents';
 import { useAgentsMapContext } from '~/Providers';
+import { activeSubagentPanel } from './state';
 import { renderAgentAvatar } from '~/utils';
 import { useLocalize } from '~/hooks';
 

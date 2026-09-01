@@ -2,10 +2,10 @@ import React from 'react';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
-import type { ActiveSubagentPanel } from '~/store/subagents';
+import type { ActiveSubagentPanel } from './state';
 import EventSubagentActivityGroup from './EventSubagentActivityGroup';
 import { ChatSurfaceHarness, testChatSurface } from 'test/harness';
-import { activeSubagentPanel } from '~/store/subagents';
+import { activeSubagentPanel } from './state';
 
 const mockRefresh = jest.fn().mockResolvedValue(undefined);
 const mockChild: ParentSubagentSummary = {

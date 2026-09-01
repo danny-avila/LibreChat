@@ -9,7 +9,7 @@ import type {
   SubagentContentPart,
   SubagentTickerState,
 } from '~/utils/subagentContent';
-import type { ActiveSubagentPanel, SubagentProgress } from '~/store/subagents';
+import type { ActiveSubagentPanel, SubagentProgress } from '~/components/Chat/Subagents/state';
 import {
   foldSubagentEvent,
   foldSubagentEventIntoTicker,
@@ -20,7 +20,7 @@ import {
   activeSubagentPanel,
   subagentProgressByToolCallId,
   subagentProgressKey,
-} from '~/store/subagents';
+} from '~/components/Chat/Subagents/state';
 import SubagentCall, { SUBAGENT_TICKER_THROTTLE_MS } from '../SubagentCall';
 import { MessageContext } from '~/Providers/MessageContext';
 import { ChatSurfaceHarness } from 'test/harness';

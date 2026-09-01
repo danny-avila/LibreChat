@@ -7,13 +7,9 @@ import type {
   SubagentThreadView,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import type { ActiveSubagentPanel } from '~/store/subagents';
+import type { ActiveSubagentPanel } from './state';
 import type { JotaiStore } from 'test/harness';
-import {
-  activeSubagentPanel,
-  subagentProgressByToolCallId,
-  subagentProgressKey,
-} from '~/store/subagents';
+import { activeSubagentPanel, subagentProgressByToolCallId, subagentProgressKey } from './state';
 import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
 import { ChatSurfaceHarness, testChatSurface } from 'test/harness';
 import SubagentThreadPanel from './SubagentThreadPanel';

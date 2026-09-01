@@ -468,6 +468,19 @@ export function listRegisteredSubagentProgressKeys(): string[] {
   return [...registeredSubagentProgressKeys];
 }
 
+/**
+ * Frees the family members held for one invocation. An `atomFamily` caches a
+ * member per key for the life of the tab, and every invocation key is unique,
+ * so the drain boundary has to release them or a long session accumulates two
+ * atom configurations per subagent call it ever saw. Callers clear the values
+ * first: `remove` drops the cached member without telling anything subscribed
+ * to it.
+ */
+export function removeSubagentProgressAtoms(invocationKey: string): void {
+  subagentProgressByToolCallId.remove(invocationKey);
+  subagentParentStreamOpenByToolCallId.remove(invocationKey);
+}
+
 const validActivitySequence = (value: number | undefined): value is number =>
   Number.isSafeInteger(value) && value != null && value >= 0;
 

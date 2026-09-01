@@ -3,8 +3,8 @@ import { useAtom } from 'jotai';
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@librechat/client';
 import { SubagentActivityScrollSurface } from './SubagentActivity';
 import SubagentConversation from './SubagentConversation';
-import { activeSubagentPanel } from '~/store/subagents';
 import { adaptLivePersistedActivity } from './adapters';
+import { activeSubagentPanel } from './state';
 import { useLocalize } from '~/hooks';
 
 /** Public-share fallback for subagent activity already embedded in the shared message payload. */

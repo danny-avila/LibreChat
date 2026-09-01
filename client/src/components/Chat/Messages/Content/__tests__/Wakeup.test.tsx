@@ -3,7 +3,7 @@ import { RecoilRoot } from 'recoil';
 import { useAtomValue } from 'jotai';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
-import { activeSubagentPanel } from '~/store/subagents';
+import { activeSubagentPanel } from '~/components/Chat/Subagents/state';
 import { ChatSurfaceHarness } from 'test/harness';
 import Wakeup from '../Wakeup';
 

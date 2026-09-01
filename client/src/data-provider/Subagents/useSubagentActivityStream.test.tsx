@@ -2,13 +2,13 @@ import React from 'react';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { act, renderHook } from '@testing-library/react';
 import { ContentTypes, QueryKeys, StepEvents } from 'librechat-data-provider';
-import type { ActiveSubagentPanel } from '~/store/subagents';
+import type { ActiveSubagentPanel } from '~/components/Chat/Subagents/state';
 import {
   subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
   subagentProgressKey,
   takeRegisteredSubagentProgressKeys,
-} from '~/store/subagents';
+} from '~/components/Chat/Subagents/state';
 import useSubagentActivityStream from './useSubagentActivityStream';
 import { IsolatedAtomStore } from 'test/harness';
 

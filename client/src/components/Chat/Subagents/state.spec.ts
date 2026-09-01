@@ -1,6 +1,13 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
-import { closeParentSubagentProgress, reduceSubagentProgress } from './subagents';
+import {
+  closeParentSubagentProgress,
+  reduceSubagentProgress,
+  removeSubagentProgressAtoms,
+  subagentParentStreamOpenByToolCallId,
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from './state';
 
 const update = (overrides: Partial<SubagentUpdateEvent> = {}): SubagentUpdateEvent => ({
   runId: 'root-run',
@@ -386,5 +393,20 @@ describe('reduceSubagentProgress', () => {
       text: 'Final answer.',
     });
     expect(continued?.tickerState.lines.length).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('removeSubagentProgressAtoms', () => {
+  it('releases both family members held for one invocation', () => {
+    const key = subagentProgressKey('parent-message', 'tool-call', 0);
+    const progress = subagentProgressByToolCallId(key);
+    const streamOpen = subagentParentStreamOpenByToolCallId(key);
+    expect(subagentProgressByToolCallId(key)).toBe(progress);
+    expect(subagentParentStreamOpenByToolCallId(key)).toBe(streamOpen);
+
+    removeSubagentProgressAtoms(key);
+
+    expect(subagentProgressByToolCallId(key)).not.toBe(progress);
+    expect(subagentParentStreamOpenByToolCallId(key)).not.toBe(streamOpen);
   });
 });

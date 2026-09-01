@@ -4,7 +4,7 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, StepEvents, apiBaseUrl } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
-import type { ActiveSubagentPanel } from '~/store/subagents';
+import type { ActiveSubagentPanel } from '~/components/Chat/Subagents/state';
 import {
   closeParentSubagentProgress,
   reduceSubagentProgress,
@@ -12,7 +12,7 @@ import {
   subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
   subagentProgressKey,
-} from '~/store/subagents';
+} from '~/components/Chat/Subagents/state';
 import { useAuthContext } from '~/hooks/AuthContext';
 
 type ActivityEnvelope = {

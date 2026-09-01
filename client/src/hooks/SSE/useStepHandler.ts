@@ -29,13 +29,16 @@ import {
   listRegisteredSubagentProgressKeys,
   reduceSubagentProgress,
   registerSubagentProgressKey,
+  removeSubagentProgressAtoms,
   subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
   takeRegisteredSubagentProgressKeys,
+  subagentProgressKey,
+} from '~/components/Chat/Subagents/state';
+import {
   sandboxStartingByToolCallId,
   ptcTraceByToolCallId,
   PTC_TRACE_MAX_ENTRIES,
-  subagentProgressKey,
   ptcTraceKey,
 } from '~/store';
 import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
@@ -296,8 +299,12 @@ export default function useStepHandler({
    */
   const resetSubagentAtoms = useCallback((): void => {
     for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
+      /** Clear before freeing: `remove` drops the cached family member but
+       *  tells nothing still subscribed to it, so anything mounted at this
+       *  boundary has to see the empty value first. */
       subagentStore.set(subagentProgressByToolCallId(invocationKey), null);
       subagentStore.set(subagentParentStreamOpenByToolCallId(invocationKey), false);
+      removeSubagentProgressAtoms(invocationKey);
     }
   }, [subagentStore]);
 

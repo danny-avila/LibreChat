@@ -21,8 +21,11 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import type { PtcTrace, PtcTraceEntry } from '~/store/ptc';
+import {
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/components/Chat/Subagents/state';
 import { ptcTraceByToolCallId, ptcTraceKey, PTC_TRACE_MAX_ENTRIES } from '~/store/ptc';
-import { subagentProgressByToolCallId, subagentProgressKey } from '~/store/subagents';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { IsolatedAtomStore } from 'test/harness';
@@ -3126,6 +3129,32 @@ describe('useStepHandler', () => {
       expect(bucket.status).toBe('stop');
       expect(bucket.latestLabel).toBe('Subagent "self" finished');
       expect(bucket.subagentType).toBe('self');
+    });
+
+    /** An `atomFamily` caches a member per key for the life of the tab, and every
+     *  invocation key is unique. The drain boundary exists to keep that bounded,
+     *  so it has to release the members, not merely blank them. */
+    it('frees the family members it drains at the conversation boundary', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_A']);
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({ parentToolCallId: 'call_A', phase: 'start' }),
+          },
+          submission,
+        );
+      });
+      const invocationKey = subagentProgressKey('response-msg-1', 'call_A', 0);
+      const held = subagentProgressByToolCallId(invocationKey);
+      expect(getProgress('call_A')).not.toBeNull();
+
+      act(() => (result.current as any).resetSubagentAtoms());
+
+      expect(getProgress('call_A')).toBeNull();
+      expect(subagentProgressByToolCallId(invocationKey)).not.toBe(held);
     });
 
     it('falls back to oldest-unclaimed tool call when parentToolCallId is absent', () => {
