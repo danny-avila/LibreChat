@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
+import { useAtom, useSetAtom, useStore } from 'jotai';
 import { Clock, OctagonPause, X, Zap } from 'lucide-react';
 import { dataService, ForkOptions } from 'librechat-data-provider';
-import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import {
   Alert,
   Button,
@@ -40,8 +40,8 @@ import {
   activeSubagentPanel,
   subagentControlStateByTask,
   subagentControlStateKey,
-  subagentProgressByToolCallId,
   subagentProgressKey,
+  useSubagentProgress,
 } from './state';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
@@ -137,13 +137,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const resetSelection = useCallback(() => setSelection(null), [setSelection]);
   const agentsMap = useAgentsMapContext();
   const { byMessageId, byThreadId, refresh } = useParentSubagents();
-  const progress = useAtomValue(
-    subagentProgressByToolCallId(
-      subagentProgressKey(
-        selection.parentMessageId,
-        selection.event?.progressKey ?? selection.toolCallId,
-        selection.partIndex,
-      ),
+  const progress = useSubagentProgress(
+    subagentProgressKey(
+      selection.parentMessageId,
+      selection.event?.progressKey ?? selection.toolCallId,
+      selection.partIndex,
     ),
   );
   const foregroundTitle =

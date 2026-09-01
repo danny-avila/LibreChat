@@ -1,12 +1,16 @@
+import { renderHook } from '@testing-library/react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import {
   closeParentSubagentProgress,
+  listRegisteredSubagentProgressKeys,
   reduceSubagentProgress,
   removeSubagentProgressAtoms,
   subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
   subagentProgressKey,
+  takeRegisteredSubagentProgressKeys,
+  useSubagentProgress,
 } from './state';
 
 const update = (overrides: Partial<SubagentUpdateEvent> = {}): SubagentUpdateEvent => ({
@@ -408,5 +412,24 @@ describe('removeSubagentProgressAtoms', () => {
 
     expect(subagentProgressByToolCallId(key)).not.toBe(progress);
     expect(subagentParentStreamOpenByToolCallId(key)).not.toBe(streamOpen);
+  });
+});
+
+describe('useSubagentProgress', () => {
+  beforeEach(() => {
+    takeRegisteredSubagentProgressKeys();
+  });
+
+  /** The read is what creates the family member. A card rendering a
+   *  conversation that finished streaming long ago never registers through the
+   *  stream, so without this the drain boundary cannot see its key. */
+  it('enrols the key it reads so the drain boundary can free it', () => {
+    const key = subagentProgressKey('historical-message', 'historical-call', 0);
+    expect(listRegisteredSubagentProgressKeys()).not.toContain(key);
+
+    const { result } = renderHook(() => useSubagentProgress(key));
+
+    expect(result.current).toBeNull();
+    expect(listRegisteredSubagentProgressKeys()).toContain(key);
   });
 });

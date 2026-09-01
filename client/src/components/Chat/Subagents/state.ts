@@ -1,5 +1,6 @@
-import { atom } from 'jotai';
+import { useEffect } from 'react';
 import { atomFamily } from 'jotai/utils';
+import { atom, useAtomValue } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   PartMetadata,
@@ -449,8 +450,9 @@ export const subagentParentStreamOpenByToolCallId = atomFamily((_key: string) =>
 
 /**
  * Invocation atoms populated by either the parent generation stream or the selected detached
- * task stream. The conversation host drains this registry on navigation so both transports share
- * one cleanup boundary instead of leaking detached-only atom-family members for the app lifetime.
+ * task stream, or created by a card that only ever reads one. The conversation host drains this
+ * registry on navigation so every route into the family shares one cleanup boundary instead of
+ * leaking members for the app lifetime.
  */
 const registeredSubagentProgressKeys = new Set<string>();
 
@@ -479,6 +481,19 @@ export function listRegisteredSubagentProgressKeys(): string[] {
 export function removeSubagentProgressAtoms(invocationKey: string): void {
   subagentProgressByToolCallId.remove(invocationKey);
   subagentParentStreamOpenByToolCallId.remove(invocationKey);
+}
+
+/**
+ * Reads one invocation's live progress and enrols its key for cleanup. The
+ * read is what creates the family member, so a card rendering a conversation
+ * that finished streaming long ago — or a search result that never streams at
+ * all — would otherwise hold one nothing ever drains.
+ */
+export function useSubagentProgress(invocationKey: string): SubagentProgress | null {
+  useEffect(() => {
+    registerSubagentProgressKey(invocationKey);
+  }, [invocationKey]);
+  return useAtomValue(subagentProgressByToolCallId(invocationKey));
 }
 
 const validActivitySequence = (value: number | undefined): value is number =>

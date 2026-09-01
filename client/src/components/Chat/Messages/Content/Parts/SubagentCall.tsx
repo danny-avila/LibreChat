@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
-import { useAtomValue, useSetAtom } from 'jotai';
+import { useSetAtom } from 'jotai';
 import { ChevronRight, Users } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type {
@@ -11,8 +11,8 @@ import type {
 import type { SubagentTickerLine } from '~/utils/subagentContent';
 import {
   activeSubagentPanel,
-  subagentProgressByToolCallId,
   subagentProgressKey,
+  useSubagentProgress,
 } from '~/components/Chat/Subagents/state';
 import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
 import { useOpenSubagentPanel } from '~/components/Chat/Subagents/surface';
@@ -173,9 +173,7 @@ export default function SubagentCall({
   const parentMessageContext = useContext(MessageContext);
   const parentMessageId = parentMessageContext.messageId?.trim() ?? '';
   const partIndex = parentMessageContext.partIndex ?? 0;
-  const progress = useAtomValue(
-    subagentProgressByToolCallId(subagentProgressKey(parentMessageId, toolCallId, partIndex)),
-  );
+  const progress = useSubagentProgress(subagentProgressKey(parentMessageId, toolCallId, partIndex));
   const setSelectedSubagent = useSetAtom(activeSubagentPanel);
   const openPanel = useOpenSubagentPanel();
   const agentsMap = useAgentsMapContext();
