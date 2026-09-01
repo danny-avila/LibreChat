@@ -33,3 +33,14 @@ why any new custom CSS cannot be expressed by the shared system. See the detaile
 When adding or changing code that mutates user documents, invalidate the auth user document cache
 for affected users, including bulk role and user mutations. See the detailed policy in `CLAUDE.md`
 under “Auth cache invalidation”.
+
+## Client state ownership
+
+The client is migrating from Recoil to Jotai — convert the areas you touch, not the whole store.
+Split by ownership: state a feature both writes and reads is feature-owned, so convert it to Jotai
+and keep it inside the feature; app-global preferences and shell state a feature merely consumes
+(`maximizeChatSpace`, `showScrollButton`, `enterToSend`, artifact visibility) must be passed in
+through props or a small host-supplied context rather than reached for through `~/store`. Passing
+them in is what lets a feature move to its own workspace later without a rewrite, and it keeps the
+Jotai conversion scoped to the state a feature owns. See the detailed policy in `CLAUDE.md` under
+“Client State Ownership”.
