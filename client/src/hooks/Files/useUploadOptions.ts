@@ -13,7 +13,7 @@ import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import useGetAgentsConfig from '~/hooks/Agents/useGetAgentsConfig';
 import { useGetFileConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
-import { getViableUploadOptions } from '~/utils';
+import { getViableUploadOptions, isUnifiedUploadMode } from '~/utils';
 import { useDragDropContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
 
@@ -51,10 +51,7 @@ export default function useUploadOptions() {
 
   const endpointFileConfig = getEndpointFileConfig({ fileConfig, endpoint, endpointType });
   const uploadsDisabled = endpointFileConfig.disabled === true;
-  /** Unified mode routes from the file itself, so no flow should raise the destination
-   *  chooser the attach button no longer shows. Withheld until the config lands, since
-   *  until then the absent `legacyFileUploadUX` says nothing about the deployment. */
-  const isUnifiedMode = !isConfigPending && endpointFileConfig.legacyFileUploadUX !== true;
+  const isUnifiedMode = isUnifiedUploadMode(endpointFileConfig, isConfigPending);
   const endpointSupportedMimeTypes = endpointFileConfig.supportedMimeTypes;
 
   const getOptions = useCallback(

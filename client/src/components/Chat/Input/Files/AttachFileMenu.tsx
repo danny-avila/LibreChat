@@ -77,6 +77,8 @@ interface AttachFileMenuProps {
   conversationId: string;
   endpointType?: EModelEndpoint | string;
   endpointFileConfig?: EndpointFileConfig;
+  /** Resolved by the parent, which knows whether the file config has landed. */
+  isUnifiedMode: boolean;
   useResponsesApi?: boolean;
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
@@ -91,6 +93,7 @@ const AttachFileMenu = ({
   endpointType,
   conversationId,
   endpointFileConfig,
+  isUnifiedMode,
   useResponsesApi,
   files,
   setFiles,
@@ -135,8 +138,6 @@ const AttachFileMenu = ({
     agentId,
     ephemeralAgent,
   );
-
-  const isUnifiedMode = endpointFileConfig?.legacyFileUploadUX !== true;
 
   const handleUploadClick = useCallback(
     (fileType?: FileUploadType) => {
