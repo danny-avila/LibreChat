@@ -33,11 +33,6 @@ const IMAGE_CHUNK_ENVELOPE_BYTES = 256;
  *  every response padding-free. */
 const BASE64_GROUP_BYTES = 3;
 
-/** Floor for a narrowed window. A runner whose stdout cap cannot hold even
- *  this much base64 (~2KB) cannot serve images at all, so further halving
- *  would only burn the round-trip budget on responses it must truncate. */
-const MIN_IMAGE_CHUNK_BYTES = 1536;
-
 /**
  * Hard round-trip ceiling for one image read, matched to a single window of
  * the Code API's per-user execution limiter (20 requests per 30s in the
@@ -63,6 +58,9 @@ const learnedChunkBytes = new Map<string, number>();
  */
 export interface SandboxImageChunk {
   outputOverflow?: boolean;
+  /** Bytes of stdout the runner did emit before truncating — its actual
+   *  cap, and a far better next window than another blind halving. */
+  observedStdoutBytes?: number;
   error?: string;
   too_large?: boolean;
   bytes?: number;
@@ -103,10 +101,15 @@ function baselineChunkBytes(): number {
     return Math.floor(override);
   }
   const configured = Number(process.env.LIBRECHAT_CODE_SANDBOX_OUTPUT_MAX_SIZE);
-  const budget =
+  return chunkBytesForBudget(
     Number.isFinite(configured) && configured > 0
       ? Math.floor(configured)
-      : DEFAULT_SANDBOX_OUTPUT_MAX_SIZE;
+      : DEFAULT_SANDBOX_OUTPUT_MAX_SIZE,
+  );
+}
+
+/** Largest window whose base64 encoding plus envelope fits `budget`. */
+function chunkBytesForBudget(budget: number): number {
   const usable = Math.max(budget - IMAGE_CHUNK_ENVELOPE_BYTES, 0);
   return alignToBase64Group(Math.floor((usable * 3) / 4));
 }
@@ -116,27 +119,38 @@ function alignToBase64Group(bytes: number): number {
 }
 
 /**
- * Halves the window that a runner just truncated and returns the size to
- * retry the same offset with, or `null` once the floor is reached.
+ * Returns the window to retry a truncated read with, or `null` when no
+ * smaller one exists.
  *
- * The halving is computed from the caller's own failing window, never from
- * the shared learned value: reads run concurrently (one per tool call), so
- * two reads failing at the same size would otherwise halve the shared value
- * twice and skip a size the runner would have accepted. For the same reason
- * the learned value only ever moves down to the narrowest size any read has
- * needed.
+ * A truncated response reveals the runner's real cap — it emitted exactly
+ * as much as it allows — so `observedStdoutBytes` sizes the retry directly
+ * and one round-trip is usually enough to land on a size that fits. Blind
+ * halving is the fallback, and bounds the result either way so every retry
+ * is strictly smaller than the window that just failed.
+ *
+ * The reduction is computed from the caller's own failing window, never
+ * from the shared learned value: reads run concurrently (one per tool
+ * call), so two reads failing at the same size would otherwise reduce the
+ * shared value twice and skip a size the runner would have accepted. For
+ * the same reason the learned value only ever moves down to the narrowest
+ * size any read has needed.
  */
 export function narrowSandboxImageChunkBytes(
   failedChunkBytes: number,
   baseUrl?: string,
+  observedStdoutBytes?: number,
 ): number | null {
-  if (failedChunkBytes <= MIN_IMAGE_CHUNK_BYTES) {
+  const halved = alignToBase64Group(Math.floor(failedChunkBytes / 2));
+  const fromObserved =
+    observedStdoutBytes != null && observedStdoutBytes > 0
+      ? chunkBytesForBudget(observedStdoutBytes)
+      : Number.POSITIVE_INFINITY;
+  const narrowed = Math.min(halved, fromObserved);
+  /* Already as small as a base64 group: this runner cannot emit an image
+   * window at all, and another attempt would only be truncated again. */
+  if (narrowed >= failedChunkBytes) {
     return null;
   }
-  const narrowed = Math.max(
-    alignToBase64Group(Math.floor(failedChunkBytes / 2)),
-    MIN_IMAGE_CHUNK_BYTES,
-  );
   if (baseUrl != null) {
     const learned = learnedChunkBytes.get(baseUrl);
     learnedChunkBytes.set(baseUrl, learned == null ? narrowed : Math.min(learned, narrowed));
@@ -218,10 +232,12 @@ export function parseSandboxImageChunk(response: {
    * job (status `OL`). Detect that explicitly: the surviving stdout is a
    * base64 string cut mid-flight, so parsing it yields a misleading
    * "unexpected output" instead of the narrowable, fixable cause. */
-  if (response.status === 'OL') {
-    return { outputOverflow: true };
-  }
   const stdout = response.stdout == null ? '' : String(response.stdout);
+  if (response.status === 'OL') {
+    /* What survived is exactly what the runner allows, so it doubles as a
+     * measurement of the cap this deployment never declared. */
+    return { outputOverflow: true, observedStdoutBytes: stdout.length };
+  }
   if (response.stderr && stdout === '') {
     throw new Error(String(response.stderr).trim());
   }
@@ -274,7 +290,7 @@ export async function readWindowedSandboxImage(params: {
        * the whole image; keep halving until the runner accepts a size or
        * the floor says it never will. */
       sawOverflow = true;
-      const narrowed = narrowSandboxImageChunkBytes(chunkBytes, baseUrl);
+      const narrowed = narrowSandboxImageChunkBytes(chunkBytes, baseUrl, chunk.observedStdoutBytes);
       if (narrowed == null) {
         throw new Error(
           `Reading "${filePath}" exceeded the sandbox stdout limit (window ${chunkBytes} bytes).`,

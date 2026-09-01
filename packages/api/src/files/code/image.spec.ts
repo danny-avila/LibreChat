@@ -22,13 +22,20 @@ function windowParams(code: string): { offset: number; chunk: number; limit: num
 }
 
 /** Serves `buffer` through the windowed reader, recording each window size. */
-function serveFile(buffer: Buffer, options: { acceptedWindow?: number } = {}) {
+function serveFile(
+  buffer: Buffer,
+  options: { acceptedWindow?: number; reportsCap?: boolean } = {},
+) {
   const windows: number[] = [];
   const readChunk = async ({ code }: { code: string }): Promise<SandboxImageChunk> => {
     const { offset, chunk, limit } = windowParams(code);
     windows.push(chunk);
     if (options.acceptedWindow != null && chunk > options.acceptedWindow) {
-      return { outputOverflow: true };
+      /* Report the cap the way a runner does: by truncating at it. */
+      return {
+        outputOverflow: true,
+        observedStdoutBytes: options.reportsCap === false ? undefined : options.acceptedWindow,
+      };
     }
     if (buffer.length > limit) {
       return { too_large: true, bytes: buffer.length };
@@ -110,24 +117,35 @@ describe('sandbox image window sizing', () => {
     expect(getSandboxImageChunkBytes(url)).toBe(first);
   });
 
-  it('keeps halving until a small runner cap is reachable', () => {
-    /* Two halvings stop at 12,240 raw bytes — still ~16KB of base64, so an
-     * 8KB runner cap was unreachable and the read failed outright. */
-    const url = 'https://tiny-cap.example.com';
-    let window: number | null = getSandboxImageChunkBytes(url);
-    const attempts: number[] = [window];
-    while (window != null && Math.ceil(window / 3) * 4 > 8 * 1024) {
-      window = narrowSandboxImageChunkBytes(window, url);
-      if (window != null) {
-        attempts.push(window);
-      }
-    }
-    expect(window).not.toBeNull();
-    expect(attempts.length).toBeLessThan(MAX_SANDBOX_IMAGE_EXEC_CALLS);
+  it('sizes the retry from the cap a truncated response revealed', () => {
+    /* Blind halving from ~49KB needs eight round-trips to reach a 1KB
+     * runner — most of the call budget spent on discovery. The truncated
+     * response already measured the cap, so one retry lands. */
+    const url = 'https://measured.example.com';
+    const window = getSandboxImageChunkBytes(url);
+
+    const narrowed = narrowSandboxImageChunkBytes(window, url, 1024);
+
+    expect(narrowed).not.toBeNull();
+    expect(Math.ceil((narrowed as number) / 3) * 4).toBeLessThan(1024);
   });
 
-  it('stops narrowing at a window no image runner could serve', () => {
-    expect(narrowSandboxImageChunkBytes(1536, 'https://floor.example.com')).toBeNull();
+  it('keeps narrowing until an unconfigured small runner is reachable', () => {
+    /* A ~1KB stdout cap is a real runner default. A floor above it declared
+     * every image unreadable even though small ones fit. */
+    const url = 'https://tiny-cap.example.com';
+    let window: number | null = getSandboxImageChunkBytes(url);
+    let attempts = 0;
+    while (window != null && Math.ceil(window / 3) * 4 + 256 > 1024) {
+      attempts++;
+      window = narrowSandboxImageChunkBytes(window, url);
+    }
+    expect(window).not.toBeNull();
+    expect(attempts).toBeLessThan(MAX_SANDBOX_IMAGE_EXEC_CALLS);
+  });
+
+  it('stops once no smaller window exists', () => {
+    expect(narrowSandboxImageChunkBytes(3, 'https://floor.example.com')).toBeNull();
   });
 });
 
@@ -136,11 +154,11 @@ describe('parseSandboxImageChunk', () => {
     /* The runner truncates stdout and SIGKILLs with status `OL`; parsing
      * the clipped base64 would report a misleading "unexpected output"
      * instead of the narrowable cause. */
-    const chunk = parseSandboxImageChunk({
-      stdout: '{"total":999999,"n":32768,"b64":"iVBORw0KGg',
-      status: 'OL',
-    });
-    expect(chunk).toEqual({ outputOverflow: true });
+    const stdout = '{"total":999999,"n":32768,"b64":"iVBORw0KGg';
+    const chunk = parseSandboxImageChunk({ stdout, status: 'OL' });
+    /* What survived is exactly what the runner allows, so it measures the
+     * cap this deployment never declared. */
+    expect(chunk).toEqual({ outputOverflow: true, observedStdoutBytes: stdout.length });
   });
 
   it('parses the reader JSON even when the shell emits a banner first', () => {
@@ -218,6 +236,34 @@ describe('readWindowedSandboxImage', () => {
     expect(windows[0]).toBeGreaterThan(acceptedWindow);
     expect(windows[1]).toBeLessThanOrEqual(acceptedWindow);
     expect(Buffer.from((result as { base64: string }).base64, 'base64').equals(source)).toBe(true);
+  });
+
+  it('reads a small image from a runner with a ~1KB stdout cap', async () => {
+    /* A 1KB cap is a real runner default. Discovery has to reach a window
+     * that small, and the truncated response says how small in one step. */
+    const cap = 1024;
+    const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(3 * 1024)]);
+    let calls = 0;
+    const readChunk = async ({ code }: { code: string }): Promise<SandboxImageChunk> => {
+      calls++;
+      const { offset, chunk } = windowParams(code);
+      const slice = source.subarray(offset, offset + chunk);
+      const encoded = Math.ceil(slice.length / 3) * 4 + 64;
+      if (encoded > cap) {
+        return { outputOverflow: true, observedStdoutBytes: cap };
+      }
+      return { total: source.length, n: slice.length, b64: slice.toString('base64') };
+    };
+
+    const result = await readWindowedSandboxImage({
+      filePath: '/mnt/data/icon.png',
+      baseUrl: 'https://kilobyte.example.com',
+      limit,
+      readChunk,
+    });
+
+    expect(Buffer.from((result as { base64: string }).base64, 'base64').equals(source)).toBe(true);
+    expect(calls).toBeLessThanOrEqual(MAX_SANDBOX_IMAGE_EXEC_CALLS);
   });
 
   it('names the stdout limit when every narrowed window still overflows', async () => {
