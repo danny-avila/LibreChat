@@ -1601,6 +1601,14 @@ function filterFile({ req, image, isAvatar, endpoint: endpointOverride }) {
     fileConfig,
     endpointType,
   });
+
+  /* Avatars are not endpoint-scoped, so the flag only governs endpoint uploads. For an
+   * agent upload this is the resolved provider's config, which is the point: a provider
+   * with uploads disabled must be refused server-side, not only hidden in the UI. */
+  if (isAvatar !== true && endpointFileConfig?.disabled === true) {
+    throw new Error(`File uploads are disabled for ${endpoint} endpoint`);
+  }
+
   const fileSizeLimit =
     isAvatar === true ? fileConfig.avatarSizeLimit : endpointFileConfig.fileSizeLimit;
 

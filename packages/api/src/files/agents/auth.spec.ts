@@ -37,6 +37,17 @@ describe('checkAgentUploadAuth', () => {
     expect(result.allowed).toBe(true);
   });
 
+  it('reports a missing agent to an admin rather than proceeding', async () => {
+    getAgent.mockResolvedValue(null);
+
+    const result = await checkAgentUploadAuth(
+      { userId: 'admin-id', userRole: SystemRoles.ADMIN, agentId: 'missing-agent' },
+      { getAgent, checkPermission },
+    );
+
+    expect(result).toMatchObject({ allowed: false, status: 404 });
+  });
+
   it('allows the agent author without consulting permissions', async () => {
     const result = await checkAgentUploadAuth(
       { userId: 'owner-id', userRole: SystemRoles.USER, agentId: 'agent_own0001' },
@@ -147,7 +158,7 @@ describe('verifyAgentUploadPermission', () => {
     checkPermission.mockResolvedValue(false);
   });
 
-  it('allows an upload the global capability permits, without reading the agent', async () => {
+  it('allows an upload the global capability permits', async () => {
     /* The bypass lives here rather than at each route, because the two upload routes
      * answered it differently and an image upload was refused where a file one passed. */
     const denied = await verifyAgentUploadPermission({
@@ -160,7 +171,26 @@ describe('verifyAgentUploadPermission', () => {
     });
 
     expect(denied).toBe(false);
-    expect(getAgent).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing agent rather than letting the capability waive it', async () => {
+    /* The capability waives the per-agent grant, not the agent's existence. Letting a
+     * stale id through here surfaces as a late failure once processing has already
+     * written the file to remote storage, on a route with no cleanup. */
+    getAgent.mockResolvedValue(null);
+    const res = makeRes();
+
+    const denied = await verifyAgentUploadPermission({
+      req,
+      res,
+      metadata: { agent_id: 'missing-agent' },
+      getAgent,
+      checkPermission,
+      hasUploadBypass: async () => true,
+    });
+
+    expect(denied).toBe(true);
+    expect(res.status).toHaveBeenCalledWith(404);
   });
 
   it('denies the same upload when the capability is absent', async () => {

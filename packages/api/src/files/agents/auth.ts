@@ -60,13 +60,16 @@ export async function checkAgentUploadAuth(
   }
   const requiredPermission = isMessageAttachment ? PermissionBits.VIEW : PermissionBits.EDIT;
 
-  if (userRole === SystemRoles.ADMIN) {
-    return { allowed: true };
-  }
-
+  /* Existence is established before any privilege shortcut. Returning early for a
+   * privileged caller lets a stale agent id reach extraction and storage, where it
+   * surfaces as a late 500 with the remote artifact already written. */
   const agent = await getAgent({ id: agentId });
   if (!agent) {
     return { allowed: false, status: 404, error: 'Not Found', message: 'Agent not found' };
+  }
+
+  if (userRole === SystemRoles.ADMIN) {
+    return { allowed: true };
   }
 
   if (agent.author?.toString() === userId) {
@@ -114,16 +117,6 @@ export async function verifyAgentUploadPermission({
    *  here rather than at each route so the two upload routes cannot answer differently. */
   hasUploadBypass?: () => Promise<boolean>;
 }): Promise<boolean> {
-  if (hasUploadBypass) {
-    try {
-      if (await hasUploadBypass()) {
-        return false;
-      }
-    } catch (error) {
-      logger.warn('[agentUploadAuth] capability check failed, denying bypass:', error);
-    }
-  }
-
   const user = req.user as IUser;
   const result = await checkAgentUploadAuth(
     {
@@ -137,6 +130,18 @@ export async function verifyAgentUploadPermission({
   );
 
   if (!result.allowed) {
+    /* The capability waives the per-agent grant, not the agent's existence, so it is
+     * consulted only once the record is known to be there. Bypassing a 404 would send a
+     * stale id on to processing to fail after the file was already written. */
+    if (result.status !== 404 && hasUploadBypass) {
+      try {
+        if (await hasUploadBypass()) {
+          return false;
+        }
+      } catch (error) {
+        logger.warn('[agentUploadAuth] capability check failed, denying bypass:', error);
+      }
+    }
     res.status(result.status).json({ error: result.error, message: result.message });
     return true;
   }
