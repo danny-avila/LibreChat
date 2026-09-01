@@ -193,6 +193,17 @@ export const isMessageFileUpload = (value?: boolean | string | null): boolean =>
 export const isResponsesApiUpload = (value?: boolean | string | null): boolean =>
   value === true || value === 'true';
 
+/**
+ * The Responses setting a turn actually runs on. A saved agent's own record wins, since
+ * execution reads its model parameters; a conversation only answers for itself. Upload
+ * and delivery must agree here, or a document is stored as raw provider content and then
+ * re-resolved to text it has no extraction for.
+ */
+export const resolveUseResponsesApi = (
+  agentValue?: boolean | null,
+  conversationValue?: boolean | null,
+): boolean | undefined => agentValue ?? conversationValue ?? undefined;
+
 export const isBedrockDocumentType = (mimeType?: string): boolean =>
   mimeType != null && mimeType in bedrockDocumentFormats;
 

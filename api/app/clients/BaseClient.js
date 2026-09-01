@@ -37,6 +37,7 @@ const {
   stripReasoningLabelMetadata,
   resolveUploadLLMDeliveryPath,
   isSpeechProviderConfigured,
+  resolveUseResponsesApi,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -1644,8 +1645,9 @@ class BaseClient {
    *  document natively. A saved agent holds it in its parameters and a plain conversation
    *  in its model options, and both readers of it have been wrong by consulting one. */
   usesResponsesApi() {
-    return (
-      this.options.agent?.model_parameters?.useResponsesApi ?? this.modelOptions?.useResponsesApi
+    return resolveUseResponsesApi(
+      this.options.agent?.model_parameters?.useResponsesApi,
+      this.modelOptions?.useResponsesApi,
     );
   }
 

@@ -1421,6 +1421,7 @@ export async function initializeAgent(
     provisionCandidates: deferredProvisionFiles as unknown as TFile[],
     legacyFileUploadUX,
     codeRouteKey: codeExecutionContext.executionRouteKey ?? codeExecutionContext.executionProfile,
+    codeBaseUrl: codeExecutionContext.baseUrl,
     screenPersistentFiles: (files) => {
       /* Persistent agent files are read inside primeResources, so they miss both checks
        * the caller already applied to this turn's other files. They face the same

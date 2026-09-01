@@ -136,7 +136,9 @@ describe('DragDropContext endpointType resolution', () => {
       expect(result.current.useResponsesApi).toBe(true);
     });
 
-    it('preserves an explicit conversation useResponsesApi false override', () => {
+    it('lets the saved agent decide over the conversation', () => {
+      /* Execution reads the agent's own model parameters, so predicting the conversation
+       * here routes an upload the turn then resolves the other way. */
       mockConversation = {
         endpoint: EModelEndpoint.agents,
         agent_id: 'agent-1',
@@ -147,7 +149,21 @@ describe('DragDropContext endpointType resolution', () => {
         model_parameters: { useResponsesApi: true },
       } as Partial<Agent>;
       const { result } = renderHook(() => useDragDropContext(), { wrapper });
-      expect(result.current.useResponsesApi).toBe(false);
+      expect(result.current.useResponsesApi).toBe(true);
+    });
+
+    it('keeps the conversation setting when the agent states none', () => {
+      mockConversation = {
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-1',
+        useResponsesApi: true,
+      };
+      mockAgentQueryData = {
+        provider: EModelEndpoint.azureOpenAI,
+        model_parameters: {},
+      } as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.useResponsesApi).toBe(true);
     });
   });
 

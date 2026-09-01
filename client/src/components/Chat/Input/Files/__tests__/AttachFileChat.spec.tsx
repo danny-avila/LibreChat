@@ -170,7 +170,9 @@ describe('AttachFileChat', () => {
       expect(mockAttachFileMenuProps.useResponsesApi).toBe(true);
     });
 
-    it('preserves an explicit conversation useResponsesApi false override', () => {
+    it('lets the saved agent decide over the conversation', () => {
+      /* Execution reads the agent's own model parameters, so the attach menu must offer
+       * what the turn will actually do rather than what the conversation says. */
       mockAgentQueryData = {
         provider: EModelEndpoint.azureOpenAI,
         model_parameters: { useResponsesApi: true },
@@ -180,7 +182,20 @@ describe('AttachFileChat', () => {
         agent_id: 'agent-1',
         useResponsesApi: false,
       });
-      expect(mockAttachFileMenuProps.useResponsesApi).toBe(false);
+      expect(mockAttachFileMenuProps.useResponsesApi).toBe(true);
+    });
+
+    it('keeps the conversation setting when the agent states none', () => {
+      mockAgentQueryData = {
+        provider: EModelEndpoint.azureOpenAI,
+        model_parameters: {},
+      } as Partial<Agent>;
+      renderComponent({
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-1',
+        useResponsesApi: true,
+      });
+      expect(mockAttachFileMenuProps.useResponsesApi).toBe(true);
     });
   });
 

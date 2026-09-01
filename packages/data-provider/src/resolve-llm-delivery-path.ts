@@ -6,7 +6,7 @@ import {
   isKnownProviderIdentifier,
   isMediaSupportedProvider,
 } from './schemas';
-import { isBedrockDocumentType, codeInterpreterMimeTypes } from './file-config';
+import { retrievalMimeTypes, isBedrockDocumentType, codeInterpreterMimeTypes } from './file-config';
 import { EToolResources } from './types/assistants';
 
 /** Audio and video reach the model only through the media encoders, which support a
@@ -272,11 +272,14 @@ export function resolveUploadLLMDeliveryPath({
  */
 export function canToolResourceConsume(toolResource: string, mimeType: string): boolean {
   if (toolResource === EToolResources.file_search) {
+    /* The union of both readers rather than either alone: the extraction set describes
+     * the document parser and omits presentations, which RAG does handle and the chooser
+     * already offers, while the retrieval set omits csv and the spreadsheet formats. */
     return (
       !mimeType.startsWith('image') &&
       !mimeType.startsWith('audio') &&
       !mimeType.startsWith('video') &&
-      hasTextExtractionPath(mimeType)
+      (hasTextExtractionPath(mimeType) || matchesMimeList(mimeType, retrievalMimeTypes))
     );
   }
   if (toolResource === EToolResources.execute_code) {

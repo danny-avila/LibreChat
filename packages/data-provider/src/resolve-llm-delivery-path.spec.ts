@@ -546,6 +546,30 @@ describe('isNativelyReadableText', () => {
 });
 
 describe('canToolResourceConsume', () => {
+  it('accepts a presentation for file search, which RAG handles', () => {
+    /* The chooser offers file search for pptx from the retrieval set, so refusing it
+     * here rejects the destination the user was just given. The extraction set omits
+     * presentations because the document parser cannot read them, which is a different
+     * question from what the vector service can index. */
+    expect(
+      canToolResourceConsume(
+        'file_search',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      ),
+    ).toBe(true);
+    expect(
+      canToolResourceConsume(
+        'file_search',
+        'application/vnd.openxmlformats-officedocument.presentationml.template',
+      ),
+    ).toBe(true);
+  });
+
+  it('still accepts csv for file search, which the retrieval set omits', () => {
+    expect(canToolResourceConsume('file_search', 'text/csv')).toBe(true);
+    expect(canToolResourceConsume('file_search', 'application/vnd.ms-excel')).toBe(true);
+  });
+
   it('judges each tool by the list the client offers it from', () => {
     /* An archive is readable by the code interpreter and not by the vector store, so
      * treating everything non-image as searchable sent it to RAG to be rejected. */

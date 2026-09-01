@@ -2111,6 +2111,62 @@ describe('primeResources', () => {
       expect(staleFile.metadata?.codeEnvRefs?.['stateful:env1']).toBeDefined();
     });
 
+    it('probes a stateful route against its own Code API and clears its stale ref', async () => {
+      /* A configured deployment issues its own refs, so leaving it out of the probe left
+       * a dead session usable forever: nothing queued a replacement and the same file id
+       * was injected on every later turn. */
+      process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+      const checkSessionsAlive = jest.fn().mockResolvedValue(new Set<string>());
+      const statefulFile = makeCodeFile({
+        file_id: 'stateful-stale',
+        metadata: {
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user1',
+              storage_session_id: 'sess-default',
+              file_id: 'remote-default',
+              executionProfile: 'default',
+            },
+            'stateful:env1': {
+              kind: 'user',
+              id: 'user1',
+              storage_session_id: 'sess-2',
+              file_id: 'remote-2',
+              executionProfile: 'stateful',
+              executionRouteKey: 'stateful:env1',
+            },
+          },
+        },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([statefulFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive,
+        codeRouteKey: 'stateful:env1',
+        codeBaseUrl: 'https://stateful.example.com',
+      });
+
+      expect(checkSessionsAlive).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseURL: 'https://stateful.example.com',
+          routeKey: 'stateful:env1',
+        }),
+      );
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('stateful-stale');
+      expect(statefulFile.metadata?.codeEnvRefs?.['stateful:env1']).toBeUndefined();
+      /* Another deployment's ref is untouched: this probe never asked about it. */
+      expect(statefulFile.metadata?.codeEnvRefs?.default).toBeDefined();
+    });
+
     it('keeps alive pre-categorized files out of the provisioning queue', async () => {
       process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
       const checkSessionsAlive = jest.fn().mockResolvedValue(new Set(['alive-file']));

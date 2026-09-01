@@ -1,5 +1,9 @@
 import { useMemo } from 'react';
-import { isAgentsEndpoint, resolveEndpointType } from 'librechat-data-provider';
+import {
+  isAgentsEndpoint,
+  resolveEndpointType,
+  resolveUseResponsesApi,
+} from 'librechat-data-provider';
 import type { EModelEndpoint, TConversation } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetAgentByIdQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
@@ -50,14 +54,14 @@ export default function useAgentUploadTarget(
     [endpointsConfig, endpoint, agentProvider],
   );
 
-  /** The conversation's own setting when it has one, otherwise the saved agent's. */
   const useResponsesApi = useMemo(() => {
-    if (!isAgents || agentId == null || agentId === '' || conversation?.useResponsesApi != null) {
+    if (!isAgents || agentId == null || agentId === '') {
       return conversation?.useResponsesApi;
     }
-    return (
+    return resolveUseResponsesApi(
       agentData?.model_parameters?.useResponsesApi ??
-      agentsMap?.[agentId]?.model_parameters?.useResponsesApi
+        agentsMap?.[agentId]?.model_parameters?.useResponsesApi,
+      conversation?.useResponsesApi,
     );
   }, [isAgents, agentId, conversation?.useResponsesApi, agentData, agentsMap]);
 

@@ -1162,6 +1162,29 @@ describe('useFileHandling', () => {
       expect(formData.get('useResponsesApi')).toBe('true');
     });
 
+    it('lets a saved agent override the conversation Responses flag', async () => {
+      /* Execution runs on the agent's own model parameters, so an upload that trusted
+       * the conversation would store a raw provider document the turn then re-resolves
+       * to text it has no extraction for. */
+      mockConversation = {
+        conversationId: 'convo-1',
+        endpoint: 'agents',
+        agent_id: 'agent_a1',
+        useResponsesApi: true,
+      };
+      mockAgentsMap = { agent_a1: { model_parameters: { useResponsesApi: false } } };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([new File(['hi'], 'a.txt', { type: 'text/plain' })]);
+      });
+
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('useResponsesApi')).toBeNull();
+    });
+
     it('omits the flag when neither the conversation nor the agent sets it', async () => {
       mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
       mockAgentsMap = { agent_a1: { model_parameters: {} } };

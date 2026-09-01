@@ -76,6 +76,8 @@ export type TCheckSessionsAlive = (params: {
   req?: ServerRequest;
   apiKey?: string;
   staleSafeWindowMs?: number;
+  baseURL?: string;
+  routeKey?: string;
 }) => Promise<Set<string>>;
 
 /** Loads CODE_API_KEY for a user. Call once per request. */
@@ -346,11 +348,16 @@ const categorizeFileForToolResources = ({
  * @param params.agentId - Agent ID used for access control filtering
  * @returns Promise resolving to processed attachments and updated tool resources
  */
-/** Code env pointers are deployment-local; a ref for a configured (stateful) route
- *  cannot be probed against the default Code API, so only default-route refs take
- *  part in the liveness check and only they may be cleared as stale. */
+/** Code env pointers are deployment-local, so a ref is probed against the Code API that
+ *  issued it. The probe therefore runs on the route this turn executes on, and only refs
+ *  belonging to that route take part or may be cleared as stale. */
 const codeEnvRouteKey = (ref: CodeEnvRef): string =>
   ref.executionRouteKey ?? ref.executionProfile ?? 'default';
+
+/** The reference a given route issued, across both the per-route map and the legacy
+ *  single pointer. */
+const codeEnvRefForRoute = (file: TFile, routeKey: string): CodeEnvRef | undefined =>
+  getCodeEnvRefs(file.metadata).find(([key]) => key === routeKey)?.[1];
 
 /** Attachments plus any deferred candidates not already present, deduped by file_id.
  *  Only the provisioning computation sees this: the delivery list stays untouched. */
@@ -390,6 +397,7 @@ const computeProvisionState = async ({
   legacyFileUploadUX,
   agentId,
   codeRouteKey,
+  codeBaseUrl,
   agentScopedFileIds,
   persistedResourceMembership,
 }: {
@@ -397,6 +405,8 @@ const computeProvisionState = async ({
   attachments: Array<TFile>;
   agentId?: string;
   codeRouteKey?: string;
+  /** Base URL of the deployment this turn runs on, used to probe its own refs. */
+  codeBaseUrl?: string;
   agentScopedFileIds?: ReadonlySet<string>;
   resourcePrincipal?: Pick<IUser, 'id' | 'role'>;
   enabledToolResources?: Set<EToolResources>;
@@ -463,18 +473,15 @@ const computeProvisionState = async ({
   const activeCodeRouteKey = codeRouteKey ?? 'default';
 
   /** Batch staleness check: identify which code env files are still alive. Only files
-   *  that already carry a default-route ref can be probed, so that set is computed
-   *  first: a turn whose attachments are all freshly uploaded has nothing to probe and
-   *  must not pay for a credential lookup that cannot change the outcome. A turn running
-   *  on another route cannot act on the answer either, so it does not ask. */
+   *  that already carry a ref for this turn's route can be probed, so that set is
+   *  computed first: a turn whose attachments are all freshly uploaded has nothing to
+   *  probe and must not pay for a credential lookup that cannot change the outcome. */
+  /* A non-default route can only be probed when its own base URL is known; the default
+   *  Code API is resolved by the probe itself when none is passed. */
+  const canProbeRoute = activeCodeRouteKey === 'default' || codeBaseUrl != null;
   const filesWithIdentifiers =
-    needsCodeEnv && checkSessionsAlive && activeCodeRouteKey === 'default'
-      ? provisionable.filter(
-          (f) =>
-            f?.metadata?.codeEnvRef &&
-            codeEnvRouteKey(f.metadata.codeEnvRef) === 'default' &&
-            f.file_id,
-        )
+    needsCodeEnv && checkSessionsAlive && canProbeRoute
+      ? provisionable.filter((f) => f?.file_id && codeEnvRefForRoute(f, activeCodeRouteKey))
       : [];
 
   /** Code API auth is optional: deployments may use a legacy key, JWT bearer minting,
@@ -498,6 +505,8 @@ const computeProvisionState = async ({
       files: filesWithIdentifiers as TFile[],
       req,
       apiKey: codeApiKey,
+      baseURL: codeBaseUrl,
+      routeKey: activeCodeRouteKey,
     });
   }
 
@@ -534,13 +543,10 @@ const computeProvisionState = async ({
       canToolResourceConsume(EToolResources.execute_code, file.type ?? '')
     ) {
       const legacyRef = file.metadata?.codeEnvRef;
-      const isDefaultRoute = legacyRef != null && codeEnvRouteKey(legacyRef) === 'default';
-      /* Liveness was probed on the default route, so it answers only for a turn running
-       * there. A stateful turn holding a usable ref for its own route would otherwise be
-       * forced into a redundant upload by a dead default session. */
+      /* Liveness answers only for the route it was probed on, so a ref belonging to
+       * another deployment is never cleared on the strength of this turn's answer. */
       const isStale =
-        isDefaultRoute &&
-        activeCodeRouteKey === 'default' &&
+        codeEnvRefForRoute(file, activeCodeRouteKey) != null &&
         aliveFileIds != null &&
         !aliveFileIds.has(file.file_id);
 
@@ -552,15 +558,18 @@ const computeProvisionState = async ({
         logger.info(
           `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
         );
-        const staleRouteKey = codeEnvRouteKey(legacyRef);
         const remainingRefs = Object.fromEntries(
           Object.entries(file.metadata?.codeEnvRefs ?? {}).filter(
-            ([routeKey]) => routeKey !== staleRouteKey,
+            ([routeKey]) => routeKey !== activeCodeRouteKey,
           ),
         );
+        /* The legacy pointer only answers for the route it names, so a ref for another
+         * deployment survives a stale answer this turn could not have been about. */
+        const legacyBelongsToRoute =
+          legacyRef != null && codeEnvRouteKey(legacyRef) === activeCodeRouteKey;
         file.metadata = {
           ...file.metadata,
-          codeEnvRef: undefined,
+          codeEnvRef: legacyBelongsToRoute ? undefined : legacyRef,
           codeEnvRefs: Object.keys(remainingRefs).length > 0 ? remainingRefs : undefined,
         };
         codeEnvFiles.push(file);
@@ -623,6 +632,7 @@ export const primeResources = async ({
   legacyFileUploadUX,
   screenPersistentFiles,
   codeRouteKey,
+  codeBaseUrl,
 }: {
   req?: ServerRequest;
   principal?: Pick<IUser, 'id' | 'role'>;
@@ -653,6 +663,9 @@ export const primeResources = async ({
   /** The code deployment this turn will execute on, which decides whether an existing
    *  sandbox reference is usable here. */
   codeRouteKey?: string;
+  /** Base URL of that deployment. Refs are deployment-local, so the liveness probe runs
+   *  against the Code API that issued them rather than the default one. */
+  codeBaseUrl?: string;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   requestAttachments: Array<TFile | undefined> | undefined;
@@ -880,6 +893,7 @@ export const primeResources = async ({
         legacyFileUploadUX,
         agentId,
         codeRouteKey,
+        codeBaseUrl,
         agentScopedFileIds: persistedResourceFileIds,
         persistedResourceMembership,
       });
@@ -943,6 +957,7 @@ export const primeResources = async ({
       legacyFileUploadUX,
       agentId,
       codeRouteKey,
+      codeBaseUrl,
       agentScopedFileIds: persistedResourceFileIds,
       persistedResourceMembership,
     });

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { getCodeBaseURL } from '@librechat/agents';
-import { FileSources, mergeCodeEnvRef } from 'librechat-data-provider';
+import { FileSources, getCodeEnvRefs, mergeCodeEnvRef } from 'librechat-data-provider';
 import type { CodeEnvRef, CodeEnvRefMap, TFile } from 'librechat-data-provider';
 import type { Readable } from 'node:stream';
 import type { ServerRequest } from '~/types';
@@ -95,6 +95,10 @@ export interface ProvisionService {
     apiKey?: string;
     req?: ServerRequest;
     staleSafeWindowMs?: number;
+    /** Deployment this turn runs on. Refs are deployment-local, so a ref is probed
+     *  against the Code API that issued it, not against the default one. */
+    baseURL?: string;
+    routeKey?: string;
   }) => Promise<Set<string>>;
 }
 
@@ -105,6 +109,11 @@ export interface ProvisionService {
  * so they are injected rather than imported: that keeps the logic here, where it is
  * type checked, and leaves only wiring on the other side.
  */
+/** The reference a given deployment issued, across both the per-route map and the
+ *  legacy single pointer. A ref from another deployment answers for another Code API. */
+const codeEnvRefForRoute = (file: TFile, routeKey: string): CodeEnvRef | undefined =>
+  getCodeEnvRefs(file.metadata).find(([key]) => key === routeKey)?.[1];
+
 export function createProvisionService({
   getStrategyFunctions,
   uploadVectors,
@@ -451,11 +460,15 @@ export function createProvisionService({
     apiKey,
     req,
     staleSafeWindowMs = 6 * 60 * 60 * 1000,
+    baseURL: routeBaseURL,
+    routeKey,
   }: {
     files: TFile[];
     apiKey?: string;
     req?: ServerRequest;
     staleSafeWindowMs?: number;
+    baseURL?: string;
+    routeKey?: string;
   }): Promise<Set<string>> {
     const aliveFileIds = new Set<string>();
     const now = Date.now();
@@ -465,7 +478,7 @@ export function createProvisionService({
     const sessionGroups = new Map();
 
     for (const file of files) {
-      const ref = file.metadata?.codeEnvRef;
+      const ref = routeKey != null ? codeEnvRefForRoute(file, routeKey) : file.metadata?.codeEnvRef;
       if (!ref?.storage_session_id || !ref?.file_id) {
         continue;
       }
@@ -489,7 +502,7 @@ export function createProvisionService({
     }
 
     // One API call per session (in parallel)
-    const baseURL = getCodeBaseURL();
+    const baseURL = routeBaseURL ?? getCodeBaseURL();
     /* Minting can fail on its own, for example when the request carries no tenant
      * context. That is an unverifiable probe, not an expired file, so it is handled
      * like any other probe failure: every ref stays alive rather than the rejection
