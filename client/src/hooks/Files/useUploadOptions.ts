@@ -4,6 +4,7 @@ import {
   Tools,
   Constants,
   mergeFileConfig,
+  isAgentsEndpoint,
   getEndpointFileConfig,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
@@ -49,7 +50,15 @@ export default function useUploadOptions() {
   const fileSearchAllowedByAgent = !isSavedAgent || (tools?.includes(Tools.file_search) ?? false);
   const codeAllowedByAgent = !isSavedAgent || (tools?.includes(Tools.execute_code) ?? false);
 
-  const endpointFileConfig = getEndpointFileConfig({ fileConfig, endpoint, endpointType });
+  /* An agent conversation carries endpoint `agents`, but its file policy belongs to the
+   * provider it runs on, which is the entry a named custom endpoint configures. Resolved
+   * the same way the attach menu resolves it, so the two cannot offer different rules. */
+  const fileConfigEndpoint = isAgentsEndpoint(endpoint) && provider ? provider : endpoint;
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint: fileConfigEndpoint,
+    endpointType,
+  });
   const uploadsDisabled = endpointFileConfig.disabled === true;
   const isUnifiedMode = isUnifiedUploadMode(endpointFileConfig, isFileConfigLoaded);
   const endpointSupportedMimeTypes = endpointFileConfig.supportedMimeTypes;
