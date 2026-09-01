@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   getSafeErrorMetadata,
   shouldUseUploadSse,
@@ -30,6 +30,7 @@ const {
   resolveUploadAgent,
 } = require('~/server/services/Files/routing');
 const { checkPermission } = require('~/server/services/PermissionService');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
 
@@ -62,6 +63,7 @@ router.post('/', async (req, res) => {
         metadata,
         getAgent: ({ id }) => resolveUploadAgent(req, id),
         checkPermission,
+        hasUploadBypass: () => hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS),
       });
       if (denied) {
         return;

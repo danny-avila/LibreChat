@@ -54,13 +54,19 @@ export default function useUploadOptions() {
    * provider it runs on, which is the entry a named custom endpoint configures. Resolved
    * the same way the attach menu resolves it, so the two cannot offer different rules. */
   const fileConfigEndpoint = isAgentsEndpoint(endpoint) && provider ? provider : endpoint;
+  /* A saved agent's policy lives under its provider, so the config is not resolved for it
+   * until that provider is known. Falling back to the `agents` entry meanwhile reports a
+   * settled answer drawn from the wrong record. Ephemeral agents have no provider to
+   * wait for. */
+  const awaitingAgentProvider = isAgentsEndpoint(endpoint) && isSavedAgent && provider == null;
   const endpointFileConfig = getEndpointFileConfig({
     fileConfig,
     endpoint: fileConfigEndpoint,
     endpointType,
   });
   const uploadsDisabled = endpointFileConfig.disabled === true;
-  const isUnifiedMode = isUnifiedUploadMode(endpointFileConfig, isFileConfigLoaded);
+  const isConfigResolved = isFileConfigLoaded && !awaitingAgentProvider;
+  const isUnifiedMode = isUnifiedUploadMode(endpointFileConfig, isConfigResolved);
   const endpointSupportedMimeTypes = endpointFileConfig.supportedMimeTypes;
 
   const getOptions = useCallback(
@@ -97,7 +103,7 @@ export default function useUploadOptions() {
     getOptions,
     uploadsDisabled,
     isConfigPending,
-    isConfigResolved: isFileConfigLoaded,
+    isConfigResolved,
     isUnifiedMode,
   };
 }

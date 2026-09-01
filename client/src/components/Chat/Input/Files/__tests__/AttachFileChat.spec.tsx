@@ -25,11 +25,13 @@ let mockFileConfig = defaultFileConfig;
 
 let mockAgentsMap: Record<string, Partial<Agent>> = {};
 let mockAgentQueryData: Partial<Agent> | undefined;
+let mockFileConfigLoaded = true;
 
 jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: () => ({ data: mockEndpointsConfig }),
   useGetFileConfig: ({ select }: { select?: (data: unknown) => unknown }) => ({
     data: select != null ? select(mockFileConfig) : mockFileConfig,
+    isSuccess: mockFileConfigLoaded,
   }),
   useGetAgentByIdQuery: () => ({ data: mockAgentQueryData }),
 }));
@@ -77,6 +79,7 @@ describe('AttachFileChat', () => {
     mockAgentsMap = {};
     mockAgentQueryData = undefined;
     mockAttachFileMenuProps = {};
+    mockFileConfigLoaded = true;
   });
 
   describe('rendering decisions', () => {
@@ -280,5 +283,33 @@ describe('AttachFileChat', () => {
       const config = mockAttachFileMenuProps.endpointFileConfig as { fileLimit?: number };
       expect(config?.fileLimit).toBe(20);
     });
+  });
+});
+
+describe('AttachFileChat upload config gating', () => {
+  beforeEach(() => {
+    mockFileConfig = defaultFileConfig;
+    mockAgentsMap = {};
+    mockAgentQueryData = undefined;
+    mockAttachFileMenuProps = {};
+  });
+
+  it('leaves the attach menu inert until the file config resolves', () => {
+    /* The menu is an action, not just a display: offering the chooser here submits an
+     * explicit destination a unified deployment would have inferred, and after a failed
+     * fetch it would keep offering it. */
+    mockFileConfigLoaded = false;
+
+    renderComponent({ endpoint: EModelEndpoint.agents });
+
+    expect(mockAttachFileMenuProps.disabled).toBe(true);
+  });
+
+  it('enables it once the config lands', () => {
+    mockFileConfigLoaded = true;
+
+    renderComponent({ endpoint: EModelEndpoint.agents });
+
+    expect(mockAttachFileMenuProps.disabled).toBe(false);
   });
 });
