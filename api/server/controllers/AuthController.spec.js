@@ -1,5 +1,7 @@
+const mockRunAsSystem = jest.fn((fn) => fn());
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn(), info: jest.fn() },
+  runAsSystem: (fn) => mockRunAsSystem(fn),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -900,6 +902,7 @@ describe('refreshController – OpenID path', () => {
       'user-db-id',
       '-password -__v -totpSecret -backupCodes -federatedTokens',
     );
+    expect(mockRunAsSystem).toHaveBeenCalledTimes(1);
     expect(setCloudFrontAuthCookies).toHaveBeenCalledWith(req, res, user);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith({
@@ -1053,6 +1056,7 @@ describe('refreshController – OpenID path', () => {
     await refreshController(req, res);
 
     expect(getUserById).toHaveBeenCalled();
+    expect(mockRunAsSystem).toHaveBeenCalledTimes(1);
     expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
     expectOpenIDRefreshGrant();
   });

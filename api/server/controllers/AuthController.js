@@ -1,7 +1,7 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const crypto = require('node:crypto');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   math,
   isEnabled,
@@ -345,7 +345,9 @@ const refreshController = async (req, res) => {
               context: 'refreshController',
             },
             async (sendAuthorized) => {
-              const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
+              const user = await runAsSystem(() =>
+                getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION),
+              );
               if (!user || !isReusableOpenIDSessionIdentity(reuseSessionTokens, user)) {
                 return undefined;
               }
@@ -379,7 +381,7 @@ const refreshController = async (req, res) => {
       const refreshUserId =
         req.session?.openidTokens?.appUserId ?? getValidOpenIDReuseUserId(parsedCookies);
       const refreshUser = refreshUserId
-        ? await getUserById(refreshUserId, AUTH_REFRESH_USER_PROJECTION)
+        ? await runAsSystem(() => getUserById(refreshUserId, AUTH_REFRESH_USER_PROJECTION))
         : null;
       if (!refreshUser) {
         return res.status(403).send('Invalid OpenID refresh token');
