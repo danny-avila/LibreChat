@@ -11,6 +11,7 @@ import {
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig, useGetEndpointsQuery, useGetAgentByIdQuery } from '~/data-provider';
+import { isUnifiedUploadMode } from '~/utils';
 import { useAgentsMapContext } from '~/Providers';
 import AttachFileMenu from './AttachFileMenu';
 import AttachFile from './AttachFile';
@@ -57,9 +58,15 @@ function AttachFileChat({
     );
   }, [isAgents, conversation?.agent_id, conversation?.useResponsesApi, agentData, agentsMap]);
 
-  const { data: fileConfig = null } = useGetFileConfig({
+  const {
+    data: fileConfig = null,
+    isError: isFileConfigError,
+    isPaused: isFileConfigPaused,
+    isSuccess: isFileConfigLoaded,
+  } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
+  const isFileConfigPending = !isFileConfigLoaded && !isFileConfigError && !isFileConfigPaused;
 
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
@@ -96,6 +103,12 @@ function AttachFileChat({
     () => (disableInputs || endpointFileConfig?.disabled) ?? false,
     [disableInputs, endpointFileConfig?.disabled],
   );
+  /* Resolved here rather than in the menu: an unresolved config reads as unified, which
+   * would show the wrong uploader on a legacy deployment until the query lands. */
+  const isUnifiedMode = useMemo(
+    () => isUnifiedUploadMode(endpointFileConfig, isFileConfigPending),
+    [endpointFileConfig, isFileConfigPending],
+  );
 
   if (isAssistants && endpointSupportsFiles && !isUploadDisabled) {
     return (
@@ -116,6 +129,7 @@ function AttachFileChat({
         conversationId={conversationId}
         agentId={conversation?.agent_id}
         endpointFileConfig={endpointFileConfig}
+        isUnifiedMode={isUnifiedMode}
         useResponsesApi={useResponsesApi}
         files={files}
         setFiles={setFiles}

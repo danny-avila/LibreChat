@@ -13,6 +13,7 @@ import {
 import type { DropTargetMonitor } from 'react-dnd';
 import type * as t from 'librechat-data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
+import { isUnifiedUploadMode } from '~/utils';
 import useFileUploadRouter from './useFileUploadRouter';
 import { useUploadModalContext } from '~/Providers';
 import useUploadOptions from './useUploadOptions';
@@ -72,7 +73,8 @@ export default function useDragHelpers() {
           showToast({ message: localize('com_ui_attach_error_disabled'), status: 'error' });
           return;
         }
-        isUnifiedMode = endpointCfg?.legacyFileUploadUX !== true;
+        /* cfg being present is this path's not-pending condition. */
+        isUnifiedMode = isUnifiedUploadMode(endpointCfg, false);
       }
 
       /** Assistants do not use the upload-option flow */

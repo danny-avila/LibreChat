@@ -148,7 +148,7 @@ function renderMenu(props: Record<string, unknown> = {}) {
           setFiles={() => {}}
           setFilesLoading={() => {}}
           conversation={null}
-          endpointFileConfig={{ legacyFileUploadUX: true }}
+          isUnifiedMode={false}
           {...props}
         />
       </RecoilRoot>
@@ -166,7 +166,7 @@ describe('AttachFileMenu', () => {
   describe('unified mode upload sources', () => {
     it('uses a single upload button when SharePoint is disabled', () => {
       setupMocks();
-      renderMenu({ endpointFileConfig: {} });
+      renderMenu({ isUnifiedMode: true });
 
       expect(screen.getByRole('button', { name: /attach files/i })).toBeInTheDocument();
       expect(
@@ -177,7 +177,7 @@ describe('AttachFileMenu', () => {
     it('offers SharePoint alongside local upload when SharePoint is enabled', () => {
       setupMocks();
       mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: true } });
-      renderMenu({ endpointFileConfig: {} });
+      renderMenu({ isUnifiedMode: true });
 
       openMenu();
 
@@ -198,7 +198,7 @@ describe('AttachFileMenu', () => {
         provider: undefined,
       });
       mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: true } });
-      renderMenu({ endpointFileConfig: {} });
+      renderMenu({ isUnifiedMode: true });
 
       openMenu();
 
@@ -329,7 +329,7 @@ describe('AttachFileMenu', () => {
 
     it('renders the unified upload button when legacyFileUploadUX is not true', () => {
       setupMocks();
-      renderMenu({ endpointFileConfig: { legacyFileUploadUX: false } });
+      renderMenu({ isUnifiedMode: true });
       expect(screen.getByRole('button', { name: /attach files/i })).toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: /attach file options/i }),

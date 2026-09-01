@@ -560,6 +560,17 @@ const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
  * Each option requires every file to be valid for it, so the caller can decide between
  * auto-routing (one option), prompting (multiple), or rejecting (none).
  */
+/**
+ * Whether uploads route from the file itself rather than through the destination chooser.
+ * The pending flag is required because an unresolved config falls back to the built-in
+ * defaults, where the absent `legacyFileUploadUX` reads as unified and would show the
+ * wrong uploader on a legacy deployment until the query lands.
+ */
+export const isUnifiedUploadMode = (
+  endpointFileConfig: EndpointFileConfig | undefined,
+  isConfigPending: boolean,
+): boolean => !isConfigPending && endpointFileConfig?.legacyFileUploadUX !== true;
+
 export const getViableUploadOptions = (
   fileList: File[],
   ctx: UploadOptionContext,
