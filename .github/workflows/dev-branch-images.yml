@@ -134,10 +134,14 @@ jobs:
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
+      # The `-arch-` separator keeps one image's artifacts out of another's glob:
+      # `lc-dev` is a prefix of `lc-dev-api`, so a bare `digests-lc-dev-*` pattern
+      # matches all four digests and the merge resolves an API digest against the
+      # app repository.
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.image_name }}-${{ matrix.arch }}
+          name: digests-${{ matrix.image_name }}-arch-${{ matrix.arch }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -158,7 +162,7 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v7
         with:
-          pattern: digests-${{ matrix.image_name }}-*
+          pattern: digests-${{ matrix.image_name }}-arch-*
           merge-multiple: true
           path: /tmp/digests
 
@@ -189,8 +193,12 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           digests=(*)
-          if [ "${#digests[@]}" -eq 0 ]; then
-            echo "No digests downloaded; refusing to publish an empty manifest." >&2
+          # One digest per platform in the build matrix. Assert the exact count:
+          # too few would publish a manifest missing an architecture, too many
+          # means the artifact glob picked up another image's digests.
+          expected=2
+          if [ "${#digests[@]}" -ne "$expected" ]; then
+            echo "Expected $expected platform digests, found ${#digests[@]}: ${digests[*]}" >&2
             exit 1
           fi
           echo "Merging ${#digests[@]} platform digests: ${digests[*]}"
