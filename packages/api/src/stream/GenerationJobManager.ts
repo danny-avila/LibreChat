@@ -38,6 +38,7 @@ import type { SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
+  GenerationPublicationFencedError,
   JobCreationSupersededError,
   JobPredecessorMismatchError,
   isPendingActionStale,
@@ -3618,7 +3619,11 @@ class GenerationJobManagerClass {
   async publishTerminalClaim(
     claim: TerminalJobClaim,
     finalEvent: t.ServerSentEvent | null,
-  ): Promise<{ finalEvent: t.ServerSentEvent; persistenceFailed: boolean }> {
+  ): Promise<{
+    finalEvent: t.ServerSentEvent;
+    persistenceFailed: boolean;
+    publicationFenced?: true;
+  }> {
     if (!this.terminalClaimRuntimes.has(claim) || claim.persistencePending !== true) {
       throw new Error('Terminal persistence claim was not issued by this manager');
     }
@@ -3683,6 +3688,17 @@ class GenerationJobManagerClass {
       }
       await this.eventTransport.emitDone(streamId, publicationEvent, createdAt);
     } catch (publicationError) {
+      if (publicationError instanceof GenerationPublicationFencedError) {
+        logger.warn(
+          `[GenerationJobManager] Terminal publication superseded for ${streamId}`,
+          publicationError,
+        );
+        return {
+          finalEvent: publicationEvent,
+          persistenceFailed: false,
+          publicationFenced: true,
+        };
+      }
       logger.error(
         `[GenerationJobManager] Failed to publish terminal persistence result ${streamId}:`,
         publicationError,
@@ -3776,10 +3792,17 @@ class GenerationJobManagerClass {
           }
           await this.eventTransport.emitError(streamId, terminalError, createdAt);
         } catch (publishError) {
-          logger.error(
-            `[GenerationJobManager] Failed to publish terminal error for ${streamId}:`,
-            publishError,
-          );
+          if (publishError instanceof GenerationPublicationFencedError) {
+            logger.warn(
+              `[GenerationJobManager] Terminal error publication superseded for ${streamId}`,
+              publishError,
+            );
+          } else {
+            logger.error(
+              `[GenerationJobManager] Failed to publish terminal error for ${streamId}:`,
+              publishError,
+            );
+          }
           if (runtime && this.runtimeState.get(streamId) === runtime) {
             for (const notify of [...runtime.localErrorHandlers]) {
               try {

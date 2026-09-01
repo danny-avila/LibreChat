@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import type { AbortResult } from '~/stream/interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { ServerSentEvent } from '~/types';
@@ -14,6 +15,7 @@ import {
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
+import { GenerationPublicationFencedError } from '~/stream/interfaces/IJobStore';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 
 function createTelemetry(): jest.Mocked<AgentStartupTelemetry> {
@@ -2234,6 +2236,50 @@ describe('GenerationJobManager startup telemetry', () => {
         finalEvent: JSON.stringify(finalEvent),
       });
     } finally {
+      await manager.destroy();
+    }
+  });
+
+  it('treats a replacement-fenced terminal publication as a superseded warning', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    jest.spyOn(eventTransport, 'emitDone').mockImplementation((streamId, _event, generationId) => {
+      throw new GenerationPublicationFencedError('done', streamId, generationId);
+    });
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const error = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false, cleanupOnComplete: true });
+    manager.initialize();
+    const streamId = 'stream-terminal-done-publication-fenced';
+
+    try {
+      const job = await manager.createJob(streamId, 'user-1', streamId);
+      const claim = await manager.claimTerminalJob(streamId, 'complete', undefined, job.createdAt, {
+        persistencePending: true,
+      });
+      expect(claim).not.toBeNull();
+      const finalEvent = {
+        final: true,
+        conversation: { conversationId: streamId },
+        responseMessage: { messageId: 'response-fenced-final', unfinished: false },
+      } as const;
+
+      await expect(manager.publishTerminalClaim(claim!, finalEvent)).resolves.toEqual({
+        finalEvent,
+        persistenceFailed: false,
+        publicationFenced: true,
+      });
+      expect(warn).toHaveBeenCalledWith(
+        `[GenerationJobManager] Terminal publication superseded for ${streamId}`,
+        expect.any(GenerationPublicationFencedError),
+      );
+      expect(error).not.toHaveBeenCalled();
+
+      await manager.finishTerminalJob(claim!);
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
       await manager.destroy();
     }
   });
