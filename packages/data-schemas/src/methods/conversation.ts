@@ -1,8 +1,14 @@
 import { Buffer } from 'node:buffer';
 import { RetentionMode } from 'librechat-data-provider';
-import type { AnyBulkWriteOperation, FilterQuery, Model, SortOrder, Types } from 'mongoose';
+import type {
+  AnyBulkWriteOperation,
+  DeleteResult,
+  FilterQuery,
+  Model,
+  SortOrder,
+  Types,
+} from 'mongoose';
 import type { SearchParams } from 'meilisearch';
-import type { DeleteResult } from 'mongoose';
 import type {
   IAgentEventActorCheckpoint,
   IAgentEventActorReconciliation,
@@ -2635,7 +2641,7 @@ export function createConversationMethods(
         const searchParams: SearchParams = {
           filter: `user = "${escapeMeiliFilterValue(user)}"`,
           limit: MEILI_SEARCH_LIMIT,
-          attributesToRetrieve: ['conversationId'],
+          attributesToRetrieve: ['conversationId', 'originalConversationId'],
         };
         const [convoResults, messageHits] = await Promise.all([
           ConversationMeili.meiliSearch(search, searchParams),

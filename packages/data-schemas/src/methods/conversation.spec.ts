@@ -6596,7 +6596,7 @@ describe('Conversation Operations', () => {
       const searchParams = {
         filter: 'user = "user123"',
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       };
       expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
       expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
@@ -6645,7 +6645,7 @@ describe('Conversation Operations', () => {
       const searchParams = {
         filter: 'user = "user123"',
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       };
       expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
       expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
