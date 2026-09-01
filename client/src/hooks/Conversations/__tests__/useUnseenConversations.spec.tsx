@@ -212,6 +212,36 @@ describe('useUnseenConversations', () => {
     expect(result.current?.stamps).toEqual([['flagged-a', RESPONDED_AGAIN_AT]]);
   });
 
+  it('ignores a stale unmounted list variant that still lists a removed conversation', () => {
+    /* Deleted or archived on another device: refetching the mounted list drops the row there,
+       while the leftover variant keeps it. Absence never supersedes presence in the scan, so
+       counting the leftover would keep a phantom dot in the badge. */
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(listKeyArchived, page([{ conversationId: 'gone', title: 'G' }]));
+      queryClient.setQueryData(
+        listKeyActive,
+        page([{ conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AT }]),
+      );
+    });
+
+    /* The variant nobody is looking at ages past the window where it still counts. */
+    act(() => {
+      const leftover = queryClient.getQueryCache().find(listKeyArchived);
+      leftover?.setData(
+        page([{ conversationId: 'gone', title: 'G', lastResponseAt: RESPONDED_AT }]),
+        { updatedAt: Date.now() - 60 * 60 * 1000, manual: true },
+      );
+      queryClient.setQueryData(
+        listKeyActive,
+        page([{ conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AT }]),
+      );
+    });
+
+    expect(result.current?.unseen.map((c) => c.conversationId)).toEqual(['unseen-a']);
+  });
+
   it('counts a conversation held in both caches once', () => {
     const { result, queryClient } = setup();
     const convo = { conversationId: 'both', title: 'B', lastResponseAt: RESPONDED_AT };

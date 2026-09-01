@@ -747,18 +747,27 @@ function preserveListFlags(next: TConversation, found: TConversation): TConversa
 }
 
 /**
- * A chat's conversation state snapshots the sidebar flags when the chat is opened and never
- * hears about a later change, so pinning an open chat leaves a stale `pinned: false` on it.
- * Strip them before that state reaches the list caches, or the next message would write the
- * stale value back over the sidebar and drop the chat out of Pinned.
+ * Read state the sidebar owns for the same reason: `lastResponseAt` is stamped by the server as
+ * a reply persists and `lastSeenAt` by the seen mutation, neither of which reaches the chat's
+ * own conversation state. Stripped rather than carried, so `updateConvoInAllQueries` falls back
+ * to whatever the list caches already hold.
+ */
+const chatOwnedStaleFields = [...listFlags, 'lastResponseAt', 'lastSeenAt'] as const;
+
+/**
+ * A chat's conversation state snapshots the sidebar's fields when the chat is opened and never
+ * hears about a later change: pinning an open chat leaves a stale `pinned: false` on it, and
+ * reading a reply leaves the catch-up it was opened with. Strip them before that state reaches
+ * the list caches, or the next message would write the stale values back over the sidebar,
+ * dropping the chat out of Pinned or lighting an unread dot the user has already cleared.
  */
 export function withoutListFlags(conversation: TConversation): TConversation {
-  if (listFlags.every((flag) => conversation[flag] === undefined)) {
+  if (chatOwnedStaleFields.every((field) => conversation[field] === undefined)) {
     return conversation;
   }
   const stripped = { ...conversation };
-  for (const flag of listFlags) {
-    delete stripped[flag];
+  for (const field of chatOwnedStaleFields) {
+    delete stripped[field];
   }
   return stripped;
 }
