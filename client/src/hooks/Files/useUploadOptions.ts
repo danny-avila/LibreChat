@@ -11,10 +11,10 @@ import {
 import type { EToolResources } from 'librechat-data-provider';
 import useAgentToolPermissions from '~/hooks/Agents/useAgentToolPermissions';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
+import { getViableUploadOptions, isUnifiedUploadMode } from '~/utils';
 import useGetAgentsConfig from '~/hooks/Agents/useGetAgentsConfig';
 import { useGetFileConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
-import { getViableUploadOptions, isUnifiedUploadMode } from '~/utils';
 import { useDragDropContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
 

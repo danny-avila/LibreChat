@@ -56,7 +56,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       search?: boolean;
       codeRouteKey?: string;
       searchNamespaces?: string[];
-      screenCodeLiveness?: boolean;
+      hydrateProvisioned?: boolean;
     },
   ) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
@@ -323,7 +323,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       codeRouteKey?: string;
       searchNamespaces?: string[];
       /** Set when no other query hydrates already-provisioned files this turn. */
-      screenCodeLiveness?: boolean;
+      hydrateProvisioned?: boolean;
     } = {
       code: true,
       search: true,
@@ -334,13 +334,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     }
 
     const missingConditions: FilterQuery<IMongoFile>[] = [];
-    /* When no other query hydrates this turn's files, every code-eligible record has to
-     * be loaded, not only the unprovisioned ones: priming adds the provisioned ones to the
-     * tool resources, and the probe screens a default-route session for liveness. Left
-     * behind, a file the previous turn provisioned successfully is the one that goes
-     * missing, while one that failed is retried. */
-    const hydrateEveryCodeFile = resources.code === true && resources.screenCodeLiveness === true;
-    if (resources.code && !hydrateEveryCodeFile) {
+    /* When no other query hydrates this turn's files, every eligible record has to be
+     * loaded, not only the unprovisioned ones: priming adds the provisioned ones to the
+     * tool resources, and the code probe screens a default-route session for liveness.
+     * Left behind, a file the previous turn provisioned successfully is the one that
+     * goes missing, while one that failed is retried. This holds for search as much as
+     * for code: an attachment embedded on an earlier turn is hydrated by nothing else,
+     * so the next search runs with no reference to it. */
+    const hydrateEverything =
+      resources.hydrateProvisioned === true &&
+      (resources.code === true || resources.search === true);
+    if (resources.code && !hydrateEverything) {
       /* A reference for another deployment does not make the file usable here, and with
        * resendFiles off nothing downstream re-reads the record to notice, so eligibility
        * is judged against the route this turn will actually execute on. The legacy
@@ -365,7 +369,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       }
       missingConditions.push({ $nor: usableForRoute });
     }
-    if (resources.search) {
+    if (resources.search && !hydrateEverything) {
       /* The record-wide flag only says the file was embedded somewhere, so for a record
        * whose vectors live in an agent namespace it cannot answer whether the namespace
        * this turn searches has them. Membership is not known here, so a record missing
@@ -385,7 +389,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         });
       }
     }
-    if (!hydrateEveryCodeFile && missingConditions.length === 0) {
+    if (!hydrateEverything && missingConditions.length === 0) {
       return [];
     }
 
@@ -394,7 +398,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         {
           file_id: { $in: fileIds },
           context: { $ne: FileContext.execute_code },
-          ...(hydrateEveryCodeFile ? {} : { $or: missingConditions }),
+          ...(hydrateEverything ? {} : { $or: missingConditions }),
         },
         ownerScope,
       );

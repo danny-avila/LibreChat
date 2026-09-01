@@ -281,6 +281,7 @@ const makeReq = ({
   ocrConfig = null,
   interfaceConfig,
   filters,
+  speech,
   body,
 } = {}) => ({
   user: { id: 'user-123', tenantId: 'tenant-a' },
@@ -296,6 +297,7 @@ const makeReq = ({
     fileStrategy: 'local',
     imageOutputType: 'webp',
     ocr: ocrConfig,
+    ...(speech ? { speech } : {}),
     ...(filters ? { filters } : {}),
     ...(interfaceConfig ? { interfaceConfig } : {}),
   },
@@ -1582,6 +1584,38 @@ describe('processAgentFileUpload', () => {
           type: 'text/markdown',
           llmDeliveryPath: 'provider',
         }),
+        true,
+      );
+    });
+
+    test('keeps audio off the text path when no speech provider is usable', async () => {
+      /* Transcription needs exactly one non-empty provider block. A schema holding only
+       * allowedAddresses reports STT present while the service refuses it, so routing
+       * audio to text there sends the upload to a transcription that cannot run. */
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue(makeFileConfig());
+      const req = makeReq({
+        mimetype: 'audio/mpeg',
+        ocrConfig: null,
+        speech: { stt: { allowedAddresses: ['127.0.0.1'] } },
+      });
+      req.body.endpoint = EModelEndpoint.openAI;
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { agent_id: 'agent-abc', message_file: 'true', file_id: 'file-uuid-123' },
+      }).catch(() => {});
+
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'audio/mpeg', llmDeliveryPath: 'none' }),
         true,
       );
     });
