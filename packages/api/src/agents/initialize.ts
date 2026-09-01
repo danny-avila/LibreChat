@@ -91,6 +91,7 @@ import {
   type CodeExecutionContext,
 } from './execution';
 import {
+  isCodeFileToolName,
   registerCodeExecutionTools,
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
@@ -1093,6 +1094,12 @@ export async function initializeAgent(
   /** Build the set of tool resources the agent has enabled */
   const toolResourceSet = new Set<EToolResources>();
   const addToolResource = (tool: string): void => {
+    /* The sandbox file tools carry no resource name of their own. An agent holding one
+     * still wants code-file provisioning, or invoking it loads a tool with nothing to
+     * read; the execution-time predicate already treats them the same way. */
+    if (isCodeFileToolName(tool)) {
+      toolResourceSet.add(EToolResources.execute_code);
+    }
     if (EToolResources[tool as keyof typeof EToolResources]) {
       toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
     }

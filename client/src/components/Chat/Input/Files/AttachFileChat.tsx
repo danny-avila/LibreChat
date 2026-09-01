@@ -4,16 +4,15 @@ import {
   supportsFiles,
   mergeFileConfig,
   isAgentsEndpoint,
-  resolveEndpointType,
   isEphemeralAgentId,
   isAssistantsEndpoint,
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
-import { useGetFileConfig, useGetEndpointsQuery, useGetAgentByIdQuery } from '~/data-provider';
+import { useGetFileConfig } from '~/data-provider';
+import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
 import { isUnifiedUploadMode } from '~/utils';
-import { useAgentsMapContext } from '~/Providers';
 import AttachFileMenu from './AttachFileMenu';
 import AttachFile from './AttachFile';
 
@@ -35,49 +34,13 @@ function AttachFileChat({
   const isAgents = useMemo(() => isAgentsEndpoint(endpoint), [endpoint]);
   const isAssistants = useMemo(() => isAssistantsEndpoint(endpoint), [endpoint]);
 
-  const agentsMap = useAgentsMapContext();
-
-  const needsAgentFetch = useMemo(() => {
-    if (!isAgents || !conversation?.agent_id) {
-      return false;
-    }
-    const agent = agentsMap?.[conversation.agent_id];
-    return !agent?.model_parameters;
-  }, [isAgents, conversation?.agent_id, agentsMap]);
-
-  const { data: agentData } = useGetAgentByIdQuery(conversation?.agent_id, {
-    enabled: needsAgentFetch,
-  });
-
-  const useResponsesApi = useMemo(() => {
-    if (!isAgents || !conversation?.agent_id || conversation?.useResponsesApi !== undefined) {
-      return conversation?.useResponsesApi;
-    }
-    return (
-      agentData?.model_parameters?.useResponsesApi ??
-      agentsMap?.[conversation.agent_id]?.model_parameters?.useResponsesApi
-    );
-  }, [isAgents, conversation?.agent_id, conversation?.useResponsesApi, agentData, agentsMap]);
+  const { agentProvider, endpointType, useResponsesApi } = useAgentUploadTarget(conversation);
 
   /* Success, not merely settled: a failed or paused fetch leaves the built-in defaults in
    * place, where the absent opt-out reads as unified. */
   const { data: fileConfig = null, isSuccess: isFileConfigLoaded } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-
-  const agentProvider = useMemo(() => {
-    if (!isAgents || !conversation?.agent_id) {
-      return undefined;
-    }
-    return agentData?.provider ?? agentsMap?.[conversation.agent_id]?.provider;
-  }, [isAgents, conversation?.agent_id, agentData, agentsMap]);
-
-  const endpointType = useMemo(
-    () => resolveEndpointType(endpointsConfig, endpoint, agentProvider),
-    [endpointsConfig, endpoint, agentProvider],
-  );
 
   const fileConfigEndpoint = useMemo(
     () => (isAgents && agentProvider ? agentProvider : endpoint),

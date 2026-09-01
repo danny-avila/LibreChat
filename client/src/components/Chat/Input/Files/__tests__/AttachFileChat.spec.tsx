@@ -40,6 +40,12 @@ jest.mock('~/Providers', () => ({
   useAgentsMapContext: () => mockAgentsMap,
 }));
 
+/* The shared upload-target hook reads the module directly rather than the barrel, so
+ * the barrel mock alone leaves it with no agents map. */
+jest.mock('~/Providers/AgentsMapContext', () => ({
+  useAgentsMapContext: () => mockAgentsMap,
+}));
+
 /** Capture the props passed to AttachFileMenu */
 let mockAttachFileMenuProps: Record<string, unknown> = {};
 jest.mock('../AttachFileMenu', () => {

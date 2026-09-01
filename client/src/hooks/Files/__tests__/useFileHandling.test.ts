@@ -69,6 +69,8 @@ let mockIsTemporary = false;
 let mockUploadOptions: MockUploadMutationOptions = {};
 
 let mockAgentsMap: Record<string, unknown> = {};
+let mockEndpointsConfig: Record<string, unknown> | undefined = undefined;
+let mockAgentQueryData: Record<string, unknown> | undefined = undefined;
 jest.mock('~/Providers/AgentsMapContext', () => ({
   useAgentsMapContext: () => mockAgentsMap,
 }));
@@ -109,6 +111,8 @@ jest.mock('@tanstack/react-query', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: jest.fn(() => ({ data: mockFileConfig })),
+  useGetEndpointsQuery: jest.fn(() => ({ data: mockEndpointsConfig })),
+  useGetAgentByIdQuery: jest.fn(() => ({ data: mockAgentQueryData })),
   useUploadFileMutation: jest.fn((opts: MockUploadMutationOptions) => {
     mockUploadOptions = opts;
     return { mutate: mockMutate };
@@ -194,6 +198,9 @@ describe('useFileHandling', () => {
     mockResizeImageIfNeeded.mockImplementation(async (file: File) => ({ file, resized: false }));
     mockWaitForConfig.mockResolvedValue(undefined);
     mockConversation = {};
+    mockAgentsMap = {};
+    mockEndpointsConfig = undefined;
+    mockAgentQueryData = undefined;
     mockFileConfig = null;
     mockIsConfigPending = false;
     mockIsTemporary = false;
@@ -1116,6 +1123,41 @@ describe('useFileHandling', () => {
         await result.current.handleFiles([new File(['hi'], 'a.txt', { type: 'text/plain' })]);
       });
 
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('useResponsesApi')).toBe('true');
+    });
+
+    it('resolves the provider and Responses flag from a fetched agent on a cache miss', async () => {
+      /* A direct-link load has no entry for the agent in the map. The record is fetched
+       * for the controls, so preflight has to read the same one or the upload is measured
+       * against the generic agents limits and loses the Responses flag. */
+      mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
+      mockAgentsMap = {};
+      mockAgentQueryData = {
+        provider: 'Custom Provider',
+        model_parameters: { useResponsesApi: true },
+      };
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          agents: { fileSizeLimit: 5 },
+          'Custom Provider': { fileSizeLimit: 20 },
+        },
+      });
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([makeSizedFile('notes.txt', 'text/plain', megabyte)]);
+      });
+
+      expect(mockValidateFiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpointFileConfig: expect.objectContaining({
+            fileSizeLimit: mockFileConfig.endpoints['Custom Provider']?.fileSizeLimit,
+          }),
+        }),
+      );
       const formData: FormData = mockMutate.mock.calls[0][0];
       expect(formData.get('useResponsesApi')).toBe('true');
     });
