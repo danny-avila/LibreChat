@@ -25,8 +25,10 @@ describe('OpenID logging helpers', () => {
       new Headers({
         Authorization: 'Bearer authorization-canary',
         Cookie: 'session=cookie-canary',
+        Location: 'https://example.test/callback?code=location-code-canary',
         'Set-Cookie': 'refreshToken=set-cookie-canary',
         'X-Amz-Security-Token': 'aws-token-canary',
+        'X-API-Key': 'api-key-canary',
         'Content-Type': 'application/json',
       }),
     );
@@ -35,6 +37,8 @@ describe('OpenID logging helpers', () => {
     expect(output).not.toContain('cookie-canary');
     expect(output).not.toContain('set-cookie-canary');
     expect(output).not.toContain('aws-token-canary');
+    expect(output).not.toContain('location-code-canary');
+    expect(output).not.toContain('api-key-canary');
     expect(output).toContain('application/json');
   });
 

@@ -5,12 +5,19 @@ export interface SafeSpanException {
   name: string;
 }
 
+const TRUSTED_ERROR_TYPES = new Map<object, string>([
+  [Error.prototype, 'Error'],
+  [EvalError.prototype, 'EvalError'],
+  [RangeError.prototype, 'RangeError'],
+  [ReferenceError.prototype, 'ReferenceError'],
+  [SyntaxError.prototype, 'SyntaxError'],
+  [TypeError.prototype, 'TypeError'],
+  [URIError.prototype, 'URIError'],
+]);
+
 function getErrorConstructorName(error: Error): string {
   try {
-    const prototype = Object.getPrototypeOf(error) as { constructor?: unknown } | null;
-    const constructorName =
-      typeof prototype?.constructor === 'function' ? prototype.constructor.name : '';
-    return /^[A-Za-z_$][A-Za-z0-9_$]{0,127}$/.test(constructorName) ? constructorName : 'Error';
+    return TRUSTED_ERROR_TYPES.get(Object.getPrototypeOf(error) as object) ?? 'Error';
   } catch {
     return 'Error';
   }

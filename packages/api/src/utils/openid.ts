@@ -1,4 +1,5 @@
 const MASKED_VALUE = '***MASKED***';
+const SAFE_OPENID_HEADER_VALUES = new Set(['content-length', 'content-type']);
 
 function isSensitiveFieldName(key: string): boolean {
   const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -15,7 +16,7 @@ function isSensitiveFieldName(key: string): boolean {
     normalized.includes('secret') ||
     normalized.includes('token') ||
     normalized.includes('verifier') ||
-    normalized === 'apikey'
+    normalized.includes('apikey')
   );
 }
 
@@ -34,10 +35,11 @@ export function safeStringify(obj: unknown, maxLength = 1000): string {
       return value;
     });
 
-    if (str && str.length > maxLength) {
-      return `${str.substring(0, maxLength)}... (truncated)`;
+    const serialized = str ?? '[Unserializable value]';
+    if (serialized.length > maxLength) {
+      return `${serialized.substring(0, maxLength)}... (truncated)`;
     }
-    return str ?? '[Unserializable value]';
+    return serialized;
   } catch {
     return '[Error stringifying object]';
   }
@@ -76,7 +78,7 @@ export function logHeaders(headers: Headers | undefined | null): string {
       return 'No headers available';
     }
     for (const [key, value] of headers.entries()) {
-      headerObj[key] = isSensitiveFieldName(key) ? MASKED_VALUE : value;
+      headerObj[key] = SAFE_OPENID_HEADER_VALUES.has(key.toLowerCase()) ? value : MASKED_VALUE;
     }
     return safeStringify(headerObj);
   } catch {

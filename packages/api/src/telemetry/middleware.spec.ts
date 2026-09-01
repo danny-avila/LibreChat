@@ -369,6 +369,24 @@ describe('telemetryErrorMiddleware', () => {
     expect(next).toHaveBeenCalledWith(error);
   });
 
+  it('falls back to Error for untrusted custom error prototypes', () => {
+    const span = createSpan();
+    const SecretNamedError = class refresh_token_supersecret extends Error {};
+    const error = new SecretNamedError('client_secret=message-canary');
+    const next = jest.fn();
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+    telemetryErrorMiddleware(error, createRequest(), createResponse() as Response, next);
+
+    expect(span.recordException).toHaveBeenCalledWith({
+      message: 'Error details withheld',
+      name: 'Error',
+    });
+    expect(JSON.stringify(span.recordException.mock.calls)).not.toContain('supersecret');
+    expect(JSON.stringify(span.recordException.mock.calls)).not.toContain('message-canary');
+    expect(next).toHaveBeenCalledWith(error);
+  });
+
   it('records exceptions on the stored request span when available', () => {
     const activeSpan = createSpan();
     const requestSpan = createSpan();
