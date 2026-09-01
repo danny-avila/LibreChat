@@ -1199,6 +1199,53 @@ describe('processAgentFileUpload', () => {
       return codeEnvUpload;
     };
 
+    const agentsZipReq = () => {
+      const req = makeReq({ mimetype: 'application/zip', ocrConfig: null });
+      req.body.endpoint = EModelEndpoint.agents;
+      return req;
+    };
+
+    it('leaves a promoted code destination for deferred provisioning', async () => {
+      /* No explicit choice stands behind a promotion, and the agent's code deployment is
+       * resolved per turn, so uploading now names the default route and has to be
+       * uploaded again where the turn actually runs. */
+      const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 'sess-x', file_id: 'fid-x' });
+
+      await processAgentFileUpload({
+        req: agentsZipReq(),
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          file_id: 'file-promoted',
+          agentTools: [EToolResources.execute_code],
+        },
+      }).catch(() => {});
+
+      expect(codeEnvUpload).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.not.objectContaining({ codeEnvRef: expect.anything() }),
+        }),
+        true,
+      );
+    });
+
+    it('still uploads eagerly when the user chose the code destination', async () => {
+      const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 'sess-y', file_id: 'fid-y' });
+
+      await processAgentFileUpload({
+        req: agentsZipReq(),
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-chosen',
+        },
+      }).catch(() => {});
+
+      expect(codeEnvUpload).toHaveBeenCalled();
+    });
+
     it('persists kind:user codeEnvRef for chat attachments (messageAttachment=true)', async () => {
       setupCodeEnvUpload({ storage_session_id: 'sess-1', file_id: 'fid-1' });
       const req = makeReq();
@@ -2643,6 +2690,32 @@ describe('permanent unified uploads and unknown tool sets', () => {
       expect.objectContaining({ tool_resource: EToolResources.file_search }),
     );
     checkCapability.mockResolvedValue(true);
+  });
+
+  test('records the agent namespace on an eagerly embedded file', async () => {
+    /* Vectors go in under entity_id, and priming asks which namespaces hold them rather
+     * than reading the root flag, so omitting this re-embeds on the first search and
+     * aborts that search when RAG is briefly unavailable. */
+    setupStoredFileUpload();
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        tool_resource: EToolResources.file_search,
+        file_id: 'f-embedded',
+      },
+    }).catch(() => {});
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ embeddedEntities: ['agent-abc'] }),
+      }),
+      true,
+    );
   });
 
   test('refuses a permanent upload that would land on no agent resource', async () => {

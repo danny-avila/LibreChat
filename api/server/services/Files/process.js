@@ -802,11 +802,23 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
+  let shouldUploadToCodeEnv = effectiveToolResource === EToolResources.execute_code;
   if (effectiveToolResource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
     }
+    /* Only an explicit choice uploads here. A promoted destination has no user decision
+     * behind it and the agent's code deployment is resolved per turn, so uploading now
+     * would name the default route and be uploaded again at execution, or fail outright
+     * where only a stateful deployment exists. Deferred provisioning does it with the
+     * route the turn actually runs on. */
+    if (tool_resource == null) {
+      shouldUploadToCodeEnv = false;
+    }
+  }
+
+  if (shouldUploadToCodeEnv) {
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     const stream = fs.createReadStream(file.path);
     /* Resource identity for codeapi's sessionKey:
@@ -1120,8 +1132,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       entity_id,
     });
 
-    // Vector status will be stored at root level, no need for metadata
-    fileInfoMetadata = {};
+    /* Vectors live under the entity that embedded them, and priming asks which namespaces
+     * hold them rather than reading the root flag. Omitting it here re-embeds the file on
+     * the first search, and aborts that search if RAG is briefly unavailable. */
+    fileInfoMetadata = entity_id != null ? { embeddedEntities: [entity_id] } : {};
   } else if (isImage) {
     /* The conversion is this file's storage step. Uploading the original first left a
      * second object nothing references, and the record's size and dimensions describing
