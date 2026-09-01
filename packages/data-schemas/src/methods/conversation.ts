@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { RetentionMode } from 'librechat-data-provider';
 import type { AnyBulkWriteOperation, FilterQuery, Model, SortOrder, Types } from 'mongoose';
+import type { SearchParams } from 'meilisearch';
 import type { DeleteResult } from 'mongoose';
 import type {
   IAgentEventActorCheckpoint,
@@ -17,6 +18,7 @@ import type {
   ISharedLink,
   ISubagentThreadReservation,
 } from '~/types';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { MessageMethods } from './message';
 import {
   MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
@@ -43,6 +45,10 @@ import logger from '~/config/winston';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const MAX_AGENT_EVENT_ACTOR_SUSPENSION_BYTES = 64 * 1_024;
+/** MeiliSearch's default `pagination.maxTotalHits` ceiling. */
+const MEILI_SEARCH_LIMIT = 1000;
+const escapeMeiliFilterValue = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 function validateAgentEventActorSuspension(
   conversationId: string,
@@ -468,6 +474,7 @@ export interface ConversationMethods {
 
 export interface ConversationMethodDeps
   extends Pick<MessageMethods, 'getMessages' | 'deleteMessages'> {
+  searchMessages?: MessageMethods['searchMessages'];
   deleteAgentQueuedTurns?: (
     user: string,
     conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
@@ -2624,23 +2631,44 @@ export function createConversationMethods(
 
     if (search) {
       try {
-        const meiliResults = await (
-          Conversation as unknown as {
-            meiliSearch: (
-              query: string,
-              options: Record<string, string>,
-            ) => Promise<{
-              hits: Array<{ conversationId: string }>;
-            }>;
+        const ConversationMeili = mongoose.models.Conversation as SchemaWithMeiliMethods;
+        const searchParams: SearchParams = {
+          filter: `user = "${escapeMeiliFilterValue(user)}"`,
+          limit: MEILI_SEARCH_LIMIT,
+          attributesToRetrieve: ['conversationId'],
+        };
+        const [convoResults, messageHits] = await Promise.all([
+          ConversationMeili.meiliSearch(search, searchParams),
+          deps?.searchMessages
+            ? deps.searchMessages(search, searchParams).then(
+                (results) => (Array.isArray(results.hits) ? results.hits : []),
+                (error) => {
+                  logger.error(
+                    '[getConvosByCursor] Message search failed, using title matches only',
+                    error,
+                  );
+                  return [];
+                },
+              )
+            : [],
+        ]);
+        const matchingIds = new Set<string>();
+        for (const hit of convoResults.hits ?? []) {
+          if (typeof hit.conversationId === 'string') {
+            matchingIds.add(hit.conversationId);
           }
-        ).meiliSearch(search, { filter: `user = "${user}"` });
-        const matchingIds = Array.isArray(meiliResults.hits)
-          ? meiliResults.hits.map((result) => result.conversationId)
-          : [];
-        if (!matchingIds.length) {
+        }
+        for (const hit of messageHits) {
+          if (typeof hit.conversationId === 'string') {
+            matchingIds.add(hit.conversationId);
+          }
+        }
+        if (!matchingIds.size) {
           return { conversations: [], nextCursor: null };
         }
-        filters.push({ conversationId: { $in: matchingIds } } as FilterQuery<IConversation>);
+        filters.push({
+          conversationId: { $in: [...matchingIds] },
+        } as FilterQuery<IConversation>);
       } catch (error) {
         logger.error('[getConvosByCursor] Error during meiliSearch', error);
         throw new Error('Error during meiliSearch');
