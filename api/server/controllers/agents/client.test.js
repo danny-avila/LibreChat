@@ -6716,6 +6716,25 @@ describe('AgentClient - finalizeSubagentContent', () => {
     const inner = client.contentParts[0].tool_call.subagent_content[0].tool_call;
     expect(resolveMcpServerName).toHaveBeenCalledWith('lookup_mcp_foo_mcp_bar', 'member');
     expect(inner.mcpServerName).toBe('bar');
+
+    const emptyMemberResolver = jest.fn(() => 'bar');
+    await runSubagentEvents(
+      [
+        {
+          ...event('run_step', {
+            id: 'step_tool_2',
+            index: 0,
+            stepDetails: {
+              type: 'tool_calls',
+              tool_calls: [{ id: 'inner_2', name: 'lookup_mcp_foo_mcp_bar', args: '{}' }],
+            },
+          }),
+          memberAgentId: '',
+        },
+      ],
+      emptyMemberResolver,
+    );
+    expect(emptyMemberResolver).toHaveBeenCalledWith('lookup_mcp_foo_mcp_bar', 'child');
   });
 
   it('ignores tool_call parts whose name is not SUBAGENT', async () => {

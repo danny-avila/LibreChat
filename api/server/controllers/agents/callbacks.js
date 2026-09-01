@@ -710,11 +710,12 @@ function getDefaultHandlers({
        * consistent "don't record" rule for subagent traces.
        */
       if (!visible) return;
+      const memberAgentId =
+        typeof data?.memberAgentId === 'string' && data.memberAgentId.trim() !== ''
+          ? data.memberAgentId
+          : data?.subagentAgentId;
       for (const toolCall of data?.data?.stepDetails?.tool_calls ?? []) {
-        const serverName = resolveMcpServerName?.(
-          toolCall?.name,
-          data?.memberAgentId ?? data?.subagentAgentId,
-        );
+        const serverName = resolveMcpServerName?.(toolCall?.name, memberAgentId);
         if (serverName) {
           toolCall.mcpServerName = serverName;
         }
