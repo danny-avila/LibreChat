@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import {
   Constants,
   MCPOptionsSchema,
@@ -401,6 +402,83 @@ export function getMissingRuntimeBodyPlaceholderFields(
  */
 export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
   return getMCPRequestScope(config).requestScoped;
+}
+
+/**
+ * Whether a resolved server config may be reached from the chat MCP picker.
+ *
+ * Mirrors `selectableServers` in the client's `useMCPServerManager`, which is
+ * the list the dropdown offers: `chatMenu: false` is the operator hiding a
+ * server from chat, and `consumeOnly` marks a server the user reaches only
+ * through an agent that references it, never on its own.
+ *
+ * An unresolved config is selectable. A name the registry cannot resolve is
+ * either request-tier (declared on the request body and never registered) or
+ * genuinely unknown, and both already have their own handling downstream —
+ * failing closed here would silently drop request-scoped servers instead.
+ */
+export function isChatSelectableMCPServer(
+  config?: Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'> | null,
+): boolean {
+  if (config == null) {
+    return true;
+  }
+  return config.chatMenu !== false && config.consumeOnly !== true;
+}
+
+/**
+ * Narrows a chat picker selection to the servers that picker is allowed to
+ * offer, so a stale client, a replayed body, or a hand-written request cannot
+ * reach a server the menu hides.
+ *
+ * Pass only the picker's own selection. Servers a model spec pins
+ * (`modelSpec.mcpServers`) are the operator's choice and stay attached even
+ * when hidden, so they must be added after this call, not through it.
+ *
+ * `chatMenu` only ever comes from the config tier, so the overlay settles it
+ * without a lookup; `consumeOnly` is derived per user and needs the registry.
+ * Lookups run concurrently and a failing one keeps its server: this narrows an
+ * already-authenticated selection and is not the authorization boundary.
+ */
+export async function filterChatSelectableMCPServers(
+  selectedServers: string[] | null | undefined,
+  {
+    userId,
+    mcpConfig,
+    getServerConfig,
+  }: {
+    userId: string;
+    mcpConfig?: Record<string, Pick<ParsedServerConfig, 'chatMenu'> | undefined> | null;
+    getServerConfig?: (
+      userId: string,
+      serverName: string,
+    ) => Promise<Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'> | undefined>;
+  },
+): Promise<string[]> {
+  if (!Array.isArray(selectedServers) || selectedServers.length === 0) {
+    return [];
+  }
+  const selectable = await Promise.all(
+    selectedServers.map(async (serverName) => {
+      if (mcpConfig?.[serverName]?.chatMenu === false) {
+        return null;
+      }
+      if (getServerConfig == null) {
+        return serverName;
+      }
+      try {
+        const resolved = await getServerConfig(userId, serverName);
+        return isChatSelectableMCPServer(resolved) ? serverName : null;
+      } catch (error) {
+        logger.warn(
+          `[MCP] Could not resolve "${serverName}" while narrowing a chat selection; keeping it`,
+          error,
+        );
+        return serverName;
+      }
+    }),
+  );
+  return selectable.filter((serverName): serverName is string => serverName != null);
 }
 
 /**

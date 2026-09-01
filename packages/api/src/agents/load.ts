@@ -16,7 +16,11 @@ import type {
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ParsedServerConfig } from '~/mcp/types';
-import { requiresEphemeralUserConnection, validateMCPServerConfig } from '~/mcp/utils';
+import {
+  requiresEphemeralUserConnection,
+  filterChatSelectableMCPServers,
+  validateMCPServerConfig,
+} from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
@@ -33,6 +37,10 @@ export interface LoadAgentDeps {
     serverName: string,
     serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
+  /** Resolves a server's effective config for one user, so a chat selection can
+   *  be narrowed to what the chat menu offers. Omitted, the selection is used
+   *  as sent. */
+  getServerConfig?: (userId: string, serverName: string) => Promise<ParsedServerConfig | undefined>;
 }
 
 export interface LoadAgentParams {
@@ -64,8 +72,17 @@ export async function loadEphemeralAgent(
     modelSpec = modelSpecs?.list?.find((s) => s.name === spec) ?? null;
   }
   const ephemeralAgent: TEphemeralAgent | undefined = req.body?.ephemeralAgent;
-  const mcpServers = new Set<string>(ephemeralAgent?.mcp);
   const userId = req.user?.id ?? '';
+  /** The picker's own selection is narrowed to what the picker may offer; a
+   *  spec's servers are the operator's choice and are added after, so pinning a
+   *  chat-hidden server to a spec keeps working. */
+  const mcpServers = new Set<string>(
+    await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
+      userId,
+      mcpConfig: req.config?.mcpConfig,
+      getServerConfig: deps.getServerConfig,
+    }),
+  );
   if (modelSpec?.mcpServers) {
     for (const mcpServer of modelSpec.mcpServers) {
       mcpServers.add(mcpServer);

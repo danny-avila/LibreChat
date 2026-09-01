@@ -20,6 +20,8 @@ import {
   isUserSourced,
   validateMCPServerConfig,
   requiresEphemeralUserConnection,
+  isChatSelectableMCPServer,
+  filterChatSelectableMCPServers,
 } from '~/mcp/utils';
 
 describe('normalizeServerName', () => {
@@ -1090,5 +1092,94 @@ describe('getMissingCustomUserVars', () => {
     expect(
       getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', UNRELATED: 'value' }),
     ).toEqual([]);
+  });
+});
+
+describe('isChatSelectableMCPServer', () => {
+  it('rejects a server hidden from the chat menu', () => {
+    expect(isChatSelectableMCPServer({ chatMenu: false })).toBe(false);
+  });
+
+  it('rejects a server reachable only through an agent', () => {
+    expect(isChatSelectableMCPServer({ consumeOnly: true })).toBe(false);
+  });
+
+  it('accepts a server with the flags unset or explicitly on', () => {
+    expect(isChatSelectableMCPServer({})).toBe(true);
+    expect(isChatSelectableMCPServer({ chatMenu: true, consumeOnly: false })).toBe(true);
+  });
+
+  it('accepts an unresolved config so request-tier servers are not dropped', () => {
+    expect(isChatSelectableMCPServer(undefined)).toBe(true);
+    expect(isChatSelectableMCPServer(null)).toBe(true);
+  });
+});
+
+describe('filterChatSelectableMCPServers', () => {
+  const mcpConfig = {
+    visible: { chatMenu: true },
+    hidden: { chatMenu: false },
+    unset: {},
+  };
+
+  it('drops servers the config tier hides, without a registry lookup', async () => {
+    const getServerConfig = jest.fn();
+    await expect(
+      filterChatSelectableMCPServers(['visible', 'hidden'], {
+        userId: 'user123',
+        mcpConfig,
+        getServerConfig,
+      }),
+    ).resolves.toEqual(['visible']);
+    expect(getServerConfig).not.toHaveBeenCalledWith('user123', 'hidden');
+  });
+
+  it('drops servers the user only reaches through an agent', async () => {
+    const getServerConfig = jest.fn(async (_userId: string, serverName: string) =>
+      serverName === 'agent-only' ? { consumeOnly: true } : {},
+    );
+    await expect(
+      filterChatSelectableMCPServers(['direct', 'agent-only'], {
+        userId: 'user123',
+        mcpConfig: {},
+        getServerConfig,
+      }),
+    ).resolves.toEqual(['direct']);
+  });
+
+  it('keeps a server the registry cannot resolve', async () => {
+    const getServerConfig = jest.fn(async () => undefined);
+    await expect(
+      filterChatSelectableMCPServers(['body-scoped'], {
+        userId: 'user123',
+        mcpConfig: {},
+        getServerConfig,
+      }),
+    ).resolves.toEqual(['body-scoped']);
+  });
+
+  it('keeps a server whose lookup fails rather than dropping it', async () => {
+    const getServerConfig = jest.fn(async () => {
+      throw new Error('registry unavailable');
+    });
+    await expect(
+      filterChatSelectableMCPServers(['a', 'b'], {
+        userId: 'user123',
+        mcpConfig: {},
+        getServerConfig,
+      }),
+    ).resolves.toEqual(['a', 'b']);
+  });
+
+  it('uses the selection as sent when no resolver is supplied', async () => {
+    await expect(
+      filterChatSelectableMCPServers(['a', 'b'], { userId: 'user123' }),
+    ).resolves.toEqual(['a', 'b']);
+  });
+
+  it('returns an empty array for an empty or missing selection', async () => {
+    await expect(filterChatSelectableMCPServers([], { userId: 'u' })).resolves.toEqual([]);
+    await expect(filterChatSelectableMCPServers(undefined, { userId: 'u' })).resolves.toEqual([]);
+    await expect(filterChatSelectableMCPServers(null, { userId: 'u' })).resolves.toEqual([]);
   });
 });

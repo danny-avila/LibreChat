@@ -11,7 +11,11 @@ import {
 import type { Agent, AgentToolOptions, TConversation, TModelSpec } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ParsedServerConfig } from '~/mcp/types';
-import { requiresEphemeralUserConnection, validateMCPServerConfig } from '~/mcp/utils';
+import {
+  requiresEphemeralUserConnection,
+  filterChatSelectableMCPServers,
+  validateMCPServerConfig,
+} from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
@@ -57,6 +61,10 @@ export interface LoadAddedAgentDeps {
     serverName: string,
     serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
+  /** Resolves a server's effective config for one user, so a chat selection can
+   *  be narrowed to what the chat menu offers. Omitted, the selection is used
+   *  as sent. */
+  getServerConfig?: (userId: string, serverName: string) => Promise<ParsedServerConfig | undefined>;
 }
 
 interface LoadAddedAgentParams {
@@ -182,8 +190,16 @@ export async function loadAddedAgent(
     return result as unknown as Agent;
   }
 
-  const mcpServers = new Set<string>(ephemeralAgent?.mcp);
   const userId = req.user?.id ?? '';
+  /** Narrowed like the primary ephemeral loader: picker selection only, spec
+   *  servers added below. */
+  const mcpServers = new Set<string>(
+    await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
+      userId,
+      mcpConfig: appConfig?.mcpConfig,
+      getServerConfig: deps.getServerConfig,
+    }),
+  );
 
   const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;
   let modelSpec: (typeof modelSpecs extends Array<infer T> | undefined ? T : never) | null = null;
