@@ -828,6 +828,93 @@ describe('useMCPSelect', () => {
     });
   });
 
+  describe('Chat-hidden servers (chatMenu: false)', () => {
+    it('clears a persisted selection once the catalog reports every server hidden', async () => {
+      const { Wrapper } = createWrapper();
+      const storageKey = `${LocalStorageKeys.LAST_MCP_}${Constants.NEW_CONVO}`;
+      localStorage.setItem(storageKey, JSON.stringify(['hidden-server']));
+
+      const { result } = renderHook(
+        () => useMCPSelect({ servers: [], allServers: createMCPServers(['hidden-server']) }),
+        { wrapper: Wrapper },
+      );
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual([]);
+      });
+    });
+
+    it('clears the ephemeral agent too, so the request stops carrying the server', async () => {
+      const { Wrapper } = createWrapper();
+
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({
+          servers: createMCPServers(['visible']),
+          allServers: createMCPServers(['visible', 'hidden-server']),
+        });
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, ephemeralAgent, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
+
+      act(() => {
+        result.current.setEphemeralAgent({ mcp: ['visible', 'hidden-server'] });
+      });
+
+      await waitFor(() => {
+        expect(result.current.ephemeralAgent?.mcp).toEqual(['visible']);
+        expect(result.current.mcpHook.mcpValues).toEqual(['visible']);
+      });
+    });
+
+    it('keeps a selection while the catalog is empty, so a degraded read cannot wipe it', async () => {
+      const { Wrapper } = createWrapper();
+      const storageKey = `${LocalStorageKeys.LAST_MCP_}${Constants.NEW_CONVO}`;
+      localStorage.setItem(storageKey, JSON.stringify(['server1', 'server2']));
+
+      const { result, rerender } = renderHook(
+        ({ servers, allServers }) => useMCPSelect({ servers, allServers }),
+        {
+          initialProps: {
+            servers: [] as MCPServerDefinition[],
+            allServers: [] as MCPServerDefinition[],
+          },
+          wrapper: Wrapper,
+        },
+      );
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['server1', 'server2']);
+      });
+
+      rerender({
+        servers: createMCPServers(['server1', 'server2']),
+        allServers: createMCPServers(['server1', 'server2']),
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['server1', 'server2']);
+      });
+    });
+
+    it('falls back to the selectable list when no unfiltered catalog is passed', async () => {
+      const { Wrapper } = createWrapper();
+      const storageKey = `${LocalStorageKeys.LAST_MCP_}${Constants.NEW_CONVO}`;
+      localStorage.setItem(storageKey, JSON.stringify(['server1', 'stale']));
+
+      const { result } = renderHook(
+        () => useMCPSelect({ servers: createMCPServers(['server1']) }),
+        { wrapper: Wrapper },
+      );
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['server1']);
+      });
+    });
+  });
+
   describe('Memory Leak Prevention', () => {
     it('should not leak memory on repeated updates', async () => {
       const values = Array.from({ length: 100 }, (_, i) => `value-${i}`);

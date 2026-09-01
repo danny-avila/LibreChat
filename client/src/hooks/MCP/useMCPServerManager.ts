@@ -121,6 +121,7 @@ export function useMCPServerManager({
     conversationId,
     storageContextKey,
     servers: selectableServers,
+    allServers: availableMCPServers,
   });
   const mcpValuesRef = useRef(mcpValues);
 

@@ -3,8 +3,8 @@ import { useAtom } from 'jotai';
 import isEqual from 'lodash/isEqual';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import type { MCPServerDefinition } from './useMCPServerManager';
 import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtom } from '~/store';
-import { MCPServerDefinition } from './useMCPServerManager';
 import { useGetStartupConfig } from '~/data-provider';
 import { setTimestamp } from '~/utils/timestamps';
 
@@ -15,15 +15,32 @@ export function useMCPSelect({
   conversationId,
   storageContextKey,
   servers,
+  allServers,
 }: {
   conversationId?: string | null;
   storageContextKey?: string;
+  /** Chat-selectable servers, i.e. the subset the dropdown offers. */
   servers: MCPServerDefinition[];
+  /** Every server the catalog returned, selectable or not. Defaults to `servers`. */
+  allServers?: MCPServerDefinition[];
 }) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const configuredServers = useMemo(() => {
     return new Set(servers?.map((s) => s.serverName));
   }, [servers]);
+  /**
+   * Whether the catalog has told us enough to forget a stale selection.
+   *
+   * Gating on the UNFILTERED list is what makes a `chatMenu: false` server
+   * clearable: when every configured server is hidden, `servers` is empty and a
+   * guard on it can never fire, so a selection persisted while the server was
+   * visible stays active forever. The unfiltered list is non-empty in that case.
+   *
+   * It stays a guard rather than a load flag because `mcpValues` writes through
+   * to localStorage: an empty catalog — still loading, or a degraded read — must
+   * never be read as "the admin removed everything" and wipe the selection.
+   */
+  const canPruneSelections = (allServers ?? servers).length > 0;
 
   /**
    * For new conversations, key the MCP atom by environment (spec or defaults)
@@ -71,11 +88,33 @@ export function useMCPSelect({
     }
   }, [startupConfig, servers, isPinned, setIsPinned]);
 
+  /** Drop persisted selections the chat menu no longer offers. Runs on the atom
+   *  itself so a selection survives with no ephemeral agent to sync from. */
+  useEffect(() => {
+    if (!canPruneSelections || mcpValues.length === 0) {
+      return;
+    }
+    const activeMcpValues = mcpValues.filter((mcp) => configuredServers.has(mcp));
+    if (activeMcpValues.length !== mcpValues.length) {
+      setMCPValuesRaw(activeMcpValues);
+    }
+  }, [canPruneSelections, mcpValues, configuredServers, setMCPValuesRaw]);
+
   // Sync ephemeral agent MCP → Jotai atom (strip unconfigured servers)
   useEffect(() => {
     const mcps = ephemeralAgent?.mcp;
-    if (Array.isArray(mcps) && mcps.length > 0 && configuredServers.size > 0) {
+    if (Array.isArray(mcps) && mcps.length > 0 && canPruneSelections) {
       const activeMcps = mcps.filter((mcp) => configuredServers.has(mcp));
+      /** The ephemeral agent is what carries the selection to the server, so a
+       *  hidden name has to leave it too, not just the dropdown's atom. */
+      if (activeMcps.length !== mcps.length) {
+        setEphemeralAgent((prev) => {
+          if (!Array.isArray(prev?.mcp) || isEqual(prev.mcp, activeMcps)) {
+            return prev;
+          }
+          return { ...prev, mcp: activeMcps };
+        });
+      }
       if (!isEqual(activeMcps, mcpValues)) {
         setMCPValuesRaw(activeMcps);
       }
@@ -83,7 +122,14 @@ export function useMCPSelect({
       // Ephemeral agent explicitly has empty MCP (e.g., spec with no MCP servers) — clear atom
       setMCPValuesRaw([]);
     }
-  }, [ephemeralAgent?.mcp, setMCPValuesRaw, configuredServers, mcpValues]);
+  }, [
+    ephemeralAgent?.mcp,
+    setEphemeralAgent,
+    setMCPValuesRaw,
+    configuredServers,
+    canPruneSelections,
+    mcpValues,
+  ]);
 
   // Write timestamp when MCP values change
   useEffect(() => {
