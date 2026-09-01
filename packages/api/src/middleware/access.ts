@@ -82,7 +82,12 @@ async function getRoleForAccess({
 
   let cachedRole = cache.get(roleName);
   if (!cachedRole) {
-    cachedRole = getRoleByName(roleName).catch((error) => {
+    try {
+      cachedRole = Promise.resolve(getRoleByName(roleName));
+    } catch (error) {
+      cachedRole = Promise.reject(error);
+    }
+    cachedRole = cachedRole.catch((error) => {
       cache.delete(roleName);
       throw error;
     });

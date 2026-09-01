@@ -367,7 +367,7 @@ describe('access middleware', () => {
       expect(defaultParams.getRoleByName).toHaveBeenCalledTimes(1);
     });
 
-    it('should reuse the role lookup across different permission types', async () => {
+    it('should reuse a synchronous role lookup across different permission types', async () => {
       const role = {
         name: 'user',
         permissions: {
@@ -375,7 +375,7 @@ describe('access middleware', () => {
           [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
         },
       } as unknown as IRole;
-      defaultParams.getRoleByName.mockResolvedValue(role);
+      defaultParams.getRoleByName.mockReturnValue(role);
       const req = mockReq as Request;
 
       await expect(
