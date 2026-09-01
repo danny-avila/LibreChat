@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useSetAtom } from 'jotai';
 import type { ReactNode } from 'react';
 import type { ComposerBindings } from '~/hooks/Input/useComposerBindings';
@@ -47,19 +47,28 @@ export function useChatSurface(): ChatSurface {
   return surface;
 }
 
+/** The host, where one exists. A subagent card is rendered by every message
+ *  renderer, and search results are not a chat surface. */
+export function useOptionalChatSurface(): ChatSurface | null {
+  return useContext(ChatSurfaceContext);
+}
+
 /**
  * Selecting a child for the panel and taking the foreground are one action:
  * the panel and whatever else occupies that slot cannot both be open, so a
  * selection made without the yield leaves the reader looking at the other one.
+ *
+ * `null` where there is no host — a search result renders the same card, but
+ * that route has no panel to open, so the card is not openable there.
  */
-export function useOpenSubagentPanel(): (selection: ActiveSubagentPanel) => void {
-  const { claimForeground } = useChatSurface();
+export function useOpenSubagentPanel(): ((selection: ActiveSubagentPanel) => void) | null {
+  const claimForeground = useOptionalChatSurface()?.claimForeground;
   const setSelection = useSetAtom(activeSubagentPanel);
-  return useCallback(
-    (selection: ActiveSubagentPanel) => {
+  return useMemo(() => {
+    if (claimForeground == null) return null;
+    return (selection: ActiveSubagentPanel) => {
       claimForeground();
       setSelection(selection);
-    },
-    [claimForeground, setSelection],
-  );
+    };
+  }, [claimForeground, setSelection]);
 }

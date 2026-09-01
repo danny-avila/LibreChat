@@ -301,10 +301,14 @@ export default function SubagentCall({
     const canOpenLiveForeground =
       isSharedConvo !== true && backgroundHandle == null && hasParentContext;
     return (
-      hasParentContext && (canOpenDurablePanel || canOpenLiveForeground || hasRenderableFallback)
+      /** No host, no panel to open — a search result renders this same card. */
+      openPanel != null &&
+      hasParentContext &&
+      (canOpenDurablePanel || canOpenLiveForeground || hasRenderableFallback)
     );
   }, [
     backgroundHandle,
+    openPanel,
     canOpenDurablePanel,
     initialProgress,
     isSharedConvo,
@@ -369,7 +373,7 @@ export default function SubagentCall({
   }, [panelSelection, parentMessageId, partIndex, setSelectedSubagent, toolCallId]);
 
   const openDetails = useCallback(() => {
-    if (!canOpenDetails) return;
+    if (!canOpenDetails || openPanel == null) return;
     openPanel(panelSelection);
   }, [canOpenDetails, openPanel, panelSelection]);
 

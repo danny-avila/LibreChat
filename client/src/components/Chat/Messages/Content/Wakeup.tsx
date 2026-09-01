@@ -81,7 +81,7 @@ function WakeupTaskCard({
   const hasResult = task.result.trim() !== '';
 
   const openActivity = useCallback(() => {
-    if (selection == null) return;
+    if (selection == null || openPanel == null) return;
     openPanel(selection);
   }, [openPanel, selection]);
 
@@ -95,7 +95,7 @@ function WakeupTaskCard({
         />
         {title !== '' && <span className="min-w-0 truncate font-medium">{title}</span>}
         <span className="shrink-0">{localize(subagentStatusLabelKey(status))}</span>
-        {selection != null && (
+        {selection != null && openPanel != null && (
           /** The trigger identity attributes let the panel's close handler
            *  return keyboard focus to this button. */
           <Button

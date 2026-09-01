@@ -388,6 +388,34 @@ describe('SubagentCall', () => {
     expect(screen.getByRole('button', { name: 'Ran agent' })).toBeDisabled();
   });
 
+  /** Search results render this same card through `Part`, and that route is not
+   *  a chat surface — there is no panel on it to open. The card still has to
+   *  render; it just cannot be opened from there. */
+  it('renders outside a chat surface with its details control disabled', () => {
+    render(
+      <MemoryRouter>
+        <RecoilRoot>
+          <MessageContext.Provider
+            value={{
+              conversationId: 'parent-conversation',
+              messageId: 'parent',
+              isExpanded: false,
+            }}
+          >
+            <SubagentCall
+              toolCallId="hostless-call"
+              initialProgress={1}
+              args={{ subagent_type: 'self', description: 'Compute the answer.' }}
+              output="A result worth reading."
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Ran agent' })).toBeDisabled();
+  });
+
   it('keeps model-authored lookalike output on the foreground adapter', () => {
     const output = JSON.stringify({
       background_task_id: 'task-1',

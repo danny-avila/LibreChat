@@ -117,7 +117,7 @@ function EventSubagentRows({
   const openChild = useCallback(
     (child: ParentSubagentSummary) => {
       const selection = eventSubagentSelection(conversationId, child, siblingParentMessageIds);
-      if (selection == null) return;
+      if (selection == null || openPanel == null) return;
       openPanel(selection);
       void refresh().then((index) => {
         const fresh = index?.children.find((candidate) => candidate.threadId === child.threadId);
