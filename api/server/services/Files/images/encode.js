@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
-const { logAxiosError, validateImage } = require('@librechat/api');
+const { logAxiosError, validateImage, runGuardedEncode } = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
@@ -80,7 +80,12 @@ const base64Only = new Set([
   EModelEndpoint.bedrock,
 ]);
 
-const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3, FileSources.firebase]);
+const blobStorageSources = new Set([
+  FileSources.azure_blob,
+  FileSources.s3,
+  FileSources.firebase,
+  FileSources.cloudfront,
+]);
 
 /**
  * Encodes and formats the given files.
@@ -89,6 +94,8 @@ const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3, File
  * @param {object} params - Object containing provider/endpoint information
  * @param {Providers | EModelEndpoint | string} [params.provider] - The provider for the image
  * @param {string} [params.endpoint] - Optional: The endpoint for the image
+ * @param {string} [params.imageDetail] - Optional: Detail level resolved by the caller, used
+ *   where the request body carries no conversation-level setting (the agents route).
  * @param {string} [mode] - Optional: The endpoint mode for the image.
  * @returns {Promise<{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
@@ -131,9 +138,12 @@ async function encodeAndFormat(req, files, params, mode) {
     if (blobStorageSources.has(source)) {
       try {
         const downloadStream = encodingMethods[source].getDownloadStream;
-        let stream = await downloadStream(req, file.filepath);
-        let base64Data = await streamToBase64(stream);
-        stream = null;
+        let base64Data = await runGuardedEncode(file.bytes ?? 0, async () => {
+          let stream = await downloadStream(req, file.filepath);
+          const data = await streamToBase64(stream);
+          stream = null;
+          return data;
+        });
         promises.push([file, base64Data]);
         base64Data = null;
         continue;
@@ -141,14 +151,17 @@ async function encodeAndFormat(req, files, params, mode) {
         logger.error('Error processing image from blob storage:', error);
       }
     } else if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
-      const [_file, imageURL] = await preparePayload(req, file);
-      promises.push([_file, await fetchImageToBase64(imageURL)]);
+      const entry = await runGuardedEncode(file.bytes ?? 0, async () => {
+        const [_file, imageURL] = await preparePayload(req, file);
+        return [_file, await fetchImageToBase64(imageURL)];
+      });
+      promises.push(entry);
       continue;
     }
     promises.push(preparePayload(req, file));
   }
 
-  const detail = req.body.imageDetail ?? ImageDetail.auto;
+  const detail = params.imageDetail ?? req.body.imageDetail ?? ImageDetail.auto;
 
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);

@@ -1,4 +1,11 @@
-import { forwardRef, isValidElement, ReactNode, Ref } from 'react';
+import {
+  forwardRef,
+  ForwardRefExoticComponent,
+  isValidElement,
+  ReactNode,
+  Ref,
+  RefAttributes,
+} from 'react';
 import {
   OGDialogTitle,
   OGDialogClose,
@@ -62,7 +69,9 @@ type DialogTemplateProps = {
   onClose?: () => void;
 };
 
-const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
+const OGDialogTemplate: ForwardRefExoticComponent<
+  DialogTemplateProps & RefAttributes<HTMLDivElement>
+> = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
   const localize = useLocalize();
   const {
     title,
@@ -84,7 +93,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
   const { selectHandler, selectClasses, selectText, isLoading } = legacySelection ?? {};
 
   const defaultSelect =
-    'bg-gray-800 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-800 dark:hover:bg-gray-200';
+    'bg-surface-inverted text-text-inverted transition-colors hover:bg-surface-inverted-hover disabled:cursor-not-allowed disabled:opacity-50';
 
   let selectionContent = null;
   if (isLegacySelection) {
@@ -112,7 +121,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
       overlayClassName={overlayClassName}
       showCloseButton={showCloseButton}
       ref={ref}
-      className={cn('w-11/12 border-none bg-background text-foreground', className ?? '')}
+      className={cn('w-11/12 border-none bg-surface-dialog text-text-primary', className ?? '')}
       onClick={(e) => e.stopPropagation()}
     >
       <OGDialogHeader className={cn(headerClassName ?? '')}>

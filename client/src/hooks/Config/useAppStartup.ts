@@ -1,12 +1,19 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import TagManager from 'react-gtm-module';
-import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { installCloudFrontImageRetry } from '@librechat/client';
+import {
+  getTokenHeader,
+  LocalStorageKeys,
+  PermissionTypes,
+  Permissions,
+  resolveModelSpecEndpoint,
+} from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useCatalogReady } from '~/hooks';
 import store from '~/store';
 
 export default function useAppStartup({
@@ -23,13 +30,18 @@ export default function useAppStartup({
   });
 
   useSpeechSettingsInit(!!user);
+  /** MCP catalogs are background-warmed: the queries stay off the startup
+   * path until warmup releases them (or an MCP UI activates them). */
+  const mcpServersReady = useCatalogReady('mcpServers');
+  const mcpToolsReady = useCatalogReady('mcpTools');
   const { data: loadedServers, isLoading: serversLoading } = useMCPServersQuery({
-    enabled: canUseMcp,
+    enabled: canUseMcp && mcpServersReady,
   });
 
   useMCPToolsQuery({
     enabled:
       canUseMcp &&
+      mcpToolsReady &&
       !serversLoading &&
       !!loadedServers &&
       Object.keys(loadedServers).length > 0 &&
@@ -71,10 +83,15 @@ export default function useAppStartup({
 
     setDefaultPreset({
       ...defaultSpec.preset,
+      endpoint: resolveModelSpecEndpoint(defaultSpec) ?? null,
       iconURL: defaultSpec.iconURL,
       spec: defaultSpec.name,
     });
   }, [defaultPreset, setDefaultPreset, startupConfig?.modelSpecs?.list]);
+
+  useEffect(() => {
+    return installCloudFrontImageRetry(startupConfig, { getAuthorizationHeader: getTokenHeader });
+  }, [startupConfig]);
 
   useEffect(() => {
     if (startupConfig?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {

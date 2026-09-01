@@ -1,58 +1,73 @@
 import { useMemo } from 'react';
 import { ScrollText } from 'lucide-react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
 
 export default function SkillCall({
   isSubmitting,
+  runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
   attachments,
+  hideAttachments = false,
+  onExpand,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
+  hideAttachments?: boolean;
+  onExpand?: () => void;
 }) {
   const localize = useLocalize();
   const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
+  const intent = useToolCallIntent(args);
 
-  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!skillName);
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
+    initialProgress,
+    isSubmitting,
+    output,
+    hasInput: !!skillName,
+    onExpand,
+    runStepStatus,
+  });
 
   return (
     <>
-      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
-          progress={progress}
+          phase={phase}
           onClick={toggleCode}
-          inProgressText={localize('com_ui_skill_running', { 0: skillName })}
+          inProgressText={intent ?? localize('com_ui_skill_running', { 0: skillName })}
           finishedText={
-            cancelled
+            phase === 'cancelled'
               ? localize('com_ui_cancelled')
-              : localize('com_ui_skill_finished', { 0: skillName })
+              : (intent ?? localize('com_ui_skill_finished', { 0: skillName }))
           }
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          durationMs={runStepDurationMs}
           icon={
             <ScrollText
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
-                progress < 1 && !cancelled && !hasError && 'animate-pulse',
+                phase === 'running' && 'animate-pulse',
               )}
               aria-hidden="true"
             />
           }
           hasInput={!!skillName || hasOutput}
           isExpanded={showCode}
-          error={cancelled}
         />
       </div>
       <div style={expandStyle}>
@@ -71,7 +86,9 @@ export default function SkillCall({
           )}
         </div>
       </div>
-      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {!hideAttachments && attachments && attachments.length > 0 && (
+        <AttachmentGroup attachments={attachments} />
+      )}
     </>
   );
 }

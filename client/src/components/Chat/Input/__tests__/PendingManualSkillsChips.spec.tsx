@@ -1,7 +1,7 @@
 import React from 'react';
+import userEvent from '@testing-library/user-event';
 import { RecoilRoot, MutableSnapshot } from 'recoil';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, params?: Record<string, unknown>) =>

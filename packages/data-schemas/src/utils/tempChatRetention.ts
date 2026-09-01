@@ -1,10 +1,10 @@
-import logger from '~/config/winston';
 import type { AppConfig } from '~/types';
+import logger from '~/config/winston';
 
 /**
  * Default retention period for temporary chats in hours
  */
-export const DEFAULT_RETENTION_HOURS = 24 * 30; // 30 days
+export const DEFAULT_RETENTION_HOURS: number = 24 * 30; // 30 days
 
 /**
  * Minimum allowed retention period in hours

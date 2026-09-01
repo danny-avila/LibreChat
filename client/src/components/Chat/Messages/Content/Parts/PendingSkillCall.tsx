@@ -33,10 +33,10 @@ export default function PendingSkillCall({
     : localize('com_ui_skill_running', { 0: skillName });
 
   return (
-    <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
+    <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
       <div className="progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5">
         <div
-          className="progress-text-content absolute left-0 top-0 overflow-visible whitespace-nowrap"
+          className="progress-text-content absolute left-0 top-0 max-w-full overflow-visible whitespace-nowrap"
           style={{ opacity: 1, transform: 'none' }}
         >
           <div className="inline-flex w-full items-center gap-2">
@@ -44,7 +44,7 @@ export default function PendingSkillCall({
               className={cn('size-4 shrink-0 text-text-secondary', !loaded && 'animate-pulse')}
               aria-hidden="true"
             />
-            <span className={cn(!loaded && 'shimmer', 'font-medium')}>{text}</span>
+            <span className={cn(!loaded && 'shimmer', 'min-w-0 truncate font-medium')}>{text}</span>
           </div>
         </div>
       </div>

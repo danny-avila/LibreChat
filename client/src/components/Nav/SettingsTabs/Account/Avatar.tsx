@@ -18,9 +18,31 @@ import {
 } from '@librechat/client';
 import type { TUser } from 'librechat-data-provider';
 import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
-import { cn, formatBytes } from '~/utils';
+import { cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+
+const AVATAR_FILE_EXTENSIONS = ['.jpeg', '.jpg', '.png'];
+const AVATAR_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
+const DEFAULT_AVATAR_SIZE_LIMIT_MB = 2;
+
+const getAvatarSizeLimitMB = (sizeLimit?: number | null) => {
+  if (sizeLimit == null) {
+    return DEFAULT_AVATAR_SIZE_LIMIT_MB;
+  }
+
+  return Number((sizeLimit / (1024 * 1024)).toFixed(2));
+};
+
+const isSupportedAvatarFile = (file: File) => {
+  const fileName = file.name.toLowerCase();
+  const hasSupportedExtension = AVATAR_FILE_EXTENSIONS.some((extension) =>
+    fileName.endsWith(extension),
+  );
+  const hasSupportedMimeType = file.type === '' || AVATAR_MIME_TYPES.has(file.type.toLowerCase());
+
+  return hasSupportedExtension && hasSupportedMimeType;
+};
 
 interface AvatarEditorRef {
   getImageScaledToCanvas: () => HTMLCanvasElement;
@@ -51,6 +73,7 @@ function Avatar() {
 
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const avatarSizeLimitMB = getAvatarSizeLimitMB(fileConfig.avatarSizeLimit);
 
   const { mutate: uploadAvatar, isLoading: isUploading } = useUploadAvatarMutation({
     onSuccess: (data) => {
@@ -70,21 +93,23 @@ function Avatar() {
 
   const handleFile = useCallback(
     (file: File | undefined) => {
-      if (fileConfig.avatarSizeLimit != null && file && file.size <= fileConfig.avatarSizeLimit) {
+      const isWithinSizeLimit =
+        file != null &&
+        (fileConfig.avatarSizeLimit == null || file.size <= fileConfig.avatarSizeLimit);
+
+      if (file && isSupportedAvatarFile(file) && isWithinSizeLimit) {
         setImage(file);
         setScale(1);
         setRotation(0);
         setPosition({ x: 0.5, y: 0.5 });
       } else {
-        const megabytes =
-          fileConfig.avatarSizeLimit != null ? formatBytes(fileConfig.avatarSizeLimit) : 2;
         showToast({
-          message: localize('com_ui_upload_invalid_var', { 0: megabytes + '' }),
+          message: localize('com_ui_avatar_invalid_file', { 0: avatarSizeLimitMB }),
           status: 'error',
         });
       }
     },
-    [fileConfig.avatarSizeLimit, localize, showToast],
+    [avatarSizeLimitMB, fileConfig.avatarSizeLimit, localize, showToast],
   );
 
   const handleScaleChange = (value: number[]) => {
@@ -134,13 +159,9 @@ function Avatar() {
     e.preventDefault();
   }, []);
 
-  const openFileDialog = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
   const handleSelectFileClick = (event: React.MouseEvent) => {
-    event.stopPropagation();
-    openFileDialog();
+    event.preventDefault();
+    fileInputRef.current?.click();
   };
 
   const resetImage = useCallback(() => {
@@ -176,7 +197,7 @@ function Avatar() {
         </OGDialogTrigger>
       </div>
 
-      <OGDialogContent showCloseButton={false} className="w-11/12 max-w-md">
+      <OGDialogContent className="w-11/12 max-w-md">
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-medium leading-6 text-text-primary">
             {image != null ? localize('com_ui_preview') : localize('com_ui_upload_image')}
@@ -187,8 +208,8 @@ function Avatar() {
             <>
               <div
                 className={cn(
-                  'relative overflow-hidden rounded-full ring-4 ring-gray-200 transition-all dark:ring-gray-700',
-                  isDragging && 'cursor-move ring-blue-500 dark:ring-blue-400',
+                  'relative overflow-hidden rounded-full ring-4 ring-border-light transition-all',
+                  isDragging && 'cursor-move ring-ring-primary',
                 )}
                 onMouseDown={() => setIsDragging(true)}
                 onMouseUp={() => setIsDragging(false)}
@@ -286,7 +307,7 @@ function Avatar() {
                 </div>
 
                 {/* Helper Text */}
-                <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-center text-xs text-text-tertiary">
                   {localize('com_ui_editor_instructions')}
                 </p>
               </div>
@@ -320,30 +341,17 @@ function Avatar() {
             </>
           ) : (
             <div
-              className="flex h-72 w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-transparent transition-colors hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500"
+              className="flex h-72 w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-border-medium bg-transparent transition-colors hover:border-border-heavy"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
-              role="button"
-              tabIndex={0}
-              onClick={openFileDialog}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  openFileDialog();
-                }
-              }}
-              aria-label={localize('com_ui_upload_avatar_label')}
             >
-              <FileImage className="mb-4 size-16 text-gray-400" />
+              <FileImage className="mb-4 size-16 text-text-tertiary" aria-hidden="true" />
               <p className="mb-2 text-center text-sm font-medium text-text-primary">
-                {localize('com_ui_drag_drop')}
+                {localize('com_ui_avatar_drop_image')}
               </p>
               <p className="mb-4 text-center text-xs text-text-secondary">
-                {localize('com_ui_max_file_size', {
-                  0:
-                    fileConfig.avatarSizeLimit != null
-                      ? formatBytes(fileConfig.avatarSizeLimit)
-                      : '2MB',
+                {localize('com_ui_avatar_file_requirements', {
+                  0: avatarSizeLimitMB,
                 })}
               </p>
               <Button type="button" variant="secondary" onClick={handleSelectFileClick}>

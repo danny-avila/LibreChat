@@ -82,9 +82,19 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('../FilePreviewDialog', () => ({
   __esModule: true,
-  default: ({ open, fileId, fileName }: { open: boolean; fileId?: string; fileName: string }) =>
+  default: ({
+    open,
+    fileId,
+    fileName,
+    fileSource,
+  }: {
+    open: boolean;
+    fileId?: string;
+    fileName: string;
+    fileSource?: string;
+  }) =>
     open ? (
-      <div data-testid="file-preview-dialog" data-file-id={fileId}>
+      <div data-testid="file-preview-dialog" data-file-id={fileId} data-file-source={fileSource}>
         {fileName}
       </div>
     ) : null,
@@ -220,6 +230,7 @@ describe('RetrievalCall - file preview resolution', () => {
           filename: 'Tutorial Imazing.pdf',
           bytes: 2048,
           type: 'application/pdf',
+          source: 'text',
         },
       ],
     });
@@ -235,6 +246,7 @@ describe('RetrievalCall - file preview resolution', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview: Tutorial Imazing.pdf' }));
 
     expect(screen.getByTestId('file-preview-dialog')).toHaveAttribute('data-file-id', 'file-123');
+    expect(screen.getByTestId('file-preview-dialog')).toHaveAttribute('data-file-source', 'text');
   });
 
   it('keeps multiple parsed results clickable when only one attachment source is available', () => {

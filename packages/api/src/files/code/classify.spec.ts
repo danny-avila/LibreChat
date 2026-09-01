@@ -79,18 +79,14 @@ describe('classifyCodeArtifact', () => {
     });
   });
 
-  describe('pptx', () => {
-    it('classifies .pptx by extension', () => {
-      expect(classifyCodeArtifact('slides.pptx', 'application/octet-stream')).toBe('pptx');
-    });
-
-    it('classifies pptx by mime', () => {
-      expect(
-        classifyCodeArtifact(
-          'unknown',
-          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        ),
-      ).toBe('pptx');
+  describe('presentation', () => {
+    it.each([
+      ['slides.pptx', 'application/octet-stream'],
+      ['template.potx', 'application/octet-stream'],
+      ['unknown', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+      ['unknown', 'application/vnd.openxmlformats-officedocument.presentationml.template'],
+    ])('classifies %s with MIME %s as a presentation', (name, mime) => {
+      expect(classifyCodeArtifact(name, mime)).toBe('presentation');
     });
   });
 
@@ -121,6 +117,16 @@ describe('classifyCodeArtifact', () => {
     expect(classifyCodeArtifact('PHOTO.PNG', 'application/octet-stream')).toBe('other');
     expect(classifyCodeArtifact('REPORT.DOCX', 'application/octet-stream')).toBe('document');
     expect(classifyCodeArtifact('SCRIPT.PY', 'application/octet-stream')).toBe('utf8-text');
+  });
+
+  describe('diagram files', () => {
+    it.each([
+      ['flow.mmd', 'application/octet-stream'],
+      ['diagram.mermaid', 'application/octet-stream'],
+      ['FLOW.MMD', 'application/octet-stream'],
+    ])('classifies %s as utf8-text', (name, mime) => {
+      expect(classifyCodeArtifact(name, mime)).toBe('utf8-text');
+    });
   });
 
   describe('extensionless filenames', () => {

@@ -1,13 +1,25 @@
-import { Types, ClientSession, DeleteResult } from 'mongoose';
-import { AllMethods, IAclEntry, createMethods, logger } from '@librechat/data-schemas';
-import { AccessRoleIds, PrincipalType, ResourceType } from 'librechat-data-provider';
+import { Types } from 'mongoose';
+import { createMethods, logger } from '@librechat/data-schemas';
+import {
+  CacheKeys,
+  AccessRoleIds,
+  PermissionBits,
+  PrincipalType,
+  ResourceType,
+} from 'librechat-data-provider';
+import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
+import type { ClientSession, DeleteResult } from 'mongoose';
+
+import type { ResolvedPrincipal } from '~/types/principal';
+import { userPrincipalsCache } from '~/cache';
 
 export class AccessControlService {
   private _dbMethods: AllMethods;
-  private _aclModel;
+
   constructor(mongoose: typeof import('mongoose')) {
-    this._dbMethods = createMethods(mongoose);
-    this._aclModel = mongoose.models.AclEntry;
+    this._dbMethods = createMethods(mongoose, {
+      getCache: (key) => (key === CacheKeys.USER_PRINCIPALS ? userPrincipalsCache() : undefined),
+    });
   }
 
   /**
@@ -20,6 +32,7 @@ export class AccessControlService {
    * @param {string} params.accessRoleId - The ID of the role (e.g., AccessRoleIds.AGENT_VIEWER, AccessRoleIds.AGENT_EDITOR)
    * @param {Types.ObjectId} params.grantedBy - User ID granting the permission
    * @param {ClientSession} [params.session] - Optional MongoDB session for transactions
+   * @param {Date} [params.expiredAt] - Optional expiration for resource-tied permissions
    * @returns {Promise<IAclEntry>} The created or updated ACL entry
    */
   public async grantPermission(args: {
@@ -29,9 +42,10 @@ export class AccessControlService {
     resourceId: string | Types.ObjectId;
     accessRoleId: AccessRoleIds;
 
-    grantedBy: string | Types.ObjectId;
+    grantedBy?: string | Types.ObjectId;
     session?: ClientSession;
     roleId?: string | Types.ObjectId;
+    expiredAt?: Date;
   }): Promise<IAclEntry | null> {
     const {
       principalType,
@@ -41,6 +55,7 @@ export class AccessControlService {
       accessRoleId,
       grantedBy,
       session,
+      expiredAt,
     } = args;
     try {
       if (!Object.values(PrincipalType).includes(principalType)) {
@@ -93,6 +108,7 @@ export class AccessControlService {
         grantedBy,
         session,
         role._id,
+        expiredAt,
       );
     } catch (error) {
       logger.error(
@@ -110,6 +126,8 @@ export class AccessControlService {
    * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
    * @param {string} params.resourceType - Type of resource (e.g., 'agent')
    * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
+   * @param {Types.ObjectId[]} [params.resourceIds] - Optional candidate bound; only these
+   *   resources are considered, so the query cost scales with the candidate set
    * @returns {Promise<Array>} Array of resource IDs
    */
   public async findAccessibleResources({
@@ -117,11 +135,54 @@ export class AccessControlService {
     role,
     resourceType,
     requiredPermissions,
+    resourceIds,
   }: {
     userId: string | Types.ObjectId;
     role?: string;
     resourceType: string;
     requiredPermissions: number;
+    resourceIds?: Types.ObjectId[];
+  }): Promise<Types.ObjectId[]> {
+    try {
+      const principalsList = await this.getUserPrincipals({ userId, role });
+      return await this.findAccessibleResourcesForPrincipals({
+        principalsList,
+        resourceType,
+        requiredPermissions,
+        resourceIds,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
+        // Re-throw validation errors
+        if (error.message.includes('requiredPermissions must be')) {
+          throw error;
+        }
+      }
+      return [];
+    }
+  }
+
+  public async getUserPrincipals({
+    userId,
+    role,
+  }: {
+    userId: string | Types.ObjectId;
+    role?: string;
+  }): Promise<ResolvedPrincipal[]> {
+    return await this._dbMethods.getUserPrincipals({ userId, role });
+  }
+
+  public async findAccessibleResourcesForPrincipals({
+    principalsList,
+    resourceType,
+    requiredPermissions,
+    resourceIds,
+  }: {
+    principalsList: ResolvedPrincipal[];
+    resourceType: string;
+    requiredPermissions: number;
+    resourceIds?: Types.ObjectId[];
   }): Promise<Types.ObjectId[]> {
     try {
       if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
@@ -130,21 +191,21 @@ export class AccessControlService {
 
       this.validateResourceType(resourceType as ResourceType);
 
-      // Get all principals for the user (user + groups + public)
-      const principalsList = await this._dbMethods.getUserPrincipals({ userId, role });
-
       if (principalsList.length === 0) {
         return [];
       }
+
       return await this._dbMethods.findAccessibleResources(
         principalsList,
         resourceType,
         requiredPermissions,
+        resourceIds,
       );
     } catch (error) {
       if (error instanceof Error) {
-        logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
-        // Re-throw validation errors
+        logger.error(
+          `[PermissionService.findAccessibleResourcesForPrincipals] Error: ${error.message}`,
+        );
         if (error.message.includes('requiredPermissions must be')) {
           throw error;
         }
@@ -158,14 +219,18 @@ export class AccessControlService {
    * @param {Object} params - Parameters for finding publicly accessible resources
    * @param {ResourceType} params.resourceType - Type of resource (e.g., 'agent')
    * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
+   * @param {Types.ObjectId[]} [params.resourceIds] - Optional candidate bound; only these
+   *   resources are considered, so the query cost scales with the candidate set
    * @returns {Promise<Types.ObjectId[]>} Array of resource IDs
    */
   public async findPubliclyAccessibleResources({
     resourceType,
     requiredPermissions,
+    resourceIds,
   }: {
     resourceType: ResourceType;
     requiredPermissions: number;
+    resourceIds?: Types.ObjectId[];
   }): Promise<Types.ObjectId[]> {
     try {
       if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
@@ -174,7 +239,11 @@ export class AccessControlService {
 
       this.validateResourceType(resourceType);
 
-      return await this._dbMethods.findPublicResourceIds(resourceType, requiredPermissions);
+      return await this._dbMethods.findPublicResourceIds(
+        resourceType,
+        requiredPermissions,
+        resourceIds,
+      );
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`[PermissionService.findPubliclyAccessibleResources] Error: ${error.message}`);
@@ -266,7 +335,7 @@ export class AccessControlService {
         throw new Error(`Invalid resource ID: ${resourceId}`);
       }
 
-      const result = await this._aclModel.deleteMany({
+      const result = await this._dbMethods.deleteAclEntries({
         resourceType,
         resourceId,
       });
@@ -298,7 +367,7 @@ export class AccessControlService {
     requiredPermission,
   }: {
     userId: string;
-    role?: string;
+    role?: string | null;
     resourceType: ResourceType;
     resourceId: string | Types.ObjectId;
     requiredPermission: number;
@@ -330,6 +399,33 @@ export class AccessControlService {
         if (error.message.includes('requiredPermission must be')) {
           throw error;
         }
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Check if a resource has a PUBLIC AclEntry (accessible to everyone).
+   * Unlike checkPermission, this does not require a user context.
+   */
+  public async hasPublicAccess({
+    resourceType,
+    resourceId,
+  }: {
+    resourceType: ResourceType;
+    resourceId: string | Types.ObjectId;
+  }): Promise<boolean> {
+    try {
+      this.validateResourceType(resourceType);
+      return await this._dbMethods.hasPermission(
+        [{ principalType: PrincipalType.PUBLIC }],
+        resourceType,
+        resourceId,
+        PermissionBits.VIEW,
+      );
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`[PermissionService.hasPublicAccess] Error: ${error.message}`);
       }
       return false;
     }

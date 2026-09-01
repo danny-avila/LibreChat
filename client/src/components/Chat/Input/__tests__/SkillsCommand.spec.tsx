@@ -3,7 +3,7 @@
  * PR has to honor: when a user picks a skill in the `$` popover the
  * component must (a) push the skill name onto the per-conversation
  * `pendingManualSkillsByConvoId` atom, (b) flip `ephemeralAgent.skills`
- * to true, and (c) insert `$skill-name ` into the textarea.
+ * to true, and (c) consume only the `$` command prefix from the textarea.
  *
  * Also covers the Phase 2 filter composition: per-agent skill scope
  * intersects with the ACL catalog, and per-user active-state toggles
@@ -115,9 +115,10 @@ jest.mock('react-virtualized', () => ({
 
 import SkillsCommand, { filterSkillsForPopover } from '../SkillsCommand';
 
-const makeTextarea = (initial = '$') => {
+const makeTextarea = (initial = '$', selectionStart = initial.length) => {
   const textarea = document.createElement('textarea');
   textarea.value = initial;
+  textarea.setSelectionRange(selectionStart, selectionStart);
   document.body.appendChild(textarea);
   return { current: textarea } as React.MutableRefObject<HTMLTextAreaElement | null>;
 };
@@ -187,6 +188,47 @@ describe('SkillsCommand', () => {
       <SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('preserves an existing draft when $ is inserted at the beginning', async () => {
+    const user = userEvent.setup();
+    const textAreaRef = makeTextarea('$Keep this draft', 1);
+
+    render(<SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
+
+    expect(screen.getByPlaceholderText('com_ui_skills_command_placeholder')).toHaveValue('');
+    expect(textAreaRef.current).toHaveValue('Keep this draft');
+    expect(textAreaRef.current?.selectionStart).toBe(0);
+
+    await user.click(await screen.findByRole('button', { name: /Brand Guidelines/i }));
+
+    expect(textAreaRef.current).toHaveValue('Keep this draft');
+    expect(document.activeElement).toBe(textAreaRef.current);
+  });
+
+  it('preserves a trailing $ in the existing draft after selecting a skill', async () => {
+    const user = userEvent.setup();
+    const textAreaRef = makeTextarea('$Keep this $', 1);
+
+    render(<SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
+
+    await user.click(await screen.findByRole('button', { name: /Brand Guidelines/i }));
+
+    expect(textAreaRef.current).toHaveValue('Keep this $');
+  });
+
+  it('does not consume a preserved leading $ when the popover input ref reattaches', () => {
+    const textAreaRef = makeTextarea('$$100', 1);
+    const { rerender } = render(
+      <SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />,
+    );
+    const nextTextAreaRef = {
+      current: textAreaRef.current,
+    } as React.MutableRefObject<HTMLTextAreaElement | null>;
+
+    rerender(<SkillsCommand index={0} textAreaRef={nextTextAreaRef} conversationId={CONVO_ID} />);
+
+    expect(nextTextAreaRef.current).toHaveValue('$100');
   });
 
   it('selecting a skill pushes to pendingManualSkillsByConvoId, flips ephemeralAgent.skills, strips the $ trigger from the textarea, and closes the popover', async () => {
@@ -320,7 +362,7 @@ describe('SkillsCommand', () => {
       isFetchingNextPage: false,
     });
     mockUseAgentsMapContext.mockReturnValue({
-      agent_1: { id: 'agent_1', skills_enabled: true },
+      agent_1: { id: 'agent_1', skills: [], skills_enabled: true },
     });
 
     const textAreaRef = makeTextarea('$');
@@ -434,6 +476,36 @@ describe('SkillsCommand', () => {
 
     expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
     expect(screen.getByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
+  });
+
+  it('resumes catalog pagination after an external refetch clears an error', () => {
+    const fetchNextPage = jest.fn();
+    mockUseSkillsInfiniteQuery.mockReturnValue({
+      data: skillsResponse,
+      isLoading: false,
+      isError: true,
+      fetchNextPage,
+      hasNextPage: true,
+      isFetchingNextPage: false,
+    });
+
+    const textAreaRef = makeTextarea('$');
+    const { rerender } = render(
+      <SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />,
+    );
+    expect(fetchNextPage).not.toHaveBeenCalled();
+
+    mockUseSkillsInfiniteQuery.mockReturnValue({
+      data: skillsResponse,
+      isLoading: false,
+      isError: false,
+      fetchNextPage,
+      hasNextPage: true,
+      isFetchingNextPage: false,
+    });
+    rerender(<SkillsCommand index={1} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
+
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
   });
 });
 

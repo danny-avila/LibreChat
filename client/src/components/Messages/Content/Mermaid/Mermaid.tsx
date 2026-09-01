@@ -1,21 +1,176 @@
-import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
+import React, { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { Spinner } from '@librechat/client';
+import { useLocation } from 'react-router-dom';
+import { Button, Spinner } from '@librechat/client';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import type { ProcessedMermaidSvg } from '~/utils/diagram/export';
+import { MERMAID_ARTIFACT_TYPE, type Artifact } from '~/common/artifacts';
+import MermaidArtifactCard from './MermaidArtifactCard';
 import useSvgProcessing from './useSvgProcessing';
+import { useMessageContext } from '~/Providers';
 import useMermaidZoom from './useMermaidZoom';
 import MermaidDialog from './MermaidDialog';
 import MermaidHeader from './MermaidHeader';
 import ZoomControls from './ZoomControls';
+import { isArtifactRoute } from '~/utils';
 import { useLocalize } from '~/hooks';
 import cn from '~/utils/cn';
+import store from '~/store';
 
 interface MermaidProps {
   children: string;
   id?: string;
   theme?: string;
+  artifact?: Artifact;
 }
 
-const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
+interface MermaidRendererProps extends Omit<MermaidProps, 'artifact'> {
+  fillContainer?: boolean;
+  onExpand?: () => void;
+  onExportReady?: (data: ProcessedMermaidSvg | null) => void;
+  exportFilename: string;
+  showExpandButton?: boolean;
+  showHeader?: boolean;
+}
+
+const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme, artifact: artifactProp }) => {
+  const localize = useLocalize();
+  const location = useLocation();
+  const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const { messageId, partIndex } = useMessageContext();
+  const artifactButtonRef = useRef<HTMLButtonElement>(null);
+  const shouldFocusArtifactCardRef = useRef(false);
+  const currentArtifactId = useRecoilValue(store.currentArtifactId);
+  const setArtifacts = useSetRecoilState(store.artifactsState);
+  const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
+  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
+  const defaultTitle = localize('com_ui_mermaid_diagram');
+  const canOpenArtifact = isArtifactRoute(location.pathname);
+  /* Each content part renders its own markdown tree, so the per-message
+   * Mermaid counter restarts at zero in every part: diagrams sitting either
+   * side of a tool call would otherwise share an id within one message. */
+  const artifactScope = messageId ? `${messageId}-part${partIndex ?? 0}` : instanceId;
+  const artifactId = `mermaid-artifact-${artifactScope}-${id || instanceId}`;
+  const artifact = useMemo<Artifact>(() => {
+    if (artifactProp != null) {
+      return {
+        ...artifactProp,
+        type: artifactProp.type ?? MERMAID_ARTIFACT_TYPE,
+        title: artifactProp.title ?? defaultTitle,
+        content: children,
+        messageId: artifactProp.messageId ?? messageId,
+      };
+    }
+
+    return {
+      id: artifactId,
+      identifier: artifactId,
+      type: MERMAID_ARTIFACT_TYPE,
+      title: defaultTitle,
+      content: children,
+      messageId,
+      lastUpdateTime: Date.now(),
+    };
+  }, [artifactId, artifactProp, children, defaultTitle, messageId]);
+  const isSelected = currentArtifactId === artifact.id;
+  const [isArtifactCard, setIsArtifactCard] = useState(() => canOpenArtifact && isSelected);
+
+  const registerArtifact = useCallback(() => {
+    setArtifacts((previousArtifacts) => {
+      const existingArtifact = previousArtifacts?.[artifact.id];
+      if (
+        existingArtifact != null &&
+        existingArtifact.content === artifact.content &&
+        existingArtifact.type === artifact.type &&
+        existingArtifact.title === artifact.title
+      ) {
+        return previousArtifacts;
+      }
+
+      return { ...(previousArtifacts ?? {}), [artifact.id]: artifact };
+    });
+  }, [artifact, setArtifacts]);
+
+  const openArtifact = useCallback(() => {
+    registerArtifact();
+    setCurrentArtifactId(artifact.id);
+    setArtifactsVisible(true);
+  }, [artifact.id, registerArtifact, setArtifactsVisible, setCurrentArtifactId]);
+
+  const handleExpand = useCallback(() => {
+    shouldFocusArtifactCardRef.current = true;
+    setIsArtifactCard(true);
+    openArtifact();
+  }, [openArtifact]);
+
+  const handleArtifactClick = useCallback(() => {
+    if (!isSelected) {
+      openArtifact();
+      return;
+    }
+
+    setCurrentArtifactId(null);
+    setArtifactsVisible(false);
+  }, [isSelected, openArtifact, setArtifactsVisible, setCurrentArtifactId]);
+
+  /* Closing the panel unmounts `Artifacts`, whose `useArtifacts` cleanup wipes
+   * `artifactsState`. Subscribing to this diagram's slice re-fires the
+   * registration once it goes missing, so reopening any card restores every
+   * expanded diagram to the version navigator rather than just the one
+   * clicked. `registerArtifact` no-ops when the entry already matches, so this
+   * cannot loop. Mirrors the self-heal in `ToolArtifactCard`. */
+  const existingEntry = useRecoilValue(store.artifactByIdSelector(artifact.id));
+
+  useEffect(() => {
+    if (!isArtifactCard) {
+      return;
+    }
+    registerArtifact();
+  }, [existingEntry, isArtifactCard, registerArtifact]);
+
+  useEffect(() => {
+    if (!isArtifactCard || !shouldFocusArtifactCardRef.current) {
+      return;
+    }
+    artifactButtonRef.current?.focus();
+    shouldFocusArtifactCardRef.current = false;
+  }, [isArtifactCard]);
+
+  if (canOpenArtifact && isArtifactCard) {
+    return (
+      <MermaidArtifactCard
+        ref={artifactButtonRef}
+        artifactId={artifact.id}
+        title={artifact.title ?? defaultTitle}
+        isSelected={isSelected}
+        onClick={handleArtifactClick}
+      />
+    );
+  }
+
+  return (
+    <MermaidRenderer
+      id={id}
+      theme={theme}
+      exportFilename={artifact.title ?? defaultTitle}
+      onExpand={canOpenArtifact ? handleExpand : undefined}
+    >
+      {children}
+    </MermaidRenderer>
+  );
+});
+
+export const MermaidRenderer = memo(function MermaidRenderer({
+  children,
+  id,
+  theme,
+  onExpand,
+  onExportReady,
+  exportFilename,
+  fillContainer = false,
+  showExpandButton = true,
+  showHeader = true,
+}: MermaidRendererProps) {
   const localize = useLocalize();
   const [showCode, setShowCode] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -34,6 +189,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
   const {
     blobUrl,
+    processedSvg,
     svgDimensions,
     isLoading,
     error,
@@ -41,6 +197,18 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     initialScale,
     calculatedHeight,
   } = useSvgProcessing({ content: children, id, theme, retryCount, containerRef });
+
+  const exportReadyRef = useRef(onExportReady);
+
+  useEffect(() => {
+    exportReadyRef.current = onExportReady;
+    onExportReady?.(processedSvg == null ? null : { svg: processedSvg, dimensions: svgDimensions });
+  }, [onExportReady, processedSvg, svgDimensions]);
+
+  /* The preview tab unmounts when the panel switches to the code view, which
+   * would otherwise leave the toolbar exporting a payload no longer on screen
+   * and no longer matching an edited source. */
+  useEffect(() => () => exportReadyRef.current?.(null), []);
 
   const { zoom, pan, isPanning, handleZoomIn, handleZoomOut, handleResetZoom, handleMouseDown } =
     useMermaidZoom({ containerRef, wheelDep: blobUrl });
@@ -53,7 +221,13 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
   const handleToggleCode = useCallback(() => setShowCode((prev) => !prev), []);
   const handleRetry = useCallback(() => setRetryCount((prev) => prev + 1), []);
-  const handleExpand = useCallback(() => setIsDialogOpen(true), []);
+  const handleExpand = useCallback(() => {
+    if (onExpand != null) {
+      onExpand();
+      return;
+    }
+    setIsDialogOpen(true);
+  }, [onExpand]);
 
   const handleContainerClick = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
@@ -91,70 +265,126 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   if (isLoading) {
     if (lastValidSvgRef.current && blobUrl) {
       return (
-        <div
-          className={cn(
-            'relative w-full overflow-hidden rounded-lg border transition-all duration-200',
-            showControls ? 'border-border-light' : 'border-transparent',
+        <>
+          {showExpandButton && onExpand == null && (
+            <MermaidDialog
+              open={isDialogOpen}
+              onOpenChange={setIsDialogOpen}
+              triggerRef={expandButtonRef}
+              blobUrl={blobUrl}
+              codeContent={children}
+              exportSvg={processedSvg}
+              exportDimensions={svgDimensions}
+              exportFilename={exportFilename}
+            />
           )}
-          {...hoverHandlers}
-          onClick={handleContainerClick}
-        >
-          <MermaidHeader
-            className={cn(
-              'absolute left-0 right-0 top-0 z-20',
-              showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
-            )}
-            codeContent={children}
-            showCode={showCode}
-            onToggleCode={handleToggleCode}
-          />
           <div
-            ref={containerRef}
             className={cn(
-              'relative overflow-hidden rounded-md p-4 transition-colors duration-200',
-              'bg-surface-primary-alt dark:bg-white/[0.03]',
-              isPanning ? 'cursor-grabbing' : 'cursor-grab',
+              'relative w-full overflow-hidden rounded-lg border transition-all duration-200',
+              fillContainer && 'h-full rounded-xl',
+              showControls ? 'border-border-light' : 'border-transparent',
             )}
-            style={{ height: `${calculatedHeight}px` }}
-            onMouseDown={handleMouseDown}
+            {...hoverHandlers}
+            onClick={handleContainerClick}
           >
-            <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded border border-border-light bg-surface-secondary px-2 py-1 text-xs text-text-secondary">
-              <Spinner className="h-3 w-3" />
-            </div>
+            {showHeader && (
+              <MermaidHeader
+                className={cn(
+                  showCode
+                    ? 'relative z-20 border-b border-border-light bg-surface-secondary'
+                    : 'absolute left-0 right-0 top-0 z-20',
+                  showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
+                )}
+                codeContent={children}
+                showCode={showCode}
+                showExpandButton={showExpandButton}
+                expandButtonRef={expandButtonRef}
+                expandLabel={onExpand != null ? localize('com_ui_open_as_artifact') : undefined}
+                exportSvg={processedSvg}
+                exportDimensions={svgDimensions}
+                exportFilename={exportFilename}
+                onExpand={handleExpand}
+                onToggleCode={handleToggleCode}
+              />
+            )}
+            {showCode && (
+              <div className="min-h-[150px] bg-surface-primary-alt p-4">
+                <pre className="overflow-auto whitespace-pre-wrap font-mono text-xs text-text-secondary">
+                  {children}
+                </pre>
+              </div>
+            )}
             <div
-              className="absolute inset-0 flex items-center justify-center"
-              style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                transition: isPanning ? 'none' : 'transform 0.1s ease-out',
-              }}
+              ref={containerRef}
+              hidden={showCode}
+              className={cn(
+                'relative overflow-hidden rounded-md p-4 transition-colors duration-200',
+                fillContainer && 'h-full rounded-lg',
+                'bg-surface-primary-alt',
+                isPanning ? 'cursor-grabbing' : 'cursor-grab',
+              )}
+              style={fillContainer ? undefined : { height: `${calculatedHeight}px` }}
+              data-testid={fillContainer ? 'mermaid-artifact-canvas' : undefined}
+              onMouseDown={handleMouseDown}
             >
-              <img
-                src={blobUrl}
-                alt="Mermaid diagram"
-                className="select-none opacity-70"
-                style={diagramStyle}
-                draggable={false}
+              <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded border border-border-light bg-surface-secondary px-2 py-1 text-xs text-text-secondary">
+                <Spinner className="h-3 w-3" />
+              </div>
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transition: isPanning ? 'none' : 'transform 0.1s ease-out',
+                }}
+              >
+                <img
+                  src={blobUrl}
+                  alt={localize('com_ui_mermaid_diagram')}
+                  className="select-none opacity-70"
+                  style={diagramStyle}
+                  draggable={false}
+                />
+              </div>
+              <ZoomControls
+                zoom={zoom}
+                pan={pan}
+                codeContent={children}
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
+                onReset={handleResetZoom}
+                className={cn(
+                  'absolute bottom-2 right-2 z-10 transition-opacity duration-200',
+                  showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
+                )}
               />
             </div>
-            <ZoomControls
-              zoom={zoom}
-              pan={pan}
-              codeContent={children}
-              onZoomIn={handleZoomIn}
-              onZoomOut={handleZoomOut}
-              onReset={handleResetZoom}
-              className={cn(
-                'absolute bottom-2 right-2 z-10 transition-opacity duration-200',
-                showControls ? 'opacity-100' : 'pointer-events-none opacity-0',
-              )}
-            />
           </div>
+        </>
+      );
+    }
+
+    if (!showHeader) {
+      return (
+        <div
+          className={cn(
+            'flex min-h-[200px] w-full items-center justify-center rounded-lg border border-border-light bg-surface-primary-alt text-text-secondary',
+            fillContainer && 'h-full rounded-xl',
+          )}
+          role="status"
+        >
+          <Spinner className="size-5" aria-hidden="true" />
+          <span className="sr-only">{localize('com_ui_loading')}</span>
         </div>
       );
     }
 
     return (
-      <div className="w-full overflow-hidden rounded-lg border border-border-light">
+      <div
+        className={cn(
+          'w-full overflow-hidden rounded-lg border border-border-light',
+          fillContainer && 'h-full rounded-xl',
+        )}
+      >
         <div className="flex items-center gap-2 border-b border-border-light bg-surface-secondary px-4 py-2 font-sans text-xs text-text-secondary">
           <Spinner className="h-3 w-3" />
           <span className="font-medium">{localize('com_ui_mermaid')}</span>
@@ -172,35 +402,38 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   if (error) {
     return (
       <div className="w-full overflow-hidden rounded-lg border border-border-light">
-        <MermaidHeader codeContent={children} showCode={showCode} onToggleCode={handleToggleCode} />
-        <div className="border-t border-border-light bg-surface-tertiary p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="font-semibold text-red-600 dark:text-red-400">
-              {localize('com_ui_mermaid_failed')}
-            </span>
-            <button
-              type="button"
-              onClick={handleRetry}
-              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface-hover"
-            >
-              <RefreshCw className="h-3 w-3" />
-              {localize('com_ui_retry')}
-            </button>
+        {showHeader && (
+          <MermaidHeader
+            codeContent={children}
+            showCode={showCode}
+            onToggleCode={handleToggleCode}
+          />
+        )}
+        {showCode ? (
+          <div className="border-t border-border-light bg-surface-primary-alt p-4">
+            <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
+              {children}
+            </pre>
           </div>
-          <pre className="overflow-auto text-xs text-red-600 dark:text-red-300">
-            {error.message}
-          </pre>
-          {showCode && (
-            <div className="mt-4 border-t border-border-light pt-4">
-              <div className="mb-2 text-xs text-text-secondary">
-                {localize('com_ui_mermaid_source')}
-              </div>
-              <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
-                {children}
-              </pre>
+        ) : (
+          <div className="border-t border-border-light bg-surface-tertiary p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-semibold text-text-destructive">
+                {localize('com_ui_mermaid_failed')}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRetry}
+                className="h-auto gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface-hover"
+              >
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                {localize('com_ui_retry')}
+              </Button>
             </div>
-          )}
-        </div>
+            <pre className="overflow-auto text-xs text-text-destructive">{error.message}</pre>
+          </div>
+        )}
       </div>
     );
   }
@@ -211,30 +444,44 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
   return (
     <>
-      <MermaidDialog
-        open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
-        triggerRef={expandButtonRef}
-        blobUrl={blobUrl}
-        codeContent={children}
-      />
+      {showExpandButton && onExpand == null && (
+        <MermaidDialog
+          open={isDialogOpen}
+          onOpenChange={setIsDialogOpen}
+          triggerRef={expandButtonRef}
+          blobUrl={blobUrl}
+          codeContent={children}
+          exportSvg={processedSvg}
+          exportDimensions={svgDimensions}
+          exportFilename={exportFilename}
+        />
+      )}
       <div
-        className="relative w-full overflow-hidden rounded-lg border border-border-light transition-all duration-200"
+        className={cn(
+          'relative w-full overflow-hidden rounded-lg border border-border-light transition-all duration-200',
+          fillContainer && 'h-full rounded-xl',
+        )}
         {...hoverHandlers}
         onClick={handleContainerClick}
       >
-        <MermaidHeader
-          className="border-b border-border-light bg-surface-secondary"
-          actionsClassName="transition-opacity duration-200"
-          codeContent={children}
-          showCode={showCode}
-          showExpandButton
-          expandButtonRef={expandButtonRef}
-          onExpand={handleExpand}
-          onToggleCode={handleToggleCode}
-        />
+        {showHeader && (
+          <MermaidHeader
+            className="border-b border-border-light bg-surface-secondary"
+            actionsClassName="transition-opacity duration-200"
+            codeContent={children}
+            showCode={showCode}
+            showExpandButton={showExpandButton}
+            expandButtonRef={expandButtonRef}
+            expandLabel={onExpand != null ? localize('com_ui_open_as_artifact') : undefined}
+            exportSvg={processedSvg}
+            exportDimensions={svgDimensions}
+            exportFilename={exportFilename}
+            onExpand={handleExpand}
+            onToggleCode={handleToggleCode}
+          />
+        )}
         {showCode && (
-          <div className="border-b border-border-light bg-surface-secondary p-4">
+          <div className="bg-surface-primary-alt p-4">
             <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
               {children}
             </pre>
@@ -242,12 +489,15 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         )}
         <div
           ref={containerRef}
+          hidden={showCode}
           className={cn(
             'relative overflow-hidden p-4 transition-colors duration-200',
-            'bg-surface-primary-alt dark:bg-white/[0.03]',
+            fillContainer && 'h-full rounded-lg',
+            'bg-surface-primary-alt',
             isPanning ? 'cursor-grabbing' : 'cursor-grab',
           )}
-          style={{ height: `${calculatedHeight}px` }}
+          style={fillContainer ? undefined : { height: `${calculatedHeight}px` }}
+          data-testid={fillContainer ? 'mermaid-artifact-canvas' : undefined}
           onMouseDown={handleMouseDown}
         >
           <div
@@ -259,7 +509,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
           >
             <img
               src={blobUrl}
-              alt="Mermaid diagram"
+              alt={localize('com_ui_mermaid_diagram')}
               className="select-none"
               style={diagramStyle}
               draggable={false}
@@ -284,5 +534,6 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 });
 
 Mermaid.displayName = 'Mermaid';
+MermaidRenderer.displayName = 'MermaidRenderer';
 
 export default Mermaid;

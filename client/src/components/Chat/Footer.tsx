@@ -2,11 +2,23 @@ import React, { useEffect, memo } from 'react';
 import TagManager from 'react-gtm-module';
 import ReactMarkdown from 'react-markdown';
 import { Constants } from 'librechat-data-provider';
+import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
-function Footer({ className }: { className?: string }) {
-  const { data: config } = useGetStartupConfig();
+type FooterProps = {
+  className?: string;
+  startupConfig?: FooterStartupConfig | null;
+};
+
+type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'customFooter'> & {
+  interface?: Pick<NonNullable<TStartupConfig['interface']>, 'privacyPolicy' | 'termsOfService'>;
+};
+
+function Footer({ className, startupConfig }: FooterProps) {
+  const shouldFetchConfig = startupConfig === undefined;
+  const { data: fetchedConfig } = useGetStartupConfig({ enabled: shouldFetchConfig });
+  const config = shouldFetchConfig ? fetchedConfig : startupConfig;
   const localize = useLocalize();
 
   const privacyPolicy = config?.interface?.privacyPolicy;
@@ -51,7 +63,8 @@ function Footer({ className }: { className?: string }) {
               <a
                 className="text-text-secondary underline"
                 href={href}
-                rel="noreferrer"
+                target="_blank"
+                rel="noopener noreferrer"
                 {...otherProps}
               >
                 {children}
@@ -78,7 +91,6 @@ function Footer({ className }: { className?: string }) {
           className ??
           'absolute bottom-0 left-0 right-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]'
         }
-        role="contentinfo"
       >
         {footerElements.map((contentRender, index) => {
           const isLastElement = index === footerElements.length - 1;

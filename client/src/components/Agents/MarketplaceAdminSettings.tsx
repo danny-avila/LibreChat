@@ -1,10 +1,10 @@
 import { ShieldEllipsis } from 'lucide-react';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { Button, useToastContext } from '@librechat/client';
-import { AdminSettingsDialog } from '~/components/ui';
-import { useUpdateMarketplacePermissionsMutation } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { PermissionConfig } from '~/components/ui';
+import { useUpdateMarketplacePermissionsMutation } from '~/data-provider';
+import { AdminSettingsDialog } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 const permissions: PermissionConfig[] = [
   { permission: Permissions.USE, labelKey: 'com_ui_marketplace_allow_use' },
@@ -50,7 +50,6 @@ const MarketplaceAdminSettings = ({ compact = false }: { compact?: boolean }) =>
       menuId="marketplace-role-dropdown"
       mutation={mutation}
       trigger={trigger}
-      dialogContentClassName="w-11/12 max-w-md border-border-light bg-surface-primary text-text-primary"
       showAdminWarning={false}
     />
   );

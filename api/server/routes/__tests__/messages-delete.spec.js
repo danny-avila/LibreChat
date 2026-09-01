@@ -9,9 +9,21 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  createContentFilter: jest.fn(() => (req, res, next) => next()),
+  inspectContent: jest.fn(() => null),
+  extractFeedbackContent: jest.fn(() => []),
+  extractStoredMessageContent: jest.fn(() => []),
+  contentFilterBlockResponse: jest.fn(),
   unescapeLaTeX: jest.fn((x) => x),
   countTokens: jest.fn().mockResolvedValue(10),
+  sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
+  traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
+  CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
+  isSubagentThreadWriteBlocked: jest.fn().mockResolvedValue(false),
+  requireFeedbackEnabled: (req, res, next) => next(),
 }));
+
+jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({}));
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -46,10 +58,31 @@ jest.mock('~/server/services/Artifacts/update', () => ({
 
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
 
-jest.mock('~/server/middleware', () => ({
-  requireJwtAuth: (req, res, next) => next(),
-  validateMessageReq: (req, res, next) => next(),
-}));
+jest.mock('~/server/middleware', () => {
+  const validateMessageReq = jest.fn((req, res, next) => next());
+  const prepareMessageRequestValidation = jest.fn((req, res, next) => {
+    req.messageRequestValidation = {
+      conversationId: 'convo-1',
+      shouldFetchMessages: true,
+      promise: Promise.resolve({ ok: true }),
+    };
+    next();
+  });
+  const sendValidationResponse = jest.fn((res, result) => {
+    if (result.send) {
+      return res.status(result.status).send(result.body);
+    }
+    return res.status(result.status).json(result.body);
+  });
+
+  return {
+    requireJwtAuth: (req, res, next) => next(),
+    validateMessageReq,
+    sendValidationResponse,
+    prepareMessageRequestValidation,
+    configMiddleware: (req, res, next) => next(),
+  };
+});
 
 jest.mock('~/db/models', () => ({
   Message: {

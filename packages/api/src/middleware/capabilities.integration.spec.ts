@@ -7,7 +7,7 @@ import {
   SystemCapabilities,
   CapabilityImplications,
 } from '@librechat/data-schemas';
-import type { SystemCapability } from '@librechat/data-schemas';
+import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
 import type { AllMethods } from '@librechat/data-schemas';
 import {
   generateCapabilityCheck,
@@ -27,6 +27,17 @@ jest.mock('@librechat/data-schemas', () => ({
 
 let mongoServer: MongoMemoryServer;
 let methods: AllMethods;
+
+const mockGetUserPrincipals = () =>
+  jest.fn<ReturnType<AllMethods['getUserPrincipals']>, Parameters<AllMethods['getUserPrincipals']>>(
+    methods.getUserPrincipals,
+  );
+
+const mockHasCapabilityForPrincipals = () =>
+  jest.fn<
+    ReturnType<AllMethods['hasCapabilityForPrincipals']>,
+    Parameters<AllMethods['hasCapabilityForPrincipals']>
+  >(methods.hasCapabilityForPrincipals);
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -226,10 +237,119 @@ describe('capabilities integration (real MongoDB)', () => {
     });
   });
 
+  describe('getReadableConfigSections', () => {
+    let getReadableConfigSections: ReturnType<
+      typeof generateCapabilityCheck
+    >['getReadableConfigSections'];
+
+    beforeEach(() => {
+      ({ getReadableConfigSections } = generateCapabilityCheck({
+        getUserPrincipals: methods.getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+        getHeldCapabilities: methods.getHeldCapabilities,
+      }));
+    });
+
+    it('reports broad access for a broad read:configs holder', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: regularUser.id,
+        capability: SystemCapabilities.READ_CONFIGS,
+      });
+
+      const readable = await getReadableConfigSections(regularUser, [
+        'endpoints',
+        'balance',
+      ] as ConfigSection[]);
+      expect(readable.broad).toBe(true);
+    });
+
+    it('reports broad access for a broad manage:configs holder (manage implies read)', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: regularUser.id,
+        capability: SystemCapabilities.MANAGE_CONFIGS,
+      });
+
+      const readable = await getReadableConfigSections(regularUser, [
+        'endpoints',
+      ] as ConfigSection[]);
+      expect(readable.broad).toBe(true);
+    });
+
+    it('resolves only the sections held via section-scoped read grants', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: regularUser.id,
+        capability: 'read:configs:endpoints' as SystemCapability,
+      });
+
+      const readable = await getReadableConfigSections(regularUser, [
+        'endpoints',
+        'balance',
+      ] as ConfigSection[]);
+      expect(readable.broad).toBe(false);
+      expect(readable.sections).toEqual(new Set(['endpoints']));
+    });
+
+    it('resolves a section as readable for a caller holding only the same-section manage grant', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: regularUser.id,
+        capability: 'manage:configs:endpoints' as SystemCapability,
+      });
+
+      const readable = await getReadableConfigSections(regularUser, [
+        'endpoints',
+        'balance',
+      ] as ConfigSection[]);
+      expect(readable.broad).toBe(false);
+      expect(readable.sections).toEqual(new Set(['endpoints']));
+    });
+
+    it('resolves an empty set for a caller with no config access', async () => {
+      const readable = await getReadableConfigSections(regularUser, [
+        'endpoints',
+        'balance',
+      ] as ConfigSection[]);
+      expect(readable.broad).toBe(false);
+      expect(readable.sections.size).toBe(0);
+    });
+
+    it('resolves all sections via a single getHeldCapabilities call regardless of section count', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: regularUser.id,
+        capability: 'read:configs:endpoints' as SystemCapability,
+      });
+
+      const getHeldCapabilities = jest.fn<
+        ReturnType<AllMethods['getHeldCapabilities']>,
+        Parameters<AllMethods['getHeldCapabilities']>
+      >(methods.getHeldCapabilities);
+
+      const { getReadableConfigSections: batched } = generateCapabilityCheck({
+        getUserPrincipals: methods.getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+        getHeldCapabilities,
+      });
+
+      const readable = await batched(regularUser, [
+        'endpoints',
+        'balance',
+        'interface',
+        'mcpServers',
+      ] as ConfigSection[]);
+
+      expect(readable.sections).toEqual(new Set(['endpoints']));
+      expect(getHeldCapabilities).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('AsyncLocalStorage per-request caching', () => {
     it('caches getUserPrincipals within a single request context', async () => {
       await methods.seedSystemGrants();
-      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+      const getUserPrincipals = mockGetUserPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals,
@@ -247,7 +367,7 @@ describe('capabilities integration (real MongoDB)', () => {
 
     it('caches capability results within a single request context', async () => {
       await methods.seedSystemGrants();
-      const hasCapabilityForPrincipals = jest.fn(methods.hasCapabilityForPrincipals);
+      const hasCapabilityForPrincipals = mockHasCapabilityForPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals: methods.getUserPrincipals,
@@ -262,14 +382,16 @@ describe('capabilities integration (real MongoDB)', () => {
       });
 
       const accessAdminCalls = hasCapabilityForPrincipals.mock.calls.filter(
-        (args) => args[0].capability === SystemCapabilities.ACCESS_ADMIN,
+        (args) =>
+          (args[0] as { capability: SystemCapability }).capability ===
+          SystemCapabilities.ACCESS_ADMIN,
       );
       expect(accessAdminCalls).toHaveLength(1);
     });
 
     it('does NOT share cache across separate request contexts', async () => {
       await methods.seedSystemGrants();
-      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+      const getUserPrincipals = mockGetUserPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals,
@@ -325,7 +447,7 @@ describe('capabilities integration (real MongoDB)', () => {
 
     it('falls through to DB when outside request context (no ALS)', async () => {
       await methods.seedSystemGrants();
-      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+      const getUserPrincipals = mockGetUserPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals,
@@ -339,7 +461,7 @@ describe('capabilities integration (real MongoDB)', () => {
     });
 
     it('caches false results correctly (negative caching)', async () => {
-      const hasCapabilityForPrincipals = jest.fn(methods.hasCapabilityForPrincipals);
+      const hasCapabilityForPrincipals = mockHasCapabilityForPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals: methods.getUserPrincipals,
@@ -354,14 +476,16 @@ describe('capabilities integration (real MongoDB)', () => {
       });
 
       const manageUserCalls = hasCapabilityForPrincipals.mock.calls.filter(
-        (args) => args[0].capability === SystemCapabilities.MANAGE_USERS,
+        (args) =>
+          (args[0] as { capability: SystemCapability }).capability ===
+          SystemCapabilities.MANAGE_USERS,
       );
       expect(manageUserCalls).toHaveLength(1);
     });
 
     it('uses separate principal cache keys for different users in same context', async () => {
       await methods.seedSystemGrants();
-      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+      const getUserPrincipals = mockGetUserPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals,
@@ -378,7 +502,7 @@ describe('capabilities integration (real MongoDB)', () => {
 
     it('uses separate principal cache keys for different tenantIds (same user)', async () => {
       await methods.seedSystemGrants();
-      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+      const getUserPrincipals = mockGetUserPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals,
@@ -465,8 +589,8 @@ describe('capabilities integration (real MongoDB)', () => {
 
     it('every DB call executes (no caching) when ALS context is missing', async () => {
       await methods.seedSystemGrants();
-      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
-      const hasCapabilityForPrincipals = jest.fn(methods.hasCapabilityForPrincipals);
+      const getUserPrincipals = mockGetUserPrincipals();
+      const hasCapabilityForPrincipals = mockHasCapabilityForPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals,
@@ -485,7 +609,7 @@ describe('capabilities integration (real MongoDB)', () => {
 
     it('nested capabilityContextMiddleware creates an independent inner context', async () => {
       await methods.seedSystemGrants();
-      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+      const getUserPrincipals = mockGetUserPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals,
@@ -581,7 +705,7 @@ describe('capabilities integration (real MongoDB)', () => {
         capability: SystemCapabilities.READ_AGENTS,
       });
 
-      const getUserPrincipals = jest.fn(methods.getUserPrincipals);
+      const getUserPrincipals = mockGetUserPrincipals();
 
       const { hasCapability } = generateCapabilityCheck({
         getUserPrincipals,

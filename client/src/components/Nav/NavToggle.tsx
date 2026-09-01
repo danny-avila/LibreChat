@@ -1,4 +1,5 @@
 import { TooltipAnchor } from '@librechat/client';
+import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -45,6 +46,9 @@ export default function NavToggle({
   }
 
   const ariaDescription = localize(actionKey, { 0: sidebarLabel });
+  const shortcutId = side === 'left' ? 'toggleSidebar' : undefined;
+  const tooltipDescription = useShortcutHint(shortcutId, ariaDescription);
+  const ariaKey = useShortcutAriaKey(shortcutId);
 
   return (
     <div
@@ -65,7 +69,8 @@ export default function NavToggle({
         id={`toggle-${side}-nav`}
         onClick={onToggle}
         role="button"
-        description={ariaDescription}
+        description={tooltipDescription}
+        aria-keyshortcuts={ariaKey}
         className="flex items-center justify-center"
         tabIndex={0}
       >
@@ -77,7 +82,7 @@ export default function NavToggle({
             <div className="flex h-6 w-6 flex-col items-center">
               {/* Top bar */}
               <div
-                className="h-3 w-1 rounded-full bg-black dark:bg-white"
+                className="h-3 w-1 rounded-full bg-surface-inverted"
                 style={{
                   ...transition,
                   transform: `translateY(0.15rem) rotate(${topBarRotation}) translateZ(0px)`,
@@ -85,7 +90,7 @@ export default function NavToggle({
               />
               {/* Bottom bar */}
               <div
-                className="h-3 w-1 rounded-full bg-black dark:bg-white"
+                className="h-3 w-1 rounded-full bg-surface-inverted"
                 style={{
                   ...transition,
                   transform: `translateY(-0.15rem) rotate(${bottomBarRotation}) translateZ(0px)`,

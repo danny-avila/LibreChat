@@ -1,11 +1,33 @@
-import { isAfter } from 'date-fns';
 import React, { useMemo } from 'react';
+import { isAfter } from 'date-fns';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
+import type { Artifact } from '~/common';
+import {
+  artifactTypeForAttachment,
+  bySalience,
+  byEntrySalience,
+  displayFilename,
+  isInternalSandboxArtifact,
+  isTextAttachment,
+  renderAttachmentKey,
+} from './attachmentTypes';
+import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { isTextAttachment } from './attachmentTypes';
+import ToolMermaidArtifact from './ToolMermaidArtifact';
+import ToolArtifactCard from './ToolArtifactCard';
 import { useLocalize } from '~/hooks';
 import LogLink from './LogLink';
+
+interface PanelEntry {
+  attachment: TAttachment;
+  artifact: Artifact;
+}
+
+interface MermaidEntry {
+  attachment: TAttachment;
+  text: string;
+}
 
 interface LogContentProps {
   output?: string;
@@ -17,6 +39,7 @@ type ImageAttachment = TFile & TAttachmentMetadata;
 
 const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, attachments }) => {
   const localize = useLocalize();
+  const artifactPreviewPending = localize('com_ui_artifact_preview_pending');
 
   const processedContent = useMemo(() => {
     if (!output) {
@@ -27,12 +50,26 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
     return parts[0].trim();
   }, [output]);
 
-  const { imageAttachments, textAttachments, nonInlineAttachments } = useMemo(() => {
+  const {
+    imageAttachments,
+    textAttachments,
+    panelAttachments,
+    mermaidAttachments,
+    nonInlineAttachments,
+  } = useMemo(() => {
     const imageAtts: ImageAttachment[] = [];
     const textAtts: Array<TFile & TAttachmentMetadata> = [];
+    const panelAtts: PanelEntry[] = [];
+    const mermaidAtts: MermaidEntry[] = [];
     const otherAtts: TAttachment[] = [];
 
+    const now = new Date();
     attachments?.forEach((attachment) => {
+      // Sandbox-internal placeholders (`.dirkeep` etc.) are
+      // implementation detail — never list them as their own files.
+      if (isInternalSandboxArtifact(attachment)) {
+        return;
+      }
       const fileData = attachment as TFile & TAttachmentMetadata;
       const { filepath = null } = fileData;
       // LogContent uses a looser image check than Attachment.tsx (no
@@ -42,6 +79,39 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         imageAtts.push(attachment as ImageAttachment);
         return;
       }
+      // Expired downloads must keep the legacy "download expired" message.
+      // Panel cards and the mermaid renderer would otherwise present an
+      // active-looking surface backed by a dead link, so route expired
+      // entries through `renderAttachment` instead.
+      const expiresAt =
+        'expiresAt' in attachment && typeof attachment.expiresAt === 'number'
+          ? new Date(attachment.expiresAt)
+          : null;
+      const isExpired = expiresAt != null && isAfter(now, expiresAt);
+      if (isExpired) {
+        otherAtts.push(attachment);
+        return;
+      }
+      const artType = artifactTypeForAttachment(attachment);
+      if (artType === TOOL_ARTIFACT_TYPES.MERMAID) {
+        if (fileData.text) {
+          mermaidAtts.push({
+            attachment,
+            text: fileData.text,
+          });
+        }
+        return;
+      }
+      if (artType != null) {
+        const artifact = fileToArtifact(fileData, {
+          placeholder: artifactPreviewPending,
+          preClassifiedType: artType,
+        });
+        if (artifact) {
+          panelAtts.push({ attachment, artifact });
+        }
+        return;
+      }
       if (isTextAttachment(attachment)) {
         textAtts.push(fileData);
         return;
@@ -49,12 +119,23 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       otherAtts.push(attachment);
     });
 
+    // Sink empty / placeholder files in each bucket so the user's eye
+    // lands on the real artifact first. Stable sort preserves the
+    // arrival order among non-empty entries.
+    imageAtts.sort(bySalience);
+    textAtts.sort(bySalience);
+    panelAtts.sort(byEntrySalience);
+    mermaidAtts.sort(byEntrySalience);
+    otherAtts.sort(bySalience);
+
     return {
       imageAttachments: renderImages === true ? imageAtts : null,
       textAttachments: textAtts,
+      panelAttachments: panelAtts,
+      mermaidAttachments: mermaidAtts,
       nonInlineAttachments: otherAtts,
     };
-  }, [attachments, renderImages]);
+  }, [attachments, renderImages, artifactPreviewPending]);
 
   const renderAttachment = (file: TAttachment) => {
     const now = new Date();
@@ -62,9 +143,10 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       'expiresAt' in file && typeof file.expiresAt === 'number' ? new Date(file.expiresAt) : null;
     const isExpired = expiresAt ? isAfter(now, expiresAt) : false;
     const filename = file.filename || '';
+    const visibleName = displayFilename(filename);
 
     if (isExpired) {
-      return `${filename} ${localize('com_download_expired')}`;
+      return `${visibleName} ${localize('com_download_expired')}`;
     }
 
     const fileData = file as TFile & TAttachmentMetadata;
@@ -79,7 +161,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         source={fileData.source}
       >
         {'- '}
-        {filename} {localize('com_click_to_download')}
+        {visibleName} {localize('com_click_to_download')}
       </LogLink>
     );
   };
@@ -91,18 +173,40 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         <div>
           <p>{localize('com_generated_files')}</p>
           {nonInlineAttachments.map((file, index) => (
-            <React.Fragment key={file.filepath}>
+            <React.Fragment key={renderAttachmentKey('nonInline', file, index)}>
               {renderAttachment(file)}
               {index < nonInlineAttachments.length - 1 && ', '}
             </React.Fragment>
           ))}
         </div>
       )}
+      {panelAttachments.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {panelAttachments.map(({ attachment, artifact }, index) => (
+            <ToolArtifactCard
+              key={renderAttachmentKey('artifact', attachment, index)}
+              attachment={attachment}
+              artifact={artifact}
+            />
+          ))}
+        </div>
+      )}
+      {mermaidAttachments.length > 0 && (
+        <div className="mt-2 flex flex-col gap-3">
+          {mermaidAttachments.map(({ attachment, text }, index) => (
+            <ToolMermaidArtifact
+              key={renderAttachmentKey('mermaid', attachment, index)}
+              attachment={attachment}
+              text={text}
+            />
+          ))}
+        </div>
+      )}
       {textAttachments.length > 0 && (
         <div className="mt-2 flex flex-col gap-3">
-          {textAttachments.map((file) => (
+          {textAttachments.map((file, index) => (
             <div
-              key={file.filepath ?? file.file_id ?? file.filename}
+              key={renderAttachmentKey('text', file, index)}
               className="rounded-lg bg-surface-secondary p-3"
             >
               {file.filename && (
@@ -115,10 +219,10 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
                       user={file.user}
                       source={file.source}
                     >
-                      {file.filename}
+                      {displayFilename(file.filename)}
                     </LogLink>
                   ) : (
-                    file.filename
+                    displayFilename(file.filename)
                   )}
                 </div>
               )}
@@ -129,11 +233,11 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
           ))}
         </div>
       )}
-      {imageAttachments?.map((attachment) => (
+      {imageAttachments?.map((attachment, index) => (
         <Image
           width={attachment.width}
           height={attachment.height}
-          key={attachment.filepath}
+          key={renderAttachmentKey('image', attachment, index)}
           altText={attachment.filename}
           imagePath={attachment.filepath}
         />

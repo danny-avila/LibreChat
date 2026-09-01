@@ -23,7 +23,9 @@ export interface FilterInputProps
  *   onChange={(e) => setSearchQuery(e.target.value)}
  * />
  */
-const FilterInput = React.forwardRef<HTMLInputElement, FilterInputProps>(
+const FilterInput: React.ForwardRefExoticComponent<
+  FilterInputProps & React.RefAttributes<HTMLInputElement>
+> = React.forwardRef<HTMLInputElement, FilterInputProps>(
   ({ className, label, inputId, containerClassName, ...props }, ref) => {
     return (
       <div className={cn('relative', containerClassName)}>
@@ -33,14 +35,14 @@ const FilterInput = React.forwardRef<HTMLInputElement, FilterInputProps>(
           placeholder=" "
           aria-label={label}
           className={cn(
-            'peer flex h-9 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+            'peer flex h-9 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm ring-offset-surface-primary placeholder:text-text-secondary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
             className,
           )}
           {...props}
         />
         <label
           htmlFor={inputId}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-surface-primary peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-surface-primary peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
         >
           {label}
         </label>

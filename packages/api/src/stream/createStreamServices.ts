@@ -1,12 +1,12 @@
-import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
-import type { IJobStore, IEventTransport } from './interfaces/IJobStore';
-import { InMemoryJobStore } from './implementations/InMemoryJobStore';
+import type { Redis, Cluster } from 'ioredis';
+import type { IJobStoreV2, IEventTransport } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
-import { RedisJobStore } from './implementations/RedisJobStore';
 import { RedisEventTransport } from './implementations/RedisEventTransport';
-import { cacheConfig } from '~/cache/cacheConfig';
+import { InMemoryJobStore } from './implementations/InMemoryJobStore';
+import { RedisJobStore } from './implementations/RedisJobStore';
 import { ioredisClient } from '~/cache/redisClients';
+import { cacheConfig } from '~/cache/cacheConfig';
 
 /**
  * Configuration for stream services (optional overrides)
@@ -34,6 +34,7 @@ export interface StreamServicesConfig {
   inMemoryOptions?: {
     ttlAfterComplete?: number;
     maxJobs?: number;
+    staleJobTimeout?: number;
   };
 }
 
@@ -41,7 +42,7 @@ export interface StreamServicesConfig {
  * Stream services result
  */
 export interface StreamServices {
-  jobStore: IJobStore;
+  jobStore: IJobStoreV2;
   eventTransport: IEventTransport;
   isRedis: boolean;
 }
@@ -119,6 +120,8 @@ function createInMemoryServices(options?: StreamServicesConfig['inMemoryOptions'
   const jobStore = new InMemoryJobStore({
     ttlAfterComplete: options?.ttlAfterComplete ?? 300000, // 5 minutes
     maxJobs: options?.maxJobs ?? 1000,
+    // Failsafe for crashed/hung generations (mirrors RedisJobStore's running-job TTL).
+    staleJobTimeout: options?.staleJobTimeout ?? 1_200_000, // 20 minutes
   });
 
   const eventTransport = new InMemoryEventTransport();

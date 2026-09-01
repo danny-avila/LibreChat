@@ -22,13 +22,20 @@ export default function useSelectAgent() {
   const getConversation = useGetConversation(0);
 
   const updateConversation = useCallback(
-    async (agent: Partial<Agent>, template: Partial<TPreset | TConversation>) => {
+    async (
+      agent: Partial<Agent>,
+      template: Partial<TPreset | TConversation>,
+      /** The passes that follow the first one only carry freshly fetched agent details into the
+       * composer the first pass opened, so a paste started meanwhile keeps its draft. */
+      keepComposerState = false,
+    ) => {
       const conversation = await getConversation();
       logger.log('conversation', 'Updating conversation with agent', agent);
       if (isAssistantsEndpoint(conversation?.endpoint)) {
         newConversation({
           template: { ...(template as Partial<TConversation>) },
           preset: template as Partial<TPreset>,
+          keepComposerState,
         });
         return;
       }
@@ -39,7 +46,7 @@ export default function useSelectAgent() {
       newConversation({
         template: currentConvo,
         preset: template as Partial<TPreset>,
-        keepLatestMessage: true,
+        keepComposerState,
       });
     },
     [getConversation, getDefaultConversation, newConversation],
@@ -67,7 +74,7 @@ export default function useSelectAgent() {
           }),
         );
         if (fullAgent) {
-          await updateConversation(fullAgent, { ...template, agent_id: fullAgent.id });
+          await updateConversation(fullAgent, { ...template, agent_id: fullAgent.id }, true);
         }
       } catch (error) {
         if ((error as { silent: boolean } | undefined)?.silent) {
@@ -75,7 +82,7 @@ export default function useSelectAgent() {
           return;
         }
         console.error('Error fetching full agent data:', error);
-        await updateConversation({}, { ...template, agent_id: undefined });
+        await updateConversation({}, { ...template, agent_id: undefined }, true);
       }
     },
     [agentsMap, updateConversation, queryClient],

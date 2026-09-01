@@ -4,23 +4,22 @@
   flex-direction: column;
   overflow: auto;
   overscroll-behavior: contain;
-  border-radius: 1rem;
+  border-radius: 0.7rem;
   border-width: 1px;
   border-style: solid;
-  border-color: var(--border-light);
-  background-color: var(--surface-primary);
+  border-color: rgb(var(--border-light) / var(--border-light-alpha, 1));
+  background-color: rgb(var(--surface-primary));
   padding: 0.5rem;
-  color: var(--text-primary);
+  color: rgb(var(--text-primary));
   box-shadow:
     0 10px 15px -3px rgb(0 0 0 / 0.1),
     0 4px 6px -4px rgb(0 0 0 / 0.1);
-  transform-origin: top;
+  transform-origin: var(--popover-transform-origin, top);
   opacity: 0;
-  transition-property: opacity, scale, translate;
+  transition-property: opacity, scale;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
   scale: 0.95;
-  translate: 0 -0.5rem;
   margin-top: 4px;
   margin-right: -2px;
 }
@@ -44,8 +43,8 @@
 }
 
 .popover-ui:where(.dark, .dark *) {
-  background-color: var(--surface-secondary);
-  color: var(--text-secondary);
+  background-color: rgb(var(--surface-secondary));
+  color: rgb(var(--text-secondary));
   box-shadow:
     0 10px 15px -3px rgb(0 0 0 / 0.25),
     0 4px 6px -4px rgb(0 0 0 / 0.1);
@@ -67,12 +66,11 @@
 }
 
 .select-item[data-active-item] {
-  background-color: var(--surface-hover);
-  color: var(--text-primary);
+  background-color: rgb(var(--surface-hover));
+  color: rgb(var(--text-primary));
 }
 
 .popover-ui[data-enter] {
   opacity: 1;
   scale: 1;
-  translate: 0;
 }

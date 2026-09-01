@@ -1,7 +1,9 @@
-import { logger } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
+import { buildTenantIsolationErrorLogContext } from './auth';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 const handleDuplicateKeyError = (err: MongoServerError, res: Response) => {
   logger.warn('Duplicate key error: ' + (err.errmsg || err.message));
@@ -40,6 +42,18 @@ function isCustomError(err: unknown): err is CustomError {
   return err !== null && typeof err === 'object' && 'statusCode' in err && 'body' in err;
 }
 
+/**
+ * Builds an error that `ErrorController` relays to the client verbatim. `isCustomError` matches only
+ * when both `statusCode` and `body` are present, so a plain `Error` falls through to a bare 500 and
+ * its message never leaves the server log. Use this wherever the caller needs to see the reason.
+ */
+export const createCustomError = (statusCode: number, message: string): CustomError => {
+  const error = new Error(message) as CustomError;
+  error.statusCode = statusCode;
+  error.body = { message };
+  return error;
+};
+
 export const ErrorController = (
   err: Error | CustomError,
   req: Request,
@@ -70,11 +84,28 @@ export const ErrorController = (
       return handleDuplicateKeyError(error, res);
     }
 
+    if (err instanceof OpenIDReauthRequiredError) {
+      logger.warn('OpenID re-authentication required: ' + err.message);
+      return res.status(401).send({ error: 'invalid_token', message: err.message });
+    }
+
     if (isCustomError(error) && error.statusCode && error.body) {
       return res.status(error.statusCode).send(error.body);
     }
 
-    logger.error('ErrorController => error', err);
+    const tenantIsolationContext = buildTenantIsolationErrorLogContext(req, err);
+    if (tenantIsolationContext) {
+      const { requestId, requestMethod, requestPath } = tenantStorage.getStore() ?? {};
+      logger.error({
+        message: 'Tenant-isolation request failed',
+        ...tenantIsolationContext,
+        ...(requestId && { request_id: requestId }),
+        ...(requestMethod && { request_method: requestMethod }),
+        ...(requestPath && { request_path: requestPath }),
+      });
+    } else {
+      logger.error('ErrorController => error', err);
+    }
     return res.status(500).send('An unknown error occurred.');
   } catch (processingError) {
     logger.error('ErrorController => processing error', processingError);

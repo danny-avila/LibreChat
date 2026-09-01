@@ -6,14 +6,14 @@
  */
 
 import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
+import { Constants, normalizeServerName } from 'librechat-data-provider';
 import {
+  Providers,
   createToolSearch,
   ToolSearchToolDefinition,
-  createProgrammaticToolCallingTool,
-  ProgrammaticToolCallingDefinition,
+  BashProgrammaticToolCallingDefinition,
+  createBashProgrammaticToolCallingTool,
 } from '@librechat/agents';
-import type { AgentToolOptions } from 'librechat-data-provider';
 import type {
   LCToolRegistry,
   JsonSchemaType,
@@ -21,6 +21,9 @@ import type {
   GenericTool,
   LCTool,
 } from '@librechat/agents';
+import type { AgentToolOptions } from 'librechat-data-provider';
+import type { CodeExecutionContext } from '~/agents/execution';
+import { sanitizeGeminiSchema } from '~/mcp/zod';
 
 export type { LCTool, LCToolRegistry, AllowedCaller, JsonSchemaType };
 
@@ -30,6 +33,47 @@ export interface ToolDefinition {
   parameters?: JsonSchemaType;
   /** MCP server name extracted from tool name */
   serverName?: string;
+  /** Raw upstream tool name when the model-facing key stripped a redundant server-name prefix */
+  serverToolName?: string;
+  /** Current catalog tool name when a LEGACY persisted key kept its pre-strip spelling */
+  currentToolName?: string;
+}
+
+/** An MCP tool name plus its OTHER spelling (legacy for stripped instances, current for legacy-named ones). */
+export interface MCPToolAlias {
+  name: string;
+  aliasName: string;
+}
+
+/**
+ * Collects both directions of identity aliases from MCP tool definitions, so
+ * approval policies and hook matchers written against EITHER spelling keep
+ * applying: a stripped instance aliases its pre-strip name, and a
+ * legacy-named instance (persisted key retained) aliases its current catalog
+ * name. Works in both loading modes because both funnel their definitions
+ * through {@link buildToolClassification}.
+ */
+export function collectMCPToolAliases(mcpToolDefs: ToolDefinition[]): MCPToolAlias[] {
+  const aliases: MCPToolAlias[] = [];
+  for (const def of mcpToolDefs) {
+    if (!def.serverName) {
+      continue;
+    }
+    const keySuffix = `${Constants.mcp_delimiter}${normalizeServerName(def.serverName)}`;
+    if (def.serverToolName) {
+      const aliasName = `${def.serverToolName}${keySuffix}`;
+      if (aliasName !== def.name) {
+        aliases.push({ name: def.name, aliasName });
+      }
+    }
+    if (def.currentToolName) {
+      const aliasName = `${def.currentToolName}${keySuffix}`;
+      if (aliasName !== def.name) {
+        aliases.push({ name: def.name, aliasName });
+      }
+    }
+  }
+  return aliases;
 }
 
 /**
@@ -44,6 +88,31 @@ export function getServerNameFromTool(toolName: string): string | undefined {
     return parts[parts.length - 1];
   }
   return undefined;
+}
+
+/**
+ * Aliases persisted `tool_options` keys onto the instance names IN PLACE, so
+ * every downstream reader of `agent.tool_options` (the registry build for
+ * defer/programmatic, the background and intent passes) sees the healed keys
+ * in BOTH loading modes and BOTH spelling directions: options keyed by a
+ * pre-strip spelling follow a renamed (wildcard-expanded) instance, and
+ * options the editor migrated to the CURRENT catalog spelling still reach a
+ * legacy-named instance an unedited `agent.tools` entry retained.
+ * Identity-gated through {@link collectMCPToolAliases}, and an explicit
+ * entry under the instance's own name always wins.
+ */
+export function aliasMCPToolOptions(
+  aliases: readonly MCPToolAlias[],
+  agentToolOptions?: AgentToolOptions,
+): void {
+  if (!agentToolOptions || Object.keys(agentToolOptions).length === 0) {
+    return;
+  }
+  for (const { name, aliasName } of aliases) {
+    if (agentToolOptions[name] == null && agentToolOptions[aliasName] != null) {
+      agentToolOptions[name] = agentToolOptions[aliasName];
+    }
+  }
 }
 
 /**
@@ -99,6 +168,12 @@ interface MCPToolInstance {
   mcp?: boolean;
   /** Original JSON schema attached at MCP tool creation time */
   mcpJsonSchema?: JsonSchemaType;
+  /** Server this tool came from, carried from resolution instead of re-parsed */
+  mcpRawServerName?: string;
+  /** Raw upstream tool name when the instance name stripped a redundant server-name prefix */
+  mcpServerToolName?: string;
+  /** Current catalog tool name when a legacy persisted key kept its pre-strip spelling */
+  mcpCurrentToolName?: string;
 }
 
 /**
@@ -119,9 +194,17 @@ export function extractMCPToolDefinition(tool: MCPToolInstance): ToolDefinition 
     def.parameters = tool.mcpJsonSchema;
   }
 
-  const serverName = getServerNameFromTool(tool.name);
+  const serverName = tool.mcpRawServerName ?? getServerNameFromTool(tool.name);
   if (serverName) {
     def.serverName = serverName;
+  }
+
+  if (tool.mcpServerToolName) {
+    def.serverToolName = tool.mcpServerToolName;
+  }
+
+  if (tool.mcpCurrentToolName) {
+    def.currentToolName = tool.mcpCurrentToolName;
   }
 
   return def;
@@ -185,8 +268,18 @@ export interface BuildToolClassificationParams {
   agentToolOptions?: AgentToolOptions;
   /** Whether the deferred_tools capability is enabled (from agent config) */
   deferredToolsEnabled?: boolean;
+  /** Whether the programmatic_tools capability is enabled (from agent config) */
+  programmaticToolsEnabled?: boolean;
+  /** Whether code execution is enabled and requested by this agent */
+  codeExecutionEnabled?: boolean;
   /** When true, skip creating tool instances (for event-driven mode) */
   definitionsOnly?: boolean;
+  /** Agent provider — Gemini/Vertex rejects union types, so injected tool schemas get sanitized */
+  provider?: Providers | string;
+  /** Optional host-supplied Code API auth headers for remote programmatic execution. */
+  authHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
+  /** Trusted Code API route selected for the executing agent. */
+  codeExecutionContext?: CodeExecutionContext;
 }
 
 /** Result from building tool classification */
@@ -199,6 +292,8 @@ export interface BuildToolClassificationResult {
   additionalTools: GenericTool[];
   /** Whether any tools have defer_loading enabled (precomputed for efficiency) */
   hasDeferredTools: boolean;
+  /** Both-direction identity aliases for MCP tools whose key spelling changed (see {@link collectMCPToolAliases}) */
+  mcpToolAliases: MCPToolAlias[];
 }
 
 /**
@@ -236,7 +331,7 @@ export function agentHasDeferredTools(toolRegistry: LCToolRegistry): boolean {
  * 1. Filters loaded tools for MCP tools
  * 2. Extracts tool definitions and builds the registry from agent's tool_options
  * 3. Cleans up temporary mcpJsonSchema properties
- * 4. Creates PTC tool only if agent has tools configured for programmatic calling
+ * 4. Creates PTC tool only if capabilities allow the agent's programmatic tools
  * 5. Creates tool search tool only if agent has deferred tools
  *
  * @param params - Parameters including loaded tools, userId, agentId, agentToolOptions, and dependencies
@@ -247,11 +342,17 @@ export async function buildToolClassification(
 ): Promise<BuildToolClassificationResult> {
   const {
     agentId,
+    provider,
     loadedTools,
     agentToolOptions,
     definitionsOnly = false,
     deferredToolsEnabled = true,
+    programmaticToolsEnabled = false,
+    codeExecutionEnabled = false,
+    authHeaders,
+    codeExecutionContext,
   } = params;
+  const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
   const additionalTools: GenericTool[] = [];
 
   const mcpTools = loadedTools.filter(isMCPTool);
@@ -261,10 +362,13 @@ export async function buildToolClassification(
       toolDefinitions: [],
       toolRegistry: undefined,
       hasDeferredTools: false,
+      mcpToolAliases: [],
     };
   }
 
   const mcpToolDefs = mcpTools.map(extractMCPToolDefinition);
+  const mcpToolAliases = collectMCPToolAliases(mcpToolDefs);
+  aliasMCPToolOptions(mcpToolAliases, agentToolOptions);
   const toolRegistry: LCToolRegistry = buildToolRegistry(mcpToolDefs, agentToolOptions);
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */
@@ -272,10 +376,11 @@ export async function buildToolClassification(
 
   /**
    * Check if this agent actually has tools configured for these features.
-   * Only enable PTC if the agent has programmatic tools.
+   * Only enable PTC if code/programmatic capabilities allow the agent's programmatic tools.
    * Only enable tool search if the agent has deferred tools AND the capability is enabled.
    */
-  const hasProgrammaticTools = agentHasProgrammaticTools(toolRegistry);
+  const hasProgrammaticTools =
+    programmaticToolsEnabled && codeExecutionEnabled && agentHasProgrammaticTools(toolRegistry);
   const hasDeferredTools = deferredToolsEnabled && agentHasDeferredTools(toolRegistry);
 
   /** Clear defer_loading if capability disabled */
@@ -296,16 +401,33 @@ export async function buildToolClassification(
     logger.debug(
       `[buildToolClassification] Agent ${agentId} has no programmatic or deferred tools, skipping PTC/ToolSearch`,
     );
-    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools: false };
+    return {
+      toolRegistry,
+      toolDefinitions,
+      additionalTools,
+      hasDeferredTools: false,
+      mcpToolAliases,
+    };
   }
 
   /** Tool search uses local mode (no API key needed) */
   if (hasDeferredTools) {
+    /**
+     * The ToolSearch schema declares `mcp_server` as a string/array union, which
+     * `zod_to_gemini_parameters` rejects — collapse it for Gemini/Vertex agents.
+     */
+    const toolSearchParameters = (isGoogle
+      ? sanitizeGeminiSchema(ToolSearchToolDefinition.schema as Record<string, unknown>)
+      : ToolSearchToolDefinition.schema) as unknown as LCTool['parameters'];
+
     if (!definitionsOnly) {
       const toolSearchTool = createToolSearch({
         mode: 'local',
         toolRegistry,
       });
+      if (isGoogle) {
+        toolSearchTool.schema = toolSearchParameters as typeof toolSearchTool.schema;
+      }
       additionalTools.push(toolSearchTool);
     }
 
@@ -313,7 +435,7 @@ export async function buildToolClassification(
     toolDefinitions.push({
       name: ToolSearchToolDefinition.name,
       description: ToolSearchToolDefinition.description,
-      parameters: ToolSearchToolDefinition.schema as unknown as LCTool['parameters'],
+      parameters: toolSearchParameters,
     });
     toolRegistry.set(ToolSearchToolDefinition.name, {
       name: ToolSearchToolDefinition.name,
@@ -324,38 +446,49 @@ export async function buildToolClassification(
   }
 
   if (!hasProgrammaticTools) {
-    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
+    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools, mcpToolAliases };
   }
 
   /** In definitions-only mode, add PTC definition without creating the tool instance */
   if (definitionsOnly) {
     toolDefinitions.push({
-      name: ProgrammaticToolCallingDefinition.name,
-      description: ProgrammaticToolCallingDefinition.description,
-      parameters: ProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
+      name: BashProgrammaticToolCallingDefinition.name,
+      description: BashProgrammaticToolCallingDefinition.description,
+      parameters: BashProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
     });
-    toolRegistry.set(ProgrammaticToolCallingDefinition.name, {
-      name: ProgrammaticToolCallingDefinition.name,
+    toolRegistry.set(BashProgrammaticToolCallingDefinition.name, {
+      name: BashProgrammaticToolCallingDefinition.name,
       allowed_callers: ['direct'],
     });
     logger.debug(
       `[buildToolClassification] PTC definition added for agent ${agentId} (definitions only)`,
     );
-    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
+    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools, mcpToolAliases };
   }
 
   try {
-    const ptcTool = createProgrammaticToolCallingTool({});
+    const profileParams = codeExecutionContext
+      ? {
+          baseUrl: codeExecutionContext.baseUrl,
+          executionProfile: codeExecutionContext.executionProfile,
+          runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
+        }
+      : {};
+    const ptcTool = createBashProgrammaticToolCallingTool({
+      authHeaders,
+      ...profileParams,
+    } as Parameters<typeof createBashProgrammaticToolCallingTool>[0] &
+      typeof profileParams & { authHeaders?: BuildToolClassificationParams['authHeaders'] });
     additionalTools.push(ptcTool);
 
     /** Add PTC definition for event-driven mode */
     toolDefinitions.push({
-      name: ProgrammaticToolCallingDefinition.name,
-      description: ProgrammaticToolCallingDefinition.description,
-      parameters: ProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
+      name: BashProgrammaticToolCallingDefinition.name,
+      description: BashProgrammaticToolCallingDefinition.description,
+      parameters: BashProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
     });
-    toolRegistry.set(ProgrammaticToolCallingDefinition.name, {
-      name: ProgrammaticToolCallingDefinition.name,
+    toolRegistry.set(BashProgrammaticToolCallingDefinition.name, {
+      name: BashProgrammaticToolCallingDefinition.name,
       allowed_callers: ['direct'],
     });
 
@@ -364,5 +497,5 @@ export async function buildToolClassification(
     logger.error('[buildToolClassification] Error creating PTC tool:', error);
   }
 
-  return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
+  return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools, mcpToolAliases };
 }

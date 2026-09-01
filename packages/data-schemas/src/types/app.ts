@@ -8,10 +8,13 @@ import type {
   EModelEndpoint,
   TVertexAIConfig,
   TAgentsEndpoint,
+  CloudFrontConfig,
   TCustomEndpoints,
   TAssistantEndpoint,
   TAnthropicEndpoint,
   SummarizationConfig,
+  SkillSyncConfig,
+  FiltersConfig,
 } from 'librechat-data-provider';
 
 export type JsonSchemaType = {
@@ -61,10 +64,20 @@ export interface AppConfig {
   summarization?: SummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
-  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
+  /** Source-scoped content filter configuration */
+  filters?: FiltersConfig;
+  /** Message filter configuration (PII and future filter types) */
+  messageFilter?: TCustomConfig['messageFilter'];
+  /** Langfuse tracing configuration */
+  langfuse?: TCustomConfig['langfuse'];
+  /** Skill sync configuration */
+  skillSync?: SkillSyncConfig;
+  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */
   fileStrategy: FileStorage;
   /** File strategies configuration */
   fileStrategies?: TCustomConfig['fileStrategies'];
+  /** CloudFront CDN configuration */
+  cloudfront?: CloudFrontConfig;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */
@@ -91,13 +104,15 @@ export interface AppConfig {
   mcpSettings?: TCustomConfig['mcpSettings'] | null;
   /** File configuration */
   fileConfig?: TFileConfig;
-  /** Secure image links configuration */
+  /** Secure image links configuration, enabled unless explicitly disabled */
   secureImageLinks?: TCustomConfig['secureImageLinks'];
   /** Processed model specifications */
   modelSpecs?: TCustomConfig['modelSpecs'];
   /** Available tools */
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {
+    /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */
+    allowedAddresses?: string[];
     /** OpenAI endpoint configuration */
     openAI?: Partial<TEndpoint>;
     /** Google endpoint configuration */

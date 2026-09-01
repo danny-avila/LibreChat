@@ -1,6 +1,39 @@
 import type { GraphEdge } from 'librechat-data-provider';
 
 /**
+ * Rewrites an agent id wherever it appears as an edge source.
+ *
+ * Agent creation uses an empty source id until the server assigns the
+ * persisted id, while agent duplication needs to move the copied router's
+ * outgoing edges to the clone. Keeping both cases here makes the rewrite
+ * consistent for scalar and multi-source edges.
+ */
+export function replaceEdgeSourceId(
+  edges: GraphEdge[] | undefined,
+  previousSourceId: string,
+  nextSourceId: string,
+): GraphEdge[] | undefined {
+  if (!edges?.length || previousSourceId === nextSourceId) {
+    return edges;
+  }
+
+  return edges.map((edge) => {
+    if (Array.isArray(edge.from)) {
+      if (!edge.from.includes(previousSourceId)) {
+        return edge;
+      }
+      return {
+        ...edge,
+        from: edge.from.map((sourceId) =>
+          sourceId === previousSourceId ? nextSourceId : sourceId,
+        ),
+      };
+    }
+    return edge.from === previousSourceId ? { ...edge, from: nextSourceId } : edge;
+  });
+}
+
+/**
  * Creates a stable key for edge deduplication.
  * Handles both single and array-based from/to values.
  */

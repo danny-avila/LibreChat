@@ -56,11 +56,13 @@ export async function getFileStream(
 
   const { getDownloadStream } = encodingMethods[source];
   const stream = await getDownloadStream(req, file.filepath);
-  const buffer = await getStream.buffer(stream);
+  let buffer: Buffer | null = await getStream.buffer(stream);
+  const content = buffer.toString('base64');
+  buffer = null;
 
   return {
     file,
-    content: buffer.toString('base64'),
+    content,
     metadata: {
       file_id: file.file_id,
       temp_file_id: file.temp_file_id,

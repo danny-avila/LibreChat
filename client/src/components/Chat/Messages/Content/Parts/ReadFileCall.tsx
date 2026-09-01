@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import { FileText } from 'lucide-react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -63,50 +64,66 @@ export function langFromPath(filePath: string): string {
 
 export default function ReadFileCall({
   isSubmitting,
+  runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
   attachments,
+  hideAttachments = false,
+  onExpand,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
+  hideAttachments?: boolean;
+  onExpand?: () => void;
 }) {
   const localize = useLocalize();
   const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
+  const intent = useToolCallIntent(args);
   const fileName = filePath.split('/').pop() || filePath;
   const lang = useMemo(() => langFromPath(filePath), [filePath]);
 
-  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!filePath);
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
+    initialProgress,
+    isSubmitting,
+    output,
+    hasInput: !!filePath,
+    onExpand,
+    runStepStatus,
+  });
 
   const highlighted = useLazyHighlight(hasOutput ? output : undefined, lang);
 
   return (
     <>
-      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
-          progress={progress}
+          phase={phase}
           onClick={toggleCode}
-          inProgressText={localize('com_ui_reading_file', { 0: fileName })}
+          inProgressText={intent ?? localize('com_ui_reading_file', { 0: fileName })}
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize('com_ui_read_file', { 0: fileName })
+            phase === 'cancelled'
+              ? localize('com_ui_cancelled')
+              : (intent ?? localize('com_ui_read_file', { 0: fileName }))
           }
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          durationMs={runStepDurationMs}
           icon={
             <FileText
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
-                progress < 1 && !cancelled && !hasError && 'animate-pulse',
+                phase === 'running' && 'animate-pulse',
               )}
               aria-hidden="true"
             />
           }
           hasInput={!!filePath || hasOutput}
           isExpanded={showCode}
-          error={cancelled}
         />
       </div>
       <div style={expandStyle}>
@@ -123,7 +140,9 @@ export default function ReadFileCall({
           )}
         </div>
       </div>
-      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {!hideAttachments && attachments && attachments.length > 0 && (
+        <AttachmentGroup attachments={attachments} />
+      )}
     </>
   );
 }

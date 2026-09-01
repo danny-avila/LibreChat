@@ -7,6 +7,7 @@ const { getImporter } = require('./importers');
 jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
   bulkSaveMessages: jest.fn(),
+  bulkIncrementTagCounts: jest.fn(),
 }));
 
 const mockGetEndpointsConfig = jest.fn().mockResolvedValue(null);

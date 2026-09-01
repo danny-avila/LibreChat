@@ -1,4 +1,4 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants, splitToolCallName } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 
 /**
@@ -12,6 +12,8 @@ import type { TranslationKeys } from '~/hooks';
 export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
   execute_code: 'com_ui_tool_name_code',
   run_tools_with_code: 'com_ui_tool_name_code',
+  run_tools_with_bash: 'com_ui_tool_name_code',
+  bash_tool: 'com_ui_tool_name_code',
   web_search: 'com_ui_tool_name_web_search',
   image_gen_oai: 'com_ui_tool_name_image_gen',
   image_edit_oai: 'com_ui_tool_name_image_edit',
@@ -19,6 +21,7 @@ export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
   file_search: 'com_ui_tool_name_file_search',
   code_interpreter: 'com_ui_tool_name_code_analysis',
   retrieval: 'com_ui_tool_name_file_search',
+  ask_user_question: 'com_ui_tool_name_ask_user_question',
 };
 
 export interface ParsedToolName {
@@ -43,11 +46,12 @@ export interface ParsedToolName {
  *   - `web_search`             → `{ mcpServer: '', toolName: 'web_search', friendlyKey: 'com_ui_tool_name_web_search' }`
  *   - `some_custom_tool`       → `{ mcpServer: '', toolName: 'some_custom_tool' }`
  */
-export function parseToolName(rawName: string): ParsedToolName {
-  const idx = rawName.indexOf(Constants.mcp_delimiter);
-  if (idx >= 0) {
-    const mcpServer = rawName.slice(idx + Constants.mcp_delimiter.length);
-    const toolName = rawName.slice(0, idx);
+export function parseToolName(
+  rawName: string,
+  knownServerNames?: readonly string[],
+): ParsedToolName {
+  if (rawName.includes(Constants.mcp_delimiter)) {
+    const [toolName, mcpServer = ''] = splitToolCallName(rawName, knownServerNames);
     return { raw: rawName, mcpServer, toolName };
   }
   const friendlyKey = TOOL_FRIENDLY_NAME_KEYS[rawName];
@@ -71,8 +75,9 @@ export function parseToolName(rawName: string): ParsedToolName {
 export function getToolDisplayLabel(
   rawName: string,
   localize: (key: TranslationKeys) => string,
+  knownServerNames?: readonly string[],
 ): string {
-  const parsed = parseToolName(rawName);
+  const parsed = parseToolName(rawName, knownServerNames);
   if (parsed.mcpServer) return parsed.mcpServer;
   if (parsed.friendlyKey) return localize(parsed.friendlyKey);
   return parsed.toolName;

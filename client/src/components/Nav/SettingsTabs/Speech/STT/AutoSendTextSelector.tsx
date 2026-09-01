@@ -40,8 +40,9 @@ export default function AutoSendTextSelector() {
     }
   };
 
-  const handleInputChange = (value: number[] | null) => {
-    const newValue = value ? value[0] : 3;
+  const handleInputChange = (value: string | number | null) => {
+    const parsed = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
+    const newValue = Number.isNaN(parsed) ? 3 : parsed;
     setDelayValue(newValue);
     if (isEnabled) {
       setAutoSendText(newValue);
@@ -102,7 +103,7 @@ export default function AutoSendTextSelector() {
                 defaultTextProps,
                 cn(
                   optionText,
-                  'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                  'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                 ),
               )}
             />

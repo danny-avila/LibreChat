@@ -1,10 +1,13 @@
+import { useMemo, useState, useRef, memo, useEffect, MemoExoticComponent } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
 import { Search, ChevronDown } from 'lucide-react';
-import { useMemo, useState, useRef, memo, useEffect } from 'react';
-import { SelectRenderer } from '@ariakit/react-core/select/select-renderer';
+import { SelectRenderer } from '@ariakit/react-components/select/select-renderer';
 import type { OptionWithIcon } from '~/common';
+import { usePopoverZIndex } from './OriginalDialog';
+import { fieldControl } from './Field';
 import './AnimatePopover.css';
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
 
 interface ControlComboboxProps {
@@ -12,7 +15,10 @@ interface ControlComboboxProps {
   displayValue?: string;
   items: OptionWithIcon[];
   setValue: (value: string) => void;
+  onBlur?: React.FocusEventHandler<HTMLButtonElement>;
   ariaLabel: string;
+  ariaInvalid?: boolean;
+  ariaDescribedBy?: string;
   searchPlaceholder?: string;
   selectPlaceholder?: string;
   isCollapsed: boolean;
@@ -24,6 +30,23 @@ interface ControlComboboxProps {
   disabled?: boolean;
   iconSide?: 'left' | 'right';
   selectId?: string;
+  placement?: Ariakit.SelectStoreProps['placement'];
+  popoverClassName?: string;
+  matchTriggerWidth?: boolean;
+  /** `field` matches the `Input` primitive so this can sit in a form row. */
+  variant?: 'default' | 'field';
+  gutter?: number;
+  /**
+   * Radix dialogs trap focus, so a portaled popover rendered outside the dialog
+   * cannot receive typing in its search field. Pass `false` from inside a dialog
+   * to keep the list in the dialog, and give that dialog `overflow-visible` so
+   * the popover is not clipped.
+   */
+  portal?: boolean;
+  /** Told when the popover opens and closes, for hosts that must behave
+   *  differently while it is up — e.g. a focus-trapped panel whose own Escape
+   *  handler must not fire while an open popover owns the key. */
+  onOpenChange?: (open: boolean) => void;
 }
 
 const ROW_HEIGHT = 36;
@@ -33,7 +56,10 @@ function ControlCombobox({
   displayValue,
   items,
   setValue,
+  onBlur,
   ariaLabel,
+  ariaInvalid,
+  ariaDescribedBy,
   searchPlaceholder,
   selectPlaceholder,
   containerClassName,
@@ -45,10 +71,18 @@ function ControlCombobox({
   iconClassName,
   iconSide = 'left',
   selectId,
-}: ControlComboboxProps) {
+  placement,
+  popoverClassName,
+  matchTriggerWidth = true,
+  variant = 'default',
+  gutter = 4,
+  portal = true,
+  onOpenChange,
+}: ControlComboboxProps): JSX.Element {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [buttonWidth, setButtonWidth] = useState<number | null>(null);
+  const popoverZIndex = usePopoverZIndex();
 
   const getItem = (option: OptionWithIcon) => ({
     id: `item-${option.value}`,
@@ -69,6 +103,8 @@ function ControlCombobox({
     defaultItems: items.map(getItem),
     value: selectedValue,
     setValue,
+    setOpen: onOpenChange,
+    placement,
   });
 
   const matches = useMemo(() => {
@@ -80,9 +116,30 @@ function ControlCombobox({
   }, [searchValue, items]);
 
   useEffect(() => {
-    if (buttonRef.current && !isCollapsed) {
-      setButtonWidth(buttonRef.current.offsetWidth);
+    const button = buttonRef.current;
+    if (!button || isCollapsed) {
+      return;
     }
+
+    setButtonWidth(button.offsetWidth);
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      const width = entry.borderBoxSize?.[0]?.inlineSize ?? button.offsetWidth;
+      if (width > 0) {
+        setButtonWidth(width);
+      }
+    });
+
+    observer.observe(button);
+    return () => observer.disconnect();
   }, [isCollapsed]);
 
   const selectIconClassName = cn(
@@ -95,7 +152,13 @@ function ControlCombobox({
   );
 
   return (
-    <div className={cn('flex w-full items-center justify-center px-1', containerClassName)}>
+    <div
+      className={cn(
+        'flex w-full items-center justify-center px-1',
+        variant === 'field' && 'px-0',
+        containerClassName,
+      )}
+    >
       <Ariakit.SelectLabel store={select} className="sr-only">
         {ariaLabel}
       </Ariakit.SelectLabel>
@@ -104,11 +167,15 @@ function ControlCombobox({
         store={select}
         id={selectId}
         disabled={disabled}
+        onBlur={onBlur}
+        aria-invalid={ariaInvalid || undefined}
+        aria-describedby={ariaDescribedBy}
         className={cn(
           'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
           'text-text-primary hover:bg-surface-tertiary',
           'border border-border-light',
           isCollapsed ? 'h-9 w-9' : 'h-9 w-full rounded-xl px-3 py-2 text-sm',
+          variant === 'field' && cn(fieldControl, 'justify-start hover:bg-surface-hover'),
           className,
         )}
       >
@@ -117,7 +184,10 @@ function ControlCombobox({
         )}
         {!isCollapsed && (
           <>
-            <span className="flex-grow truncate text-left">
+            <span
+              className="flex-grow truncate text-left"
+              title={(displayValue != null ? displayValue : selectedValue) || undefined}
+            >
               {displayValue != null
                 ? displayValue || selectPlaceholder
                 : selectedValue || selectPlaceholder}
@@ -131,12 +201,18 @@ function ControlCombobox({
       </Ariakit.Select>
       <Ariakit.SelectPopover
         store={select}
-        gutter={4}
-        portal
+        gutter={gutter}
+        portal={portal}
         className={cn(
-          'animate-popover z-40 overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          'overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          popoverClassName ?? 'animate-popover',
         )}
-        style={{ width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }}
+        style={{
+          zIndex: popoverZIndex,
+          ...(matchTriggerWidth
+            ? { width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }
+            : { minWidth: '16rem' }),
+        }}
       >
         <div className="py-1.5">
           <div className="relative">
@@ -180,4 +256,5 @@ function ControlCombobox({
   );
 }
 
-export default memo(ControlCombobox);
+const ControlComboboxMemo: MemoExoticComponent<typeof ControlCombobox> = memo(ControlCombobox);
+export default ControlComboboxMemo;

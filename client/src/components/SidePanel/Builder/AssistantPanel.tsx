@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Spinner, useToastContext, SelectDropDown } from '@librechat/client';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
@@ -7,19 +7,26 @@ import {
   Capabilities,
   isActionTool,
   ImageVisionTool,
+  LocalStorageKeys,
   defaultAssistantFormValues,
 } from 'librechat-data-provider';
 import type { FunctionTool, TConfig } from 'librechat-data-provider';
-import type { AssistantForm, AssistantPanelProps } from '~/common';
+import type { AssistantForm, AssistantPanelProps, LastSelectedModels } from '~/common';
 import {
   useCreateAssistantMutation,
   useUpdateAssistantMutation,
   useAvailableAgentToolsQuery,
 } from '~/data-provider';
-import { cn, cardStyle, defaultTextProps, removeFocusOutlines } from '~/utils';
+import {
+  cn,
+  cardStyle,
+  defaultTextProps,
+  getAvailableModelSelection,
+  removeFocusOutlines,
+} from '~/utils';
 import AssistantConversationStarters from './AssistantConversationStarters';
 import AssistantToolsDialog from '~/components/Tools/AssistantToolsDialog';
-import { useSelectAssistant, useLocalize } from '~/hooks';
+import { useSelectAssistant, useLocalize, useLocalStorage } from '~/hooks';
 import { useAssistantsMapContext } from '~/Providers';
 import AppendDateCheckbox from './AppendDateCheckbox';
 import CapabilitiesForm from './CapabilitiesForm';
@@ -50,7 +57,13 @@ export default function AssistantPanel({
   assistantsConfig,
   version,
 }: AssistantPanelProps & { assistantsConfig?: TConfig | null }) {
-  const modelsQuery = useGetModelsQuery();
+  const modelsQuery = useGetModelsQuery({ refetchOnMount: 'always' });
+  const models = useMemo(() => modelsQuery.data?.[endpoint] ?? [], [endpoint, modelsQuery.data]);
+  const modelsReady = modelsQuery.isFetchedAfterMount && !modelsQuery.isFetching;
+  const [lastSelectedModels] = useLocalStorage<LastSelectedModels | undefined>(
+    LocalStorageKeys.LAST_MODEL,
+    {} as LastSelectedModels,
+  );
   const assistantMap = useAssistantsMapContext();
 
   const { data: allTools = [] } = useAvailableAgentToolsQuery();
@@ -64,10 +77,41 @@ export default function AssistantPanel({
 
   const [showToolDialog, setShowToolDialog] = useState(false);
 
-  const { control, handleSubmit, reset, setValue, getValues } = methods;
+  const {
+    control,
+    handleSubmit,
+    reset,
+    setValue,
+    getValues,
+    formState: { dirtyFields },
+  } = methods;
   const assistant = useWatch({ control, name: 'assistant' });
   const functions = useWatch({ control, name: 'functions' });
   const assistant_id = useWatch({ control, name: 'id' });
+  const model = useWatch({ control, name: 'model' });
+
+  useEffect(() => {
+    if (!modelsReady || !modelsQuery.isSuccess || current_assistant_id || assistant_id) {
+      return;
+    }
+
+    const candidate = dirtyFields.model === true ? model : (lastSelectedModels?.[endpoint] ?? '');
+    const nextModel = getAvailableModelSelection(candidate, models);
+    if (nextModel !== model) {
+      setValue('model', nextModel, { shouldDirty: false });
+    }
+  }, [
+    assistant_id,
+    current_assistant_id,
+    dirtyFields.model,
+    endpoint,
+    lastSelectedModels,
+    model,
+    models,
+    modelsQuery.isSuccess,
+    modelsReady,
+    setValue,
+  ]);
 
   const activeModel = useMemo(() => {
     return assistantMap?.[endpoint]?.[assistant_id]?.model;
@@ -237,7 +281,7 @@ export default function AssistantPanel({
           {/* Select Button */}
           {assistant_id && (
             <button
-              className="btn btn-primary focus:shadow-outline mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              className="btn btn-primary mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
               type="button"
               disabled={!assistant_id}
               onClick={(e) => {
@@ -249,7 +293,7 @@ export default function AssistantPanel({
             </button>
           )}
         </div>
-        <div className="bg-surface-50 h-auto px-4 pb-8 pt-3 dark:bg-transparent">
+        <div className="h-auto bg-surface-primary px-4 pb-8 pt-3 dark:bg-transparent">
           {/* Avatar & Name */}
           <div className="mb-4">
             <AssistantAvatar
@@ -363,7 +407,8 @@ export default function AssistantPanel({
                     emptyTitle={true}
                     value={field.value}
                     setValue={field.onChange}
-                    availableValues={modelsQuery.data?.[endpoint] ?? []}
+                    availableValues={models}
+                    disabled={!modelsReady}
                     showAbove={false}
                     showLabel={false}
                     className={cn(
@@ -460,7 +505,7 @@ export default function AssistantPanel({
             />
             {/* Submit Button */}
             <button
-              className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+              className="btn btn-primary flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
               type="submit"
             >
               {submitContext}
