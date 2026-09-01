@@ -1,9 +1,11 @@
 import React from 'react';
+import { useSetAtom } from 'jotai';
 import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import { activeSubagentPanel } from '~/store/subagents';
+import { ChatSurfaceHarness } from 'test/harness';
 import Presentation from './Presentation';
 import store from '~/store';
 
@@ -96,7 +98,7 @@ const OpenArtifactPanel = () => {
 
 const OpenSubagentPanel = () => {
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
-  const setSelection = useSetRecoilState(activeSubagentPanel);
+  const setSelection = useSetAtom(activeSubagentPanel);
   const open = () => {
     setConversation({ conversationId: 'parent-conversation' } as TConversation);
     setSelection({
@@ -146,11 +148,13 @@ describe('Presentation Artifact loading', () => {
     };
 
     render(
-      <RecoilRoot>
-        <Presentation>
-          <OpenArtifactPanel />
-        </Presentation>
-      </RecoilRoot>,
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <Presentation>
+            <OpenArtifactPanel />
+          </Presentation>
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
     );
 
     expect(testGlobal.presentationArtifactModuleEvaluations ?? 0).toBe(0);
@@ -164,11 +168,13 @@ describe('Presentation Artifact loading', () => {
 
   it('loads the parent child index only for Agent conversations', () => {
     render(
-      <RecoilRoot>
-        <Presentation>
-          <SelectAgentConversation />
-        </Presentation>
-      </RecoilRoot>,
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <Presentation>
+            <SelectAgentConversation />
+          </Presentation>
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
     );
 
     expect(mockUseParentSubagentsQuery).toHaveBeenLastCalledWith('', { enabled: false });
@@ -180,12 +186,14 @@ describe('Presentation Artifact loading', () => {
 
   it('uses one panel slot and lets an opened artifact replace child activity', async () => {
     render(
-      <RecoilRoot>
-        <Presentation>
-          <OpenSubagentPanel />
-          <OpenArtifactPanel />
-        </Presentation>
-      </RecoilRoot>,
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <Presentation>
+            <OpenSubagentPanel />
+            <OpenArtifactPanel />
+          </Presentation>
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: mockOpenChildLabel }));

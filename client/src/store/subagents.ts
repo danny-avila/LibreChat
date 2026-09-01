@@ -1,4 +1,5 @@
-import { atom, atomFamily } from 'recoil';
+import { atom } from 'jotai';
+import { atomFamily } from 'jotai/utils';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   PartMetadata,
@@ -8,7 +9,8 @@ import type {
   TMessageContentParts,
   SubagentUpdateEvent,
 } from 'librechat-data-provider';
-import type { AtomEffect } from 'recoil';
+import type { Getter, PrimitiveAtom, WritableAtom } from 'jotai';
+import type { SetStateAction } from 'react';
 import type {
   SubagentAggregatorState,
   SubagentContentPart,
@@ -284,10 +286,7 @@ export type ActiveSubagentPanel = {
   };
 };
 
-export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({
-  key: 'activeSubagentPanel',
-  default: null,
-});
+export const activeSubagentPanel = atom<ActiveSubagentPanel | null>(null);
 
 export type SubagentControlUiReceipt = Omit<SubagentControlReceipt, 'status'> & {
   status: SubagentControlReceipt['status'] | 'submitted';
@@ -367,42 +366,70 @@ const storedControlState = (value: unknown): SubagentControlUiState | null => {
   };
 };
 
-const subagentControlStorageEffect =
-  (identity: string): AtomEffect<SubagentControlUiState | null> =>
-  ({ setSelf, onSet }) => {
-    if (typeof window === 'undefined') return;
-    const storageKey = `${SUBAGENT_CONTROL_STORAGE_PREFIX}${encodeURIComponent(identity)}`;
+const controlStorageKey = (identity: string): string =>
+  `${SUBAGENT_CONTROL_STORAGE_PREFIX}${encodeURIComponent(identity)}`;
+
+const restoreControlState = (identity: string): SubagentControlUiState | null => {
+  if (typeof window === 'undefined') return null;
+  const storageKey = controlStorageKey(identity);
+  try {
+    const raw = window.sessionStorage.getItem(storageKey);
+    if (raw == null) return null;
+    const restored = storedControlState(JSON.parse(raw));
+    if (restored == null) window.sessionStorage.removeItem(storageKey);
+    return restored;
+  } catch {
     try {
-      const raw = window.sessionStorage.getItem(storageKey);
-      if (raw != null) {
-        const restored = storedControlState(JSON.parse(raw));
-        if (restored == null) window.sessionStorage.removeItem(storageKey);
-        else setSelf(restored);
-      }
+      window.sessionStorage.removeItem(storageKey);
     } catch {
-      try {
-        window.sessionStorage.removeItem(storageKey);
-      } catch {
-        // Some privacy modes deny session storage entirely.
-      }
+      // Some privacy modes deny session storage entirely.
     }
-    onSet((next, _previous, isReset) => {
-      try {
-        if (isReset || next?.retry == null) window.sessionStorage.removeItem(storageKey);
-        else window.sessionStorage.setItem(storageKey, JSON.stringify(next));
-      } catch {
-        // Storage is best-effort; the in-memory receipt still protects this mounted session.
-      }
-    });
-  };
+    return null;
+  }
+};
+
+const persistControlState = (identity: string, next: SubagentControlUiState | null): void => {
+  if (typeof window === 'undefined') return;
+  const storageKey = controlStorageKey(identity);
+  try {
+    /** Only an ambiguous retry has to outlive the tab's memory; anything else
+     *  is reconstructed from the durable receipts on the next read. */
+    if (next?.retry == null) window.sessionStorage.removeItem(storageKey);
+    else window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+  } catch {
+    // Storage is best-effort; the in-memory receipt still protects this mounted session.
+  }
+};
 
 /** Parent-owned control state survives closing the activity panel or selecting
  * another child. Ambiguous retries also survive a full page reload in this tab;
  * durable receipts clear both copies after authoritative reconciliation. */
-export const subagentControlStateByTask = atomFamily<SubagentControlUiState | null, string>({
-  key: 'subagentControlStateByTask',
-  default: null,
-  effects_UNSTABLE: (identity) => [subagentControlStorageEffect(identity)],
+const UNWRITTEN = Symbol('unwritten');
+
+export const subagentControlStateByTask = atomFamily<
+  string,
+  WritableAtom<SubagentControlUiState | null, [SetStateAction<SubagentControlUiState | null>], void>
+>((identity: string) => {
+  /** Restored per store rather than per family member: a member is created
+   *  once for the tab, and a reload has to see what the last one persisted. */
+  const restored = atom(() => restoreControlState(identity));
+  const held: PrimitiveAtom<SubagentControlUiState | null | typeof UNWRITTEN> = atom(
+    UNWRITTEN as SubagentControlUiState | null | typeof UNWRITTEN,
+  );
+  const read = (get: Getter): SubagentControlUiState | null => {
+    const current = get(held);
+    return current === UNWRITTEN ? get(restored) : current;
+  };
+  return atom(read, (get, set, update: SetStateAction<SubagentControlUiState | null>) => {
+    const next =
+      typeof update === 'function'
+        ? (update as (previous: SubagentControlUiState | null) => SubagentControlUiState | null)(
+            read(get),
+          )
+        : update;
+    set(held, next);
+    persistControlState(identity, next);
+  });
 });
 
 /** Stable identity for one subagent invocation in the parent conversation. */
@@ -413,16 +440,12 @@ export const subagentProgressKey = (
 ) => `${parentMessageId}\u0000${toolCallId}\u0000${partIndex}`;
 
 /** Progress state keyed by one concrete tool-call content-part occurrence. */
-export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, string>({
-  key: 'subagentProgressByToolCallId',
-  default: null,
-});
+export const subagentProgressByToolCallId = atomFamily((_key: string) =>
+  atom<SubagentProgress | null>(null),
+);
 
 /** Parent delivery remains authoritative until its ordered SSE close boundary. */
-export const subagentParentStreamOpenByToolCallId = atomFamily<boolean, string>({
-  key: 'subagentParentStreamOpenByToolCallId',
-  default: false,
-});
+export const subagentParentStreamOpenByToolCallId = atomFamily((_key: string) => atom(false));
 
 /**
  * Invocation atoms populated by either the parent generation stream or the selected detached

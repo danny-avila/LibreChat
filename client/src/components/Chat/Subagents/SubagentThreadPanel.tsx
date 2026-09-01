@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { Clock, OctagonPause, X, Zap } from 'lucide-react';
 import { dataService, ForkOptions } from 'librechat-data-provider';
+import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import {
   Alert,
   Button,
@@ -10,13 +11,6 @@ import {
   useMediaQuery,
   useToastContext,
 } from '@librechat/client';
-import {
-  useRecoilCallback,
-  useRecoilState,
-  useRecoilValue,
-  useResetRecoilState,
-  useSetRecoilState,
-} from 'recoil';
 import type {
   ParentSubagentTaskSummary,
   SubagentControlAction,
@@ -54,14 +48,13 @@ import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActiv
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { isMacPlatform, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
-import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
 import { isLiveSubagentStatus } from './status';
 import { renderAgentAvatar } from '~/utils';
-import store from '~/store';
+import { useChatSurface } from './surface';
 
 const EVENT_TASK_PAGE_SIZE = 3;
 const TERMINAL_CONTROL_REASONS = new Set([
@@ -116,6 +109,7 @@ const failedControlLocaleKey = (reason?: string) => {
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
+  const panelStore = useStore();
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -126,8 +120,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
    *  `aside` the trap knows, so Tab never reaches it. Either way those readers
    *  get the same actions as controls of their own, inside the panel. */
   const coarsePointer = useMediaQuery('(hover: none)');
-  const enterToSend = useRecoilValue(store.enterToSend);
-  const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
+  const {
+    enterToSend,
+    handOffComposerText,
+    composerBindings: { shortcutsEnabled, submitOverride, yieldedChords },
+  } = useChatSurface();
   const [actorPickerOpen, setActorPickerOpen] = useState(false);
   /** A continuation is out. Declared here because the selection-advance effect
    *  below has to defer to it, well before the mutation itself exists. */
@@ -136,11 +133,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   /** Unsent words in the composer are enough on their own: whatever put them
    *  there, an advance would change the control identity and wipe them. */
   const selectionHeldForDraft = continuationPending || controlMessage.trim() !== '';
-  const resetSelection = useResetRecoilState(activeSubagentPanel);
-  const setSelection = useSetRecoilState(activeSubagentPanel);
+  const setSelection = useSetAtom(activeSubagentPanel);
+  const resetSelection = useCallback(() => setSelection(null), [setSelection]);
   const agentsMap = useAgentsMapContext();
   const { byMessageId, byThreadId, refresh } = useParentSubagents();
-  const progress = useRecoilValue(
+  const progress = useAtomValue(
     subagentProgressByToolCallId(
       subagentProgressKey(
         selection.parentMessageId,
@@ -156,14 +153,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const threadId = selection.durable?.threadId ?? '';
   const taskId = selection.durable?.taskId ?? '';
   const controlIdentity = subagentControlStateKey(selection.parentConversationId, threadId, taskId);
-  const [controlState, setControlState] = useRecoilState(
-    subagentControlStateByTask(controlIdentity),
-  );
-  const setControlStateForIdentity = useRecoilCallback(
-    ({ set }) =>
-      (identity: string, state: SubagentControlUiState | null) =>
-        set(subagentControlStateByTask(identity), state),
-    [],
+  const [controlState, setControlState] = useAtom(subagentControlStateByTask(controlIdentity));
+  const setControlStateForIdentity = useCallback(
+    (identity: string, state: SubagentControlUiState | null) =>
+      panelStore.set(subagentControlStateByTask(identity), state),
+    [panelStore],
   );
   const transientControl = controlState?.receipt ?? null;
   const retryControl = controlState?.retry ?? null;
@@ -302,12 +296,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
    *  that made the request. Switch actors mid-flight and the words in the field
    *  are the new actor's, so this falls back to what was there at submission. */
   const continuationRef = useRef<{ identity: string; text: string } | null>(null);
-  const handOffComposerText = useRecoilCallback(
-    ({ set }) =>
-      (conversationId: string, text: string) =>
-        set(store.pendingComposerTextByConvoId(conversationId), text),
-    [],
-  );
   const continueChat = useForkConvoMutation({
     onSuccess: (result) => {
       const continuedConversationId = result.conversation?.conversationId;

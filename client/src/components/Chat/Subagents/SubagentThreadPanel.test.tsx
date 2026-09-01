@@ -1,6 +1,6 @@
 import React from 'react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { ContentTypes, ForkOptions } from 'librechat-data-provider';
-import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type {
   ParentSubagentSummary,
@@ -8,15 +8,16 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
+import type { JotaiStore } from 'test/harness';
 import {
   activeSubagentPanel,
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
 import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
+import { ChatSurfaceHarness, testChatSurface } from 'test/harness';
 import SubagentThreadPanel from './SubagentThreadPanel';
 import { getDraft } from '~/utils';
-import store from '~/store';
 
 const mockUseSubagentThreadQuery = jest.fn();
 const mockUseSubagentActivityStream = jest.fn();
@@ -32,6 +33,33 @@ let mockCoarsePointer = false;
 let mockParentChildrenByMessage = new Map<string, ParentSubagentSummary[]>();
 let mockParentChildrenByThread = new Map<string, ParentSubagentSummary>();
 const mockRefreshParentChildren = jest.fn().mockResolvedValue(undefined);
+/** The host's half of the chat surface, supplied here instead of reached for:
+ *  what the panel promises is that it consults the preference and hands the
+ *  words over, not which application atom either one lives in. */
+let mockEnterToSend = true;
+const mockClaimForeground = jest.fn();
+const mockHandOffComposerText = jest.fn();
+
+function Root({
+  seed,
+  children,
+}: {
+  seed?: (store: JotaiStore) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <ChatSurfaceHarness
+      seed={seed}
+      surface={testChatSurface({
+        enterToSend: mockEnterToSend,
+        claimForeground: mockClaimForeground,
+        handOffComposerText: mockHandOffComposerText,
+      })}
+    >
+      {children}
+    </ChatSurfaceHarness>
+  );
+}
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -425,6 +453,9 @@ describe('SubagentThreadPanel', () => {
     window.sessionStorage.clear();
     mockIsMobile = false;
     mockCoarsePointer = false;
+    mockEnterToSend = true;
+    mockClaimForeground.mockClear();
+    mockHandOffComposerText.mockClear();
     mockApprovalProviderMounted.mockClear();
     mockApprovalProviderUnmounted.mockClear();
     mockForkMutate.mockClear();
@@ -450,12 +481,12 @@ describe('SubagentThreadPanel', () => {
     });
     let active: ActiveSubagentPanel | null = selection;
     const Observer = () => {
-      active = useRecoilValue(activeSubagentPanel);
+      active = useAtomValue(activeSubagentPanel);
       return null;
     };
 
     const { container } = render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <button
           type="button"
           data-subagent-tool-call="tool-call"
@@ -464,7 +495,7 @@ describe('SubagentThreadPanel', () => {
         />
         <Observer />
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith(
@@ -500,11 +531,11 @@ describe('SubagentThreadPanel', () => {
     });
     let active: ActiveSubagentPanel | null = selection;
     const Observer = () => {
-      active = useRecoilValue(activeSubagentPanel);
+      active = useAtomValue(activeSubagentPanel);
       return null;
     };
     const { container } = render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <button
           type="button"
           data-subagent-tool-call="tool-call"
@@ -513,7 +544,7 @@ describe('SubagentThreadPanel', () => {
         />
         <Observer />
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
@@ -553,9 +584,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByTestId('subagent-conversation')).toBeInTheDocument();
@@ -586,9 +617,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getAllByTestId('conversation-turn')).toHaveLength(2);
@@ -606,15 +637,11 @@ describe('SubagentThreadPanel', () => {
       isError: false,
       isReadinessPending: false,
     });
+    mockEnterToSend = false;
     render(
-      <RecoilRoot
-        initializeState={({ set }) => {
-          set(activeSubagentPanel, selection);
-          set(store.enterToSend, false);
-        }}
-      >
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     const composer = screen.getByLabelText('com_ui_message_input');
@@ -641,9 +668,9 @@ describe('SubagentThreadPanel', () => {
     /** A fresh element each time: React bails out of an update whose element is
      *  the very same object, so a reused tree would assert nothing. */
     const tree = () => (
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>
+      </Root>
     );
     const { rerender } = render(tree());
 
@@ -683,9 +710,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     const composer = screen.getByLabelText('com_ui_message_input');
@@ -714,9 +741,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -742,9 +769,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -771,9 +798,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     const composer = screen.getByLabelText('com_ui_message_input');
@@ -795,9 +822,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     const composer = screen.getByLabelText('com_ui_message_input');
@@ -826,9 +853,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -854,9 +881,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -876,9 +903,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -932,9 +959,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -964,9 +991,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -991,8 +1018,8 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     const PanelHost = () => {
-      const current = useRecoilValue(activeSubagentPanel);
-      const setCurrent = useSetRecoilState(activeSubagentPanel);
+      const current = useAtomValue(activeSubagentPanel);
+      const setCurrent = useSetAtom(activeSubagentPanel);
       return current == null ? (
         <button type="button" onClick={() => setCurrent(selection)}>
           {selection.subagentType}
@@ -1002,9 +1029,9 @@ describe('SubagentThreadPanel', () => {
       );
     };
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <PanelHost />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -1034,9 +1061,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     const first = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -1053,9 +1080,9 @@ describe('SubagentThreadPanel', () => {
     first.unmount();
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
     expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
@@ -1070,8 +1097,8 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     const PanelHost = () => {
-      const current = useRecoilValue(activeSubagentPanel);
-      const setCurrent = useSetRecoilState(activeSubagentPanel);
+      const current = useAtomValue(activeSubagentPanel);
+      const setCurrent = useSetAtom(activeSubagentPanel);
       return current == null ? (
         <button type="button" onClick={() => setCurrent(selection)}>
           {selection.subagentType}
@@ -1081,9 +1108,9 @@ describe('SubagentThreadPanel', () => {
       );
     };
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <PanelHost />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -1113,9 +1140,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     const { rerender } = render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -1133,9 +1160,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     rerender(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(
@@ -1171,9 +1198,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     const composer = screen.getByLabelText('com_ui_message_input');
@@ -1204,9 +1231,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     const { rerender } = render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -1239,9 +1266,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     rerender(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByText('applied')).toBeInTheDocument();
@@ -1261,9 +1288,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' }));
@@ -1295,9 +1322,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' }));
@@ -1345,9 +1372,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByText('applied')).toBeInTheDocument();
@@ -1366,9 +1393,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.queryByRole('button', { name: 'com_ui_steer_send' })).not.toBeInTheDocument();
@@ -1402,9 +1429,9 @@ describe('SubagentThreadPanel', () => {
     };
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={foreground} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByText('Review this change.')).toBeInTheDocument();
@@ -1423,16 +1450,10 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
 
-    let handedOffText: string | undefined;
-    const Observer = () => {
-      handedOffText = useRecoilValue(store.pendingComposerTextByConvoId('continued-chat'));
-      return null;
-    };
     render(
-      <RecoilRoot>
-        <Observer />
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     /** The settled thread keeps ONE composer: Enter continues from it, and what
@@ -1462,7 +1483,10 @@ describe('SubagentThreadPanel', () => {
     expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
     /** In memory, never in the composer draft store: an unsent draft must not
      *  be written to storage a reader may have asked not to use. */
-    expect(handedOffText).toBe('Take this further, starting from the endgame.');
+    expect(mockHandOffComposerText).toHaveBeenCalledWith(
+      'continued-chat',
+      'Take this further, starting from the endgame.',
+    );
     expect(getDraft('continued-chat')).toBe('');
   });
 
@@ -1476,16 +1500,10 @@ describe('SubagentThreadPanel', () => {
       isError: false,
       isReadinessPending: false,
     });
-    let handedOffText: string | undefined;
-    const Observer = () => {
-      handedOffText = useRecoilValue(store.pendingComposerTextByConvoId('continued-chat'));
-      return null;
-    };
     const { rerender } = render(
-      <RecoilRoot>
-        <Observer />
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -1498,10 +1516,9 @@ describe('SubagentThreadPanel', () => {
      *  draft) is not the one the fork was sent from. */
     const laterSelection = { ...selection, parentConversationId: 'other-parent-conversation' };
     rerender(
-      <RecoilRoot>
-        <Observer />
+      <Root>
         <SubagentThreadPanel selection={laterSelection} />
-      </RecoilRoot>,
+      </Root>,
     );
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'A different question entirely.' },
@@ -1510,7 +1527,10 @@ describe('SubagentThreadPanel', () => {
     const conversation = { conversationId: 'continued-chat', agent_id: 'agent-1' };
     act(() => mockForkMutate.mock.calls[0][1].onSuccess({ conversation, messages: [] }));
 
-    expect(handedOffText).toBe('Keep going on the first task.');
+    expect(mockHandOffComposerText).toHaveBeenCalledWith(
+      'continued-chat',
+      'Keep going on the first task.',
+    );
     expect(screen.getByLabelText('com_ui_message_input')).toHaveValue(
       'A different question entirely.',
     );
@@ -1530,9 +1550,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, selection)}>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     const composer = screen.getByLabelText('com_ui_message_input');
@@ -1583,9 +1603,9 @@ describe('SubagentThreadPanel', () => {
     };
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, eventSelection)}>
         <SubagentThreadPanel selection={eventSelection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByRole('combobox', { name: 'com_ui_subagent_actor' })).toBeEnabled();
@@ -1636,7 +1656,7 @@ describe('SubagentThreadPanel', () => {
     });
     let active: ActiveSubagentPanel | null = null;
     const Observer = () => {
-      active = useRecoilValue(activeSubagentPanel);
+      active = useAtomValue(activeSubagentPanel);
       return null;
     };
     const eventSelection: ActiveSubagentPanel = {
@@ -1647,10 +1667,10 @@ describe('SubagentThreadPanel', () => {
     /** A fresh element each time: React bails out of an update whose element is
      *  the very same object, so a reused tree would assert nothing. */
     const tree = () => (
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, eventSelection)}>
         <Observer />
         <SubagentThreadPanel selection={eventSelection} />
-      </RecoilRoot>
+      </Root>
     );
     const { rerender } = render(tree());
 
@@ -1688,16 +1708,10 @@ describe('SubagentThreadPanel', () => {
       isError: false,
       isReadinessPending: false,
     });
-    let handedOffText: string | undefined;
-    const Observer = () => {
-      handedOffText = useRecoilValue(store.pendingComposerTextByConvoId('continued-chat'));
-      return null;
-    };
     render(
-      <RecoilRoot>
-        <Observer />
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -1710,7 +1724,7 @@ describe('SubagentThreadPanel', () => {
     act(() => mockForkMutate.mock.calls[0][1].onSuccess({ conversation, messages: [] }));
 
     expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
-    expect(handedOffText).toBeUndefined();
+    expect(mockHandOffComposerText).not.toHaveBeenCalled();
   });
 
   it('continues with no draft when the reader asks for the chat without typing', () => {
@@ -1721,16 +1735,10 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
 
-    let handedOffText: string | undefined;
-    const Observer = () => {
-      handedOffText = useRecoilValue(store.pendingComposerTextByConvoId('empty-continuation'));
-      return null;
-    };
     render(
-      <RecoilRoot>
-        <Observer />
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_continue_new_chat' }));
@@ -1738,7 +1746,7 @@ describe('SubagentThreadPanel', () => {
     const conversation = { conversationId: 'empty-continuation', agent_id: 'agent-1' };
     act(() => mutationOptions.onSuccess({ conversation, messages: [] }));
     expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
-    expect(handedOffText).toBeUndefined();
+    expect(mockHandOffComposerText).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1754,9 +1762,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(
@@ -1773,9 +1781,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
@@ -1813,9 +1821,9 @@ describe('SubagentThreadPanel', () => {
     };
 
     render(
-      <RecoilRoot
-        initializeState={({ set }) =>
-          set(subagentProgressByToolCallId(progressKey), {
+      <Root
+        seed={(jotai) =>
+          jotai.set(subagentProgressByToolCallId(progressKey), {
             subagentRunId: 'child-run',
             subagentType: 'researcher',
             status: 'message_delta',
@@ -1827,7 +1835,7 @@ describe('SubagentThreadPanel', () => {
         }
       >
         <SubagentThreadPanel selection={detachedSelection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByText('Dispatch-time snapshot.latest detached text.')).toBeInTheDocument();
@@ -1841,20 +1849,20 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     const { rerender } = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={{ ...selection, durable: undefined }} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(mockApprovalProviderMounted).toHaveBeenCalledTimes(1);
     expect(mockApprovalProviderUnmounted).not.toHaveBeenCalled();
 
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel
           selection={{ ...selection, partIndex: selection.partIndex + 1, durable: undefined }}
         />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(mockApprovalProviderUnmounted).toHaveBeenCalledTimes(1);
@@ -1870,9 +1878,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByTestId('subagent-conversation')).toHaveAttribute('data-state', 'loading');
@@ -1889,9 +1897,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     const { rerender } = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
 
@@ -1902,9 +1910,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
@@ -1922,9 +1930,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
@@ -1963,9 +1971,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={eventSelection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith(
@@ -1990,9 +1998,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByTestId('subagent-conversation')).toHaveAttribute('data-state', 'error');
@@ -2008,9 +2016,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot
-        initializeState={({ set }) =>
-          set(
+      <Root
+        seed={(jotai) =>
+          jotai.set(
             subagentProgressByToolCallId(
               subagentProgressKey(
                 selection.parentMessageId,
@@ -2030,7 +2038,7 @@ describe('SubagentThreadPanel', () => {
         }
       >
         <SubagentThreadPanel selection={{ ...selection, runStepStatus: 'completed' }} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByText('Live child update.')).toBeInTheDocument();
@@ -2048,9 +2056,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
@@ -2109,15 +2117,15 @@ describe('SubagentThreadPanel', () => {
     };
     let active: ActiveSubagentPanel | null = eventSelection;
     const Observer = () => {
-      active = useRecoilValue(activeSubagentPanel);
+      active = useAtomValue(activeSubagentPanel);
       return null;
     };
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, eventSelection)}>
         <Observer />
         <SubagentThreadPanel selection={eventSelection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.queryByRole('button', { name: 'com_ui_subagent_turn' })).not.toBeInTheDocument();
@@ -2199,7 +2207,7 @@ describe('SubagentThreadPanel', () => {
     mockIsMobile = true;
     let active: ActiveSubagentPanel | null = null;
     const Observer = () => {
-      active = useRecoilValue(activeSubagentPanel);
+      active = useAtomValue(activeSubagentPanel);
       return null;
     };
     const eventSelection: ActiveSubagentPanel = {
@@ -2208,10 +2216,10 @@ describe('SubagentThreadPanel', () => {
     };
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, eventSelection)}>
         <Observer />
         <SubagentThreadPanel selection={eventSelection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     const picker = screen.getByRole('combobox', { name: 'com_ui_subagent_actor' });
@@ -2246,14 +2254,14 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel
           selection={{
             ...selection,
             event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
           }}
         />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getByRole('heading', { name: 'Analyst One' })).toBeInTheDocument();
@@ -2311,9 +2319,9 @@ describe('SubagentThreadPanel', () => {
         durable: { threadId: 'child-thread', taskId: selectedTaskId },
       };
       render(
-        <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, missingSelection)}>
+        <Root seed={(jotai) => jotai.set(activeSubagentPanel, missingSelection)}>
           <SubagentThreadPanel selection={missingSelection} />
-        </RecoilRoot>,
+        </Root>,
       );
 
       const turns = screen.getAllByTestId('conversation-turn');
@@ -2367,9 +2375,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(mockGetSubagentThread).not.toHaveBeenCalled();
@@ -2411,9 +2419,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'load-task-old' }));
@@ -2461,9 +2469,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
@@ -2504,9 +2512,9 @@ describe('SubagentThreadPanel', () => {
     mockGetSubagentThread.mockReturnValueOnce(olderPage);
 
     const { rerender } = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
 
@@ -2538,9 +2546,9 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     await act(async () => {
@@ -2593,9 +2601,9 @@ describe('SubagentThreadPanel', () => {
     mockGetSubagentThread.mockRejectedValueOnce(new Error('history unavailable'));
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
@@ -2627,9 +2635,9 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(
@@ -2670,9 +2678,9 @@ describe('SubagentThreadPanel', () => {
       });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
@@ -2715,9 +2723,9 @@ describe('SubagentThreadPanel', () => {
     }));
 
     const { rerender } = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
     expect(
       screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
@@ -2729,9 +2737,9 @@ describe('SubagentThreadPanel', () => {
       nextCursor: 'new-boundary:assistant',
     };
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     await waitFor(() =>
@@ -2795,20 +2803,20 @@ describe('SubagentThreadPanel', () => {
     };
 
     const { rerender } = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selectionA} />
-      </RecoilRoot>,
+      </Root>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'load-task-a' }));
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selectionB} />
-      </RecoilRoot>,
+      </Root>,
     );
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selectionA} />
-      </RecoilRoot>,
+      </Root>,
     );
     await waitFor(() => expect(screen.getByRole('button', { name: 'load-task-a' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'load-task-a' }));
@@ -2884,20 +2892,20 @@ describe('SubagentThreadPanel', () => {
     };
 
     const { rerender } = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selectionA} />
-      </RecoilRoot>,
+      </Root>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selectionB} />
-      </RecoilRoot>,
+      </Root>,
     );
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selectionA} />
-      </RecoilRoot>,
+      </Root>,
     );
     await waitFor(() =>
       expect(
@@ -2975,9 +2983,9 @@ describe('SubagentThreadPanel', () => {
       .mockReturnValueOnce(reconnectPage);
 
     const { rerender } = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
     await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(3));
@@ -2988,9 +2996,9 @@ describe('SubagentThreadPanel', () => {
       turns: [makeTurn('task-new', 'New result'), makeTurn('task-newer', 'Newest result')],
     };
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(5));
@@ -3017,9 +3025,9 @@ describe('SubagentThreadPanel', () => {
       turns: [makeTurn('task-final', 'Final live result')],
     };
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
     await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(7));
 
@@ -3039,9 +3047,9 @@ describe('SubagentThreadPanel', () => {
       turns: [makeTurn('task-ultimate', 'Ultimate live result')],
     };
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
     await waitFor(() => expect(screen.getByText('Ultimate live result')).toBeInTheDocument());
 
@@ -3098,9 +3106,9 @@ describe('SubagentThreadPanel', () => {
     }));
 
     const { rerender } = render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
     expect(screen.getByText('Old result')).toBeInTheDocument();
 
@@ -3110,9 +3118,9 @@ describe('SubagentThreadPanel', () => {
       turns: [makeTurn('task', 'Current result'), makeTurn('new', 'New result')],
     };
     rerender(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={selection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     await waitFor(() => expect(screen.queryByText('Old result')).not.toBeInTheDocument());
@@ -3153,15 +3161,15 @@ describe('SubagentThreadPanel', () => {
     };
     let active: ActiveSubagentPanel | null = staleSelection;
     const Observer = () => {
-      active = useRecoilValue(activeSubagentPanel);
+      active = useAtomValue(activeSubagentPanel);
       return null;
     };
 
     render(
-      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, staleSelection)}>
+      <Root seed={(jotai) => jotai.set(activeSubagentPanel, staleSelection)}>
         <Observer />
         <SubagentThreadPanel selection={staleSelection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     await waitFor(() =>
@@ -3204,9 +3212,9 @@ describe('SubagentThreadPanel', () => {
     };
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel selection={eventSelection} />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getAllByTestId('shared-activity')).toHaveLength(3);
@@ -3251,14 +3259,14 @@ describe('SubagentThreadPanel', () => {
     });
 
     render(
-      <RecoilRoot>
+      <Root>
         <SubagentThreadPanel
           selection={{
             ...selection,
             event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
           }}
         />
-      </RecoilRoot>,
+      </Root>,
     );
 
     expect(screen.getAllByTestId('shared-activity')).toHaveLength(1);

@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { ChevronDown, Users } from 'lucide-react';
-import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { WakeupDisplay, WakeupTask } from './Parts/wakeup';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import type { TranslationKeys } from '~/hooks';
@@ -9,9 +9,9 @@ import { subagentStatusIcon, subagentStatusLabelKey } from '~/components/Chat/Su
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import { durableSubagentSelection } from '~/components/Chat/Subagents/eventSelection';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
+import { useOpenSubagentPanel } from '~/components/Chat/Subagents/surface';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { useShareContext } from '~/Providers/ShareContext';
-import { activeSubagentPanel } from '~/store/subagents';
 import { cn, getToolDisplayLabel } from '~/utils';
 import { useMessageContext } from '~/Providers';
 import { StackedToolIcons } from './ToolOutput';
@@ -41,9 +41,7 @@ function WakeupTaskCard({
   const { isSharedConvo } = useShareContext();
   const { messageId } = useMessageContext();
   const { byThreadId } = useParentSubagents();
-  const setSelection = useSetRecoilState(activeSubagentPanel);
-  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
-  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const openPanel = useOpenSubagentPanel();
   const child = task.threadId == null ? undefined : byThreadId.get(task.threadId);
   const selection = useMemo<ActiveSubagentPanel | null>(() => {
     /** Share pages have no authenticated durable-thread panel; a conversation
@@ -84,10 +82,8 @@ function WakeupTaskCard({
 
   const openActivity = useCallback(() => {
     if (selection == null) return;
-    resetCurrentArtifactId();
-    setArtifactsVisible(false);
-    setSelection(selection);
-  }, [resetCurrentArtifactId, selection, setArtifactsVisible, setSelection]);
+    openPanel(selection);
+  }, [openPanel, selection]);
 
   return (
     <div className="my-1.5 rounded-lg border border-border-light bg-surface-secondary/40 p-3">

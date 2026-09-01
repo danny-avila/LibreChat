@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
@@ -18,9 +17,9 @@ import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
+import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import store from '~/store';
 
 const AT_BOTTOM_THRESHOLD_PX = 120;
 const CONTROL_ACTION_LABELS = {
@@ -140,7 +139,7 @@ export function SubagentActivityScrollSurface({
   const scrollButtonRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isSettled, setIsSettled] = useState(false);
-  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
+  const { showScrollButton: scrollButtonPreference } = useChatSurface();
 
   useEffect(() => {
     const scroll = scrollRef.current;

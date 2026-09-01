@@ -1,6 +1,7 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
+import { useAtomValue, useStore } from 'jotai';
 import { MemoryRouter } from 'react-router-dom';
-import { RecoilRoot, useRecoilCallback, useRecoilValue } from 'recoil';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type {
@@ -22,6 +23,7 @@ import {
 } from '~/store/subagents';
 import SubagentCall, { SUBAGENT_TICKER_THROTTLE_MS } from '../SubagentCall';
 import { MessageContext } from '~/Providers/MessageContext';
+import { ChatSurfaceHarness } from 'test/harness';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -108,42 +110,41 @@ function renderWithState(args: {
   const setter = { current: null as null | ((next: SubagentProgress | null) => void) };
   let selection: ActiveSubagentPanel | null = null;
   const SeedHelper = () => {
-    setter.current = useRecoilCallback(
-      ({ set }) =>
-        (next: SubagentProgress | null) =>
-          set(
-            subagentProgressByToolCallId(subagentProgressKey('parent-message', args.toolCallId, 0)),
-            next,
-          ),
-      [],
-    );
+    const store = useStore();
+    setter.current = (next: SubagentProgress | null) =>
+      store.set(
+        subagentProgressByToolCallId(subagentProgressKey('parent-message', args.toolCallId, 0)),
+        next,
+      );
     return null;
   };
   const SelectionObserver = () => {
-    selection = useRecoilValue(activeSubagentPanel);
+    selection = useAtomValue(activeSubagentPanel);
     return null;
   };
   const rendered = render(
     <MemoryRouter>
-      <RecoilRoot>
-        <SeedHelper />
-        <SelectionObserver />
-        <MessageContext.Provider
-          value={{
-            messageId: 'parent-message',
-            conversationId: 'parent-conversation',
-            isExpanded: false,
-          }}
-        >
-          <SubagentCall
-            toolCallId={args.toolCallId}
-            initialProgress={args.initialProgress}
-            isSubmitting={args.isSubmitting ?? false}
-            args={args.toolArgs ?? { subagent_type: 'self', description: 'compute' }}
-            output={args.output}
-          />
-        </MessageContext.Provider>
-      </RecoilRoot>
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <SeedHelper />
+          <SelectionObserver />
+          <MessageContext.Provider
+            value={{
+              messageId: 'parent-message',
+              conversationId: 'parent-conversation',
+              isExpanded: false,
+            }}
+          >
+            <SubagentCall
+              toolCallId={args.toolCallId}
+              initialProgress={args.initialProgress}
+              isSubmitting={args.isSubmitting ?? false}
+              args={args.toolArgs ?? { subagent_type: 'self', description: 'compute' }}
+              output={args.output}
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>
+      </ChatSurfaceHarness>
     </MemoryRouter>,
   );
   act(() => setter.current?.(args.progress ?? null));
@@ -257,7 +258,7 @@ describe('SubagentCall', () => {
   it('opens a foreground legacy invocation in the shared panel with persisted activity', () => {
     let selection: ActiveSubagentPanel | null = null;
     const Observer = () => {
-      selection = useRecoilValue(activeSubagentPanel);
+      selection = useAtomValue(activeSubagentPanel);
       return null;
     };
     const persistedContent = [
@@ -270,24 +271,26 @@ describe('SubagentCall', () => {
     ] as Parameters<typeof SubagentCall>[0]['persistedContent'];
     render(
       <MemoryRouter>
-        <RecoilRoot>
-          <Observer />
-          <MessageContext.Provider
-            value={{
-              conversationId: 'parent-conversation',
-              messageId: 'parent',
-              isExpanded: false,
-            }}
-          >
-            <SubagentCall
-              toolCallId="foreground-call"
-              initialProgress={1}
-              args={{ subagent_type: 'self', description: 'Compute the answer.' }}
-              output="legacy fallback"
-              persistedContent={persistedContent}
-            />
-          </MessageContext.Provider>
-        </RecoilRoot>
+        <ChatSurfaceHarness>
+          <RecoilRoot>
+            <Observer />
+            <MessageContext.Provider
+              value={{
+                conversationId: 'parent-conversation',
+                messageId: 'parent',
+                isExpanded: false,
+              }}
+            >
+              <SubagentCall
+                toolCallId="foreground-call"
+                initialProgress={1}
+                args={{ subagent_type: 'self', description: 'Compute the answer.' }}
+                output="legacy fallback"
+                persistedContent={persistedContent}
+              />
+            </MessageContext.Provider>
+          </RecoilRoot>
+        </ChatSurfaceHarness>
       </MemoryRouter>,
     );
 
@@ -342,18 +345,20 @@ describe('SubagentCall', () => {
 
     render(
       <MemoryRouter>
-        <RecoilRoot>
-          <MessageContext.Provider
-            value={{ messageId: 'nested-message', conversationId: null, isExpanded: true }}
-          >
-            <SubagentCall
-              toolCallId="nested-detached-call"
-              initialProgress={1}
-              args={{ subagent_type: 'self', run_in_background: true }}
-              output={output}
-            />
-          </MessageContext.Provider>
-        </RecoilRoot>
+        <ChatSurfaceHarness>
+          <RecoilRoot>
+            <MessageContext.Provider
+              value={{ messageId: 'nested-message', conversationId: null, isExpanded: true }}
+            >
+              <SubagentCall
+                toolCallId="nested-detached-call"
+                initialProgress={1}
+                args={{ subagent_type: 'self', run_in_background: true }}
+                output={output}
+              />
+            </MessageContext.Provider>
+          </RecoilRoot>
+        </ChatSurfaceHarness>
       </MemoryRouter>,
     );
 
@@ -363,18 +368,20 @@ describe('SubagentCall', () => {
   it('disables a nested fallback that cannot remain attached to the conversation host', () => {
     render(
       <MemoryRouter>
-        <RecoilRoot>
-          <MessageContext.Provider
-            value={{ messageId: 'nested-message', conversationId: null, isExpanded: true }}
-          >
-            <SubagentCall
-              toolCallId="nested-foreground-call"
-              initialProgress={1}
-              args={{ subagent_type: 'self' }}
-              output="Nested result"
-            />
-          </MessageContext.Provider>
-        </RecoilRoot>
+        <ChatSurfaceHarness>
+          <RecoilRoot>
+            <MessageContext.Provider
+              value={{ messageId: 'nested-message', conversationId: null, isExpanded: true }}
+            >
+              <SubagentCall
+                toolCallId="nested-foreground-call"
+                initialProgress={1}
+                args={{ subagent_type: 'self' }}
+                output="Nested result"
+              />
+            </MessageContext.Provider>
+          </RecoilRoot>
+        </ChatSurfaceHarness>
       </MemoryRouter>,
     );
 

@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
 import {
   Constants,
@@ -156,6 +157,7 @@ export default function useStepHandler({
   lastAnnouncementTimeRef,
   onSkillAuthoringComplete,
 }: TUseStepHandler) {
+  const subagentStore = useStore();
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
@@ -248,73 +250,63 @@ export default function useStepHandler({
   );
 
   /**
-   * Merges an incoming {@link SubagentUpdateEvent} into the Recoil atom bucket
-   * keyed by the parent `tool_call_id`. Buffers early-arriving events whose
-   * tool call is not yet mapped, and replays the buffer once correlation
-   * completes.
+   * Merges an incoming {@link SubagentUpdateEvent} into the atom bucket keyed
+   * by the parent `tool_call_id`. Buffers early-arriving events whose tool call
+   * is not yet mapped, and replays the buffer once correlation completes.
    */
-  const applySubagentUpdate = useRecoilCallback(
-    ({ set }) =>
-      (payload: SubagentUpdateEvent, parentMessageId: string): void => {
-        const invocationKey = resolveSubagentInvocationKey(payload, parentMessageId);
+  const applySubagentUpdate = useCallback(
+    (payload: SubagentUpdateEvent, parentMessageId: string): void => {
+      const invocationKey = resolveSubagentInvocationKey(payload, parentMessageId);
 
-        if (!invocationKey) {
-          const pending = pendingSubagentBuffer.current.get(payload.subagentRunId) ?? {
-            parentMessageId,
-            events: [],
-          };
-          pending.events.push(payload);
-          pendingSubagentBuffer.current.set(payload.subagentRunId, pending);
-          return;
-        }
+      if (!invocationKey) {
+        const pending = pendingSubagentBuffer.current.get(payload.subagentRunId) ?? {
+          parentMessageId,
+          events: [],
+        };
+        pending.events.push(payload);
+        pendingSubagentBuffer.current.set(payload.subagentRunId, pending);
+        return;
+      }
 
-        const pending = pendingSubagentBuffer.current.get(payload.subagentRunId);
-        if (pending && pending.events.length > 0) {
-          pendingSubagentBuffer.current.delete(payload.subagentRunId);
-        }
-        const toApply = pending ? [...pending.events, payload] : [payload];
+      const pending = pendingSubagentBuffer.current.get(payload.subagentRunId);
+      if (pending && pending.events.length > 0) {
+        pendingSubagentBuffer.current.delete(payload.subagentRunId);
+      }
+      const toApply = pending ? [...pending.events, payload] : [payload];
 
-        registerSubagentProgressKey(invocationKey);
-        set(subagentParentStreamOpenByToolCallId(invocationKey), true);
-        set(subagentProgressByToolCallId(invocationKey), (prev) =>
-          reduceSubagentProgress(prev, toApply, 'parent', true),
-        );
-      },
-    [resolveSubagentInvocationKey],
+      registerSubagentProgressKey(invocationKey);
+      subagentStore.set(subagentParentStreamOpenByToolCallId(invocationKey), true);
+      subagentStore.set(subagentProgressByToolCallId(invocationKey), (prev) =>
+        reduceSubagentProgress(prev, toApply, 'parent', true),
+      );
+    },
+    [resolveSubagentInvocationKey, subagentStore],
   );
 
   /**
-   * Resets all accumulated subagent Recoil state. Kept for conversation-
-   * switch cleanup (see top-level hook usage) but NOT called from
-   * `clearStepMaps` — the collapsed SubagentCall ticker and its panel
-   * read from these atoms to render the child's content parts, and we
-   * want that history to remain visible after the stream ends so the
-   * user can reopen the panel for auditability. The atoms are bounded
-   * by aggregated structure and per-conversation (one atom per
-   * subagent spawn), so growth is proportional to messages — the same
-   * growth profile as the rest of the conversation state.
+   * Resets all accumulated subagent state. Kept for conversation-switch
+   * cleanup (see top-level hook usage) but NOT called from `clearStepMaps` —
+   * the collapsed SubagentCall ticker and its panel read from these atoms to
+   * render the child's content parts, and we want that history to remain
+   * visible after the stream ends so the user can reopen the panel for
+   * auditability. The atoms are bounded by aggregated structure and
+   * per-conversation (one atom per subagent spawn), so growth is proportional
+   * to messages — the same growth profile as the rest of the conversation
+   * state.
    */
-  const resetSubagentAtoms = useRecoilCallback(
-    ({ reset }) =>
-      (): void => {
-        for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
-          reset(subagentProgressByToolCallId(invocationKey));
-          reset(subagentParentStreamOpenByToolCallId(invocationKey));
-        }
-      },
-    [],
-  );
+  const resetSubagentAtoms = useCallback((): void => {
+    for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
+      subagentStore.set(subagentProgressByToolCallId(invocationKey), null);
+      subagentStore.set(subagentParentStreamOpenByToolCallId(invocationKey), false);
+    }
+  }, [subagentStore]);
 
-  const closeParentSubagentStreams = useRecoilCallback(
-    ({ set }) =>
-      (): void => {
-        for (const invocationKey of listRegisteredSubagentProgressKeys()) {
-          set(subagentParentStreamOpenByToolCallId(invocationKey), false);
-          set(subagentProgressByToolCallId(invocationKey), closeParentSubagentProgress);
-        }
-      },
-    [],
-  );
+  const closeParentSubagentStreams = useCallback((): void => {
+    for (const invocationKey of listRegisteredSubagentProgressKeys()) {
+      subagentStore.set(subagentParentStreamOpenByToolCallId(invocationKey), false);
+      subagentStore.set(subagentProgressByToolCallId(invocationKey), closeParentSubagentProgress);
+    }
+  }, [subagentStore]);
 
   /** Tool-call ids whose sandbox-starting atom is set, so completion can clear them. */
   const knownSandboxAtomKeys = useRef(new Set<string>());

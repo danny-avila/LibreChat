@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { ChevronRight, Users } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type {
   PartMetadata,
   TAttachment,
@@ -9,12 +9,9 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
-import store, {
-  activeSubagentPanel,
-  subagentProgressByToolCallId,
-  subagentProgressKey,
-} from '~/store';
+import { activeSubagentPanel, subagentProgressByToolCallId, subagentProgressKey } from '~/store';
 import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
+import { useOpenSubagentPanel } from '~/components/Chat/Subagents/surface';
 import { MessageContext } from '~/Providers/MessageContext';
 import { useShareContext } from '~/Providers/ShareContext';
 import MessageIcon from '~/components/Share/MessageIcon';
@@ -40,7 +37,7 @@ interface SubagentCallProps {
   output?: string | null;
   attachments?: TAttachment[];
   /** Aggregated content parts the backend attached to the tool_call at
-   *  message-save time. Takes precedence over the in-memory Recoil atom
+   *  message-save time. Takes precedence over the in-memory atom
    *  so a page refresh shows the same history the user saw live. Older
    *  runs recorded before the persistence path landed will not have this
    *  field; those fall back to the atom (or the raw `output` string). */
@@ -151,7 +148,7 @@ function useThrottledValue<T>(value: T, intervalMs: number, enabled: boolean): T
  * artifacts-style panel that renders the child's aggregated activity through
  * the shared child-activity module, so every subagent mode uses one deep view.
  *
- * Progress is sourced from the `subagentProgressByToolCallId` Recoil atom
+ * Progress is sourced from the `subagentProgressByToolCallId` atom
  * family, populated by `useStepHandler` as `ON_SUBAGENT_UPDATE` SSE
  * envelopes arrive. The atom is keyed by the parent message and
  * `tool_call_id`, since providers may reuse tool IDs across turns.
@@ -172,12 +169,11 @@ export default function SubagentCall({
   const parentMessageContext = useContext(MessageContext);
   const parentMessageId = parentMessageContext.messageId?.trim() ?? '';
   const partIndex = parentMessageContext.partIndex ?? 0;
-  const progress = useRecoilValue(
+  const progress = useAtomValue(
     subagentProgressByToolCallId(subagentProgressKey(parentMessageId, toolCallId, partIndex)),
   );
-  const setSelectedSubagent = useSetRecoilState(activeSubagentPanel);
-  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
-  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const setSelectedSubagent = useSetAtom(activeSubagentPanel);
+  const openPanel = useOpenSubagentPanel();
   const agentsMap = useAgentsMapContext();
   const backgroundHandle = useMemo(
     () => parseSubagentBackgroundHandle(output, args),
@@ -370,16 +366,8 @@ export default function SubagentCall({
 
   const openDetails = useCallback(() => {
     if (!canOpenDetails) return;
-    resetCurrentArtifactId();
-    setArtifactsVisible(false);
-    setSelectedSubagent(panelSelection);
-  }, [
-    canOpenDetails,
-    panelSelection,
-    resetCurrentArtifactId,
-    setArtifactsVisible,
-    setSelectedSubagent,
-  ]);
+    openPanel(panelSelection);
+  }, [canOpenDetails, openPanel, panelSelection]);
 
   return (
     <>

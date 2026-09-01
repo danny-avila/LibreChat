@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { SSE } from 'sse.js';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryKeys, StepEvents, apiBaseUrl } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
@@ -51,9 +51,9 @@ export default function useSubagentActivityStream(
     selection.event?.progressKey ?? selection.toolCallId,
     selection.partIndex,
   );
-  const setProgress = useSetRecoilState(subagentProgressByToolCallId(key));
-  const parentStreamOpen = useRecoilValue(subagentParentStreamOpenByToolCallId(key));
-  const setParentStreamOpen = useSetRecoilState(subagentParentStreamOpenByToolCallId(key));
+  const setProgress = useSetAtom(subagentProgressByToolCallId(key));
+  const parentStreamOpen = useAtomValue(subagentParentStreamOpenByToolCallId(key));
+  const setParentStreamOpen = useSetAtom(subagentParentStreamOpenByToolCallId(key));
   const parentStreamOpenRef = useRef(parentStreamOpen);
   const durable = selection.durable;
   const threadId = durable?.threadId;
