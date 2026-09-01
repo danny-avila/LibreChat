@@ -35,7 +35,7 @@ async function tryAcquire(
   jobId: string,
   owner: string,
   leaseMs: number,
-): Promise<boolean> {
+): Promise<Date | undefined> {
   const now = new Date();
 
   try {
@@ -54,10 +54,10 @@ async function tryAcquire(
       },
       { upsert: true, returnDocument: 'after', includeResultMetadata: false },
     );
-    return state?.owner === owner;
+    return state?.owner === owner ? state.expiresAt : undefined;
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
-      return false;
+      return;
     }
     throw error;
   }
@@ -74,6 +74,17 @@ export async function runDistributedJob<T>(
   const completionTtlMs = options.completionTtlMs ?? DEFAULT_COMPLETION_TTL_MS;
   const failureTtlMs = options.failureTtlMs ?? DEFAULT_FAILURE_TTL_MS;
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
+  if (
+    !Number.isFinite(leaseMs) ||
+    !Number.isFinite(refreshMs) ||
+    leaseMs <= LEASE_SAFETY_MS ||
+    refreshMs <= 0 ||
+    refreshMs >= leaseMs - LEASE_SAFETY_MS
+  ) {
+    throw new RangeError(
+      `Invalid distributed job timing: leaseMs must exceed ${LEASE_SAFETY_MS}ms and refreshMs must be positive with at least ${LEASE_SAFETY_MS}ms safety margin`,
+    );
+  }
   const onLeaseLost =
     options.onLeaseLost ??
     (() => {
@@ -81,7 +92,8 @@ export async function runDistributedJob<T>(
     });
   const owner = crypto.randomUUID();
 
-  while (!(await tryAcquire(collection, jobId, owner, leaseMs))) {
+  let acquiredExpiry: Date | undefined;
+  while ((acquiredExpiry = await tryAcquire(collection, jobId, owner, leaseMs)) == null) {
     const state = (await collection.findOne({ _id: jobId })) as WithId<DistributedJobState> | null;
     if (state?.status === 'completed' && state.expiresAt > new Date()) {
       return;
@@ -89,9 +101,12 @@ export async function runDistributedJob<T>(
     await sleep(pollMs);
   }
 
-  let leaseExpiresAt = Date.now() + leaseMs;
+  let leaseExpiresAt = acquiredExpiry.getTime();
   let leaseLost = false;
+  let finalizing = false;
+  let refreshing = false;
   let watchdogTimer: NodeJS.Timeout | undefined;
+  let refreshInFlight: Promise<void> = Promise.resolve();
 
   const loseLease = (message: string, error?: unknown) => {
     if (leaseLost) {
@@ -113,7 +128,7 @@ export async function runDistributedJob<T>(
     watchdogTimer.unref();
   };
 
-  const refreshTimer = setInterval(async () => {
+  const refreshLease = async () => {
     try {
       const now = new Date();
       const result = await collection.updateOne(
@@ -126,7 +141,9 @@ export async function runDistributedJob<T>(
         },
       );
       if (result.matchedCount !== 1) {
-        loseLease(`[DistributedJob] Lost lease for ${jobId}`);
+        if (!finalizing) {
+          loseLease(`[DistributedJob] Lost lease for ${jobId}`);
+        }
         return;
       }
       leaseExpiresAt = now.getTime() + leaseMs;
@@ -134,18 +151,38 @@ export async function runDistributedJob<T>(
     } catch (error) {
       logger.error(`[DistributedJob] Failed to refresh lease for ${jobId}`, error);
     }
+  };
+
+  const refreshTimer = setInterval(() => {
+    if (finalizing || refreshing) {
+      return;
+    }
+    refreshing = true;
+    refreshInFlight = refreshLease().finally(() => {
+      refreshing = false;
+    });
   }, refreshMs);
   refreshTimer.unref();
   scheduleWatchdog();
+
+  const stopRenewal = async () => {
+    finalizing = true;
+    clearInterval(refreshTimer);
+    await refreshInFlight;
+    if (leaseLost) {
+      throw new Error(`Lost distributed job lease for ${jobId}`);
+    }
+  };
 
   try {
     let result: T;
     try {
       result = await handler();
     } catch (error) {
+      await stopRenewal();
       const now = new Date();
       const failure = await collection.updateOne(
-        { _id: jobId, status: 'running', owner },
+        { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
         {
           $set: {
             status: 'failed',
@@ -161,9 +198,10 @@ export async function runDistributedJob<T>(
       throw error;
     }
 
+    await stopRenewal();
     const now = new Date();
     const completion = await collection.updateOne(
-      { _id: jobId, status: 'running', owner },
+      { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
       {
         $set: {
           status: 'completed',

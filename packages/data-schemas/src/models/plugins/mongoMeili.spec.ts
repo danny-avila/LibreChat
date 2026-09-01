@@ -91,9 +91,11 @@ const mockIndex = jest.fn().mockReturnValue({
   deleteDocuments: mockDeleteDocuments,
   getDocument: mockGetDocument,
   getDocuments: mockGetDocuments,
+  waitForTask: mockWaitForTask,
 });
 jest.mock('meilisearch', () => {
   return {
+    MeiliSearchTimeOutError: class MeiliSearchTimeOutError extends Error {},
     MeiliSearch: jest.fn().mockImplementation(() => {
       return {
         index: mockIndex,
@@ -123,7 +125,7 @@ describe('Meilisearch Mongoose plugin', () => {
 
   beforeEach(() => {
     mockAddDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
-    mockAddDocumentsInBatches.mockClear();
+    mockAddDocumentsInBatches.mockReset().mockResolvedValue([{ taskUid: 1 }]);
     mockUpdateDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
     mockDeleteDocument.mockReset().mockResolvedValue({ taskUid: 2 });
     mockDeleteDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
@@ -596,7 +598,9 @@ describe('Meilisearch Mongoose plugin', () => {
     mockGetDocuments.mockResolvedValueOnce({ results: [{ conversationId }] });
     mockWaitForTask.mockResolvedValueOnce({ status: 'failed' });
 
-    await conversationModel.syncWithMeili();
+    await expect(conversationModel.syncWithMeili()).rejects.toThrow(
+      'Meilisearch indexing task 1 ended with failed',
+    );
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
 
     expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId]);
@@ -694,7 +698,7 @@ describe('Meilisearch Mongoose plugin', () => {
       .spyOn(conversationModel, 'updateMany')
       .mockRejectedValueOnce(new Error('Mongo acknowledgment failed'));
 
-    await conversationModel.syncWithMeili();
+    await expect(conversationModel.syncWithMeili()).rejects.toThrow('Mongo acknowledgment failed');
     expect((await conversationModel.collection.findOne({ conversationId }))?._meiliIndex).toBe(
       true,
     );
@@ -1181,6 +1185,83 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(expect.any(Array), undefined, {
         primaryKey: 'conversationId',
       });
+      expect(mockWaitForTask).toHaveBeenCalledWith(1, {
+        timeOutMs: 10_000,
+        intervalMs: 100,
+      });
+    });
+
+    test('does not mark Mongo documents indexed before the Meilisearch task succeeds', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Wait for Meilisearch',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      const syncing = conversationModel.syncWithMeili();
+      await waitForMock(mockWaitForTask);
+      expect(await conversationModel.countDocuments({ _meiliIndex: true })).toBe(0);
+
+      finishTask?.({ status: 'succeeded' });
+      await syncing;
+      expect(await conversationModel.countDocuments({ _meiliIndex: true })).toBe(1);
+    });
+
+    test('does not acknowledge a Mongo document changed while its task was running', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+      const _id = new mongoose.Types.ObjectId();
+      const originalUpdatedAt = new Date('2026-09-01T10:00:00.000Z');
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Original snapshot',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+        updatedAt: originalUpdatedAt,
+      });
+
+      const syncing = conversationModel.syncWithMeili();
+      await waitForMock(mockWaitForTask);
+      await conversationModel.collection.updateOne(
+        { _id },
+        {
+          $set: {
+            title: 'Newer snapshot',
+            updatedAt: new Date(originalUpdatedAt.getTime() + 1000),
+          },
+        },
+      );
+      finishTask?.({ status: 'succeeded' });
+      await syncing;
+
+      expect(await conversationModel.countDocuments({ _id, _meiliIndex: true })).toBe(0);
     });
 
     test('a transient document-write failure retries without delaying MongoDB persistence', async () => {
@@ -1518,7 +1599,7 @@ describe('Meilisearch Mongoose plugin', () => {
       });
 
       // Mock addDocumentsInBatches to succeed but simulate updateMany failure
-      mockAddDocumentsInBatches.mockResolvedValueOnce({});
+      mockAddDocumentsInBatches.mockResolvedValueOnce([{ taskUid: 1 }]);
 
       // Spy on updateMany and make it fail
       const updateManySpy = jest
@@ -1828,6 +1909,21 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockGetDocuments).toHaveBeenCalledTimes(1);
     });
 
+    test('cleanupMeiliIndex treats a missing index as an empty cleanup target', async () => {
+      const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
+      const missingIndexError = Object.assign(new Error('Index not found'), {
+        code: 'index_not_found',
+      });
+      mockGetDocuments.mockRejectedValueOnce(missingIndexError);
+
+      const indexMock = mockIndex();
+
+      await expect(
+        messageModel.cleanupMeiliIndex(indexMock, 'messageId', 100, 0),
+      ).resolves.toBeUndefined();
+      expect(mockDeleteDocuments).not.toHaveBeenCalled();
+    });
+
     test('cleanupMeiliIndex stops when results.length < batchSize', async () => {
       const conversationModel = createConversationModel(
         mongoose,
@@ -1974,17 +2070,16 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockGetDocuments).toHaveBeenCalledTimes(3);
     });
 
-    test('cleanupMeiliIndex handles errors gracefully', async () => {
+    test('cleanupMeiliIndex propagates errors', async () => {
       const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
 
       mockGetDocuments.mockRejectedValueOnce(new Error('MeiliSearch connection error'));
 
       const indexMock = mockIndex();
 
-      // Should not throw, errors are caught and logged
-      await expect(
-        messageModel.cleanupMeiliIndex(indexMock, 'messageId', 100, 0),
-      ).resolves.not.toThrow();
+      await expect(messageModel.cleanupMeiliIndex(indexMock, 'messageId', 100, 0)).rejects.toThrow(
+        'MeiliSearch connection error',
+      );
     });
 
     test('cleanupMeiliIndex with all documents being orphaned', async () => {

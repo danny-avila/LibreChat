@@ -300,6 +300,26 @@ const createMeiliMongooseModel = ({
 }) => {
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
 
+  const waitForSuccessfulTask = async (taskUid: number): Promise<void> => {
+    while (true) {
+      try {
+        const task = await index.waitForTask(taskUid, {
+          timeOutMs: meiliRequestTimeoutMs,
+          intervalMs: 100,
+        });
+        if (task.status !== 'succeeded') {
+          throw new Error(`Meilisearch indexing task ${taskUid} ended with ${task.status}`);
+        }
+        return;
+      } catch (error) {
+        if (error instanceof MeiliSearchTimeOutError) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  };
+
   const loadLatestDocument = async (
     doc: DocumentWithMeiliIndex,
   ): Promise<DocumentWithMeiliIndex | null> => {
@@ -515,7 +535,7 @@ const createMeiliMongooseModel = ({
 
         try {
           const documents = await this.find(query)
-            .select(attributesToIndex.join(' ') + ' _meiliIndex')
+            .select(attributesToIndex.join(' ') + ' _meiliIndex updatedAt')
             .limit(batchSize)
             .lean();
 
@@ -576,13 +596,24 @@ const createMeiliMongooseModel = ({
         );
 
         // Add documents to MeiliSearch
-        await index.addDocumentsInBatches(formattedDocs, undefined, { primaryKey });
+        const enqueuedTasks = await index.addDocumentsInBatches(formattedDocs, undefined, {
+          primaryKey,
+        });
+        for (const task of enqueuedTasks) {
+          await waitForSuccessfulTask(task.taskUid);
+        }
 
         // Update MongoDB to mark documents as indexed.
         // { timestamps: false } prevents Mongoose from touching updatedAt, preserving
         // original conversation/message timestamps (fixes sidebar chronological sort).
+        const snapshotFilter = documents.map((doc) => ({
+          _id: doc._id,
+          ...(doc.updatedAt == null
+            ? { updatedAt: { $exists: false } }
+            : { updatedAt: doc.updatedAt }),
+        }));
         await this.updateMany(
-          { _id: { $in: docsIds } },
+          { ...getIndexableQuery(), $or: snapshotFilter },
           {
             $set: {
               _meiliIndex: true,
@@ -623,15 +654,7 @@ const createMeiliMongooseModel = ({
           (doc: Record<string, unknown>) => doc[primaryKey],
         );
         const deletion = await index.deleteDocuments(pendingIds.map(String));
-        const deletionTask = await client.waitForTask(deletion.taskUid, {
-          timeOutMs: 10000,
-          intervalMs: 100,
-        });
-        if (deletionTask.status !== 'succeeded') {
-          throw new Error(
-            `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
-          );
-        }
+        await waitForSuccessfulTask(deletion.taskUid);
         await this.updateMany(
           { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
           {
@@ -689,15 +712,7 @@ const createMeiliMongooseModel = ({
           const toDelete = meiliIds.filter((id) => !existingIds.has(id));
           if (toDelete.length > 0) {
             const deletion = await index.deleteDocuments(toDelete.map(String));
-            const deletionTask = await client.waitForTask(deletion.taskUid, {
-              timeOutMs: 10000,
-              intervalMs: 100,
-            });
-            if (deletionTask.status !== 'succeeded') {
-              throw new Error(
-                `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
-              );
-            }
+            await waitForSuccessfulTask(deletion.taskUid);
             await this.updateMany(
               { [primaryKey]: { $in: toDelete } },
               {
@@ -721,7 +736,14 @@ const createMeiliMongooseModel = ({
           }
         }
       } catch (error) {
+        if ((error as { code?: string })?.code === 'index_not_found') {
+          logger.info(
+            `[cleanupMeiliIndex] Index ${index.uid} does not exist yet; skipping cleanup`,
+          );
+          return;
+        }
         logger.error('[cleanupMeiliIndex] Error during cleanup:', error);
+        throw error;
       }
     }
 
