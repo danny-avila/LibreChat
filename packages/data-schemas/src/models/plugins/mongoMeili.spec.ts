@@ -471,9 +471,10 @@ describe('Meilisearch Mongoose plugin', () => {
       mongoose,
     ) as unknown as SchemaWithMeiliMethods;
     const conversationId = 'abc|def|ghi';
+    const user = new mongoose.Types.ObjectId().toString();
     const convo = await conversationModel.create({
       conversationId,
-      user: new mongoose.Types.ObjectId(),
+      user,
       title: 'Pipe Test',
       endpoint: EModelEndpoint.openAI,
     });
@@ -487,7 +488,7 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(mockUpdateDocuments).toHaveBeenCalledWith(
       [
         expect.objectContaining({
-          conversationId: encodeMeiliConversationId(conversationId),
+          conversationId: encodeMeiliConversationId(conversationId, null, user),
           originalConversationId: conversationId,
         }),
       ],
@@ -499,6 +500,9 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(encodeMeiliConversationId('a|b')).not.toBe(encodeMeiliConversationId('a--b'));
     expect(encodeMeiliConversationId('same', 'tenant-a')).not.toBe(
       encodeMeiliConversationId('same', 'tenant-b'),
+    );
+    expect(encodeMeiliConversationId('same', 'tenant-a', 'user-a')).not.toBe(
+      encodeMeiliConversationId('same', 'tenant-a', 'user-b'),
     );
   });
 
@@ -575,10 +579,11 @@ describe('Meilisearch Mongoose plugin', () => {
     ) as unknown as SchemaWithMeiliMethods;
     await conversationModel.deleteMany({});
     const conversationId = new mongoose.Types.ObjectId().toString();
+    const user = new mongoose.Types.ObjectId().toString();
 
     await conversationModel.collection.insertOne({
       conversationId,
-      user: new mongoose.Types.ObjectId().toString(),
+      user,
       title: 'Indexed child conversation',
       endpoint: EModelEndpoint.agents,
       subagentThread: {
@@ -595,7 +600,7 @@ describe('Meilisearch Mongoose plugin', () => {
       updatedAt: new Date(),
     });
     mockGetDocuments.mockResolvedValueOnce({
-      results: [{ conversationId: encodeMeiliConversationId(conversationId) }],
+      results: [{ conversationId: encodeMeiliConversationId(conversationId, null, user), user }],
     });
 
     const progress = await conversationModel.getSyncProgress();
@@ -603,7 +608,9 @@ describe('Meilisearch Mongoose plugin', () => {
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
 
     expect(progress).toMatchObject({ pendingCleanup: 1, isComplete: false });
-    expect(mockDeleteDocuments).toHaveBeenCalledWith([encodeMeiliConversationId(conversationId)]);
+    expect(mockDeleteDocuments).toHaveBeenCalledWith([
+      encodeMeiliConversationId(conversationId, null, user),
+    ]);
     expect(mockWaitForTask).toHaveBeenCalledWith(1, {
       timeOutMs: 10000,
       intervalMs: 100,
@@ -617,10 +624,11 @@ describe('Meilisearch Mongoose plugin', () => {
     ) as unknown as SchemaWithMeiliMethods;
     await conversationModel.deleteMany({});
     const conversationId = new mongoose.Types.ObjectId().toString();
+    const user = new mongoose.Types.ObjectId().toString();
 
     await conversationModel.collection.insertOne({
       conversationId,
-      user: new mongoose.Types.ObjectId().toString(),
+      user,
       title: 'Indexed child conversation',
       endpoint: EModelEndpoint.agents,
       subagentThread: {
@@ -637,14 +645,16 @@ describe('Meilisearch Mongoose plugin', () => {
       updatedAt: new Date(),
     });
     mockGetDocuments.mockResolvedValueOnce({
-      results: [{ conversationId: encodeMeiliConversationId(conversationId) }],
+      results: [{ conversationId: encodeMeiliConversationId(conversationId, null, user), user }],
     });
     mockWaitForTask.mockResolvedValueOnce({ status: 'failed' });
 
     await conversationModel.syncWithMeili();
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
 
-    expect(mockDeleteDocuments).toHaveBeenCalledWith([encodeMeiliConversationId(conversationId)]);
+    expect(mockDeleteDocuments).toHaveBeenCalledWith([
+      encodeMeiliConversationId(conversationId, null, user),
+    ]);
     expect(storedDoc?._meiliIndex).toBe(true);
   });
 

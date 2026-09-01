@@ -120,14 +120,21 @@ export const MEILI_INDEX_SCHEMA_VERSION = 2;
 type MeiliConversationIdentity = {
   conversationId: string;
   tenantId?: string | null;
+  user?: string | null;
 };
 
+/** Collision-free Meili key for a conversation ID, tenant, and owner. */
 export const encodeMeiliConversationId = (
   conversationId: string,
   tenantId?: string | null,
+  user?: string | null,
 ): string =>
   `${MEILI_CONVERSATION_ID_PREFIX}${Buffer.from(
-    JSON.stringify({ conversationId, tenantId: tenantId ?? null }),
+    JSON.stringify({
+      conversationId,
+      tenantId: tenantId ?? null,
+      user: user ?? null,
+    }),
     'utf8',
   ).toString('base64url')}`;
 
@@ -141,16 +148,19 @@ const decodeMeiliConversationId = (value: unknown): MeiliConversationIdentity | 
     const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as {
       conversationId?: unknown;
       tenantId?: unknown;
+      user?: unknown;
     };
     if (
       typeof decoded.conversationId !== 'string' ||
-      (decoded.tenantId !== null && typeof decoded.tenantId !== 'string')
+      (decoded.tenantId !== null && typeof decoded.tenantId !== 'string') ||
+      (decoded.user !== null && typeof decoded.user !== 'string')
     ) {
       return undefined;
     }
     return {
       conversationId: decoded.conversationId,
       tenantId: decoded.tenantId,
+      user: decoded.user,
     };
   } catch {
     return undefined;
@@ -161,6 +171,7 @@ const getMeiliPrimaryKey = (
   value: unknown,
   primaryKey: string,
   tenantId?: unknown,
+  user?: unknown,
   tenantAware = false,
 ): string => {
   const stringValue = String(value);
@@ -168,13 +179,15 @@ const getMeiliPrimaryKey = (
     return stringValue;
   }
   const scopedTenantId = tenantAware && tenantId != null ? String(tenantId) : undefined;
-  return encodeMeiliConversationId(stringValue, scopedTenantId);
+  const scopedUser = typeof user === 'string' ? user : undefined;
+  return encodeMeiliConversationId(stringValue, scopedTenantId, scopedUser);
 };
 
 const getConversationIdentity = (
   value: unknown,
   tenantId?: unknown,
   originalValue?: unknown,
+  user?: unknown,
 ): MeiliConversationIdentity | undefined => {
   const decoded = decodeMeiliConversationId(value);
   if (decoded) {
@@ -187,6 +200,7 @@ const getConversationIdentity = (
     return {
       conversationId: originalValue,
       ...(tenantId == null ? {} : { tenantId: String(tenantId) }),
+      ...(user == null ? {} : { user: String(user) }),
     };
   }
   return value == null
@@ -194,15 +208,17 @@ const getConversationIdentity = (
     : {
         conversationId: String(value),
         ...(tenantId == null ? {} : { tenantId: String(tenantId) }),
+        ...(user == null ? {} : { user: String(user) }),
       };
 };
 
 const buildConversationQuery = (
   identities: MeiliConversationIdentity[],
 ): Record<string, unknown> => {
-  const clauses = identities.map(({ conversationId, tenantId }) => ({
+  const clauses = identities.map(({ conversationId, tenantId, user }) => ({
     conversationId,
     ...(tenantId === undefined ? {} : { tenantId: tenantId ?? null }),
+    ...(user == null ? {} : { user }),
   }));
   if (clauses.length === 0) {
     return { conversationId: { $in: [] } };
@@ -228,6 +244,7 @@ const prepareObjectForIndex = (
     conversationId,
     primaryKey,
     object.tenantId,
+    object.user,
     tenantAware,
   );
 };
@@ -465,6 +482,7 @@ const createMeiliMongooseModel = ({
         doc[primaryKey as keyof DocumentWithMeiliIndex],
         primaryKey,
         doc.tenantId,
+        doc.user,
         tenantAware,
       ),
     );
@@ -761,7 +779,7 @@ const createMeiliMongooseModel = ({
       const { batchSize, delayMs } = syncConfig;
       while (true) {
         const pendingExcludedDocuments = await this.find(excludedIndexedQuery)
-          .select(`${primaryKey} tenantId`)
+          .select(`${primaryKey} tenantId user`)
           .limit(batchSize)
           .lean();
         if (pendingExcludedDocuments.length === 0) {
@@ -770,7 +788,7 @@ const createMeiliMongooseModel = ({
 
         const deletion = await index.deleteDocuments(
           pendingExcludedDocuments.map((doc: Record<string, unknown>) =>
-            getMeiliPrimaryKey(doc[primaryKey], primaryKey, doc.tenantId, tenantAware),
+            getMeiliPrimaryKey(doc[primaryKey], primaryKey, doc.tenantId, doc.user, tenantAware),
           ),
         );
         const deletionTask = await client.waitForTask(deletion.taskUid, {
@@ -844,6 +862,7 @@ const createMeiliMongooseModel = ({
                     doc[primaryKey],
                     doc.tenantId,
                     doc.originalConversationId,
+                    doc.user,
                   )
                 : undefined,
             ] as const),
@@ -858,12 +877,18 @@ const createMeiliMongooseModel = ({
               : { [primaryKey]: { $in: meiliIds } };
 
           const existingDocs = await this.find({ $and: [query, getIndexableQuery()] })
-            .select(tenantAware ? `${primaryKey} tenantId` : primaryKey)
+            .select(tenantAware ? `${primaryKey} tenantId user` : primaryKey)
             .lean();
 
           const existingIds = new Set(
             existingDocs.map((doc: Record<string, unknown>) =>
-              getMeiliPrimaryKey(doc[primaryKey], primaryKey, doc.tenantId, tenantAware),
+              getMeiliPrimaryKey(
+                doc[primaryKey],
+                primaryKey,
+                doc.tenantId,
+                doc.user,
+                tenantAware,
+              ),
             ),
           );
 
@@ -948,6 +973,7 @@ const createMeiliMongooseModel = ({
                   hit[primaryKey],
                   hit.tenantId,
                   hit.originalConversationId,
+                  hit.user,
                 ),
               )
               .filter(
@@ -1063,6 +1089,7 @@ const createMeiliMongooseModel = ({
             this[primaryKey as keyof DocumentWithMeiliIndex],
             primaryKey,
             this.tenantId,
+            this.user,
             tenantAware,
           ),
         );
@@ -1419,7 +1446,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         const deletedConvos = await mongoose
           .model('Conversation')
           .find(conditions as FilterQuery<unknown>)
-          .select('conversationId tenantId')
+          .select('conversationId tenantId user')
           .lean();
 
         // Process deletions in batches
@@ -1430,6 +1457,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
                 convo.conversationId,
                 'conversationId',
                 convo.tenantId,
+                convo.user,
                 tenantAware,
               ),
             ),
