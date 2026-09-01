@@ -2219,12 +2219,49 @@ describe('primeResources', () => {
         agentId: 'agent1',
         enabledToolResources: new Set([EToolResources.execute_code]),
         checkSessionsAlive,
+        /* The agent runs on the same route the ref names, so the file is already usable
+         * and the probe has nothing to clear. */
+        codeRouteKey: 'stateful:abc',
       });
 
       expect(checkSessionsAlive).not.toHaveBeenCalled();
       expect(result.provisionState).toBeUndefined();
       expect(statefulFile.metadata?.codeEnvRef).toEqual(statefulRef);
       expect(statefulFile.metadata?.codeEnvRefs?.['stateful:abc']).toEqual(statefulRef);
+    });
+
+    it('queues a file whose only reference names another code route', async () => {
+      /* Priming resolves the active route alone, so a reference to a different deployment
+       * would leave the sandbox call without the attachment. */
+      const otherRouteRef = {
+        kind: 'user' as const,
+        id: 'user1',
+        storage_session_id: 'sess-a',
+        file_id: 'remote-a',
+        executionProfile: 'stateful' as const,
+        executionRouteKey: 'stateful:a',
+      };
+      const otherRouteFile = makeCodeFile({
+        file_id: 'other-route-file',
+        metadata: { codeEnvRef: otherRouteRef, codeEnvRefs: { 'stateful:a': otherRouteRef } },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([otherRouteFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        codeRouteKey: 'stateful:b',
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toEqual([
+        'other-route-file',
+      ]);
     });
 
     it('queues persistent context files on a turn with no request attachments', async () => {

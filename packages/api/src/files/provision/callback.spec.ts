@@ -293,6 +293,22 @@ describe('createProvisionFilesCallback', () => {
     expect(codeImpl).toHaveBeenCalledTimes(2);
   });
 
+  it('treats a declined embedding as a failure rather than a result', async () => {
+    /* The service resolves with embedded false when the vector store declines the file.
+     * That means the vectors are absent just as a throw does, so the file has to stay
+     * queued instead of search proceeding without it. */
+    const vectorImpl = jest.fn(async () => ({ embedded: false, fileUpdate: null }));
+    const { provisionFiles, agentToolContexts } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([], [makeFile()]) }]],
+      vectorImpl,
+    });
+
+    await expect(provisionFiles(['file_search'], 'agent-a')).rejects.toThrow(
+      /aborting tool execution rather than searching without them/,
+    );
+    expect(agentToolContexts.get('agent-a')?.provisionState?.vectorDBFiles).toHaveLength(1);
+  });
+
   it('aborts the turn when search provisioning fails', async () => {
     const vectorImpl = jest.fn(async () => {
       throw new Error('rag unreachable');

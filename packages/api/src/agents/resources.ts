@@ -5,6 +5,7 @@ import {
   AgentCapabilities,
   FileContext,
   FileSources,
+  getCodeEnvRefs,
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
@@ -183,6 +184,14 @@ const isEmbeddedForNamespace = (file: TFile, agentId?: string): boolean => {
   return file.metadata?.embeddedEntities?.includes(agentId) === true;
 };
 
+/**
+ * Whether this file already has a sandbox reference for the route the agent will execute
+ * on. A reference for another deployment does not make the file reachable here, so it has
+ * to be provisioned again rather than treated as done.
+ */
+const hasCodeRefForRoute = (file: TFile, routeKey: string): boolean =>
+  getCodeEnvRefs(file.metadata).some(([key]) => key === routeKey);
+
 /** Whether a file's tool provisioning is scoped to the agent rather than the user. */
 export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
   AGENT_SCOPED_FILE_CONTEXTS.has(file.context as string);
@@ -348,10 +357,12 @@ const computeProvisionState = async ({
   loadCodeApiKey,
   legacyFileUploadUX,
   agentId,
+  codeRouteKey,
 }: {
   req?: ServerRequest;
   attachments: Array<TFile>;
   agentId?: string;
+  codeRouteKey?: string;
   resourcePrincipal?: Pick<IUser, 'id' | 'role'>;
   enabledToolResources?: Set<EToolResources>;
   tool_resources: AgentToolResources;
@@ -416,6 +427,7 @@ const computeProvisionState = async ({
     });
   }
 
+  const activeCodeRouteKey = codeRouteKey ?? 'default';
   const codeEnvFiles: TFile[] = [];
   const vectorDBFiles: TFile[] = [];
 
@@ -456,17 +468,20 @@ const computeProvisionState = async ({
           codeEnvRefs: Object.keys(remainingRefs).length > 0 ? remainingRefs : undefined,
         };
         codeEnvFiles.push(file);
+      } else if (!hasCodeRefForRoute(file, activeCodeRouteKey)) {
+        /* Judged by the active route rather than by any reference at all: a file
+         * provisioned to another deployment is not reachable from this one, and priming
+         * resolves only this route, so it would be omitted from the sandbox call. The
+         * pre-categorization pass marks such a file processed on the strength of the
+         * reference it does have, so the processed flag cannot gate this. */
+        codeEnvFiles.push(file);
       } else if (!processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)) {
-        if (legacyRef == null) {
-          codeEnvFiles.push(file);
-        } else {
-          addFileToResource({
-            file,
-            resourceType: EToolResources.execute_code,
-            tool_resources,
-            processedResourceFiles,
-          });
-        }
+        addFileToResource({
+          file,
+          resourceType: EToolResources.execute_code,
+          tool_resources,
+          processedResourceFiles,
+        });
       }
     }
 
@@ -503,6 +518,7 @@ export const primeResources = async ({
   provisionCandidates,
   legacyFileUploadUX,
   screenPersistentFiles,
+  codeRouteKey,
 }: {
   req?: ServerRequest;
   principal?: Pick<IUser, 'id' | 'role'>;
@@ -530,6 +546,9 @@ export const primeResources = async ({
    *  and a configuration or policy change since they were attached would otherwise let
    *  their bytes reach the model, the Code API or RAG. */
   screenPersistentFiles?: (files: Array<TFile>) => Array<TFile>;
+  /** The code deployment this turn will execute on, which decides whether an existing
+   *  sandbox reference is usable here. */
+  codeRouteKey?: string;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   requestAttachments: Array<TFile | undefined> | undefined;
@@ -691,6 +710,7 @@ export const primeResources = async ({
         loadCodeApiKey,
         legacyFileUploadUX,
         agentId,
+        codeRouteKey,
       });
       return {
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -747,6 +767,7 @@ export const primeResources = async ({
       loadCodeApiKey,
       legacyFileUploadUX,
       agentId,
+      codeRouteKey,
     });
 
     return {
