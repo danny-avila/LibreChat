@@ -1,6 +1,6 @@
 import React from 'react';
-import { Provider as JotaiProvider, createStore } from 'jotai';
 import { renderHook, waitFor } from '@testing-library/react';
+import { Provider as JotaiProvider, createStore } from 'jotai';
 import { unseenTabBadgeAtom } from '../replyNotificationSettings';
 import useUnseenBadge from '../useUnseenBadge';
 
