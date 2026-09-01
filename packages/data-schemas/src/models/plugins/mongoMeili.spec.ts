@@ -1,13 +1,13 @@
 import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import meiliLogger from '~/config/meiliLogger';
 import mongoMeili, {
   MEILI_INDEX_SCHEMA_VERSION,
   type SchemaWithMeiliMethods,
 } from '~/models/plugins/mongoMeili';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
+import meiliLogger from '~/config/meiliLogger';
 
 interface DynamicMeiliDocument extends mongoose.Document {
   docId: string;
@@ -1260,7 +1260,7 @@ describe('Meilisearch Mongoose plugin', () => {
       ).toBe(false);
       await waitForMockCalls(mockUpdateDocuments, 3);
       await waitForCondition(() =>
-        errorSpy.mock.calls.some(
+        (errorSpy.mock.calls as unknown as Array<[string, unknown]>).some(
           ([message, error]) =>
             message === '[updateObjectToMeili] Error updating document in Meili:' &&
             error === finalError,
