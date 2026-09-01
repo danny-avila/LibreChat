@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
-import { ListEnd, X, Zap } from 'lucide-react';
+import { Clock, OctagonPause, X, Zap } from 'lucide-react';
 import { dataService, ForkOptions } from 'librechat-data-provider';
 import {
   useRecoilCallback,
@@ -14,7 +14,6 @@ import {
   Button,
   Composer,
   ControlCombobox,
-  TooltipAnchor,
   useMediaQuery,
   useToastContext,
 } from '@librechat/client';
@@ -24,7 +23,7 @@ import type {
   SubagentControlReceipt,
   SubagentControlRequest,
 } from 'librechat-data-provider';
-import type { ComposerKeyVerdict, ComposerStopProps } from '@librechat/client';
+import type { ComposerKeyVerdict, ComposerStopProps, SendAction } from '@librechat/client';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import type { ActiveSubagentPanel, SubagentControlUiState } from '~/store/subagents';
 import type { ComposerKeyAction } from '~/utils/shortcuts';
@@ -53,10 +52,10 @@ import {
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
+import { isMacPlatform, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useParentSubagents } from './ParentSubagentsProvider';
-import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
@@ -1045,9 +1044,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const composerMode =
     liveComposerMode ?? (composerSettling ? retainedModeRef.current?.mode : null);
   const composerPlaceholder = localize('com_endpoint_message_new', { 0: panelTitle });
+  /** The send control names what IT does, distinct from the `Steer` row it
+   *  offers — the same pairing main chat uses for its during-run send. */
   const composerSubmitLabel =
     composerMode === 'control'
-      ? localize('com_ui_steer')
+      ? localize('com_ui_steer_send')
       : localize('com_ui_subagent_continue_new_chat');
   const cancelTask = useCallback(() => submitControl('cancel'), [submitControl]);
   /** Handler and label travel as one value, so the Stop control can never
@@ -1070,6 +1071,76 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   } else {
     composerCanSubmit = !continueChat.isLoading;
   }
+  /** The alternate submissions, offered from the send control exactly as main
+   *  chat offers its during-run actions — never as a row of controls beside the
+   *  field repeating what submitting already does. Each chord is advertised
+   *  only while it still reaches its action, read from the same decision table
+   *  that will execute it. */
+  const submitActions = useMemo<SendAction[]>(() => {
+    if (composerMode !== 'control') return [];
+    const context = {
+      isComposing: false,
+      isSubmitting: true,
+      allowSubmitWhileGenerating: true,
+      hasDuringRunModifier: true,
+      shortcutsEnabled,
+      enterToSend,
+      submitOverride,
+      yieldedChords,
+    };
+    const base = { key: 'Enter', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false };
+    const plainEnter = resolveComposerKeyDown(base, context);
+    const modEnter = resolveComposerKeyDown(
+      { ...base, ctrlKey: !isMacPlatform, metaKey: isMacPlatform },
+      context,
+    );
+    const altEnter = resolveComposerKeyDown({ ...base, altKey: true }, context);
+    const modSymbol = isMacPlatform ? '\u2318\u23CE' : 'Ctrl \u23CE';
+    const altSymbol = isMacPlatform ? '\u2325\u23CE' : 'Alt \u23CE';
+    let steerKbd: string | undefined;
+    if (plainEnter === 'submit') {
+      steerKbd = '\u23CE';
+    } else if (modEnter === 'submit') {
+      steerKbd = modSymbol;
+    }
+    const blocked = controlPending || controlMessage.trim() === '';
+    return [
+      {
+        key: 'steer',
+        label: localize('com_ui_steer'),
+        kbd: steerKbd,
+        icon: <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />,
+        disabled: blocked,
+        onClick: () => submitControl('steer'),
+      },
+      {
+        key: 'queue',
+        label: localize('com_ui_queue'),
+        kbd: modEnter === 'other' ? modSymbol : undefined,
+        icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+        disabled: blocked,
+        onClick: () => submitControl('queue'),
+      },
+      {
+        key: 'interrupt',
+        label: localize('com_ui_subagent_interrupt'),
+        kbd: altEnter === 'interrupt' ? altSymbol : undefined,
+        icon: <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />,
+        disabled: blocked,
+        onClick: () => submitControl('interrupt'),
+      },
+    ];
+  }, [
+    composerMode,
+    controlMessage,
+    controlPending,
+    enterToSend,
+    localize,
+    shortcutsEnabled,
+    submitControl,
+    submitOverride,
+    yieldedChords,
+  ]);
   /** The main chat form's own Enter decision table, so a reader who rebound or
    *  unbound the submit shortcut gets the same contract here, and chords
    *  claimed by global shortcuts are left for the window handler. */
@@ -1400,10 +1471,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           )}
           {composerMode != null && (
             /* One surface across the run's whole life, and one control on it:
-               submitting IS the steer, and with nothing to send the send button
-               becomes main chat's Stop, which cancels the task. Queue and
-               interrupt keep the chords main chat gives them rather than
-               spelling themselves out beside the field. */
+               submitting IS the steer, with nothing to send the send button
+               becomes main chat's Stop, and every alternate submission hangs
+               off that same control the way main chat's during-run actions do. */
             <Composer
               value={controlMessage}
               onChange={setControlMessage}
@@ -1420,48 +1490,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
                *  continuation is ordinary chat text bound for an ordinary
                *  composer, which caps nothing. */
               maxLength={composerMode === 'control' ? 4 * 1024 : undefined}
-              /** Queue and interrupt keep a pointer of their own. They carry no
-               *  word label — the tooltip and the accessible name say what they
-               *  are — but a touch reader, or one whose shortcuts are off or
-               *  rebound, still has to be able to reach them. */
-              actions={
-                composerMode === 'control' ? (
-                  <>
-                    <TooltipAnchor
-                      description={localize('com_ui_queue')}
-                      render={
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          aria-label={localize('com_ui_queue')}
-                          disabled={controlPending || controlMessage.trim() === ''}
-                          onClick={() => submitControl('queue')}
-                          className="size-9 rounded-full text-text-secondary hover:text-text-primary"
-                        >
-                          <ListEnd size={16} aria-hidden />
-                        </Button>
-                      }
-                    />
-                    <TooltipAnchor
-                      description={localize('com_ui_subagent_interrupt')}
-                      render={
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          aria-label={localize('com_ui_subagent_interrupt')}
-                          disabled={controlPending || controlMessage.trim() === ''}
-                          onClick={() => submitControl('interrupt')}
-                          className="size-9 rounded-full text-text-secondary hover:text-text-primary"
-                        >
-                          <Zap size={16} aria-hidden />
-                        </Button>
-                      }
-                    />
-                  </>
-                ) : null
-              }
+              submitActions={submitActions}
+              submitActionsLabel={localize('com_ui_during_run_actions')}
             />
           )}
         </div>

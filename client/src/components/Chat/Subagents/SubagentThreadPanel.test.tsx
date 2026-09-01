@@ -286,6 +286,7 @@ jest.mock('@librechat/client', () => ({
     maxLength,
     onStop,
     stopLabel,
+    submitActions,
   }: {
     value: string;
     onChange: (value: string) => void;
@@ -304,6 +305,12 @@ jest.mock('@librechat/client', () => ({
     maxLength?: number;
     onStop?: () => void;
     stopLabel?: string;
+    submitActions?: Array<{
+      key: string;
+      label: string;
+      disabled?: boolean;
+      onClick: () => void;
+    }>;
   }) => (
     <div>
       <textarea
@@ -324,6 +331,18 @@ jest.mock('@librechat/client', () => ({
         }}
       />
       {actions}
+      {/* The real composer hides these behind the send control until it is
+          hovered; rendering them inline keeps them reachable to assertions. */}
+      {(submitActions ?? []).map((action) => (
+        <button
+          key={action.key}
+          type="button"
+          aria-disabled={action.disabled === true}
+          onClick={action.disabled === true ? undefined : action.onClick}
+        >
+          {action.label}
+        </button>
+      ))}
       {onStop != null && value.trim() === '' ? (
         <button type="button" aria-label={stopLabel} onClick={onStop}>
           {stopLabel}
@@ -642,7 +661,7 @@ describe('SubagentThreadPanel', () => {
 
     expect(screen.getByLabelText('com_ui_message_input')).toHaveValue('Half-typed steer.');
     /** Present, but not submittable until the new task's own view arrives. */
-    expect(screen.getByRole('button', { name: 'com_ui_steer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'com_ui_steer_send' })).toBeDisabled();
   });
 
   /** A task on its way to an executor is live: withdrawing the composer until
@@ -715,7 +734,7 @@ describe('SubagentThreadPanel', () => {
     expect(mockControlMutate).not.toHaveBeenCalled();
 
     fireEvent.change(composer, { target: { value: 'Check the primary source.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer_send' }));
 
     expect(mockControlMutate).toHaveBeenCalledTimes(1);
     expect(mockControlMutate.mock.calls[0][0].command.action).toBe('steer');
@@ -821,14 +840,14 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Use the primary source.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer_send' }));
     const firstCommand = mockControlMutate.mock.calls[0][0].command;
     act(() => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
     });
 
     expect(screen.getByLabelText('com_ui_message_input')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'com_ui_steer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'com_ui_steer_send' })).toBeDisabled();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
@@ -853,7 +872,7 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Blocked guidance.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer_send' }));
     act(() => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 400 } });
     });
@@ -861,7 +880,7 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('com_ui_subagent_control_reason_invalid_command')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('com_ui_message_input')).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'com_ui_steer' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'com_ui_steer_send' })).toBeEnabled();
   });
 
   it('retains an ambiguous invocation across closing and reopening the panel', () => {
@@ -1002,7 +1021,7 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Use the primary source.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer_send' }));
     act(() => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
     });
@@ -1025,7 +1044,7 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
     /** The settled child leaves the composer standing — Enter continues the
      *  thread from here — but nothing in it still addresses the finished run. */
-    expect(screen.queryByRole('button', { name: 'com_ui_steer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_steer_send' })).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),
     ).not.toBeInTheDocument();
@@ -1093,7 +1112,7 @@ describe('SubagentThreadPanel', () => {
     fireEvent.change(screen.getByLabelText('com_ui_message_input'), {
       target: { value: 'Use the primary source.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer_send' }));
     const command = mockControlMutate.mock.calls[0][0].command;
     act(() => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
@@ -1252,7 +1271,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.queryByRole('button', { name: 'com_ui_steer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_steer_send' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'com_ui_queue' })).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'com_ui_subagent_cancel_task' }),

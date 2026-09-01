@@ -1,9 +1,9 @@
 import React, { forwardRef, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import * as Ariakit from '@ariakit/react';
 import { useWatch } from 'react-hook-form';
-import { SendIcon } from '@librechat/client';
+import { SendActions, SendIcon } from '@librechat/client';
 import { Zap, Clock, OctagonPause, ZapOff } from 'lucide-react';
+import type { SendAction } from '@librechat/client';
 import type { Control } from 'react-hook-form';
 import type { ComposerKeyContext, KeyChordSource } from '~/utils/shortcuts';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
@@ -13,25 +13,9 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const ROW_CLASS =
-  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="ml-auto rounded-md bg-surface-tertiary px-1.5 py-0.5 font-sans text-xs text-text-secondary">
-      {children}
-    </kbd>
-  );
-}
-
-type ActionRow = {
-  key: string;
-  label: string;
-  kbd?: string;
-  icon: React.ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
-};
+/** The rows, the popover and the chord chips are shared with every other chat
+ *  surface that can submit more than one way — see `SendActions`. */
+type ActionRow = SendAction;
 
 type DuringRunSendButtonProps = {
   control: Control<{ text: string }>;
@@ -182,50 +166,28 @@ const DuringRunSendButton = React.memo(
       primary === 'steer' ? localize('com_ui_steer_send') : localize('com_ui_queue_send');
 
     return (
-      <Ariakit.HovercardProvider placement="top-end" showTimeout={100} hideTimeout={150}>
-        <Ariakit.HovercardAnchor
-          render={
-            <button
-              ref={ref}
-              aria-label={label}
-              id="during-run-send-button"
-              disabled={!content || props.disabled === true}
-              className={cn(
-                'size-theme-control rounded-theme-control-round bg-text-primary p-theme-compact text-text-primary outline-offset-4 transition-all duration-theme-normal disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
-              )}
-              data-testid="during-run-send-button"
-              data-during-run-action={primary}
-              type="submit"
-            >
-              <span data-state="closed">
-                <SendIcon size={24} />
-              </span>
-            </button>
-          }
-        />
-        <Ariakit.Hovercard
-          portal
-          gutter={8}
-          unmountOnHide
-          aria-label={localize('com_ui_during_run_actions')}
-          className="z-50 min-w-[12rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
-        >
-          {rows.map((row) => (
-            <button
-              key={row.key}
-              type="button"
-              className={ROW_CLASS}
-              aria-disabled={row.disabled === true}
-              onClick={row.disabled === true ? undefined : row.onClick}
-            >
-              {row.icon}
-              {row.label}
-              {/* A disabled row's action refuses its chord too, so no hint. */}
-              {row.kbd != null && row.disabled !== true && <Kbd>{row.kbd}</Kbd>}
-            </button>
-          ))}
-        </Ariakit.Hovercard>
-      </Ariakit.HovercardProvider>
+      <SendActions
+        actions={rows}
+        label={localize('com_ui_during_run_actions')}
+        anchor={
+          <button
+            ref={ref}
+            aria-label={label}
+            id="during-run-send-button"
+            disabled={!content || props.disabled === true}
+            className={cn(
+              'size-theme-control rounded-theme-control-round bg-text-primary p-theme-compact text-text-primary outline-offset-4 transition-all duration-theme-normal disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
+            )}
+            data-testid="during-run-send-button"
+            data-during-run-action={primary}
+            type="submit"
+          >
+            <span data-state="closed">
+              <SendIcon size={24} />
+            </span>
+          </button>
+        }
+      />
     );
   }),
 );

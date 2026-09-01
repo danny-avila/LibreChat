@@ -6,8 +6,10 @@ import type {
   Ref,
   RefAttributes,
 } from 'react';
+import type { SendAction } from './SendActions';
 import { composerSurfaceClasses, composerSurfaceShadow } from '~/utils/composer';
 import { TextareaAutosize } from './TextareaAutosize';
+import { SendActions } from './SendActions';
 import { TooltipAnchor } from './Tooltip';
 import { SendIcon } from '~/svgs';
 import { cn } from '~/utils';
@@ -36,6 +38,14 @@ export interface ComposerProps {
   maxRows?: number;
   /** Secondary controls, laid out inline-start of the send button. */
   actions?: ReactNode;
+  /**
+   * Alternate submissions, revealed from the send control on hover or focus —
+   * the same trade main chat's during-run send button makes, so the field is
+   * never lined with controls that repeat what submitting already does. The
+   * primary submission stays the button's own click.
+   */
+  submitActions?: SendAction[];
+  submitActionsLabel?: string;
 
   /**
    * The reader's "Press Enter to send" preference. When false, Enter inserts a
@@ -101,6 +111,8 @@ const Composer: ForwardRefExoticComponent<
     minRows = 1,
     maxRows = 6,
     actions,
+    submitActions,
+    submitActionsLabel,
     onStop,
     stopLabel,
     submitOnEnter = true,
@@ -203,20 +215,26 @@ const Composer: ForwardRefExoticComponent<
             }
           />
         ) : (
-          <TooltipAnchor
-            description={submitLabel}
-            className="ml-auto"
-            render={
-              <button
-                type="button"
-                aria-label={submitLabel}
-                disabled={disabled || !canSubmit}
-                onClick={() => onSubmit()}
-                data-testid="composer-send-button"
-                className={CONTROL_CLASS}
-              >
-                <SendIcon size={24} />
-              </button>
+          <SendActions
+            actions={canSubmit ? (submitActions ?? []) : []}
+            label={submitActionsLabel ?? submitLabel}
+            anchor={
+              <TooltipAnchor
+                description={submitLabel}
+                className="ml-auto"
+                render={
+                  <button
+                    type="button"
+                    aria-label={submitLabel}
+                    disabled={disabled || !canSubmit}
+                    onClick={() => onSubmit()}
+                    data-testid="composer-send-button"
+                    className={CONTROL_CLASS}
+                  >
+                    <SendIcon size={24} />
+                  </button>
+                }
+              />
             }
           />
         )}
