@@ -150,6 +150,25 @@ describe('agent memory partition authorization', () => {
     );
   });
 
+  it('allows agent managers without consulting the resource ACL', async () => {
+    mockHasCapability.mockResolvedValue(true);
+    mockCheckPermission.mockResolvedValue(false);
+    mockGetUserMemories
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ key: 'timezone', value: 'UTC', agentId: 'agent-1' }]);
+    mockCreateMemory.mockResolvedValue({ ok: true });
+
+    const response = await request(buildApp())
+      .post('/api/memories')
+      .send({ key: 'timezone', value: 'UTC', agentId: 'agent-1' });
+
+    expect(response.status).toBe(201);
+    expect(mockCheckPermission).not.toHaveBeenCalled();
+    expect(mockCreateMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', agentId: 'agent-1' }),
+    );
+  });
+
   it.each([
     ['patch', '/api/memories/id/507f1f77bcf86cd799439011?agentId=agent-1'],
     ['delete', '/api/memories/id/507f1f77bcf86cd799439011?agentId=agent-1'],
