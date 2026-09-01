@@ -370,6 +370,7 @@ const loadTools = async ({
           codeApiBaseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           executionRouteKey: codeExecutionContext.executionRouteKey,
+          bridgeWorkerId: codeExecutionContext.bridgeWorkerId,
         });
         if (toolContext) {
           dynamicToolContextMap[tool] = toolContext;
