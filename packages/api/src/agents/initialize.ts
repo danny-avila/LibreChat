@@ -119,6 +119,29 @@ import { primeResources } from './resources';
  * manages overflow. `createRun` can further override this via `SummarizationConfig.reserveRatio`.
  */
 const DEFAULT_RESERVE_RATIO = 0.05;
+
+/**
+ * Bytes these files spend against the endpoint's total-size allowance, counting a file
+ * that appears in more than one set once. The sets overlap, an embedded attachment still
+ * missing the active code route being the case in point, and they are merged with the
+ * same deduplication downstream, so charging it twice spends an allowance the request
+ * never uses and drops another file that fits.
+ */
+function sumUniqueBytes(files: Array<{ file_id?: string; bytes?: number }>): number {
+  const seen = new Set<string>();
+  let total = 0;
+  for (const file of files) {
+    if (file.file_id != null) {
+      if (seen.has(file.file_id)) {
+        continue;
+      }
+      seen.add(file.file_id);
+    }
+    total += file.bytes ?? 0;
+  }
+  return total;
+}
+
 const temporalSpecialVarRegex = /{{\s*(current_date|current_datetime|iso_datetime)\s*}}/i;
 const geminiModelVersionRegex = /^gemini-(\d+)(?:\.(\d+))?(?:-|$)/;
 const googleToolCombinationTextModels = [
@@ -1254,24 +1277,23 @@ export async function initializeAgent(
        * code route being the case in point, and the merge deduplicates afterwards. Charging
        * it twice would spend an allowance the request never uses and drop a different
        * candidate that fits, so the shared ones are counted once. */
-      const deliveredIds = new Set<string>();
-      let deliveredBytes = 0;
-      for (const file of currentFiles ?? []) {
-        if (file.file_id != null) {
-          deliveredIds.add(file.file_id);
-        }
-        deliveredBytes += file.bytes ?? 0;
-      }
-      const alreadyCharged = deferredProvisionFiles.reduce(
-        (sum, file) =>
-          file.file_id != null && deliveredIds.has(file.file_id) ? sum + (file.bytes ?? 0) : sum,
-        0,
+      const deferredFileIds = new Set(
+        deferredProvisionFiles
+          .map((file) => file.file_id)
+          .filter((fileId): fileId is string => fileId != null),
       );
       deferredProvisionFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
         files: deferredProvisionFiles,
         endpoint: agent.endpoint ?? '',
         endpointType,
-        consumedBytes: deliveredBytes - alreadyCharged,
+        /* The deferred pass charges its own list as it walks it, so a file in both sets
+         * is counted there. Only what delivery spends on files the deferred pass will
+         * not see is carried in. */
+        consumedBytes: sumUniqueBytes(
+          (currentFiles ?? []).filter(
+            (file) => file.file_id == null || !deferredFileIds.has(file.file_id),
+          ),
+        ),
       }) as IMongoFile[];
     }
   }
@@ -1351,9 +1373,7 @@ export async function initializeAgent(
        * endpoint policy under the remainder of the one total-size allowance the current
        * and deferred sets have already drawn on, and the same content policy, which can
        * have changed since the file was attached. */
-      const committedBytes =
-        (currentFiles ?? []).reduce((sum, file) => sum + (file.bytes ?? 0), 0) +
-        deferredProvisionFiles.reduce((sum, file) => sum + (file.bytes ?? 0), 0);
+      const committedBytes = sumUniqueBytes([...(currentFiles ?? []), ...deferredProvisionFiles]);
       const withinPolicy = filterFilesByEndpointRuntimeConfig(appConfig, {
         files: files as unknown as IMongoFile[],
         endpoint: agent.endpoint ?? '',

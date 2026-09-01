@@ -18,8 +18,8 @@ const {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   resolveUploadLLMDeliveryPath,
-  hasTextExtractionPath,
   isNativelyReadableText,
+  resolveUploadDestination,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -699,8 +699,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   let messageAttachment = !!metadata.message_file;
 
-  let effectiveToolResource =
-    tool_resource === EToolResources.ocr ? EToolResources.context : tool_resource;
+  let effectiveToolResource;
 
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
   const endpoint = metadata.effectiveEndpoint ?? req.body?.endpoint;
@@ -720,50 +719,28 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     endpoint,
   });
 
-  if (!tool_resource && llmDeliveryPath === 'text') {
-    effectiveToolResource = EToolResources.context;
+  /* Destination and acceptability are one decision, made by shared policy rather than
+   * rebuilt here. `agentTools` is undefined when no agent record backs the upload. */
+  const destination = resolveUploadDestination({
+    toolResource: tool_resource,
+    deliveryPath: llmDeliveryPath,
+    mimeType: file.mimetype,
+    agentTools: metadata.agentTools,
+    hasAgent: agent_id != null,
+    isMessageAttachment: messageAttachment,
+  });
+
+  if (destination.rejection === 'no-consumer') {
+    throw new Error(
+      `Files of type ${file.mimetype} are not sent to the model and can only be used by the code interpreter or file search. Enable one of those tools for this agent, or upload a supported file type.`,
+    );
   }
-
-  /* A type nothing can extract reaches the conversation only through a file tool. The
-   * route resolves the agent's tools from the read it already made, and leaves them
-   * undefined when no agent record backs the upload, as for an ephemeral agent that
-   * exists only for the request. Only a known tool set is judged here. */
-  const agentTools = metadata.agentTools;
-  const consumingTool =
-    agentTools == null
-      ? undefined
-      : [EToolResources.execute_code, EToolResources.file_search].find((tool) =>
-          agentTools.includes(tool),
-        );
-
-  if (!tool_resource && llmDeliveryPath === 'none' && !hasTextExtractionPath(file.mimetype)) {
-    /* Accepting one for an agent with no such tool leaves it visible in the composer while
-     * nothing can read it, so the model answers as though it had the file. An admin who
-     * routes a readable type to none has chosen tool-only access deliberately and is
-     * warned about it at boot, so that case is left alone. */
-    if (agentTools != null && consumingTool == null) {
-      throw new Error(
-        `Files of type ${file.mimetype} are not sent to the model and can only be used by the code interpreter or file search. Enable one of those tools for this agent, or upload a supported file type.`,
-      );
-    }
-  }
-
-  /* A permanent upload has to end up on one of the agent's resources or nothing records
-   * it and the agent cannot see it again. Routing to none means a file tool is its only
-   * consumer, so that is the resource it belongs to. */
-  if (!tool_resource && !messageAttachment && llmDeliveryPath === 'none' && consumingTool) {
-    effectiveToolResource = consumingTool;
-  }
-
-  /* Nothing above claimed this permanent upload, so storing it would succeed while
-   * leaving the agent without any reference to it. There is no agent resource for files
-   * delivered straight to the model, so the request is refused rather than reported as a
-   * success that changed nothing. */
-  if (agent_id && !messageAttachment && !effectiveToolResource) {
+  if (destination.rejection === 'no-agent-resource') {
     throw new Error(
       `Files of type ${file.mimetype} cannot be saved to an agent on their own. Attach the file to a message, or enable the code interpreter or file search so the agent has somewhere to keep it.`,
     );
   }
+  effectiveToolResource = destination.toolResource;
 
   if (effectiveToolResource === EToolResources.file_search && file.mimetype.startsWith('image')) {
     throw new Error('Image uploads are not supported for file search tool resources');
