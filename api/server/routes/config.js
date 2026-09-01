@@ -11,13 +11,9 @@ const {
   sanitizeModelSpecs,
   excludeHiddenModelSpecs,
   isFileSnapshotEnabled,
+  getEndpointsDropParamsMap,
 } = require('@librechat/api');
-const {
-  EModelEndpoint,
-  defaultSocialLogins,
-  paramEndpoints,
-  normalizeEndpointName,
-} = require('librechat-data-provider');
+const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, hasConfigCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
@@ -211,43 +207,6 @@ function buildCloudFrontStartupConfig() {
   };
 }
 
-/**
- * Builds a map of normalized endpoint name -> dropParams for endpoints that support
- * per-endpoint dropParams (array-configured endpoints like `custom`, and `azureOpenAI`
- * whose per-group dropParams are merged under its `groupMap`).
- */
-function getEndpointsDropParamsMap(endpoints) {
-  const result = {};
-  for (const endpointName of Object.keys(endpoints)) {
-    if (!paramEndpoints.has(endpointName) || endpointName === 'agents') {
-      continue;
-    }
-
-    const endpointConfig = endpoints[endpointName];
-    if (Array.isArray(endpointConfig)) {
-      endpointConfig.forEach((endpoint) => {
-        if (endpoint && Array.isArray(endpoint.dropParams) && endpoint.dropParams.length > 0) {
-          result[normalizeEndpointName(endpoint.name)] = endpoint.dropParams;
-        }
-      });
-      continue;
-    }
-
-    if (endpointConfig && endpointConfig.groupMap) {
-      const dropParams = new Set();
-      Object.values(endpointConfig.groupMap).forEach((group) => {
-        if (group && Array.isArray(group.dropParams)) {
-          group.dropParams.forEach((param) => dropParams.add(param));
-        }
-      });
-      if (dropParams.size > 0) {
-        result[normalizeEndpointName(endpointName)] = Array.from(dropParams);
-      }
-    }
-  }
-  return result;
-}
-
 router.get('/', async function (req, res) {
   try {
     const preLoginPayload = buildPreLoginPayload();
@@ -291,7 +250,7 @@ router.get('/', async function (req, res) {
 
     const appConfig = await getAppConfig(getAppConfigOptionsFromUser(req.user));
 
-    const endpointsDropParamsMap = getEndpointsDropParamsMap(appConfig?.endpoints ?? {});
+    const endpointsDropParamsMap = getEndpointsDropParamsMap(appConfig?.endpoints);
 
     const balanceConfig = getBalanceConfig(appConfig);
     const cloudFront = buildCloudFrontStartupConfig();

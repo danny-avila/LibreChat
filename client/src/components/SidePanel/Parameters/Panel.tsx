@@ -50,9 +50,12 @@ export default function Parameters() {
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
     const dropParamsMap = startupConfig?.endpointsDropParamsMap;
-    const dropParams =
-      dropParamsMap?.[provider] ?? dropParamsMap?.[normalizeEndpointName(provider)] ?? [];
-    const dropParamsSet = new Set(dropParams);
+    const dropParamsEntry =
+      dropParamsMap?.[provider] ?? dropParamsMap?.[normalizeEndpointName(provider)];
+    const resolvedDropParams = Array.isArray(dropParamsEntry)
+      ? dropParamsEntry
+      : dropParamsEntry?.[model];
+    const dropParamsSet = new Set(Array.isArray(resolvedDropParams) ? resolvedDropParams : []);
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');

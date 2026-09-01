@@ -2,7 +2,12 @@ import { logger, encryptV3 } from '@librechat/data-schemas';
 import { FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { TCustomConfig, TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { getTransactionsConfig, getBalanceConfig, getCustomEndpointConfig } from './config';
+import {
+  getBalanceConfig,
+  getCustomEndpointConfig,
+  getTransactionsConfig,
+  getEndpointsDropParamsMap,
+} from './config';
 
 // Helper function to create a minimal AppConfig for testing
 const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
@@ -379,5 +384,101 @@ describe('getCustomEndpointConfig', () => {
       const result = getCustomEndpointConfig({ endpoint: 'customai', appConfig });
       expect(result).toBeUndefined();
     });
+  });
+});
+
+describe('getEndpointsDropParamsMap', () => {
+  it('returns an empty map when endpoints is undefined', () => {
+    expect(getEndpointsDropParamsMap(undefined)).toEqual({});
+  });
+
+  it('returns an empty map when no configured endpoint has dropParams', () => {
+    const result = getEndpointsDropParamsMap({
+      [EModelEndpoint.custom]: [{ name: 'no-drop-provider', apiKey: 'k' } as TEndpoint],
+    });
+    expect(result).toEqual({});
+  });
+
+  it('maps dropParams for array-configured custom endpoints', () => {
+    const result = getEndpointsDropParamsMap({
+      [EModelEndpoint.custom]: [
+        { name: 'custom-provider', dropParams: ['temperature', 'top_p'] } as TEndpoint,
+        { name: 'no-drop-provider' } as TEndpoint,
+      ],
+    });
+    expect(result).toEqual({
+      'custom-provider': ['temperature', 'top_p'],
+    });
+  });
+
+  it('normalizes an ollama custom endpoint name to lowercase', () => {
+    const result = getEndpointsDropParamsMap({
+      [EModelEndpoint.custom]: [{ name: 'Ollama', dropParams: ['stop'] } as TEndpoint],
+    });
+    expect(result).toEqual({ ollama: ['stop'] });
+  });
+
+  it('keeps azureOpenAI dropParams model-specific instead of merging across groups', () => {
+    const endpoints = {
+      [EModelEndpoint.azureOpenAI]: {
+        groupMap: {
+          groupA: { dropParams: ['temperature'] },
+          groupB: { dropParams: ['temperature', 'top_p'] },
+        },
+        modelGroupMap: {
+          'model-a': { group: 'groupA' },
+          'model-b': { group: 'groupB' },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any as AppConfig['endpoints'];
+
+    const result = getEndpointsDropParamsMap(endpoints);
+
+    expect(result[EModelEndpoint.azureOpenAI]).toEqual({
+      'model-a': ['temperature'],
+      'model-b': ['temperature', 'top_p'],
+    });
+  });
+
+  it('omits an azureOpenAI model from the map when its group has no dropParams', () => {
+    const endpoints = {
+      [EModelEndpoint.azureOpenAI]: {
+        groupMap: {
+          groupA: { dropParams: ['temperature'] },
+          groupB: {},
+        },
+        modelGroupMap: {
+          'model-a': { group: 'groupA' },
+          'model-b': { group: 'groupB' },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any as AppConfig['endpoints'];
+
+    expect(getEndpointsDropParamsMap(endpoints)).toEqual({
+      [EModelEndpoint.azureOpenAI]: { 'model-a': ['temperature'] },
+    });
+  });
+
+  it('excludes azureOpenAI when no group has dropParams', () => {
+    const endpoints = {
+      [EModelEndpoint.azureOpenAI]: {
+        groupMap: { groupA: {} },
+        modelGroupMap: { 'model-a': { group: 'groupA' } },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any as AppConfig['endpoints'];
+
+    expect(getEndpointsDropParamsMap(endpoints)).toEqual({});
+  });
+
+  it('ignores endpoint shapes without dropParams support, like agents', () => {
+    const endpoints = {
+      [EModelEndpoint.custom]: [{ name: 'no-drop-provider' } as TEndpoint],
+      [EModelEndpoint.agents]: { titleConvo: true },
+    } as AppConfig['endpoints'];
+
+    expect(getEndpointsDropParamsMap(endpoints)).toEqual({});
   });
 });
