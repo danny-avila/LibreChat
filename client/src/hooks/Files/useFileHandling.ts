@@ -37,6 +37,7 @@ import {
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
+import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { useChatContext } from '~/Providers/ChatContext';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useClientResize from './useClientResize';
@@ -148,6 +149,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, conversation } = fileState;
+  const agentsMap = useAgentsMapContext();
   const filesRef = useRef(files);
   filesRef.current = files;
   const fileSetter = params?.fileSetter ?? setFiles;
@@ -214,6 +216,18 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     () => endpointOverride ?? conversation?.endpoint ?? 'default',
     [endpointOverride, conversation?.endpoint],
   );
+  /** The conversation's own setting when it has one, otherwise the saved agent's, which
+   *  is where a saved Azure agent keeps it. */
+  const usesResponsesApi = useMemo(() => {
+    if (conversation?.useResponsesApi !== undefined) {
+      return conversation.useResponsesApi;
+    }
+    const agentId = conversation?.agent_id;
+    if (agentId == null || agentId === '') {
+      return undefined;
+    }
+    return agentsMap?.[agentId]?.model_parameters?.useResponsesApi;
+  }, [conversation?.useResponsesApi, conversation?.agent_id, agentsMap]);
 
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -361,8 +375,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     formData.append('endpoint', endpoint);
     formData.append('endpointType', endpointType ?? '');
     /* Azure carries native documents only through the Responses API, so routing needs to
-     * know which one this conversation uses. */
-    if (conversation?.useResponsesApi === true) {
+     * know which one this conversation uses. A saved agent holds the setting on its own
+     * record when the conversation does not carry one, which is the same fallback the
+     * attach menu and the drop handler resolve. */
+    if (usesResponsesApi === true) {
       formData.append('useResponsesApi', 'true');
     }
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));

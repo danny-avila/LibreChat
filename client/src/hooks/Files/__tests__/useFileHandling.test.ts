@@ -68,6 +68,11 @@ let mockIsConfigPending = false;
 let mockIsTemporary = false;
 let mockUploadOptions: MockUploadMutationOptions = {};
 
+let mockAgentsMap: Record<string, unknown> = {};
+jest.mock('~/Providers/AgentsMapContext', () => ({
+  useAgentsMapContext: () => mockAgentsMap,
+}));
+
 jest.mock('~/Providers/ChatContext', () => ({
   useChatContext: jest.fn(() => ({
     files: new Map(),
@@ -1065,6 +1070,38 @@ describe('useFileHandling', () => {
       expect(formData.get('endpoint')).toBe(EModelEndpoint.agents);
       expect(formData.get('endpointType')).toBe(EModelEndpoint.agents);
       expect(formData.get('conversationId')).toBeNull();
+    });
+
+    it('sends the Responses flag a saved agent holds on its own record', async () => {
+      /* A saved Azure agent keeps the setting in model_parameters, and without it the
+       * server routes a natively supported PDF to extracted text. */
+      mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
+      mockAgentsMap = { agent_a1: { model_parameters: { useResponsesApi: true } } };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([new File(['hi'], 'a.txt', { type: 'text/plain' })]);
+      });
+
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('useResponsesApi')).toBe('true');
+    });
+
+    it('omits the flag when neither the conversation nor the agent sets it', async () => {
+      mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
+      mockAgentsMap = { agent_a1: { model_parameters: {} } };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([new File(['hi'], 'a.txt', { type: 'text/plain' })]);
+      });
+
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('useResponsesApi')).toBeNull();
     });
 
     it('does not enter assistants upload path when override is agents', async () => {

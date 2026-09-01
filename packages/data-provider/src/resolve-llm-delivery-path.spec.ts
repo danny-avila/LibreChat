@@ -297,6 +297,21 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     );
   });
 
+  it('keeps audio off the text path where nothing transcribes it', () => {
+    /* Audio's text path is speech to text, so with no provider configured routing it
+     * there sends the upload to a service that is not running and fails it. */
+    expect(
+      resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'openAI', undefined, false),
+    ).toBe('none');
+    expect(
+      resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'openAI', undefined, true),
+    ).toBe('text');
+    /* Unknown is not absent: a caller that does not say keeps the existing answer. */
+    expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'openAI')).toBe(
+      'text',
+    );
+  });
+
   it('honors the Responses API when routing Azure documents', () => {
     /* Azure is out of the document set because native documents need Responses, so the
      * encoder's own condition decides rather than the endpoint alone. */

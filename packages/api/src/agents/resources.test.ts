@@ -2711,6 +2711,45 @@ describe('primeResources', () => {
       expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toEqual(['permanent-code']);
     });
 
+    it('reprovisions a chooser message attachment onto the route this turn uses', async () => {
+      /* A message attachment is never in the agent's resources, so membership cannot show
+       * which destination the chooser picked. The reference it already carries can: only
+       * a code upload creates one. */
+      const defaultRef = {
+        kind: 'user' as const,
+        id: 'user1',
+        storage_session_id: 'sess-default',
+        file_id: 'remote-default',
+      };
+      const chosenAttachment = makeCodeFile({
+        file_id: 'chooser-attachment',
+        metadata: {
+          destinationChosen: true,
+          codeEnvRef: defaultRef,
+          codeEnvRefs: { default: defaultRef },
+        },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([chosenAttachment]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+        codeRouteKey: 'stateful:abc',
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toEqual([
+        'chooser-attachment',
+      ]);
+      /* And still only that destination: search was declined at upload. */
+      expect(result.provisionState?.vectorDBFiles ?? []).toEqual([]);
+    });
+
     it('reprovisions the destination a chooser upload was actually filed under', async () => {
       /* A duplicated agent inherits the file id but not its vectors, and the marker says
        * the upload was a chooser one without saying which destination it chose. Blanket

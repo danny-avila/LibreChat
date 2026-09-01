@@ -483,6 +483,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     fileConfig,
     endpoint: configEndpoint,
     useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
+    sttConfigured: appConfig?.speech?.stt != null,
   });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
@@ -770,6 +771,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     fileConfig,
     endpoint,
     useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
+    sttConfigured: appConfig?.speech?.stt != null,
   });
 
   /* Destination and acceptability are one decision, made by shared policy rather than

@@ -425,14 +425,24 @@ const computeProvisionState = async ({
   /** A chooser upload may still be provisioned for the destination it was filed under,
    *  which is how an inherited search file gets vectors in a duplicated agent's namespace.
    *  The destinations it carries no reference for were declined, not deferred. */
+  /** What the record itself shows about where it was sent. A message attachment is never
+   *  in the agent's resources, so a reference or an embedding is the only evidence that
+   *  the chooser picked that destination, and it is proof: nothing else creates one. */
+  const carriesEvidenceFor = (file: TFile, resourceType: EToolResources): boolean => {
+    if (resourceType === EToolResources.execute_code) {
+      return getCodeEnvRefs(file.metadata).length > 0;
+    }
+    return file.embedded === true || (file.metadata?.embeddedEntities?.length ?? 0) > 0;
+  };
+
   const allowsResource = (file: TFile, resourceType: EToolResources): boolean => {
     if (!cameFromChooser(file)) {
       return true;
     }
-    return (
+    const isPersistedResource =
       file.file_id != null &&
-      persistedResourceMembership?.get(resourceType)?.has(file.file_id) === true
-    );
+      persistedResourceMembership?.get(resourceType)?.has(file.file_id) === true;
+    return isPersistedResource || carriesEvidenceFor(file, resourceType);
   };
   const provisionable = attachments.filter(
     (file) =>
