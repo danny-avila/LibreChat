@@ -35,6 +35,7 @@ const {
   HITL_MESSAGE_FILTER_FIELDS,
   getEndpointFileConfig,
   stripReasoningLabelMetadata,
+  resolveUploadLLMDeliveryPath,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -1721,13 +1722,28 @@ class BaseClient {
 
     if (!this._mergedFileConfig) {
       this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
-      const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
+      this._deliveryEndpoint = this.options.agent?.endpoint ?? this.options.endpoint;
       this._endpointFileConfig = getEndpointFileConfig({
         fileConfig: this._mergedFileConfig,
-        endpoint,
+        endpoint: this._deliveryEndpoint,
         endpointType: this.options.endpointType,
       });
     }
+
+    /* The stored path records what upload time inferred from the endpoint it saw, and this
+     * turn may be running somewhere else: audio stored as `provider` under Google reaches
+     * an encoder that emits nothing for OpenAI, delivering neither media nor text. An
+     * explicit chooser decision is the user's and survives, and a record predating the
+     * field keeps its legacy handling. */
+    const deliveryPathFor = (file) =>
+      file.llmDeliveryPath == null || file.metadata?.legacyUploadChoice === true
+        ? file.llmDeliveryPath
+        : resolveUploadLLMDeliveryPath({
+            mimeType: file.type,
+            endpointConfig: this._endpointFileConfig,
+            fileConfig: this._mergedFileConfig,
+            endpoint: this._deliveryEndpoint,
+          });
 
     for (const file of attachments) {
       /** @type {FileSources} */
@@ -1736,7 +1752,8 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
-      if (file.llmDeliveryPath === 'text' || file.llmDeliveryPath === 'none') {
+      const deliveryPath = deliveryPathFor(file);
+      if (deliveryPath === 'text' || deliveryPath === 'none') {
         allFiles.push(file);
         continue;
       }
@@ -1744,7 +1761,7 @@ class BaseClient {
        * `embedded`/`codeEnvRef` on files that are still meant for the model, so the
        * legacy tool-provisioning exclusion only applies to records without one. */
       if (
-        file.llmDeliveryPath !== 'provider' &&
+        deliveryPath !== 'provider' &&
         (file.embedded === true ||
           file.metadata?.codeEnvRef != null ||
           file.metadata?.codeEnvRefs != null ||
