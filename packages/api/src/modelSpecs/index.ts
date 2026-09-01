@@ -1,6 +1,7 @@
 import {
   parseCompactConvo,
   replaceSpecialVars,
+  resolveModelSpecEndpoint,
   type EModelEndpoint,
   type TConversation,
   type TModelSpec,
@@ -10,7 +11,14 @@ import {
   type TUser,
 } from 'librechat-data-provider';
 
-export const PRIVATE_MODEL_SPEC_PRESET_FIELDS = [
+export const PRIVATE_MODEL_SPEC_PRESET_FIELDS: readonly [
+  'promptPrefix',
+  'instructions',
+  'additional_instructions',
+  'system',
+  'context',
+  'examples',
+] = [
   'promptPrefix',
   'instructions',
   'additional_instructions',
@@ -22,6 +30,10 @@ export const PRIVATE_MODEL_SPEC_PRESET_FIELDS = [
 export type PrivateModelSpecPresetField = (typeof PRIVATE_MODEL_SPEC_PRESET_FIELDS)[number];
 export type ModelSpecParsedBody = Partial<TConversation | TPreset | TModelSpecPreset> &
   Record<string, unknown>;
+
+export const ENFORCED_MODEL_SPEC_REQUEST_FIELDS: readonly ['chatProjectId'] = [
+  'chatProjectId',
+] as const satisfies readonly (keyof ModelSpecParsedBody)[];
 
 export type ApplyModelSpecPresetParams = {
   modelSpec: TModelSpec;
@@ -57,15 +69,30 @@ function hasModelSpecValue(field: PrivateModelSpecPresetField, value: unknown): 
   return value.length > 0;
 }
 
+function pickEnforcedModelSpecRequestFields(parsedBody: ModelSpecParsedBody): ModelSpecParsedBody {
+  const requestFields: ModelSpecParsedBody = {};
+
+  for (const field of ENFORCED_MODEL_SPEC_REQUEST_FIELDS) {
+    if (parsedBody[field] !== undefined) {
+      requestFields[field] = parsedBody[field];
+    }
+  }
+
+  return requestFields;
+}
+
 function mergeModelSpecPreset(
   modelSpec: TModelSpec,
   parsedBody: ModelSpecParsedBody,
   { includePresetDefaults = false }: Pick<ApplyModelSpecPresetParams, 'includePresetDefaults'> = {},
 ): ApplyModelSpecPresetResult {
   const preset = modelSpec.preset;
+  const requestFields = includePresetDefaults
+    ? pickEnforcedModelSpecRequestFields(parsedBody)
+    : parsedBody;
   const merged = {
+    ...requestFields,
     ...(includePresetDefaults ? preset : {}),
-    ...parsedBody,
     spec: modelSpec.name,
   } as ModelSpecParsedBody;
   const appliedPrivateFields = new Set<PrivateModelSpecPresetField>();
@@ -104,7 +131,37 @@ export function isModelSpecEndpointMatch(
   modelSpec: Pick<TModelSpec, 'preset'> | undefined,
   endpoint: string | null | undefined,
 ): boolean {
-  return Boolean(modelSpec && endpoint === modelSpec.preset?.endpoint);
+  return Boolean(modelSpec && endpoint === resolveModelSpecEndpoint(modelSpec));
+}
+
+export type ModelSpecEndpointResolution =
+  | { modelSpec: TModelSpec }
+  | { error: 'invalid-model-spec' | 'model-spec-mismatch' };
+
+/**
+ * Resolves the selected spec only when it serves the requested endpoint.
+ * Authorization and endpoint construction use this same result so a preset
+ * cannot change the resource identity after its access check has completed.
+ */
+export function resolveModelSpecForEndpoint({
+  modelSpecs,
+  spec,
+  endpoint,
+}: {
+  modelSpecs: Pick<TSpecsConfig, 'list'> | undefined;
+  spec: string;
+  endpoint: string | null | undefined;
+}): ModelSpecEndpointResolution {
+  const modelSpec = findModelSpecByName(modelSpecs, spec);
+  if (!modelSpec) {
+    return { error: 'invalid-model-spec' };
+  }
+
+  if (!isModelSpecEndpointMatch(modelSpec, endpoint)) {
+    return { error: 'model-spec-mismatch' };
+  }
+
+  return { modelSpec };
 }
 
 export function applyModelSpecPreset({
@@ -160,6 +217,25 @@ export function resolveModelSpecPromptPrefixVariables<T extends { promptPrefix?:
   };
 }
 
+/**
+ * Drops specs marked `showInMenu: false` so they are not advertised to clients
+ * (the model selector menu and the startup config). Such specs remain resolvable
+ * server-side by name, so a caller that sets `spec: "<name>"` can still use them.
+ * Returns the config unchanged when there is no list. Apply before `sanitizeModelSpecs`.
+ */
+export function excludeHiddenModelSpecs<T extends Partial<TSpecsConfig> | null | undefined>(
+  modelSpecs: T,
+): T {
+  if (!modelSpecs?.list || !Array.isArray(modelSpecs.list)) {
+    return modelSpecs;
+  }
+
+  return {
+    ...modelSpecs,
+    list: modelSpecs.list.filter((modelSpec) => modelSpec?.showInMenu !== false),
+  } as T;
+}
+
 export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | undefined>(
   modelSpecs: T,
 ): T {
@@ -170,9 +246,30 @@ export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | unde
   return {
     ...modelSpecs,
     list: modelSpecs.list.map((modelSpec) => {
-      const preset = modelSpec?.preset;
-      if (!preset || typeof preset !== 'object') {
+      if (!modelSpec || typeof modelSpec !== 'object') {
         return modelSpec;
+      }
+
+      const preset = modelSpec?.preset;
+      const sanitizedModelSpec = { ...modelSpec };
+      delete (sanitizedModelSpec as { skills?: unknown }).skills;
+      const subagents = sanitizedModelSpec.subagents;
+      if (subagents && typeof subagents === 'object') {
+        const sanitizedSubagents: TModelSpec['subagents'] = {};
+        if (subagents.enabled !== undefined) {
+          sanitizedSubagents.enabled = subagents.enabled;
+        }
+        if (subagents.allowSelf !== undefined) {
+          sanitizedSubagents.allowSelf = subagents.allowSelf;
+        }
+        if (Object.keys(sanitizedSubagents).length > 0) {
+          sanitizedModelSpec.subagents = sanitizedSubagents;
+        } else {
+          delete sanitizedModelSpec.subagents;
+        }
+      }
+      if (!preset || typeof preset !== 'object') {
+        return sanitizedModelSpec;
       }
 
       const sanitizedPreset = { ...preset };
@@ -181,7 +278,7 @@ export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | unde
       }
 
       return {
-        ...modelSpec,
+        ...sanitizedModelSpec,
         preset: sanitizedPreset,
       };
     }),

@@ -8,10 +8,15 @@ const { GenerationJobManager } = require('@librechat/api');
  * @param {import('http').ServerResponse} res - The server response object
  * @param {string | null} streamId - The stream ID for resumable mode, or null for standard mode
  * @param {Object} attachment - The attachment data
+ * @param {number} [jobCreatedAt] - The generation epoch that owns the attachment
  */
-function writeAttachment(res, streamId, attachment) {
+function writeAttachment(res, streamId, attachment, jobCreatedAt) {
   if (streamId) {
-    GenerationJobManager.emitChunk(streamId, { event: 'attachment', data: attachment });
+    GenerationJobManager.emitChunk(
+      streamId,
+      { event: 'attachment', data: attachment },
+      { expectedCreatedAt: jobCreatedAt },
+    );
   } else {
     res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
   }
@@ -21,9 +26,10 @@ function writeAttachment(res, streamId, attachment) {
  * Creates a function to handle search results and stream them as attachments
  * @param {import('http').ServerResponse} res - The HTTP server response object
  * @param {string | null} [streamId] - The stream ID for resumable mode, or null for standard mode
+ * @param {number} [jobCreatedAt] - The generation epoch that owns emitted attachments
  * @returns {{ onSearchResults: function(SearchResult, GraphRunnableConfig): void; onGetHighlights: function(string): void}} - Function that takes search results and returns or streams an attachment
  */
-function createOnSearchResults(res, streamId = null) {
+function createOnSearchResults(res, streamId = null, jobCreatedAt) {
   const context = {
     sourceMap: new Map(),
     searchResultData: undefined,
@@ -86,7 +92,7 @@ function createOnSearchResults(res, streamId = null) {
     if (!res.headersSent) {
       return attachment;
     }
-    writeAttachment(res, streamId, attachment);
+    writeAttachment(res, streamId, attachment, jobCreatedAt);
   }
 
   /**
@@ -108,7 +114,7 @@ function createOnSearchResults(res, streamId = null) {
     }
 
     const attachment = buildAttachment(context);
-    writeAttachment(res, streamId, attachment);
+    writeAttachment(res, streamId, attachment, jobCreatedAt);
   }
 
   return {

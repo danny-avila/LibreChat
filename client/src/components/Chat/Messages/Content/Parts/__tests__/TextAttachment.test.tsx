@@ -71,7 +71,6 @@ const textAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
      * bearing, downloadable, expandable) without the panel coupling. */
     filename: 'output.json',
     filepath: '/files/output.json',
-    type: 'application/json',
     text: '{"a":1,"b":2,"c":3}',
     ...overrides,
   }) as TAttachment;
@@ -190,8 +189,7 @@ describe('AttachmentGroup', () => {
       textAttachment({
         file_id: 'b',
         filename: 'archive.zip',
-        type: 'application/zip',
-        text: undefined as unknown as string,
+        text: undefined,
       }),
     ] as TAttachment[];
     const { container } = render(<AttachmentGroup attachments={attachments} />);
@@ -205,8 +203,7 @@ describe('AttachmentGroup', () => {
         file_id: 'placeholder',
         filename: 'placeholder.zip',
         filepath: '',
-        type: 'application/zip',
-        text: undefined as unknown as string,
+        text: undefined,
       }),
       textAttachment({
         file_id: 'json',
@@ -230,8 +227,7 @@ describe('AttachmentGroup', () => {
       textAttachment({
         file_id: 'archive',
         filename: 'archive.zip',
-        type: 'application/zip',
-        text: undefined as unknown as string,
+        text: undefined,
       }),
       textAttachment({
         file_id: 'json',

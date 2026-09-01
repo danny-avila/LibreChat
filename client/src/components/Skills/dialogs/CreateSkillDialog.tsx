@@ -1,17 +1,21 @@
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import {
+  SKILL_NAME_PATTERN,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+} from 'librechat-data-provider';
+import {
+  Input,
+  Label,
   Button,
   OGDialog,
   OGDialogContent,
   TextareaAutosize,
   useToastContext,
 } from '@librechat/client';
-import {
-  SKILL_NAME_PATTERN,
-  SKILL_NAME_MAX_LENGTH,
-  SKILL_DESCRIPTION_MAX_LENGTH,
-} from 'librechat-data-provider';
+import type { TSkill } from 'librechat-data-provider';
+import type { FormEvent } from 'react';
 import { useCreateSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -22,6 +26,12 @@ interface CreateSkillDialogProps {
   defaultName?: string;
   defaultDescription?: string;
   defaultBody?: string;
+  /**
+   * Called with the created skill instead of navigating to its page. Lets the
+   * dialog be reused in-context (e.g. the agent-builder skill picker) so creating
+   * a skill keeps the user in place rather than routing to `/skills/:id`.
+   */
+  onCreated?: (skill: TSkill) => void;
 }
 
 interface FormValues {
@@ -40,6 +50,7 @@ export default function CreateSkillDialog({
   defaultName = '',
   defaultDescription = '',
   defaultBody = '',
+  onCreated,
 }: CreateSkillDialogProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -60,6 +71,10 @@ export default function CreateSkillDialog({
       showToast({ status: 'success', message: localize('com_ui_skill_created') });
       setIsOpen(false);
       reset();
+      if (onCreated) {
+        onCreated(skill);
+        return;
+      }
       navigate(`/skills/${skill._id}`);
     },
     onError: (error: unknown) => {
@@ -86,13 +101,23 @@ export default function CreateSkillDialog({
     reset();
   };
 
+  const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    /**
+     * This dialog can be portaled from inside Agent Builder's form. React
+     * events still bubble through the component tree across a portal, so an
+     * unguarded submit also submits (and prematurely creates) the agent.
+     */
+    event.stopPropagation();
+    return handleSubmit(onSubmit)(event);
+  };
+
   const submitDisabled = !isValid || isSubmitting || createSkill.isLoading;
 
   return (
     <OGDialog open={isOpen} onOpenChange={setIsOpen}>
-      <OGDialogContent className="w-11/12 max-w-5xl overflow-hidden">
+      <OGDialogContent className="w-11/12 max-w-5xl overflow-hidden" showCloseButton={false}>
         <form
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={handleFormSubmit}
           className="flex max-h-[80vh] min-w-0 flex-col gap-3 overflow-hidden p-1 sm:gap-4 sm:p-2"
         >
           <h2 className="text-lg font-bold text-text-primary">
@@ -101,10 +126,10 @@ export default function CreateSkillDialog({
 
           {/* Skill name */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="create-skill-name" className="text-sm font-medium text-text-secondary">
+            <Label htmlFor="create-skill-name" className="text-sm font-medium text-text-secondary">
               {localize('com_ui_name')}
-            </label>
-            <input
+            </Label>
+            <Input
               id="create-skill-name"
               placeholder={localize('com_ui_skill_name_placeholder')}
               aria-invalid={errors.name ? 'true' : 'false'}
@@ -124,7 +149,7 @@ export default function CreateSkillDialog({
                 },
               })}
             />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-text-destructive">{errors.name.message}</p>}
           </div>
 
           {/* Description */}
@@ -177,6 +202,7 @@ export default function CreateSkillDialog({
             </Button>
             <Button
               type="submit"
+              variant="submit"
               disabled={submitDisabled}
               className={cn(submitDisabled && 'opacity-50')}
             >

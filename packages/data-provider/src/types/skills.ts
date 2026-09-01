@@ -25,9 +25,11 @@ export const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 /**
  * Source of a skill — where its canonical definition came from.
  * `inline` means the skill was authored directly in LibreChat.
- * `github` / `notion` are reserved for future sync integrations.
+ * `deployment` means the skill was loaded from the server's configured
+ * deployment skill directory and is not persisted as a Skill document.
+ * `github` is populated by admin-configured GitHub skill sync; `notion` is reserved.
  */
-export type SkillSource = 'inline' | 'github' | 'notion';
+export type SkillSource = 'inline' | 'deployment' | 'github' | 'notion';
 
 /**
  * Category inferred from a skill file's top-level directory prefix.
@@ -36,11 +38,25 @@ export type SkillSource = 'inline' | 'github' | 'notion';
  */
 export type SkillFileCategory = 'script' | 'reference' | 'asset' | 'other';
 
+/** Nested object inside a structured frontmatter key. */
+export type SkillFrontmatterObject = { [key: string]: SkillFrontmatterValue | undefined };
+
 /**
- * Allowed value types inside a skill's YAML frontmatter.
- * Kept strict so callers cannot slip arbitrary `unknown` payloads through the API.
+ * Allowed value types inside a skill's YAML frontmatter. Scalars cover the
+ * documented keys; nested arrays and objects describe the structured ones
+ * (`hooks`, `metadata`, `references`), which real `SKILL.md` files write as a
+ * list, a list of objects, or a map.
+ *
+ * Still no `unknown` or `any`: the payload is JSON-safe by construction, and
+ * the server bounds depth, string length and array size when validating it.
  */
-export type SkillFrontmatterValue = string | number | boolean | string[] | null;
+export type SkillFrontmatterValue =
+  | string
+  | number
+  | boolean
+  | null
+  | SkillFrontmatterValue[]
+  | SkillFrontmatterObject;
 
 /**
  * Structured YAML frontmatter for a skill. All keys are optional on the wire
@@ -58,11 +74,25 @@ export type SkillFrontmatter = {
  * Provenance metadata for skills that originated from an external source
  * (e.g. a GitHub commit SHA or a Notion page id).
  *
- * Reserved for phase 2+ external sync — no code path currently populates this
- * in phase 1, but the column exists so a future sync worker can use it
- * without a schema migration.
+ * Populated by external sync workers with upstream identifiers such as source
+ * ids, paths, and commit/blob SHAs.
  */
-export type SkillSourceMetadata = Record<string, string | number | boolean>;
+export type SkillSourceMetadata =
+  | Record<string, string | number | boolean>
+  | {
+      provider: 'github';
+      sourceId: string;
+      upstreamId: string;
+      owner: string;
+      repo: string;
+      ref: string;
+      skillPath: string;
+      commitSha?: string;
+      skillBlobSha?: string;
+      syncedAt?: string;
+      syncStatus?: 'synced' | 'failed';
+      error?: string;
+    };
 
 /**
  * A non-blocking coaching hint surfaced alongside a successful create/update
@@ -90,10 +120,10 @@ export type TSkillWarning = {
  * - `description` is the "when to use this skill" sentence. Highest-leverage
  *   field for trigger accuracy; a short/vague one causes undertriggering.
  * - `frontmatter` is the structured YAML bag minus `name`/`description`
- *   (those live as top-level columns). Validated strictly against a known
- *   key set server-side.
- * - `source`/`sourceMetadata` are reserved for phase 2+ external sync and
- *   always `'inline'` / absent in phase 1.
+ *   (those live as top-level columns). Known keys receive value validation;
+ *   unknown keys are retained and reported as non-blocking warnings.
+ * - `source`/`sourceMetadata` identify whether the row is user-authored,
+ *   deployment-provided, or mirrored from an external source such as GitHub.
  */
 export type TSkill = {
   _id: string;
@@ -181,12 +211,87 @@ export type TSkillFile = {
   isExecutable: boolean;
   author: string;
   tenantId?: string;
+  sourceMetadata?: Record<string, string | number | boolean>;
   /** Lazily cached text content (≤ 512 KB). Excluded from list responses. */
   content?: string;
   /** Set on first read. `true` prevents repeated storage reads for non-text files. */
   isBinary?: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type TGitHubSkillSyncCredentialSummary = {
+  provider: 'github';
+  credentialKey: string;
+  credentialPresent: boolean;
+  tokenFingerprint?: string;
+  updatedAt?: string;
+  createdAt?: string;
+};
+
+/** One upstream skill a sync run dropped, with the reason it was dropped. */
+export type TGitHubSkillSyncSkippedSkill = {
+  path: string;
+  name?: string;
+  errorCode: string;
+  errorMessage: string;
+};
+
+/** One upstream file a sync run published a skill without, and why. */
+export type TGitHubSkillSyncSkippedFile = {
+  path: string;
+  skillPath: string;
+  errorCode: string;
+  errorMessage: string;
+};
+
+export type TGitHubSkillSyncSourceStatus = {
+  provider: 'github';
+  sourceId: string;
+  tenantId?: string;
+  /** `partial`: some skills published, others were skipped (see `skippedSkills`). */
+  status: 'idle' | 'running' | 'succeeded' | 'partial' | 'failed' | 'skipped';
+  credentialKey?: string;
+  credentialPresent: boolean;
+  owner?: string;
+  repo?: string;
+  ref?: string;
+  paths?: string[];
+  startedAt?: string;
+  finishedAt?: string;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  syncedSkillCount: number;
+  syncedFileCount: number;
+  deletedSkillCount: number;
+  deletedFileCount: number;
+  skippedSkillCount: number;
+  skippedSkills?: TGitHubSkillSyncSkippedSkill[];
+  skippedFileCount: number;
+  skippedFiles?: TGitHubSkillSyncSkippedFile[];
+  updatedAt?: string;
+  createdAt?: string;
+};
+
+export type TGitHubSkillSyncStatusResponse = {
+  enabled: boolean;
+  intervalMinutes: number;
+  runOnStartup: boolean;
+  sources: TGitHubSkillSyncSourceStatus[];
+  credentials: TGitHubSkillSyncCredentialSummary[];
+  fineGrainedTokenRecommendation: string;
+};
+
+export type TGitHubSkillSyncCredentialUpdateRequest = {
+  token: string;
+};
+
+export type TGitHubSkillSyncManualRunResponse = {
+  status: 'started' | 'skipped' | 'completed' | 'failed';
+  message?: string;
+  sources?: TGitHubSkillSyncSourceStatus[];
 };
 
 /** Request body for POST `/api/skills`. */
@@ -197,7 +302,7 @@ export type TCreateSkill = {
   body: string;
   frontmatter?: Partial<SkillFrontmatter>;
   category?: string;
-  /** When `true`, the skill auto-primes into every turn (mirrors `always-apply` frontmatter). */
+  /** When `true`, the skill auto-primes into every turn (mirrors always-apply frontmatter). */
   alwaysApply?: boolean;
 };
 

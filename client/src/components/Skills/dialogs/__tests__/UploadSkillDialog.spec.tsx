@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import type { FileConfigInput } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import UploadSkillDialog from '../UploadSkillDialog';
 
 const mockMutate = jest.fn();
@@ -18,23 +18,19 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => {
-    const React = jest.requireActual<typeof import('react')>('react');
-    return {
-      OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
-        open ? React.createElement('div', null, children) : null,
-      OGDialogContent: ({ children }: { children: ReactNode }) =>
-        React.createElement('div', null, children),
-      Spinner: () => React.createElement('div', { 'data-testid': 'spinner' }),
-      useToastContext: () => ({
-        showToast: mockShowToast,
-      }),
-    };
-  },
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  return {
+    OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
+      open ? React.createElement('div', null, children) : null,
+    OGDialogContent: ({ children }: { children: ReactNode }) =>
+      React.createElement('div', null, children),
+    Spinner: () => React.createElement('div', { 'data-testid': 'spinner' }),
+    useToastContext: () => ({
+      showToast: mockShowToast,
+    }),
+  };
+});
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: ({ select }: { select?: (data: FileConfigInput | undefined) => unknown }) => ({

@@ -1,3 +1,4 @@
+import { JSX } from 'react/jsx-runtime';
 import type { TFile } from 'librechat-data-provider';
 
 export default function FileIcon({
@@ -10,7 +11,7 @@ export default function FileIcon({
     paths: React.FC;
     title: string;
   };
-}) {
+}): JSX.Element {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

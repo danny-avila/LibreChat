@@ -580,7 +580,10 @@ describe('S3 CRUD', () => {
         fileName: 'downloaded.jpg',
       });
 
-      expect(global.fetch).toHaveBeenCalledWith('https://example.com/image.jpg');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://example.com/image.jpg',
+        expect.objectContaining({ signal: expect.any(Object) }),
+      );
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
       expect(result).toBe('https://bucket.s3.amazonaws.com/test-key?signed=true');
     });
@@ -593,7 +596,10 @@ describe('S3 CRUD', () => {
         fileName: 'downloaded.jpg',
       });
 
-      expect(global.fetch).toHaveBeenCalledWith('https://example.com/image.jpg');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://example.com/image.jpg',
+        expect.objectContaining({ signal: expect.any(Object) }),
+      );
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
       expect(result).toEqual({
         filepath: 'https://bucket.s3.amazonaws.com/test-key?signed=true',
@@ -777,6 +783,47 @@ describe('S3 CRUD', () => {
           fileName: 'missing.jpg',
         }),
       ).rejects.toThrow('Failed to fetch URL');
+    });
+
+    it('rejects non-http remote file URLs before fetching', async () => {
+      const { saveURLToS3 } = await import('../crud');
+      await expect(
+        saveURLToS3({
+          userId: 'user123',
+          URL: 'file:///etc/passwd',
+          fileName: 'passwd',
+        }),
+      ).rejects.toThrow('Refusing to fetch remote file over file:');
+
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects remote responses larger than the configured cap', async () => {
+      process.env.REMOTE_FILE_FETCH_MAX_BYTES = '4';
+      try {
+        (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+          ok: true,
+          headers: {
+            get: (name: string) =>
+              ({
+                'content-length': '8',
+                'content-type': 'image/jpeg',
+              })[name.toLowerCase()] ?? null,
+          },
+          arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(8)),
+        });
+
+        const { saveURLToS3 } = await import('../crud');
+        await expect(
+          saveURLToS3({
+            userId: 'user123',
+            URL: 'https://example.com/image.jpg',
+            fileName: 'downloaded.jpg',
+          }),
+        ).rejects.toThrow('Remote file response too large: 8 bytes');
+      } finally {
+        delete process.env.REMOTE_FILE_FETCH_MAX_BYTES;
+      }
     });
 
     it('handles fetch errors', async () => {

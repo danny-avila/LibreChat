@@ -1,11 +1,12 @@
 import { useState, useMemo, memo, useCallback, useRef, useId, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { FocusEvent, FC } from 'react';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
+import { AnimatedText } from '../animate';
 import { cn } from '~/utils';
 
 /**
@@ -14,12 +15,15 @@ import { cn } from '~/utils';
  */
 export const ThinkingContent: FC<{
   children: React.ReactNode;
-}> = memo(({ children }) => {
+  animate?: boolean;
+}> = memo(({ children, animate = false }) => {
   const fontSize = useAtomValue(fontSizeAtom);
+  const content =
+    animate && typeof children === 'string' ? <AnimatedText text={children} /> : children;
 
   return (
     <div className="relative rounded-lg border border-border-light bg-surface-secondary p-3 pb-8 text-text-secondary">
-      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
+      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{content}</p>
     </div>
   );
 });
@@ -37,6 +41,8 @@ export const ThinkingButton = memo(
     content,
     contentId,
     showCopyButton = true,
+    animateLabel = false,
+    shimmerLabel = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -44,6 +50,11 @@ export const ThinkingButton = memo(
     content?: string;
     contentId: string;
     showCopyButton?: boolean;
+    animateLabel?: boolean;
+    /** Reasoning is still being generated: carry the same shimmer a running
+     *  tool call's label carries, so "thinking" reads as in-flight rather
+     *  than as a settled disclosure. Off for finished thoughts. */
+    shimmerLabel?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -87,11 +98,45 @@ export const ThinkingButton = memo(
               aria-hidden="true"
             />
           </span>
-          {label}
+          {/* The sweep rides the label row itself. That row is a flex item, so
+              `.shimmer`'s `inline-block` is blockified away and the text sits
+              exactly where the un-shimmered label sits — which matters, because
+              an `inline-block` carrying `truncate` takes its baseline from its
+              bottom margin edge, growing the line box and lifting the label off
+              the icon's axis.
+
+              Only the generated-label entrance forces a nested span: it and the
+              sweep both drive `animation-name`, so they cannot share an element.
+              There the entrance must stay outside — the clipped element paints
+              the glyphs itself, so a descendant's opacity cannot fade them — and
+              the inner span takes `align-top` to keep the baseline rule above
+              from reopening the same gap.
+
+              `key` remounts the row so the entrance replays, and that restarts
+              the sweep with it. Reasoning labels revise on a 3s default against
+              a 4s sweep, so the restart is frequent; it reads as intentional
+              only while the entrance is there to cover it. With no entrance to
+              play, the row keeps its identity and the sweep runs unbroken. */}
+          <span
+            key={animateLabel ? label : undefined}
+            className={cn(
+              'min-w-0 truncate text-left',
+              shimmerLabel && !animateLabel && 'shimmer',
+              animateLabel &&
+                'duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none',
+            )}
+          >
+            {shimmerLabel && animateLabel ? (
+              <span className="shimmer max-w-full truncate align-top">{label}</span>
+            ) : (
+              label
+            )}
+          </span>
         </button>
         {content && showCopyButton && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleCopy}
             aria-label={
               isCopied
@@ -99,12 +144,12 @@ export const ThinkingButton = memo(
                 : localize('com_ui_copy_thoughts_to_clipboard')
             }
             className={cn(
-              'rounded-lg p-1.5 text-text-secondary-alt',
+              'size-auto gap-0 rounded-lg p-1.5 text-text-secondary-alt',
               isExpanded
                 ? 'opacity-0 group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100'
                 : 'opacity-0',
               'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
             )}
           >
             <span className="sr-only">
@@ -117,12 +162,35 @@ export const ThinkingButton = memo(
             ) : (
               <Clipboard size="19" aria-hidden="true" />
             )}
-          </button>
+          </Button>
         )}
       </div>
     );
   },
 );
+
+/**
+ * ThinkingLabel - Non-interactive variant of the ThinkingButton header row,
+ * for reasoning that happened but whose text is not available to this view
+ * (detached subagent projections retain only a marker). Keeps the reasoning
+ * presentation identical across surfaces without offering an empty disclosure.
+ */
+export const ThinkingLabel = memo(({ label, title }: { label: string; title?: string }) => {
+  const fontSize = useAtomValue(fontSizeAtom);
+  return (
+    <div className="mb-2 pb-2 pt-2">
+      <div
+        className={cn('flex w-full items-center justify-start leading-[18px]', fontSize)}
+        title={title}
+      >
+        <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+          <Lightbulb className="icon-sm text-text-secondary" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 truncate text-left text-text-secondary">{label}</span>
+      </div>
+    </div>
+  );
+});
 
 /**
  * FloatingThinkingBar - Floating bar with expand/collapse and copy buttons
@@ -332,6 +400,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
 ThinkingButton.displayName = 'ThinkingButton';
 ThinkingContent.displayName = 'ThinkingContent';
+ThinkingLabel.displayName = 'ThinkingLabel';
 FloatingThinkingBar.displayName = 'FloatingThinkingBar';
 Thinking.displayName = 'Thinking';
 

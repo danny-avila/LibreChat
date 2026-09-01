@@ -5,6 +5,20 @@ export type EncodingName = 'o200k_base' | 'claude';
 
 type EncodingData = ConstructorParameters<typeof AiTokenizer>[0];
 
+const MAX_TOKENIZER_INPUT_LENGTH = 4 * 1024;
+
+function estimateBoundedTokenCount(text: string): number {
+  return Buffer.byteLength(text, 'utf8');
+}
+
+function estimateUnavailableTokenCount(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function requiresTokenEstimate(text: string): boolean {
+  return text.length > MAX_TOKENIZER_INPUT_LENGTH;
+}
+
 class Tokenizer {
   private tokenizersCache: Partial<Record<EncodingName, AiTokenizer>> = {};
   private loadingPromises: Partial<Record<EncodingName, Promise<void>>> = {};
@@ -27,25 +41,57 @@ class Tokenizer {
     return this.loadingPromises[encoding];
   }
 
+  /** Returns a counter that avoids expensive tokenization for oversized content. */
+  async createExactTokenCounter(encoding: EncodingName): Promise<(text: string) => number> {
+    await this.initEncoding(encoding);
+    const tokenizer = this.tokenizersCache[encoding];
+    if (!tokenizer) {
+      throw new Error(`Tokenizer encoding failed to initialize: ${encoding}`);
+    }
+    return (text: string): number => {
+      if (requiresTokenEstimate(text)) {
+        return estimateBoundedTokenCount(text);
+      }
+      try {
+        return tokenizer.count(text);
+      } catch (error) {
+        this.handleCountError(encoding, tokenizer, error);
+        throw error;
+      }
+    };
+  }
+
   getTokenCount(text: string, encoding: EncodingName = 'o200k_base'): number {
+    if (requiresTokenEstimate(text)) {
+      return estimateBoundedTokenCount(text);
+    }
     const tokenizer = this.tokenizersCache[encoding];
     if (!tokenizer) {
       this.initEncoding(encoding);
-      return Math.ceil(text.length / 4);
+      return estimateUnavailableTokenCount(text);
     }
     try {
       return tokenizer.count(text);
     } catch (error) {
-      logger.error('[Tokenizer] Error getting token count:', error);
-      delete this.tokenizersCache[encoding];
-      delete this.loadingPromises[encoding];
-      this.initEncoding(encoding);
-      return Math.ceil(text.length / 4);
+      this.handleCountError(encoding, tokenizer, error);
+      return estimateUnavailableTokenCount(text);
     }
+  }
+
+  private handleCountError(encoding: EncodingName, tokenizer: AiTokenizer, error: unknown): void {
+    logger.error('[Tokenizer] Error getting token count:', error);
+    if (this.tokenizersCache[encoding] !== tokenizer) {
+      return;
+    }
+    delete this.tokenizersCache[encoding];
+    delete this.loadingPromises[encoding];
+    void this.initEncoding(encoding).catch((initError: unknown) => {
+      logger.error(`[Tokenizer] Error reloading ${encoding} encoding:`, initError);
+    });
   }
 }
 
-const TokenizerSingleton = new Tokenizer();
+const TokenizerSingleton: Tokenizer = new Tokenizer();
 
 /**
  * Counts the number of tokens in a given text using ai-tokenizer with o200k_base encoding.

@@ -1,11 +1,33 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
+import {
+  ErrorTypes,
+  alternateName,
+  ViolationTypes,
+  parseLangChainErrorCode,
+  stripLangChainTroubleshootingUrl,
+} from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
+import type { TranslationKeys } from '~/hooks';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';
+
+/**
+ * The server converts classified LangChain failures into typed payloads, but messages persisted
+ * before it did still carry the docs URL, so the code is read back out of the text to localize
+ * those the same way. Codes without copy fall through to the provider text, stripped of the URL.
+ */
+const langChainErrorKeys: Record<string, TranslationKeys> = {
+  MODEL_NOT_FOUND: 'com_error_model_not_found',
+  MODEL_RATE_LIMIT: 'com_error_model_rate_limit',
+};
+
+function getLangChainErrorKey(text: string): TranslationKeys | undefined {
+  const code = parseLangChainErrorCode(text);
+  return code == null ? undefined : langChainErrorKeys[code];
+}
 
 type TConcurrent = {
   limit: number;
@@ -75,7 +97,11 @@ const errorMessages = {
     return info;
   },
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
+  [ErrorTypes.GOOGLE_VIDEO_UNPROCESSABLE]: 'com_error_google_video_unprocessable',
+  [ErrorTypes.RESOURCE_RECOVERY_REQUIRED]: 'com_error_resource_recovery_required',
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
+  [ErrorTypes.MODEL_NOT_FOUND]: langChainErrorKeys.MODEL_NOT_FOUND,
+  [ErrorTypes.MODEL_RATE_LIMIT]: langChainErrorKeys.MODEL_RATE_LIMIT,
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {
@@ -100,9 +126,13 @@ const errorMessages = {
       windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
     }.`;
   },
-  token_balance: (json: TTokenBalance) => {
+  token_balance: (json: TTokenBalance, localize: LocalizeFunction) => {
     const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
+    const message = localize('com_error_token_balance', {
+      0: balance,
+      1: promptTokens,
+      2: tokenCost,
+    });
     return (
       <>
         {message}
@@ -127,8 +157,15 @@ const errorMessages = {
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
   const jsonString = extractJson(text);
-  const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
+  const providerText = stripLangChainTroubleshootingUrl(text);
+  const errorMessage =
+    providerText.length > 512 && !jsonString ? providerText.slice(0, 512) + '...' : providerText;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
+
+  const langChainErrorKey = getLangChainErrorKey(text);
+  if (langChainErrorKey != null) {
+    return localize(langChainErrorKey);
+  }
 
   if (!isJson(jsonString)) {
     return defaultResponse;

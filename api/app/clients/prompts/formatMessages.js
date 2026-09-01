@@ -1,3 +1,4 @@
+const { ATTACHMENT_ONLY_TEXT } = require('@librechat/api');
 const { EModelEndpoint, ContentTypes } = require('librechat-data-provider');
 const {
   AIMessage,
@@ -18,12 +19,18 @@ const {
  * @returns {(Object)} - The formatted message.
  */
 const formatVisionMessage = ({ message, image_urls, endpoint }) => {
+  // Omit an empty text part for image-only messages. Anthropic rejects empty
+  // text content blocks with HTTP 400, and an empty block adds nothing for
+  // other providers either.
+  const hasText = typeof message.content === 'string' && message.content.trim() !== '';
+  const textPart = hasText ? [{ type: ContentTypes.TEXT, text: message.content }] : [];
+
   if (endpoint === EModelEndpoint.anthropic) {
-    message.content = [...image_urls, { type: ContentTypes.TEXT, text: message.content }];
+    message.content = [...image_urls, ...textPart];
     return message;
   }
 
-  message.content = [{ type: ContentTypes.TEXT, text: message.content }, ...image_urls];
+  message.content = [...textPart, ...image_urls];
 
   return message;
 };
@@ -69,6 +76,15 @@ const formatMessage = ({ message, userName, assistantName, endpoint, langChain =
       image_urls: message.image_urls,
       endpoint,
     });
+  }
+
+  /**
+   * An attachment-only turn whose files reach the model out-of-band (RAG,
+   * code environment) leaves nothing in the content itself, and providers
+   * such as Anthropic reject an empty user message outright.
+   */
+  if (role === 'user' && content === '' && message.files?.length > 0) {
+    formattedMessage.content = ATTACHMENT_ONLY_TEXT;
   }
 
   if (_name) {
@@ -201,7 +217,12 @@ const formatAgentMessages = (payload) => {
         }
 
         // Note: `tool_calls` list is defined when constructed by `AIMessage` class, and outputs should be excluded from it
-        const { output, args: _args, ...tool_call } = part.tool_call;
+        const {
+          output,
+          args: _args,
+          inputValidationError: _inputValidationError,
+          ...tool_call
+        } = part.tool_call;
         // TODO: investigate; args as dictionary may need to be provider-or-tool-specific
         let args = _args;
         try {
@@ -229,7 +250,49 @@ const formatAgentMessages = (payload) => {
       } else if (part.type === ContentTypes.THINK) {
         hasReasoning = true;
         continue;
-      } else if (part.type === ContentTypes.ERROR || part.type === ContentTypes.AGENT_UPDATE) {
+      } else if (part.type === ContentTypes.STEER) {
+        /*
+        A mid-run steer: user speech persisted inline in the assistant message.
+        Flush any accumulated assistant text first so ordering is preserved, then
+        replay the steer as a standalone user message. `lastAIMessage` is NOT
+        reset — the aggregator emits a fresh text-with-tool_call_ids part for any
+        post-steer tool step, and preceding tool_call parts already pushed their
+        ToolMessages, so the HumanMessage lands after them (valid provider order).
+         */
+        if (currentContent.length > 0) {
+          if (currentContent.some((curr) => curr.type !== ContentTypes.TEXT)) {
+            /** Non-text parts (images, files) must survive the flush intact —
+             *  folding to text here would drop them from replayed history. */
+            messages.push(new AIMessage({ content: currentContent }));
+          } else {
+            const content = currentContent
+              .reduce((acc, curr) => `${acc}${curr[ContentTypes.TEXT] ?? ''}\n`, '')
+              .trim();
+            if (content.length > 0) {
+              messages.push(new AIMessage({ content }));
+            }
+          }
+          currentContent = [];
+        }
+        messages.push(
+          new HumanMessage({
+            content:
+              Array.isArray(part.media) && part.media.length > 0
+                ? part.media
+                : (part[ContentTypes.STEER] ?? ''),
+            additional_kwargs: { source: 'steer' },
+          }),
+        );
+        /** A post-steer tool_call must mint a FRESH assistant anchor —
+         *  attaching to the pre-steer one would emit its ToolMessage after
+         *  the HumanMessage while the call sat before it (invalid order). */
+        lastAIMessage = null;
+      } else if (
+        part.type === ContentTypes.ERROR ||
+        part.type === ContentTypes.AGENT_UPDATE ||
+        part.type === ContentTypes.ACTIVITY_LABEL
+      ) {
+        // ACTIVITY_LABEL parts are UI-only progress notes — never model input.
         continue;
       } else {
         currentContent.push(part);

@@ -1,9 +1,23 @@
 const express = require('express');
+const { createContentFilter, extractToolArgumentContent } = require('@librechat/api');
 const { callTool, verifyToolAuth, getToolCalls } = require('~/server/controllers/tools');
 const { getAvailableTools } = require('~/server/controllers/PluginController');
 const { toolCallLimiter } = require('~/server/middleware');
 
 const router = express.Router();
+const filterToolArguments = createContentFilter({
+  getFilters: (req) => req.config?.filters,
+  extract: (req) => {
+    const {
+      partIndex: _partIndex,
+      blockIndex: _blockIndex,
+      messageId: _messageId,
+      conversationId: _conversationId,
+      ...args
+    } = req.body ?? {};
+    return extractToolArgumentContent({ name: req.params.toolId, arguments: args });
+  },
+});
 
 /**
  * Get a list of available tools for agents.
@@ -34,6 +48,6 @@ router.get('/:toolId/auth', verifyToolAuth);
  * @param {object} req.body - Request body
  * @returns {object} Result of code execution
  */
-router.post('/:toolId/call', toolCallLimiter, callTool);
+router.post('/:toolId/call', toolCallLimiter, filterToolArguments, callTool);
 
 module.exports = router;

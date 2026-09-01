@@ -1,9 +1,25 @@
 import {
+  CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
   ReadFileToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
+
+export const CREATE_FILE_TOOL_NAME = 'create_file';
+export const EDIT_FILE_TOOL_NAME = 'edit_file';
+export const HOST_FILE_AUTHORING_ARTIFACT_KEY = '__librechat_file_authoring';
+export const FILE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
+]);
+
+export function isCodeSessionToolName(
+  name: string,
+  hostFileAuthoringToolNames?: ReadonlySet<string>,
+): boolean {
+  return CODE_EXECUTION_TOOLS.has(name) || hostFileAuthoringToolNames?.has(name) === true;
+}
 
 interface ToolDefLike {
   name: string;
@@ -78,12 +94,40 @@ export interface RegisterCodeExecutionToolsParams {
    * commands. Paired with `RunConfig.toolOutputReferences` in `createRun`.
    */
   enableToolOutputReferences?: boolean;
+  /**
+   * When `true`, the registered `bash_tool` description is the hedged
+   * stateful-session variant (workspace usually persists across calls, may
+   * reset at any time). Transport routing is resolved independently from the
+   * actually executing agent at tool-load time.
+   */
+  statefulSessions?: boolean;
 }
 
 export interface RegisterCodeExecutionToolsResult {
   toolDefinitions: LCTool[];
   /** Tool names newly registered (skipped names that already existed). */
   registered: string[];
+  /**
+   * Every tool name this registration manages, whether newly registered or
+   * already present. `initializeAgent` records these under the capability
+   * marker that triggered the call, so a `tool_options` entry keyed by the
+   * marker projects onto exactly the definitions the capability produced —
+   * the registrar itself is the source of truth, not a hand-maintained map.
+   */
+  toolNames: string[];
+}
+
+export type RegisterFileAuthoringToolsResult = RegisterCodeExecutionToolsResult;
+
+export interface RegisterFileAuthoringToolsParams {
+  toolRegistry: LCToolRegistry | undefined;
+  toolDefinitions: LCTool[] | undefined;
+  /**
+   * When true, descriptions point the model at the skill file namespace
+   * (`skills/{skillName}/...`) in addition to sandbox paths. When false,
+   * descriptions stay focused on code-execution sandbox files.
+   */
+  includeSkillFileInstructions?: boolean;
 }
 
 /**
@@ -93,35 +137,31 @@ export interface RegisterCodeExecutionToolsResult {
  * per-request state — so a single frozen object is safe to share across
  * every agent init.
  */
+const SKILL_READ_FILE_DESCRIPTION = `${ReadFileToolDefinition.description}
+
+Also accepts authored skill file paths using "skills/{skillName}/...", including "skills/{skillName}/SKILL.md".`;
+
 const READ_FILE_DEF: LCTool = Object.freeze({
   name: ReadFileToolDefinition.name,
-  description: ReadFileToolDefinition.description,
+  description: SKILL_READ_FILE_DESCRIPTION,
   parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
 
-const CODE_READ_FILE_DESCRIPTION = `Read the contents of a file from the code-execution sandbox or from prior code-execution output. Returns text content with line numbers for easy reference.
+const CODE_READ_FILE_DESCRIPTION = `Read a known file from the code-execution sandbox. Text files return line-numbered content (large files truncate around 256KB); images (png, jpeg, gif, webp) return as visual content you can see.
 
-BEHAVIOR:
-- Text files: returned with numbered lines.
-- Large text files are truncated around 256KB with a note to use bash_tool for the full content.
-- Binary files and formats that are not safe to serialize as text may return an error. Use bash_tool to inspect or process them.
-
-CONSTRAINTS:
-- Only files produced by code execution or attached to the code-execution sandbox are accessible.
-- Use paths returned by tool output or paths under /mnt/data/.
-- Do not guess file paths. Use bash_tool to inspect available sandbox files when needed.`;
+Use for text, CSV, JSON, Markdown, logs, small source files, and images at paths returned by tool output, just written, or under /mnt/data/. Do not run ls/find just to rediscover known paths. Use bash_tool for other binary files, large files, transforms, metadata, or true filesystem discovery. /tmp is per-call scratch and unavailable later.`;
 
 const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to a file from code execution output, such as "/mnt/data/result.csv" or another path returned by the execution tool.',
     },
   },
-  required: ['file_path'],
+  required: ['path'],
 }) as LCTool['parameters'];
 
 const CODE_READ_FILE_DEF: LCTool = Object.freeze({
@@ -131,14 +171,218 @@ const CODE_READ_FILE_DEF: LCTool = Object.freeze({
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
 
+const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description:
+        'Path to write. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. For SKILL.md, the YAML frontmatter name must match {skillName}.',
+    },
+    content: {
+      type: 'string',
+      description:
+        'Complete file contents. Keep a single call well under the streamed tool-argument limit (64 KB by default); build larger files incrementally with edit_file.',
+    },
+    overwrite: {
+      type: 'boolean',
+      description: 'Must be true to replace an existing file. Refuses otherwise.',
+      default: false,
+    },
+  },
+  required: ['path', 'content'],
+}) as LCTool['parameters'];
+
+const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description:
+        'Path to write in the code-execution sandbox, such as "/mnt/data/result.txt". Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.',
+    },
+    content: {
+      type: 'string',
+      description:
+        'Complete file contents. Keep a single call well under the streamed tool-argument limit (64 KB by default); build larger files incrementally with edit_file.',
+    },
+    overwrite: {
+      type: 'boolean',
+      description: 'Must be true to replace an existing file. Refuses otherwise.',
+      default: false,
+    },
+  },
+  required: ['path', 'content'],
+}) as LCTool['parameters'];
+
+const SKILL_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description:
+        'Path to edit. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. edit_file cannot rename skills; keep SKILL.md frontmatter name equal to {skillName}.',
+    },
+    old_text: {
+      type: 'string',
+      description: 'Exact text to find. Must match exactly one location in the file.',
+    },
+    new_text: {
+      type: 'string',
+      description: 'Replacement text.',
+    },
+    edits: {
+      type: 'array',
+      description: 'Optional batch of replacements. Each old_text must match exactly once.',
+      items: {
+        type: 'object',
+        properties: {
+          old_text: { type: 'string' },
+          new_text: { type: 'string' },
+        },
+        required: ['old_text', 'new_text'],
+      },
+    },
+  },
+  required: ['path'],
+}) as LCTool['parameters'];
+
+const CODE_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description: 'Path to edit in the code-execution sandbox, such as "/mnt/data/result.txt".',
+    },
+    old_text: {
+      type: 'string',
+      description: 'Exact text to find. Must match exactly one location in the file.',
+    },
+    new_text: {
+      type: 'string',
+      description: 'Replacement text.',
+    },
+    edits: {
+      type: 'array',
+      description: 'Optional batch of replacements. Each old_text must match exactly once.',
+      items: {
+        type: 'object',
+        properties: {
+          old_text: { type: 'string' },
+          new_text: { type: 'string' },
+        },
+        required: ['old_text', 'new_text'],
+      },
+    },
+  },
+  required: ['path'],
+}) as LCTool['parameters'];
+
+const SKILL_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existing file with explicit intent.
+
+Use for new files and full rewrites. Requires overwrite: true to replace existing files.
+
+Paths starting with "skills/" write skill files:
+- skills/{skillName}/SKILL.md - main instructions; keep it lean with YAML frontmatter, trigger-friendly description, workflow steps, and short snippets.
+- skills/{skillName}/references/{file} - long docs, schemas, examples, large templates, HTML/CSS/JS dashboards.
+- skills/{skillName}/scripts/{file} - helper scripts.
+- skills/{skillName}/assets/{file} - static assets.
+- skills/{skillName}/templates/{file} - reusable output templates.
+
+For SKILL.md, frontmatter name must match {skillName}; create skills/{newName}/SKILL.md to rename. Put large runnable artifacts in bundled files such as references/template.html, and have SKILL.md tell the agent when to read or reuse them.
+
+Non-skills paths target the code-execution sandbox when enabled. Prefer /mnt/data/{file}.`;
+
+const CODE_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existing file with explicit intent.
+
+Use for new files and full rewrites where the change is larger than half the file. Requires overwrite: true to replace existing files. Refuses otherwise.
+
+Targets code-execution sandbox paths. Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.
+
+Very long content can exceed the streamed tool-argument limit (64 KB by default) and fail the call. For large files, create the file with its first section, then extend it with edit_file.`;
+
+const SKILL_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
+
+Use for small, precise changes. Each old_text must match exactly one location. Tries exact match first; falls back to whitespace-tolerant matching if needed. Reports which matching strategy was used. Returns a unified diff.
+
+For skills/{skillName}/SKILL.md, edit description, title, or body content, but keep YAML frontmatter name equal to {skillName}. edit_file cannot rename skills; create a new skills/{newName}/SKILL.md for a different skill name. Keep SKILL.md concise; move large templates, HTML/CSS/JS dashboards, examples, schemas, and long docs into references/, scripts/, assets/, or templates/ files and point to them from SKILL.md.
+
+Paths starting with "skills/" target the skill file system. When code execution is enabled, non-skills paths target the code-execution sandbox.`;
+
+const CODE_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
+
+Use for small, precise changes. Each old_text must match exactly one location. Tries exact match first; falls back to whitespace-tolerant matching if needed. Reports which matching strategy was used. Returns a unified diff.
+
+Targets code-execution sandbox paths, such as /mnt/data/result.txt.`;
+
+const SKILL_CREATE_FILE_DEF: LCTool = Object.freeze({
+  name: CREATE_FILE_TOOL_NAME,
+  description: SKILL_CREATE_FILE_DESCRIPTION,
+  parameters: SKILL_CREATE_FILE_PARAMETERS,
+  responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
+}) as LCTool;
+
+const CODE_CREATE_FILE_DEF: LCTool = Object.freeze({
+  name: CREATE_FILE_TOOL_NAME,
+  description: CODE_CREATE_FILE_DESCRIPTION,
+  parameters: CODE_CREATE_FILE_PARAMETERS,
+  responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
+}) as LCTool;
+
+const SKILL_EDIT_FILE_DEF: LCTool = Object.freeze({
+  name: EDIT_FILE_TOOL_NAME,
+  description: SKILL_EDIT_FILE_DESCRIPTION,
+  parameters: SKILL_EDIT_FILE_PARAMETERS,
+  responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
+}) as LCTool;
+
+const CODE_EDIT_FILE_DEF: LCTool = Object.freeze({
+  name: EDIT_FILE_TOOL_NAME,
+  description: CODE_EDIT_FILE_DESCRIPTION,
+  parameters: CODE_EDIT_FILE_PARAMETERS,
+  responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
+}) as LCTool;
+
 function buildReadFileDef(includeSkillFileInstructions: boolean): LCTool {
   return includeSkillFileInstructions ? READ_FILE_DEF : CODE_READ_FILE_DEF;
+}
+
+function buildFileAuthoringDefs(includeSkillFileInstructions: boolean): LCTool[] {
+  return includeSkillFileInstructions
+    ? [SKILL_CREATE_FILE_DEF, SKILL_EDIT_FILE_DEF]
+    : [CODE_CREATE_FILE_DEF, CODE_EDIT_FILE_DEF];
 }
 
 function isCodeOnlyReadFileDef(def: LCTool | undefined): boolean {
   return (
     def?.name === ReadFileToolDefinition.name && def?.description === CODE_READ_FILE_DESCRIPTION
   );
+}
+
+function isCodeOnlyFileAuthoringDef(def: LCTool | undefined): boolean {
+  if (def?.name === CREATE_FILE_TOOL_NAME) {
+    return def.description === CODE_CREATE_FILE_DESCRIPTION;
+  }
+  if (def?.name === EDIT_FILE_TOOL_NAME) {
+    return def.description === CODE_EDIT_FILE_DESCRIPTION;
+  }
+  return false;
+}
+
+export function isFileAuthoringToolDefinition(def: LCTool | undefined): boolean {
+  if (def?.name === CREATE_FILE_TOOL_NAME) {
+    return (
+      def.description === CODE_CREATE_FILE_DESCRIPTION ||
+      def.description === SKILL_CREATE_FILE_DESCRIPTION
+    );
+  }
+  if (def?.name === EDIT_FILE_TOOL_NAME) {
+    return (
+      def.description === CODE_EDIT_FILE_DESCRIPTION ||
+      def.description === SKILL_EDIT_FILE_DESCRIPTION
+    );
+  }
+  return false;
 }
 
 /**
@@ -152,10 +396,14 @@ function isCodeOnlyReadFileDef(def: LCTool | undefined): boolean {
  * intent of the original constant while keeping the per-agent gate
  * behavior introduced for tool-output references.
  */
-function createBashToolDef(enableToolOutputReferences: boolean): LCTool {
+function createBashToolDef(enableToolOutputReferences: boolean, statefulSessions = false): LCTool {
+  /* Passed as a variable (not an inline literal) so the extra
+   * `statefulSessions` key stays assignable against pinned SDK versions
+   * whose builder predates it (ignored at runtime there). */
+  const descriptionOpts = { enableToolOutputReferences, statefulSessions };
   return Object.freeze({
     name: BashExecutionToolDefinition.name,
-    description: buildBashExecutionToolDescription({ enableToolOutputReferences }),
+    description: buildBashExecutionToolDescription(descriptionOpts),
     parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
   }) as LCTool;
 }
@@ -163,7 +411,15 @@ function createBashToolDef(enableToolOutputReferences: boolean): LCTool {
 const BASH_TOOL_DEF_WITH_OUTPUT_REFS = createBashToolDef(true);
 const BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS = createBashToolDef(false);
 
-function buildBashToolDef(opts: { enableToolOutputReferences: boolean }): LCTool {
+function buildBashToolDef(opts: {
+  enableToolOutputReferences: boolean;
+  statefulSessions?: boolean;
+}): LCTool {
+  /* Stateful defs are built on demand: the stateless pair covers the
+   * default path, and per-run construction is negligible next to init. */
+  if (opts.statefulSessions === true) {
+    return createBashToolDef(opts.enableToolOutputReferences, true);
+  }
   return opts.enableToolOutputReferences
     ? BASH_TOOL_DEF_WITH_OUTPUT_REFS
     : BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS;
@@ -192,12 +448,14 @@ export function registerCodeExecutionTools(
     includeBash,
     includeSkillFileInstructions = true,
     enableToolOutputReferences = false,
+    statefulSessions = false,
   } = params;
 
   const readFileDef = buildReadFileDef(includeSkillFileInstructions);
   const candidates: LCTool[] = includeBash
-    ? [readFileDef, buildBashToolDef({ enableToolOutputReferences })]
+    ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
     : [readFileDef];
+  const toolNames = candidates.map((def) => def.name);
 
   const inputDefinitions = toolDefinitions ?? [];
   let workingDefinitions = inputDefinitions;
@@ -240,10 +498,64 @@ export function registerCodeExecutionTools(
    * code-only `read_file` definition was upgraded above.
    */
   if (newDefs.length === 0) {
-    return { toolDefinitions: workingDefinitions, registered };
+    return { toolDefinitions: workingDefinitions, registered, toolNames };
   }
   return {
     toolDefinitions: [...workingDefinitions, ...newDefs],
     registered,
+    toolNames,
+  };
+}
+
+export function registerFileAuthoringTools(
+  params: RegisterFileAuthoringToolsParams,
+): RegisterFileAuthoringToolsResult {
+  const { toolRegistry, toolDefinitions, includeSkillFileInstructions = true } = params;
+
+  const candidates = buildFileAuthoringDefs(includeSkillFileInstructions);
+  const toolNames = candidates.map((def) => def.name);
+  const inputDefinitions = toolDefinitions ?? [];
+  let workingDefinitions = inputDefinitions;
+
+  const registered: string[] = [];
+  const newDefs: LCTool[] = [];
+  for (const def of candidates) {
+    const existingIndex = workingDefinitions.findIndex((d) => d.name === def.name);
+    const existingDef = existingIndex >= 0 ? workingDefinitions[existingIndex] : undefined;
+    const registryDef = toolRegistry?.get(def.name);
+
+    if (
+      includeSkillFileInstructions &&
+      (isCodeOnlyFileAuthoringDef(existingDef) || isCodeOnlyFileAuthoringDef(registryDef))
+    ) {
+      if (isCodeOnlyFileAuthoringDef(existingDef)) {
+        workingDefinitions =
+          workingDefinitions === inputDefinitions ? [...inputDefinitions] : workingDefinitions;
+        workingDefinitions[existingIndex] = def;
+      }
+      if (isCodeOnlyFileAuthoringDef(registryDef)) {
+        toolRegistry?.set(def.name, def);
+      }
+      continue;
+    }
+
+    const inRegistry = toolRegistry?.has(def.name) === true;
+    const inDefs = existingIndex >= 0;
+    if (inRegistry || inDefs) {
+      continue;
+    }
+
+    toolRegistry?.set(def.name, def);
+    newDefs.push(def);
+    registered.push(def.name);
+  }
+
+  if (newDefs.length === 0) {
+    return { toolDefinitions: workingDefinitions, registered, toolNames };
+  }
+  return {
+    toolDefinitions: [...workingDefinitions, ...newDefs],
+    registered,
+    toolNames,
   };
 }

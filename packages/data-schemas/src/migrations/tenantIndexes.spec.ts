@@ -113,6 +113,11 @@ describe('dropSupersededTenantIndexes', () => {
           { idOnTheSource: 1, source: 1 },
           { unique: true, name: 'idOnTheSource_1_source_1' },
         );
+
+      await db.createCollection('skillsyncstatuses');
+      await db
+        .collection('skillsyncstatuses')
+        .createIndex({ provider: 1, sourceId: 1 }, { unique: true, name: 'provider_1_sourceId_1' });
     });
 
     it('drops all superseded indexes', async () => {
@@ -159,6 +164,13 @@ describe('dropSupersededTenantIndexes', () => {
       const indexNames = indexes.map((idx) => idx.name);
 
       expect(indexNames).not.toContain('conversationId_1_user_1');
+    });
+
+    it('old skill sync status unique index is gone', async () => {
+      const indexes = await mongoose.connection.db!.collection('skillsyncstatuses').indexes();
+      const indexNames = indexes.map((idx) => idx.name);
+
+      expect(indexNames).not.toContain('provider_1_sourceId_1');
     });
   });
 
@@ -287,6 +299,7 @@ describe('dropSupersededTenantIndexes', () => {
         'mcpservers',
         'files',
         'groups',
+        'skillsyncstatuses',
       ];
 
       for (const col of expectedCollections) {

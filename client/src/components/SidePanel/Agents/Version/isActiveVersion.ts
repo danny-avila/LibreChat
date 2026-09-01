@@ -1,4 +1,9 @@
+import isEqual from 'lodash/isEqual';
+import type { GraphEdge } from 'librechat-data-provider';
 import type { AgentState, VersionRecord } from './types';
+
+const edgesMatch = (versionEdges?: GraphEdge[], currentEdges?: GraphEdge[]): boolean =>
+  isEqual(versionEdges ?? [], currentEdges ?? []);
 
 export const isActiveVersion = (
   version: VersionRecord,
@@ -23,6 +28,7 @@ export const isActiveVersion = (
   const matchesDescription = version.description === currentAgent.description;
   const matchesInstructions = version.instructions === currentAgent.instructions;
   const matchesArtifacts = version.artifacts === currentAgent.artifacts;
+  const matchesEdges = edgesMatch(version.edges, currentAgent.edges);
 
   const toolsMatch = () => {
     if (!version.tools && !currentAgent.tools) return true;
@@ -53,6 +59,7 @@ export const isActiveVersion = (
     matchesDescription &&
     matchesInstructions &&
     matchesArtifacts &&
+    matchesEdges &&
     toolsMatch() &&
     capabilitiesMatch()
   );

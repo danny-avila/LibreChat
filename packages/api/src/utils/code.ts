@@ -7,5 +7,5 @@ import https from 'https';
  * on Node 19+ (keepAlive: true by default), tainted sockets re-enter the global pool
  * and kill unrelated requests (e.g., node-fetch in CodeExecutor) after the idle timeout.
  */
-export const codeServerHttpAgent = new http.Agent({ keepAlive: false });
-export const codeServerHttpsAgent = new https.Agent({ keepAlive: false });
+export const codeServerHttpAgent: http.Agent = new http.Agent({ keepAlive: false });
+export const codeServerHttpsAgent: https.Agent = new https.Agent({ keepAlive: false });

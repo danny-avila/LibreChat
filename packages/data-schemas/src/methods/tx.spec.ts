@@ -1,13 +1,14 @@
 /** Note: No hard-coded values should be used in this file. */
-import { matchModelName, findMatchingPattern } from './test-helpers';
 import { EModelEndpoint } from 'librechat-data-provider';
 import {
   createTxMethods,
   tokenValues,
   cacheTokenValues,
   premiumTokenValues,
+  premiumCacheTokenValues,
   defaultRate,
 } from './tx';
+import { matchModelName, findMatchingPattern } from './test-helpers';
 
 const { getValueKey, getMultiplier, getPremiumRate, getCacheMultiplier } = createTxMethods(
   {} as typeof import('mongoose'),
@@ -56,9 +57,17 @@ describe('getValueKey', () => {
 
   it('should return "gpt-5.3" for model name containing "gpt-5.3"', () => {
     expect(getValueKey('gpt-5.3')).toBe('gpt-5.3');
-    expect(getValueKey('gpt-5.3-chat-latest')).toBe('gpt-5.3');
     expect(getValueKey('gpt-5.3-codex')).toBe('gpt-5.3');
     expect(getValueKey('openai/gpt-5.3')).toBe('gpt-5.3');
+  });
+
+  it('should return explicit keys for chat-latest aliases', () => {
+    expect(getValueKey('chat-latest')).toBe('chat-latest');
+    expect(getValueKey('openai/chat-latest')).toBe('chat-latest');
+    expect(getValueKey('gpt-5-chat-latest')).toBe('gpt-5-chat-latest');
+    expect(getValueKey('gpt-5.1-chat-latest')).toBe('gpt-5.1-chat-latest');
+    expect(getValueKey('gpt-5.2-chat-latest')).toBe('gpt-5.2-chat-latest');
+    expect(getValueKey('gpt-5.3-chat-latest')).toBe('gpt-5.3-chat-latest');
   });
 
   it('should return "gpt-5.4" for model name containing "gpt-5.4"', () => {
@@ -439,6 +448,56 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ model: 'openai/gpt-5.4-pro', tokenType: 'prompt' })).toBe(
       tokenValues['gpt-5.4-pro'].prompt,
     );
+  });
+
+  it('should return the correct multiplier for gpt-5.6 tiers', () => {
+    for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+      expect(getValueKey(model)).toBe(model);
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues[model].prompt);
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(tokenValues[model].completion);
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(cacheTokenValues[model].write);
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(cacheTokenValues[model].read);
+    }
+    expect(getValueKey('gpt-5.6-sol')).toBe('gpt-5.6');
+    expect(getMultiplier({ model: 'openai/gpt-5.6-terra', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.6-terra'].completion,
+    );
+  });
+
+  it('should bill gpt-5.6 cache writes at the documented 1.25x input surcharge', () => {
+    for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+      expect(cacheTokenValues[model].write).toBeCloseTo(tokenValues[model].prompt * 1.25);
+    }
+  });
+
+  it('should use the documented gpt-5.6 pricing', () => {
+    const expectedPricing = {
+      'gpt-5.6': {
+        standard: { prompt: 4, completion: 20 },
+        cache: { write: 5, read: 0.4 },
+        premium: { threshold: 272000, prompt: 8, completion: 30 },
+        premiumCache: { threshold: 272000, write: 10, read: 0.8 },
+      },
+      'gpt-5.6-terra': {
+        standard: { prompt: 2, completion: 12 },
+        cache: { write: 2.5, read: 0.2 },
+        premium: { threshold: 272000, prompt: 4, completion: 18 },
+        premiumCache: { threshold: 272000, write: 5, read: 0.4 },
+      },
+      'gpt-5.6-luna': {
+        standard: { prompt: 0.2, completion: 1.2 },
+        cache: { write: 0.25, read: 0.02 },
+        premium: { threshold: 272000, prompt: 0.4, completion: 1.8 },
+        premiumCache: { threshold: 272000, write: 0.5, read: 0.04 },
+      },
+    };
+
+    for (const [model, pricing] of Object.entries(expectedPricing)) {
+      expect(tokenValues[model]).toEqual(pricing.standard);
+      expect(cacheTokenValues[model]).toEqual(pricing.cache);
+      expect(premiumTokenValues[model]).toEqual(pricing.premium);
+      expect(premiumCacheTokenValues[model]).toEqual(pricing.premiumCache);
+    }
   });
 
   it('should return the correct multiplier for gpt-4o', () => {
@@ -1497,6 +1556,10 @@ describe('Google Model Tests', () => {
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
     'gemini-3.1-flash-lite-preview',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
     'gemini-2.5-pro',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -1544,6 +1607,10 @@ describe('Google Model Tests', () => {
       'gemini-3.1-pro-preview': 'gemini-3.1',
       'gemini-3.1-pro-preview-customtools': 'gemini-3.1',
       'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite',
+      'gemini-3.7-flash': 'gemini-3.7-flash',
+      'gemini-3.6-flash': 'gemini-3.6-flash',
+      'gemini-3.5-flash': 'gemini-3.5-flash',
+      'gemini-3.5-flash-lite': 'gemini-3.5-flash-lite',
       'gemini-2.5-pro': 'gemini-2.5-pro',
       'gemini-2.5-flash': 'gemini-2.5-flash',
       'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
@@ -1643,6 +1710,83 @@ describe('Google Model Tests', () => {
     );
     expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
       cacheTokenValues['gemini-3.1-flash-lite'].read,
+    );
+  });
+
+  it('should return correct rates for Gemini 3.5 Flash', () => {
+    const model = 'gemini-3.5-flash';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.5-flash'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.5-flash'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.5-flash'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.5-flash'].read,
+    );
+  });
+
+  it('should return correct rates for Gemini 3.6 Flash', () => {
+    const model = 'gemini-3.6-flash';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.6-flash'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.6-flash'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.6-flash'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.6-flash'].read,
+    );
+  });
+
+  it('should return correct rates for Gemini 3.7 Flash', () => {
+    const model = 'gemini-3.7-flash';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.7-flash'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.7-flash'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.7-flash'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.7-flash'].read,
+    );
+  });
+
+  it('should apply the introductory Flash rates to Gemini 3.6 and 3.7 Flash', () => {
+    for (const model of ['gemini-3.6-flash', 'gemini-3.7-flash']) {
+      expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+        0.75,
+      );
+      expect(
+        getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google }),
+      ).toBe(3.75);
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(0.75);
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(0.075);
+    }
+  });
+
+  it('should return correct rates for Gemini 3.5 Flash-Lite', () => {
+    const model = 'gemini-3.5-flash-lite';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.5-flash-lite'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.5-flash-lite'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.5-flash-lite'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.5-flash-lite'].read,
     );
   });
 });
@@ -2319,6 +2463,251 @@ describe('Claude Model Tests', () => {
       cacheTokenValues['claude-opus-4-7'].read,
     );
   });
+
+  it('should return correct prompt and completion rates for Claude Opus 4.8', () => {
+    expect(getMultiplier({ model: 'claude-opus-4-8', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-4-8'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-4-8', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-4-8'].completion,
+    );
+  });
+
+  it('should handle Claude Opus 4.8 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-4-8',
+      'claude-opus-4-8-20260528',
+      'claude-opus-4-8-latest',
+      'anthropic/claude-opus-4-8',
+      'claude-opus-4-8/anthropic',
+      'claude-opus-4-8-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-4-8');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-4-8'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-4-8'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Opus 4.8', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-4-8', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-4-8'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-4-8', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-4-8'].read,
+    );
+  });
+
+  it('should return correct prompt and completion rates for Claude Opus 5', () => {
+    expect(getMultiplier({ model: 'claude-opus-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-5'].completion,
+    );
+  });
+
+  it('should handle Claude Opus 5 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-5',
+      'claude-opus-5-20260701',
+      'claude-opus-5-latest',
+      'anthropic/claude-opus-5',
+      'claude-opus-5/anthropic',
+      'claude-opus-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-5'].completion,
+      );
+    });
+  });
+
+  it('should not confuse Claude Opus 5 with Claude Opus 4.5', () => {
+    expect(getValueKey('claude-opus-5')).toBe('claude-opus-5');
+    expect(getValueKey('claude-opus-4-5')).toBe('claude-opus-4-5');
+  });
+
+  it('should return correct cache rates for Claude Opus 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-5'].read,
+    );
+  });
+
+  it('should price Bedrock cross-region inference profile IDs like their base model', () => {
+    const profileToBase: Array<[string, string]> = [
+      ['global.anthropic.claude-opus-5', 'claude-opus-5'],
+      ['us.anthropic.claude-opus-5', 'claude-opus-5'],
+      ['global.anthropic.claude-opus-4-8', 'claude-opus-4-8'],
+      ['global.anthropic.claude-sonnet-5', 'claude-sonnet-5'],
+      ['global.anthropic.claude-sonnet-4-6', 'claude-sonnet-4-6'],
+      ['global.anthropic.claude-fable-5', 'claude-fable-5'],
+    ];
+
+    profileToBase.forEach(([profileId, base]) => {
+      expect(getValueKey(profileId)).toBe(base);
+      expect(getMultiplier({ model: profileId, tokenType: 'prompt' })).toBe(
+        tokenValues[base].prompt,
+      );
+      expect(getMultiplier({ model: profileId, tokenType: 'completion' })).toBe(
+        tokenValues[base].completion,
+      );
+      expect(getCacheMultiplier({ model: profileId, cacheType: 'write' })).toBe(
+        cacheTokenValues[base].write,
+      );
+    });
+  });
+
+  it('should return correct prompt and completion rates for Claude Fable 5', () => {
+    expect(getMultiplier({ model: 'claude-fable-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-fable-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-fable-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-fable-5'].completion,
+    );
+  });
+
+  it('should pin Claude Fable 5 pricing to $10 / $50 per MTok', () => {
+    expect(tokenValues['claude-fable-5']).toEqual({ prompt: 10, completion: 50 });
+  });
+
+  it('should handle Claude Fable 5 model name variations', () => {
+    const modelVariations = [
+      'claude-fable-5',
+      'claude-fable-5-20260609',
+      'claude-fable-5-latest',
+      'anthropic/claude-fable-5',
+      'claude-fable-5/anthropic',
+      'anthropic.claude-fable-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-fable-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-fable-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-fable-5'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Fable 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-fable-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-fable-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-fable-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-fable-5'].read,
+    );
+  });
+
+  it('should return correct prompt and completion rates for Claude Mythos 5', () => {
+    expect(getMultiplier({ model: 'claude-mythos-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-mythos-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-mythos-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-mythos-5'].completion,
+    );
+  });
+
+  it('should pin Claude Mythos 5 pricing to $10 / $50 per MTok', () => {
+    expect(tokenValues['claude-mythos-5']).toEqual({ prompt: 10, completion: 50 });
+  });
+
+  it('should handle Claude Mythos 5 model name variations', () => {
+    const modelVariations = [
+      'claude-mythos-5',
+      'claude-mythos-5-20260609',
+      'claude-mythos-5-latest',
+      'anthropic/claude-mythos-5',
+      'claude-mythos-5/anthropic',
+      'anthropic.claude-mythos-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-mythos-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-mythos-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-mythos-5'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Mythos 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-mythos-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-mythos-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-mythos-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-mythos-5'].read,
+    );
+  });
+
+  it('should return correct prompt and completion rates for Claude Sonnet 5', () => {
+    expect(getMultiplier({ model: 'claude-sonnet-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-sonnet-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-sonnet-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-sonnet-5'].completion,
+    );
+  });
+
+  it('should pin Claude Sonnet 5 to introductory $2 / $10 per MTok (through 2026-08-31)', () => {
+    expect(tokenValues['claude-sonnet-5']).toEqual({ prompt: 2, completion: 10 });
+  });
+
+  it('should apply introductory cache rates ($2.50 / $0.20) for Claude Sonnet 5', () => {
+    expect(cacheTokenValues['claude-sonnet-5']).toEqual({ write: 2.5, read: 0.2 });
+  });
+
+  it('should handle Claude Sonnet 5 model name variations without matching Sonnet 4', () => {
+    const modelVariations = [
+      'claude-sonnet-5',
+      'claude-sonnet-5-20260101',
+      'claude-sonnet-5-latest',
+      'anthropic/claude-sonnet-5',
+      'claude-sonnet-5/anthropic',
+      'anthropic.claude-sonnet-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-sonnet-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-sonnet-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-sonnet-5'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Sonnet 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-sonnet-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-sonnet-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-sonnet-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-sonnet-5'].read,
+    );
+  });
 });
 
 describe('Premium Token Pricing', () => {
@@ -2339,7 +2728,16 @@ describe('Premium Token Pricing', () => {
   });
 
   it('should not apply premium pricing to Claude 1M GA models', () => {
-    const claudeModels = ['claude-opus-4-6', 'claude-opus-4-7', 'claude-sonnet-4-6'];
+    const claudeModels = [
+      'claude-opus-4-6',
+      'claude-opus-4-7',
+      'claude-opus-4-8',
+      'claude-opus-5',
+      'claude-fable-5',
+      'claude-mythos-5',
+      'claude-sonnet-4-6',
+      'claude-sonnet-5',
+    ];
     claudeModels.forEach((model) => {
       expect(premiumTokenValues[model]).toBeUndefined();
       expect(getPremiumRate(model, 'prompt', wellAboveThreshold)).toBeNull();
@@ -2475,6 +2873,179 @@ describe('Premium Token Pricing', () => {
     expect(
       getMultiplier({ valueKey, tokenType: 'completion', inputTokenCount: belowThreshold }),
     ).toBe(tokenValues[premiumModel].completion);
+  });
+});
+
+describe('GPT-5.6 Long-Context Premium Pricing', () => {
+  const tiers = ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna'];
+
+  it('should define a premium entry above standard rates for every tier', () => {
+    for (const model of tiers) {
+      const premiumEntry = premiumTokenValues[model];
+      expect(premiumEntry).toBeDefined();
+      expect(premiumEntry.threshold).toBe(272000);
+      expect(premiumEntry.prompt).toBeCloseTo(tokenValues[model].prompt * 2);
+      expect(premiumEntry.completion).toBeCloseTo(tokenValues[model].completion * 1.5);
+    }
+  });
+
+  it('should bill standard rates at or below threshold and premium rates above', () => {
+    for (const model of tiers) {
+      const { threshold, prompt, completion } = premiumTokenValues[model];
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold })).toBe(
+        tokenValues[model].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold + 1 })).toBe(
+        prompt,
+      );
+      expect(
+        getMultiplier({ model, tokenType: 'completion', inputTokenCount: threshold + 1 }),
+      ).toBe(completion);
+    }
+  });
+});
+
+describe('Long-Context Premium Cache Pricing', () => {
+  const premiumCacheModels = Object.keys(premiumCacheTokenValues);
+
+  it('should scale cache write/read by the same long-context multiplier as input', () => {
+    for (const model of premiumCacheModels) {
+      const inputRatio = premiumTokenValues[model].prompt / tokenValues[model].prompt;
+      expect(premiumCacheTokenValues[model].write).toBeCloseTo(
+        cacheTokenValues[model].write * inputRatio,
+      );
+      expect(premiumCacheTokenValues[model].read).toBeCloseTo(
+        cacheTokenValues[model].read * inputRatio,
+      );
+    }
+  });
+
+  it('should return premium cache rates above threshold and standard rates at/below', () => {
+    for (const model of premiumCacheModels) {
+      const { threshold } = premiumCacheTokenValues[model];
+      for (const cacheType of ['write', 'read'] as const) {
+        expect(getCacheMultiplier({ model, cacheType, inputTokenCount: threshold + 1 })).toBe(
+          premiumCacheTokenValues[model][cacheType],
+        );
+        expect(getCacheMultiplier({ model, cacheType, inputTokenCount: threshold })).toBe(
+          cacheTokenValues[model][cacheType],
+        );
+        expect(getCacheMultiplier({ model, cacheType })).toBe(cacheTokenValues[model][cacheType]);
+      }
+    }
+  });
+
+  it('should not apply premium cache rates to models without a premium cache entry', () => {
+    for (const model of ['gpt-5-mini', 'gpt-5.4-mini', 'gpt-4o']) {
+      expect(premiumCacheTokenValues[model]).toBeUndefined();
+      expect(getCacheMultiplier({ model, cacheType: 'read', inputTokenCount: 5_000_000 })).toBe(
+        getCacheMultiplier({ model, cacheType: 'read' }),
+      );
+    }
+  });
+});
+
+describe('Newer model pricing', () => {
+  const newlyPriced = [
+    'llama4-scout',
+    'llama-4-maverick',
+    'muse-spark-1.1',
+    'musespark',
+    'muse-glimmer-30b',
+    'deepseek-v4-flash',
+    'deepseek-v4-pro',
+    'kimi-k3',
+    'glm-4.7',
+    'glm-4.7-flash',
+    'glm-5.1',
+    'glm-5.2',
+    'grok-4.5',
+    'grok-4.6',
+    'ministral-8b-2512',
+    'ministral-14b-2512',
+    'nova-2-lite',
+    'command-a',
+    'minimax-m2.7',
+    'minimax-m3',
+    'qwen3-coder-next',
+  ];
+
+  it.each(newlyPriced)('bills %s at its own rate rather than the default', (model) => {
+    const valueKey = getValueKey(model);
+    expect(valueKey).toBe(model);
+    expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues[model].prompt);
+    expect(getMultiplier({ model, tokenType: 'completion' })).toBe(tokenValues[model].completion);
+    expect(getMultiplier({ model, tokenType: 'prompt' })).not.toBe(defaultRate);
+  });
+
+  it('keeps the preceding generation on its own rate', () => {
+    for (const model of [
+      'grok-4',
+      'grok-4-fast',
+      'ministral-8b',
+      'qwen3-coder',
+      'command-r-plus',
+    ]) {
+      expect(getValueKey(model)).toBe(model);
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues[model].prompt);
+    }
+  });
+
+  it('resolves dated and vendor-prefixed variants to the same rate', () => {
+    expect(getMultiplier({ model: 'moonshotai/kimi-k3', tokenType: 'completion' })).toBe(
+      tokenValues['kimi-k3'].completion,
+    );
+    expect(getMultiplier({ model: 'x-ai/grok-4-6', tokenType: 'prompt' })).toBe(
+      tokenValues['grok-4-6'].prompt,
+    );
+    expect(getMultiplier({ model: 'command-a-plus-05-2026', tokenType: 'prompt' })).toBe(
+      tokenValues['command-a'].prompt,
+    );
+  });
+});
+
+describe('dot-prefixed Kimi K3 aliases', () => {
+  it('bills both bedrock forms at the K3 rate rather than an older Kimi row', () => {
+    for (const model of ['moonshot.kimi-k3', 'moonshotai.kimi-k3']) {
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k3'].completion,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).not.toBe(
+        tokenValues['moonshot.kimi'].completion,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).not.toBe(
+        tokenValues['moonshot'].completion,
+      );
+    }
+  });
+});
+
+describe('Grok long-context premium tier', () => {
+  it('doubles the rate once a prompt passes the 200K threshold', () => {
+    for (const model of ['grok-4.5', 'grok-4.6']) {
+      const { threshold } = premiumTokenValues[model];
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold })).toBe(
+        tokenValues[model].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold + 1 })).toBe(
+        premiumTokenValues[model].prompt,
+      );
+      expect(
+        getMultiplier({ model, tokenType: 'completion', inputTokenCount: threshold + 1 }),
+      ).toBe(premiumTokenValues[model].completion);
+    }
+  });
+});
+
+describe('vendor-prefixed pricing keys', () => {
+  it('prices the model segment rather than the vendor prefix', () => {
+    expect(getValueKey('moonshotai/kimi-k2')).toBe('kimi-k2');
+    expect(getMultiplier({ model: 'moonshotai/kimi-k2', tokenType: 'prompt' })).toBe(
+      tokenValues['kimi-k2'].prompt,
+    );
+    expect(getMultiplier({ model: 'moonshotai/kimi-k2', tokenType: 'prompt' })).not.toBe(
+      tokenValues['moonshot'].prompt,
+    );
   });
 });
 

@@ -21,6 +21,17 @@ interface DeduplicatedSource {
 }
 
 /**
+ * The `file_search` attachment is typed as {@link SearchResultData} in the
+ * shared schema, but at runtime the agent file-search tool emits a
+ * `{ sources: FileSource[] }` payload. Read the sources defensively.
+ */
+type FileSearchAttachmentData = SearchResultData & { sources?: FileSource[] };
+
+function getFileSearchSources(data: FileSearchAttachmentData): FileSource[] {
+  return Array.isArray(data.sources) ? data.sources : [];
+}
+
+/**
  * Hook that creates a map of turn numbers to SearchResultData from web search and agent file search attachments
  * @param attachments Array of attachment metadata
  * @returns A map of turn numbers to their corresponding search result data
@@ -42,7 +53,7 @@ export function useSearchResultsByTurn(attachments?: TAttachment[]) {
 
       // Handle agent file search attachments (following web search pattern)
       if (attachment.type === Tools.file_search && attachment[Tools.file_search]) {
-        const sources = attachment[Tools.file_search].sources;
+        const sources = getFileSearchSources(attachment[Tools.file_search]);
 
         // Deduplicate sources by fileId and merge pages
         const deduplicatedSources = new Map<string, DeduplicatedSource>();

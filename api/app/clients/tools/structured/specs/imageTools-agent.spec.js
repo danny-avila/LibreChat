@@ -100,11 +100,21 @@ describe('image tools - agent mode ToolMessage format', () => {
     });
 
     it('keeps tenant context without retaining the request object', () => {
-      const req = { user: { tenantId: 'tenant-a' }, socket: {} };
+      const req = {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+        socket: {},
+      };
       const dalle = new DALLE3({ isAgent: false, processFileURL: jest.fn(), req });
 
       expect(dalle.tenantId).toBe('tenant-a');
       expect(dalle.req).toBeUndefined();
+      expect(dalle.retentionRequest).toEqual({
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+      });
     });
 
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
@@ -181,11 +191,90 @@ describe('image tools - agent mode ToolMessage format', () => {
     });
 
     it('keeps tenant context without retaining the request object', () => {
-      const req = { user: { tenantId: 'tenant-a' }, socket: {} };
+      const req = {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+        socket: {},
+      };
       const flux = new FluxAPI({ isAgent: false, processFileURL: jest.fn(), req });
 
       expect(flux.tenantId).toBe('tenant-a');
       expect(flux.req).toBeUndefined();
+      expect(flux.retentionRequest).toEqual({
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+      });
+    });
+
+    it('passes minimal retention context when saving generated images', async () => {
+      const processFileURL = jest.fn().mockResolvedValue({ filepath: '/images/generated.png' });
+      const req = {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+        socket: {},
+      };
+      const flux = new FluxAPI({
+        isAgent: false,
+        processFileURL,
+        req,
+        userId: 'user-1',
+        fileStrategy: 'local',
+      });
+      const invokePromise = flux.invoke(
+        makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' }),
+      );
+      await jest.runAllTimersAsync();
+      await invokePromise;
+
+      expect(processFileURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-a' },
+            body: { conversationId: 'convo-1', isTemporary: 'true' },
+            config: { interfaceConfig: { retentionMode: 'all' } },
+          },
+        }),
+      );
+    });
+
+    it('passes minimal retention context when saving finetuned generated images', async () => {
+      const processFileURL = jest.fn().mockResolvedValue({ filepath: '/images/generated.png' });
+      const req = {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+        socket: {},
+      };
+      const flux = new FluxAPI({
+        isAgent: false,
+        processFileURL,
+        req,
+        userId: 'user-1',
+        fileStrategy: 'local',
+      });
+      const invokePromise = flux.invoke(
+        makeToolCall('flux', {
+          action: 'generate_finetuned',
+          prompt: 'a box',
+          finetune_id: 'ft-abc123',
+          endpoint: '/v1/flux-pro-finetuned',
+        }),
+      );
+      await jest.runAllTimersAsync();
+      await invokePromise;
+
+      expect(processFileURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-a' },
+            body: { conversationId: 'convo-1', isTemporary: 'true' },
+            config: { interfaceConfig: { retentionMode: 'all' } },
+          },
+        }),
+      );
     });
 
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
@@ -248,6 +337,51 @@ describe('image tools - agent mode ToolMessage format', () => {
         typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
       expect(contentStr).toContain('Something went wrong');
       expect(result.artifact).toBeDefined();
+    });
+
+    it('routes a finetuned endpoint through generateFinetunedImage even when action is left as "generate"', async () => {
+      const flux = new FluxAPI({ isAgent: true });
+      const invokePromise = flux.invoke(
+        makeToolCall('flux', {
+          prompt: 'a box',
+          endpoint: '/v1/flux-pro-finetuned',
+          finetune_id: 'ft-abc123',
+          finetune_strength: 0.8,
+          guidance: 3,
+        }),
+      );
+      await jest.runAllTimersAsync();
+      const result = await invokePromise;
+
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining('/v1/flux-pro-finetuned'),
+        expect.objectContaining({
+          finetune_id: 'ft-abc123',
+          finetune_strength: 0.8,
+          guidance: 3,
+        }),
+        expect.anything(),
+      );
+
+      expect(result).toBeInstanceOf(ToolMessage);
+      expect(result.artifact).toBeDefined();
+      const artifactContent = result.artifact?.content;
+      expect(Array.isArray(artifactContent)).toBe(true);
+      expect(artifactContent[0].type).toBe(ContentTypes.IMAGE_URL);
+      expect(artifactContent[0].image_url.url).toContain('base64');
+    });
+
+    it('rejects a finetuned endpoint without finetune_id even when action is left as "generate"', async () => {
+      const flux = new FluxAPI({ isAgent: true });
+
+      await expect(
+        flux.invoke(
+          makeToolCall('flux', {
+            prompt: 'a box',
+            endpoint: '/v1/flux-pro-finetuned',
+          }),
+        ),
+      ).rejects.toThrow(/finetune_id/);
     });
   });
 

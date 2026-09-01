@@ -3,7 +3,18 @@ import type { IAction } from '~/types';
 
 const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'] as const;
 
-export function createActionMethods(mongoose: typeof import('mongoose')) {
+export function createActionMethods(mongoose: typeof import('mongoose')): {
+  getActions: (
+    searchParams: FilterQuery<IAction>,
+    includeSensitive?: boolean,
+  ) => Promise<IAction[]>;
+  updateAction: (
+    searchParams: FilterQuery<IAction>,
+    updateData: Partial<IAction>,
+  ) => Promise<IAction | null>;
+  deleteAction: (searchParams: FilterQuery<IAction>) => Promise<IAction | null>;
+  deleteActions: (searchParams: FilterQuery<IAction>) => Promise<number>;
+} {
   /**
    * Update an action with new data without overwriting existing properties,
    * or create a new action if it doesn't exist.

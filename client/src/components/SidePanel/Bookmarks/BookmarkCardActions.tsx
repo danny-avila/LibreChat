@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import type { TConversationTag } from 'librechat-data-provider';
 import {
   Button,
   OGDialog,
@@ -9,6 +8,7 @@ import {
   TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
+import type { TConversationTag } from 'librechat-data-provider';
 import { useDeleteConversationTagMutation } from '~/data-provider';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { NotificationSeverity } from '~/common';
@@ -108,7 +108,7 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
           selection={{
             selectHandler: confirmDelete,
             selectClasses:
-              'bg-destructive text-white transition-all duration-200 hover:bg-destructive/80',
+              'bg-surface-destructive text-white transition-all duration-200 hover:bg-surface-destructive-hover',
             selectText: localize('com_ui_delete'),
           }}
         />

@@ -1,10 +1,15 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { isActionDomainAllowed, validateActionOAuthMetadata } = require('@librechat/api');
+const {
+  isActionDomainAllowed,
+  blockFilteredActionProjection,
+  validateActionOAuthMetadata,
+} = require('@librechat/api');
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const {
   legacyDomainEncode,
+  decryptMetadata,
   encryptMetadata,
   domainParser,
 } = require('~/server/services/ActionService');
@@ -31,6 +36,15 @@ router.post('/:assistant_id', async (req, res) => {
     const { functions, action_id: _action_id, metadata: _metadata } = req.body;
     if (!functions.length) {
       return res.status(400).json({ message: 'No functions provided' });
+    }
+
+    if (
+      blockFilteredActionProjection(req.config?.filters, res, {
+        functions,
+        metadata: _metadata,
+      })
+    ) {
+      return;
     }
 
     let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
@@ -118,6 +132,15 @@ router.post('/:assistant_id', async (req, res) => {
           },
         })),
       );
+
+    if (
+      blockFilteredActionProjection(req.config?.filters, res, {
+        functions: tools,
+        metadata: await decryptMetadata(metadata),
+      })
+    ) {
+      return;
+    }
 
     let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];

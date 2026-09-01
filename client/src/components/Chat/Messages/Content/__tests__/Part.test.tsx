@@ -10,10 +10,16 @@ jest.mock('../Parts', () => ({
   AgentUpdate: () => <div data-testid="agent-update" />,
   EmptyText: () => <div data-testid="empty-text" />,
   Reasoning: () => <div data-testid="reasoning" />,
+  ReasoningMarker: ({ label }: { label?: string }) => (
+    <div data-testid="reasoning-marker">{label}</div>
+  ),
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
   SkillCall: () => <div data-testid="skill-call" />,
   ReadFileCall: () => <div data-testid="read-file-call" />,
+  FileAuthoringCall: ({ toolName }: { toolName: string }) => (
+    <div data-testid="file-authoring-call" data-tool-name={toolName} />
+  ),
   BashCall: ({ commandField }: { commandField?: string }) => (
     <div data-testid="bash-call" data-command-field={commandField ?? 'command'} />
   ),
@@ -100,5 +106,55 @@ describe('Part tool renderer selection', () => {
 
     expect(screen.getByTestId('execute-code')).toBeInTheDocument();
     expect(screen.queryByTestId('bash-call')).not.toBeInTheDocument();
+  });
+
+  it('routes create_file calls through the file-authoring renderer', () => {
+    renderPart(
+      toolCallPart('create_file', '{"file_path":"skills/demo/SKILL.md","content":"# Demo"}'),
+    );
+
+    expect(screen.getByTestId('file-authoring-call')).toHaveAttribute(
+      'data-tool-name',
+      'create_file',
+    );
+    expect(screen.queryByTestId('tool-call')).not.toBeInTheDocument();
+  });
+
+  it('routes edit_file calls through the file-authoring renderer', () => {
+    renderPart(
+      toolCallPart(
+        'edit_file',
+        '{"file_path":"skills/demo/SKILL.md","old_text":"Demo","new_text":"Updated"}',
+      ),
+    );
+
+    expect(screen.getByTestId('file-authoring-call')).toHaveAttribute(
+      'data-tool-name',
+      'edit_file',
+    );
+    expect(screen.queryByTestId('tool-call')).not.toBeInTheDocument();
+  });
+
+  it('routes an unavailable reasoning marker to the marker renderer', () => {
+    renderPart({
+      type: ContentTypes.THINK,
+      think: '',
+      reasoning_unavailable: true,
+      reasoning_label: 'Planning the answer',
+    } as TMessageContentParts);
+
+    expect(screen.getByTestId('reasoning-marker')).toHaveTextContent('Planning the answer');
+    expect(screen.queryByTestId('reasoning')).not.toBeInTheDocument();
+  });
+
+  it('keeps reasoning with text on the full Reasoning renderer even when marked unavailable', () => {
+    renderPart({
+      type: ContentTypes.THINK,
+      think: 'Actual thoughts',
+      reasoning_unavailable: true,
+    } as TMessageContentParts);
+
+    expect(screen.getByTestId('reasoning')).toBeInTheDocument();
+    expect(screen.queryByTestId('reasoning-marker')).not.toBeInTheDocument();
   });
 });

@@ -83,6 +83,21 @@ describe('mermaid config', () => {
       const files = getMermaidFiles('', true);
       expect(files['diagram.mmd']).toBe('# No mermaid diagram content provided');
     });
+
+    it('serializes special Mermaid labels as a TSX string literal', () => {
+      const specialContent = 'flowchart TD\n  A["`code ${danger} C:\\temp`"] --> B';
+      const files = getMermaidFiles(specialContent, true);
+
+      expect(files['App.tsx']).toContain(`content={${JSON.stringify(specialContent)}}`);
+      expect(files['App.tsx']).not.toContain('content={`');
+    });
+
+    it('declares the generated App component before exporting it', () => {
+      const files = getMermaidFiles(content, true);
+
+      expect(files['App.tsx']).toContain('const App = () =>');
+      expect(files['App.tsx']).toContain('export default App;');
+    });
   });
 
   describe('fixSubgraphTitleContrast', () => {

@@ -1,19 +1,27 @@
+import { useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useLocation } from 'react-router-dom';
-import { Button, Sidebar, TooltipAnchor } from '@librechat/client';
+import { Button, Sidebar, Spinner, TooltipAnchor } from '@librechat/client';
+import type { PromptGroupListResponse } from 'librechat-data-provider';
+import { useLocalize, useNavScrolling, activateCatalog } from '~/hooks';
+import PromptGroupSkeleton from '../lists/PromptGroupSkeleton';
 import { usePromptGroupsContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
-import PanelNavigation from './PanelNavigation';
+import { PanelContent } from '~/components/ui';
 import List from '../lists/List';
 import { cn } from '~/utils';
+import store from '~/store';
 
 export default function GroupSidePanel({
   children,
+  footer,
   className = '',
   closePanelRef,
   onClose,
   isChatRoute: isChatRouteProp,
 }: {
   children?: React.ReactNode;
+  /** Rendered below the list, outside the scroll area, so it stays visible */
+  footer?: React.ReactNode;
   className?: string;
   closePanelRef?: React.RefObject<HTMLButtonElement>;
   onClose?: () => void;
@@ -24,10 +32,32 @@ export default function GroupSidePanel({
   const isChatRoute = isChatRouteProp ?? location.pathname?.startsWith('/c/') ?? false;
 
   const context = usePromptGroupsContext();
+
+  /** A collapsed sidebar keeps this panel mounted, so stop draining pages into it */
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  /** Mirrors UnifiedSidebar's panelExpanded: the insights route collapses the
+   * panel while the atom stays true, so visibility is atom AND route */
+  const panelVisible = sidebarExpanded && !location.pathname.startsWith('/insights');
+
+  /** The panel stays mounted while hidden, so only a visible panel releases
+   * its catalog ahead of the background warmup schedule */
+  useEffect(() => {
+    if (panelVisible) {
+      activateCatalog('prompts');
+    }
+  }, [panelVisible]);
+
+  const { containerRef } = useNavScrolling<PromptGroupListResponse>({
+    nextCursor: context?.nextCursor,
+    isFetchingNext: context?.isFetchingNextPage ?? false,
+    fetchNextPage: context?.fetchNextPage,
+    enabled: sidebarExpanded,
+  });
+
   if (!context) {
     return null;
   }
-  const { promptGroups, groupsQuery, nextPage, prevPage, hasNextPage, hasPreviousPage } = context;
+  const { promptGroups, groupsQuery, isFetchingNextPage } = context;
 
   return (
     <div id="prompts-panel" className={cn('flex h-full w-full flex-col', className)}>
@@ -53,31 +83,27 @@ export default function GroupSidePanel({
         </div>
       )}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className="scrollbar-gutter-stable flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden pl-3 pr-1 text-text-primary">
-          <div className="shrink-0 space-y-2">{children}</div>
-          <List
-            groups={promptGroups}
-            isLoading={!!groupsQuery.isLoading}
-            isChatRoute={isChatRoute}
-          />
-        </div>
-        <div
-          className={cn(
-            'pointer-events-none inset-x-0 bottom-0 bg-gradient-to-t from-surface-primary-alt from-60% to-transparent px-3 pb-2',
-          )}
+        {/* Sticky header: filter and toggles stay put while the list scrolls */}
+        <div className="shrink-0 space-y-2 px-3 pb-2 text-text-primary">{children}</div>
+        <PanelContent
+          ref={containerRef}
+          isLoading={!!groupsQuery.isLoading}
+          skeleton={<PromptGroupSkeleton />}
+          className="scrollbar-gutter-stable flex flex-col gap-2 overflow-x-hidden pb-3 pl-3 pr-1 text-text-primary"
         >
-          <div className="pointer-events-auto">
-            <PanelNavigation
-              onPrevious={prevPage}
-              onNext={nextPage}
-              hasNextPage={hasNextPage}
-              hasPreviousPage={hasPreviousPage}
-              isLoading={groupsQuery.isFetching}
-              isChatRoute={isChatRoute}
-            />
-          </div>
-        </div>
+          <List groups={promptGroups} isChatRoute={isChatRoute} />
+          {/* Appending the next page, so the loaded rows stay put */}
+          {isFetchingNextPage && (
+            <div className="flex shrink-0 justify-center py-2">
+              <Spinner className="size-4" />
+              <span className="sr-only" aria-live="polite" aria-atomic="true">
+                {localize('com_ui_loading')}
+              </span>
+            </div>
+          )}
+        </PanelContent>
       </div>
+      {footer}
     </div>
   );
 }

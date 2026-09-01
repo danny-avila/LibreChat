@@ -933,6 +933,7 @@
  *   signal?: AbortSignal,
  *   memory?: ConversationSummaryBufferMemory,
  *   tool_resources?: AgentToolResources,
+ *   jobCreatedAt?: number,
  *   web_search?: ReturnType<typeof import('~/server/services/Tools/search').createOnSearchResults>,
  * }} LoadToolOptions
  * @memberof typedefs
@@ -1287,6 +1288,7 @@
  * @property {string} [proxy] - Proxy configuration
  * @property {Object} [tools] - Available tools for the agent
  * @property {Object} [eventHandlers] - Custom event handlers
+ * @property {import('@librechat/api').AgentStartupTelemetry} [startupTelemetry] - Startup latency recorder
  * @property {Object} [addParams] - Additional parameters to add to requests
  * @property {string[]} [dropParams] - Parameters to remove from requests
  * @memberof typedefs

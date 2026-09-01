@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import ToolIcon, { getToolIconType, getMCPServerName } from './ToolIcon';
 import type { ToolIconType } from './ToolIcon';
+import ToolIcon, { getToolIconType, getMCPServerName } from './ToolIcon';
+import { useMCPServerNames } from '~/hooks/MCP';
 import { cn } from '~/utils';
 
 interface ResolvedIcon {
@@ -22,12 +23,13 @@ export default function StackedToolIcons({
   maxIcons = 3,
   isAnimating = false,
 }: StackedToolIconsProps) {
+  const mcpServerNames = useMCPServerNames();
   const uniqueIcons = useMemo(() => {
     const seen = new Set<string>();
     const result: ResolvedIcon[] = [];
     for (const name of toolNames) {
       const type = getToolIconType(name);
-      const serverName = getMCPServerName(name);
+      const serverName = getMCPServerName(name, mcpServerNames);
       const iconUrl = serverName ? mcpIconMap?.get(serverName) : undefined;
       const key = iconUrl ? `mcp-${serverName}` : type;
       if (!seen.has(key)) {
@@ -36,7 +38,7 @@ export default function StackedToolIcons({
       }
     }
     return result;
-  }, [toolNames, mcpIconMap]);
+  }, [toolNames, mcpIconMap, mcpServerNames]);
 
   const visibleIcons = uniqueIcons.slice(0, maxIcons);
   const overflowCount = uniqueIcons.length - visibleIcons.length;

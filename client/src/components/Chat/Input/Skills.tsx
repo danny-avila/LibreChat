@@ -4,6 +4,7 @@ import { CheckboxButton } from '@librechat/client';
 import { Permissions, PermissionTypes, defaultAgentCapabilities } from 'librechat-data-provider';
 import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
+import { badgeAccents } from './accents';
 
 function Skills() {
   const localize = useLocalize();
@@ -26,11 +27,10 @@ function Skills() {
   return (
     (skillsActive || isPinned) && (
       <CheckboxButton
-        className="max-w-fit"
         checked={skillsActive}
         setValue={debouncedChange}
         label={localize('com_ui_skills')}
-        isCheckedClassName="border-cyan-600/40 bg-cyan-500/10 hover:bg-cyan-700/10"
+        isCheckedClassName={badgeAccents.cyan}
         icon={<ScrollText className="icon-md" aria-hidden="true" />}
       />
     )

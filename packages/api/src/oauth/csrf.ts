@@ -1,20 +1,28 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
+import { isEnabled } from '~/utils/common';
 
 export const OAUTH_CSRF_COOKIE = 'oauth_csrf';
-export const OAUTH_CSRF_MAX_AGE = 10 * 60 * 1000;
+export const OAUTH_CSRF_MAX_AGE: number = 10 * 60 * 1000;
 
 export const OAUTH_SESSION_COOKIE = 'oauth_session';
-export const OAUTH_SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
+export const OAUTH_SESSION_MAX_AGE: number = 24 * 60 * 60 * 1000;
 export const OAUTH_SESSION_COOKIE_PATH = '/api';
 
 /**
  * Determines if secure cookies should be used.
- * Returns `true` in production unless the server is running on localhost (HTTP).
- * This allows cookies to work on `http://localhost` during local development
+ * SESSION_COOKIE_SECURE=true/false explicitly overrides the environment heuristic.
+ * Returns `true` in production unless DOMAIN_SERVER uses a localhost-style hostname.
+ * This allows cookies to work on localhost during local development
  * even when `NODE_ENV=production` (common in Docker Compose setups).
  */
 export function shouldUseSecureCookie(): boolean {
+  const secureOverride = process.env.SESSION_COOKIE_SECURE?.trim().toLowerCase();
+  if (secureOverride === 'true' || secureOverride === 'false') {
+    return isEnabled(secureOverride);
+  }
+
   const isProduction = process.env.NODE_ENV === 'production';
   const domainServer = process.env.DOMAIN_SERVER || '';
 
@@ -38,6 +46,83 @@ export function shouldUseSecureCookie(): boolean {
     hostname.endsWith('.localhost');
 
   return isProduction && !isLocalhost;
+}
+
+export const REFRESH_TOKEN_COOKIE = 'refreshToken';
+export const TOKEN_PROVIDER_COOKIE = 'token_provider';
+export const OPENID_USER_ID_COOKIE = 'openid_user_id';
+
+/**
+ * Writes the IdP refresh token to the `refreshToken` cookie. Single source of
+ * truth for the cookie's options so the login/refresh path
+ * (`setOpenIDAuthTokens`) and the inline OBO refresh path (`performIdpRefresh`)
+ * stay byte-for-byte in sync. The cookie outlives the (shorter) express-session
+ * cookie and is the fallback `refreshController` reads when the session copy is
+ * gone, so a rotated refresh token must land here too — otherwise a later
+ * session loss replays an invalidated token and signs the user out.
+ */
+export function setRefreshTokenCookie(res: Response, refreshToken: string, expires: Date): void {
+  res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, {
+    expires,
+    httpOnly: true,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'strict',
+  });
+}
+
+export interface OpenIDMarkerCookieOptions {
+  userId?: string | null;
+  expires: Date;
+  refreshExpiryMs: number;
+  reuseTokens?: boolean;
+  /** Binds the marker to the refresh token it was issued alongside. */
+  refreshToken?: string | null;
+}
+
+export function setOpenIDMarkerCookies(
+  res: Response,
+  {
+    userId,
+    expires,
+    refreshExpiryMs,
+    reuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS),
+    refreshToken,
+  }: OpenIDMarkerCookieOptions,
+): void {
+  const cookieOptions = {
+    expires,
+    httpOnly: true,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'strict' as const,
+  };
+
+  res.cookie(TOKEN_PROVIDER_COOKIE, 'openid', cookieOptions);
+
+  if (!userId || !reuseTokens) {
+    return;
+  }
+
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    throw new Error('JWT_REFRESH_SECRET is required for OpenID marker cookies');
+  }
+
+  const refreshExpirySeconds = Math.floor(refreshExpiryMs / 1000);
+  if (!Number.isFinite(refreshExpirySeconds) || refreshExpirySeconds <= 0) {
+    throw new Error('refreshExpiryMs must be a positive duration for OpenID marker cookies');
+  }
+
+  /** Bind the marker to the durable refresh-token session it was issued with, so a
+   *  marker lifted from one session cannot stand in for another's. */
+  const refreshTokenHash = refreshToken
+    ? crypto.createHash('sha256').update(refreshToken).digest('base64url')
+    : undefined;
+  const signedUserId = jwt.sign(
+    refreshTokenHash ? { id: userId, refreshTokenHash } : { id: userId },
+    secret,
+    { expiresIn: refreshExpirySeconds },
+  );
+  res.cookie(OPENID_USER_ID_COOKIE, signedUserId, cookieOptions);
 }
 
 /** Generates an HMAC-based token for OAuth CSRF protection */

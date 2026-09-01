@@ -39,10 +39,7 @@ export default function HeaderOptions({
   const paramEndpoint = isParamEndpoint(endpoint, endpointType);
 
   return (
-    <Root
-      open={showPopover}
-      // onOpenChange={} //  called when the open state of the popover changes.
-    >
+    <Root open={showPopover} onOpenChange={setShowPopover}>
       <Anchor>
         <div className="my-auto lg:max-w-2xl xl:max-w-3xl">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">

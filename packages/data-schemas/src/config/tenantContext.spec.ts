@@ -1,4 +1,10 @@
-import { tenantStorage, getUserId, getRequestId, runAsSystem, scopedCacheKey } from './tenantContext';
+import {
+  tenantStorage,
+  getUserId,
+  getRequestId,
+  runAsSystem,
+  scopedCacheKey,
+} from './tenantContext';
 
 describe('scopedCacheKey', () => {
   it('returns base key when no ALS context is set', () => {
@@ -32,12 +38,15 @@ describe('scopedCacheKey', () => {
   });
 
   it('preserves user and request context inside system tenant operations', async () => {
-    await tenantStorage.run({ tenantId: 'acme', userId: 'user-1', requestId: 'req-1' }, async () => {
-      await runAsSystem(async () => {
-        expect(getUserId()).toBe('user-1');
-        expect(getRequestId()).toBe('req-1');
-        expect(scopedCacheKey('KEY')).toBe('KEY');
-      });
-    });
+    await tenantStorage.run(
+      { tenantId: 'acme', userId: 'user-1', requestId: 'req-1' },
+      async () => {
+        await runAsSystem(async () => {
+          expect(getUserId()).toBe('user-1');
+          expect(getRequestId()).toBe('req-1');
+          expect(scopedCacheKey('KEY')).toBe('KEY');
+        });
+      },
+    );
   });
 });

@@ -987,12 +987,12 @@ function renderPptxSlidesBody(slides: PptxSlide[]): string {
       const titleHtml = slide.title
         ? `<h2 class="lc-pptx-slide-title">${escapeHtml(slide.title)}</h2>`
         : '';
-      const bodyHtml =
-        slide.body.length > 0
-          ? `<ul class="lc-pptx-slide-body">${slide.body.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
-          : !slide.title
-            ? '<p class="lc-pptx-slide-empty">(empty slide)</p>'
-            : '';
+      let bodyHtml = '';
+      if (slide.body.length > 0) {
+        bodyHtml = `<ul class="lc-pptx-slide-body">${slide.body.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`;
+      } else if (!slide.title) {
+        bodyHtml = '<p class="lc-pptx-slide-empty">(empty slide)</p>';
+      }
       return `<li class="lc-pptx-slide">
   <span class="lc-pptx-slide-number">Slide ${slide.number}</span>
   ${titleHtml}
@@ -1479,7 +1479,14 @@ async function pptxToSlideListHtmlInternal(buffer: Buffer): Promise<string> {
  * padded fixtures. Not part of the public API — callers in production
  * code should always go through `wordDocToHtml` / `pptxToHtml`.
  */
-export const _internal = {
+export const _internal: {
+  wordDocToHtmlViaCdn: typeof wordDocToHtmlViaCdn;
+  wordDocToHtmlViaMammoth: typeof wordDocToHtmlViaMammoth;
+  MAX_DOCX_CDN_BINARY_BYTES: number;
+  OFFICE_HTML_OUTPUT_CAP: number;
+  pptxToHtmlViaCdn: typeof pptxToHtmlViaCdn;
+  MAX_PPTX_CDN_BINARY_BYTES: number;
+} = {
   wordDocToHtmlViaCdn,
   wordDocToHtmlViaMammoth,
   MAX_DOCX_CDN_BINARY_BYTES,
@@ -1494,6 +1501,7 @@ export const _internal = {
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+const POTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.template';
 const ODS_MIME = 'application/vnd.oasis.opendocument.spreadsheet';
 const CSV_MIME_PATTERN = /^(text\/csv|application\/csv|text\/comma-separated-values)$/i;
 
@@ -1534,7 +1542,7 @@ function baseMime(mime: string): string {
  * `text/csv`), which then routed to the SPREADSHEET bucket on the
  * client expecting full HTML and got raw text instead.
  */
-export type OfficeHtmlBucket = 'docx' | 'spreadsheet' | 'csv' | 'pptx';
+export type OfficeHtmlBucket = 'docx' | 'spreadsheet' | 'csv' | 'presentation';
 
 const OFFICE_EXTENSIONS: Record<string, OfficeHtmlBucket> = {
   docx: 'docx',
@@ -1542,7 +1550,8 @@ const OFFICE_EXTENSIONS: Record<string, OfficeHtmlBucket> = {
   xlsx: 'spreadsheet',
   xls: 'spreadsheet',
   ods: 'spreadsheet',
-  pptx: 'pptx',
+  pptx: 'presentation',
+  potx: 'presentation',
 };
 
 /**
@@ -1601,8 +1610,8 @@ export function officeHtmlBucket(name: string, mimeType: string): OfficeHtmlBuck
   if (excelMimeTypes.test(normalized) || normalized === ODS_MIME) {
     return 'spreadsheet';
   }
-  if (normalized === PPTX_MIME) {
-    return 'pptx';
+  if (normalized === PPTX_MIME || normalized === POTX_MIME) {
+    return 'presentation';
   }
   return null;
 }
@@ -1625,7 +1634,7 @@ export async function bufferToOfficeHtml(
       return csvToHtml(buffer);
     case 'spreadsheet':
       return excelSheetToHtml(buffer);
-    case 'pptx':
+    case 'presentation':
       return pptxToHtml(buffer);
     default:
       return null;

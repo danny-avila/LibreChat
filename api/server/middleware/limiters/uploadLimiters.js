@@ -80,6 +80,39 @@ const createFileLimiters = () => {
   return { fileUploadIpLimiter, fileUploadUserLimiter };
 };
 
+/**
+ * Per-user limiter for the `/files/usage` TTL hold. Deliberately separate from
+ * the upload limiters: a metadata touch must not consume upload quota, but it
+ * still writes to the DB and so cannot go unmetered. Sized well above the
+ * enqueue-driven call rate a real client produces.
+ */
+const createFileUsageLimiter = () => {
+  const windowMinutes = parseInt(process.env.FILE_USAGE_USER_WINDOW) || 15;
+  const max = parseInt(process.env.FILE_USAGE_USER_MAX) || 120;
+  const windowMs = windowMinutes * 60 * 1000;
+
+  return rateLimit({
+    windowMs,
+    max,
+    handler: async (req, res) => {
+      const type = ViolationTypes.FILE_UPLOAD_LIMIT;
+      await logViolation(
+        req,
+        res,
+        type,
+        { type, max, limiter: 'user', windowInMinutes: windowMinutes },
+        process.env.FILE_UPLOAD_VIOLATION_SCORE,
+      );
+      res.status(429).json({ message: 'Too many file usage requests. Try again later' });
+    },
+    keyGenerator: function (req) {
+      return req.user?.id;
+    },
+    store: limiterCache('file_usage_user_limiter'),
+  });
+};
+
 module.exports = {
   createFileLimiters,
+  createFileUsageLimiter,
 };

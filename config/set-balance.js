@@ -3,9 +3,9 @@ const mongoose = require('mongoose');
 const { getBalanceConfig } = require('@librechat/api');
 const { User, Balance } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { getAppConfig } = require('~/server/services/Config');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
-const { getAppConfig } = require('~/server/services/Config');
 
 (async () => {
   await connect();

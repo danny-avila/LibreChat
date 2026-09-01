@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles, STATEFUL_CODE_ENVIRONMENTS } from 'librechat-data-provider';
 import { IUser } from '~/types';
 
 // Session sub-schema
@@ -23,7 +23,7 @@ const BackupCodeSchema = new Schema(
   { _id: false },
 );
 
-const userSchema = new Schema<IUser>(
+const userSchema: Schema<IUser> = new Schema<IUser>(
   {
     name: {
       type: String,
@@ -127,11 +127,35 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    termsAcceptedAt: {
+      type: Date,
+      default: null,
+    },
+    agentTriggerDeletionStartedAt: {
+      type: Date,
+      select: false,
+    },
+    subagentAdmissionFences: {
+      type: [
+        {
+          token: { type: String, required: true },
+          expiresAt: { type: Date, required: true },
+        },
+      ],
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     personalization: {
       type: {
         memories: {
           type: Boolean,
           default: true,
+        },
+        statefulCodeEnvironment: {
+          type: String,
+          enum: STATEFUL_CODE_ENVIRONMENTS,
+          default: 'user',
         },
       },
       default: {},
@@ -168,6 +192,7 @@ const userSchema = new Schema<IUser>(
 
 userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
 userSchema.index({ role: 1, tenantId: 1 });
+userSchema.index({ idOnTheSource: 1, openidIssuer: 1, tenantId: 1 });
 
 const oAuthIdFields = [
   'googleId',

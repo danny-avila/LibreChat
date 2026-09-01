@@ -1,3 +1,4 @@
+import { TStartupConfig } from 'librechat-data-provider';
 import {
   GoogleIcon,
   FacebookIcon,
@@ -7,12 +8,8 @@ import {
   AppleIcon,
   SamlIcon,
 } from '@librechat/client';
-
 import SocialButton from './SocialButton';
-
 import { useLocalize } from '~/hooks';
-
-import { TStartupConfig } from 'librechat-data-provider';
 
 function SocialLoginRender({
   startupConfig,
@@ -122,9 +119,9 @@ function SocialLoginRender({
       <>
         {startupConfig.emailLoginEnabled && (
           <>
-            <div className="relative mt-6 flex w-full items-center justify-center border border-t border-gray-300 uppercase dark:border-gray-600">
-              <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
-                Or
+            <div className="relative mt-6 flex w-full items-center justify-center border border-t border-border-medium uppercase">
+              <div className="absolute bg-surface-primary px-3 text-xs text-text-primary">
+                {localize('com_auth_or')}
               </div>
             </div>
             <div className="mt-8" />

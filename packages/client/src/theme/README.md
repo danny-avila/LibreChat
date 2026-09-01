@@ -1,8 +1,40 @@
 # Dynamic Theme System for @librechat/client
 
+## Versioned theme definitions
+
+New themes should use the versioned `ThemeDefinition` interface. Definitions are data-only, may
+provide separate light and dark overrides, and resolve missing values against LibreChat's bundled
+defaults before any CSS variables are applied.
+
+```tsx
+const compactTheme: ThemeDefinition = {
+  version: 1,
+  name: 'compact',
+  modes: {
+    light: {
+      appearance: {
+        controlRadius: '0.25rem',
+        roundControlRadius: '9999px',
+        surfaceRadius: '0.5rem',
+        largeSurfaceRadius: '0.75rem',
+        controlHeight: '2rem',
+      },
+    },
+  },
+};
+
+<ThemeProvider themeDefinition={compactTheme}>{children}</ThemeProvider>;
+```
+
+The initial appearance registry intentionally covers only shared control shape, surface shape,
+control height, compact/normal spacing, UI typography, surface elevation, and fast/normal motion.
+`themeRGB`, `REACT_APP_THEME_*`, and the existing localStorage keys remain supported through legacy
+adapters. Theme application removes only variables owned by the theme module when a theme is reset.
+
 This theme system allows you to dynamically change colors in your React application using CSS variables and Tailwind CSS. It combines dark/light mode switching with dynamic color theming capabilities.
 
 ## Table of Contents
+
 - [Overview](#overview)
 - [How It Works](#how-it-works)
 - [Basic Usage](#basic-usage)
@@ -17,6 +49,7 @@ This theme system allows you to dynamically change colors in your React applicat
 ## Overview
 
 The theme system provides:
+
 1. **Dark/Light Mode Switching** - Automatic theme switching based on user preference
 2. **Dynamic Color Theming** - Change colors at runtime without recompiling CSS
 3. **CSS Variable Based** - Uses CSS custom properties for performance
@@ -32,15 +65,18 @@ The theme system operates in three layers:
 3. **Tailwind Layer**: Maps CSS variables to Tailwind utility classes
 
 ### Default Behavior (No Custom Theme)
+
 - CSS variables cascade from your app's `style.css` definitions
 - Light mode uses variables under `html` selector
 - Dark mode uses variables under `.dark` selector
 - No JavaScript intervention in color values
 
 ### Custom Theme Behavior
-- Only applies when `themeRGB` prop is provided
-- Overrides CSS variables with `rgb()` formatted values
-- Maintains compatibility with existing CSS
+
+- Prefer the versioned `themeDefinition` prop; the legacy `themeRGB` prop remains supported
+- Overrides CSS variables with bare `R G B` channel triplets
+- Resolves missing `themeDefinition` values against the bundled light/dark defaults
+- Leaves colors omitted by legacy `themeRGB` unset so consumer CSS continues to cascade
 
 ## Basic Usage
 
@@ -66,14 +102,17 @@ function App() {
 
 ### 3. Set Up Your Base CSS
 
-Ensure your app has CSS variables defined as fallbacks:
+Ensure your app has CSS variables defined as fallbacks. Every theme variable must
+hold a **bare `R G B` channel triplet**, not a complete CSS color, because the
+Tailwind color map wraps them as `rgb(var(--x) / <alpha-value>)` so that opacity
+modifiers such as `bg-surface-primary/50` work:
 
 ```css
 /* style.css */
 :root {
-  --white: #fff;
-  --gray-800: #212121;
-  --gray-100: #ececec;
+  --white: 255 255 255;
+  --gray-800: 33 33 33;
+  --gray-100: 236 236 236;
   /* ... other color definitions */
 }
 
@@ -90,12 +129,22 @@ html {
 }
 ```
 
+Any direct use of these variables in hand-written CSS must wrap the triplet
+itself: `color: rgb(var(--text-primary));`.
+
+> **Breaking change:** earlier versions accepted complete colors
+> (`--text-primary: #212121`). Hex, `rgb(...)`, and named colors now produce
+> invalid declarations and must be converted to channel triplets.
+
 ### 4. Configure Tailwind
 
 Update your `tailwind.config.js`:
 
 ```js
+const libreChatTailwindPreset = require('@librechat/client/tailwind-preset');
+
 module.exports = {
+  presets: [libreChatTailwindPreset],
   content: [
     './src/**/*.{js,jsx,ts,tsx}',
     // Include component library files
@@ -105,10 +154,10 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Map CSS variables to Tailwind colors
-        'text-primary': 'var(--text-primary)',
-        'surface-primary': 'var(--surface-primary)',
-        'brand-purple': 'var(--brand-purple)',
+        // Wrap each channel triplet so opacity modifiers keep working
+        'text-primary': 'rgb(var(--text-primary) / <alpha-value>)',
+        'surface-primary': 'rgb(var(--surface-primary) / <alpha-value>)',
+        'brand-purple': 'rgb(var(--brand-purple) / <alpha-value>)',
         // ... other colors
       },
     },
@@ -116,14 +165,18 @@ module.exports = {
 };
 ```
 
+The published preset supplies the semantic appearance utilities used by theme-aware component
+variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compact`, and
+`duration-theme-fast`. Keep the preset enabled even when defining additional project utilities.
+
 ### 5. Use Theme Colors in Components
 
 ```tsx
 function MyComponent() {
   return (
-    <div className="bg-surface-primary text-text-primary border border-border-light">
+    <div className="border border-border-light bg-surface-primary text-text-primary">
       <h1 className="text-text-secondary">Hello World</h1>
-      <button className="bg-surface-submit hover:bg-surface-submit-hover text-white">
+      <button className="bg-surface-submit text-text-on-status hover:bg-surface-submit-hover">
         Submit
       </button>
     </div>
@@ -134,28 +187,48 @@ function MyComponent() {
 ## Available Theme Colors
 
 ### Text Colors
+
 - `text-text-primary` - Primary text color
 - `text-text-secondary` - Secondary text color
 - `text-text-secondary-alt` - Alternative secondary text
 - `text-text-tertiary` - Tertiary text color
 - `text-text-warning` - Warning text color
+- `text-text-destructive` - Destructive/error text color
+- `text-text-on-status` - Text color for strong status surfaces
 
 ### Surface Colors
+
 - `bg-surface-primary` - Primary background
 - `bg-surface-secondary` - Secondary background
 - `bg-surface-tertiary` - Tertiary background
 - `bg-surface-submit` - Submit button background
 - `bg-surface-destructive` - Destructive action background
 - `bg-surface-dialog` - Dialog/modal background
+- `bg-surface-overlay` - Dialog/modal scrim, adapted per theme
 - `bg-surface-chat` - Chat interface background
 
 ### Border Colors
+
 - `border-border-light` - Light border
 - `border-border-medium` - Medium border
 - `border-border-heavy` - Heavy border
 - `border-border-xheavy` - Extra heavy border
+- `border-border-destructive` - Destructive action border
+
+### Status Colors
+
+Each status family has a foreground, a `-subtle` background, a `-border`, and a
+`-strong` surface for high-contrast notifications:
+
+- `text-status-success` / `bg-status-success-subtle` / `border-status-success-border`
+- `text-status-info` / `bg-status-info-subtle` / `border-status-info-border`
+- `text-status-warning` / `bg-status-warning-subtle` / `border-status-warning-border`
+- `text-status-error` / `bg-status-error-subtle` / `border-status-error-border`
+- `text-status-neutral` / `bg-status-neutral-subtle` / `border-status-neutral-border`
+- `bg-status-success-strong` / `bg-status-info-strong` / `bg-status-warning-strong` / `bg-status-error-strong`
 
 ### Other Colors
+
 - `bg-brand-purple` - Brand purple color
 - `bg-presentation` - Presentation background
 - `ring-ring-primary` - Focus ring color
@@ -168,11 +241,11 @@ function MyComponent() {
 import { IThemeRGB } from '@librechat/client';
 
 export const customTheme: IThemeRGB = {
-  'rgb-text-primary': '0 0 0',        // Black
+  'rgb-text-primary': '0 0 0', // Black
   'rgb-text-secondary': '100 100 100', // Gray
   'rgb-surface-primary': '255 255 255', // White
-  'rgb-surface-submit': '0 128 0',     // Green
-  'rgb-brand-purple': '138 43 226',    // Blue Violet
+  'rgb-surface-submit': '0 128 0', // Green
+  'rgb-brand-purple': '138 43 226', // Blue Violet
   // ... define other colors
 };
 ```
@@ -205,36 +278,40 @@ REACT_APP_THEME_TEXT_PRIMARY=33 33 33
 REACT_APP_THEME_TEXT_SECONDARY=66 66 66
 REACT_APP_THEME_SURFACE_PRIMARY=255 255 255
 REACT_APP_THEME_SURFACE_SUBMIT=4 120 87
+REACT_APP_THEME_LINK=37 99 235
+REACT_APP_THEME_ACCENT_PRIMARY=18 110 107
+REACT_APP_THEME_STATUS_ERROR=185 28 28
+REACT_APP_THEME_STATUS_ERROR_SUBTLE=254 226 226
+REACT_APP_THEME_STATUS_ERROR_BORDER=252 165 165
 ```
+
+Every `IThemeRGB` key is configurable this way: drop the `rgb-` prefix and
+upper-snake-case the rest, so `rgb-status-error-border` becomes
+`REACT_APP_THEME_STATUS_ERROR_BORDER`.
+
+The prefix must be listed in the bundler's `envPrefix` (Vite) or equivalent, and
+values are inlined at build time, so the client has to be rebuilt after changing
+them.
 
 ### 2. Create a Theme Loader
 
 ```tsx
-function getThemeFromEnv(): IThemeRGB | undefined {
-  // Check if any theme environment variables are set
-  const hasThemeEnvVars = Object.keys(process.env).some(key => 
-    key.startsWith('REACT_APP_THEME_')
-  );
-
-  if (!hasThemeEnvVars) {
-    return undefined; // Use default themes
-  }
-
-  return {
-    'rgb-text-primary': process.env.REACT_APP_THEME_TEXT_PRIMARY || '33 33 33',
-    'rgb-brand-purple': process.env.REACT_APP_THEME_BRAND_PURPLE || '171 104 255',
+function getThemeFromEnv(env = import.meta.env): IThemeRGB | undefined {
+  const theme = {
+    'rgb-text-primary': env.REACT_APP_THEME_TEXT_PRIMARY,
+    'rgb-brand-purple': env.REACT_APP_THEME_BRAND_PURPLE,
     // ... other colors
   };
+
+  const set = Object.fromEntries(Object.entries(theme).filter(([, value]) => value));
+  return Object.keys(set).length > 0 ? set : undefined; // Fall back to default themes
 }
 ```
 
 ### 3. Apply Environment Theme
 
 ```tsx
-<ThemeProvider 
-  initialTheme="system"
-  themeRGB={getThemeFromEnv()}
->
+<ThemeProvider initialTheme="system" themeRGB={getThemeFromEnv()}>
   <App />
 </ThemeProvider>
 ```
@@ -250,7 +327,7 @@ import { useTheme } from '@librechat/client';
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
-  
+
   return (
     <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
       Current theme: {theme}
@@ -260,6 +337,7 @@ function ThemeToggle() {
 ```
 
 ### Theme Options
+
 - `'light'` - Force light mode
 - `'dark'` - Force dark mode
 - `'system'` - Follow system preference
@@ -271,11 +349,13 @@ If you're migrating from an older theme system:
 ### 1. Update Imports
 
 **Before:**
+
 ```tsx
 import { ThemeContext, ThemeProvider } from '~/hooks/ThemeContext';
 ```
 
 **After:**
+
 ```tsx
 import { ThemeContext, ThemeProvider } from '@librechat/client';
 ```
@@ -285,8 +365,8 @@ import { ThemeContext, ThemeProvider } from '@librechat/client';
 The new ThemeProvider is backward compatible but adds new capabilities:
 
 ```tsx
-<ThemeProvider 
-  initialTheme="system"  // Same as before
+<ThemeProvider
+  initialTheme="system" // Same as before
   themeRGB={customTheme} // New: optional custom colors
 >
   <App />
@@ -305,6 +385,7 @@ const { theme, setTheme } = useContext(ThemeContext);
 ## Implementation Details
 
 ### File Structure
+
 ```
 packages/client/src/theme/
 ├── context/
@@ -326,13 +407,15 @@ packages/client/src/theme/
 ### CSS Variable Format
 
 The theme system uses RGB values in CSS variables:
-- CSS Variable: `--text-primary: rgb(33 33 33)`
+
+- CSS Variable: `--text-primary: 33 33 33`
 - Theme Definition: `'rgb-text-primary': '33 33 33'`
 - Tailwind Usage: `text-text-primary`
 
 ### RGB Format Requirements
 
 All color values must be in space-separated RGB format:
+
 - ✅ Correct: `'255 255 255'`
 - ❌ Incorrect: `'#ffffff'` or `'rgb(255, 255, 255)'`
 
@@ -343,22 +426,27 @@ This format allows Tailwind to apply opacity modifiers like `bg-surface-primary/
 ### Common Issues
 
 #### 1. Colors Not Applying
+
 - **Issue**: Custom theme colors aren't showing
-- **Solution**: Ensure you're passing the `themeRGB` prop to ThemeProvider
-- **Check**: CSS variables in DevTools should show `rgb(R G B)` format
+- **Solution**: Pass a valid `themeDefinition`, or use the legacy `themeRGB` prop for color-only overrides
+- **Check**: CSS variables in DevTools should show a bare `R G B` triplet
 
 #### 2. Circular Reference Errors
+
 - **Issue**: `--brand-purple: var(--brand-purple)` creates infinite loop
-- **Solution**: Use direct color values: `--brand-purple: #ab68ff`
+- **Solution**: Use direct channel values: `--brand-purple: 171 104 255`
 
 #### 3. Dark Mode Not Working
+
 - **Issue**: Dark mode doesn't switch
 - **Solution**: Ensure `darkMode: ['class']` is in your Tailwind config
 - **Check**: The `<html>` element should have `class="dark"` in dark mode
 
 #### 4. TypeScript Errors
+
 - **Issue**: Type errors when defining themes
 - **Solution**: Import and use the `IThemeRGB` interface:
+
 ```tsx
 import { IThemeRGB } from '@librechat/client';
 ```
@@ -380,16 +468,14 @@ import { useState } from 'react';
 
 function App() {
   const [isDark, setIsDark] = useState(false);
-  
+
   return (
-    <ThemeProvider 
+    <ThemeProvider
       initialTheme={isDark ? 'dark' : 'light'}
       themeRGB={isDark ? darkTheme : defaultTheme}
       themeName={isDark ? 'dark' : 'default'}
     >
-      <button onClick={() => setIsDark(!isDark)}>
-        Toggle Theme
-      </button>
+      <button onClick={() => setIsDark(!isDark)}>Toggle Theme</button>
       <YourApp />
     </ThemeProvider>
   );
@@ -415,15 +501,14 @@ const themes = {
 
 function App() {
   const [selectedTheme, setSelectedTheme] = useState('default');
-  
+
   return (
-    <ThemeProvider 
-      themeRGB={themes[selectedTheme]}
-      themeName={selectedTheme}
-    >
+    <ThemeProvider themeRGB={themes[selectedTheme]} themeName={selectedTheme}>
       <select onChange={(e) => setSelectedTheme(e.target.value)}>
-        {Object.keys(themes).map(name => (
-          <option key={name} value={name}>{name}</option>
+        {Object.keys(themes).map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
         ))}
       </select>
       <YourApp />
@@ -442,12 +527,12 @@ import { getThemeFromEnv } from './utils';
 
 function App() {
   const envTheme = getThemeFromEnv();
-  
+
   return (
-    <ThemeProvider 
+    <ThemeProvider
       // Only pass props if you want to override stored values
       // If you always pass props, they will override localStorage
-      initialTheme={envTheme ? "system" : undefined}
+      initialTheme={envTheme ? 'system' : undefined}
       themeRGB={envTheme || undefined}
     >
       {/* Your app content */}
@@ -456,7 +541,14 @@ function App() {
 }
 ```
 
-**Important**: Props passed to ThemeProvider will override stored values on initial mount. Only pass props when you explicitly want to override the user's saved preferences.
+**Important**: The `themeDefinition`, `themeRGB`, and `themeName` props override stored values and
+remain synchronized when they change. Only pass theme props when the parent should control those
+values; otherwise use the context setters and allow stored preferences to remain authoritative.
+
+Set `persistThemeDefinition={false}` when a parent controls a deployment or embedded theme that
+must not replace the user's stored theme definition, legacy colors, name, or source. Appearance
+mode changes remain independently persisted through `color-theme`; leave `initialTheme` undefined
+when the stored light, dark, or system preference should remain authoritative.
 
 ## Contributing
 
@@ -470,4 +562,4 @@ When adding new theme colors:
 
 ## License
 
-This theme system is part of the @librechat/client package. 
+This theme system is part of the @librechat/client package.

@@ -14,7 +14,7 @@ const {
 } = require('@librechat/api');
 const { findToken, updateToken, createToken } = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
-const { getFlowStateManager } = require('~/config');
+const { getActionFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const router = express.Router();
@@ -56,7 +56,7 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
   const { action_id } = req.params;
   const { code, state } = req.query;
   const flowsCache = getLogStores(CacheKeys.FLOWS);
-  const flowManager = getFlowStateManager(flowsCache);
+  const flowManager = getActionFlowStateManager(flowsCache);
   const basePath = getBasePath();
   let identifier = action_id;
   try {

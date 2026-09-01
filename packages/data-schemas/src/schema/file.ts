@@ -1,6 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 import { FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types';
+import { codeEnvRefMapSchema, codeEnvRefSchema } from './codeEnvRef';
 
 const file: Schema<IMongoFile> = new Schema(
   {
@@ -119,24 +120,26 @@ const file: Schema<IMongoFile> = new Schema(
     height: Number,
     metadata: {
       codeEnvRef: {
-        type: new Schema(
-          {
-            kind: {
-              type: String,
-              enum: ['skill', 'agent', 'user'],
-              required: true,
-            },
-            id: { type: String, required: true },
-            storage_session_id: { type: String, required: true },
-            file_id: { type: String, required: true },
-            version: { type: Number },
-          },
-          { _id: false },
-        ),
+        type: codeEnvRefSchema,
+        default: undefined,
+      },
+      codeEnvRefs: {
+        type: codeEnvRefMapSchema,
+        default: undefined,
+      },
+      /** Dispatch-order stamp of the last writer (or claimant, on insert):
+       *  the background harvest's stale-output guard compares writer
+       *  dispatch order so an older task settling late cannot overwrite a
+       *  newer task's same-named output. */
+      sourceDispatchedAt: {
+        type: Number,
         default: undefined,
       },
     },
     expiresAt: {
+      /* Short-lived upload TTL managed by MongoDB. This is separate from
+       * retention-scoped `expiredAt`, which is swept by application code
+       * after storage cleanup succeeds. */
       type: Date,
       expires: 3600, // 1 hour in seconds
     },
@@ -144,12 +147,18 @@ const file: Schema<IMongoFile> = new Schema(
       type: String,
       index: true,
     },
+    expiredAt: {
+      /* Retention deadline for persisted files. The file sweep deletes the
+       * backing storage first, then removes this metadata record. */
+      type: Date,
+    },
   },
   {
     timestamps: true,
   },
 );
 
+file.index({ expiredAt: 1 });
 file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },

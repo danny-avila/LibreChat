@@ -2,8 +2,12 @@ const axios = require('axios');
 const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Tool } = require('@librechat/agents/langchain/tools');
+const {
+  applyAxiosProxyConfig,
+  createMinimalRetentionRequest,
+  getHttpsProxyAgent,
+} = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
 const fluxApiJsonSchema = {
@@ -87,6 +91,9 @@ const fluxApiJsonSchema = {
 const displayMessage =
   "Flux displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
 
+/** Endpoints that require a `finetune_id`, regardless of which `action` the caller selected. */
+const FINETUNED_ENDPOINTS = ['/v1/flux-pro-finetuned', '/v1/flux-pro-1.1-ultra-finetuned'];
+
 /**
  * FluxAPI - A tool for generating high-quality images from text prompts using the Flux API.
  * Each call generates one image. If multiple images are needed, make multiple consecutive calls with the same or varied prompts.
@@ -110,6 +117,7 @@ class FluxAPI extends Tool {
 
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
+    this.retentionRequest = createMinimalRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
 
     /** @type {boolean} **/
@@ -148,10 +156,7 @@ class FluxAPI extends Tool {
 
   getAxiosConfig() {
     const config = {};
-    if (process.env.PROXY) {
-      config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
-    }
-    return config;
+    return applyAxiosProxyConfig(config, this.baseUrl);
   }
 
   /** @param {Object|string} value */
@@ -198,8 +203,9 @@ class FluxAPI extends Tool {
       return this.getMyFinetunes(requestApiKey);
     }
 
-    // Handle finetuned generation
-    if (action === 'generate_finetuned') {
+    // Handle finetuned generation. Route by endpoint too, since a finetuned
+    // endpoint requires finetune_id regardless of which action was selected.
+    if (action === 'generate_finetuned' || FINETUNED_ENDPOINTS.includes(imageData.endpoint)) {
       return this.generateFinetunedImage(imageData, requestApiKey);
     }
 
@@ -305,8 +311,9 @@ class FluxAPI extends Tool {
       try {
         // Fetch the image and convert to base64
         const fetchOptions = {};
-        if (process.env.PROXY) {
-          fetchOptions.agent = new HttpsProxyAgent(process.env.PROXY);
+        const agent = getHttpsProxyAgent(imageUrl);
+        if (agent) {
+          fetchOptions.agent = agent;
         }
         const imageResponse = await fetch(imageUrl, fetchOptions);
         const arrayBuffer = await imageResponse.arrayBuffer();
@@ -343,6 +350,7 @@ class FluxAPI extends Tool {
         basePath: 'images',
         context: FileContext.image_generation,
         tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       logger.debug('[FluxAPI] Image saved to path:', result.filepath);
@@ -430,12 +438,11 @@ class FluxAPI extends Tool {
     }
 
     // Validate endpoint is appropriate for finetuned generation
-    const validFinetunedEndpoints = ['/v1/flux-pro-finetuned', '/v1/flux-pro-1.1-ultra-finetuned'];
     const endpoint = imageData.endpoint || '/v1/flux-pro-finetuned';
 
-    if (!validFinetunedEndpoints.includes(endpoint)) {
+    if (!FINETUNED_ENDPOINTS.includes(endpoint)) {
       throw new Error(
-        `Invalid endpoint for finetuned generation. Must be one of: ${validFinetunedEndpoints.join(', ')}`,
+        `Invalid endpoint for finetuned generation. Must be one of: ${FINETUNED_ENDPOINTS.join(', ')}`,
       );
     }
 
@@ -536,8 +543,9 @@ class FluxAPI extends Tool {
     if (this.isAgent) {
       try {
         const fetchOptions = {};
-        if (process.env.PROXY) {
-          fetchOptions.agent = new HttpsProxyAgent(process.env.PROXY);
+        const agent = getHttpsProxyAgent(imageUrl);
+        if (agent) {
+          fetchOptions.agent = agent;
         }
         const imageResponse = await fetch(imageUrl, fetchOptions);
         const arrayBuffer = await imageResponse.arrayBuffer();
@@ -574,6 +582,7 @@ class FluxAPI extends Tool {
         basePath: 'images',
         context: FileContext.image_generation,
         tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       logger.debug('[FluxAPI] Finetuned image saved to path:', result.filepath);

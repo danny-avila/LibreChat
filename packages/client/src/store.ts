@@ -1,8 +1,12 @@
-import { atom } from 'jotai';
+import { atom, PrimitiveAtom } from 'jotai';
 import { NotificationSeverity } from '~/common';
 
-export const chatDirectionAtom = atom<string>('ltr');
-export const fontSizeAtom = atom<string>('text-base');
+export const chatDirectionAtom: PrimitiveAtom<string> & {
+  init: string;
+} = atom<string>('ltr');
+export const fontSizeAtom: PrimitiveAtom<string> & {
+  init: string;
+} = atom<string>('text-base');
 
 export type ToastState = {
   open: boolean;
@@ -11,7 +15,9 @@ export type ToastState = {
   showIcon: boolean;
 };
 
-export const toastState = atom<ToastState>({
+export const toastState: PrimitiveAtom<ToastState> & {
+  init: ToastState;
+} = atom<ToastState>({
   open: false,
   message: '',
   severity: NotificationSeverity.SUCCESS,

@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { getTransactionSupport, logger } = require('@librechat/data-schemas');
+const {
+  getTransactionSupport,
+  tenantStorage,
+  getTenantId,
+  logger,
+  runAfterTransaction,
+} = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -25,6 +31,22 @@ const validateResourceType = (resourceType) => {
   if (!validTypes.includes(resourceType)) {
     throw new Error(`Invalid resourceType: ${resourceType}. Valid types: ${validTypes.join(', ')}`);
   }
+};
+
+const ensureLocalUserPrincipalExists = async (principalId) => {
+  const user = await db.findUser({ _id: principalId }, '_id');
+  if (!user) {
+    throw new Error('User principal not found');
+  }
+  return user._id.toString();
+};
+
+const ensureLocalGroupPrincipalExists = async (principalId) => {
+  const group = await db.findGroupById(principalId, { _id: 1 });
+  if (!group) {
+    throw new Error('Group principal not found');
+  }
+  return group._id.toString();
 };
 
 /**
@@ -93,7 +115,7 @@ const grantPermission = async ({
         `Role ${accessRoleId} is for ${role.resourceType} resources, not ${resourceType}`,
       );
     }
-    return await db.grantPermission(
+    const result = await db.grantPermission(
       principalType,
       principalId,
       resourceType,
@@ -103,6 +125,12 @@ const grantPermission = async ({
       session,
       role._id,
     );
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      /** A caller-owned session may not have committed yet; invalidating early
+       * would let a concurrent read re-cache pre-commit IDs under the new generation. */
+      await runAfterTransaction(session, () => db.invalidatePromptGroupAccessContext());
+    }
+    return result;
   } catch (error) {
     logger.error(`[PermissionService.grantPermission] Error: ${error.message}`);
     throw error;
@@ -217,11 +245,19 @@ const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceI
  * @param {Object} params - Parameters for finding accessible resources
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
  * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
+ * @param {string|null} [params.idOnTheSource] - Optional external member id. `null` means "known to
+ * be absent" (local user); only `undefined` makes `getUserPrincipals` read the user document.
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
  * @returns {Promise<Array>} Array of resource IDs
  */
-const findAccessibleResources = async ({ userId, role, resourceType, requiredPermissions }) => {
+const findAccessibleResources = async ({
+  userId,
+  role,
+  idOnTheSource,
+  resourceType,
+  requiredPermissions,
+}) => {
   try {
     if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
       throw new Error('requiredPermissions must be a positive number');
@@ -230,7 +266,7 @@ const findAccessibleResources = async ({ userId, role, resourceType, requiredPer
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principalsList = await db.getUserPrincipals({ userId, role });
+    const principalsList = await db.getUserPrincipals({ userId, role, idOnTheSource });
 
     if (principalsList.length === 0) {
       return [];
@@ -300,8 +336,8 @@ const ensurePrincipalExists = async function (principal) {
     return null;
   }
 
-  if (principal.id) {
-    return principal.id;
+  if (principal.type === PrincipalType.USER && principal.id) {
+    return await ensureLocalUserPrincipalExists(principal.id);
   }
 
   if (principal.type === PrincipalType.USER && principal.source === 'entra') {
@@ -364,6 +400,10 @@ const ensurePrincipalExists = async function (principal) {
 const ensureGroupPrincipalExists = async function (principal, authContext = null) {
   if (principal.type !== PrincipalType.GROUP) {
     throw new Error(`Invalid principal type: ${principal.type}. Expected '${PrincipalType.GROUP}'`);
+  }
+
+  if (principal.id && principal.source !== 'entra') {
+    return await ensureLocalGroupPrincipalExists(principal.id);
   }
 
   if (principal.source === 'entra') {
@@ -481,6 +521,21 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
  * @returns {Promise<void>}
  */
 const syncUserEntraGroupMemberships = async (user, accessToken, session = null) => {
+  const tenantId = user?.tenantId ? String(user.tenantId) : undefined;
+  if (!tenantId || getTenantId() != null) {
+    return performEntraGroupMembershipSync(user, accessToken, session);
+  }
+  /**
+   * The OAuth callback runs before `tenantContextMiddleware`, so establish the
+   * user's tenant context here: group queries, created groups, and principal
+   * cache invalidation are then scoped exactly like authenticated reads.
+   */
+  return tenantStorage.run({ tenantId, userId: user._id?.toString() }, async () =>
+    performEntraGroupMembershipSync(user, accessToken, session),
+  );
+};
+
+const performEntraGroupMembershipSync = async (user, accessToken, session = null) => {
   try {
     if (!entraIdPrincipalFeatureEnabled(user) || !accessToken || !user.idOnTheSource) {
       return;
@@ -718,6 +773,20 @@ const bulkUpdateResourcePermissions = async ({
 
     const bulkWrites = [];
 
+    /**
+     * Tracks non-public principals granted in this same request so their revoke is skipped below.
+     * Grants are flushed before deletes, so a principal present in both `updatedPrincipals` and
+     * `revokedPrincipals` would be upserted and then deleted, stripping access the caller just set
+     * (e.g. a resource owner landing in both lists from a client `id`/`idOnTheSource` mismatch).
+     * Granting wins to make owner lockout impossible regardless of the client-side diff (#14316).
+     *
+     * PUBLIC is deliberately excluded: an explicit `public: false` disable adds the public principal
+     * to the revoke list, and disabling public access must always win over a stale/contradictory
+     * grant so a resource is never left public when the caller asked to make it private.
+     */
+    const grantedPrincipalKeys = new Set();
+    const principalKey = (principal) => `${principal.type}:${principal.id}`;
+
     for (const principal of updatedPrincipals) {
       try {
         if (!principal.accessRoleId) {
@@ -798,6 +867,9 @@ const bulkUpdateResourcePermissions = async ({
           memberCount: principal.memberCount,
           memberIds: principal.memberIds,
         });
+        if (principal.type !== PrincipalType.PUBLIC) {
+          grantedPrincipalKeys.add(principalKey(principal));
+        }
       } catch (error) {
         results.errors.push({
           principal,
@@ -813,6 +885,14 @@ const bulkUpdateResourcePermissions = async ({
     const deleteQueries = [];
     for (const principal of revokedPrincipals) {
       try {
+        // Inside the try so a malformed revoke entry (e.g. a nullish principal) is recorded in
+        // results.errors and skipped, rather than throwing out after grants were already flushed.
+        if (
+          principal.type !== PrincipalType.PUBLIC &&
+          grantedPrincipalKeys.has(principalKey(principal))
+        ) {
+          continue;
+        }
         const query = {
           principalType: principal.type,
           resourceType,
@@ -853,6 +933,11 @@ const bulkUpdateResourcePermissions = async ({
 
     if (shouldEndSession && supportsTransactions) {
       await localSession.commitTransaction();
+    }
+
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      /** The caller's session may still be uncommitted; defer until it commits */
+      await runAfterTransaction(localSession, () => db.invalidatePromptGroupAccessContext());
     }
 
     return results;
@@ -896,6 +981,10 @@ const removeAllPermissions = async ({ resourceType, resourceId }) => {
       resourceType,
       resourceId,
     });
+
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      await db.invalidatePromptGroupAccessContext();
+    }
 
     return result;
   } catch (error) {

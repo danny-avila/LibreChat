@@ -12,6 +12,7 @@ import type { NodeSDKConfiguration } from '@opentelemetry/sdk-node';
 import type { Span, Attributes } from '@opentelemetry/api';
 import type { RequestOptions } from 'node:http';
 import type { TelemetryConfig, TelemetryStatus } from './config';
+import { registerShutdownTask } from '../app/shutdown';
 import { getTelemetryConfig } from './config';
 
 export interface TelemetryController {
@@ -23,11 +24,6 @@ export interface TelemetryController {
 const WARNING_CODE = 'LIBRECHAT_OTEL';
 const REDACTED_QUERY_VALUE = '[REDACTED]';
 const SIGNAL_SHUTDOWN_TIMEOUT_MS = 5_000;
-
-interface RegisteredSignal {
-  signal: NodeJS.Signals;
-  listener: NodeJS.SignalsListener;
-}
 
 interface RequestUrlParts {
   href?: string;
@@ -49,7 +45,7 @@ let pendingSdk: NodeSDK | undefined;
 let startPromise: Promise<void> | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let status: TelemetryStatus = 'stopped';
-let registeredSignals: RegisteredSignal[] = [];
+let shutdownTaskRegistered = false;
 let requestSpans = new WeakMap<IncomingMessage, Span>();
 
 function isBunRuntime(): boolean {
@@ -301,34 +297,39 @@ function getResourceAttributes(config: TelemetryConfig): Attributes {
 }
 
 function createSdk(config: TelemetryConfig): NodeSDK {
+  const instrumentations: NodeSDKConfiguration['instrumentations'] = [
+    new HttpInstrumentation({
+      headersToSpanAttributes: {
+        client: { requestHeaders: [], responseHeaders: [] },
+        server: { requestHeaders: [], responseHeaders: [] },
+      },
+      requestHook: (span: Span, request: object) => {
+        if (request instanceof IncomingMessage) {
+          requestSpans.set(request, span);
+        }
+      },
+      startIncomingSpanHook: (request: IncomingMessage) =>
+        getSanitizedIncomingUrlAttributes(request, config.healthPath),
+      startOutgoingSpanHook: (request: RequestOptions) =>
+        getSanitizedOutgoingHttpUrlAttributes(request),
+      ignoreIncomingRequestHook: (request: IncomingMessage) =>
+        shouldIgnoreIncomingRequest(request, config.healthPath),
+    }),
+    new ExpressInstrumentation(),
+    new MongoDBInstrumentation(),
+    new MongooseInstrumentation(),
+    new UndiciInstrumentation({
+      startSpanHook: (request: UndiciRequestInfo) => getSanitizedUndiciUrlAttributes(request),
+    }),
+  ];
+
+  if (config.ioredisTracingEnabled) {
+    instrumentations.push(new IORedisInstrumentation());
+  }
+
   const sdkConfig: Partial<NodeSDKConfiguration> = {
     resource: resourceFromAttributes(getResourceAttributes(config)),
-    instrumentations: [
-      new HttpInstrumentation({
-        headersToSpanAttributes: {
-          client: { requestHeaders: [], responseHeaders: [] },
-          server: { requestHeaders: [], responseHeaders: [] },
-        },
-        requestHook: (span: Span, request: object) => {
-          if (request instanceof IncomingMessage) {
-            requestSpans.set(request, span);
-          }
-        },
-        startIncomingSpanHook: (request: IncomingMessage) =>
-          getSanitizedIncomingUrlAttributes(request, config.healthPath),
-        startOutgoingSpanHook: (request: RequestOptions) =>
-          getSanitizedOutgoingHttpUrlAttributes(request),
-        ignoreIncomingRequestHook: (request: IncomingMessage) =>
-          shouldIgnoreIncomingRequest(request, config.healthPath),
-      }),
-      new ExpressInstrumentation(),
-      new MongoDBInstrumentation(),
-      new MongooseInstrumentation(),
-      new IORedisInstrumentation(),
-      new UndiciInstrumentation({
-        startSpanHook: (request: UndiciRequestInfo) => getSanitizedUndiciUrlAttributes(request),
-      }),
-    ],
+    instrumentations,
   };
 
   return new NodeSDK(sdkConfig);
@@ -370,35 +371,26 @@ function makeController(): TelemetryController {
   };
 }
 
-function unregisterShutdownHandlers(): void {
-  for (const { signal, listener } of registeredSignals) {
-    process.removeListener(signal, listener);
-  }
-  registeredSignals = [];
-}
-
-function registerShutdownHandlers(): void {
-  if (registeredSignals.length > 0) {
+function ensureShutdownTaskRegistered(): void {
+  if (shutdownTaskRegistered) {
     return;
   }
-
-  const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
-  registeredSignals = signals.map((signal) => {
-    const listener: NodeJS.SignalsListener = () => {
-      const shouldReraiseSignal = process.listenerCount(signal) === 0;
-      withTimeout(shutdownTelemetry(), SIGNAL_SHUTDOWN_TIMEOUT_MS)
-        .catch((error) => {
-          emitWarning(`OpenTelemetry shutdown failed: ${getErrorMessage(error)}`);
-        })
-        .finally(() => {
-          if (shouldReraiseSignal) {
-            process.kill(process.pid, signal);
-          }
-        });
-    };
-    process.once(signal, listener);
-    return { signal, listener };
-  });
+  shutdownTaskRegistered = true;
+  // Register with the centralized graceful-shutdown coordinator
+  // (see ../app/shutdown.ts) rather than attaching SIGTERM/SIGINT
+  // listeners directly — signal listener return values are ignored
+  // by Node, so a separate signal handler can let the coordinator
+  // exit before the async OpenTelemetry flush completes, dropping
+  // final spans during pod shutdowns.
+  registerShutdownTask(
+    'telemetry',
+    () =>
+      withTimeout(shutdownTelemetry(), SIGNAL_SHUTDOWN_TIMEOUT_MS).catch((error) => {
+        emitWarning(`OpenTelemetry shutdown failed: ${getErrorMessage(error)}`);
+      }),
+    // Exporters close after instrumented modules have emitted their final shutdown spans.
+    { priority: -100 },
+  );
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -440,7 +432,7 @@ export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): Telem
             pendingSdk = undefined;
             activeSdk = sdk;
             status = 'started';
-            registerShutdownHandlers();
+            ensureShutdownTaskRegistered();
           }
         })
         .catch((error) => {
@@ -461,7 +453,7 @@ export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): Telem
 
     activeSdk = sdk;
     status = 'started';
-    registerShutdownHandlers();
+    ensureShutdownTaskRegistered();
     return makeController();
   } catch (error) {
     status = 'failed';
@@ -485,7 +477,6 @@ async function performShutdownTelemetry(): Promise<void> {
     await sdk.shutdown();
     activeSdk = undefined;
     status = 'stopped';
-    unregisterShutdownHandlers();
   } catch (error) {
     status = 'started';
     throw error;
@@ -520,6 +511,6 @@ export async function resetTelemetryForTests(): Promise<void> {
     shutdownPromise = undefined;
     status = 'stopped';
     requestSpans = new WeakMap<IncomingMessage, Span>();
-    unregisterShutdownHandlers();
+    shutdownTaskRegistered = false;
   }
 }

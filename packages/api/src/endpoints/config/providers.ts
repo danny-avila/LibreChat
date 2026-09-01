@@ -2,7 +2,8 @@ import { Providers } from '@librechat/agents';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import type { BaseInitializeParams, InitializeResultBase } from '~/types';
+import type { InitializeResultBase, ProviderInitializeParams } from '~/types';
+import { resolveCustomEndpointSecrets } from '~/admin/secrets';
 import { initializeAnthropic } from '../anthropic/initialize';
 import { initializeBedrock } from '../bedrock/initialize';
 import { initializeCustom } from '../custom/initialize';
@@ -13,7 +14,7 @@ import { getCustomEndpointConfig } from '~/app/config';
 /**
  * Type for initialize functions
  */
-export type InitializeFn = (params: BaseInitializeParams) => Promise<InitializeResultBase>;
+export type InitializeFn = (params: ProviderInitializeParams) => Promise<InitializeResultBase>;
 
 /**
  * Check if the provider is a known custom provider
@@ -48,6 +49,69 @@ export const providerConfigMap: Record<string, InitializeFn> = {
   [EModelEndpoint.azureOpenAI]: initializeOpenAI,
   [EModelEndpoint.anthropic]: initializeAnthropic,
 };
+
+export type TitleTiming = 'immediate' | 'final';
+
+/**
+ * Resolves when conversation titles are generated for a given endpoint.
+ *
+ * `endpoints.all.titleTiming`, when present, is the global override. Otherwise,
+ * endpoint candidates are checked in order so the public endpoint (for example
+ * `agents`) can override the backing provider, with provider/custom config used
+ * as a fallback. Resolving custom providers via `getProviderConfig` picks up its
+ * case-insensitive fallback for normalized provider names (e.g. `openrouter` →
+ * `OpenRouter`). Defaults to `immediate`.
+ */
+export function resolveTitleTiming({
+  appConfig,
+  endpoint,
+}: {
+  appConfig?: AppConfig;
+  endpoint?: string | Array<string | undefined>;
+}): TitleTiming {
+  const endpoints = appConfig?.endpoints;
+  const resolveConfiguredTiming = (config?: Partial<TEndpoint>): TitleTiming | undefined =>
+    config?.titleTiming === 'final' || config?.titleTiming === 'immediate'
+      ? config.titleTiming
+      : undefined;
+
+  const globalTiming = resolveConfiguredTiming(endpoints?.all);
+  if (globalTiming) {
+    return globalTiming;
+  }
+
+  const endpointCandidates = (Array.isArray(endpoint) ? endpoint : [endpoint]).filter(
+    (value): value is string => !!value,
+  );
+
+  for (const endpointCandidate of endpointCandidates) {
+    const endpointConfig = endpoints?.[endpointCandidate as keyof NonNullable<typeof endpoints>] as
+      | Partial<TEndpoint>
+      | undefined;
+    const endpointTiming = resolveConfiguredTiming(endpointConfig);
+    if (endpointTiming) {
+      return endpointTiming;
+    }
+  }
+
+  for (const endpointCandidate of endpointCandidates) {
+    if (!appConfig) {
+      continue;
+    }
+    try {
+      const providerTiming = resolveConfiguredTiming(
+        getProviderConfig({ provider: endpointCandidate, appConfig }).customEndpointConfig,
+      );
+      if (providerTiming) {
+        return providerTiming;
+      }
+    } catch {
+      // Unsupported providers fall back to the default timing.
+    }
+  }
+
+  return 'immediate';
+}
 
 /**
  * Result from getProviderConfig
@@ -128,11 +192,23 @@ export function getProviderConfig({
           `Provider ${provider} is ambiguous: multiple custom endpoints match case-insensitively (${names}). Rename one or use the exact-case provider value.`,
         );
       }
-      customEndpointConfig = matches[0];
+      customEndpointConfig = matches[0] && resolveCustomEndpointSecrets(matches[0]);
     }
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
     }
+  }
+
+  /**
+   * Custom endpoints default to the OpenAI-compatible client. An explicit
+   * `provider: anthropic` routes them through the native Anthropic `/v1/messages`
+   * client (`initializeCustom` builds the right config). Applied here — after all
+   * `customEndpointConfig` resolution — so it also wins when the endpoint name
+   * collides with a known custom-provider (e.g. `openrouter`), ensuring
+   * `overrideProvider`-derived values (token/context budget) use the Anthropic map.
+   */
+  if (customEndpointConfig?.provider === EModelEndpoint.anthropic) {
+    overrideProvider = Providers.ANTHROPIC;
   }
 
   return {

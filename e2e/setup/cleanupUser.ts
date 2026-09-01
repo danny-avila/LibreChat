@@ -1,9 +1,23 @@
+import path from 'path';
 import { applyRuntimeEnv } from './runtimeEnv';
 
 type TUser = { email: string; password: string };
 
+/**
+ * Registers the backend's `~` alias in this process. Playwright's require hook only
+ * maps it when `api/jsconfig.json` is the nearest path-config to the requiring file,
+ * so a stray `api/tsconfig.json` would otherwise break every backend require here.
+ */
+function registerBackendAlias() {
+  /* eslint-disable-next-line @typescript-eslint/no-require-imports */
+  require('module-alias')({
+    base: path.dirname(require.resolve('@librechat/backend/package.json')),
+  });
+}
+
 export default async function cleanupUser(user: TUser) {
   applyRuntimeEnv();
+  registerBackendAlias();
   /* eslint-disable @typescript-eslint/no-require-imports */
   const { connectDb } = require('@librechat/backend/db/connect');
   const {

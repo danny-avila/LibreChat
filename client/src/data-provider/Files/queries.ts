@@ -3,8 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileSources, QueryKeys, DynamicQueryKeys, dataService } from 'librechat-data-provider';
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
+import {
+  addFileToCache,
+  getDownloadFilename,
+  registerDownloadFilename,
+  unregisterDownloadFilename,
+} from '~/utils';
 import { isEphemeralAgent } from '~/common';
-import { addFileToCache } from '~/utils';
 import store from '~/store';
 
 export const useGetFiles = <TData = t.TFile[] | boolean>(
@@ -38,10 +43,10 @@ export const useGetAgentFiles = <TData = t.TFile[]>(
   );
 };
 
-export const useGetFileConfig = <TData = t.FileConfig>(
-  config?: UseQueryOptions<t.FileConfig, unknown, TData>,
+export const useGetFileConfig = <TData = t.TFileConfig>(
+  config?: UseQueryOptions<t.TFileConfig, unknown, TData>,
 ): QueryObserverResult<TData, unknown> => {
-  return useQuery<t.FileConfig, unknown, TData>(
+  return useQuery<t.TFileConfig, unknown, TData>(
     [QueryKeys.fileConfig],
     () => dataService.getFileConfig(),
     {
@@ -56,6 +61,7 @@ export const useGetFileConfig = <TData = t.FileConfig>(
 type FileDownloadOptions = {
   source?: string | null;
   direct?: boolean;
+  purpose?: 'download' | 'preview';
 };
 
 export const isDirectDownloadSource = (source?: string | null): boolean =>
@@ -65,6 +71,7 @@ export const revokeDownloadURL = (url?: string | null): void => {
   if (!url?.startsWith('blob:')) {
     return;
   }
+  unregisterDownloadFilename(url);
   window.URL.revokeObjectURL(url);
 };
 
@@ -75,7 +82,13 @@ export const useFileDownload = (
 ): QueryObserverResult<string> => {
   const queryClient = useQueryClient();
   return useQuery(
-    [QueryKeys.fileDownload, file_id, options.source ?? '', options.direct ?? true],
+    [
+      QueryKeys.fileDownload,
+      file_id,
+      options.source ?? '',
+      options.direct ?? true,
+      options.purpose ?? 'download',
+    ],
     async () => {
       if (!userId || !file_id) {
         console.warn('No user ID provided for file download');
@@ -104,12 +117,42 @@ export const useFileDownload = (
           return downloadURL;
         }
 
+        registerDownloadFilename(
+          downloadURL,
+          getDownloadFilename(metadata.filename, metadata.file_id, metadata.source),
+        );
         addFileToCache(queryClient, metadata);
       } catch (e) {
         console.error('Error parsing file metadata, skipped updating file query cache', e);
       }
 
       return downloadURL;
+    },
+    {
+      enabled: false,
+      retry: false,
+    },
+  );
+};
+
+/**
+ * Blob download for a snapshotted file served through a shared link. Authorized
+ * by shared-link view permission (public/ACL) rather than the owner's file ACL.
+ * Idle by default; call `refetch` to download.
+ */
+export const useSharedFileDownload = (
+  shareId?: string,
+  file_id?: string,
+  purpose: 'download' | 'preview' = 'download',
+): QueryObserverResult<string> => {
+  return useQuery(
+    [QueryKeys.fileDownload, 'share', shareId ?? '', file_id ?? '', purpose],
+    async () => {
+      if (!shareId || !file_id) {
+        return;
+      }
+      const response = await dataService.getSharedFileDownload(shareId, file_id);
+      return window.URL.createObjectURL(response.data);
     },
     {
       enabled: false,
@@ -157,6 +200,21 @@ export const fetchFilePreview = async (fileId: string): Promise<t.TFilePreview> 
   }
 };
 
+/** Preview fetch for a snapshotted file served through a shared link. */
+export const fetchSharedFilePreview = async (
+  shareId: string,
+  fileId: string,
+): Promise<t.TFilePreview> => {
+  try {
+    const data = await dataService.getSharedFilePreview(shareId, fileId);
+    consecutivePreviewErrors.delete(fileId);
+    return data;
+  } catch (err) {
+    consecutivePreviewErrors.set(fileId, (consecutivePreviewErrors.get(fileId) ?? 0) + 1);
+    throw err;
+  }
+};
+
 export const previewRefetchInterval = (
   data: t.TFilePreview | undefined,
   query: { queryKey: readonly unknown[] },
@@ -194,10 +252,12 @@ export const _resetPreviewErrorCounter = (fileId?: string): void => {
 export const useFilePreview = (
   file_id: string | undefined,
   config?: UseQueryOptions<t.TFilePreview, unknown, t.TFilePreview>,
+  shareId?: string,
 ): QueryObserverResult<t.TFilePreview, unknown> => {
   return useQuery<t.TFilePreview, unknown, t.TFilePreview>(
-    [QueryKeys.filePreview, file_id],
-    () => fetchFilePreview(file_id ?? ''),
+    shareId ? [QueryKeys.filePreview, file_id, shareId] : [QueryKeys.filePreview, file_id],
+    () =>
+      shareId ? fetchSharedFilePreview(shareId, file_id ?? '') : fetchFilePreview(file_id ?? ''),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
