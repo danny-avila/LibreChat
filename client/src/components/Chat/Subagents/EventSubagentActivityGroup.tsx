@@ -1,17 +1,17 @@
 import { useCallback, useId, useMemo, useState } from 'react';
+import { useSetAtom } from 'jotai';
 import { Button, cn } from '@librechat/client';
 import { Bot, ChevronDown } from 'lucide-react';
-import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
 import { isLiveSubagentStatus, subagentStatusDotClass, subagentStatusLabelKey } from './status';
 import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRow';
+import { useChatSurface, useOpenSubagentPanel } from './surface';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import { eventSubagentSelection } from './eventSelection';
-import { activeSubagentPanel } from '~/store/subagents';
 import { useAgentsMapContext } from '~/Providers';
+import { activeSubagentPanel } from './state';
 import { renderAgentAvatar } from '~/utils';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 const STATUS_COUNT_LABEL_KEYS = {
   dispatched: {
@@ -60,7 +60,7 @@ export default function EventSubagentActivityGroup({
         return true;
       });
   }, [byMessageId, parentMessageIds]);
-  const fullWidth = useRecoilValue(store.maximizeChatSpace);
+  const { maximizeChatSpace: fullWidth } = useChatSurface();
   const siblingParentMessageIds = useMemo(
     () => Array.from(new Set(parentMessageIds)),
     [parentMessageIds],
@@ -94,9 +94,8 @@ function EventSubagentRows({
   const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
   const { refresh } = useParentSubagents();
-  const setSelected = useSetRecoilState(activeSubagentPanel);
-  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
-  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const setSelected = useSetAtom(activeSubagentPanel);
+  const openPanel = useOpenSubagentPanel();
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
   const counts = useMemo(() => {
@@ -118,10 +117,8 @@ function EventSubagentRows({
   const openChild = useCallback(
     (child: ParentSubagentSummary) => {
       const selection = eventSubagentSelection(conversationId, child, siblingParentMessageIds);
-      if (selection == null) return;
-      resetCurrentArtifactId();
-      setArtifactsVisible(false);
-      setSelected(selection);
+      if (selection == null || openPanel == null) return;
+      openPanel(selection);
       void refresh().then((index) => {
         const fresh = index?.children.find((candidate) => candidate.threadId === child.threadId);
         if (fresh == null || fresh.latestTaskId === child.latestTaskId) return;
@@ -143,14 +140,7 @@ function EventSubagentRows({
         }
       });
     },
-    [
-      conversationId,
-      refresh,
-      resetCurrentArtifactId,
-      setArtifactsVisible,
-      setSelected,
-      siblingParentMessageIds,
-    ],
+    [conversationId, openPanel, refresh, setSelected, siblingParentMessageIds],
   );
   return (
     <section
