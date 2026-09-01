@@ -1,6 +1,13 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { logger, CLIENT_MESSAGE_SELECT, MEILI_SEARCH_LIMIT } = require('@librechat/data-schemas');
+const {
+  logger,
+  getTenantId,
+  SYSTEM_TENANT_ID,
+  CLIENT_MESSAGE_SELECT,
+  MEILI_SEARCH_LIMIT,
+  escapeMeiliFilterValue,
+} = require('@librechat/data-schemas');
 const {
   ContentTypes,
   feedbackSchema,
@@ -138,10 +145,15 @@ router.get('/', async (req, res) => {
       }
       response = messageResult.value;
     } else if (search) {
+      const tenantId = getTenantId();
+      const tenantFilter =
+        tenantId && tenantId !== SYSTEM_TENANT_ID
+          ? ` AND tenantId = "${escapeMeiliFilterValue(tenantId)}"`
+          : '';
       const searchResults = await db.searchMessages(
         search,
         {
-          filter: `user = "${user}"`,
+          filter: `user = "${escapeMeiliFilterValue(user)}"${tenantFilter}`,
           limit: Math.min(pageSize, MEILI_SEARCH_LIMIT),
         },
         true,

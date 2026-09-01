@@ -6716,5 +6716,61 @@ describe('Conversation Operations', () => {
         titleMatch.conversationId,
       ]);
     });
+
+    it('scopes both search indexes to the active tenant', async () => {
+      const tenantId = 'tenant-a';
+      const conversationId = uuidv4();
+      await tenantStorage.run({ tenantId }, async () => {
+        await Conversation.create({
+          conversationId,
+          user: 'user123',
+          title: 'Tenant conversation',
+          endpoint: EModelEndpoint.openAI,
+        });
+      });
+
+      const meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
+      Object.assign(Conversation, { meiliSearch });
+      searchMessages.mockResolvedValue({ hits: [{ conversationId }] });
+
+      const result = await tenantStorage.run({ tenantId }, () =>
+        getConvosByCursor('user123', { search: 'keyword' }),
+      );
+
+      const searchParams = {
+        filter: 'user = "user123" AND tenantId = "tenant-a"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId'],
+      };
+      expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+      expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
+      expect(result?.conversations.map((c) => c.conversationId)).toEqual([conversationId]);
+    });
+
+    it('keeps search unscoped in system and tenantless contexts', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        title: 'System conversation',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const meiliSearch = jest.fn().mockResolvedValue({ hits: [{ conversationId }] });
+      Object.assign(Conversation, { meiliSearch });
+      searchMessages.mockResolvedValue({ hits: [] });
+
+      await runAsSystem(async () => {
+        const result = await getConvosByCursor('user123', { search: 'keyword' });
+        const searchParams = {
+          filter: 'user = "user123"',
+          limit: MEILI_SEARCH_LIMIT,
+          attributesToRetrieve: ['conversationId'],
+        };
+        expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+        expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
+        expect(result?.conversations.map((c) => c.conversationId)).toEqual([conversationId]);
+      });
+    });
   });
 });

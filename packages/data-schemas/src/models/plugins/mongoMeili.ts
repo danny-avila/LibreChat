@@ -110,7 +110,7 @@ const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
 
 /** Bump when the indexed document shape or projection changes. */
-export const MEILI_INDEX_SCHEMA_VERSION = 1;
+export const MEILI_INDEX_SCHEMA_VERSION = 2;
 
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 const previouslyIndexedFlagKey = 'meiliPreviouslyIndexed';
@@ -1058,11 +1058,20 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       }
     }
 
+    const filterableAttributes = ['user'];
+    if (hasSchemaPath(schema, 'tenantId')) {
+      filterableAttributes.push('tenantId');
+    }
+
     try {
       await index.updateSettings({
-        filterableAttributes: ['user'],
+        filterableAttributes,
       });
-      logger.debug(`[mongoMeili] Updated index ${indexName} settings to make 'user' filterable`);
+      logger.debug(
+        `[mongoMeili] Updated index ${indexName} settings to make ${filterableAttributes.join(
+          ' and ',
+        )} filterable`,
+      );
     } catch (settingsError) {
       logger.error(`[mongoMeili] Error updating index settings for ${indexName}:`, settingsError);
     }
