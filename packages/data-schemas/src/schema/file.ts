@@ -144,6 +144,9 @@ const file: Schema<IMongoFile> = new Schema(
       },
     },
     llmDeliveryPath: {
+      /* What upload time inferred about delivery, from the endpoint and MIME type it saw.
+       * Not a contract: the executing agent, its provider and its tools are all decided
+       * per turn, so a reader that needs the real destination resolves it there. */
       type: String,
       enum: ['provider', 'text', 'none'],
     },
