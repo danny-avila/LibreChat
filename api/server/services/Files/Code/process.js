@@ -1788,9 +1788,7 @@ async function execSandboxImageChunk({
             'Content-Type': 'application/json',
             'User-Agent': 'LibreChat/1.0',
             ...authHeaders,
-            ...(executionProfile
-              ? codeExecutionHeaders({ executionProfile, bridgeWorkerId })
-              : {}),
+            ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
           },
           httpAgent: codeServerHttpAgent,
           httpsAgent: codeServerHttpsAgent,
