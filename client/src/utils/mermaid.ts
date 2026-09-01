@@ -95,11 +95,13 @@ const tokenHex = (triplet: string | undefined, fallback: string): string => {
   return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
 };
 
-/** Mermaid reads twelve pie slots; the palette ships seven, so they wrap. */
-const seriesVariables = (palette: IThemeRGB): Record<string, string> => {
-  const slots = Array.from({ length: 7 }, (_, index) =>
+const seriesColors = (palette: IThemeRGB): string[] =>
+  Array.from({ length: 7 }, (_, index) =>
     tokenHex(palette[`rgb-series-${index + 1}` as keyof IThemeRGB], '#000000'),
   );
+
+/** Mermaid reads twelve pie slots; the palette ships seven, so they wrap. */
+const seriesVariables = (slots: string[]): Record<string, string> => {
   return Object.fromEntries(
     Array.from({ length: 12 }, (_, index) => [`pie${index + 1}`, slots[index % slots.length]]),
   );
@@ -126,6 +128,13 @@ export const contrastMermaidVariables = (
   const ink = tokenHex(palette['rgb-text-primary'], isDarkMode ? '#ffffff' : '#000000');
   /** The label colour for anything drawn on a solid fill rather than the canvas. */
   const onFill = tokenHex(palette['rgb-text-on-status'], isDarkMode ? '#000000' : '#ffffff');
+  const series = seriesColors(palette);
+  const active = tokenHex(palette['rgb-surface-active'], ink);
+  const successFill = tokenHex(palette['rgb-status-success-strong'], series[2]);
+  const successBorder = tokenHex(palette['rgb-status-success-border'], successFill);
+  const errorFill = tokenHex(palette['rgb-status-error-strong'], series[4]);
+  const errorBorder = tokenHex(palette['rgb-status-error-border'], errorFill);
+  const errorText = tokenHex(palette['rgb-text-destructive'], errorBorder);
 
   return {
     background: canvas,
@@ -146,6 +155,28 @@ export const contrastMermaidVariables = (
     nodeBorder: ink,
     clusterBorder: ink,
     lineColor: ink,
+    errorBkgColor: canvas,
+    errorTextColor: errorText,
+    sectionBkgColor: series[2],
+    sectionBkgColor2: series[3],
+    altSectionBkgColor: series[4],
+    excludeBkgColor: active,
+    taskBkgColor: series[0],
+    taskBorderColor: series[0],
+    activeTaskBkgColor: series[1],
+    activeTaskBorderColor: series[1],
+    doneTaskBkgColor: successFill,
+    doneTaskBorderColor: successBorder,
+    critBkgColor: errorFill,
+    critBorderColor: errorBorder,
+    todayLineColor: errorBorder,
+    vertLineColor: errorBorder,
+    gridColor: ink,
+    taskTextColor: onFill,
+    taskTextOutsideColor: ink,
+    taskTextLightColor: onFill,
+    taskTextDarkColor: onFill,
+    taskTextClickableColor: onFill,
     /**
      * `pie1`..`pie12` otherwise derive from the primary, secondary and tertiary
      * colours, which are all the canvas here, so every slice would collapse
@@ -154,7 +185,7 @@ export const contrastMermaidVariables = (
      * on this canvas and stay separable under simulated deuteranopia. Slices
      * beyond the seventh wrap, which mermaid's own palettes do as well.
      */
-    ...seriesVariables(palette),
+    ...seriesVariables(series),
     pieStrokeColor: ink,
     pieOuterStrokeColor: ink,
     pieTitleTextColor: ink,
@@ -424,7 +455,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
       } catch (error) {
         console.error("Mermaid rendering error:", error);
         if (mermaidRef.current) {
-          mermaidRef.current.innerHTML = "Error rendering diagram";
+          mermaidRef.current.innerHTML = '<p class="mermaid-error">Error rendering diagram</p>';
         }
       }
     };
@@ -582,9 +613,13 @@ export const getMermaidFiles = (content: string, isDarkMode = true, highContrast
   const mermaidTheme = themeVariables ? 'base' : standardTheme;
   const btnStyles = getButtonStyles(isDarkMode, highContrast);
   const bgColor = themeVariables?.background ?? (isDarkMode ? '#212121' : '#FFFFFF');
+  const errorTextColor = themeVariables?.errorTextColor ?? btnStyles.text;
   const mermaidCSS = `
 body {
   background-color: ${bgColor};
+}
+.mermaid-error {
+  color: ${errorTextColor};
 }
 `;
 

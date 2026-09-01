@@ -354,10 +354,10 @@ function FailedSteerRow({
   return (
     <div
       role="listitem"
-      className={cn(ROW_CLASS, 'border-red-500/60')}
+      className={cn(ROW_CLASS, 'border-border-destructive')}
       data-testid="steer-message-row"
     >
-      <Zap className="h-4 w-4 shrink-0 text-red-500" aria-hidden="true" />
+      <Zap className="h-4 w-4 shrink-0 text-text-destructive" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate" title={steer.text}>
         {steer.text}
       </span>
@@ -367,7 +367,7 @@ function FailedSteerRow({
           0: String(steer.quotes?.length ?? 0),
         })}
       />
-      <span className="shrink-0 text-xs text-red-500">
+      <span className="shrink-0 text-xs text-text-destructive">
         {localize(
           steer.deliveryUncertain ? 'com_ui_steer_delivery_unconfirmed' : 'com_ui_steer_failed',
         )}

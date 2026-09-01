@@ -102,4 +102,10 @@ describe('AgentSubagents', () => {
       ),
     );
   });
+
+  it('uses the semantic warning role for an empty configuration', () => {
+    render(<Harness />);
+
+    expect(screen.getByText('com_ui_agent_subagents_empty')).toHaveClass('text-text-warning');
+  });
 });

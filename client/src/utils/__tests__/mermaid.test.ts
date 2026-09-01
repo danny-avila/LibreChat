@@ -327,6 +327,48 @@ describe('high contrast mermaid palette', () => {
     expect(contrast).toContain('color: "#000000"');
   });
 
+  it('maps Gantt tasks and labels to contrast-safe semantic colors', () => {
+    const light = contrastMermaidVariables(false, true)!;
+    expect(light).toMatchObject({
+      taskBkgColor: '#0b4fa0',
+      activeTaskBkgColor: '#8f3b00',
+      doneTaskBkgColor: '#005c2e',
+      doneTaskBorderColor: '#005c2e',
+      critBkgColor: '#a10000',
+      critBorderColor: '#a10000',
+      gridColor: '#000000',
+      taskTextColor: '#ffffff',
+      taskTextDarkColor: '#ffffff',
+      taskTextOutsideColor: '#000000',
+    });
+
+    const dark = contrastMermaidVariables(true, true)!;
+    expect(dark).toMatchObject({
+      taskBkgColor: '#6bb8ff',
+      activeTaskBkgColor: '#ffb366',
+      doneTaskBkgColor: '#7ff0b3',
+      doneTaskBorderColor: '#7ff0b3',
+      critBkgColor: '#ff8f8f',
+      critBorderColor: '#ff8f8f',
+      gridColor: '#ffffff',
+      taskTextColor: '#000000',
+      taskTextDarkColor: '#000000',
+      taskTextOutsideColor: '#ffffff',
+    });
+  });
+
+  it('themes artifact render errors with the semantic destructive color', () => {
+    const light = getMermaidFiles('invalid', false, true);
+    const lightComponent = light['/components/ui/MermaidDiagram.tsx'];
+    expect(lightComponent).toContain('class="mermaid-error"');
+    expect(light['mermaid.css']).toContain('color: #a10000');
+
+    const dark = getMermaidFiles('invalid', true, true);
+    const darkComponent = dark['/components/ui/MermaidDiagram.tsx'];
+    expect(darkComponent).toContain('class="mermaid-error"');
+    expect(dark['mermaid.css']).toContain('color: #ff8f8f');
+  });
+
   /** Every node fill is the canvas here, and mermaid derives `pie1..pie3` from
    *  the primary, secondary and tertiary colours, so without the series ramp a
    *  pie chart loses its encoding entirely. */

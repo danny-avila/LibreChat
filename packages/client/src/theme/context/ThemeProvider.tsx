@@ -40,6 +40,7 @@ type InitialThemeState = {
 
 type ThemeDOMSnapshot = {
   properties: Map<string, { value: string; priority: string }>;
+  colorScheme: { value: string; priority: string };
   dataTheme: string | null;
 };
 
@@ -257,6 +258,10 @@ const captureThemeDOM = (root: HTMLElement): ThemeDOMSnapshot => ({
       },
     ]),
   ),
+  colorScheme: {
+    value: root.style.getPropertyValue('color-scheme'),
+    priority: root.style.getPropertyPriority('color-scheme'),
+  },
   dataTheme: root.getAttribute('data-theme'),
 });
 
@@ -268,6 +273,16 @@ const restoreThemeDOM = (snapshot: ThemeDOMSnapshot, root: HTMLElement): void =>
     }
     root.style.setProperty(property, value, priority);
   });
+
+  if (snapshot.colorScheme.value) {
+    root.style.setProperty(
+      'color-scheme',
+      snapshot.colorScheme.value,
+      snapshot.colorScheme.priority,
+    );
+  } else {
+    root.style.removeProperty('color-scheme');
+  }
 
   if (snapshot.dataTheme === null) {
     root.removeAttribute('data-theme');
@@ -592,6 +607,9 @@ export function ThemeProvider({
       }
 
       prepareThemeDOM(root);
+      if (highContrast) {
+        root.style.setProperty('color-scheme', mode);
+      }
 
       if (!highContrast && legacyThemeRGB) {
         applyTheme(legacyThemeRGB, root);

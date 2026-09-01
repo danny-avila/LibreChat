@@ -765,6 +765,7 @@ describe('ThemeProvider', () => {
     expect(root.style.getPropertyValue('--text-primary')).toBe(
       highContrastLightTheme['rgb-text-primary'],
     );
+    expect(root.style.getPropertyValue('color-scheme')).toBe('light');
     expect(localStorage.getItem('color-theme')).toBe('high-contrast-light');
   });
 
@@ -786,6 +787,7 @@ describe('ThemeProvider', () => {
     expect(root.style.getPropertyValue('--surface-primary')).toBe(
       highContrastDarkTheme['rgb-surface-primary'],
     );
+    expect(root.style.getPropertyValue('color-scheme')).toBe('dark');
     expect(isDark('high-contrast-dark')).toBe(true);
     expect(isDark('high-contrast-light')).toBe(false);
     expect(isHighContrast('high-contrast-dark')).toBe(true);
@@ -793,6 +795,8 @@ describe('ThemeProvider', () => {
   });
 
   it('restores the standard palette when leaving high contrast', async () => {
+    const root = document.documentElement;
+    root.style.setProperty('color-scheme', 'only light', 'important');
     render(
       <ThemeProvider initialTheme="light">
         <Controls />
@@ -803,15 +807,18 @@ describe('ThemeProvider', () => {
     await waitFor(() => {
       expect(document.documentElement).toHaveClass('high-contrast');
     });
+    expect(root.style.getPropertyValue('color-scheme')).toBe('dark');
+    expect(root.style.getPropertyPriority('color-scheme')).toBe('');
 
     act(() => screen.getByRole('button', { name: 'Light' }).click());
 
     await waitFor(() => {
       expect(document.documentElement).not.toHaveClass('high-contrast');
     });
-    const root = document.documentElement;
     expect(root.style.getPropertyValue('--surface-primary')).toBe('');
     expect(root.style.getPropertyValue('--text-primary')).toBe('');
+    expect(root.style.getPropertyValue('color-scheme')).toBe('only light');
+    expect(root.style.getPropertyPriority('color-scheme')).toBe('important');
     expect(root.hasAttribute('data-theme')).toBe(false);
   });
 

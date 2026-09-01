@@ -414,16 +414,12 @@ html {
  * Every `IThemeRGB` token is delivered by the theme registry as an inline custom
  * property on <html> (see packages/client/src/theme/themes/highContrast.ts), so
  * this block only covers what the token layer cannot reach: the CSS-only
- * variables, the UA-rendered chrome that follows `color-scheme`, and the
- * hard-coded literals elsewhere in this stylesheet. Every ratio quoted below is
- * measured against the mode's own canvas, pure white or pure black. */
+ * variables and hard-coded literals elsewhere in this stylesheet. Every ratio
+ * quoted below is measured against the mode's own canvas, pure white or pure
+ * black. */
 html.high-contrast {
-  color-scheme: light;
   /* A 0.5rem bar is a small target to hit and a thin thing to see. */
   --scrollbar-size: 0.75rem;
-}
-html.high-contrast.dark {
-  color-scheme: dark;
 }
 html.high-contrast ::-webkit-scrollbar-thumb {
   /* The 10%-alpha thumb is invisible against a pure black or white canvas. */
