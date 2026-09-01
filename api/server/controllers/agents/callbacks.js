@@ -40,7 +40,12 @@ function collectAnnotationsFromValue(value, collected = []) {
 
   if (Array.isArray(value.annotations)) {
     for (const annotation of value.annotations) {
-      if (annotation && typeof annotation === 'object') {
+      if (
+        annotation &&
+        typeof annotation === 'object' &&
+        annotation.type === 'citation' &&
+        !collected.includes(annotation)
+      ) {
         collected.push(annotation);
       }
     }
@@ -1269,7 +1274,9 @@ const agentLogHandlerObj = { handle: agentLogHandler };
  */
 function buildSummarizationHandlers({ isStreaming, res }) {
   if (!isStreaming) {
-    const noop = { handle: () => {} };
+    const noop = {
+      handle: () => {},
+    };
     return { on_summarize_start: noop, on_summarize_delta: noop, on_summarize_complete: noop };
   }
   const writeEvent = (name) => ({
