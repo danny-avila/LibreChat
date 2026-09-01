@@ -51,6 +51,10 @@ export default function useUploadOptions() {
 
   const endpointFileConfig = getEndpointFileConfig({ fileConfig, endpoint, endpointType });
   const uploadsDisabled = endpointFileConfig.disabled === true;
+  /** Unified mode routes from the file itself, so no flow should raise the destination
+   *  chooser the attach button no longer shows. Withheld until the config lands, since
+   *  until then the absent `legacyFileUploadUX` says nothing about the deployment. */
+  const isUnifiedMode = !isConfigPending && endpointFileConfig.legacyFileUploadUX !== true;
   const endpointSupportedMimeTypes = endpointFileConfig.supportedMimeTypes;
 
   const getOptions = useCallback(
@@ -83,5 +87,5 @@ export default function useUploadOptions() {
     ],
   );
 
-  return { getOptions, uploadsDisabled, isConfigPending };
+  return { getOptions, uploadsDisabled, isConfigPending, isUnifiedMode };
 }

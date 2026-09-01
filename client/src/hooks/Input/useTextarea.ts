@@ -74,6 +74,7 @@ export default function useTextarea({
     getOptions: getUploadOptions,
     uploadsDisabled,
     isConfigPending: isUploadConfigPending,
+    isUnifiedMode,
   } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
@@ -310,6 +311,13 @@ export default function useTextarea({
           return await upload();
         }
 
+        /* Unified mode decides the destination from the file itself, matching the drop
+         * handler. A caller that already knows where the file belongs, as the long-text
+         * paste does, still passes that through. */
+        if (isUnifiedMode && preferred == null) {
+          return await upload();
+        }
+
         /** Resolving options reads the file config, so until that lands the list is empty for
          * reasons that have nothing to do with this file. A caller that already knows where the
          * file belongs hands it to the upload instead, which waits for the same config and
@@ -348,6 +356,7 @@ export default function useTextarea({
       setFilesLoading,
       getUploadOptions,
       isUploadConfigPending,
+      isUnifiedMode,
     ],
   );
 

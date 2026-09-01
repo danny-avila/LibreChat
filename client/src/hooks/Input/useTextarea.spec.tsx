@@ -27,6 +27,7 @@ let useTextarea: typeof import('./useTextarea').default;
 let mockIndex = 0;
 let mockIsSubmitting = false;
 let mockIsUploadConfigPending = false;
+let mockIsUnifiedMode = false;
 let mockConversation: { endpoint: string; conversationId?: string } = {
   endpoint: 'openAI',
   conversationId: 'convo-1',
@@ -100,6 +101,7 @@ jest.mock('~/hooks/Files/useUploadOptions', () => ({
     getOptions: mockGetUploadOptions,
     uploadsDisabled: false,
     isConfigPending: mockIsUploadConfigPending,
+    isUnifiedMode: mockIsUnifiedMode,
   })),
 }));
 
@@ -174,6 +176,7 @@ describe('useTextarea long-paste fallback', () => {
     mockIndex = 0;
     mockIsSubmitting = false;
     mockIsUploadConfigPending = false;
+    mockIsUnifiedMode = false;
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
@@ -983,5 +986,51 @@ describe('useTextarea composer handoff', () => {
 
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     expect(mockSetPendingComposerText).not.toHaveBeenCalled();
+  });
+});
+
+describe('useTextarea clipboard routing in unified mode', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorage.clear();
+    mockIndex = 0;
+    mockIsSubmitting = false;
+    mockIsUploadConfigPending = false;
+    mockIsUnifiedMode = true;
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
+    mockGetUploadOptions.mockReturnValue([EToolResources.context, EToolResources.execute_code]);
+  });
+
+  it('routes a pasted file without offering the destination chooser', async () => {
+    /* The attach button no longer shows the chooser in unified mode, so raising it here
+     * would deliver the same file differently depending on how it was added. */
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const pastedFile = new File(['%PDF-'], 'report.pdf', { type: 'application/pdf' });
+    const event = createPasteEvent([pastedFile]);
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+    expect(mockRouteFiles.mock.calls[0][1]).toBeUndefined();
+    expect(mockOpenModal).not.toHaveBeenCalled();
+  });
+
+  it('still honors a destination the caller already resolved', async () => {
+    /* The long-text paste knows the file belongs in the text context, and unified routing
+     * does not override a caller that already decided. */
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+    expect(mockRouteFiles.mock.calls[0][1]).toBe(EToolResources.context);
+    expect(mockOpenModal).not.toHaveBeenCalled();
   });
 });
