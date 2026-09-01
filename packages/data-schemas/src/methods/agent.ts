@@ -556,11 +556,12 @@ export function createAgentMethods(
     lostEnvironmentId: string,
   ): Promise<void> {
     if (agentAfterWrite == null) return;
+    const { updatedAt } = agentAfterWrite as IAgent & { updatedAt: Date };
     const restored = await Agent.replaceOne(
       {
         _id: agentAfterWrite._id,
         code_environment_id: lostEnvironmentId,
-        updatedAt: agentAfterWrite.updatedAt,
+        updatedAt,
       },
       originalAgent,
       { timestamps: false },
