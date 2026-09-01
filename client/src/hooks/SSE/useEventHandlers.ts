@@ -35,6 +35,7 @@ import {
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
+  applyServerReplyStamp,
   removeConvoFromAllQueries,
   findConversationInInfinite,
   preserveStreamedContentIdentity,
@@ -965,17 +966,13 @@ export default function useEventHandlers({
             });
           }
 
-          /* The sidebar list is a separate cache from the single-conversation entry above, and
-             nothing else writes to it once a run completes. Only the server's own stamp is
-             written: the seen acknowledgement is bound to whatever stamp the client observed,
-             so inventing one from the browser clock would offer the server a value it cannot
-             match. Where the payload carries none, `useReplyWatcher` fetches the real one. */
+          /* Where the payload carries no stamp, `useReplyWatcher` fetches the real one. */
           const serverLastResponseAt = serverConversation.lastResponseAt;
           if (conversation.conversationId && !_isTemporary && serverLastResponseAt) {
-            updateConvoInAllQueries(queryClient, conversation.conversationId, (convo) => ({
-              ...convo,
+            applyServerReplyStamp(queryClient, conversation.conversationId, {
               lastResponseAt: serverLastResponseAt,
-            }));
+              updatedAt: serverConversation.updatedAt,
+            });
           }
 
           if (conversation.chatProjectId) {

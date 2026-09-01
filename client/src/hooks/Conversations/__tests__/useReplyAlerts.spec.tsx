@@ -279,14 +279,15 @@ describe('useReplyAlerts', () => {
       rerender(stateOf([row('convo-b', 'Beta')]));
     });
 
-    expect(window.localStorage.getItem('replyAlerts:announced')).toBeNull();
+    expect(window.localStorage.getItem('replyAlerts:announced:sound')).toBeNull();
+    expect(window.localStorage.getItem('replyAlerts:announced:notification')).toBeNull();
   });
 
   it('stays quiet for a reply another tab has already announced', () => {
     /* Every open tab polls on its own timer; without the shared claim the same reply would
        chime once per tab, seconds apart. */
     window.localStorage.setItem(
-      'replyAlerts:announced',
+      'replyAlerts:announced:notification',
       JSON.stringify([['convo-b', '2026-08-16T10:05:00.000Z']]),
     );
     const { rerender } = setup({ notifications: true }, stateOf([row('convo-b', 'Beta')]));
@@ -298,6 +299,22 @@ describe('useReplyAlerts', () => {
     expect(createdNotifications).toHaveLength(0);
   });
 
+  it('still notifies for a reply another tab has only claimed the chime for', async () => {
+    /* The toggles are per-tab snapshots, so a sound-only tab and a notification-only tab can
+       both be open: one channel's claim must not silence the other. */
+    window.localStorage.setItem(
+      'replyAlerts:announced:sound',
+      JSON.stringify([['convo-b', '2026-08-16T10:05:00.000Z']]),
+    );
+    const { rerender } = setup({ notifications: true }, stateOf([row('convo-b', 'Beta')]));
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta', '2026-08-16T10:05:00.000Z')]));
+    });
+
+    await waitFor(() => expect(createdNotifications).toHaveLength(1));
+  });
+
   it('records its own announcement where the other tabs will look', async () => {
     const { rerender } = setup({ notifications: true }, stateOf([]));
 
@@ -306,7 +323,7 @@ describe('useReplyAlerts', () => {
     });
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
 
-    const raw = window.localStorage.getItem('replyAlerts:announced');
+    const raw = window.localStorage.getItem('replyAlerts:announced:notification');
     expect(raw).not.toBeNull();
     expect(JSON.parse(raw as string)).toEqual([['convo-b', '2026-08-16T10:00:00.000Z']]);
   });

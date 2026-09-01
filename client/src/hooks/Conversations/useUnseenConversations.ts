@@ -117,13 +117,23 @@ const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
     if (!lastResponseAt) {
       continue;
     }
-    stamps.push([conversationId, lastResponseAt]);
+    const flagged = isManualFlagStamp(lastResponseAt, convo.updatedAt);
+    /* A manual marker is deliberately left out of the baseline. The reply that later lands on
+       a conversation flagged before it ever had one is stamped with `$max`, so a marker
+       written in the same moment as that reply's own precomputed stamp is the value that
+       survives the write: baselining it would make the arrival look like a stamp this tab had
+       already accounted for, and the reply would pass without a chime or a notification.
+       Flagged rows never announce anything themselves, so withholding one can only defer an
+       announcement to the real reply. */
+    if (!flagged) {
+      stamps.push([conversationId, lastResponseAt]);
+    }
     if (isConversationUnseen(convo)) {
       unseen.push({
         conversationId,
         title: convo.title ?? '',
         lastResponseAt,
-        flagged: isManualFlagStamp(lastResponseAt, convo.updatedAt),
+        flagged,
       });
     }
   }
