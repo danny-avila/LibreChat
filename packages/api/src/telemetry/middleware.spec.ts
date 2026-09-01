@@ -338,15 +338,19 @@ describe('telemetryErrorMiddleware', () => {
     jest.restoreAllMocks();
   });
 
-  it('records exceptions and forwards the error', () => {
+  it('records safe exception metadata and forwards the original error', () => {
     const span = createSpan();
-    const error = new TypeError('boom');
+    const error = new TypeError('Bearer exception-token-canary');
     const next = jest.fn();
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
 
     telemetryErrorMiddleware(error, createRequest(), createResponse() as Response, next);
 
-    expect(span.recordException).toHaveBeenCalledWith(error);
+    expect(span.recordException).toHaveBeenCalledWith({
+      message: 'Error details withheld',
+      name: 'TypeError',
+    });
+    expect(JSON.stringify(span.recordException.mock.calls)).not.toContain('exception-token-canary');
     expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
     expect(span.setAttributes).toHaveBeenCalledWith({
       'enduser.id': 'user-1',
@@ -371,7 +375,10 @@ describe('telemetryErrorMiddleware', () => {
 
     expect(trace.getActiveSpan).not.toHaveBeenCalled();
     expect(activeSpan.recordException).not.toHaveBeenCalled();
-    expect(requestSpan.recordException).toHaveBeenCalledWith(error);
+    expect(requestSpan.recordException).toHaveBeenCalledWith({
+      message: 'Error details withheld',
+      name: 'TypeError',
+    });
     expect(requestSpan.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
     expect(next).toHaveBeenCalledWith(error);
   });
@@ -381,9 +388,18 @@ describe('telemetryErrorMiddleware', () => {
     const next = jest.fn();
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
 
-    telemetryErrorMiddleware('boom', createRequest(), createResponse() as Response, next);
+    telemetryErrorMiddleware(
+      'refresh_token=non-error-token-canary',
+      createRequest(),
+      createResponse() as Response,
+      next,
+    );
 
-    expect(span.recordException).toHaveBeenCalledWith('boom');
+    expect(span.recordException).toHaveBeenCalledWith({
+      message: 'Error details withheld',
+      name: 'string',
+    });
+    expect(JSON.stringify(span.recordException.mock.calls)).not.toContain('non-error-token-canary');
     expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
     expect(span.setAttributes).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -391,7 +407,7 @@ describe('telemetryErrorMiddleware', () => {
         'http.route': '/api/messages/:conversationId',
       }),
     );
-    expect(next).toHaveBeenCalledWith('boom');
+    expect(next).toHaveBeenCalledWith('refresh_token=non-error-token-canary');
   });
 
   it('handles null error values without throwing', () => {

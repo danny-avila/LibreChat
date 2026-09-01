@@ -61,6 +61,31 @@ describe('redactMessage', () => {
     expect(redactMessage('mask-value computed')).toBe('mask-value computed');
     expect(redactMessage('monkey=10 bananas')).toBe('monkey=10 bananas');
   });
+
+  it('redacts OAuth and signed URL parameters', () => {
+    const message =
+      'https://example.test/callback?code=auth-code&code_verifier=pkce-secret&client_secret=oauth-secret&X-Amz-Signature=aws-signature&X-Amz-Security-Token=session-token&next=true';
+
+    expect(redactMessage(message)).toBe(
+      'https://example.test/callback?code=[REDACTED]&code_verifier=[REDACTED]&client_secret=[REDACTED]&X-Amz-Signature=[REDACTED]&X-Amz-Security-Token=[REDACTED]&next=true',
+    );
+  });
+
+  it('redacts complete JWTs, cookies, and URI userinfo', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZWNyZXQtdXNlciJ9.c2lnbmF0dXJlLXNlY3JldA';
+    const message =
+      `token=${jwt} Cookie: session=cookie-secret; refresh=refresh-secret\n` +
+      'database=postgresql://service-user:database-secret@example.test/app';
+    const redacted = redactMessage(message);
+
+    expect(redacted).not.toContain(jwt);
+    expect(redacted).not.toContain('cookie-secret');
+    expect(redacted).not.toContain('refresh-secret');
+    expect(redacted).not.toContain('database-secret');
+    expect(redacted).toContain('token=[REDACTED]');
+    expect(redacted).toContain('Cookie: [REDACTED]');
+    expect(redacted).toContain('postgresql://[REDACTED]@example.test/app');
+  });
 });
 
 describe('redactFormat', () => {
@@ -114,6 +139,9 @@ describe('redactFormat', () => {
       nested: { token: 'secretvalue' },
       safe: 'secretvalue',
       'x-api-key': 'secretvalue',
+      cookie: 'session=secretvalue',
+      code_verifier: 'secretvalue',
+      connectionString: 'postgresql://user:secretvalue@example.test/db',
     };
     const info = runRedactFormat({
       level: 'info',
@@ -126,6 +154,9 @@ describe('redactFormat', () => {
     expect(splat[0].authorization).toBe('[REDACTED]');
     expect(splat[0].nested.token).toBe('[REDACTED]');
     expect(splat[0]['x-api-key']).toBe('[REDACTED]');
+    expect(splat[0].cookie).toBe('[REDACTED]');
+    expect(splat[0].code_verifier).toBe('[REDACTED]');
+    expect(splat[0].connectionString).toBe('[REDACTED]');
     expect(splat[0].safe).toBe('secretvalue');
     expect(metadata.apiKey).toBe('secretvalue');
     expect(metadata.nested.token).toBe('secretvalue');
