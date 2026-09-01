@@ -75,6 +75,32 @@ export function attachmentIdentity(attachment: TAttachment): string | undefined 
 }
 
 /**
+ * Identity for deciding whether two records render as the SAME artifact, which
+ * is `attachmentIdentity` plus the host run step.
+ *
+ * The extra dimension is the difference between merging and rendering. The
+ * merge in `useAttachments` reconciles DB rows against live SSE records, whose
+ * `stepId` may not have arrived yet, so it matches wildcard-tolerantly and
+ * must not split on a field one side can lack. A rendered row has no such
+ * excuse: `filterAttachmentsForPart` deliberately routes records to their
+ * owning part BY run step, so two executions that reuse a provider tool-call
+ * id and claim the same `file_id` are two artifacts. Collapsing them would
+ * drop one from the media row, which — once the fold hides the parts' own
+ * copies — is the only place it appears.
+ *
+ * A record with no `stepId` keeps the plain identity, so a legacy row never
+ * splits away from itself.
+ */
+export function attachmentRenderKey(attachment: TAttachment): string | undefined {
+  const identity = attachmentIdentity(attachment);
+  if (identity == null) {
+    return undefined;
+  }
+  const { stepId } = attachment as { stepId?: string };
+  return stepId == null ? identity : `${identity}::step:${stepId}`;
+}
+
+/**
  * Indexes a turn's attachments by the filename a markdown image would name
  * them with.
  *

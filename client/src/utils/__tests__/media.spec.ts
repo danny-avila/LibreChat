@@ -1,6 +1,7 @@
 import type { TAttachment } from 'librechat-data-provider';
 import {
   attachmentIdentity,
+  attachmentRenderKey,
   buildAttachmentsByName,
   resolveInlineMedia,
   toAbsoluteFilePath,
@@ -227,5 +228,41 @@ describe('toAbsoluteFilePath', () => {
         resolveInlineMedia(path, buildAttachmentsByName([attachment({ filename: 'a.png' })])),
       ).toBeUndefined();
     }
+  });
+});
+
+describe('attachmentRenderKey', () => {
+  it('splits two run steps that reuse one provider tool-call id', () => {
+    // `filterAttachmentsForPart` routes these to different parts by step, so
+    // they are two artifacts. Collapsing them drops one from the media row —
+    // the only place it appears once the fold hides the parts' own copies.
+    const first = attachment({
+      file_id: 'f1',
+      toolCallId: 't1',
+      stepId: 's1',
+    } as Partial<TAttachment>);
+    const second = attachment({
+      file_id: 'f1',
+      toolCallId: 't1',
+      stepId: 's2',
+    } as Partial<TAttachment>);
+    expect(attachmentRenderKey(first)).not.toBe(attachmentRenderKey(second));
+  });
+
+  it('keeps one record of one artifact together across re-renders', () => {
+    const a = attachment({ file_id: 'f1', toolCallId: 't1', stepId: 's1' } as Partial<TAttachment>);
+    const b = attachment({ file_id: 'f1', toolCallId: 't1', stepId: 's1' } as Partial<TAttachment>);
+    expect(attachmentRenderKey(a)).toBe(attachmentRenderKey(b));
+  });
+
+  it('leaves a step-less legacy row on the plain identity', () => {
+    const legacy = attachment({ file_id: 'f1', toolCallId: 't1' } as Partial<TAttachment>);
+    expect(attachmentRenderKey(legacy)).toBe(attachmentIdentity(legacy));
+  });
+
+  it('has no key when the identity has none', () => {
+    expect(
+      attachmentRenderKey(attachment({ file_id: undefined, filepath: undefined })),
+    ).toBeUndefined();
   });
 });

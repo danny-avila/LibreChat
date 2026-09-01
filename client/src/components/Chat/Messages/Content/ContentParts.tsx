@@ -12,7 +12,7 @@ import type { ActivityPhaseSegment } from '~/utils/activityLabels';
 import {
   mapAttachments,
   getPartKeyIndex,
-  attachmentIdentity,
+  attachmentRenderKey,
   buildAttachmentsByName,
   filterAttachmentsForPart,
   groupSequentialToolCalls,
@@ -368,7 +368,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           /** No identity means nothing to compare against — two rows that
            *  cannot be told apart are two rows, so both are kept rather than
            *  silently collapsed onto whichever arrived first. */
-          const identity = attachmentIdentity(attachment);
+          const identity = attachmentRenderKey(attachment);
           if (identity == null) {
             collected.push(attachment);
             continue;
