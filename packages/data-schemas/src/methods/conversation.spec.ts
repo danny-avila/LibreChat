@@ -7066,7 +7066,7 @@ describe('Conversation Operations', () => {
       const searchParams = {
         filter: 'user = "user123" AND tenantId = "tenant-a"',
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       };
       expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
       expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
@@ -7091,12 +7091,42 @@ describe('Conversation Operations', () => {
         const searchParams = {
           filter: 'user = "user123"',
           limit: MEILI_SEARCH_LIMIT,
-          attributesToRetrieve: ['conversationId'],
+          attributesToRetrieve: ['conversationId', 'originalConversationId'],
         };
         expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
         expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
         expect(result?.conversations.map((c) => c.conversationId)).toEqual([conversationId]);
       });
+
+      jest.clearAllMocks();
+      searchMessages.mockResolvedValue({ hits: [] });
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+      const searchParams = {
+        filter: 'user = "user123"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
+      };
+      expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+      expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
+      expect(result?.conversations.map((c) => c.conversationId)).toEqual([conversationId]);
+    });
+
+    it('escapes user and tenant values in scoped search filters', async () => {
+      const meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
+      Object.assign(Conversation, { meiliSearch });
+      searchMessages.mockResolvedValue({ hits: [] });
+
+      await tenantStorage.run({ tenantId: 'tenant"\\id' }, () =>
+        getConvosByCursor('user"\\id', { search: 'keyword' }),
+      );
+
+      const searchParams = {
+        filter: 'user = "user\\"\\\\id" AND tenantId = "tenant\\"\\\\id"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
+      };
+      expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+      expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
     });
   });
 });
