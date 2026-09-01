@@ -47,6 +47,26 @@ router.post('/', async (req, res) => {
 
   try {
     req.file.originalname = sanitizeFilename(req.file.originalname);
+    const isAssistants = isAssistantsEndpoint(metadata.endpoint);
+
+    /* Authorization runs before anything reads the target agent, matching the file
+     * route. Validating against a record the caller cannot access answers with that
+     * agent's provider limits and content policy, so the rejection reports its
+     * configuration. Message attachments and requests naming no agent pass straight
+     * through without a read. */
+    if (!isAssistants) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent: ({ id }) => resolveUploadAgent(req, id),
+        checkPermission,
+      });
+      if (denied) {
+        return;
+      }
+    }
+
     /* Agent uploads arrive as `agents` but route by the agent's own provider, so the
      * provider's configuration has to govern acceptance too. Resolved once here and
      * reused by routing, authorization and processing below. */
@@ -100,17 +120,7 @@ router.post('/', async (req, res) => {
       metadata.message_file !== 'true';
     const takesAgentUploadPath = effectiveToolResource != null || isPermanentAgentUpload;
 
-    if (!isAssistantsEndpoint(metadata.endpoint) && takesAgentUploadPath) {
-      const denied = await verifyAgentUploadPermission({
-        req,
-        res,
-        metadata,
-        getAgent: ({ id }) => resolveUploadAgent(req, id),
-        checkPermission,
-      });
-      if (denied) {
-        return;
-      }
+    if (!isAssistants && takesAgentUploadPath) {
       openSseStreamIfRequested();
       return await processAgentFileUpload({ req, res, metadata, sseStream });
     }

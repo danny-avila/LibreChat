@@ -127,6 +127,31 @@ const DEFAULT_RESERVE_RATIO = 0.05;
  * same deduplication downstream, so charging it twice spends an allowance the request
  * never uses and drops another file that fits.
  */
+/**
+ * Splits persistent files into those this request already screened and charged, and those
+ * still to screen. A setup file can also be the turn's attachment, and the sets are merged
+ * by id downstream, so charging it again against the remaining size allowance spends it
+ * twice and drops another file that would have fit.
+ */
+export function partitionCommittedFiles<T extends { file_id?: string }>(
+  files: T[],
+  committed: Array<{ file_id?: string }>,
+): { committed: T[]; pending: T[] } {
+  const ids = new Set(
+    committed.map((file) => file.file_id).filter((id): id is string => id != null),
+  );
+  const alreadyCommitted: T[] = [];
+  const pending: T[] = [];
+  for (const file of files) {
+    if (file.file_id != null && ids.has(file.file_id)) {
+      alreadyCommitted.push(file);
+      continue;
+    }
+    pending.push(file);
+  }
+  return { committed: alreadyCommitted, pending };
+}
+
 function sumUniqueBytes(files: Array<{ file_id?: string; bytes?: number }>): number {
   const seen = new Set<string>();
   let total = 0;
@@ -1390,18 +1415,19 @@ export async function initializeAgent(
        * endpoint policy under the remainder of the one total-size allowance the current
        * and deferred sets have already drawn on, and the same content policy, which can
        * have changed since the file was attached. */
-      const committedBytes = sumUniqueBytes([...(currentFiles ?? []), ...deferredProvisionFiles]);
+      const committedFiles = [...(currentFiles ?? []), ...deferredProvisionFiles];
+      const { committed, pending } = partitionCommittedFiles(files, committedFiles);
       const withinPolicy = filterFilesByEndpointRuntimeConfig(appConfig, {
-        files: files as unknown as IMongoFile[],
+        files: pending as unknown as IMongoFile[],
         endpoint: agent.endpoint ?? '',
         endpointType: endpointFileType,
-        consumedBytes: committedBytes,
+        consumedBytes: sumUniqueBytes(committedFiles),
       }) as unknown as TFile[];
 
       /* Dropped rather than fatal, matching the deferred candidates: these were not
        * attached by this request, so refusing the conversation over a historical record
        * would be harsher than leaving it out. */
-      return withinPolicy.filter((file) => {
+      return committed.concat(withinPolicy).filter((file) => {
         try {
           assertModelBoundContent({
             filters: appConfig?.filters,

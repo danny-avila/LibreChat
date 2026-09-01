@@ -1,5 +1,5 @@
 import type { IConversation } from '@librechat/data-schemas';
-import { readResolvedConversationFiles } from './initialize';
+import { partitionCommittedFiles, readResolvedConversationFiles } from './initialize';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 
 describe('readResolvedConversationFiles', () => {
@@ -54,5 +54,35 @@ describe('readResolvedConversationFiles', () => {
         conversationId,
       ),
     ).toBeUndefined();
+  });
+});
+
+describe('partitionCommittedFiles', () => {
+  it('separates files this request already screened from the rest', () => {
+    const shared = { file_id: 'shared', bytes: 2 };
+    const persistent = { file_id: 'persistent', bytes: 7 };
+
+    const { committed, pending } = partitionCommittedFiles(
+      [shared, persistent],
+      [{ file_id: 'shared' }, { file_id: 'attachment' }],
+    );
+
+    expect(committed).toEqual([shared]);
+    expect(pending).toEqual([persistent]);
+  });
+
+  it('treats a file with no id as still to screen', () => {
+    const anonymous: { file_id?: string; bytes: number } = { bytes: 1 };
+
+    expect(partitionCommittedFiles([anonymous], [{ file_id: 'shared' }])).toEqual({
+      committed: [],
+      pending: [anonymous],
+    });
+  });
+
+  it('keeps every file when nothing was committed', () => {
+    const files = [{ file_id: 'a' }, { file_id: 'b' }];
+
+    expect(partitionCommittedFiles(files, [])).toEqual({ committed: [], pending: files });
   });
 });

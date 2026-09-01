@@ -148,6 +148,13 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
   };
 
   it('inspects the canonical sanitized image filename used by upload processing', async () => {
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
     const app = createAppWithUser(
       authorId,
       SystemRoles.USER,
@@ -207,6 +214,41 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
   });
 
+  it('denies an unauthorized caller before validating against the agent', async () => {
+    /* Image validation applies the target agent's provider policy, so reaching it first
+     * answers an unauthorized caller with that agent's configuration instead of a 403. */
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+
+    const app = createAppWithUser(otherUserId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['content'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+    });
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('Forbidden');
+    expect(processAgentFileUpload).not.toHaveBeenCalled();
+  });
+
   it('should allow upload for agent owner', async () => {
     await createAgent({
       id: agentCustomId,
@@ -229,8 +271,15 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
   });
 
   it.each(['content', 'extracted_text'])(
-    'blocks opaque image %s before permission or processing side effects',
+    'blocks opaque image %s before processing side effects',
     async (field) => {
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
       const app = createAppWithUser(authorId, SystemRoles.USER, {
         filters: {
           files: {
@@ -382,6 +431,13 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
   });
 
   it('blocks extracted-text fail-close when configured OCR does not support the image MIME type', async () => {
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
     const app = createAppWithUser(authorId, SystemRoles.USER, {
       filters: {
         files: {
@@ -414,6 +470,13 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
   });
 
   it('preserves raw-content fail-close even when configured OCR supports the image', async () => {
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
     const app = createAppWithUser(authorId, SystemRoles.USER, {
       filters: {
         files: {
