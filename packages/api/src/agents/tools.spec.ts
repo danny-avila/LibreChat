@@ -322,6 +322,15 @@ describe('buildHistoricalToolNames', () => {
     );
   });
 
+  it('keeps skill file access without exposing the skill invocation tool', () => {
+    expect(
+      buildHistoricalToolNames({
+        skillsAvailable: false,
+        skillFileAccessAvailable: true,
+      }),
+    ).toEqual(new Set(['read_file']));
+  });
+
   it('normalizes Action names and their options', () => {
     expect(
       buildHistoricalToolNames({

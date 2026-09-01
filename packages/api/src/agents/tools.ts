@@ -57,6 +57,7 @@ export interface BuildHistoricalToolNamesConfig {
   codeExecutionAvailable?: boolean;
   memoryAvailable?: boolean;
   skillsAvailable?: boolean;
+  skillFileAccessAvailable?: boolean;
   skillAuthoringAvailable?: boolean;
   deferredToolsAvailable?: boolean;
   programmaticToolsAvailable?: boolean;
@@ -103,6 +104,8 @@ export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig)
   }
   if (config.skillsAvailable === true) {
     toolNames.add('skill');
+  }
+  if ((config.skillFileAccessAvailable ?? config.skillsAvailable) === true) {
     toolNames.add('read_file');
   }
   if (config.skillAuthoringAvailable === true) {

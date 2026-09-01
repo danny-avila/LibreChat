@@ -14,7 +14,6 @@ const {
   discoverConnectedAgents,
   resolveAgentTokenConfig,
   resolveAgentScopedSkillIds,
-  resolveAlwaysApplySkills,
   resolveModelSpecSkillIds,
   getAgentStartupTelemetry,
   isContentFilterError,
@@ -25,7 +24,7 @@ const {
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
-  buildHistoricalToolNames,
+  createLazyAgentHistoryResolver,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -35,7 +34,6 @@ const {
   isAgentsEndpoint,
   AgentCapabilities,
   normalizeServerName,
-  Constants,
   Tools,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_SUBAGENT_RUN_CONFIGS,
@@ -801,10 +799,7 @@ const initializeClient = async ({
 
   const lazyMetadataByAgentId = new Map();
   const lazyMetadataLoadsByAgentId = new Map();
-  /** Request-scoped cache: lazy descriptors sharing the same Skill ACL scope
-   * reuse one history-only always-apply lookup without initializing tools,
-   * files, model clients, or MCP connections. */
-  const lazyAlwaysApplySkillsByScope = new Map();
+  const resolveLazyMetadata = createConcurrencyLimiter(SUBAGENT_GRAPH_LOAD_CONCURRENCY);
   const subagentGraphIds = new Set();
   const expandedSubagentDescriptorState = { configCount: 0, rootAgentIds: [] };
 
@@ -915,49 +910,32 @@ const initializeClient = async ({
       ),
     );
 
-  const resolveLazyAlwaysApplySkillPrimes = (agent) => {
-    const scopedSkillIds = resolveAgentScopedSkillIds({
-      agent,
-      accessibleSkillIds,
-      skillsCapabilityEnabled,
-      ephemeralSkillsToggle,
-    });
-    if (scopedSkillIds.length === 0 || typeof skillDbMethods.listAlwaysApplySkills !== 'function') {
-      return Promise.resolve([]);
-    }
-    const scopeKey = scopedSkillIds
-      .map((skillId) => skillId.toString())
-      .sort()
-      .join(':');
-    let resolution = lazyAlwaysApplySkillsByScope.get(scopeKey);
-    if (resolution == null) {
-      resolution = resolveAlwaysApplySkills({
-        listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
-        accessibleSkillIds: scopedSkillIds,
-        userId,
-        skillStates,
-        defaultActiveOnShare,
-      });
-      lazyAlwaysApplySkillsByScope.set(scopeKey, resolution);
-    }
-    return resolution;
-  };
-
-  let historicalMcpServerNamesPromise;
-  const resolveHistoricalMcpServerNames = () => {
-    historicalMcpServerNamesPromise ??= Promise.resolve(
-      getAccessibleMcpServerNames(req.user.id, req.user.role),
-    )
-      .then((names) => [...new Set([...(names ?? []), ...Object.keys(appConfig?.mcpConfig ?? {})])])
-      .catch((error) => {
-        logger.warn(
-          '[initializeClient] Failed to resolve MCP names for lazy history normalization:',
-          error,
-        );
-        return Object.keys(appConfig?.mcpConfig ?? {});
-      });
-    return historicalMcpServerNamesPromise;
-  };
+  const lazyHistoryResolver = createLazyAgentHistoryResolver({
+    accessibleSkillIds,
+    editableSkillIds,
+    skillsCapabilityEnabled,
+    ephemeralSkillsToggle,
+    userId,
+    userRole,
+    skillStates,
+    defaultActiveOnShare,
+    maxCatalogSkills: appConfig?.endpoints?.[EModelEndpoint.agents]?.skills?.maxCatalogSkills,
+    listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+    listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+    getAccessibleMcpServerNames,
+    configuredMcpServerNames: Object.keys(appConfig?.mcpConfig ?? {}),
+    canAuthorSkillFiles: ({ agent, scopedEditableSkillIds }) =>
+      canAuthorSkillFiles({
+        agent,
+        scopedEditableSkillIds,
+        skillCreateAllowed,
+        skillsCapabilityEnabled,
+        ephemeralSkillsToggle,
+      }),
+    deferredToolsAvailable,
+    programmaticToolsAvailable,
+    backgroundToolsAvailable,
+  });
 
   const toLazySubagentMetadata = async (agent) => {
     const lazyCodeEnvAvailable =
@@ -991,50 +969,12 @@ const initializeClient = async ({
             conversationId,
           })
         : undefined;
-    const scopedSkillIds = resolveAgentScopedSkillIds({
-      agent,
-      accessibleSkillIds,
-      skillsCapabilityEnabled,
-      ephemeralSkillsToggle,
-    });
-    const scopedEditableSkillIds = resolveAgentScopedSkillIds({
-      agent,
-      accessibleSkillIds: editableSkillIds,
-      skillsCapabilityEnabled,
-      ephemeralSkillsToggle,
-    });
-    const skillAuthoringAvailable = canAuthorSkillFiles({
-      agent,
-      scopedEditableSkillIds,
-      skillCreateAllowed,
-      skillsCapabilityEnabled,
-      ephemeralSkillsToggle,
-    });
-    const alwaysApplySkillPrimes = await resolveLazyAlwaysApplySkillPrimes(agent);
-    const configuredAndSkillToolNames = [
-      ...(agent.tools ?? []),
-      ...alwaysApplySkillPrimes.flatMap((prime) => prime.allowedTools ?? []),
-    ];
-    const rawMcpServerNames = configuredAndSkillToolNames.some((name) =>
-      name.includes(Constants.mcp_delimiter),
-    )
-      ? await resolveHistoricalMcpServerNames()
-      : [];
-    const historicalToolNames = Array.from(
-      buildHistoricalToolNames({
-        configuredToolNames: agent.tools,
-        alwaysApplyToolNames: alwaysApplySkillPrimes.flatMap((prime) => prime.allowedTools ?? []),
-        toolOptions: agent.tool_options,
-        rawMcpServerNames,
+    const { alwaysApplySkillPrimes, historicalToolNames, historicalMcpServerNames } =
+      await lazyHistoryResolver.resolve({
+        agent,
         codeExecutionAvailable: lazyCodeEnvAvailable,
-        memoryAvailable: memoryAvailable === true && agent.tools?.includes(Tools.memory) === true,
-        skillsAvailable: scopedSkillIds.length > 0,
-        skillAuthoringAvailable,
-        deferredToolsAvailable,
-        programmaticToolsAvailable,
-        backgroundToolsAvailable,
-      }),
-    );
+        memoryAvailable,
+      });
     return {
       id: agent.id,
       name: agent.name,
@@ -1056,7 +996,7 @@ const initializeClient = async ({
       includeReasoningHistory: getIncludeReasoningHistory(agent),
       alwaysApplySkillPrimes,
       historicalToolNames,
-      historicalMcpServerNames: rawMcpServerNames,
+      historicalMcpServerNames,
     };
   };
 
@@ -1066,7 +1006,7 @@ const initializeClient = async ({
     if (cached) return cached;
     let loading = lazyMetadataLoadsByAgentId.get(agentId);
     if (!loading) {
-      loading = (async () => {
+      loading = resolveLazyMetadata(async () => {
         const agent = await db.getAgentWithVersionCount({ id: agentId });
         if (!agent || !(await hasSubagentViewAccess(agent, agentId))) {
           skippedAgentIds.add(agentId);
@@ -1075,7 +1015,7 @@ const initializeClient = async ({
         const metadata = await toLazySubagentMetadata(agent);
         lazyMetadataByAgentId.set(agentId, metadata);
         return metadata;
-      })();
+      });
       lazyMetadataLoadsByAgentId.set(agentId, loading);
     }
     try {

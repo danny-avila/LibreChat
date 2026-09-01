@@ -1301,6 +1301,57 @@ describe('initializeClient — subagent loading', () => {
     }
   });
 
+  it('bounds concurrent lazy metadata reads', async () => {
+    const subagentIds = Array.from({ length: 6 }, (_, index) => `agent_bounded_lazy_${index}`);
+    for (const id of subagentIds) {
+      await createViewableAgent(id);
+    }
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: false, agent_ids: subagentIds },
+      }),
+    );
+    const originalGetAgent = db.getAgentWithVersionCount.bind(db);
+    const fourReadsStarted = deferred();
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const getAgentSpy = jest
+      .spyOn(db, 'getAgentWithVersionCount')
+      .mockImplementation(async (...args) => {
+        activeReads += 1;
+        maxActiveReads = Math.max(maxActiveReads, activeReads);
+        if (activeReads === 4) {
+          fourReadsStarted.resolve();
+        }
+        let timer;
+        await Promise.race([
+          fourReadsStarted.promise,
+          new Promise((resolve) => {
+            timer = setTimeout(resolve, 1000);
+          }),
+        ]);
+        clearTimeout(timer);
+        try {
+          return await originalGetAgent(...args);
+        } finally {
+          activeReads -= 1;
+        }
+      });
+
+    try {
+      await initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
+      expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(subagentIds.length);
+      expect(maxActiveReads).toBe(4);
+    } finally {
+      getAgentSpy.mockRestore();
+    }
+  });
+
   it('rejects a disallowed lazy subagent scope before exposing it for prewarm', async () => {
     const subAgent = await createAgent({
       id: SUBAGENT_ID,
