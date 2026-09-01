@@ -1,9 +1,8 @@
 import { Buffer } from 'node:buffer';
 import { RetentionMode } from 'librechat-data-provider';
-import type { SearchParams } from 'meilisearch';
 import type { AnyBulkWriteOperation, FilterQuery, Model, SortOrder, Types } from 'mongoose';
+import type { SearchParams } from 'meilisearch';
 import type { DeleteResult } from 'mongoose';
-import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type {
   IAgentEventActorCheckpoint,
   IAgentEventActorReconciliation,
@@ -19,6 +18,7 @@ import type {
   ISharedLink,
   ISubagentThreadReservation,
 } from '~/types';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { MessageMethods } from './message';
 import {
   MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
