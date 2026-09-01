@@ -1058,12 +1058,26 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       }
     }
 
-    const filterableAttributes = ['user'];
+    const requiredFilterableAttributes = ['user'];
     if (hasSchemaPath(schema, 'tenantId')) {
-      filterableAttributes.push('tenantId');
+      requiredFilterableAttributes.push('tenantId');
     }
 
     try {
+      const settings = await index.getSettings();
+      const currentFilterableAttributes = settings.filterableAttributes ?? [];
+      const filterableAttributes = [
+        ...new Set([...currentFilterableAttributes, ...requiredFilterableAttributes]),
+      ];
+      const settingsUnchanged =
+        filterableAttributes.length === currentFilterableAttributes.length &&
+        filterableAttributes.every(
+          (attribute, index) => attribute === currentFilterableAttributes[index],
+        );
+      if (settingsUnchanged) {
+        return;
+      }
+
       await index.updateSettings({
         filterableAttributes,
       });

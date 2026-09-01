@@ -341,9 +341,20 @@ describe('performSync() - syncThreshold logic', () => {
       isComplete: true,
     });
 
+    const updateSettings = jest.fn().mockResolvedValue({});
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({
+        filterableAttributes: ['user', 'tenantId', 'customAttribute'],
+      }),
+      updateSettings,
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    });
+
     // Act
     const indexSync = require('./indexSync');
     await indexSync();
+
+    expect(updateSettings).not.toHaveBeenCalled();
 
     // Assert: No countDocuments calls
     expect(Message.countDocuments).not.toHaveBeenCalled();
