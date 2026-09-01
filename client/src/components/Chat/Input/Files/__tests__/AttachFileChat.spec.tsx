@@ -312,4 +312,25 @@ describe('AttachFileChat upload config gating', () => {
 
     expect(mockAttachFileMenuProps.disabled).toBe(false);
   });
+
+  it('keeps it inert while a saved agent provider is still being fetched', () => {
+    /* The config can succeed before the agent does, and until then endpointFileConfig is
+     * the generic agents entry rather than the provider's. */
+    mockFileConfigLoaded = true;
+    mockAgentsMap = {};
+    mockAgentQueryData = undefined;
+
+    renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent_saved01' });
+
+    expect(mockAttachFileMenuProps.disabled).toBe(true);
+  });
+
+  it('enables it once that provider resolves', () => {
+    mockFileConfigLoaded = true;
+    mockAgentQueryData = { provider: 'openAI' } as Partial<Agent>;
+
+    renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent_saved01' });
+
+    expect(mockAttachFileMenuProps.disabled).toBe(false);
+  });
 });

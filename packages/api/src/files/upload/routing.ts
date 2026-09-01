@@ -1,6 +1,7 @@
 import {
   EToolResources,
   mergeFileConfig,
+  isAssistantsEndpoint,
   getEndpointFileConfig,
   resolveUploadLLMDeliveryPath,
 } from 'librechat-data-provider';
@@ -59,6 +60,11 @@ export function resolveUploadAgent(
 /**
  * Agent uploads carry endpoint `agents`; the agent's own provider governs both the file
  * configuration used for validation and the delivery-path routing.
+ *
+ * An assistants upload has its own pipeline and never files anything against an agent, so
+ * an `agent_id` on one names a record the request has no business reading: the agent
+ * authorization gate does not run for assistants, and the provider it resolved would
+ * still shape the validation errors the caller sees.
  */
 export async function resolveUploadEndpoint({
   req,
@@ -69,7 +75,7 @@ export async function resolveUploadEndpoint({
   metadata: UploadMetadata;
   getAgent: GetUploadAgent;
 }): Promise<string | undefined> {
-  if (!metadata.agent_id) {
+  if (!metadata.agent_id || isAssistantsEndpoint(metadata.endpoint)) {
     return metadata.endpoint;
   }
   const agent = await resolveUploadAgent(req, metadata.agent_id, getAgent);

@@ -6,6 +6,7 @@ import {
   FileContext,
   FileSources,
   getCodeEnvRefs,
+  canToolResourceConsume,
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
@@ -543,10 +544,12 @@ const computeProvisionState = async ({
       }
     }
 
-    const isImage = file.type?.startsWith('image') ?? false;
+    /* The same predicate the upload path files a consumer with. Queueing a type the
+     * vector store cannot read sends it to RAG on the next search call and aborts the
+     * tool when extraction refuses it. */
     if (
       needsVectorDB &&
-      !isImage &&
+      canToolResourceConsume(EToolResources.file_search, file.type ?? '') &&
       !isEmbeddedForNamespace(file, namespaceId) &&
       !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
     ) {

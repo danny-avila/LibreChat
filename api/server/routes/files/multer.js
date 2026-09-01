@@ -6,6 +6,7 @@ const { sanitizeFilename, createCustomError } = require('@librechat/api');
 const {
   mergeFileConfig,
   inferMimeType,
+  isAgentsEndpoint,
   getEndpointFileConfig,
   fileConfig: defaultFileConfig,
 } = require('librechat-data-provider');
@@ -36,6 +37,18 @@ const importFileFilter = (req, file, cb) => {
   } else {
     cb(createCustomError(415, 'Only JSON files are allowed'), false);
   }
+};
+
+/** Every type some configured endpoint accepts, for a request whose real endpoint is only
+ *  known after an agent read this filter cannot make. */
+const collectSupportedMimeTypes = (customFileConfig, endpointFileConfig) => {
+  const merged = [...(endpointFileConfig.supportedMimeTypes ?? [])];
+  for (const config of Object.values(customFileConfig?.endpoints ?? {})) {
+    for (const mimeType of config?.supportedMimeTypes ?? []) {
+      merged.push(mimeType);
+    }
+  }
+  return merged;
 };
 
 const normalizeUploadMimeType = (file) => {
@@ -75,7 +88,16 @@ const createFileFilter = (customFileConfig) => {
       endpointType,
     });
 
-    if (!defaultFileConfig.checkType(mimeType, endpointFileConfig.supportedMimeTypes)) {
+    /* An agent upload is validated again under the agent's own provider once the route
+     * has resolved and authorized it. That provider's allowlist can be wider than the
+     * `agents` entry, and this filter is synchronous so it cannot resolve it, so here the
+     * question is only whether any configured endpoint accepts the type. Narrowing to
+     * `agents` would make the later provider check able to reject but never to permit. */
+    const supportedMimeTypes = isAgentsEndpoint(endpoint)
+      ? collectSupportedMimeTypes(customFileConfig, endpointFileConfig)
+      : endpointFileConfig.supportedMimeTypes;
+
+    if (!defaultFileConfig.checkType(mimeType, supportedMimeTypes)) {
       return cb(
         createCustomError(415, 'Unsupported file type: ' + (file.mimetype || mimeType)),
         false,
