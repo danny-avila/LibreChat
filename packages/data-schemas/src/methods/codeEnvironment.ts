@@ -138,7 +138,7 @@ export async function withCodeEnvironmentReference<T>(
   mongoose: typeof import('mongoose'),
   environmentId: string | undefined,
   operation: () => Promise<T>,
-  renewIntervalMs = REFERENCE_RENEW_INTERVAL_MS,
+  renewIntervalMs: number = REFERENCE_RENEW_INTERVAL_MS,
 ): Promise<T> {
   const reservation = await reserveCodeEnvironmentReference(mongoose, environmentId);
   if (reservation == null) return await operation();
