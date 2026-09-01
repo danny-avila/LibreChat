@@ -44,6 +44,18 @@ describe('code environment pairing rate limiter', () => {
     expect(mockLimiter).toHaveBeenCalledWith(req, {}, next);
   });
 
+  it('falls back to safe limits for invalid environment values', () => {
+    process.env.CODE_ENVIRONMENT_PAIRING_USER_MAX = 'NaN';
+    process.env.CODE_ENVIRONMENT_PAIRING_USER_WINDOW = '-1';
+    const { codeEnvironmentPairingLimiter } = require('./code');
+
+    codeEnvironmentPairingLimiter({ user: { id: 'user-1' } }, {}, jest.fn());
+
+    expect(mockRateLimit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ max: 5, windowMs: 3_600_000 }),
+    );
+  });
+
   it('returns an actionable JSON response when the limit is exceeded', async () => {
     const { codeEnvironmentPairingLimiter } = require('./code');
 
