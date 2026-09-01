@@ -3019,8 +3019,13 @@ describe('BaseClient', () => {
     });
 
     test('re-resolves a path stored under a different provider', async () => {
-      /* Audio uploaded under Google stores `provider`, but the OpenAI encoder emits no
-       * audio payload, so honoring that inference delivers neither media nor text. */
+      /* Audio uploaded under Google stores `provider`, and the OpenAI encoder emits no
+       * audio payload for it, so the inference is not this endpoint's to honor.
+       *
+       * What this does not do is produce a transcript: the record holds raw media and no
+       * extracted text, and extraction at delivery is Phase 2 work. So the model receives
+       * nothing here either way, which the assertions state rather than imply, and the
+       * change is limited to not downloading and encoding a file to no purpose. */
       routeTo('text', 'audio/*');
       const message = {};
       const file = {
@@ -3038,6 +3043,8 @@ describe('BaseClient', () => {
 
       expect(result).toEqual([file]);
       expect(TestClient.addAudios).not.toHaveBeenCalled();
+      expect(message.audios).toBeUndefined();
+      expect(file.text).toBeUndefined();
     });
 
     test('re-resolves a converted image against the type it was routed on', async () => {
