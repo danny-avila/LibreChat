@@ -10,6 +10,7 @@ import {
   Constants,
   EToolResources,
   mergeFileConfig,
+  isAgentsEndpoint,
   isAssistantsEndpoint,
   getEndpointFileConfig,
   defaultAssistantsVersion,
@@ -216,6 +217,17 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     () => endpointOverride ?? conversation?.endpoint ?? 'default',
     [endpointOverride, conversation?.endpoint],
   );
+  /** An agent's file policy lives under its provider, which is the entry the server now
+   *  validates against. Resolving `agents` here instead rejects a provider-supported file
+   *  before it ever reaches that check, or measures it against the wrong limits. */
+  const agentProvider = useMemo(() => {
+    if (endpointOverride != null || !isAgentsEndpoint(conversation?.endpoint)) {
+      return undefined;
+    }
+    const agentId = conversation?.agent_id;
+    return agentId != null && agentId !== '' ? agentsMap?.[agentId]?.provider : undefined;
+  }, [endpointOverride, conversation?.endpoint, conversation?.agent_id, agentsMap]);
+
   /** The conversation's own setting when it has one, otherwise the saved agent's, which
    *  is where a saved Azure agent keeps it. */
   const usesResponsesApi = useMemo(() => {
@@ -510,9 +522,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       : filesRef.current;
     const currentFileConfig = fileConfigRef.current;
     const endpointFileConfig = getEndpointFileConfig({
-      endpoint,
+      endpoint: agentProvider ?? endpoint,
       fileConfig: currentFileConfig,
-      endpointType,
+      endpointType: agentProvider != null ? undefined : endpointType,
     });
     /** The source remains visible until success, so exclude only its matching entry from this
      * upload's validation tallies. All other callers validate against the complete file map. */
