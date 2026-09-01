@@ -778,6 +778,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     contextEnabled,
   });
 
+  if (destination.rejection === 'no-consumer') {
+    throw new Error(
+      `Files of type ${file.mimetype} are not sent to the model here, and this conversation has no agent whose tools could read them. Attach it to an agent with the code interpreter or file search enabled, or upload a supported file type.`,
+    );
+  }
   if (destination.rejection === 'context-disabled') {
     throw new Error(
       `Files of type ${file.mimetype} are saved to an agent as extracted text, and the context capability is disabled. Enable it for Agents, or attach the file to a message instead.`,

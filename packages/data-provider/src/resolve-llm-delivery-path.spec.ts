@@ -418,6 +418,32 @@ describe('resolveUploadDestination', () => {
     ).toBe('no-agent-resource');
   });
 
+  it('refuses a none-routed upload with no agent behind it', () => {
+    /* Nothing provisions in a conversation with no agent, so a file kept off the model
+     * path there is reachable by nothing at all. */
+    expect(
+      resolveUploadDestination({
+        ...base,
+        deliveryPath: 'none',
+        hasAgent: false,
+        isMessageAttachment: true,
+      }).rejection,
+    ).toBe('no-consumer');
+  });
+
+  it('does not judge an agent conversation the same way', () => {
+    /* An agent's tool set is not knowable at upload: a skill can contribute file search
+     * or code execution for the turn without appearing in agent.tools. */
+    expect(
+      resolveUploadDestination({
+        ...base,
+        deliveryPath: 'none',
+        agentTools: [],
+        isMessageAttachment: true,
+      }).rejection,
+    ).toBeUndefined();
+  });
+
   it('leaves a message attachment unclaimed', () => {
     expect(
       resolveUploadDestination({
