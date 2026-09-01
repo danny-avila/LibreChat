@@ -480,3 +480,347 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     );
   });
 });
+
+describe('ContentParts — synthesized activity folds', () => {
+  /** Settled by default: the fold is content-derived, so history and a live
+   *  run partition identically. The streaming case gets its own test below. */
+  const baseProps = {
+    messageId: 'msg1',
+    isCreatedByUser: false,
+    isLast: true,
+    isSubmitting: false,
+    isLatestMessage: true,
+  };
+
+  const makeChildLabel = (label: string): TMessageContentParts =>
+    ({
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: label,
+      pending: false,
+    }) as unknown as TMessageContentParts;
+
+  const TICKER = 'Confirmed the fix';
+  const FIRST = 'Found 43 available GitHub tools';
+
+  const labeledRun = () => [
+    makeMcpToolCall('t1'),
+    makeChildLabel(FIRST),
+    makeMcpToolCall('t2'),
+    makeChildLabel(TICKER),
+  ];
+
+  /** The card's header and the last sub-group's header carry the same text by
+   *  design — the ticker IS that sub-group's line. The card is the outer one. */
+  const foldHeader = () => screen.getAllByRole('button', { name: TICKER })[0];
+
+  it('folds a labeled run into one collapsed card headed by the newest label', () => {
+    renderContentParts({ ...baseProps, content: labeledRun() });
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'false');
+    /** Collapsed means unmounted, so the earlier row is not merely hidden. */
+    expect(screen.queryByRole('button', { name: FIRST })).toBeNull();
+    expect(screen.getAllByRole('button', { name: TICKER })).toHaveLength(1);
+  });
+
+  it('reveals the sub-groups, each still collapsed, when the card is opened', () => {
+    renderContentParts({ ...baseProps, content: labeledRun() });
+
+    fireEvent.click(foldHeader());
+
+    expect(screen.getByRole('button', { name: FIRST })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getAllByRole('button', { name: TICKER })[1]).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('leaves the in-flight tool call outside the card', () => {
+    renderContentParts({
+      ...baseProps,
+      isSubmitting: true,
+      content: [...labeledRun(), makeMcpToolCall('t3', false)],
+    });
+
+    /** The call the reader is watching stays a sibling of the card, so it is
+     *  still on screen once the fold settles shut over everything before it. */
+    const panel = screen.getByTestId('activity-phase-panel');
+    expect(panel.contains(screen.getByTestId('tool-call'))).toBe(false);
+  });
+
+  it('keeps the reader’s toggle when the ticker advances', () => {
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          content={[...labeledRun(), makeMcpToolCall('t3'), makeChildLabel('Checked the callers')]}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Checked the callers' })[0]).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('keeps the reader’s toggle when a server summary replaces the ticker', () => {
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          content={[...labeledRun(), makePhasePart(0, 4, 'Reviewed the release paths')]}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Reviewed the release paths' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('does not replay the entrance fold when the summary replaces the ticker', () => {
+    const streaming = { ...baseProps, isSubmitting: true };
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...streaming} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...streaming}
+          content={[...labeledRun(), makePhasePart(0, 4, 'Reviewed the release paths')]}
+        />
+      </RecoilRoot>,
+    );
+
+    /** The entrance mounts a card OPEN and folds it shut over the next two
+     *  painted frames. Playing it here would flash every sub-group back open
+     *  on top of a card the reader already watched fold. */
+    expect(screen.getByRole('button', { name: 'Reviewed the release paths' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('ticks the header forward as each sub-group resolves', () => {
+    const steps = ['Read the config', 'Checked the callers', 'Confirmed the fix'];
+    const content: TMessageContentParts[] = [];
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={[]} />
+      </RecoilRoot>,
+    );
+
+    const headers: string[] = [];
+    steps.forEach((step, index) => {
+      content.push(makeMcpToolCall(`t${index}`), makeChildLabel(step));
+      rerender(
+        <RecoilRoot>
+          <ContentParts {...baseProps} content={[...content]} />
+        </RecoilRoot>,
+      );
+      const panel = screen.queryByTestId('activity-phase-panel');
+      if (panel == null) {
+        return;
+      }
+      const card = panel.parentElement?.querySelector('button');
+      headers.push(card?.getAttribute('aria-label') ?? '');
+      expect(card).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    /** One card from the second activity on, its line always the newest —
+     *  and never re-opening underneath the reader as the run advances. */
+    expect(headers).toEqual(['Checked the callers', 'Confirmed the fix']);
+  });
+
+  it('refuses to fold a span holding an unresolved approval', () => {
+    const awaiting = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 't2',
+        name: `getTinyImage${MCP_DELIMITER}Everything`,
+        args: '{}',
+        output: '',
+        approval: { state: 'pending' },
+      },
+    } as unknown as TMessageContentParts;
+
+    renderContentParts({
+      ...baseProps,
+      content: [makeMcpToolCall('t1'), makeChildLabel(FIRST), awaiting, makeChildLabel(TICKER)],
+    });
+
+    /** No card: the run is blocked on the reader, and the request must not sit
+     *  behind a disclosure they have to discover. */
+    expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
+    expect(screen.getByRole('button', { name: FIRST })).toBeInTheDocument();
+  });
+
+  it('never mounts a fold expanded while the run is live', () => {
+    /** The entrance mounts a card OPEN and folds it shut. This component
+     *  remounts mid-run — `messageId` is in the key and changes when the
+     *  placeholder hydrates to the server id — so an entrance here would flash
+     *  the whole fold back open partway through the run. */
+    renderContentParts({ ...baseProps, isSubmitting: true, content: labeledRun() });
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: FIRST })).toBeNull();
+  });
+
+  it('keeps the toggle even when the summary claims more content than the fold', () => {
+    /** The server extends a phase back across short intermediate text that the
+     *  client treats as a boundary, so the two spans start in different
+     *  places. They still share their first tool call, which is what the card
+     *  is anchored to — so this is the same card gaining content, not a new
+     *  one, and the reader's choice rides through. */
+    const preface = makeTextPart('Checking now.');
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={[preface, ...labeledRun()]} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          content={[preface, ...labeledRun(), makePhasePart(0, 5, 'Reviewed the release paths')]}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Reviewed the release paths' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('refuses to fold a span whose tool output is hoisted outside its group', () => {
+    /** `ToolCallGroup` renders `groupAttachments` outside its own panel so a
+     *  generated image survives collapsing the group. A fold would put that
+     *  hoist back inside a disclosure. */
+    renderContentParts({
+      ...baseProps,
+      content: labeledRun(),
+      attachments: [imageAttachment('t2', 'chart.png')],
+    });
+
+    expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
+    expect(screen.getByRole('button', { name: FIRST })).toBeInTheDocument();
+  });
+
+  it('keeps the reader’s card open when the message takes its server id', () => {
+    /** The assistant streams under a synthetic `<userId>_` for the whole run
+     *  and only takes its real id at finalize. A key carrying `messageId`
+     *  would remount every card at that moment and drop the toggle. */
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="server-id" content={labeledRun()} />
+      </RecoilRoot>,
+    );
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('resets the card when the reader pages to another sibling', () => {
+    /** `MultiMessage` reuses this instance across siblings, so a card anchored
+     *  only to a content index would carry one response's open state into an
+     *  unrelated one. The provider id on the span's first call separates them.
+     *  No message identity can: `messageId` moves at settle too. */
+    const otherSibling = [
+      makeMcpToolCall('other-1'),
+      makeChildLabel(FIRST),
+      makeMcpToolCall('other-2'),
+      makeChildLabel(TICKER),
+    ];
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} siblingIdx={0} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          siblingIdx={1}
+          messageId="sibling-msg"
+          content={otherSibling}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('survives background churn that renumbers the response in place', () => {
+    /** `MultiMessage` recomputes the viewed response's positional index when a
+     *  sibling is added or dropped around it — dropping an optimistic row
+     *  moves the newest response from index 1 to 0 while the reader stays on
+     *  it. Nothing about the response changed, so neither should the card. */
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} siblingIdx={1} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+    fireEvent.click(foldHeader());
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} siblingIdx={0} content={labeledRun()} />
+      </RecoilRoot>,
+    );
+
+    expect(foldHeader()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('shows exactly one streaming cursor when a placeholder trails the fold', () => {
+    /** Providers append an empty TEXT slot after visible output. The cursor
+     *  belongs to the card (the run's tail is inside its span), and that
+     *  trailing slot looks like the initial waiting state from inside its own
+     *  segment — so without the ownership signal both render one. */
+    renderContentParts({
+      ...baseProps,
+      isSubmitting: true,
+      content: [...labeledRun(), makeTextPart('')],
+    });
+
+    expect(screen.getAllByTestId('empty-text')).toHaveLength(1);
+  });
+
+  it('leaves an unlabeled run rendering exactly as before', () => {
+    renderContentParts({
+      ...baseProps,
+      content: [makeMcpToolCall('t1'), makeMcpToolCall('t2')],
+    });
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+    expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
+  });
+});

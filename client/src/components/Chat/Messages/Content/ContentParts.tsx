@@ -8,6 +8,7 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
+import type { ActivityPhaseSegment } from '~/utils/activityLabels';
 import {
   mapAttachments,
   getPartKeyIndex,
@@ -216,6 +217,11 @@ type ContentPartsProps = {
   nestedActivityPhase?: boolean;
   /** Internal signal that this segment renders inside a completed phase card. */
   withinActivityPhase?: boolean;
+  /** Internal signal that a phase card already carries this message's
+   *  streaming cursor. A solitary empty provider slot looks like the initial
+   *  waiting state from inside its own segment, so without this it renders a
+   *  second cursor beside the one already on screen. */
+  cursorOwnedElsewhere?: boolean;
   /** Internal signal that the parent already removed message-level workspace attachments. */
   workspaceAttachmentsPartitioned?: boolean;
   /** Absolute transcript index represented by `content[0]` in a phase slice. */
@@ -257,6 +263,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   createdAt,
   nestedActivityPhase = false,
   withinActivityPhase = false,
+  cursorOwnedElsewhere = false,
   workspaceAttachmentsPartitioned = false,
   contentIndexOffset = 0,
   contentIndices,
@@ -328,13 +335,20 @@ const ContentPartsBody = memo(function ContentPartsBody({
     const labels = new Map<string, number>();
     const ordinals = new Map<number, number>();
     for (const segment of phaseSegments ?? []) {
-      if (segment.type === 'phase') {
-        const text = getActivityLabelText(segment.labelPart);
-        const occurrence = (labels.get(text) ?? 0) + 1;
-        indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
-        labels.set(text, occurrence);
-        ordinals.set(getPartKeyIndex(segment.labelPart, segment.labelIndex), occurrence);
+      if (segment.type !== 'phase') {
+        continue;
       }
+      /** Synthesized cards are excluded: their header key moves with the
+       *  ticker, and a moving key reads here as a re-key — which would
+       *  suppress the entrance fold on every real marker after it. */
+      if (segment.synthesized === true) {
+        continue;
+      }
+      const text = getActivityLabelText(segment.labelPart);
+      const occurrence = (labels.get(text) ?? 0) + 1;
+      indices.add(getPartKeyIndex(segment.labelPart, segment.labelIndex));
+      labels.set(text, occurrence);
+      ordinals.set(getPartKeyIndex(segment.labelPart, segment.labelIndex), occurrence);
     }
     return { indices, labels, ordinals };
   }, [phaseSegments]);
@@ -676,12 +690,55 @@ const ContentPartsBody = memo(function ContentPartsBody({
       }
       return absoluteIndexAt(segment.startIndex);
     };
+    /** Stable render identity for a phase card. See the key comment below.
+     *
+     *  Anchored to the first TOOL CALL, not the span's first part, for the
+     *  reason `getToolGroupId` gives: an empty leading TEXT or THINK is
+     *  DROPPED by `preserveStreamedContentIdentity` at settle, which would
+     *  move a first-part anchor and remount the card exactly when the run
+     *  finishes. The tool calls themselves do not move. */
+    const phaseCardKey = (segment: Extract<ActivityPhaseSegment, { type: 'phase' }>): string => {
+      for (let position = 0; position < segment.content.length; position += 1) {
+        const part = segment.content[position];
+        const toolCallId = part == null ? '' : getToolCallId(part);
+        if (toolCallId) {
+          const anchor = getPartKeyIndex(part, absoluteIndexAt(segment.contentIndices[position]));
+          return `${toolCallId}:${anchor}`;
+        }
+      }
+      /** No provider id in the span at all — id-less legacy calls,
+       *  reasoning-only, or children compacted away. A bare position cannot
+       *  separate two siblings whose cards start at the same index, so this
+       *  branch carries the message-change counter, exactly as
+       *  `getToolGroupId` does for its own id-less fallback. The tradeoff is
+       *  the same one accepted there: the counter also advances at settle, so
+       *  these cards remount then. */
+      const position = segment.hasContent
+        ? segmentKeyIndex(segment)
+        : getPartKeyIndex(segment.labelPart, segment.labelIndex);
+      return `fallback:${fallbackScope}:${position}`;
+    };
+    /** Exactly one thing may hold the streaming cursor. A card carries it
+     *  below its own header whenever the tail of the run sits inside its
+     *  span, which puts every sibling segment out of the running. */
+    const cursorOwnedByCard =
+      isLast &&
+      effectiveIsSubmitting &&
+      phaseSegments.some((segment) => {
+        if (segment.type !== 'phase') {
+          return false;
+        }
+        return segment.synthesized === true
+          ? segment.contentIndices.map(absoluteIndexAt).includes(globalLastContentIdx)
+          : absoluteIndexAt(segment.labelIndex) === globalLastContentIdx;
+      });
     const renderSegment = (
       segmentContent: Array<TMessageContentParts | undefined>,
       segmentStartIndex: number,
       segmentIndices: ReadonlyArray<number>,
       key: string,
       withinPhase = false,
+      ownsCursor = false,
     ) => {
       return (
         <ContentPartsBody
@@ -694,11 +751,12 @@ const ContentPartsBody = memo(function ContentPartsBody({
           attachments={inlineAttachments}
           searchResults={searchResults}
           isCreatedByUser={isCreatedByUser}
-          isLast={isLast && segmentIndices.includes(globalLastContentIdx)}
+          isLast={!ownsCursor && isLast && segmentIndices.includes(globalLastContentIdx)}
           isSubmitting={isSubmitting}
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
           withinActivityPhase={withinPhase}
+          cursorOwnedElsewhere={cursorOwnedByCard}
           workspaceAttachmentsPartitioned
           contentIndexOffset={segmentStartIndex}
           contentIndices={segmentIndices}
@@ -727,17 +785,91 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 `phase-adjacent-${segmentKeyIndex(segment)}`,
               );
             }
+            const synthesized = segment.synthesized === true;
+            /** Entrance bookkeeping still keys on the marker. */
             const phaseKeyIndex = getPartKeyIndex(segment.labelPart, segment.labelIndex);
+            /** The RENDER key is the span, not the header. A synthesized card's
+             *  header ticks with the newest child label, so keying on it would
+             *  remount the card on every tick — and when the summary finally
+             *  lands, a card keyed the same way as the fold it replaces is
+             *  RECONCILED rather than remounted, so a reader who opened the
+             *  ticker keeps it open with no state to hand over. A phase with no
+             *  children has no span to anchor to and keeps its marker key.
+             *
+             *  The first tool call carries it — its provider id paired with
+             *  its own position. No message identity goes into it, and none
+             *  can: `MultiMessage` reuses this instance across siblings, but
+             *  `messageId` moves at settle (batched with
+             *  `setIsSubmitting(false)`, so that commit is indistinguishable
+             *  from a sibling switch) and the positional `siblingIdx` moves
+             *  under background churn that deliberately PRESERVES the viewed
+             *  response. Both halves survive those: the position is
+             *  content-derived, and the provider id is what separates two
+             *  siblings whose cards start at the same index. Pairing them also
+             *  keeps repeated provider ids in one message apart, the way
+             *  `getToolGroupId` uses an occurrence counter. */
+            const cardKey = phaseCardKey(segment);
             const labelText = getActivityLabelText(segment.labelPart);
+            const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
+            /** While a run streams, the cursor sits INSIDE a synthesized span.
+             *  A collapsed card would swallow it, so the card carries it below
+             *  the header and the nested body stands down. */
+            const ownsCursor =
+              synthesized &&
+              isLast &&
+              effectiveIsSubmitting &&
+              segmentIndices.includes(globalLastContentIdx);
+            const hasPendingApproval = segment.content.some(
+              (part) => part != null && hasPendingApprovalInPart(part),
+            );
+            /** `ToolCallGroup` hoists `groupAttachments` OUTSIDE its own panel
+             *  precisely so a generated image or file survives collapsing the
+             *  group. Folding that group into a card puts the hoist back
+             *  inside a disclosure and the output vanishes — and these never
+             *  appear in `segment.content`, so the visible-part allowlist
+             *  cannot catch them. */
+            const hasSpanAttachments = segment.content.some(
+              (part) =>
+                part != null &&
+                (filterAttachmentsForPart(
+                  attachmentMap[getToolCallId(part)],
+                  getPartAgentId(part),
+                  getPartStepId(part),
+                  getSiblingStepIds(part, resolvedToolCallStepOwners),
+                )?.length ?? 0) > 0,
+            );
+            /** A fold summarizes work that is DONE. An unresolved approval is
+             *  the run asking the reader for something and blocking until it
+             *  gets it — never put that behind a disclosure they have to find.
+             *  A server marker cannot hit this (it is emitted after the batch
+             *  resolves), but a subagent nested in an already-labeled group
+             *  can raise one long after its parent's label filled. The span
+             *  renders exactly as it would without the feature until it
+             *  clears, then folds. The same escape covers hoisted tool output. */
+            if (synthesized && (hasPendingApproval || hasSpanAttachments)) {
+              return renderSegment(
+                segment.content,
+                absoluteIndexAt(segment.startIndex),
+                segmentIndices,
+                `phase-awaiting-${cardKey}`,
+              );
+            }
             return (
               <ActivityPhaseGroup
-                key={`activity-phase-${messageId}-${phaseKeyIndex}`}
+                key={`activity-phase-${cardKey}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
-                hasPendingApproval={segment.content.some(
-                  (part) => part != null && hasPendingApprovalInPart(part),
-                )}
+                hasPendingApproval={hasPendingApproval}
                 animateEntrance={
+                  /** Never for a synthesized card. The entrance mounts a card
+                   *  OPEN and folds it shut, and this component remounts
+                   *  mid-run — the key carries `messageId`, which changes when
+                   *  the placeholder hydrates to the server id, and a reconnect
+                   *  mounts straight onto existing labeled content. Either
+                   *  would flash the whole fold back open. Fold GROWTH is
+                   *  already unanimated, so formation matching it is the
+                   *  consistent behavior, not a downgrade. */
+                  !synthesized &&
                   previousPhases != null &&
                   !previousPhases.indices.has(phaseKeyIndex) &&
                   (!hasPhaseRekey ||
@@ -745,17 +877,20 @@ const ContentPartsBody = memo(function ContentPartsBody({
                       (previousPhases.labels.get(labelText) ?? 0))
                 }
                 showCursor={
-                  isLast &&
-                  effectiveIsSubmitting &&
-                  absoluteIndexAt(segment.labelIndex) === globalLastContentIdx
+                  synthesized
+                    ? ownsCursor
+                    : isLast &&
+                      effectiveIsSubmitting &&
+                      absoluteIndexAt(segment.labelIndex) === globalLastContentIdx
                 }
               >
                 {renderSegment(
                   segment.content,
                   absoluteIndexAt(segment.startIndex),
-                  segment.contentIndices.map(absoluteIndexAt),
-                  `phase-content-${phaseKeyIndex}`,
+                  segmentIndices,
+                  `phase-content-${cardKey}`,
                   true,
+                  ownsCursor,
                 )}
               </ActivityPhaseGroup>
             );
@@ -773,7 +908,10 @@ const ContentPartsBody = memo(function ContentPartsBody({
    *  flows share the gated header-axis nudge. Never solitary mid-stream, so
    *  empty TEXT after real parts keeps its flush in-flow cursor. */
   const solitaryEmptyText = safeContent.length === 1 && isEmptyTextPart(safeContent[0]);
-  const showEmptyCursor = (safeContent.length === 0 || solitaryEmptyText) && effectiveIsSubmitting;
+  const showEmptyCursor =
+    (safeContent.length === 0 || solitaryEmptyText) &&
+    effectiveIsSubmitting &&
+    !cursorOwnedElsewhere;
   /** Skips trailing blank label reservations and empty provider placeholders,
    * keeping the cursor attached to the last visible output. */
   const relativeLastContentIdx = lastCursorContentIdx(safeContent);
