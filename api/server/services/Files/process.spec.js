@@ -2551,13 +2551,14 @@ describe('permanent unified uploads and unknown tool sets', () => {
       width: 10,
       height: 10,
     });
+    const storedFileUpload = jest.fn().mockResolvedValue({
+      bytes: 4096,
+      filename: 'photo.jpg',
+      filepath: '/uploads/photo.jpg',
+    });
     getStrategyFunctions.mockReturnValue({
       handleImageUpload,
-      handleFileUpload: jest.fn().mockResolvedValue({
-        bytes: 64,
-        filename: 'photo.jpg',
-        filepath: '/uploads/photo.jpg',
-      }),
+      handleFileUpload: storedFileUpload,
     });
     const req = makeReq({ mimetype: 'image/jpeg', ocrConfig: null });
     req.body.endpoint = EModelEndpoint.agents;
@@ -2575,6 +2576,16 @@ describe('permanent unified uploads and unknown tool sets', () => {
     /* The conversion runs under an id of its own, so persisting it too would leave a
      * message-attachment row referenced by nothing beside the record above. */
     expect(db.createFile).toHaveBeenCalledTimes(1);
+    /* And the conversion is the only storage write: uploading the original first left a
+     * second object nothing references. */
+    expect(handleImageUpload).toHaveBeenCalledTimes(1);
+    expect(storedFileUpload).not.toHaveBeenCalled();
+    /* Size and dimensions describe the bytes actually stored, which the persistent-file
+     * screening later charges against the agent's allowance. */
+    expect(db.createFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bytes: 64, width: 10, height: 10 }),
+      true,
+    );
   });
 
   test('treats an explicit message_file of "false" as a permanent upload', async () => {
@@ -2609,8 +2620,17 @@ describe('permanent unified uploads and unknown tool sets', () => {
       async (_req, capability) => capability !== AgentCapabilities.execute_code,
     );
 
+    /* A searchable type routed off the model path, since a consumer is only chosen for a
+     * file kept off it, and only one that can read the file. */
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      defaultLLMDeliveryPath: { overrides: { [PDF_MIME]: 'none' } },
+    });
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
     await processAgentFileUpload({
-      req: zipReq(),
+      req,
       res: mockRes,
       metadata: {
         agent_id: 'agent-abc',

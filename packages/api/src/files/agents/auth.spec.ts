@@ -1,4 +1,4 @@
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles, PermissionBits } from 'librechat-data-provider';
 import { checkAgentUploadAuth } from './auth';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -47,14 +47,46 @@ describe('checkAgentUploadAuth', () => {
     expect(checkPermission).not.toHaveBeenCalled();
   });
 
-  it('skips the check for message attachments, which belong to the conversation', async () => {
+  it('asks only for view access on a message attachment', async () => {
+    /* The attachment belongs to the conversation rather than the agent, so edit access is
+     * too much. Skipping the check entirely was too little: the upload is validated under
+     * the named agent's provider, so its rejections describe a record the caller may not
+     * be allowed to see. */
+    checkPermission.mockResolvedValue(true);
+
     const result = await checkAgentUploadAuth(
       {
-        userId: 'any-user',
+        userId: 'viewer-id',
+        userRole: SystemRoles.USER,
+        agentId: 'shared-agent',
+        messageFile: 'true',
+      },
+      { getAgent, checkPermission },
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(checkPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ requiredPermission: PermissionBits.VIEW }),
+    );
+  });
+
+  it('denies a message attachment naming an agent the caller cannot view', async () => {
+    const result = await checkAgentUploadAuth(
+      {
+        userId: 'attacker-id',
         userRole: SystemRoles.USER,
         agentId: 'victim-agent',
         messageFile: 'true',
       },
+      { getAgent, checkPermission },
+    );
+
+    expect(result.allowed).toBe(false);
+  });
+
+  it('leaves an upload naming no agent alone', async () => {
+    const result = await checkAgentUploadAuth(
+      { userId: 'any-user', userRole: SystemRoles.USER, messageFile: 'true' },
       { getAgent, checkPermission },
     );
 

@@ -6,7 +6,7 @@ import {
   isKnownProviderIdentifier,
   isMediaSupportedProvider,
 } from './schemas';
-import { isBedrockDocumentType } from './file-config';
+import { isBedrockDocumentType, retrievalMimeTypes, codeInterpreterMimeTypes } from './file-config';
 import { EToolResources } from './types/assistants';
 
 /** Audio and video reach the model only through the media encoders, which support a
@@ -222,16 +222,23 @@ export function resolveUploadLLMDeliveryPath({
 }
 
 /**
- * Whether a file tool can do anything with this type. `file_search` indexes extracted
- * text, so an image gives it nothing to embed. Shared with the upload guard so selection
- * and rejection cannot disagree about the same pairing.
+ * Whether a file tool can do anything with this type, judged by the same lists the client
+ * offers destinations from. `file_search` indexes extracted text, so it takes neither an
+ * image nor an archive the vector store cannot read, while code execution accepts a wider
+ * set. Shared with the upload guard so selection and rejection cannot disagree.
  */
 export function canToolResourceConsume(toolResource: string, mimeType: string): boolean {
   if (toolResource === EToolResources.file_search) {
-    return !mimeType.startsWith('image');
+    return !mimeType.startsWith('image') && matchesMimeList(mimeType, retrievalMimeTypes);
+  }
+  if (toolResource === EToolResources.execute_code) {
+    return matchesMimeList(mimeType, codeInterpreterMimeTypes);
   }
   return true;
 }
+
+const matchesMimeList = (mimeType: string, patterns: RegExp[]): boolean =>
+  patterns.some((pattern) => pattern.test(mimeType));
 
 /** Why an upload cannot be accepted, when nothing would be able to read it. */
 export type UploadRejection = 'no-agent-resource' | 'context-disabled';

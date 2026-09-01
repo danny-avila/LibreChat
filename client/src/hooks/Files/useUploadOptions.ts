@@ -51,7 +51,7 @@ export default function useUploadOptions() {
 
   const endpointFileConfig = getEndpointFileConfig({ fileConfig, endpoint, endpointType });
   const uploadsDisabled = endpointFileConfig.disabled === true;
-  const isUnifiedMode = isUnifiedUploadMode(endpointFileConfig, isConfigPending);
+  const isUnifiedMode = isUnifiedUploadMode(endpointFileConfig, isFileConfigLoaded);
   const endpointSupportedMimeTypes = endpointFileConfig.supportedMimeTypes;
 
   const getOptions = useCallback(
@@ -84,5 +84,11 @@ export default function useUploadOptions() {
     ],
   );
 
-  return { getOptions, uploadsDisabled, isConfigPending, isUnifiedMode };
+  return {
+    getOptions,
+    uploadsDisabled,
+    isConfigPending,
+    isConfigResolved: isFileConfigLoaded,
+    isUnifiedMode,
+  };
 }

@@ -58,15 +58,11 @@ function AttachFileChat({
     );
   }, [isAgents, conversation?.agent_id, conversation?.useResponsesApi, agentData, agentsMap]);
 
-  const {
-    data: fileConfig = null,
-    isError: isFileConfigError,
-    isPaused: isFileConfigPaused,
-    isSuccess: isFileConfigLoaded,
-  } = useGetFileConfig({
+  /* Success, not merely settled: a failed or paused fetch leaves the built-in defaults in
+   * place, where the absent opt-out reads as unified. */
+  const { data: fileConfig = null, isSuccess: isFileConfigLoaded } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-  const isFileConfigPending = !isFileConfigLoaded && !isFileConfigError && !isFileConfigPaused;
 
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
@@ -104,10 +100,10 @@ function AttachFileChat({
     [disableInputs, endpointFileConfig?.disabled],
   );
   /* Resolved here rather than in the menu: an unresolved config reads as unified, which
-   * would show the wrong uploader on a legacy deployment until the query lands. */
+   * would show the wrong uploader on a legacy deployment. */
   const isUnifiedMode = useMemo(
-    () => isUnifiedUploadMode(endpointFileConfig, isFileConfigPending),
-    [endpointFileConfig, isFileConfigPending],
+    () => isUnifiedUploadMode(endpointFileConfig, isFileConfigLoaded),
+    [endpointFileConfig, isFileConfigLoaded],
   );
 
   if (isAssistants && endpointSupportsFiles && !isUploadDisabled) {
