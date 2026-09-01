@@ -394,8 +394,25 @@ export function createCodeEnvironmentRegistry(
       const accessibleIds = new Set(
         (await findAccessibleResourceIds(principals)).map((id) => id.toString()),
       );
-      return (cached as CachedAccessibleCodeEnvironmentConfiguration[])
-        .filter(({ resourceId }) => accessibleIds.has(resourceId))
+      const cachedConfigurations = cached as CachedAccessibleCodeEnvironmentConfiguration[];
+      const liveEnvironments = await methods.findCodeEnvironmentsByIds(
+        cachedConfigurations.map(({ resourceId }) => resourceId),
+      );
+      const userId = actor.userId.toString();
+      const liveIds = new Set(
+        liveEnvironments
+          .filter(
+            (environment) =>
+              environment.registrationPendingAt == null &&
+              environment.deletionStartedAt == null &&
+              environment.deletionCommittedAt == null &&
+              (environment.workerPrincipal?.type !== 'user' ||
+                environment.workerPrincipal.id === userId),
+          )
+          .map((environment) => environment._id.toString()),
+      );
+      return cachedConfigurations
+        .filter(({ resourceId }) => accessibleIds.has(resourceId) && liveIds.has(resourceId))
         .map(toPublicConfiguration);
     }
 

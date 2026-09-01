@@ -17,6 +17,9 @@ export type CodeEnvironment = {
   deletionLeaseExpiresAt?: Date;
   deletionCommittedAt?: Date;
   registrationPendingAt?: Date;
+  registrationLeaseId?: string;
+  registrationLeaseExpiresAt?: Date;
+  registrationReconcileAfter?: Date;
   revocationPendingAt?: Date;
   revocationAttempts?: number;
   revocationLastError?: string;

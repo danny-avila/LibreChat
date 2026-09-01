@@ -68,6 +68,9 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
     deletionLeaseExpiresAt: { type: Date },
     deletionCommittedAt: { type: Date },
     registrationPendingAt: { type: Date },
+    registrationLeaseId: { type: String },
+    registrationLeaseExpiresAt: { type: Date },
+    registrationReconcileAfter: { type: Date },
     revocationPendingAt: {
       type: Date,
     },

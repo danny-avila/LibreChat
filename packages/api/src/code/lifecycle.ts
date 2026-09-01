@@ -7,6 +7,7 @@ import { readCodeBridgeSecret, revokeCodeBridgeWorker } from './bridge';
 const RECONCILE_INTERVAL_MS = 60_000;
 const RECONCILE_LEASE_MS = 2 * 60_000;
 const REGISTRATION_STALE_MS = 5 * 60_000;
+const REGISTRATION_RETRY_MS = 5 * 60_000;
 let reconcileTimer: NodeJS.Timeout | undefined;
 let reconcileInFlight: Promise<void> | undefined;
 
@@ -35,6 +36,7 @@ export async function reconcileCodeEnvironmentLifecycle({
       deletionCommittedAt: { $exists: false },
       deletionLeaseExpiresAt: { $lte: now },
     })
+      .sort({ _id: 1 })
       .limit(limit)
       .select('_id')
       .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
@@ -42,20 +44,26 @@ export async function reconcileCodeEnvironmentLifecycle({
       const environment = await methods.beginCodeEnvironmentRemoval(candidate._id);
       if (environment == null || environment.deletionLeaseId == null) continue;
       const leaseId = environment.deletionLeaseId;
-      if (environment.workerPrincipal?.type !== 'user' || environment.workerId == null) {
+      const Agent = mongoose.models.Agent;
+      if (
+        Agent != null &&
+        (await Agent.exists({ code_environment_id: environment.environmentId })) != null
+      ) {
         await methods.cancelCodeEnvironmentRemoval(environment._id, leaseId);
         continue;
       }
-      const tokenEnv = environment.revocationTokenEnv;
-      const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
-      if (!token) continue;
       try {
-        await revokeCodeBridgeWorker({
-          baseURL: environment.baseURL,
-          token,
-          workerId: environment.workerId,
-          fetchImpl,
-        });
+        if (environment.workerPrincipal?.type === 'user') {
+          const tokenEnv = environment.revocationTokenEnv;
+          const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
+          if (!token || environment.workerId == null) continue;
+          await revokeCodeBridgeWorker({
+            baseURL: environment.baseURL,
+            token,
+            workerId: environment.workerId,
+            fetchImpl,
+          });
+        }
         await methods.commitCodeEnvironmentRemoval(environment._id, leaseId);
         await AclEntry.deleteMany({
           resourceType: ResourceType.CODE_ENVIRONMENT,
@@ -67,16 +75,74 @@ export async function reconcileCodeEnvironmentLifecycle({
       }
     }
     const staleRegistration = new Date(Date.now() - REGISTRATION_STALE_MS);
-    const pendingRegistrations = await CodeEnvironment.find({
+    const registrationCandidates = await CodeEnvironment.find({
       registrationPendingAt: { $lte: staleRegistration },
+      $and: [
+        {
+          $or: [
+            { registrationReconcileAfter: { $exists: false } },
+            { registrationReconcileAfter: { $lte: now } },
+          ],
+        },
+        {
+          $or: [
+            { registrationLeaseExpiresAt: { $exists: false } },
+            { registrationLeaseExpiresAt: { $lte: now } },
+          ],
+        },
+      ],
     })
+      .sort({ registrationReconcileAfter: 1, _id: 1 })
       .limit(limit)
-      .lean<CodeEnvironmentDocument[]>();
-    for (const environment of pendingRegistrations) {
+      .select('_id')
+      .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
+    for (const candidate of registrationCandidates) {
+      const leaseId = new mongoose.Types.ObjectId().toHexString();
+      const leaseNow = new Date();
+      const environment = await CodeEnvironment.findOneAndUpdate(
+        {
+          _id: candidate._id,
+          registrationPendingAt: { $lte: staleRegistration },
+          $and: [
+            {
+              $or: [
+                { registrationReconcileAfter: { $exists: false } },
+                { registrationReconcileAfter: { $lte: leaseNow } },
+              ],
+            },
+            {
+              $or: [
+                { registrationLeaseExpiresAt: { $exists: false } },
+                { registrationLeaseExpiresAt: { $lte: leaseNow } },
+              ],
+            },
+          ],
+        },
+        {
+          $set: {
+            registrationLeaseId: leaseId,
+            registrationLeaseExpiresAt: new Date(leaseNow.getTime() + RECONCILE_LEASE_MS),
+          },
+        },
+        { new: true },
+      ).lean<CodeEnvironmentDocument>();
+      if (environment == null) continue;
+      const deferRegistration = async (): Promise<void> => {
+        await CodeEnvironment.updateOne(
+          { _id: environment._id, registrationLeaseId: leaseId },
+          {
+            $set: { registrationReconcileAfter: new Date(Date.now() + REGISTRATION_RETRY_MS) },
+            $unset: { registrationLeaseId: 1, registrationLeaseExpiresAt: 1 },
+          },
+        );
+      };
       const tokenEnv = environment.revocationTokenEnv;
       const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
       if (environment.workerId != null) {
-        if (!token) continue;
+        if (!token) {
+          await deferRegistration();
+          continue;
+        }
         try {
           await revokeCodeBridgeWorker({
             baseURL: environment.baseURL,
@@ -85,6 +151,7 @@ export async function reconcileCodeEnvironmentLifecycle({
             fetchImpl,
           });
         } catch {
+          await deferRegistration();
           continue;
         }
       }
@@ -94,7 +161,7 @@ export async function reconcileCodeEnvironmentLifecycle({
       });
       await CodeEnvironment.deleteOne({
         _id: environment._id,
-        registrationPendingAt: environment.registrationPendingAt,
+        registrationLeaseId: leaseId,
       });
     }
 

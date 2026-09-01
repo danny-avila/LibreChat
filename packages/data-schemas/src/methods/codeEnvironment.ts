@@ -261,8 +261,12 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
 
   async function completeCodeEnvironmentRegistration(id: string | Types.ObjectId): Promise<void> {
     const result = await model().updateOne(
-      { _id: id, registrationPendingAt: { $exists: true } },
-      { $unset: { registrationPendingAt: 1 } },
+      {
+        _id: id,
+        registrationPendingAt: { $exists: true },
+        registrationLeaseId: { $exists: false },
+      },
+      { $unset: { registrationPendingAt: 1, registrationReconcileAfter: 1 } },
     );
     if (result.matchedCount !== 1) {
       throw new Error('Code environment registration could not be committed');

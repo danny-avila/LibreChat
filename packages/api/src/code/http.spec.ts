@@ -58,6 +58,42 @@ describe('code environment HTTP handlers', () => {
     expect(res.body).toEqual({ environments: [], controlPlanes: [] });
   });
 
+  test('lists only principal control planes present in the caller effective policy', async () => {
+    const getAppConfig = jest.fn().mockResolvedValue({
+      endpoints: { [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [] } } },
+    } as unknown as AppConfig);
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
+      registry: {
+        register: jest.fn(),
+        listAccessible: jest.fn().mockResolvedValue([]),
+        remove: jest.fn(),
+      },
+      principalAuthEnabled: () => true,
+    });
+    const res = response();
+
+    await handlers.list(
+      {
+        user: {
+          id: '68b2f0c498f24c1e78fa0001',
+          role: 'USER',
+          tenantId: 'tenant-1',
+        },
+      } as never,
+      res as never,
+    );
+
+    expect(res.body).toEqual({ environments: [], controlPlanes: [] });
+    expect(getAppConfig).toHaveBeenCalledWith({
+      role: 'USER',
+      userId: '68b2f0c498f24c1e78fa0001',
+      idOnTheSource: undefined,
+      tenantId: 'tenant-1',
+      failClosed: true,
+    });
+  });
+
   test('returns 400 when registration has no request body', async () => {
     const register = jest.fn();
     const handlers = createCodeEnvironmentHttpHandlers({
@@ -242,6 +278,88 @@ describe('code environment HTTP handlers', () => {
     expect(res.statusCode).toBe(409);
     expect(res.body).toEqual({ error: 'Personal code environment limit reached' });
     expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.librechat.example/v1/bridge/workers/code-generated/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  test('revokes through the registry fence when the principal becomes inactive after registration', async () => {
+    const remove = jest.fn(
+      async ({ beforeDelete }: { beforeDelete?: (target: never) => Promise<void> }) => {
+        await beforeDelete?.({} as never);
+        return { id: 'code-generated' } as never;
+      },
+    );
+    const principalIsActive = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const fetchImpl = jest.fn(
+      async (input: string | URL | Request) =>
+        ({
+          ok: true,
+          json: async () =>
+            String(input).endsWith('/bridge/pairings')
+              ? {
+                  protocolVersion: 1,
+                  workerId: 'code-generated',
+                  code: 'a'.repeat(32),
+                  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+                }
+              : { protocolVersion: 1, revoked: true },
+        }) as Response,
+    );
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example/v1',
+                  owner: 'deployment',
+                  pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: {
+        register: jest.fn().mockResolvedValue({ id: 'code-generated' }),
+        listAccessible: jest.fn(),
+        remove,
+      },
+      createEnvironmentId: () => 'code-generated',
+      readSecret: () => 'administrator-token',
+      principalAuthEnabled: () => true,
+      principalAuthReady: jest.fn(),
+      principalIsActive,
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(remove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        environmentId: 'code-generated',
+        beforeDelete: expect.any(Function),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenLastCalledWith(
       'https://code.librechat.example/v1/bridge/workers/code-generated/revoke',
       expect.objectContaining({ method: 'POST' }),
     );

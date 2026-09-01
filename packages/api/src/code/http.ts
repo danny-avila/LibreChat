@@ -162,10 +162,17 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (principal == null) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const [environments, appConfig] = await Promise.all([
-      deps.registry.listAccessible(principal),
-      deps.getAppConfig({ baseOnly: true }),
-    ]);
+    let environments: CodeEnvironmentSummary[];
+    let appConfig: AppConfig;
+    try {
+      [environments, appConfig] = await Promise.all([
+        deps.registry.listAccessible(principal),
+        deps.getAppConfig({ ...getAppConfigOptionsFromUser(req.user), failClosed: true }),
+      ]);
+    } catch (error) {
+      logger.error('[codeEnvironments] discovery policy resolution failed:', error);
+      return res.status(503).json({ error: 'Code environment policy is unavailable' });
+    }
     return res.status(200).json({
       environments,
       controlPlanes: principalAuthEnabled() ? principalControlPlanes(appConfig) : [],
@@ -370,7 +377,26 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         logger.error('[codeEnvironments] post-registration principal check failed:', error);
       }
       if (!activeAfterRegistration) {
-        await deps.registry.remove({ actor: principal, environmentId: workerId });
+        const removed = await deps.registry.remove({
+          actor: principal,
+          environmentId: workerId,
+          beforeDelete: async () => {
+            await revokeCodeBridgeWorker({
+              baseURL: controlPlane.baseURL,
+              token,
+              workerId,
+              fetchImpl: deps.fetchImpl,
+            });
+          },
+        });
+        if (removed == null) {
+          await revokeCodeBridgeWorker({
+            baseURL: controlPlane.baseURL,
+            token,
+            workerId,
+            fetchImpl: deps.fetchImpl,
+          });
+        }
         return res.status(409).json({ error: 'Account is unavailable for code worker pairing' });
       }
       return res.status(201).json({

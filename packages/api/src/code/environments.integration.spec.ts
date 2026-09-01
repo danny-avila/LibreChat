@@ -556,6 +556,37 @@ describe('code environment registry', () => {
     ]);
   });
 
+  test('does not reuse a cached configuration after removal is fenced', async () => {
+    const cache = createSharedCache();
+    const registry = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const ownerId = new Types.ObjectId();
+    const actor = { userId: ownerId, role: 'USER', idOnTheSource: null };
+    const environment = await registry.register({
+      actor,
+      environment: {
+        id: 'cached-removal-vm',
+        name: 'Cached removal VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    await expect(registry.listAccessibleConfigurations(actor)).resolves.toHaveLength(1);
+
+    await mongoose.models.CodeEnvironment.updateOne(
+      { _id: environment.resourceId },
+      {
+        $set: {
+          deletionStartedAt: new Date(),
+          deletionLeaseId: 'in-flight-removal',
+          deletionLeaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      },
+    );
+
+    await expect(registry.listAccessibleConfigurations(actor)).resolves.toEqual([]);
+  });
+
   test('caches registered environment ids behind the shared tenant revision', async () => {
     const cache = createSharedCache();
     const firstWorker = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
@@ -772,6 +803,52 @@ describe('code environment registry', () => {
     ).resolves.toBe(0);
   });
 
+  test('claims a stale registration before compensating its worker', async () => {
+    const methods = createMethods(mongoose);
+    const ownerId = new Types.ObjectId();
+    const environment = await methods.createCodeEnvironment({
+      environmentId: 'stale-registration-race',
+      name: 'Stale registration race',
+      type: 'attached',
+      baseURL: 'https://code.example.com/v1',
+      controlPlaneId: 'shared-code-api',
+      createdBy: ownerId,
+      workerId: 'stale-registration-race',
+      revocationTokenEnv: 'CODE_ADMIN_TOKEN',
+      workerPrincipal: { type: 'user', id: ownerId.toString() },
+    });
+    await mongoose.models.CodeEnvironment.updateOne(
+      { _id: environment._id },
+      { $set: { registrationPendingAt: new Date(Date.now() - 10 * 60_000) } },
+    );
+    let enteredRevoke!: () => void;
+    let releaseRevoke!: () => void;
+    const entered = new Promise<void>((resolve) => (enteredRevoke = resolve));
+    const release = new Promise<void>((resolve) => (releaseRevoke = resolve));
+    const fetchImpl = jest.fn(async () => {
+      enteredRevoke();
+      await release;
+      return {
+        ok: true,
+        json: async () => ({ protocolVersion: 1, revoked: true }),
+      } as Response;
+    });
+
+    const reconciliation = reconcileCodeEnvironmentLifecycle({
+      mongoose,
+      readSecret: () => 'administrator-token',
+      fetchImpl,
+    });
+    await entered;
+    await expect(methods.completeCodeEnvironmentRegistration(environment._id)).rejects.toThrow(
+      'registration could not be committed',
+    );
+    releaseRevoke();
+    await reconciliation;
+
+    await expect(mongoose.models.CodeEnvironment.findById(environment._id)).resolves.toBeNull();
+  });
+
   test('preserves a creator-owned environment referenced by another surviving agent', async () => {
     const registry = createCodeEnvironmentRegistry(mongoose);
     const methods = createMethods(mongoose);
@@ -839,6 +916,85 @@ describe('code environment registry', () => {
       pendingAgentReferences: [],
     });
     expect(claimed?.deletionLeaseId).not.toBe('abandoned-removal');
+  });
+
+  test('preserves persisted agent references during interrupted-removal recovery', async () => {
+    const ownerId = new Types.ObjectId();
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'referenced-interrupted-removal',
+        name: 'Referenced interrupted removal',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    await mongoose.models.Agent.create({
+      id: 'agent_references_interrupted_removal',
+      name: 'Referenced environment agent',
+      author: ownerId,
+      model: 'test-model',
+      provider: 'test-provider',
+      code_environment_id: environment.id,
+    });
+    const expiredAt = new Date(Date.now() - 1_000);
+    await mongoose.models.CodeEnvironment.updateOne(
+      { _id: environment.resourceId },
+      {
+        $set: {
+          deletionStartedAt: expiredAt,
+          deletionLeaseId: 'abandoned-removal',
+          deletionLeaseExpiresAt: expiredAt,
+        },
+      },
+    );
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose });
+
+    await expect(
+      mongoose.models.CodeEnvironment.findById(environment.resourceId).lean(),
+    ).resolves.toMatchObject({ environmentId: environment.id });
+    await expect(
+      mongoose.models.CodeEnvironment.findById(environment.resourceId).lean(),
+    ).resolves.not.toHaveProperty('deletionStartedAt');
+  });
+
+  test('finishes an interrupted local-only removal', async () => {
+    const ownerId = new Types.ObjectId();
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'local-interrupted-removal',
+        name: 'Local interrupted removal',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        workerPrincipal: { type: 'deployment', id: 'shared-code-api' },
+      },
+    });
+    const expiredAt = new Date(Date.now() - 1_000);
+    await mongoose.models.CodeEnvironment.updateOne(
+      { _id: environment.resourceId },
+      {
+        $set: {
+          deletionStartedAt: expiredAt,
+          deletionLeaseId: 'abandoned-local-removal',
+          deletionLeaseExpiresAt: expiredAt,
+        },
+      },
+    );
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose });
+
+    await expect(
+      mongoose.models.CodeEnvironment.findById(environment.resourceId),
+    ).resolves.toBeNull();
+    await expect(
+      mongoose.models.AclEntry.countDocuments({ resourceId: environment.resourceId }),
+    ).resolves.toBe(0);
   });
 
   test('scopes retired environment ids to their tenant', async () => {
