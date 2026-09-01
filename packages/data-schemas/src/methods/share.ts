@@ -1,6 +1,12 @@
 import { nanoid } from 'nanoid';
 import { Types } from 'mongoose';
-import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
+import {
+  Tools,
+  Constants,
+  ContentTypes,
+  FileSources,
+  isConfiguredSender,
+} from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
@@ -341,6 +347,24 @@ function encodeSharedLinksCursor(link: t.ISharedLink, sortBy: string): string {
 }
 
 /**
+ * Whether this message shows a label rather than a model-derived name.
+ *
+ * The public header renders each message's stored `sender`, which froze at whatever the
+ * sender chain produced when it was written, so the messages — not the conversation's
+ * current settings — decide whether a link may reveal a model. A label cleared after the
+ * responses were written, or one that lives in config this package never reads, both
+ * answer correctly here.
+ */
+function showsConfiguredSender(message: t.IMessage): boolean {
+  return isConfiguredSender({
+    sender: message.sender,
+    endpoint: message.endpoint,
+    model: message.model,
+    isCreatedByUser: message.isCreatedByUser,
+  });
+}
+
+/**
  * Commit a lazy snapshot backfill only while the link still has none. An owner can
  * republish the same shareId while a viewer's first read is in flight, and an
  * unconditional write would restore the snapshot that republish just replaced,
@@ -497,13 +521,17 @@ function anonymizeMessages(
   includeFiles: boolean,
   anonymizeMessageId: (id: string) => string,
   anonymizeAssistantId: (id: string) => string,
-): t.SharedMessage[] {
+): { messages: t.SharedMessage[]; hasConfiguredSender: boolean } {
   if (!Array.isArray(messages)) {
-    return [];
+    return { messages: [], hasConfiguredSender: false };
   }
 
+  /** Collected in this pass rather than a second one over the same array: shared
+   *  transcripts can be long and this is their visible loading path. */
+  let hasConfiguredSender = false;
   const idMap = new Map<string, string>();
-  return messages.map((message) => {
+  const shared = messages.map((message) => {
+    hasConfiguredSender = hasConfiguredSender || showsConfiguredSender(message);
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
@@ -586,6 +614,8 @@ function anonymizeMessages(
       ...(attachments && { attachments }),
     };
   });
+
+  return { messages: shared, hasConfiguredSender };
 }
 
 /**
@@ -874,11 +904,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const perLinkEnabled = share.snapshotFiles !== false;
       const includeFiles = adminEnabled && perLinkEnabled;
       let fileSnapshots = share.fileSnapshots;
-      let shouldPersistFileSnapshots = false;
-      if (includeFiles && fileSnapshots === undefined && share._id) {
+      const shouldPersistFileSnapshots =
+        includeFiles && fileSnapshots === undefined && share._id != null;
+      if (shouldPersistFileSnapshots) {
         fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
-        shouldPersistFileSnapshots = true;
       }
+
       const snapshotIds = includeFiles
         ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
         : new Set<string>();
@@ -889,22 +920,26 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
               .map((snapshot) => snapshot.file_id),
           )
         : new Set<string>();
+      /** The share view has no conversation in scope, so whether this link may reveal a
+       *  model travels in the payload — read off the very messages being returned. */
+      const { messages, hasConfiguredSender } = anonymizeMessages(
+        messagesToShare,
+        newConvoId,
+        resolvedShareId,
+        snapshotIds,
+        textSourceIds,
+        includeFiles,
+        anonymizeMessageId,
+        anonymizeAssistantId,
+      );
       const result: t.SharedMessagesResult = {
         shareId: resolvedShareId,
         title: share.title,
+        ...(hasConfiguredSender ? { hasConfiguredSender: true } : {}),
         createdAt: share.createdAt,
         updatedAt: share.updatedAt,
         conversationId: newConvoId,
-        messages: anonymizeMessages(
-          messagesToShare,
-          newConvoId,
-          resolvedShareId,
-          snapshotIds,
-          textSourceIds,
-          includeFiles,
-          anonymizeMessageId,
-          anonymizeAssistantId,
-        ),
+        messages,
       };
 
       try {

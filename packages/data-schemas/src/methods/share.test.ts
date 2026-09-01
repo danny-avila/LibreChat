@@ -1,7 +1,13 @@
 import { nanoid } from 'nanoid';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
+import {
+  Tools,
+  Constants,
+  ContentTypes,
+  EModelEndpoint,
+  getResponseSender,
+} from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import {
@@ -81,6 +87,7 @@ describe('Share Methods', () => {
           default: undefined,
         },
         model: String,
+        sender: String,
         iconURL: String,
         endpoint: String,
         conversationSignature: String,
@@ -104,6 +111,10 @@ describe('Share Methods', () => {
         conversationId: { type: String, required: true },
         title: String,
         user: String,
+        endpoint: String,
+        endpointType: String,
+        modelLabel: String,
+        chatGptLabel: String,
       },
       { timestamps: true },
     );
@@ -513,6 +524,136 @@ describe('Share Methods', () => {
   });
 
   describe('getSharedMessages', () => {
+    /** Publishes through `createSharedLink` with one response whose stored `sender` is
+     *  what the header will render, so what a viewer reads back is the published flag. */
+    const publishWithSender = async (sender?: string, endpoint = EModelEndpoint.openAI) => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await Conversation.create({ conversationId, user: userId, title: 'Shared', endpoint });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Reply',
+        isCreatedByUser: false,
+        endpoint,
+        model: 'gpt-4o',
+        sender,
+        parentMessageId: Constants.NO_PARENT,
+      });
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      return { userId, conversationId, shareId };
+    };
+
+    /* The header renders the stored `sender`, so a link publishing a label must not swap
+       it for the model the label stands in for. */
+    test('flags a link whose messages show a configured sender', async () => {
+      const { shareId } = await publishWithSender('Acme Assistant');
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      expect(result?.hasConfiguredSender).toBe(true);
+    });
+
+    test('leaves a model-derived sender unflagged', async () => {
+      const { shareId } = await publishWithSender(
+        getResponseSender({ endpoint: EModelEndpoint.openAI, model: 'gpt-4o' }),
+      );
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      expect(result).toBeDefined();
+      expect(result).not.toHaveProperty('hasConfiguredSender');
+    });
+
+    /* Anthropic's sender ignores `chatGptLabel` and writes 'Claude', so the model has to
+       stay reachable — the stored sender says so without the settings being consulted. */
+    test('leaves an endpoint that wrote its own name unflagged', async () => {
+      const { shareId } = await publishWithSender('Claude', EModelEndpoint.anthropic);
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      expect(result).not.toHaveProperty('hasConfiguredSender');
+    });
+
+    test('publishes no label text of its own', async () => {
+      const { shareId } = await publishWithSender('Acme Assistant');
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const senders = result?.messages.map((message) => message.sender);
+      expect(senders).toContain('Acme Assistant');
+      /** Only the messages carry it, where the content preflight inspects it. */
+      expect(result?.hasConfiguredSender).toBe(true);
+    });
+
+    /* The conversation's settings changing cannot start revealing the model on a link
+       that is already public: the messages it published keep the sender they were
+       written under, and nothing about the link is re-derived from the conversation. */
+    test('is unmoved by the conversation changing after the link is published', async () => {
+      const { userId, conversationId, shareId } = await publishWithSender('Acme Assistant');
+      await Conversation.updateOne({ conversationId, user: userId }, { $set: { modelLabel: '' } });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      expect(result?.hasConfiguredSender).toBe(true);
+    });
+
+    /* One older message stored without an endpoint cannot be named, and reading that
+       silence as a label would disable the hover for the whole transcript. */
+    test('is unmoved by a message stored without an endpoint', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await Conversation.create({ conversationId, user: userId, title: 'Legacy' });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Reply',
+        isCreatedByUser: false,
+        model: 'gpt-4o',
+        sender: 'GPT-4o',
+        parentMessageId: Constants.NO_PARENT,
+      });
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      expect(result).not.toHaveProperty('hasConfiguredSender');
+    });
+
+    /* Only messages the link actually publishes have a say. */
+    test('ignores a labelled message outside the shared branch', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const modelSender = getResponseSender({ endpoint: EModelEndpoint.openAI, model: 'gpt-4o' });
+      await Conversation.create({ conversationId, user: userId, title: 'Branched' });
+      const root = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Shared reply',
+        isCreatedByUser: false,
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-4o',
+        sender: modelSender,
+        parentMessageId: Constants.NO_PARENT,
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Later reply',
+        isCreatedByUser: false,
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-4o',
+        sender: 'Acme Assistant',
+        parentMessageId: root.messageId,
+      });
+      const { shareId } = await shareMethods.createSharedLink(
+        userId,
+        conversationId,
+        root.messageId,
+      );
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      expect(result).not.toHaveProperty('hasConfiguredSender');
+    });
+
     test('should retrieve and anonymize shared messages', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
