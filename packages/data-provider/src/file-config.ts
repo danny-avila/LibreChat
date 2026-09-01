@@ -194,6 +194,33 @@ export const isResponsesApiUpload = (value?: boolean | string | null): boolean =
   value === true || value === 'true';
 
 /**
+ * The name a file carries inside the code sandbox.
+ *
+ * Image uploads are converted to the configured output type while the record keeps the
+ * original filename, so the extension has to follow the stored bytes or the sandbox
+ * decoder is handed a mismatch. Provisioning and priming both resolve the mount path
+ * from here: deriving it twice under different rules leaves a later turn advertising a
+ * path that does not exist in the sandbox.
+ */
+export const resolveSandboxFilename = (filename: string, mimeType?: string | null): string => {
+  if (!mimeType?.startsWith('image/')) {
+    return filename;
+  }
+  const subtype = mimeType.slice('image/'.length);
+  if (!['webp', 'png', 'jpeg', 'gif'].includes(subtype)) {
+    return filename;
+  }
+  const accepted = subtype === 'jpeg' ? ['.jpg', '.jpeg'] : [`.${subtype}`];
+  const lastDot = filename.lastIndexOf('.');
+  const currentExt = lastDot > 0 ? filename.slice(lastDot).toLowerCase() : '';
+  if (accepted.includes(currentExt)) {
+    return filename;
+  }
+  const base = lastDot > 0 ? filename.slice(0, lastDot) : filename;
+  return `${base}${accepted[0]}`;
+};
+
+/**
  * The Responses setting a turn actually runs on. A saved agent's own record wins, since
  * execution reads its model parameters; a conversation only answers for itself. Upload
  * and delivery must agree here, or a document is stored as raw provider content and then

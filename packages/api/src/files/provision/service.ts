@@ -4,9 +4,15 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { getCodeBaseURL } from '@librechat/agents';
-import { FileSources, getCodeEnvRefs, mergeCodeEnvRef } from 'librechat-data-provider';
+import {
+  FileSources,
+  getCodeEnvRefs,
+  mergeCodeEnvRef,
+  resolveSandboxFilename,
+} from 'librechat-data-provider';
 import type { CodeEnvRef, CodeEnvRefMap, TFile } from 'librechat-data-provider';
 import type { Readable } from 'node:stream';
+import type { CodeEnvIdentity } from '~/files/code/identity';
 import type { ServerRequest } from '~/types';
 import {
   logAxiosError,
@@ -14,6 +20,7 @@ import {
   codeServerHttpAgent,
   codeServerHttpsAgent,
 } from '~/utils';
+import { buildCodeEnvIdentityParams } from '~/files/code/identity';
 import { getCodeApiAuthHeaders } from '~/auth/codeapi';
 
 /** Storage strategy lookup, injected so this module stays free of the api workspace. */
@@ -168,24 +175,6 @@ export function createProvisionService({
     };
   }
 
-  /** Image uploads are converted to appConfig.imageOutputType while the record keeps
-   *  the original filename; rename so sandbox decoders match the stored bytes. */
-  function provisionFilename(file: TFile): string {
-    if (!file.type?.startsWith('image/')) {
-      return file.filename;
-    }
-    const subtype = file.type.slice('image/'.length);
-    if (!['webp', 'png', 'jpeg', 'gif'].includes(subtype)) {
-      return file.filename;
-    }
-    const accepted = subtype === 'jpeg' ? ['.jpg', '.jpeg'] : [`.${subtype}`];
-    const currentExt = path.extname(file.filename).toLowerCase();
-    if (accepted.includes(currentExt)) {
-      return file.filename;
-    }
-    return `${path.basename(file.filename, path.extname(file.filename))}${accepted[0]}`;
-  }
-
   /** Env var holding the code-execution API key (symmetric with LIBRECHAT_CODE_BASEURL). */
   const CODE_API_KEY_FIELD = 'LIBRECHAT_CODE_API_KEY';
 
@@ -250,7 +239,7 @@ export function createProvisionService({
      * be re-uploaded by priming, and a deployment whose only healthy Code API is the
      * configured stateful one could not provision at all. */
     const executionProfile = route?.executionProfile ?? 'default';
-    const sandboxFilename = provisionFilename(file);
+    const sandboxFilename = resolveSandboxFilename(file.filename, file.type);
     const uploaded = await uploadCodeEnvFile({
       req,
       stream,
@@ -473,9 +462,18 @@ export function createProvisionService({
     const aliveFileIds = new Set<string>();
     const now = Date.now();
 
-    // Group files by storage_session_id, skip recently-updated files (fast pre-filter)
-    /** @type {Map<string, Array<{ file_id: string; remoteFileId: string }>>} */
-    const sessionGroups = new Map();
+    /* Group by session AND resource identity, skipping recently-updated files. Codeapi
+     * reconstructs the session key from kind and id for shared kinds, so a probe that
+     * omits them asks about the requester's own bucket and 404s on a live agent
+     * session, which reads here as expiry and forces a needless re-upload. */
+    const sessionGroups = new Map<
+      string,
+      {
+        session_id: string;
+        identity: CodeEnvIdentity;
+        entries: Array<{ file_id: string; remoteFileId: string }>;
+      }
+    >();
 
     for (const file of files) {
       const ref = routeKey != null ? codeEnvRefForRoute(file, routeKey) : file.metadata?.codeEnvRef;
@@ -492,13 +490,20 @@ export function createProvisionService({
         continue;
       }
 
-      if (!sessionGroups.has(ref.storage_session_id)) {
-        sessionGroups.set(ref.storage_session_id, []);
+      const identity: CodeEnvIdentity = {
+        kind: ref.kind,
+        id: ref.id,
+        ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+      };
+      const groupKey = `${ref.storage_session_id}\0${identity.kind}\0${identity.id}\0${
+        identity.version ?? ''
+      }`;
+      let group = sessionGroups.get(groupKey);
+      if (!group) {
+        group = { session_id: ref.storage_session_id, identity, entries: [] };
+        sessionGroups.set(groupKey, group);
       }
-      sessionGroups.get(ref.storage_session_id).push({
-        file_id: file.file_id,
-        remoteFileId: ref.file_id,
-      });
+      group.entries.push({ file_id: file.file_id, remoteFileId: ref.file_id });
     }
 
     // One API call per session (in parallel)
@@ -521,13 +526,13 @@ export function createProvisionService({
       }
       return aliveFileIds;
     }
-    const sessionChecks = Array.from(sessionGroups.entries()).map(
-      async ([session_id, fileEntries]) => {
+    const sessionChecks = Array.from(sessionGroups.values()).map(
+      async ({ session_id, identity, entries: fileEntries }) => {
         try {
           const response = await getAxios()({
             method: 'get',
             url: `${baseURL}/files/${session_id}`,
-            params: { detail: 'summary' },
+            params: { detail: 'summary', ...buildCodeEnvIdentityParams(identity) },
             headers,
             httpAgent: codeServerHttpAgent,
             httpsAgent: codeServerHttpsAgent,

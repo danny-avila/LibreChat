@@ -192,6 +192,33 @@ describe('createProvisionService', () => {
       expect(alive.has('f1')).toBe(true);
     });
 
+    it('probes an agent-scoped session with the identity codeapi needs to resolve it', async () => {
+      /* Codeapi rebuilds the session key from kind and id for shared kinds. Without them
+       * it looks in the requester's own bucket, 404s on a live agent session, and this
+       * method reads that as expiry and queues a needless re-upload. */
+      mockAxios.mockResolvedValue({ data: [{ fileId: 'remote-agent' }] });
+      const { service } = buildService();
+      const agentFile = makeFile({
+        file_id: 'f-agent',
+        metadata: {
+          codeEnvRef: {
+            kind: 'agent',
+            id: 'agent_a1',
+            storage_session_id: 'sess-agent',
+            file_id: 'remote-agent',
+            provisionedAt: 1,
+          },
+        } as never,
+      });
+
+      const alive = await service.checkSessionsAlive({ files: [agentFile], req });
+
+      expect(mockAxios.mock.calls[0][0].params).toEqual(
+        expect.objectContaining({ kind: 'agent', id: 'agent_a1', detail: 'summary' }),
+      );
+      expect(alive.has('f-agent')).toBe(true);
+    });
+
     it('sends the legacy key alongside minted headers', async () => {
       mockAxios.mockResolvedValue({ data: [] });
       const { service } = buildService();
