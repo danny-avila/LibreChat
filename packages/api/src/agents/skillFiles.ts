@@ -137,6 +137,14 @@ const uploadSlots = createConcurrencyLimiter(SKILL_UPLOAD_CONCURRENCY);
 const inflightPrimes = new Map<string, Promise<PrimeSkillFilesResult | null>>();
 
 type SkillUploadFiles = Array<{ stream: NodeJS.ReadableStream; filename: string }>;
+type SkillCodeEnvRef = Extract<CodeEnvRef, { kind: 'skill' }>;
+
+function isCurrentSkillRef(
+  ref: CodeEnvRef | undefined,
+  skillVersion: number,
+): ref is SkillCodeEnvRef {
+  return ref?.kind === 'skill' && ref.version === skillVersion;
+}
 
 function getRetryAfterMs(error: unknown): number | null {
   if (!isAxiosError(error) || error.response?.status !== 429) {
@@ -427,12 +435,14 @@ async function executePrimeSkillFiles(
    * previous prime. Check freshness against codeapi for every distinct
    * storage session; if all are still active, reuse without
    * re-uploading. The skill version is part of the ref — when the
-   * skill is edited, the upsert clears the ref and forces a fresh
-   * upload on the next prime. */
+   * skill version has been bumped (e.g. by a SKILL.md edit), stale
+   * refs are treated as cache misses and the files are re-uploaded
+   * under the new version's session key. */
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
-    const allHaveRefs = skillFiles.every(
-      (sf) => getCodeEnvRefForProfile(sf, executionRouteKey) !== undefined,
-    );
+    const allHaveRefs = skillFiles.every((sf) => {
+      const ref = getCodeEnvRefForProfile(sf, executionRouteKey);
+      return isCurrentSkillRef(ref, skill.version);
+    });
     if (allHaveRefs) {
       const refsBySession = new Map<string, CodeEnvRef>();
       for (const sf of skillFiles) {
@@ -753,12 +763,16 @@ export async function primeInvokedSkills(
     if (!inspectStoredSkillFileContent && deps.getSessionInfo && deps.checkIfActive) {
       const allResolved = fileListResults.flatMap((r) =>
         r.files.map((f) => ({
+          skill: r.skill,
           skillName: r.skill.name,
           file: f,
           ref: getCodeEnvRefForProfile(f, executionRouteKey),
         })),
       );
-      const resolvedWithRef = allResolved.filter((x) => x.ref !== undefined);
+      const resolvedWithRef = allResolved.filter(
+        (entry): entry is typeof entry & { ref: SkillCodeEnvRef } =>
+          isCurrentSkillRef(entry.ref, entry.skill.version),
+      );
 
       // Only use cache when ALL files have refs (no partial persistence)
       if (resolvedWithRef.length > 0 && resolvedWithRef.length === allResolved.length) {

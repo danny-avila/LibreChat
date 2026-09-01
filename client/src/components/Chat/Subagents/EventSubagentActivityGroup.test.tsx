@@ -220,6 +220,40 @@ describe('EventSubagentActivityGroup', () => {
     ]);
   });
 
+  it('pins the status color to one column and shimmers only a live row', () => {
+    mockChildrenByMessage = new Map([['parent-message', [mockChild, mockCompletedChild]]]);
+
+    render(
+      <RecoilRoot>
+        <EventSubagentActivityGroup
+          conversationId="parent-conversation"
+          parentMessageIds={['parent-message']}
+        />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_subagent_activity/ }));
+
+    const rows = [
+      screen.getByRole('button', { name: /Visible Agent/ }),
+      screen.getByRole('button', { name: /Completed Agent/ }),
+    ];
+    const [running, completed] = rows.map((row) => row.lastElementChild as HTMLElement);
+
+    /** Label first, dot last, in every row: a longer status can only grow
+     *  inboard, so the color never moves between rows. */
+    expect(running.firstElementChild).toHaveTextContent('com_ui_subagent_thread_status_running');
+    expect(running.lastElementChild).toHaveAttribute('aria-hidden', 'true');
+    expect(running.lastElementChild).toHaveClass('bg-status-info');
+    expect(running.firstElementChild).toHaveClass('shimmer');
+
+    expect(completed.firstElementChild).toHaveTextContent(
+      'com_ui_subagent_thread_status_completed',
+    );
+    expect(completed.lastElementChild).toHaveClass('bg-status-success');
+    expect(completed.firstElementChild).not.toHaveClass('shimmer');
+  });
+
   it('does not reopen a child after the user closes it while refresh is pending', async () => {
     let selection: ActiveSubagentPanel | null = null;
     let resolveRefresh!: (value: unknown) => void;

@@ -12,6 +12,9 @@ jest.mock('~/utils', () => ({
   groupSequentialToolCalls: jest.fn(),
   hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
   getPartKeyIndex: jest.requireActual('~/utils/messages').getPartKeyIndex,
+  /** Real implementations: the media helpers are pure and drive the phase
+   * card's attachment row, so stubbing them would make that path inert here. */
+  ...jest.requireActual<typeof import('~/utils/media')>('~/utils/media'),
 }));
 
 jest.mock('~/Providers', () => {
@@ -33,12 +36,19 @@ jest.mock('~/Providers', () => {
      * the component's own catch swallowed it, so the sources path was dead here
      * while the suite still passed. */
     useSearchContext: () => ({ searchResults: undefined }),
+    MediaContext: {
+      Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    },
+    useMediaContext: () => ({ attachmentsByName: undefined }),
   };
 });
 
 jest.mock('../Parts', () => ({
   EmptyText: ({ underHeaderIcon }: { underHeaderIcon?: boolean }) => (
     <div data-testid="empty-text" data-under-header-icon={String(underHeaderIcon === true)} />
+  ),
+  AttachmentGroup: ({ attachments }: { attachments?: unknown[] }) => (
+    <div data-testid="attachment-group" data-count={String(attachments?.length ?? 0)} />
   ),
   AgentUpdate: ({ currentAgentId }: { currentAgentId: string }) => (
     <div data-testid="post-steer-agent-update" data-agent-id={currentAgentId} />

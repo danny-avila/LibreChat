@@ -50,6 +50,44 @@ describe('theme registry', () => {
     expect(dark.appearance).toEqual(defaultAppearance);
   });
 
+  /** Themes predate the shimmer stops, so an omission means "not written yet",
+   *  not "wants LibreChat's sweep". Filling it from the bundled base would light
+   *  a white-text theme's in-flight labels in the stock near-black. */
+  it('derives an omitted shimmer base from a theme that restates its text', () => {
+    const inverted = resolveTheme(
+      {
+        version: 1,
+        name: 'inverted-reference',
+        modes: { light: { colors: { 'rgb-text-primary': '255 255 255' } } },
+      },
+      'light',
+    );
+
+    expect(inverted.colors['rgb-shimmer-base']).toBe('255 255 255');
+    expect(inverted.colors['rgb-shimmer-dip']).toBe(defaultTheme['rgb-shimmer-dip']);
+  });
+
+  it('leaves a theme that names its own shimmer base alone', () => {
+    const explicit = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-reference',
+        modes: {
+          light: { colors: { 'rgb-text-primary': '255 255 255', 'rgb-shimmer-base': '10 20 30' } },
+        },
+      },
+      'light',
+    );
+
+    expect(explicit.colors['rgb-shimmer-base']).toBe('10 20 30');
+  });
+
+  it('keeps the bundled shimmer base for a theme that restates nothing', () => {
+    expect(resolveTheme(compactTheme, 'dark').colors['rgb-shimmer-base']).toBe(
+      darkTheme['rgb-shimmer-base'],
+    );
+  });
+
   it('resolves provider brand tokens and lets a theme override them', () => {
     const defaults = resolveTheme(libreChatTheme, 'light');
     expect(defaults.brands['provider-anthropic']).toBe('#d09a74');

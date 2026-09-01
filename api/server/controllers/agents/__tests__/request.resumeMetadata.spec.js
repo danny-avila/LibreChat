@@ -937,6 +937,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(initializeClient).toHaveBeenCalledWith(
       expect.objectContaining({ checkpointNamespace: '1000', jobCreatedAt: 1000 }),
     );
+    expect(req.turnStartedAt).toBe(1000);
     expect(mockGenerationJobManager.updateMetadata).not.toHaveBeenCalled();
     const startupMilestones = mockStartupTelemetry.mark.mock.calls.map(([milestone]) => milestone);
     expect(startupMilestones.slice(0, 2)).toEqual(['request_admitted', 'job_created']);

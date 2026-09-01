@@ -1372,9 +1372,7 @@ async function loadToolDefinitionsWrapper({
 
   if (hasWebSearch) {
     toolContextMap[Tools.web_search] = buildWebSearchContext();
-    dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext(
-      req.conversationCreatedAt,
-    );
+    dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext(req.turnStartedAt);
   }
 
   /**
