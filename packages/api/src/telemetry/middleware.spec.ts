@@ -341,6 +341,10 @@ describe('telemetryErrorMiddleware', () => {
   it('records safe exception metadata and forwards the original error', () => {
     const span = createSpan();
     const error = new TypeError('Bearer exception-token-canary');
+    error.name = 'refresh_token=error-name-canary';
+    Object.defineProperty(error, 'constructor', {
+      value: { name: 'client_secret=constructor-canary' },
+    });
     const next = jest.fn();
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
 
@@ -351,6 +355,8 @@ describe('telemetryErrorMiddleware', () => {
       name: 'TypeError',
     });
     expect(JSON.stringify(span.recordException.mock.calls)).not.toContain('exception-token-canary');
+    expect(JSON.stringify(span.recordException.mock.calls)).not.toContain('error-name-canary');
+    expect(JSON.stringify(span.recordException.mock.calls)).not.toContain('constructor-canary');
     expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
     expect(span.setAttributes).toHaveBeenCalledWith({
       'enduser.id': 'user-1',
