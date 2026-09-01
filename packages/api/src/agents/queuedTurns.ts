@@ -153,6 +153,9 @@ function parseQueuedTurnAdmissionSource(raw: unknown): AgentContinuationAdmissio
   const sourceId = 'sourceId' in raw ? raw.sourceId : undefined;
   const claimId = 'claimId' in raw ? raw.claimId : undefined;
   const claimBy = 'claimBy' in raw ? raw.claimBy : undefined;
+  const effectivePredecessorCreatedAt =
+    'effectivePredecessorCreatedAt' in raw ? raw.effectivePredecessorCreatedAt : undefined;
+  const lineagePredecessorId = 'lineagePredecessorId' in raw ? raw.lineagePredecessorId : undefined;
   if (
     typeof sourceId !== 'string' ||
     sourceId.length === 0 ||
@@ -162,11 +165,28 @@ function parseQueuedTurnAdmissionSource(raw: unknown): AgentContinuationAdmissio
     claimId.length > 128 ||
     typeof claimBy !== 'string' ||
     claimBy.length === 0 ||
-    claimBy.length > 256
+    claimBy.length > 256 ||
+    (effectivePredecessorCreatedAt != null &&
+      (typeof effectivePredecessorCreatedAt !== 'number' ||
+        !Number.isSafeInteger(effectivePredecessorCreatedAt) ||
+        effectivePredecessorCreatedAt < 0)) ||
+    (lineagePredecessorId != null &&
+      (typeof lineagePredecessorId !== 'string' ||
+        lineagePredecessorId.length === 0 ||
+        lineagePredecessorId.length > 128))
   ) {
     throw new TypeError('Agent queued turn admission source is invalid');
   }
-  return { source: AGENT_QUEUED_TURN_SOURCE, sourceId, claimId, claimBy };
+  return {
+    source: AGENT_QUEUED_TURN_SOURCE,
+    sourceId,
+    claimId,
+    claimBy,
+    ...(typeof effectivePredecessorCreatedAt === 'number' && {
+      effectivePredecessorCreatedAt,
+    }),
+    ...(typeof lineagePredecessorId === 'string' && { lineagePredecessorId }),
+  };
 }
 
 /** Commits the source-owned admission receipt only after the controller has
@@ -195,6 +215,12 @@ async function settleAgentQueuedTurnExecutionAdmission(
     admissionMode: 'ordinary',
     generationId: input.generationId,
     generationCreatedAt: input.generationCreatedAt,
+    ...(source.effectivePredecessorCreatedAt != null && {
+      effectivePredecessorCreatedAt: source.effectivePredecessorCreatedAt,
+    }),
+    ...(source.lineagePredecessorId != null && {
+      lineagePredecessorId: source.lineagePredecessorId,
+    }),
     settledAt: new Date(),
   });
   if (settled.outcome === 'conflict') {
@@ -226,6 +252,12 @@ async function verifyAgentQueuedTurnExecutionAdmission(
     admissionId: input.clientRequestId,
     generationId: input.generationId,
     generationCreatedAt: input.generationCreatedAt,
+    ...(source.effectivePredecessorCreatedAt != null && {
+      effectivePredecessorCreatedAt: source.effectivePredecessorCreatedAt,
+    }),
+    ...(source.lineagePredecessorId != null && {
+      lineagePredecessorId: source.lineagePredecessorId,
+    }),
   });
   if (!confirmed) {
     throw new Error('The queued turn execution admission is not yet confirmed');
@@ -578,17 +610,6 @@ function createAgentQueuedTurnResolver({
       return { status: 'settled' };
     }
 
-    const effectivePredecessorCreatedAt =
-      (await methods.getEffectiveAgentQueuedTurnPredecessor({
-        user: claim.user,
-        ...(claim.tenantId != null && { tenantId: claim.tenantId }),
-        conversationId: claim.conversationId,
-        sequence: claim.sequence,
-        ...(claim.expectedPredecessorCreatedAt != null && {
-          expectedPredecessorCreatedAt: claim.expectedPredecessorCreatedAt,
-        }),
-      })) ?? claim.expectedPredecessorCreatedAt;
-
     const admission = await methods.beginAgentQueuedTurnAdmission({
       user: claim.user,
       ...(claim.tenantId != null && { tenantId: claim.tenantId }),
@@ -607,9 +628,11 @@ function createAgentQueuedTurnResolver({
         deferWithoutAttempt: true,
       });
     }
-    if (admission.outcome === 'retired') {
+    if (admission.outcome === 'retired' || admission.outcome === 'order_unavailable') {
       return { status: 'settled' };
     }
+    const effectivePredecessorCreatedAt = admission.turn.admissionEffectivePredecessorCreatedAt;
+    const lineagePredecessorId = admission.turn.admissionLineagePredecessorId;
 
     return {
       status: 'ready',
@@ -626,6 +649,8 @@ function createAgentQueuedTurnResolver({
         sourceId: claim.queuedTurnId,
         claimId: claim.claimId,
         claimBy: claim.claimBy,
+        ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
+        ...(lineagePredecessorId != null && { lineagePredecessorId }),
       },
       releaseOnDefiniteFailure: async (error) => {
         if (
@@ -659,6 +684,8 @@ function createAgentQueuedTurnResolver({
           ...(result.generationCreatedAt != null && {
             generationCreatedAt: result.generationCreatedAt,
           }),
+          ...(effectivePredecessorCreatedAt != null && { effectivePredecessorCreatedAt }),
+          ...(lineagePredecessorId != null && { lineagePredecessorId }),
           settledAt: new Date(now()),
         });
         if (settled.outcome === 'conflict') {
@@ -794,7 +821,10 @@ function createAgentQueuedTurnScheduler({
             }),
           );
         try {
-          if (turn.status === 'claimed') {
+          const isIndeterminate =
+            turn.terminalReceipt?.outcome === 'dead' &&
+            turn.terminalReceipt.failure?.code === 'ADMISSION_INDETERMINATE';
+          if (turn.status === 'claimed' && !isIndeterminate) {
             const result = await runAsSystem(() =>
               methods.deadLetterAgentQueuedTurn({
                 user: turn.user,
