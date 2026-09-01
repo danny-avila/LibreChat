@@ -158,6 +158,7 @@ describe('code environment registry', () => {
         type: 'attached',
         baseURL: 'https://code.example.com',
         workerId: 'owner-worker',
+        controlPlaneId: 'shared-code-api',
         workerPrincipal: { type: 'user', id: ownerId.toString() },
       },
     });

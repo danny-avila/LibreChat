@@ -179,7 +179,7 @@ describe('code environment HTTP handlers', () => {
     } as AppConfig;
     const effectiveConfig = {
       endpoints: { [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [] } } },
-    } as AppConfig;
+    } as unknown as AppConfig;
     const getAppConfig = jest.fn(async (options) =>
       options.baseOnly === true ? baseConfig : effectiveConfig,
     );

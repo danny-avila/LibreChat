@@ -130,7 +130,9 @@ export async function mergeAccessibleCodeEnvironments({
   }
   let mergedEnvironments = [...filteredEnvironments, ...effectivePrincipalEnvironments].map(
     (environment) =>
-      !isExecutableCodeEnvironment(environment) && environment.default === true
+      !isExecutableCodeEnvironment(environment) &&
+      'default' in environment &&
+      environment.default === true
         ? { ...environment, default: false as const }
         : environment,
   );
