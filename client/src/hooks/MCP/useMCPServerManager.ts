@@ -63,10 +63,19 @@ export function useMCPServerManager({
   conversationId,
   storageContextKey,
   specName,
+  ownsChatSelection = false,
 }: {
   conversationId?: string | null;
   storageContextKey?: string;
   specName?: string | null;
+  /**
+   * Opt in to managing the chat MCP selection. Most callers mount this hook for
+   * the catalog, the server actions, or the status icons and never read the
+   * selection, so it defaults off: every instance keyed to a conversation shares
+   * one selection, and only the one rendering the picker knows the spec context
+   * needed to prune it correctly.
+   */
+  ownsChatSelection?: boolean;
 } = {}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
@@ -128,6 +137,7 @@ export function useMCPServerManager({
     servers: selectableServers,
     allServers: availableMCPServers,
     specName,
+    ownsChatSelection,
   });
   const mcpValuesRef = useRef(mcpValues);
 

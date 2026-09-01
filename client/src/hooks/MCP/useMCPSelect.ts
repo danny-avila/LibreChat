@@ -18,6 +18,7 @@ export function useMCPSelect({
   servers,
   allServers,
   specName,
+  ownsChatSelection = false,
 }: {
   conversationId?: string | null;
   storageContextKey?: string;
@@ -27,6 +28,14 @@ export function useMCPSelect({
   allServers?: MCPServerDefinition[];
   /** Active model spec, whose pinned servers are exempt from pruning. */
   specName?: string | null;
+  /**
+   * Whether this instance drives the chat picker and may therefore rewrite the
+   * shared selection. Off by default: every instance keyed to a conversation
+   * shares one atom and one ephemeral agent, so a caller mounted for the catalog
+   * alone — with no spec context to exempt from — would otherwise prune away a
+   * selection the picker's own instance is deliberately keeping.
+   */
+  ownsChatSelection?: boolean;
 }) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const configuredServers = useMemo(() => {
@@ -44,7 +53,7 @@ export function useMCPSelect({
    * to localStorage: an empty catalog — still loading, or a degraded read — must
    * never be read as "the admin removed everything" and wipe the selection.
    */
-  const canPruneSelections = (allServers ?? servers).length > 0;
+  const canPruneSelections = ownsChatSelection && (allServers ?? servers).length > 0;
   const { data: startupConfig } = useGetStartupConfig();
   /**
    * Selections that survive pruning: what the dropdown offers, plus whatever the
@@ -123,6 +132,9 @@ export function useMCPSelect({
 
   // Sync ephemeral agent MCP → Jotai atom (strip unconfigured servers)
   useEffect(() => {
+    if (!ownsChatSelection) {
+      return;
+    }
     const mcps = ephemeralAgent?.mcp;
     if (Array.isArray(mcps) && mcps.length > 0 && canPruneSelections) {
       const activeMcps = mcps.filter((mcp) => retainedServers.has(mcp));
@@ -149,6 +161,7 @@ export function useMCPSelect({
     setMCPValuesRaw,
     retainedServers,
     canPruneSelections,
+    ownsChatSelection,
     mcpValues,
   ]);
 

@@ -270,7 +270,12 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
-  const mcpServerManager = useMCPServerManager({ conversationId, storageContextKey, specName });
+  const mcpServerManager = useMCPServerManager({
+    conversationId,
+    storageContextKey,
+    specName,
+    ownsChatSelection: true,
+  });
 
   const value: BadgeRowContextType = {
     skills,

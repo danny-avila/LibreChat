@@ -63,7 +63,7 @@ describe('useMCPSelect', () => {
   describe('Basic Functionality', () => {
     it('should initialize with default values', () => {
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ servers }), {
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -76,18 +76,24 @@ describe('useMCPSelect', () => {
     it('should use conversationId when provided', () => {
       const conversationId = 'test-convo-123';
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ conversationId, servers }), {
-        wrapper: Wrapper,
-      });
+      const { result } = renderHook(
+        () => useMCPSelect({ conversationId, servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       expect(result.current.mcpValues).toEqual([]);
     });
 
     it('should use NEW_CONVO constant when conversationId is null', () => {
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ conversationId: null, servers }), {
-        wrapper: Wrapper,
-      });
+      const { result } = renderHook(
+        () => useMCPSelect({ conversationId: null, servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       expect(result.current.mcpValues).toEqual([]);
     });
@@ -96,7 +102,7 @@ describe('useMCPSelect', () => {
   describe('State Updates', () => {
     it('should update mcpValues when setMCPValues is called', async () => {
       const { Wrapper, servers } = createWrapper(['value1', 'value2']);
-      const { result } = renderHook(() => useMCPSelect({ servers }), {
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -113,7 +119,7 @@ describe('useMCPSelect', () => {
 
     it('should not update mcpValues if non-array is passed', () => {
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ servers }), {
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -127,7 +133,7 @@ describe('useMCPSelect', () => {
 
     it('should update isPinned state', () => {
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ servers }), {
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -154,9 +160,12 @@ describe('useMCPSelect', () => {
     it('should set timestamp when mcpValues is updated with values', async () => {
       const conversationId = 'test-convo';
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ conversationId, servers }), {
-        wrapper: Wrapper,
-      });
+      const { result } = renderHook(
+        () => useMCPSelect({ conversationId, servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       const newValues = ['value1', 'value2'];
 
@@ -172,7 +181,7 @@ describe('useMCPSelect', () => {
 
     it('should not set timestamp when mcpValues is empty', async () => {
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ servers }), {
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -189,9 +198,12 @@ describe('useMCPSelect', () => {
   describe('Race Conditions and Infinite Loops Prevention', () => {
     it('should not create infinite loop when syncing between Jotai and Recoil states', async () => {
       const { Wrapper, servers } = createWrapper();
-      const { result, rerender } = renderHook(() => useMCPSelect({ servers }), {
-        wrapper: Wrapper,
-      });
+      const { result, rerender } = renderHook(
+        () => useMCPSelect({ servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       let renderCount = 0;
       const maxRenders = 10;
@@ -222,7 +234,7 @@ describe('useMCPSelect', () => {
 
     it('should handle rapid consecutive updates without race conditions', async () => {
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ servers }), {
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -249,9 +261,12 @@ describe('useMCPSelect', () => {
 
     it('should maintain stable setter function reference', () => {
       const { Wrapper, servers } = createWrapper();
-      const { result, rerender } = renderHook(() => useMCPSelect({ servers }), {
-        wrapper: Wrapper,
-      });
+      const { result, rerender } = renderHook(
+        () => useMCPSelect({ servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       const firstSetMCPValues = result.current.setMCPValues;
 
@@ -267,7 +282,7 @@ describe('useMCPSelect', () => {
     it('should handle switching conversation IDs without issues', async () => {
       const { Wrapper, servers } = createWrapper(['convo1-value', 'convo2-value']);
       const { result, rerender } = renderHook(
-        ({ conversationId }) => useMCPSelect({ conversationId, servers }),
+        ({ conversationId }) => useMCPSelect({ conversationId, servers, ownsChatSelection: true }),
         {
           wrapper: Wrapper,
           initialProps: { conversationId: 'convo1' },
@@ -315,7 +330,7 @@ describe('useMCPSelect', () => {
 
       // Create a component that uses both hooks to ensure they share state
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
           ephemeralAgentByConvoId(Constants.NEW_CONVO),
         );
@@ -342,7 +357,7 @@ describe('useMCPSelect', () => {
       const { Wrapper, servers } = createWrapper(['server1', 'server2']);
 
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -364,7 +379,7 @@ describe('useMCPSelect', () => {
       const { Wrapper, servers } = createWrapper(['server1', 'server2']);
 
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -386,7 +401,7 @@ describe('useMCPSelect', () => {
       const { Wrapper, servers } = createWrapper(['server1', 'server2', 'server3']);
 
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -410,7 +425,7 @@ describe('useMCPSelect', () => {
 
       // Create a component that uses both the hook and accesses Recoil state
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, ephemeralAgent };
       };
@@ -436,7 +451,7 @@ describe('useMCPSelect', () => {
 
       // Create a component that uses both hooks
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -472,7 +487,7 @@ describe('useMCPSelect', () => {
 
       // Create a component that uses both hooks
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -511,7 +526,7 @@ describe('useMCPSelect', () => {
       ]);
 
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -549,9 +564,12 @@ describe('useMCPSelect', () => {
   describe('Edge Cases', () => {
     it('should handle undefined conversationId', () => {
       const { Wrapper, servers } = createWrapper(['test']);
-      const { result } = renderHook(() => useMCPSelect({ conversationId: undefined, servers }), {
-        wrapper: Wrapper,
-      });
+      const { result } = renderHook(
+        () => useMCPSelect({ conversationId: undefined, servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       expect(result.current.mcpValues).toEqual([]);
 
@@ -564,9 +582,12 @@ describe('useMCPSelect', () => {
 
     it('should handle empty string conversationId', () => {
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ conversationId: '', servers }), {
-        wrapper: Wrapper,
-      });
+      const { result } = renderHook(
+        () => useMCPSelect({ conversationId: '', servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       expect(result.current.mcpValues).toEqual([]);
     });
@@ -574,7 +595,7 @@ describe('useMCPSelect', () => {
     it('should handle very large arrays without performance issues', async () => {
       const largeArray = Array.from({ length: 1000 }, (_, i) => `value-${i}`);
       const { Wrapper, servers } = createWrapper(largeArray);
-      const { result } = renderHook(() => useMCPSelect({ servers }), {
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -597,7 +618,7 @@ describe('useMCPSelect', () => {
 
     it('should cleanup properly on unmount', () => {
       const { Wrapper, servers } = createWrapper();
-      const { unmount } = renderHook(() => useMCPSelect({ servers }), {
+      const { unmount } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -613,7 +634,13 @@ describe('useMCPSelect', () => {
 
       // Hook A: new conversation with storageContextKey
       const { result: resultA } = renderHook(
-        () => useMCPSelect({ conversationId: null, storageContextKey, servers }),
+        () =>
+          useMCPSelect({
+            conversationId: null,
+            storageContextKey,
+            servers,
+            ownsChatSelection: true,
+          }),
         { wrapper: Wrapper },
       );
 
@@ -627,7 +654,7 @@ describe('useMCPSelect', () => {
 
       // Hook B: new conversation WITHOUT storageContextKey (different environment)
       const { result: resultB } = renderHook(
-        () => useMCPSelect({ conversationId: null, servers }),
+        () => useMCPSelect({ conversationId: null, servers, ownsChatSelection: true }),
         { wrapper: Wrapper },
       );
 
@@ -641,7 +668,7 @@ describe('useMCPSelect', () => {
       const storageContextKey = '__defaults__';
 
       const { result } = renderHook(
-        () => useMCPSelect({ conversationId, storageContextKey, servers }),
+        () => useMCPSelect({ conversationId, storageContextKey, servers, ownsChatSelection: true }),
         { wrapper: Wrapper },
       );
 
@@ -663,7 +690,13 @@ describe('useMCPSelect', () => {
       const storageContextKey = '__defaults__';
 
       const { result } = renderHook(
-        () => useMCPSelect({ conversationId: null, storageContextKey, servers }),
+        () =>
+          useMCPSelect({
+            conversationId: null,
+            storageContextKey,
+            servers,
+            ownsChatSelection: true,
+          }),
         { wrapper: Wrapper },
       );
 
@@ -683,9 +716,12 @@ describe('useMCPSelect', () => {
       const conversationId = 'convo-no-specs';
       const { Wrapper, servers } = createWrapper(['server1']);
 
-      const { result } = renderHook(() => useMCPSelect({ conversationId, servers }), {
-        wrapper: Wrapper,
-      });
+      const { result } = renderHook(
+        () => useMCPSelect({ conversationId, servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       act(() => {
         result.current.setMCPValues(['server1']);
@@ -706,7 +742,13 @@ describe('useMCPSelect', () => {
 
       // Set environment defaults via new conversation
       const { result: newConvoResult } = renderHook(
-        () => useMCPSelect({ conversationId: null, storageContextKey, servers }),
+        () =>
+          useMCPSelect({
+            conversationId: null,
+            storageContextKey,
+            servers,
+            ownsChatSelection: true,
+          }),
         { wrapper: Wrapper },
       );
 
@@ -720,7 +762,13 @@ describe('useMCPSelect', () => {
 
       // Existing conversation should have its own isolated state
       const { result: existingResult } = renderHook(
-        () => useMCPSelect({ conversationId: 'existing-convo', storageContextKey, servers }),
+        () =>
+          useMCPSelect({
+            conversationId: 'existing-convo',
+            storageContextKey,
+            servers,
+            ownsChatSelection: true,
+          }),
         { wrapper: Wrapper },
       );
 
@@ -747,7 +795,12 @@ describe('useMCPSelect', () => {
       const storageContextKey = '__defaults__';
 
       const TestComponent = ({ ctxKey }: { ctxKey?: string }) => {
-        const mcpHook = useMCPSelect({ conversationId: null, storageContextKey: ctxKey, servers });
+        const mcpHook = useMCPSelect({
+          conversationId: null,
+          storageContextKey: ctxKey,
+          servers,
+          ownsChatSelection: true,
+        });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -780,7 +833,7 @@ describe('useMCPSelect', () => {
       const { Wrapper, servers } = createWrapper(['spec-server1', 'spec-server2']);
 
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ conversationId: null, servers });
+        const mcpHook = useMCPSelect({ conversationId: null, servers, ownsChatSelection: true });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -804,7 +857,7 @@ describe('useMCPSelect', () => {
       const { Wrapper, servers } = createWrapper(['server1', 'server2']);
 
       const TestComponent = () => {
-        const mcpHook = useMCPSelect({ servers });
+        const mcpHook = useMCPSelect({ servers, ownsChatSelection: true });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
         return { mcpHook, setEphemeralAgent };
       };
@@ -840,7 +893,12 @@ describe('useMCPSelect', () => {
       localStorage.setItem(storageKey, JSON.stringify(['hidden-server']));
 
       const { result } = renderHook(
-        () => useMCPSelect({ servers: [], allServers: createMCPServers(['hidden-server']) }),
+        () =>
+          useMCPSelect({
+            servers: [],
+            allServers: createMCPServers(['hidden-server']),
+            ownsChatSelection: true,
+          }),
         { wrapper: Wrapper },
       );
 
@@ -854,6 +912,7 @@ describe('useMCPSelect', () => {
 
       const TestComponent = () => {
         const mcpHook = useMCPSelect({
+          ownsChatSelection: true,
           servers: createMCPServers(['visible']),
           allServers: createMCPServers(['visible', 'hidden-server']),
         });
@@ -882,6 +941,7 @@ describe('useMCPSelect', () => {
 
       const TestComponent = () => {
         const mcpHook = useMCPSelect({
+          ownsChatSelection: true,
           servers: createMCPServers(['visible']),
           allServers: createMCPServers(['visible', 'spec-server', 'stale-hidden']),
           specName: 'pins-hidden',
@@ -905,13 +965,49 @@ describe('useMCPSelect', () => {
       });
     });
 
+    it("lets a catalog-only instance leave the picker instance's selection alone", async () => {
+      mockStartupConfig = {
+        modelSpecs: { list: [{ name: 'pins-hidden', mcpServers: ['spec-server'] }] },
+      };
+      const { Wrapper } = createWrapper();
+
+      /** Mirrors `useSideNavLinks`, which is always mounted and shares the
+       *  NEW_CONVO selection but knows nothing about the active spec. */
+      const TestComponent = () => {
+        const picker = useMCPSelect({
+          servers: createMCPServers(['visible']),
+          allServers: createMCPServers(['visible', 'spec-server']),
+          specName: 'pins-hidden',
+          ownsChatSelection: true,
+        });
+        useMCPSelect({
+          servers: createMCPServers(['visible']),
+          allServers: createMCPServers(['visible', 'spec-server']),
+        });
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { picker, ephemeralAgent, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
+
+      act(() => {
+        result.current.setEphemeralAgent({ mcp: ['visible', 'spec-server'] });
+      });
+
+      await waitFor(() => {
+        expect(result.current.picker.mcpValues).toEqual(['visible', 'spec-server']);
+      });
+      expect(result.current.ephemeralAgent?.mcp).toEqual(['visible', 'spec-server']);
+    });
+
     it('keeps a selection while the catalog is empty, so a degraded read cannot wipe it', async () => {
       const { Wrapper } = createWrapper();
       const storageKey = `${LocalStorageKeys.LAST_MCP_}${Constants.NEW_CONVO}`;
       localStorage.setItem(storageKey, JSON.stringify(['server1', 'server2']));
 
       const { result, rerender } = renderHook(
-        ({ servers, allServers }) => useMCPSelect({ servers, allServers }),
+        ({ servers, allServers }) => useMCPSelect({ servers, allServers, ownsChatSelection: true }),
         {
           initialProps: {
             servers: [] as MCPServerDefinition[],
@@ -941,7 +1037,7 @@ describe('useMCPSelect', () => {
       localStorage.setItem(storageKey, JSON.stringify(['server1', 'stale']));
 
       const { result } = renderHook(
-        () => useMCPSelect({ servers: createMCPServers(['server1']) }),
+        () => useMCPSelect({ servers: createMCPServers(['server1']), ownsChatSelection: true }),
         { wrapper: Wrapper },
       );
 
@@ -955,7 +1051,7 @@ describe('useMCPSelect', () => {
     it('should not leak memory on repeated updates', async () => {
       const values = Array.from({ length: 100 }, (_, i) => `value-${i}`);
       const { Wrapper, servers } = createWrapper(values);
-      const { result } = renderHook(() => useMCPSelect({ servers }), {
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
         wrapper: Wrapper,
       });
 
@@ -972,9 +1068,12 @@ describe('useMCPSelect', () => {
 
     it('should handle component remounting', () => {
       const { Wrapper, servers } = createWrapper();
-      const { result, unmount } = renderHook(() => useMCPSelect({ servers }), {
-        wrapper: Wrapper,
-      });
+      const { result, unmount } = renderHook(
+        () => useMCPSelect({ servers, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper,
+        },
+      );
 
       act(() => {
         result.current.setMCPValues(['before-unmount']);
@@ -984,9 +1083,12 @@ describe('useMCPSelect', () => {
 
       // Remount
       const { Wrapper: Wrapper2, servers: servers2 } = createWrapper();
-      const { result: newResult } = renderHook(() => useMCPSelect({ servers: servers2 }), {
-        wrapper: Wrapper2,
-      });
+      const { result: newResult } = renderHook(
+        () => useMCPSelect({ servers: servers2, ownsChatSelection: true }),
+        {
+          wrapper: Wrapper2,
+        },
+      );
 
       // Should handle remounting gracefully
       expect(newResult.current.mcpValues).toBeDefined();
@@ -997,7 +1099,9 @@ describe('useMCPSelect', () => {
     it('keeps the MCP dropdown pinned by default when "mcp" is listed', async () => {
       mockStartupConfig = { interface: { defaultPinnedTools: ['artifacts', 'mcp'] } };
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
+        wrapper: Wrapper,
+      });
 
       await waitFor(() => {
         expect(result.current.isPinned).toBe(true);
@@ -1007,7 +1111,9 @@ describe('useMCPSelect', () => {
     it('unpins the MCP dropdown by default when configured without "mcp"', async () => {
       mockStartupConfig = { interface: { defaultPinnedTools: ['artifacts'] } };
       const { Wrapper, servers } = createWrapper(['serverA']);
-      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
+        wrapper: Wrapper,
+      });
 
       await waitFor(() => {
         expect(result.current.isPinned).toBe(false);
@@ -1017,7 +1123,9 @@ describe('useMCPSelect', () => {
     it('pins the MCP dropdown when a configured server name is listed', async () => {
       mockStartupConfig = { interface: { defaultPinnedTools: ['serverA'] } };
       const { Wrapper, servers } = createWrapper(['serverA', 'serverB']);
-      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
+        wrapper: Wrapper,
+      });
 
       await waitFor(() => {
         expect(result.current.isPinned).toBe(true);
@@ -1027,7 +1135,9 @@ describe('useMCPSelect', () => {
     it('keeps the legacy pinned default when defaultPinnedTools is not configured', async () => {
       mockStartupConfig = { interface: {} };
       const { Wrapper, servers } = createWrapper(['serverA']);
-      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
+        wrapper: Wrapper,
+      });
 
       await waitFor(() => {
         expect(result.current.isPinned).toBe(true);
@@ -1038,7 +1148,9 @@ describe('useMCPSelect', () => {
       localStorage.setItem(LocalStorageKeys.PIN_MCP_, JSON.stringify(false));
       mockStartupConfig = { interface: { defaultPinnedTools: ['mcp'] } };
       const { Wrapper, servers } = createWrapper();
-      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+      const { result } = renderHook(() => useMCPSelect({ servers, ownsChatSelection: true }), {
+        wrapper: Wrapper,
+      });
 
       await waitFor(() => {
         expect(result.current.isPinned).toBe(false);
