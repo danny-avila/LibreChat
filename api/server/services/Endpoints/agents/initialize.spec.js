@@ -59,9 +59,11 @@ jest.mock('~/server/controllers/agents/callbacks', () => ({
 }));
 
 const mockLoadToolsForExecution = jest.fn();
+const mockGetAccessibleMcpServerNames = jest.fn();
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
+  getAccessibleMcpServerNames: (...args) => mockGetAccessibleMcpServerNames(...args),
   isFatalAgentInitializationError: (error) =>
     [
       'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
@@ -667,6 +669,8 @@ describe('initializeClient — subagent loading', () => {
     capturedToolExecuteOptions = undefined;
     mockLoadToolsForExecution.mockReset();
     mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
+    mockGetAccessibleMcpServerNames.mockReset();
+    mockGetAccessibleMcpServerNames.mockResolvedValue([]);
 
     testUser = await User.create({
       email: 'subagent@example.com',
@@ -959,6 +963,7 @@ describe('initializeClient — subagent loading', () => {
     });
 
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    expect(mockGetAccessibleMcpServerNames).toHaveBeenCalledWith(testUser._id.toString(), 'USER');
     await expect(
       agentClientArgs.agent.lazySubagentConfigs[0].resolve({
         signal: new AbortController().signal,
