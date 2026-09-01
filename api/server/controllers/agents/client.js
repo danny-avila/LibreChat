@@ -9,7 +9,7 @@ const {
   createRun,
   isEnabled,
   checkAccess,
-  buildToolSet,
+  buildRunToolSet,
   logToolError,
   sanitizeTitle,
   payloadParser,
@@ -127,6 +127,7 @@ const {
   hasModelBoundContentProtection,
   assertResumeRuntimeContentAllowed,
   collectReachableAgents,
+  stampMcpServerIdentities,
   getDynamicToolContexts,
   getSafeErrorMetadata,
   createInitializedAgentContextFingerprint,
@@ -505,6 +506,15 @@ class AgentClient extends BaseClient {
       }
     }
     buffer.clear();
+  }
+
+  /** Stamps host-resolved MCP identities onto persisted calls so future replay
+   * can distinguish delimiter-bearing tool names from longer server names. */
+  stampMcpServerIdentities() {
+    stampMcpServerIdentities({
+      contentParts: this.contentParts,
+      roots: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
+    });
   }
 
   /**
@@ -3852,7 +3862,12 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
-      const toolSet = buildToolSet(this.options.agent);
+      const toolSet = buildRunToolSet(
+        this.options.agent,
+        this.agentConfigs?.values(),
+        this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
+        payload,
+      );
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
@@ -4423,6 +4438,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      this.stampMcpServerIdentities();
       await this.settleActivityLabels();
 
       /** Flush subagent usage emits the sink fired without awaiting, so their
@@ -4858,6 +4874,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      this.stampMcpServerIdentities();
       await this.settleActivityLabels();
 
       if (this.pendingSubagentEmits.length > 0) {

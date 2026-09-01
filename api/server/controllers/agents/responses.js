@@ -13,7 +13,7 @@ const {
   createRun,
   applyContextToAgent,
   buildInitialToolSessions,
-  buildToolSet,
+  buildRunToolSet,
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
   createAgentExecutionContext,
@@ -1004,7 +1004,13 @@ const executeResponse = async (envelope, { req, res }) => {
       // Merge previous messages with new input
       const allMessages = [...previousMessages, ...inputMessages];
 
-      const toolSet = buildToolSet(primaryConfig);
+      const toolSet = buildRunToolSet(
+        primaryConfig,
+        handoffAgentConfigs.values(),
+        undefined,
+        allMessages,
+        true,
+      );
       const formatted = formatAgentMessages(stripActivityLabelParts(allMessages), {}, toolSet);
       const formattedMessages = formatted.messages;
       const initialSummary = formatted.summary;
