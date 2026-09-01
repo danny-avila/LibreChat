@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
+import { ListEnd, OctagonX, X, Zap } from 'lucide-react';
 import { dataService, ForkOptions } from 'librechat-data-provider';
-import { Bot, CornerDownRight, ListEnd, MessagesSquare, OctagonX, X, Zap } from 'lucide-react';
+import {
+  Alert,
+  Button,
+  Composer,
+  ControlCombobox,
+  useMediaQuery,
+  useToastContext,
+} from '@librechat/client';
 import {
   useRecoilCallback,
   useRecoilState,
@@ -9,28 +17,16 @@ import {
   useResetRecoilState,
   useSetRecoilState,
 } from 'recoil';
-import {
-  Button,
-  Alert,
-  composerSurfaceClasses,
-  composerSurfaceShadow,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  TextareaAutosize,
-  useMediaQuery,
-  useToastContext,
-} from '@librechat/client';
 import type {
   ParentSubagentTaskSummary,
   SubagentControlAction,
   SubagentControlReceipt,
   SubagentControlRequest,
 } from 'librechat-data-provider';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import type { ComposerKeyVerdict } from '@librechat/client';
 import type { ActiveSubagentPanel, SubagentControlUiState } from '~/store/subagents';
+import type { OptionWithIcon } from '~/common';
 import {
   adaptDurableThreadActivity,
   adaptDurableThreadConversation,
@@ -56,11 +52,14 @@ import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActi
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useParentSubagents } from './ParentSubagentsProvider';
+import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
-import { cn } from '~/utils';
+import { renderAgentAvatar } from '~/utils';
+import store from '~/store';
 
 const EVENT_TASK_PAGE_SIZE = 3;
 const TERMINAL_CONTROL_REASONS = new Set([
@@ -109,6 +108,16 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
+  const enterToSend = useRecoilValue(store.enterToSend);
+  const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
+  const [actorPickerOpen, setActorPickerOpen] = useState(false);
+  /** A continuation is out. Declared here because the selection-advance effect
+   *  below has to defer to it, well before the mutation itself exists. */
+  const [continuationPending, setContinuationPending] = useState(false);
+  const [controlMessage, setControlMessage] = useState('');
+  /** Unsent words in the composer are enough on their own: whatever put them
+   *  there, an advance would change the control identity and wipe them. */
+  const selectionHeldForDraft = continuationPending || controlMessage.trim() !== '';
   const resetSelection = useResetRecoilState(activeSubagentPanel);
   const setSelection = useSetRecoilState(activeSubagentPanel);
   const agentsMap = useAgentsMapContext();
@@ -243,6 +252,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     if (
       selection.event == null ||
       selection.event.pinnedTask === true ||
+      /** An advance changes the control identity, which empties the composer.
+       *  Defer while anything unsent is in it — a draft not yet submitted, one
+       *  travelling with a continuation in flight, or one left behind by a
+       *  continuation that failed and is waiting to be retried. The hold
+       *  releases itself once the draft is sent or cleared. */
+      selectionHeldForDraft ||
       eventSummary?.latestTaskId == null ||
       eventSummary.latestTaskId === taskId
     ) {
@@ -254,23 +269,62 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       selection.event.siblingParentMessageIds,
     );
     if (nextSelection != null) setSelection(nextSelection);
-  }, [eventSummary, selection, setSelection, taskId]);
+  }, [eventSummary, selection, selectionHeldForDraft, setSelection, taskId]);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&
     progress.status !== 'stop' &&
     progress.status !== 'error';
 
+  const controlMessageRef = useRef(controlMessage);
+  controlMessageRef.current = controlMessage;
+  /** The continuation in flight, bound to the selection that asked for it. The
+   *  fork lands a round trip later and the panel stays live for it, so the live
+   *  field is the better source — but ONLY while it still belongs to the actor
+   *  that made the request. Switch actors mid-flight and the words in the field
+   *  are the new actor's, so this falls back to what was there at submission. */
+  const continuationRef = useRef<{ identity: string; text: string } | null>(null);
+  const handOffComposerText = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string, text: string) =>
+        set(store.pendingComposerTextByConvoId(conversationId), text),
+    [],
+  );
   const continueChat = useForkConvoMutation({
     onSuccess: (result) => {
+      const continuedConversationId = result.conversation?.conversationId;
+      /** The server keeps child threads view-only (`CHILD_THREAD_READ_ONLY_ERROR`),
+       *  so a continuation is a real conversation forked from the thread. Hand
+       *  what the reader typed to that conversation's composer instead of
+       *  dropping it with this panel — in memory, since an unsent draft must not
+       *  be written to storage the reader may have asked not to use. */
+      const continuation = continuationRef.current;
+      continuationRef.current = null;
+      setContinuationPending(false);
+      /** While the field still belongs to this continuation it IS the draft,
+       *  verbatim — including when the reader has emptied it since, which is
+       *  them withdrawing the words rather than leaving them behind. Only a
+       *  composer that has moved to another selection falls back to what was
+       *  captured at submission. */
+      const stillItsOwnComposer = continuation?.identity === controlSelectionRef.current;
+      const draft = stillItsOwnComposer
+        ? controlMessageRef.current.trim()
+        : (continuation?.text ?? '');
+      if (continuedConversationId != null && draft !== '') {
+        handOffComposerText(continuedConversationId, draft);
+      }
+      if (stillItsOwnComposer) setControlMessage('');
       resetSelection();
       navigateToConvo(result.conversation);
     },
     onError: () => {
+      /** The panel stays open on a failed continuation, and the composer still
+       *  holds the words, so there is nothing to restore. */
+      continuationRef.current = null;
+      setContinuationPending(false);
       showToast({ message: localize('com_ui_continue_chat_error'), status: 'error' });
     },
   });
-  const [controlMessage, setControlMessage] = useState('');
   const [turnDetailOverrides, setTurnDetailOverrides] = useState(
     () => new Map<string, ReturnType<typeof adaptDurableThreadActivity>>(),
   );
@@ -687,7 +741,20 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     });
   }, [resetSelection, selection.parentMessageId, selection.partIndex, selection.toolCallId]);
 
-  useFocusTrap(panelRef, isMobile, close);
+  /** Escape is handled on the element rather than through the trap's own
+   *  native listener: that listener sits on this `aside`, so it runs BEFORE any
+   *  React handler inside it and would close the whole panel out from under a
+   *  nested popover that meant to dismiss only itself. As a React handler it
+   *  bubbles in DOM order, so an inner control can stop it or mark it handled. */
+  useFocusTrap(panelRef, isMobile);
+  const handlePanelKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      if (!isMobile || event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      close();
+    },
+    [close, isMobile],
+  );
 
   useEffect(() => {
     const activeElement = document.activeElement;
@@ -745,6 +812,33 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     return { ...merged, controls: [...(merged.controls ?? []), transientControl] };
   }, [liveActivity, progress, selection.durable, taskView, transientControl]);
   const panelTitle = selection.event == null ? activity.title : selectedEventActorName;
+  const actorOptions = useMemo<OptionWithIcon[]>(() => {
+    if (selection.event == null) return [];
+    return (
+      eventSiblings
+        /** An actor with no task has nothing to open, and this list has no
+         *  disabled state — leave it out rather than offering a dead row. The
+         *  selected thread stays listed whatever the index currently says. */
+        .filter((child) => child.latestTaskId != null || child.threadId === threadId)
+        .map((child) => {
+          const agent = child.agentId == null ? undefined : agentsMap?.[child.agentId];
+          const name = agent?.name || child.actorId || child.title;
+          return {
+            value: child.threadId,
+            label:
+              agent?.name != null && child.actorId != null ? `${name} · ${child.actorId}` : name,
+            icon: renderAgentAvatar(agent, { size: 'icon', showBorder: false }),
+          };
+        })
+    );
+  }, [agentsMap, eventSiblings, selection.event, threadId]);
+  const selectedActorLabel =
+    actorOptions.find((option) => option.value === threadId)?.label ?? panelTitle;
+  const selectedActorAgentId = selectedEventActor?.agentId ?? threadView?.agentId;
+  const selectedActorIcon = renderAgentAvatar(
+    selectedActorAgentId == null ? undefined : agentsMap?.[selectedActorAgentId],
+    { size: 'icon', showBorder: false },
+  );
   const latestConversationTurns = useMemo(
     () => (threadView == null ? [] : adaptDurableThreadConversation(threadView)),
     [threadView],
@@ -796,23 +890,38 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           return override == null ? selected : { ...selected, activity: override };
         });
       }
-      // The API keeps the exact selected activity even when its bounded
-      // chronological turn is the first item removed from the response.
-      // Preserve that selection ahead of the retained newer continuation.
-      const retained = [
-        {
-          taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
-          trigger: {
-            kind:
-              selection.event == null
-                ? ('parent_continuation' as const)
-                : ('external_event' as const),
-            summary: selection.prompt ?? activity.prompt ?? '',
-          },
-          activity,
+      /** A turn absent from the durable window is either the thread's newest
+       *  delivery whose fetch has not landed yet (place it at the END, where
+       *  it will settle — a new event must not appear at the top and then
+       *  jump to the bottom) or an older selection displaced from the bounded
+       *  window (keep it ahead of the retained newer continuation). */
+      const indexedChild = byThreadId.get(threadId);
+      const selectedTaskCreatedAt = indexedChild?.tasks.find(
+        (task) => task.taskId === taskId,
+      )?.createdAt;
+      const synthesizedTurn = {
+        taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+        trigger: {
+          kind:
+            selection.event == null
+              ? ('parent_continuation' as const)
+              : ('external_event' as const),
+          summary: selection.prompt ?? activity.prompt ?? '',
+          ...(selectedTaskCreatedAt == null ? {} : { createdAt: selectedTaskCreatedAt }),
         },
-        ...durableTurns,
-      ];
+        activity,
+      };
+      /** Order by trigger time when both sides carry one; the separately
+       *  polled discovery index is only the fallback authority, since it can
+       *  briefly lag or lead the thread view. */
+      const lastDurableCreatedAt = durableTurns[durableTurns.length - 1]?.trigger.createdAt;
+      const appendSynthesized =
+        selectedTaskCreatedAt != null && lastDurableCreatedAt != null
+          ? selectedTaskCreatedAt >= lastDurableCreatedAt
+          : indexedChild?.latestTaskId === taskId;
+      const retained = appendSynthesized
+        ? [...durableTurns, synthesizedTurn]
+        : [synthesizedTurn, ...durableTurns];
       return retained.map((turn) => {
         const override = turnDetailOverrides.get(turn.taskId);
         return override == null ? turn : { ...turn, activity: override };
@@ -831,12 +940,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     ];
   }, [
     activity,
+    byThreadId,
     latestConversationTurns,
     movingWindowTurns,
     olderTurns,
     postRebaseTurns,
     rebaseTurns,
     retainedTurnsValid,
+    threadId,
     selection,
     taskId,
     turnDetailOverrides,
@@ -881,13 +992,58 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     taskView.messages.some((message) => message.messageId === `${taskId}:assistant`);
 
   const continueAsChat = useCallback(() => {
-    if (!canContinueAsChat || selection.durable == null) return;
+    if (!canContinueAsChat || selection.durable == null || continueChat.isLoading) return;
+    continuationRef.current = { identity: controlIdentity, text: controlMessage.trim() };
+    setContinuationPending(true);
     continueChat.mutate({
       conversationId: selection.durable.threadId,
       messageId: `${selection.durable.taskId}:assistant`,
       option: ForkOptions.DIRECT_PATH,
     });
-  }, [canContinueAsChat, continueChat, selection.durable]);
+  }, [canContinueAsChat, continueChat, controlIdentity, controlMessage, selection.durable]);
+  /** `control` steers the live run, `continue` carries the thread into a chat
+   *  of the reader's own. Both compose into the same field, with the same
+   *  placeholder the main chat composer shows for this agent. */
+  let composerMode: 'control' | 'continue' | null = null;
+  if (controlAvailable) {
+    composerMode = 'control';
+  } else if (canContinueAsChat) {
+    composerMode = 'continue';
+  }
+  const composerPlaceholder = localize('com_endpoint_message_new', { 0: panelTitle });
+  const composerCanSubmit =
+    composerMode === 'control'
+      ? !controlPending && controlMessage.trim() !== ''
+      : !continueChat.isLoading;
+  /** The main chat form's own Enter decision table, so a reader who rebound or
+   *  unbound the submit shortcut gets the same contract here, and chords
+   *  claimed by global shortcuts are left for the window handler. */
+  const resolveKeyVerdict = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>, isComposing: boolean): ComposerKeyVerdict => {
+      const action = resolveComposerKeyDown(event, {
+        isComposing,
+        isSubmitting: false,
+        allowSubmitWhileGenerating: false,
+        hasDuringRunModifier: false,
+        shortcutsEnabled,
+        enterToSend,
+        submitOverride,
+        yieldedChords,
+      });
+      if (action === 'submit') return 'submit';
+      if (action === 'newline') return 'newline';
+      if (action === 'block') return 'block';
+      return 'none';
+    },
+    [enterToSend, shortcutsEnabled, submitOverride, yieldedChords],
+  );
+  const submitComposer = useCallback(() => {
+    if (controlAvailable) {
+      submitControl('steer');
+      return;
+    }
+    continueAsChat();
+  }, [continueAsChat, controlAvailable, submitControl]);
   const selectActor = useCallback(
     (nextThreadId: string) => {
       const next = eventSiblings.find((child) => child.threadId === nextThreadId);
@@ -1065,44 +1221,58 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       role={isMobile ? 'dialog' : 'region'}
       aria-modal={isMobile || undefined}
       aria-label={localize('com_ui_subagent_thread_panel')}
+      onKeyDown={handlePanelKeyDown}
       className="flex h-full w-full flex-col overflow-hidden bg-surface-primary-alt text-text-primary"
     >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border-light px-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-tertiary">
-          <Bot size={17} aria-hidden="true" />
-        </div>
-        <div className="min-w-0 flex-1">
-          {selection.event != null && eventSiblings.length > 1 ? (
-            <Select value={threadId} onValueChange={selectActor}>
-              <SelectTrigger
-                className="h-8 max-w-sm border-0 bg-transparent px-1 font-semibold shadow-none"
-                aria-label={localize('com_ui_subagent_actor')}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {eventSiblings.map((child) => (
-                  <SelectItem
-                    key={child.threadId}
-                    value={child.threadId}
-                    disabled={!child.latestTaskId}
-                  >
-                    {child.agentId != null && agentsMap?.[child.agentId]?.name
-                      ? agentsMap[child.agentId]?.name
-                      : child.actorId || child.title}
-                    {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
-                      ? ` · ${child.actorId}`
-                      : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <h2 className="truncate text-sm font-semibold" title={panelTitle}>
+        {actorOptions.length > 1 ? (
+          /* The agent builder's picker, so switching actors here reads as the
+             same control as every other agent selection in the app — avatar,
+             searchable list, and the shared theming that comes with it.
+
+             The wrapper keeps an Escape aimed at the open popover from reaching
+             the panel's focus trap, which closes the whole panel on Escape and
+             would take the composer's text with it. */
+          <div
+            className="flex min-w-0 flex-1"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && actorPickerOpen) event.stopPropagation();
+            }}
+          >
+            <ControlCombobox
+              isCollapsed={false}
+              selectedValue={threadId}
+              setValue={selectActor}
+              displayValue={selectedActorLabel}
+              selectPlaceholder={selectedActorLabel}
+              searchPlaceholder={localize('com_agents_search_name')}
+              ariaLabel={localize('com_ui_subagent_actor')}
+              items={actorOptions}
+              SelectIcon={selectedActorIcon}
+              disabled={continuationPending}
+              /** In the panel, not in a portal: on mobile this `aside` is a
+                  modal whose focus trap only knows its own descendants, so a
+                  portaled search field would let Tab escape to the page
+                  behind it. */
+              portal={false}
+              onOpenChange={setActorPickerOpen}
+              containerClassName="min-w-0 flex-1 px-0"
+              className="h-9 w-full border-transparent bg-transparent font-semibold hover:bg-surface-hover"
+              showCarat
+            />
+          </div>
+        ) : (
+          <>
+            {/* The `MessageRow` author-glyph slot, one size up: no plate
+                behind it, so an agent avatar reads as the avatar it is. */}
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full">
+              {selectedActorIcon}
+            </div>
+            <h2 className="min-w-0 flex-1 truncate text-sm font-semibold" title={panelTitle}>
               {panelTitle}
             </h2>
-          )}
-        </div>
+          </>
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -1145,88 +1315,69 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               )}
             </Alert>
           )}
-          {controlAvailable && (
-            /* Same surface language as the main chat composer, scaled to the panel. */
-            <div
-              className={cn(
-                'flex w-full flex-col gap-1.5 rounded-3xl p-2.5',
-                composerSurfaceClasses(),
-                composerSurfaceShadow.within,
-              )}
-            >
-              <TextareaAutosize
-                value={controlMessage}
-                onChange={(event) => setControlMessage(event.target.value)}
-                placeholder={localize('com_ui_subagent_control_placeholder')}
-                aria-label={localize('com_ui_subagent_control_message')}
-                maxLength={4 * 1024}
-                minRows={1}
-                maxRows={6}
-                disabled={controlPending}
-                className="w-full resize-none bg-transparent px-1.5 py-1 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none disabled:cursor-not-allowed"
-              />
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={controlPending || controlMessage.trim() === ''}
-                  onClick={() => submitControl('steer')}
-                  className="rounded-full"
-                >
-                  <CornerDownRight size={14} aria-hidden />
-                  {localize('com_ui_steer')}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={controlPending || controlMessage.trim() === ''}
-                  onClick={() => submitControl('queue')}
-                  className="rounded-full"
-                >
-                  <ListEnd size={14} aria-hidden />
-                  {localize('com_ui_queue')}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={controlPending || controlMessage.trim() === ''}
-                  onClick={() => submitControl('interrupt')}
-                  className="rounded-full"
-                >
-                  <Zap size={14} aria-hidden />
-                  {localize('com_ui_subagent_interrupt')}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={controlPending}
-                  onClick={() => submitControl('cancel')}
-                  className="ml-auto rounded-full text-status-error"
-                >
-                  <OctagonX size={14} aria-hidden />
-                  {localize('com_ui_subagent_cancel_task')}
-                </Button>
-              </div>
-            </div>
-          )}
-          {!controlAvailable && canContinueAsChat && (
-            /* The settled run keeps a footer affordance where the composer was,
-               instead of the input vanishing at completion. */
-            <Button
-              type="button"
-              variant="outline"
-              onClick={continueAsChat}
-              disabled={continueChat.isLoading}
-              aria-label={localize('com_ui_continue_chat')}
-              className="w-full gap-1.5 rounded-3xl"
-            >
-              <MessagesSquare size={15} aria-hidden="true" />
-              {localize('com_ui_continue_chat')}
-            </Button>
+          {composerMode != null && (
+            /* One surface across the run's whole life. A settled thread swaps
+               what Enter DOES, never the control the reader is looking at, so
+               nothing under the pointer moves as the run completes. */
+            <Composer
+              value={controlMessage}
+              onChange={setControlMessage}
+              onSubmit={submitComposer}
+              canSubmit={composerCanSubmit}
+              disabled={composerMode === 'control' && controlPending}
+              submitLabel={
+                composerMode === 'control'
+                  ? localize('com_ui_steer')
+                  : localize('com_ui_subagent_continue_new_chat')
+              }
+              ariaLabel={localize('com_ui_message_input')}
+              placeholder={composerPlaceholder}
+              submitOnEnter={enterToSend}
+              resolveKeyVerdict={resolveKeyVerdict}
+              /** The cap bounds a subagent CONTROL command's payload. A
+               *  continuation is ordinary chat text bound for an ordinary
+               *  composer, which caps nothing. */
+              maxLength={composerMode === 'control' ? 4 * 1024 : undefined}
+              actions={
+                composerMode === 'control' ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={controlPending || controlMessage.trim() === ''}
+                      onClick={() => submitControl('queue')}
+                      className="rounded-full"
+                    >
+                      <ListEnd size={14} aria-hidden />
+                      {localize('com_ui_queue')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={controlPending || controlMessage.trim() === ''}
+                      onClick={() => submitControl('interrupt')}
+                      className="rounded-full"
+                    >
+                      <Zap size={14} aria-hidden />
+                      {localize('com_ui_subagent_interrupt')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={controlPending}
+                      onClick={() => submitControl('cancel')}
+                      className="rounded-full text-status-error"
+                    >
+                      <OctagonX size={14} aria-hidden />
+                      {localize('com_ui_subagent_cancel_task')}
+                    </Button>
+                  </>
+                ) : null
+              }
+            />
           )}
         </div>
       )}

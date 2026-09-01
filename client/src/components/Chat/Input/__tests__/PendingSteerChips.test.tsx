@@ -181,6 +181,25 @@ describe('PendingSteerChips — terminal server state', () => {
     expect(screen.getByText('com_ui_queued_turn_failed')).toBeInTheDocument();
   });
 
+  it('shows indeterminate admission as non-actionable reconciliation work', () => {
+    renderChips([
+      {
+        id: 'indeterminate-turn',
+        text: 'external result unknown',
+        createdAt: 1,
+        server: {
+          id: 'server-indeterminate-1',
+          status: 'indeterminate',
+          errorCode: 'ADMISSION_INDETERMINATE',
+        },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_queued_turn_reconciliation_required')).toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_remove_queued')).toBeDisabled();
+    expect(screen.queryByText('com_ui_send_now')).toBeNull();
+  });
+
   it('dismisses an expired ambiguous receipt without restoring or resending it', () => {
     renderChips([
       {

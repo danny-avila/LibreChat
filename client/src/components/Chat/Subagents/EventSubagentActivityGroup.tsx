@@ -3,8 +3,8 @@ import { Button, cn } from '@librechat/client';
 import { Bot, ChevronDown } from 'lucide-react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
+import { isLiveSubagentStatus, subagentStatusDotClass, subagentStatusLabelKey } from './status';
 import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRow';
-import { subagentStatusIcon, subagentStatusLabelKey } from './status';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import { eventSubagentSelection } from './eventSelection';
 import { activeSubagentPanel } from '~/store/subagents';
@@ -185,7 +185,6 @@ function EventSubagentRows({
         className="divide-y divide-border-light border-t border-border-light"
       >
         {eventChildren.map((child) => {
-          const StatusIcon = subagentStatusIcon(child.status);
           const agent = child.agentId == null ? undefined : agentsMap?.[child.agentId];
           const label = agent?.name || child.actorId || child.title;
           const canOpen = child.latestTaskId != null;
@@ -218,13 +217,25 @@ function EventSubagentRows({
                   </span>
                 ) : null}
               </span>
-              <span className="flex items-center gap-1 text-xs text-text-secondary">
-                <StatusIcon
-                  size={14}
-                  className={child.status === 'running' ? 'animate-spin' : undefined}
+              {/* Fixed-width slot, dot last: the label absorbs every length
+                  change inboard of it, so the color lands on the same pixel
+                  column in every row and cannot drift as statuses change. */}
+              <span className="flex w-24 shrink-0 items-center justify-end gap-1.5 text-xs text-text-secondary">
+                <span
+                  className={cn(
+                    'min-w-0 truncate',
+                    isLiveSubagentStatus(child.status) && 'shimmer',
+                  )}
+                >
+                  {localize(subagentStatusLabelKey(child.status))}
+                </span>
+                <span
+                  className={cn(
+                    'h-2 w-2 shrink-0 rounded-full border border-border-heavy/40',
+                    subagentStatusDotClass(child.status),
+                  )}
                   aria-hidden="true"
                 />
-                {localize(subagentStatusLabelKey(child.status))}
               </span>
             </button>
           );

@@ -71,18 +71,10 @@ import {
 import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
 import { contentFilterUninspectableResponse } from '~/protection/files';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
+import { getUserFacingProviderError } from '../errors';
 import { collectReachableAgents } from '../traversal';
 import { getDynamicToolContexts } from '../hitl';
 import { createSafeUser } from '~/utils';
-
-const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
-
-function getUserFacingProviderError(error: unknown, protectionEnabled: boolean): string {
-  if (protectionEnabled) {
-    return GENERIC_PROVIDER_ERROR;
-  }
-  return error instanceof Error ? error.message : 'An error occurred';
-}
 
 /**
  * Dependencies for the chat completion service

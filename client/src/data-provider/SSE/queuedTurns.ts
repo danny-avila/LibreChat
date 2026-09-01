@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys } from 'librechat-data-provider';
 import type {
@@ -8,10 +9,12 @@ import type {
 export type AgentQueuedTurnReceipt = TAgentQueuedTurnReceipt;
 export type EnqueueAgentQueuedTurnRequest = TEnqueueAgentQueuedTurnRequest;
 
-export const agentQueuedTurnsQueryKey = (
-  conversationId: string,
-  clientRequestIds: readonly string[] = [],
-) => [QueryKeys.agentQueuedTurns, conversationId, ...clientRequestIds] as const;
+/** Keep one cache authority for a conversation. Known receipt ids change the
+ * server projection, not the identity of the durable queue. Giving every id
+ * set its own key can resurrect an older cached projection after an id is
+ * retired. */
+export const agentQueuedTurnsQueryKey = (conversationId: string) =>
+  [QueryKeys.agentQueuedTurns, conversationId] as const;
 
 function queuedTurnErrorResponse(error: unknown): { status?: number; code?: string } {
   const response = (
@@ -72,29 +75,85 @@ export async function cancelAgentQueuedTurn(input: {
   return response.receipt;
 }
 
+/** Indeterminate admission deliberately retains its durable claim until exact
+ * source evidence arrives. It can still be refreshed on mount/focus, but a
+ * two-second loop cannot resolve it and disguises permanent quarantine as
+ * ordinary progress. */
+export function shouldPollAgentQueuedTurns(
+  receipts: unknown,
+  reconcileUntil?: number,
+  observedAt = Date.now(),
+): boolean {
+  return (
+    (reconcileUntil != null && observedAt < reconcileUntil) ||
+    (Array.isArray(receipts) &&
+      receipts.some(
+        (item: AgentQueuedTurnReceipt) =>
+          item.status === 'queued' ||
+          (item.status === 'claimed' && item.failure?.code !== 'ADMISSION_INDETERMINATE'),
+      ))
+  );
+}
+
 export function useAgentQueuedTurns(
   conversationId: string,
   enabled: boolean,
   clientRequestIds: string[] = [],
   reconcileUntil?: number,
 ) {
+  const queryClient = useQueryClient();
   const knownIds = [...new Set(clientRequestIds)].sort();
-  return useQuery({
-    queryKey: agentQueuedTurnsQueryKey(conversationId, knownIds),
+  const knownIdsSignature = knownIds.join('\u0000');
+  const previousRequest = useRef({ conversationId, knownIdsSignature });
+  const query = useQuery({
+    queryKey: agentQueuedTurnsQueryKey(conversationId),
     queryFn: () => fetchAgentQueuedTurns(conversationId, knownIds),
     enabled: enabled && conversationId.length > 0,
     staleTime: 1_000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    refetchInterval: (receipts) => {
-      return (reconcileUntil != null && Date.now() < reconcileUntil) ||
-        (Array.isArray(receipts) &&
-          receipts.some((item) => item.status === 'queued' || item.status === 'claimed'))
-        ? 2_000
-        : false;
-    },
+    /** A stopped indeterminate row can receive exact proof at any time. Its
+     * cache may still be inside `staleTime`, so mount/focus must bypass the
+     * ordinary freshness gate rather than waiting for another user cycle. */
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    refetchInterval: (receipts) =>
+      shouldPollAgentQueuedTurns(receipts, reconcileUntil) ? 2_000 : false,
     retry: false,
   });
+  const { refetch } = query;
+
+  useEffect(() => {
+    const previous = previousRequest.current;
+    previousRequest.current = { conversationId, knownIdsSignature };
+    if (
+      !enabled ||
+      conversationId.length === 0 ||
+      previous.conversationId !== conversationId ||
+      previous.knownIdsSignature === knownIdsSignature
+    ) {
+      return;
+    }
+
+    let superseded = false;
+    const refreshProjection = async () => {
+      /** React Query cannot replace an initial fetch that has no cached data
+       * through `refetch` alone. Cancel it explicitly so the next request
+       * captures the current reconciliation identities. */
+      await queryClient.cancelQueries({
+        queryKey: agentQueuedTurnsQueryKey(conversationId),
+        exact: true,
+      });
+      if (!superseded) {
+        await refetch({ cancelRefetch: true });
+      }
+    };
+    void refreshProjection();
+
+    return () => {
+      superseded = true;
+    };
+  }, [conversationId, enabled, knownIdsSignature, queryClient, refetch]);
+
+  return query;
 }
 
 export function useEnqueueAgentQueuedTurnMutation() {
