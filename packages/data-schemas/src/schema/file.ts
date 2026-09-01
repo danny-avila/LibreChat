@@ -142,6 +142,14 @@ const file: Schema<IMongoFile> = new Schema(
         type: [String],
         default: undefined,
       },
+      /** The user picked this file's destination from the legacy chooser, so the
+       *  destinations absent from the record were declined rather than deferred. Unlike
+       *  the endpoint setting, which the next turn may resolve differently, the choice
+       *  belongs to the file. */
+      legacyUploadChoice: {
+        type: Boolean,
+        default: undefined,
+      },
     },
     llmDeliveryPath: {
       /* What upload time inferred about delivery, from the endpoint and MIME type it saw.

@@ -2478,6 +2478,38 @@ describe('primeResources', () => {
       ]);
     });
 
+    it('leaves a file alone whose destination came from the legacy chooser', async () => {
+      /* The endpoint deciding this turn need not be the one the file was uploaded under,
+       * so the request-level legacy check cannot answer for it. Its missing references
+       * are declines, not work to do. */
+      const chosenFile = {
+        user: 'user1',
+        file_id: 'legacy-chosen',
+        filename: 'notes.csv',
+        filepath: '/uploads/notes.csv',
+        object: 'file',
+        type: 'text/csv',
+        bytes: 512,
+        embedded: false,
+        usage: 0,
+        metadata: { legacyUploadChoice: true },
+      } as TFile;
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([chosenFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+      });
+
+      expect(result.provisionState).toBeUndefined();
+    });
+
     it('queues a deferred candidate for provisioning without delivering it again', async () => {
       process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
       const deferred = makeCodeFile({ file_id: 'deferred-file' });

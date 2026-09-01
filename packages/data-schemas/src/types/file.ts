@@ -75,6 +75,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
     sourceDispatchedAt?: number;
     /** Vector namespaces this file has been embedded into. */
     embeddedEntities?: string[];
+    /** The destination came from the legacy chooser, so absent ones were declined. */
+    legacyUploadChoice?: boolean;
   };
   /** Upload-time inference, not a durable contract. See the schema field for why. */
   llmDeliveryPath?: string;

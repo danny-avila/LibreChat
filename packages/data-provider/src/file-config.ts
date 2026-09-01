@@ -177,6 +177,14 @@ export const bedrockDocumentFormats: Record<string, BedrockDocumentFormat> = {
   'text/markdown': 'md',
 };
 
+/**
+ * Whether an upload belongs to the conversation rather than to the agent. The value
+ * arrives from multipart form data, so it can be the string "false", which is truthy.
+ * Shared so the route, the authorization check and processing cannot disagree about it.
+ */
+export const isMessageFileUpload = (value?: boolean | string | null): boolean =>
+  value === true || value === 'true';
+
 export const isBedrockDocumentType = (mimeType?: string): boolean =>
   mimeType != null && mimeType in bedrockDocumentFormats;
 
