@@ -6614,6 +6614,28 @@ describe('Conversation Operations', () => {
         titleMatch.conversationId,
       ]);
     });
+
+    it('should search titles when message methods are not injected', async () => {
+      const titleMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Contains keyword',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      Object.assign(Conversation, {
+        meiliSearch: jest
+          .fn()
+          .mockResolvedValue({ hits: [{ conversationId: titleMatch.conversationId }] }),
+      });
+
+      const scopedMethods = createConversationMethods(mongoose);
+      const result = await scopedMethods.getConvosByCursor('user123', { search: 'keyword' });
+
+      expect(result?.conversations.map((c) => c.conversationId)).toEqual([
+        titleMatch.conversationId,
+      ]);
+    });
   });
 
   describe('tenantId stripping', () => {

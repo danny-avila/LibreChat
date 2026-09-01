@@ -2627,7 +2627,6 @@ export function createConversationMethods(
 
     if (search) {
       try {
-        const { searchMessages } = getMessageMethods();
         const ConversationMeili = mongoose.models.Conversation as SchemaWithMeiliMethods;
         const searchParams: SearchParams = {
           filter: `user = "${user}"`,
@@ -2635,16 +2634,18 @@ export function createConversationMethods(
         };
         const [convoResults, messageHits] = await Promise.all([
           ConversationMeili.meiliSearch(search, searchParams),
-          searchMessages(search, searchParams).then(
-            (results) => results.hits ?? [],
-            (error) => {
-              logger.error(
-                '[getConvosByCursor] Message search failed, using title matches only',
-                error,
-              );
-              return [];
-            },
-          ),
+          deps?.searchMessages
+            ? deps.searchMessages(search, searchParams).then(
+                (results) => results.hits ?? [],
+                (error) => {
+                  logger.error(
+                    '[getConvosByCursor] Message search failed, using title matches only',
+                    error,
+                  );
+                  return [];
+                },
+              )
+            : [],
         ]);
         const matchingIds = new Set<string>();
         for (const hit of convoResults.hits ?? []) {
