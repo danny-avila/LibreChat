@@ -391,11 +391,17 @@ const computeProvisionState = async ({
     return undefined;
   }
 
-  /* The legacy chooser makes the destination an explicit user decision that the upload
-   * path already acted on, so a file carries no reference for the destinations the user
-   * declined. Queueing on a missing reference would read those declines as work to do
-   * and send the contents to a service the user did not pick. */
-  if (legacyFileUploadUX === true) {
+  /* The legacy chooser makes the destination an explicit user decision, so a file it
+   * uploaded carries no reference for the destinations the user declined, and queueing on
+   * a missing reference would read those declines as work to do. The decision belongs to
+   * the file, not to this request: the endpoint deciding this turn need not be the one it
+   * was uploaded under. Records predating the marker have only the setting to go on. */
+  const wasDeclinedElsewhere = (file: TFile): boolean => {
+    const choice = file.metadata?.legacyUploadChoice;
+    return choice == null ? legacyFileUploadUX === true : choice;
+  };
+  const provisionable = attachments.filter((file) => file != null && !wasDeclinedElsewhere(file));
+  if (provisionable.length === 0) {
     return undefined;
   }
 
@@ -414,7 +420,7 @@ const computeProvisionState = async ({
    *  on another route cannot act on the answer either, so it does not ask. */
   const filesWithIdentifiers =
     needsCodeEnv && checkSessionsAlive && activeCodeRouteKey === 'default'
-      ? attachments.filter(
+      ? provisionable.filter(
           (f) =>
             f?.metadata?.codeEnvRef &&
             codeEnvRouteKey(f.metadata.codeEnvRef) === 'default' &&
@@ -450,7 +456,7 @@ const computeProvisionState = async ({
   const codeEnvFiles: TFile[] = [];
   const vectorDBFiles: TFile[] = [];
 
-  for (const file of attachments) {
+  for (const file of provisionable) {
     if (!file?.file_id) {
       continue;
     }
@@ -459,13 +465,6 @@ const computeProvisionState = async ({
      *  to stream, so provisioning them would fail and, for code, abort the turn.
      *  Provisioning them from their stored text is tracked as follow-up work. */
     if (file.source === FileSources.text) {
-      continue;
-    }
-
-    /** The user chose this file's destination from the legacy chooser, so the ones it
-     *  carries no reference for were declined. The request-level check cannot answer for
-     *  it: the endpoint deciding this turn may not be the one it was uploaded under. */
-    if (file.metadata?.legacyUploadChoice === true) {
       continue;
     }
 

@@ -561,7 +561,11 @@ describe('processAgentFileUpload', () => {
 
     test('throws when configured OCR capability is not enabled for the agent', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
-      checkCapability.mockResolvedValue(false);
+      /* Only OCR is under test here; disabling every capability would trip the
+       * separate context guard first. */
+      checkCapability.mockImplementation(
+        async (_req, capability) => capability !== AgentCapabilities.ocr,
+      );
       const req = makeReq({
         mimetype: PDF_MIME,
         ocrConfig: { strategy: FileSources.mistral_ocr },
@@ -573,7 +577,11 @@ describe('processAgentFileUpload', () => {
     });
 
     test('uses document_parser (no capability check) when OCR capability returns false but no OCR config', async () => {
-      checkCapability.mockResolvedValue(false);
+      /* Only OCR is under test here; disabling every capability would trip the
+       * separate context guard first. */
+      checkCapability.mockImplementation(
+        async (_req, capability) => capability !== AgentCapabilities.ocr,
+      );
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
@@ -1207,7 +1215,7 @@ describe('processAgentFileUpload', () => {
 
       expect(db.createFile).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: {
+          metadata: expect.objectContaining({
             codeEnvRef: {
               kind: 'user',
               id: 'user-123',
@@ -1226,7 +1234,7 @@ describe('processAgentFileUpload', () => {
                 provisionedAt: expect.any(Number),
               },
             },
-          },
+          }),
         }),
         true,
       );
@@ -1247,7 +1255,7 @@ describe('processAgentFileUpload', () => {
 
       expect(db.createFile).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: {
+          metadata: expect.objectContaining({
             codeEnvRef: {
               kind: 'agent',
               id: 'agent-abc',
@@ -1266,7 +1274,7 @@ describe('processAgentFileUpload', () => {
                 provisionedAt: expect.any(Number),
               },
             },
-          },
+          }),
         }),
         true,
       );
@@ -1319,7 +1327,7 @@ describe('processAgentFileUpload', () => {
         expect.objectContaining({
           expiredAt,
           context: FileContext.agents,
-          metadata: {
+          metadata: expect.objectContaining({
             codeEnvRef: {
               kind: 'agent',
               id: 'agent-abc',
@@ -1338,7 +1346,7 @@ describe('processAgentFileUpload', () => {
                 provisionedAt: expect.any(Number),
               },
             },
-          },
+          }),
         }),
         true,
       );
@@ -1647,7 +1655,7 @@ describe('processAgentFileUpload', () => {
           filepath: '/uploads/user-123/file-uuid-123__upload.bin',
           source: FileSources.local,
           type: 'text/csv',
-          metadata: {
+          metadata: expect.objectContaining({
             codeEnvRef: {
               kind: 'agent',
               id: 'agent-abc',
@@ -1666,7 +1674,7 @@ describe('processAgentFileUpload', () => {
                 provisionedAt: expect.any(Number),
               },
             },
-          },
+          }),
           llmDeliveryPath: 'none',
         }),
         true,
@@ -2551,12 +2559,6 @@ describe('permanent unified uploads and unknown tool sets', () => {
         filepath: '/uploads/photo.jpg',
       }),
     });
-    db.createFile.mockResolvedValueOnce({
-      file_id: 'inner-image',
-      type: 'image/webp',
-      filepath: '/uploads/photo.webp',
-      source: 'local',
-    });
     const req = makeReq({ mimetype: 'image/jpeg', ocrConfig: null });
     req.body.endpoint = EModelEndpoint.agents;
 
@@ -2570,6 +2572,9 @@ describe('permanent unified uploads and unknown tool sets', () => {
       expect.objectContaining({ file_id: 'f-image', type: 'image/webp' }),
       true,
     );
+    /* The conversion runs under an id of its own, so persisting it too would leave a
+     * message-attachment row referenced by nothing beside the record above. */
+    expect(db.createFile).toHaveBeenCalledTimes(1);
   });
 
   test('treats an explicit message_file of "false" as a permanent upload', async () => {

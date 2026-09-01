@@ -1018,6 +1018,25 @@ describe('useTextarea clipboard routing in unified mode', () => {
     expect(mockOpenModal).not.toHaveBeenCalled();
   });
 
+  it('holds a paste rather than offering the chooser before the config lands', async () => {
+    /* Neither answer is safe while pending: the chooser sends an explicit destination a
+     * unified deployment no longer uses, and skipping it sends none, which a legacy one
+     * refuses. */
+    mockIsUnifiedMode = false;
+    mockIsUploadConfigPending = true;
+    const { result } = renderTextareaHook();
+    const pastedFile = new File(['%PDF-'], 'report.pdf', { type: 'application/pdf' });
+    const event = createPasteEvent([pastedFile]);
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalled());
+    expect(mockOpenModal).not.toHaveBeenCalled();
+    expect(mockRouteFiles).not.toHaveBeenCalled();
+  });
+
   it('still honors a destination the caller already resolved', async () => {
     /* The long-text paste knows the file belongs in the text context, and unified routing
      * does not override a caller that already decided. */

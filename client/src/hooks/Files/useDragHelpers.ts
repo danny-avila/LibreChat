@@ -30,19 +30,21 @@ export default function useDragHelpers() {
     [conversation?.endpoint],
   );
 
-  const { getOptions } = useUploadOptions();
+  const { getOptions, isConfigPending } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
 
   /** Use refs to avoid re-creating the drop handler */
   const conversationRef = useRef(conversation);
   const getOptionsRef = useRef(getOptions);
+  const isConfigPendingRef = useRef(isConfigPending);
   const routeFilesRef = useRef(routeFiles);
   const openModalRef = useRef(openModal);
   const isAssistantsRef = useRef(isAssistants);
 
   conversationRef.current = conversation;
   getOptionsRef.current = getOptions;
+  isConfigPendingRef.current = isConfigPending;
   routeFilesRef.current = routeFiles;
   openModalRef.current = openModal;
   isAssistantsRef.current = isAssistants;
@@ -62,20 +64,25 @@ export default function useDragHelpers() {
         agent?.provider,
       );
       const cfg = queryClient.getQueryData<t.TFileConfig>([QueryKeys.fileConfig]);
-      let isUnifiedMode = false;
-      if (cfg) {
-        const endpointCfg = getEndpointFileConfig({
-          fileConfig: mergeFileConfig(cfg),
-          endpoint: currentEndpoint,
-          endpointType: currentEndpointType,
-        });
-        if (endpointCfg?.disabled === true) {
-          showToast({ message: localize('com_ui_attach_error_disabled'), status: 'error' });
-          return;
-        }
-        /* cfg being present is this path's not-pending condition. */
-        isUnifiedMode = isUnifiedUploadMode(endpointCfg, false);
+      const endpointCfg = cfg
+        ? getEndpointFileConfig({
+            fileConfig: mergeFileConfig(cfg),
+            endpoint: currentEndpoint,
+            endpointType: currentEndpointType,
+          })
+        : undefined;
+      if (endpointCfg?.disabled === true) {
+        showToast({ message: localize('com_ui_attach_error_disabled'), status: 'error' });
+        return;
       }
+      /* Neither answer is safe before the config lands: offering the chooser sends an
+       * explicit destination on a unified deployment, and skipping it sends none on a
+       * legacy one, which the server refuses. Say so instead of guessing. */
+      if (isConfigPendingRef.current) {
+        showToast({ message: localize('com_ui_attach_error_pending'), status: 'warning' });
+        return;
+      }
+      const isUnifiedMode = isUnifiedUploadMode(endpointCfg, false);
 
       /** Assistants do not use the upload-option flow */
       if (isAssistantsRef.current) {

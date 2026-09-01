@@ -234,7 +234,7 @@ export function canToolResourceConsume(toolResource: string, mimeType: string): 
 }
 
 /** Why an upload cannot be accepted, when nothing would be able to read it. */
-export type UploadRejection = 'no-agent-resource';
+export type UploadRejection = 'no-agent-resource' | 'context-disabled';
 
 /**
  * Where a unified upload will end up, and whether it can be accepted at all.
@@ -254,19 +254,40 @@ export function resolveUploadDestination(params: {
   agentTools?: string[];
   hasAgent: boolean;
   isMessageAttachment: boolean;
+  /** Undefined when not looked up, as for an upload that cannot land on context. */
+  contextEnabled?: boolean;
 }): { toolResource?: string; rejection?: UploadRejection } {
-  const { toolResource, deliveryPath, mimeType, agentTools, hasAgent, isMessageAttachment } =
-    params;
+  const {
+    toolResource,
+    deliveryPath,
+    mimeType,
+    agentTools,
+    hasAgent,
+    isMessageAttachment,
+    contextEnabled,
+  } = params;
+
+  /* A permanent context resource is only readable while the capability is on: priming
+   * skips those ids entirely when it is off, so storing one reports success and leaves
+   * the agent a file it can never open. */
+  const refusesContext = (resource: string): boolean =>
+    resource === EToolResources.context &&
+    hasAgent &&
+    !isMessageAttachment &&
+    contextEnabled === false;
 
   if (toolResource) {
-    return {
-      toolResource:
-        toolResource === EToolResources.ocr ? EToolResources.context : (toolResource as string),
-    };
+    const resolved =
+      toolResource === EToolResources.ocr ? EToolResources.context : (toolResource as string);
+    return refusesContext(resolved)
+      ? { rejection: 'context-disabled' }
+      : { toolResource: resolved };
   }
 
   if (deliveryPath === 'text') {
-    return { toolResource: EToolResources.context };
+    return refusesContext(EToolResources.context)
+      ? { rejection: 'context-disabled' }
+      : { toolResource: EToolResources.context };
   }
 
   /* Skills contribute file tools per turn without being stored on the agent, so this list

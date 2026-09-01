@@ -461,7 +461,7 @@ const processFileURL = async ({
  * @param {ServerRequest} params.req - The Express request object.
  * @param {Express.Response} [params.res] - The Express response object.
  * @param {ImageMetadata} params.metadata - Additional metadata for the file.
- * @param {boolean} params.returnFile - Whether to return the file metadata or return response as normal.
+ * @param {boolean} params.returnFile - Return the converted file's metadata without persisting it, for a caller that creates its own record.
  * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
@@ -491,30 +491,32 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
 
-  const result = await db.createFile(
-    {
-      user: req.user.id,
-      file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      ...storageMetadata,
-      filename: file.originalname,
-      context: FileContext.message_attachment,
-      source,
-      type: `image/${appConfig.imageOutputType}`,
-      ...(await getRetentionExpiry(req)),
-      width,
-      height,
-      tenantId: req.user.tenantId,
-      llmDeliveryPath,
-    },
-    true,
-  );
+  const fileInfo = {
+    user: req.user.id,
+    file_id,
+    temp_file_id,
+    bytes,
+    filepath,
+    ...storageMetadata,
+    filename: file.originalname,
+    context: FileContext.message_attachment,
+    source,
+    type: `image/${appConfig.imageOutputType}`,
+    ...(await getRetentionExpiry(req)),
+    width,
+    height,
+    tenantId: req.user.tenantId,
+    llmDeliveryPath,
+  };
 
+  /* Callers asking for the file are converting an image for a record of their own, under
+   * a different id. Persisting here would leave that row referenced by nothing while the
+   * converted object it points at is the one they go on to use. */
   if (returnFile) {
-    return result;
+    return fileInfo;
   }
+
+  const result = await db.createFile(fileInfo, true);
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
@@ -734,9 +736,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const endpoint = metadata.effectiveEndpoint ?? req.body?.endpoint;
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
 
-  /* Recorded on the file below: the endpoint setting can differ on a later turn, but the
-   * user's decision about this file does not change with it. */
+  /* Recorded on the file below, both ways: the endpoint setting can differ on a later
+   * turn, but the user's decision about this file does not change with it. An absent
+   * marker means a record written before this was tracked, not a unified upload. */
   const legacyUploadUX = endpointConfig?.legacyFileUploadUX === true;
+  const uploadChoiceMetadata = { legacyUploadChoice: legacyUploadUX };
 
   if (agent_id && !tool_resource && !messageAttachment) {
     if (legacyUploadUX) {
@@ -754,6 +758,13 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   /* Destination and acceptability are one decision, made by shared policy rather than
    * rebuilt here. `agentTools` is undefined when no agent record backs the upload. */
+  /* Only a permanent agent upload can land on a context resource, so the capability is
+   * looked up only there and the common attachment path pays nothing for it. */
+  const contextEnabled =
+    messageAttachment || agent_id == null
+      ? undefined
+      : await checkCapability(req, AgentCapabilities.context);
+
   const destination = resolveUploadDestination({
     toolResource: tool_resource,
     deliveryPath: llmDeliveryPath,
@@ -761,8 +772,14 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     agentTools: await filterEnabledConsumers(req, metadata.agentTools),
     hasAgent: agent_id != null,
     isMessageAttachment: messageAttachment,
+    contextEnabled,
   });
 
+  if (destination.rejection === 'context-disabled') {
+    throw new Error(
+      `Files of type ${file.mimetype} are saved to an agent as extracted text, and the context capability is disabled. Enable it for Agents, or attach the file to a message instead.`,
+    );
+  }
   if (destination.rejection === 'no-agent-resource') {
     throw new Error(
       `Files of type ${file.mimetype} cannot be saved to an agent on their own. Attach the file to a message, or enable the code interpreter or file search so the agent has somewhere to keep it.`,
@@ -926,6 +943,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           width,
           llmDeliveryPath: 'text',
         }),
+        metadata: uploadChoiceMetadata,
         ...retentionExpiry,
       };
 
@@ -1183,9 +1201,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       filename: filename ?? sanitizeFilename(file.originalname),
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       model: messageAttachment ? undefined : req.body.model,
-      metadata: legacyUploadUX
-        ? { ...(fileInfoMetadata ?? {}), legacyUploadChoice: true }
-        : fileInfoMetadata,
+      metadata: { ...(fileInfoMetadata ?? {}), ...uploadChoiceMetadata },
       type: storedType,
       embedded,
       source,

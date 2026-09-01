@@ -355,6 +355,42 @@ describe('resolveUploadDestination', () => {
     ).toBe('execute_code');
   });
 
+  it('refuses a permanent text upload when the context capability is off', () => {
+    /* Priming skips context ids entirely when the capability is off, so storing one
+     * reports success and leaves the agent a file it can never open. */
+    expect(
+      resolveUploadDestination({
+        ...base,
+        deliveryPath: 'text',
+        contextEnabled: false,
+      }).rejection,
+    ).toBe('context-disabled');
+    expect(
+      resolveUploadDestination({
+        ...base,
+        toolResource: 'ocr',
+        deliveryPath: 'text',
+        contextEnabled: false,
+      }).rejection,
+    ).toBe('context-disabled');
+  });
+
+  it('leaves message attachments and unknown capability alone', () => {
+    /* A message attachment is delivered with the turn rather than stored on the agent,
+     * and an unlooked-up capability is not judged. */
+    expect(
+      resolveUploadDestination({
+        ...base,
+        deliveryPath: 'text',
+        isMessageAttachment: true,
+        contextEnabled: false,
+      }).toolResource,
+    ).toBe('context');
+    expect(resolveUploadDestination({ ...base, deliveryPath: 'text' }).toolResource).toBe(
+      'context',
+    );
+  });
+
   it('refuses a permanent upload that would land on no agent resource', () => {
     expect(
       resolveUploadDestination({
