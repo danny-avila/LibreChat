@@ -14,6 +14,7 @@ const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
 const mockIsToolProgrammaticOnly = jest.fn((_toolId: string): boolean => false);
 const mockAreAllToolsProgrammatic = jest.fn((): boolean => false);
+const mockAreAllToolsBackground = jest.fn((): boolean => false);
 const mockCapabilities = {
   codeEnabled: false,
   deferredToolsEnabled: false,
@@ -76,7 +77,7 @@ jest.mock('~/hooks', () => ({
     toggleToolIntent: jest.fn(),
     areAllToolsDeferred: () => false,
     areAllToolsProgrammatic: mockAreAllToolsProgrammatic,
-    areAllToolsBackground: () => false,
+    areAllToolsBackground: mockAreAllToolsBackground,
     areAllToolsIntent: () => false,
     toggleDeferAll: jest.fn(),
     toggleProgrammaticAll: jest.fn(),
@@ -182,6 +183,8 @@ describe('McpSection', () => {
     mockIsToolProgrammaticOnly.mockReturnValue(false);
     mockAreAllToolsProgrammatic.mockReset();
     mockAreAllToolsProgrammatic.mockReturnValue(false);
+    mockAreAllToolsBackground.mockReset();
+    mockAreAllToolsBackground.mockReturnValue(false);
     mockGetToolOptions.mockReset();
     mockGetToolOptions.mockReturnValue(undefined);
     mockMcpServersMap.mockReset();
@@ -475,6 +478,19 @@ describe('McpSection', () => {
     expect(
       screen.getByRole('button', { name: 'com_ui_mcp_unprogrammatic_all' }),
     ).not.toHaveAttribute('aria-disabled');
+  });
+
+  test('bulk background toggle uses the shared semantic pressed state', () => {
+    mockCapabilities.backgroundToolsEnabled = true;
+    mockAreAllToolsBackground.mockReturnValue(true);
+
+    render(<McpSection item={item} />);
+
+    expect(screen.getByRole('button', { name: 'com_ui_mcp_unbackground_all' })).toHaveClass(
+      'border-series-1',
+      'bg-surface-active',
+      'text-text-primary',
+    );
   });
 
   test('bulk intent skips programmatic-only tools (label can never reach them)', () => {

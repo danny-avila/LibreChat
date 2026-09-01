@@ -248,8 +248,8 @@ describe.each([
 
 /** The meter paints segments on `surface-tertiary`; the swatch and popover chrome
  *  sit on `surface-secondary`; prompt categories sit on `surface-primary`;
- *  checked capability badges sit on `surface-chat`. All have to clear the 3:1
- *  mark-contrast floor. */
+ *  checked capability badges sit on `surface-chat`; dialog option toggles sit
+ *  on `surface-dialog`. All have to clear the 3:1 mark-contrast floor. */
 const seriesTokens = Array.from(
   { length: 7 },
   (_, index) => `rgb-series-${index + 1}` as keyof IThemeRGB,
@@ -259,6 +259,7 @@ const seriesSurfaces: Array<keyof IThemeRGB> = [
   'rgb-surface-tertiary',
   'rgb-surface-secondary',
   'rgb-surface-chat',
+  'rgb-surface-dialog',
 ];
 const WCAG_MARK_MIN = 3;
 

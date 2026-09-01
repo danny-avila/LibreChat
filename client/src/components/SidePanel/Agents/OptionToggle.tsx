@@ -8,8 +8,8 @@ interface OptionToggleProps {
   label: string;
   /** Defaults to `label` (bulk toggles use the same text for both). */
   tooltip?: string;
-  /** Text color applied directly to the icon when pressed. */
-  activeClass: string;
+  /** Semantic series border applied to the pressed button. */
+  activeBorderClass: string;
   onToggle: () => void;
   size?: 'sm' | 'md';
   /**
@@ -30,11 +30,23 @@ export default function OptionToggle({
   pressed,
   label,
   tooltip,
-  activeClass,
+  activeBorderClass,
   onToggle,
   size = 'sm',
   disabled = false,
 }: OptionToggleProps) {
+  let stateClass =
+    'border-transparent text-text-secondary hover:bg-surface-hover hover:text-text-secondary';
+  if (disabled) {
+    stateClass =
+      'cursor-not-allowed border-transparent text-text-tertiary opacity-60 hover:bg-transparent hover:text-text-tertiary';
+  } else if (pressed) {
+    stateClass = cn(
+      activeBorderClass,
+      'bg-surface-active text-text-primary hover:bg-surface-active-alt hover:text-text-primary',
+    );
+  }
+
   return (
     <TooltipAnchor
       description={tooltip ?? label}
@@ -47,15 +59,9 @@ export default function OptionToggle({
           aria-pressed={pressed}
           aria-label={label}
           aria-disabled={disabled || undefined}
-          className={cn(
-            'rounded-md',
-            size === 'sm' ? 'size-6' : 'size-7',
-            disabled
-              ? 'cursor-not-allowed text-text-tertiary opacity-60 hover:bg-transparent hover:text-text-tertiary'
-              : 'text-text-secondary hover:bg-surface-hover hover:text-text-secondary',
-          )}
+          className={cn('rounded-md border', size === 'sm' ? 'size-6' : 'size-7', stateClass)}
         >
-          <Icon className={cn('size-4', pressed && activeClass)} aria-hidden="true" />
+          <Icon className="size-4" aria-hidden="true" />
         </Button>
       }
     />
