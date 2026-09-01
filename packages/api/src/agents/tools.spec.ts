@@ -42,6 +42,7 @@ import { CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import {
   buildToolSet,
+  buildRunToolSet,
   BuildToolSetConfig,
   registerCodeExecutionTools,
   registerFileAuthoringTools,
@@ -189,6 +190,65 @@ describe('buildToolSet', () => {
       expect(toolSet.has('also_valid')).toBe(true);
       expect(toolSet.has('')).toBe(false);
     });
+  });
+});
+
+describe('buildRunToolSet', () => {
+  const agent = (id: string, ...toolNames: string[]): BuildToolSetConfig & { id: string } => ({
+    id,
+    toolDefinitions: toolNames.map((name) => ({ name })),
+  });
+
+  it('returns an empty set when there are no agents', () => {
+    expect(buildRunToolSet(null).size).toBe(0);
+    expect(buildRunToolSet(undefined).size).toBe(0);
+  });
+
+  it("includes the primary agent's own tools", () => {
+    const toolSet = buildRunToolSet(agent('primary', 'set_memory', 'execute_code'));
+
+    expect(toolSet.has('set_memory')).toBe(true);
+    expect(toolSet.has('execute_code')).toBe(true);
+  });
+
+  it('adds the synthetic `subagent` spawn tool for any run with an agent', () => {
+    expect(buildRunToolSet(agent('primary', 'set_memory')).has('subagent')).toBe(true);
+    // even for a tool-less agent, so a historical subagent call stays structured
+    expect(buildRunToolSet(agent('primary')).has('subagent')).toBe(true);
+  });
+
+  it('adds a `lc_transfer_to_<id>` handoff tool name for each reachable agent', () => {
+    const toolSet = buildRunToolSet(agent('primary', 'set_memory'), [
+      agent('agent_writer', 'search'),
+      agent('agent_analyst', 'analytics_realdata_api'),
+    ]);
+
+    expect(toolSet.has('lc_transfer_to_primary')).toBe(true);
+    expect(toolSet.has('lc_transfer_to_agent_writer')).toBe(true);
+    expect(toolSet.has('lc_transfer_to_agent_analyst')).toBe(true);
+  });
+
+  it("unions every reachable handoff agent's own tools", () => {
+    const toolSet = buildRunToolSet(agent('primary', 'set_memory'), [
+      agent('agent_writer', 'search'),
+      agent('agent_analyst', 'analytics_realdata_api'),
+    ]);
+
+    expect(toolSet.has('set_memory')).toBe(true);
+    expect(toolSet.has('search')).toBe(true);
+    expect(toolSet.has('analytics_realdata_api')).toBe(true);
+  });
+
+  it('skips nullish agent configs and agents without an id', () => {
+    const toolSet = buildRunToolSet(agent('primary', 'set_memory'), [
+      null,
+      undefined,
+      { toolDefinitions: [{ name: 'orphan_tool' }] },
+    ]);
+
+    expect(toolSet.has('orphan_tool')).toBe(true);
+    // no id -> no synthetic transfer name, and no spurious empty transfer name
+    expect(toolSet.has('lc_transfer_to_')).toBe(false);
   });
 });
 

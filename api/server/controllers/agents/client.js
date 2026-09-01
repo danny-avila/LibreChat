@@ -9,7 +9,7 @@ const {
   createRun,
   isEnabled,
   checkAccess,
-  buildToolSet,
+  buildRunToolSet,
   logToolError,
   sanitizeTitle,
   payloadParser,
@@ -3852,7 +3852,10 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
-      const toolSet = buildToolSet(this.options.agent);
+      const toolSet = buildRunToolSet(
+        this.options.agent,
+        this.agentConfigs ? this.agentConfigs.values() : undefined,
+      );
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */

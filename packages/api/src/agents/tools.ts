@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import {
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
@@ -59,6 +60,66 @@ export function buildToolSet(agentConfig: BuildToolSetConfig | null | undefined)
       : (tools ?? []).map((tool) => tool?.name);
 
   return new Set(toolNames.filter((name): name is string => Boolean(name)));
+}
+
+export interface RunAgentToolSetConfig extends BuildToolSetConfig {
+  /** Agent id, used to derive the synthetic `lc_transfer_to_<id>` handoff tool name. */
+  id?: string;
+}
+
+/**
+ * Builds the complete Set of tool names valid across an entire agent *run* —
+ * the primary agent plus every reachable handoff/added agent — including the
+ * synthetic tools that `@librechat/agents` injects at graph-build time: the
+ * `subagent` spawn tool and the `lc_transfer_to_<agentId>` handoff tools.
+ *
+ * `buildToolSet` alone only covers a single agent's own `toolDefinitions`, so
+ * when its result is passed to `formatAgentMessages`, historical `subagent` /
+ * `lc_transfer_to_*` (and handoff-destination) tool calls are treated as
+ * unknown and flattened into plain `Tool: <name>, <output>` text on every
+ * subsequent turn. Feeding this union instead preserves those calls as
+ * structured tool_call/tool_result pairs.
+ *
+ * See https://github.com/danny-avila/LibreChat/issues/14623.
+ */
+export function buildRunToolSet(
+  primaryConfig: RunAgentToolSetConfig | null | undefined,
+  additionalConfigs?: Iterable<RunAgentToolSetConfig | null | undefined> | null,
+): Set<string> {
+  const toolSet = new Set<string>();
+  let sawAgent = false;
+
+  const addAgent = (agentConfig: RunAgentToolSetConfig | null | undefined): void => {
+    if (!agentConfig) {
+      return;
+    }
+    sawAgent = true;
+    for (const name of buildToolSet(agentConfig)) {
+      toolSet.add(name);
+    }
+    if (typeof agentConfig.id === 'string' && agentConfig.id !== '') {
+      toolSet.add(`${Constants.LC_TRANSFER_TO_}${agentConfig.id}`);
+    }
+  };
+
+  addAgent(primaryConfig);
+  if (additionalConfigs) {
+    for (const agentConfig of additionalConfigs) {
+      addAgent(agentConfig);
+    }
+  }
+
+  /**
+   * The `subagent` spawn tool is injected by `@librechat/agents` at
+   * graph-build time and is never present in any agent's stored
+   * `toolDefinitions`, so add it explicitly whenever the run has at least
+   * one agent to keep historical subagent calls structured.
+   */
+  if (sawAgent) {
+    toolSet.add(Constants.SUBAGENT);
+  }
+
+  return toolSet;
 }
 
 export interface RegisterCodeExecutionToolsParams {
