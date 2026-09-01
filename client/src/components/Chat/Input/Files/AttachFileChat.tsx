@@ -120,7 +120,10 @@ function AttachFileChat({
     return (
       <AttachFileMenu
         endpoint={endpoint}
-        disabled={disableInputs}
+        /* Inert until the config resolves: the menu is an action, not just a display, and
+         * offering the chooser here submits an explicit destination a unified deployment
+         * would have inferred. The drag and paste paths hold for the same reason. */
+        disabled={disableInputs || !isFileConfigLoaded}
         endpointType={endpointType}
         conversationId={conversationId}
         agentId={conversation?.agent_id}

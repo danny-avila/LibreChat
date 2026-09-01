@@ -4,12 +4,16 @@ import useUploadOptions from '../useUploadOptions';
 
 const mockDragDropContext = {
   conversationId: 'convo-1',
-  agentId: 'agent-1',
+  get agentId() {
+    return mockAgentId;
+  },
   endpoint: 'agents',
   endpointType: 'custom',
   useResponsesApi: undefined,
 };
 let mockProvider: string | undefined = 'Custom Provider';
+/* Saved agent ids carry the `agent_` prefix; anything else reads as ephemeral. */
+let mockAgentId: string | undefined = 'agent_saved01';
 
 jest.mock('~/Providers', () => ({
   useDragDropContext: () => mockDragDropContext,
@@ -53,9 +57,30 @@ describe('useUploadOptions endpoint resolution', () => {
 
   it('falls back to the conversation endpoint when no provider is resolved', () => {
     mockProvider = undefined;
+    mockAgentId = undefined;
 
     const { result } = render();
 
     expect(result.current.isUnifiedMode).toBe(true);
+  });
+
+  it('withholds resolution until the saved agent provider lands', () => {
+    /* Falling back to the agents entry meanwhile reports a settled answer drawn from the
+     * wrong record, so an upload routes on a policy the server will not apply. */
+    mockProvider = undefined;
+    mockAgentId = 'agent_saved01';
+
+    const { result } = render();
+
+    expect(result.current.isConfigResolved).toBe(false);
+  });
+
+  it('does not wait on a provider an ephemeral agent will never have', () => {
+    mockProvider = undefined;
+    mockAgentId = 'ephemeral-convo-1';
+
+    const { result } = render();
+
+    expect(result.current.isConfigResolved).toBe(true);
   });
 });

@@ -742,24 +742,16 @@ router.post('/', async (req, res) => {
      * record the caller cannot access answers with that agent's provider limits and
      * content policy, so the rejection itself reports its configuration. */
     if (!isAssistants) {
-      let skipUploadAuth = false;
-      try {
-        skipUploadAuth = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
-      } catch (err) {
-        logger.warn('[/files] capability check failed, denying bypass:', getSafeErrorMetadata(err));
-      }
-
-      if (!skipUploadAuth) {
-        const denied = await verifyAgentUploadPermission({
-          req,
-          res,
-          metadata,
-          getAgent: ({ id }) => resolveUploadAgent(req, id),
-          checkPermission,
-        });
-        if (denied) {
-          return;
-        }
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent: ({ id }) => resolveUploadAgent(req, id),
+        checkPermission,
+        hasUploadBypass: () => hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS),
+      });
+      if (denied) {
+        return;
       }
     }
 

@@ -99,13 +99,27 @@ export async function verifyAgentUploadPermission({
   metadata,
   getAgent,
   checkPermission,
+  hasUploadBypass,
 }: {
   req: ServerRequest;
   res: Response;
   metadata: { agent_id?: string; tool_resource?: string | null; message_file?: boolean | string };
   getAgent: AgentUploadAuthDeps['getAgent'];
   checkPermission: AgentUploadAuthDeps['checkPermission'];
+  /** Global capability that permits agent writes regardless of the per-agent grant. Held
+   *  here rather than at each route so the two upload routes cannot answer differently. */
+  hasUploadBypass?: () => Promise<boolean>;
 }): Promise<boolean> {
+  if (hasUploadBypass) {
+    try {
+      if (await hasUploadBypass()) {
+        return false;
+      }
+    } catch (error) {
+      logger.warn('[agentUploadAuth] capability check failed, denying bypass:', error);
+    }
+  }
+
   const user = req.user as IUser;
   const result = await checkAgentUploadAuth(
     {
