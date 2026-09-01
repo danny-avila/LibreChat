@@ -14,6 +14,7 @@ const defaultSyncThreshold = 1000;
 const syncThreshold = process.env.MEILI_SYNC_THRESHOLD
   ? parseInt(process.env.MEILI_SYNC_THRESHOLD, 10)
   : defaultSyncThreshold;
+const requiredFilterableAttributes = ['user', 'tenantId'];
 
 class MeiliSearchClient {
   static instance = null;
@@ -96,12 +97,17 @@ async function ensureFilterableAttributes(client) {
       const messagesIndex = client.index('messages');
       const settings = await messagesIndex.getSettings();
 
-      if (!settings.filterableAttributes || !settings.filterableAttributes.includes('user')) {
-        logger.info('[indexSync] Configuring messages index to filter by user...');
+      if (
+        !settings.filterableAttributes ||
+        !requiredFilterableAttributes.every((attribute) =>
+          settings.filterableAttributes.includes(attribute),
+        )
+      ) {
+        logger.info('[indexSync] Configuring messages index to filter by user and tenant...');
         await messagesIndex.updateSettings({
-          filterableAttributes: ['user'],
+          filterableAttributes: requiredFilterableAttributes,
         });
-        logger.info('[indexSync] Messages index configured for user filtering');
+        logger.info('[indexSync] Messages index configured for user and tenant filtering');
         settingsUpdated = true;
       }
 
@@ -128,12 +134,17 @@ async function ensureFilterableAttributes(client) {
       const convosIndex = client.index('convos');
       const settings = await convosIndex.getSettings();
 
-      if (!settings.filterableAttributes || !settings.filterableAttributes.includes('user')) {
-        logger.info('[indexSync] Configuring convos index to filter by user...');
+      if (
+        !settings.filterableAttributes ||
+        !requiredFilterableAttributes.every((attribute) =>
+          settings.filterableAttributes.includes(attribute),
+        )
+      ) {
+        logger.info('[indexSync] Configuring convos index to filter by user and tenant...');
         await convosIndex.updateSettings({
-          filterableAttributes: ['user'],
+          filterableAttributes: requiredFilterableAttributes,
         });
-        logger.info('[indexSync] Convos index configured for user filtering');
+        logger.info('[indexSync] Convos index configured for user and tenant filtering');
         settingsUpdated = true;
       }
 
