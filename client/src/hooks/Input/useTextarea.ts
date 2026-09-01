@@ -3,7 +3,7 @@ import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import type { UploadLifecycleCallbacks } from '~/hooks/Files/useFileHandling';
@@ -96,6 +96,9 @@ export default function useTextarea({
   const reservedPasteFilenames = useRef<Set<string>>(new Set());
   const latestMessage = useLatestMessageMeta(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
+  const [pendingComposerText, setPendingComposerText] = useRecoilState(
+    store.pendingComposerTextByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  );
 
   const { endpoint = '' } = conversation || {};
   const { entity, isAgent, isAssistant } = getEntity({
@@ -119,6 +122,18 @@ export default function useTextarea({
       setActivePrompt(undefined);
     }
   }, [activePrompt, setActivePrompt, textAreaRef]);
+
+  /** Text a surface the user was leaving handed to THIS conversation (see
+   *  `pendingComposerTextByConvoId`). It is drained once, on the first render
+   *  where that conversation's composer exists, which is what lets it survive a
+   *  navigation that resolves its record before moving the route. */
+  useEffect(() => {
+    const text = pendingComposerText ?? '';
+    if (text === '' || textAreaRef.current == null) return;
+    insertTextAtCursor(textAreaRef.current, text);
+    forceResize(textAreaRef.current);
+    setPendingComposerText(undefined);
+  }, [pendingComposerText, setPendingComposerText, textAreaRef]);
 
   useEffect(() => {
     const currentValue = textAreaRef.current?.value ?? '';

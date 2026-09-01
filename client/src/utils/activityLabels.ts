@@ -1,4 +1,4 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TActivityLabelEvent, TMessageContentParts } from 'librechat-data-provider';
 
 type ActivityLabelPart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
@@ -24,6 +24,10 @@ export type ActivityPhaseSegment =
       labelPart: ActivityLabelPart;
       labelIndex: number;
       hasContent: boolean;
+      /** Client-built card: no server phase marker covers this span yet, so
+       *  the header carries the newest child label as a ticker instead of a
+       *  generated summary. Set only by `synthesizeActivityFolds`. */
+      synthesized?: boolean;
     };
 
 function isVisibleContentPart(part: TMessageContentParts | undefined): boolean {
@@ -64,9 +68,7 @@ function isLogicallyEarlierPhaseMarker(
     if (trailingPart?.type !== ContentTypes.TEXT) {
       return true;
     }
-    const text =
-      typeof trailingPart.text === 'string' ? trailingPart.text : trailingPart.text?.value;
-    return typeof text === 'string' && text.length > 0;
+    return textValue(trailingPart).length > 0;
   });
 }
 
@@ -140,6 +142,270 @@ export function offsetActivityPhaseBoundary(
 }
 
 /**
+ * Mirrors `SUBSTANTIAL_TEXT_CHARS` in `activityPhases/runtime.ts`. Short
+ * commentary belongs inside a phase; a real block of prose ends one.
+ */
+const SUBSTANTIAL_TEXT_CHARS = 200;
+
+/**
+ * Activities a span needs before it is worth folding, matching the server's
+ * `MIN_ACTIVITIES`. Below it the child groups already read as a short list
+ * and a card would add a disclosure without hiding anything.
+ */
+const MIN_FOLD_ACTIVITIES = 2;
+
+function textValue(part: TMessageContentParts | undefined): string {
+  if (part?.type !== ContentTypes.TEXT) {
+    return '';
+  }
+  return (typeof part.text === 'string' ? part.text : part.text?.value) ?? '';
+}
+
+/**
+ * What an activity block may contain — the membership `groupSequentialToolCalls`
+ * uses, plus `AGENT_UPDATE`, which the server deliberately keeps inside a phase
+ * (a transfer card cannot join a tool group, so the parent card is where it
+ * belongs). Everything absent here — an error, an image, a summary — is content
+ * in its own right and ends the fold rather than disappearing into it.
+ */
+const ACTIVITY_BLOCK_TYPES = new Set<string>([
+  ContentTypes.TOOL_CALL,
+  ContentTypes.THINK,
+  ContentTypes.ACTIVITY_LABEL,
+  ContentTypes.AGENT_UPDATE,
+]);
+
+/**
+ * True at a hard UI boundary — where a fold has to stop.
+ *
+ * Prose is the strictest case. `groupSequentialToolCalls` absorbs only
+ * `commentary` text into an activity block, so anything else the model says is
+ * an answer the reader came for and must never end up behind a disclosure —
+ * including a two-word reply on a provider that never stamps `phase`, which
+ * the server's own 200-character rule would let through. Long commentary ends
+ * a fold too, matching `SUBSTANTIAL_TEXT_CHARS`, so a card cannot swallow an
+ * essay. Steers and existing phase markers end one because the server says so.
+ */
+function isFoldBoundaryPart(part: TMessageContentParts | undefined): boolean {
+  if (part == null) {
+    return false;
+  }
+  if (isPhaseActivityLabel(getActivityLabelPart(part))) {
+    return true;
+  }
+  if (part.type === ContentTypes.TEXT) {
+    const text = textValue(part).trim();
+    if (text.length === 0) {
+      return false;
+    }
+    return (
+      (part as { phase?: string }).phase !== 'commentary' || text.length > SUBSTANTIAL_TEXT_CHARS
+    );
+  }
+  return !ACTIVITY_BLOCK_TYPES.has(part.type);
+}
+
+/**
+ * True when the part is one an activity label can CLAIM. Mirrors
+ * `isGroupableToolCall` plus the block's reasoning and commentary members: a
+ * handoff call is never groupable, so a label covering only handoffs claims
+ * nothing and renders standalone rather than heading a group.
+ */
+function claimsActivity(part: TMessageContentParts | undefined): boolean {
+  if (part == null) {
+    return false;
+  }
+  if (part.type === ContentTypes.THINK) {
+    return true;
+  }
+  if (part.type === ContentTypes.TEXT) {
+    return (part as { phase?: string }).phase === 'commentary';
+  }
+  if (part.type !== ContentTypes.TOOL_CALL) {
+    return false;
+  }
+  const name = (part[ContentTypes.TOOL_CALL] as { name?: string } | undefined)?.name;
+  return typeof name !== 'string' || !name.startsWith(Constants.LC_TRANSFER_TO_);
+}
+
+type FoldRun = {
+  content: Array<TMessageContentParts | undefined>;
+  contentIndices: number[];
+};
+
+type SynthesizedPhaseHeader = {
+  labelPart: ActivityLabelPart;
+  labelIndex: number;
+  /** Position in the run of the last filled child label — the fold's tail. */
+  endPosition: number;
+};
+
+/**
+ * Builds the header for a synthesized fold, or undefined when the span has not
+ * accumulated enough filled child labels to be worth folding.
+ *
+ * The text is the NEWEST filled child label, which makes the collapsed row a
+ * ticker: it reads as the line the reader would have seen at the bottom of the
+ * unfolded list, and the generated summary replaces it verbatim once a real
+ * phase marker claims the span.
+ */
+function buildSynthesizedPhaseLabel(run: FoldRun): SynthesizedPhaseHeader | undefined {
+  let endPosition = -1;
+  let text = '';
+  let count = 0;
+  let failed = 0;
+  let degraded = 0;
+  /** Parts available to the next label. Any label — blank reservation included
+   *  — closes the claim, exactly as `claimStart` does in
+   *  `groupSequentialToolCalls`, so a label can only ever claim its own batch. */
+  let claimable = 0;
+  for (let position = 0; position < run.content.length; position += 1) {
+    const part = run.content[position];
+    if (part?.type !== ContentTypes.ACTIVITY_LABEL) {
+      /** A part the block cannot hold FLUSHES it in `groupSequentialToolCalls`
+       *  — a handoff call, or the agent update beside it — so whatever came
+       *  before is no longer claimable. Without the reset, `tool → transfer →
+       *  label` reads as a claimed batch here while the grouping drops that
+       *  label entirely through `coversTransferCall`. */
+      claimable = claimsActivity(part) ? claimable + 1 : 0;
+      continue;
+    }
+    const claimed = claimable;
+    claimable = 0;
+    const child = getBatchActivityLabelPart(part);
+    const childText = getActivityLabelText(child);
+    /** An orphan label heads no group — it renders as a standalone line. Two of
+     *  them are not two activities, and folding them would hide the first
+     *  behind a card whose body is just the pair of lines. */
+    if (child == null || childText.length === 0 || claimed === 0) {
+      continue;
+    }
+    count += 1;
+    text = childText;
+    endPosition = position;
+    if (child.status === 'failed') {
+      failed += 1;
+      degraded += 1;
+    } else if (child.status === 'partial') {
+      degraded += 1;
+    }
+  }
+  if (count < MIN_FOLD_ACTIVITIES || endPosition < 0) {
+    return undefined;
+  }
+  const labelIndex = run.contentIndices[endPosition];
+  let status: 'ok' | 'partial' | 'failed' = 'ok';
+  if (failed === count) {
+    status = 'failed';
+  } else if (degraded > 0) {
+    status = 'partial';
+  }
+  return {
+    labelIndex,
+    endPosition,
+    labelPart: {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: text,
+      activity_label_type: 'phase',
+      activity_start_index: run.contentIndices[0],
+      activity_end_index: labelIndex + 1,
+      activity_count: count,
+      status,
+      /** Never summarized by a model, so it stays pending forever — which also
+       *  keeps it out of `completed` if it is ever read back through here. */
+      pending: true,
+    } as ActivityLabelPart,
+  };
+}
+
+/**
+ * Splits one unclaimed content segment at its hard boundaries and folds every
+ * run that carries enough labeled activity into a phase segment.
+ *
+ * This is why the module owns the partition: a run of labeled tool blocks is
+ * one card whether the server has summarized it yet or not, so `ContentParts`
+ * renders `ActivityPhaseGroup` either way and the card chrome has a single
+ * definition. Returns the segment untouched when nothing folds, so a message
+ * that never accumulates labeled activity keeps its exact prior shape.
+ */
+function synthesizeActivityFolds(
+  segment: Extract<ActivityPhaseSegment, { type: 'content' }>,
+): ActivityPhaseSegment[] {
+  const segments: ActivityPhaseSegment[] = [];
+  const pending: FoldRun = { content: [], contentIndices: [] };
+  const run: FoldRun = { content: [], contentIndices: [] };
+  let folded = false;
+
+  const flushPending = () => {
+    if (pending.contentIndices.length === 0) {
+      return;
+    }
+    segments.push({
+      type: 'content',
+      content: pending.content,
+      contentIndices: pending.contentIndices,
+      /** The leading chunk keeps the original span start; a sparse segment can
+       *  begin before its first defined index and the nested renderer offsets
+       *  from it. */
+      startIndex: segments.length === 0 ? segment.startIndex : pending.contentIndices[0],
+    });
+    pending.content = [];
+    pending.contentIndices = [];
+  };
+  const carryOver = (from: number) => {
+    for (let position = from; position < run.content.length; position += 1) {
+      pending.content.push(run.content[position]);
+      pending.contentIndices.push(run.contentIndices[position]);
+    }
+  };
+  const flushRun = () => {
+    if (run.contentIndices.length === 0) {
+      return;
+    }
+    const header = buildSynthesizedPhaseLabel(run);
+    if (header == null) {
+      carryOver(0);
+    } else {
+      flushPending();
+      folded = true;
+      const content = run.content.slice(0, header.endPosition + 1);
+      segments.push({
+        type: 'phase',
+        content,
+        contentIndices: run.contentIndices.slice(0, header.endPosition + 1),
+        startIndex: run.contentIndices[0],
+        labelPart: header.labelPart,
+        labelIndex: header.labelIndex,
+        hasContent: content.some(isVisibleContentPart),
+        synthesized: true,
+      });
+      /** Everything past the newest label is still in flight — the reasoning
+       *  and the tool call the reader is watching right now. It stays outside
+       *  the card and joins on the commit where its own label fills. */
+      carryOver(header.endPosition + 1);
+    }
+    run.content = [];
+    run.contentIndices = [];
+  };
+
+  for (let position = 0; position < segment.content.length; position += 1) {
+    const part = segment.content[position];
+    const index = segment.contentIndices[position];
+    if (isFoldBoundaryPart(part)) {
+      flushRun();
+      pending.content.push(part);
+      pending.contentIndices.push(index);
+      continue;
+    }
+    run.content.push(part);
+    run.contentIndices.push(index);
+  }
+  flushRun();
+  flushPending();
+  return folded ? segments : [segment];
+}
+
+/**
  * Partitions completed phase markers into collapsed parent groups while
  * carrying absolute indexes alongside compact content slices. Pending markers
  * preserve feature-off UI; finalized empty markers only restore child order.
@@ -151,6 +417,13 @@ export function groupActivityPhases(
     return undefined;
   }
   const definedIndices = Object.keys(content).map(Number);
+  /** Parallel columns lay their own activity out and are rendered by
+   *  `ParallelContentRenderer`, which a synthesized card would pull onto the
+   *  phase path. Server markers may still claim parallel spans; only the
+   *  client-built folds stand down. */
+  const foldable = !definedIndices.some(
+    (index) => (content[index] as { groupId?: string } | undefined)?.groupId != null,
+  );
   const completed = definedIndices
     .map((index) => ({ part: getActivityLabelPart(content[index]), index }))
     .filter(
@@ -160,7 +433,19 @@ export function groupActivityPhases(
         typeof part?.activity_start_index === 'number',
     );
   if (completed.length === 0) {
-    return undefined;
+    if (!foldable) {
+      return undefined;
+    }
+    /** No marker has landed yet — the whole message is one unclaimed span.
+     *  Returning `undefined` when nothing folds keeps the untouched
+     *  fast path for messages that never accumulate labeled activity. */
+    const folded = synthesizeActivityFolds({
+      type: 'content',
+      content: definedIndices.map((index) => content[index]),
+      contentIndices: definedIndices,
+      startIndex: definedIndices[0] ?? 0,
+    });
+    return folded.some((segment) => segment.type === 'phase') ? folded : undefined;
   }
 
   const segments: ActivityPhaseSegment[] = [];
@@ -312,7 +597,12 @@ export function groupActivityPhases(
     }
     pushContent(adjacent, cursor);
   }
-  return segments;
+  if (!foldable) {
+    return segments;
+  }
+  return segments.flatMap((segment) =>
+    segment.type === 'content' ? synthesizeActivityFolds(segment) : segment,
+  );
 }
 
 /**
@@ -360,11 +650,7 @@ export function lastVisibleContentIdx(
 }
 
 function isEmptyTextContentPart(part: TMessageContentParts | undefined): boolean {
-  if (part == null || part.type !== ContentTypes.TEXT) {
-    return false;
-  }
-  const text = typeof part.text === 'string' ? part.text : part.text?.value;
-  return (text ?? '').length === 0;
+  return part?.type === ContentTypes.TEXT && textValue(part).length === 0;
 }
 
 /**

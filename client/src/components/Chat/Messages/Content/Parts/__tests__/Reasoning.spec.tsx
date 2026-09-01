@@ -27,6 +27,19 @@ describe('Reasoning label shimmer', () => {
     expect(screen.getByText('Thinking...')).toHaveClass('shimmer');
   });
 
+  /** The sweep has to ride the label row itself rather than a span nested inside
+   *  it. That row is a flex item, so `.shimmer`'s `inline-block` is blockified
+   *  away; nested, it is an inline-block whose `truncate` moves its baseline to
+   *  its bottom margin edge, which grew the line box 18px -> 23px and lifted the
+   *  label 2px off the lightbulb's axis for the whole of a generation. */
+  it('keeps the sweep on the label row instead of a nested span', () => {
+    renderReasoning();
+    const label = screen.getByText('Thinking...');
+
+    expect(label).toHaveClass('truncate');
+    expect(label.querySelector('.shimmer')).toBeNull();
+  });
+
   it('leaves settled thoughts unanimated', () => {
     renderReasoning({ isSubmitting: false });
     expect(screen.getByText('Thoughts')).not.toHaveClass('shimmer');
