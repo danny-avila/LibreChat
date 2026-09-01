@@ -1,4 +1,4 @@
-const { CLIENT_MESSAGE_SELECT } = require('@librechat/data-schemas');
+const { CLIENT_MESSAGE_SELECT, MEILI_SEARCH_LIMIT } = require('@librechat/data-schemas');
 const express = require('express');
 const request = require('supertest');
 
@@ -212,6 +212,8 @@ describe('message route conversation ownership filters', () => {
     getMessage,
     getMessages,
     getMessagesByCursor,
+    getConvosQueried,
+    searchMessages,
     saveConvo,
     saveMessage,
     updateMessage,
@@ -461,6 +463,49 @@ describe('message route conversation ownership filters', () => {
       CLIENT_MESSAGE_SELECT,
     );
   });
+
+  it.each([
+    {
+      name: 'default',
+      query: 'search=needle',
+      searchLimit: 25,
+      conversationLimit: 25,
+    },
+    {
+      name: 'custom',
+      query: 'search=needle&pageSize=40',
+      searchLimit: 40,
+      conversationLimit: 40,
+    },
+    {
+      name: 'capped',
+      query: `search=needle&pageSize=${MEILI_SEARCH_LIMIT + 1}`,
+      searchLimit: MEILI_SEARCH_LIMIT,
+      conversationLimit: MEILI_SEARCH_LIMIT + 1,
+    },
+  ])(
+    'uses the $name page size for message search limits',
+    async ({ query, searchLimit, conversationLimit }) => {
+      searchMessages.mockResolvedValue({ hits: [] });
+      getConvosQueried.mockResolvedValue({ convoMap: {} });
+      getMessages.mockResolvedValue([]);
+
+      const response = await request(app).get(`/api/messages?${query}`);
+
+      expect(response.status).toBe(200);
+      expect(searchMessages).toHaveBeenCalledWith(
+        'needle',
+        { filter: `user = "${authenticatedUserId}"`, limit: searchLimit },
+        true,
+      );
+      expect(getConvosQueried).toHaveBeenCalledWith(
+        authenticatedUserId,
+        [],
+        null,
+        conversationLimit,
+      );
+    },
+  );
 
   it('returns indistinguishable not-found responses for child and missing query reads', async () => {
     getConvoOwnership.mockResolvedValueOnce({
