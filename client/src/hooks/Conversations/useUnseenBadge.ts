@@ -1,5 +1,5 @@
-import { useAtomValue } from 'jotai';
 import { useEffect } from 'react';
+import { useAtomValue } from 'jotai';
 import { unseenTabBadgeAtom } from './replyNotificationSettings';
 
 const FAVICON_SELECTOR = 'link[rel="icon"]';

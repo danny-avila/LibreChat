@@ -1,6 +1,13 @@
 import { SettingsTabValues } from 'librechat-data-provider';
 import type { SettingEntry } from './types';
 import {
+  unseenTabBadgeAtom,
+  replyNotificationsAtom,
+  replyNotificationSoundAtom,
+  unlockReplyNotificationSound,
+  requestReplyNotificationPermission,
+} from '~/hooks';
+import {
   TextToSpeechSwitch,
   VoiceDropdown,
   CacheTTSSwitch,
@@ -15,13 +22,6 @@ import {
   AutoSendTextSelector,
   DecibelSelector,
 } from '../SettingsTabs/Speech/STT';
-import {
-  unseenTabBadgeAtom,
-  replyNotificationsAtom,
-  replyNotificationSoundAtom,
-  unlockReplyNotificationSound,
-  requestReplyNotificationPermission,
-} from '~/hooks';
 import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMessages';
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
