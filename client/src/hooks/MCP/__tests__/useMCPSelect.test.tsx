@@ -1001,6 +1001,36 @@ describe('useMCPSelect', () => {
       expect(result.current.ephemeralAgent?.mcp).toEqual(['visible', 'spec-server']);
     });
 
+    it('mirrors the selection into a non-owner instance so its actions build on it', async () => {
+      const { Wrapper } = createWrapper();
+
+      /** Mirrors `MCPServerCard`, which mounts the manager for its actions only;
+       *  those actions derive the next selection from `mcpValues`. */
+      const TestComponent = () => {
+        const actions = useMCPSelect({ servers: createMCPServers(['server1', 'server2']) });
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { actions, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
+
+      act(() => {
+        result.current.setEphemeralAgent({ mcp: ['server1'] });
+      });
+
+      await waitFor(() => {
+        expect(result.current.actions.mcpValues).toEqual(['server1']);
+      });
+
+      act(() => {
+        result.current.actions.setMCPValues([...result.current.actions.mcpValues, 'server2']);
+      });
+
+      await waitFor(() => {
+        expect(result.current.actions.mcpValues).toEqual(['server1', 'server2']);
+      });
+    });
+
     it('keeps a selection while the catalog is empty, so a degraded read cannot wipe it', async () => {
       const { Wrapper } = createWrapper();
       const storageKey = `${LocalStorageKeys.LAST_MCP_}${Constants.NEW_CONVO}`;

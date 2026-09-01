@@ -130,14 +130,19 @@ export function useMCPSelect({
     }
   }, [canPruneSelections, mcpValues, retainedServers, setMCPValuesRaw]);
 
-  // Sync ephemeral agent MCP → Jotai atom (strip unconfigured servers)
+  /**
+   * Mirror the ephemeral agent's MCP list into this instance's atom.
+   *
+   * Every instance mirrors, owner or not: the action paths (`initializeServer`,
+   * the revoke handler) build their next selection from `mcpValues`, so an
+   * instance left unmirrored would write a stale list back through
+   * `setMCPValues` — authenticating one server would drop another. Only the
+   * pruning inside is owner-gated.
+   */
   useEffect(() => {
-    if (!ownsChatSelection) {
-      return;
-    }
     const mcps = ephemeralAgent?.mcp;
-    if (Array.isArray(mcps) && mcps.length > 0 && canPruneSelections) {
-      const activeMcps = mcps.filter((mcp) => retainedServers.has(mcp));
+    if (Array.isArray(mcps) && mcps.length > 0) {
+      const activeMcps = canPruneSelections ? mcps.filter((mcp) => retainedServers.has(mcp)) : mcps;
       /** The ephemeral agent is what carries the selection to the server, so a
        *  hidden name has to leave it too, not just the dropdown's atom. */
       if (activeMcps.length !== mcps.length) {
@@ -161,7 +166,6 @@ export function useMCPSelect({
     setMCPValuesRaw,
     retainedServers,
     canPruneSelections,
-    ownsChatSelection,
     mcpValues,
   ]);
 
