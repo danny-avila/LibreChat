@@ -1,4 +1,9 @@
-import { appendLeafSuffix, flattenArtifactPath, FILENAME_SEGMENT_MAX_BYTES } from '~/utils/files';
+import {
+  appendLeafSuffix,
+  flattenArtifactPath,
+  deterministicHexSuffix,
+  FILENAME_SEGMENT_MAX_BYTES,
+} from '~/utils/files';
 
 /**
  * Sandbox input files mount at a destination derived from their `name`, and
@@ -68,43 +73,58 @@ function take(set: CodeDestinationSet, destination: string): void {
 }
 
 /**
- * Inserts `-n` before the leaf's extension, preserving directory structure
- * (`a/b/c.txt` -> `a/b/c-2.txt`). The leaf is held to the same per-segment
- * byte budget `sanitizeFilename` applies, since codeapi caps whole-path
- * length and a name already sitting at the cap would otherwise grow past it.
- * The counter survives that trim, so distinct counters stay distinct and the
- * search below always terminates.
+ * Inserts `suffix` before the leaf's extension, preserving directory
+ * structure (`a/b/c.txt` -> `a/b/c-9f2a11.txt`). The leaf is held to the same
+ * per-segment byte budget `sanitizeFilename` applies, since codeapi caps
+ * whole-path length and a name already sitting at the cap would otherwise
+ * grow past it. The suffix survives that trim, so distinct suffixes stay
+ * distinct and the search below always terminates.
  */
-function withCounter(destination: string, counter: number): string {
+function withSuffix(destination: string, suffix: string): string {
   const slash = destination.lastIndexOf('/');
   const dir = slash === -1 ? '' : destination.slice(0, slash + 1);
   const leaf = destination.slice(slash + 1);
-  return `${dir}${appendLeafSuffix(leaf, `-${counter}`, FILENAME_SEGMENT_MAX_BYTES)}`;
+  return `${dir}${appendLeafSuffix(leaf, suffix, FILENAME_SEGMENT_MAX_BYTES)}`;
 }
 
 /**
- * Claims a destination for `name`, disambiguating with a `-2`, `-3`, ...
- * counter when it is already spoken for. Callers that own what the model is
- * told about the sandbox use this: both files stay reachable, at names the
- * caller can echo into the tool context.
+ * Claims a destination for `name`, falling back to `<stem>-<identity hash>`
+ * when it is already spoken for. Callers that own what the model is told
+ * about the sandbox use this: both files stay reachable, at names the caller
+ * can echo into the tool context.
  *
- * Deterministic for a given claim order, so callers must claim in a stable
- * order — see {@link sortCodeFilesByDestinationPriority}. Names beyond the
- * first collision on a shared stem can still shift as the colliding set
- * grows; that is inherent to mounting by name, and only the already
- * degenerate three-way case reaches it.
+ * The fallback hashes `identity` — a stable per-file value such as `file_id`
+ * — rather than counting collisions, so a displaced file keeps the same
+ * destination for the life of the conversation. A counter would be assigned
+ * from the current set: a third file arriving under the literal name a
+ * displaced file had been given would push that file along, and code the
+ * model wrote in an earlier turn would silently start reading the newcomer.
+ * The hash is immune to what else is present, so only the winner of the bare
+ * name can ever change, and only when a newer file legitimately takes it.
+ *
+ * A trailing counter is still appended in the event of a hash collision, so
+ * the search terminates on any input.
  */
-export function claimCodeDestination(set: CodeDestinationSet, name: string): string {
+export function claimCodeDestination(
+  set: CodeDestinationSet,
+  name: string,
+  identity: string,
+): string {
   /* A claimed file sitting at a parent directory makes every name beneath it
-   * conflict, so bumping the leaf can never clear it. Flattening lifts the
+   * conflict, so suffixing the leaf can never clear it. Flattening lifts the
    * path out from under that directory and leaves only whole-name conflicts,
-   * which the counter does clear. */
+   * which the suffix does clear. */
   const base = hasTakenAncestor(set, name)
     ? flattenArtifactPath(name, FILENAME_SEGMENT_MAX_BYTES)
     : name;
-  let destination = base;
+  if (!isTaken(set, base)) {
+    take(set, base);
+    return base;
+  }
+  const identitySuffix = `-${deterministicHexSuffix(identity)}`;
+  let destination = withSuffix(base, identitySuffix);
   for (let counter = 2; isTaken(set, destination); counter++) {
-    destination = withCounter(base, counter);
+    destination = withSuffix(base, `${identitySuffix}-${counter}`);
   }
   take(set, destination);
   return destination;
@@ -129,6 +149,11 @@ export function reserveCodeDestination(set: CodeDestinationSet, name: string): b
 interface CodeDestinationCandidate {
   file_id?: string;
   createdAt?: Date | string | number;
+  /** Last content write for a reused code-output record. `processCodeOutput`
+   *  claims one row per `(filename, conversationId)` and rewrites it in
+   *  place, so `createdAt` marks when the name was first produced, not when
+   *  the bytes behind it last changed. */
+  metadata?: { sourceDispatchedAt?: number } | null;
 }
 
 function toTime(value: Date | string | number | undefined): number {
@@ -139,26 +164,47 @@ function toTime(value: Date | string | number | undefined): number {
   return Number.isFinite(time) ? time : 0;
 }
 
+function contentTime(file: CodeDestinationCandidate | null | undefined): number {
+  return Math.max(toTime(file?.metadata?.sourceDispatchedAt), toTime(file?.createdAt));
+}
+
 /**
- * Orders files so the newest record claims the bare name and older ones take
- * the counter. Newest-wins matches `ToolNode.updateCodeSession`, which
- * collapses by name the same way once results come back, and it is the right
- * answer when an execution rewrote an uploaded file in place: the model's
- * next read of that path gets its own edit, not the superseded original.
+ * Orders files so the one holding the newest content claims the bare name and
+ * the rest take an identity suffix. Newest-wins matches
+ * `ToolNode.updateCodeSession`, which collapses by name the same way once
+ * results come back, and it is the right answer when an execution rewrote an
+ * uploaded file in place: the model's next read of that path gets its own
+ * edit, not the superseded original.
  *
- * Ordering is keyed on `createdAt` because it never moves. `updatedAt` — the
- * default `getFiles` sort — is bumped by usage accounting and by re-upload,
- * so destinations keyed on it would shuffle between turns and silently
- * repoint paths that code written in an earlier turn still reads.
+ * Recency is `max(metadata.sourceDispatchedAt, createdAt)`, never `updatedAt`.
+ * `updatedAt` — the default `getFiles` sort — is bumped by usage accounting
+ * and by re-upload, so destinations keyed on it would shuffle between turns
+ * and silently repoint paths that code written in an earlier turn still
+ * reads. `sourceDispatchedAt` moves only when a generated output's bytes are
+ * rewritten, which is exactly when the ranking should change.
+ *
+ * `privateFileIds` names files that belong to a single contributor rather
+ * than to the conversation, and sinks them below the shared ones. Each agent
+ * in a run claims destinations over its own set — the conversation's files
+ * plus its own — so without this a private file could take a bare name from a
+ * shared file in one agent and not in another, leaving two agents advertising
+ * different paths for the same file into one shared mount namespace.
  *
  * Holes are tolerated and preserved rather than filtered: callers hand this
  * a raw query result and keep their own per-entry guard.
  */
 export function sortCodeFilesByDestinationPriority<T extends CodeDestinationCandidate>(
   files: Array<T | null | undefined>,
+  privateFileIds?: ReadonlySet<string>,
 ): Array<T | null | undefined> {
+  const isPrivate = (file: T | null | undefined): number =>
+    privateFileIds != null && file?.file_id != null && privateFileIds.has(file.file_id) ? 1 : 0;
   return [...files].sort((a, b) => {
-    const delta = toTime(b?.createdAt) - toTime(a?.createdAt);
+    const scope = isPrivate(a) - isPrivate(b);
+    if (scope !== 0) {
+      return scope;
+    }
+    const delta = contentTime(b) - contentTime(a);
     if (delta !== 0) {
       return delta;
     }

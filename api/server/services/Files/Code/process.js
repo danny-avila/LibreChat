@@ -1033,13 +1033,26 @@ const getPreviewContextSuffix = (file) => {
     : ' (preview unavailable)';
 };
 
+/**
+ * A generated output is normally left out — the model already knows what it
+ * wrote. That only holds while the file is still where it wrote it: once a
+ * newer same-named file takes the bare path, the output mounts under a
+ * suffixed name the model has never seen, and silence would leave it reading
+ * the newcomer or failing to find its own artifact.
+ */
 const getVisibleCodeFileContextLine = (file, agentResourceIds, destination) => {
-  if (file.context === FileContext.execute_code) {
+  const displaced = destination !== file.filename;
+  if (file.context === FileContext.execute_code && !displaced) {
     return '';
   }
 
-  const fileSuffix = agentResourceIds.has(file.file_id) ? '' : ' (attached by user)';
-  return `\n\t- /mnt/data/${destination}${fileSuffix}${getPreviewContextSuffix(file)}`;
+  const origin =
+    file.context === FileContext.execute_code
+      ? ` (written earlier as ${file.filename})`
+      : `${agentResourceIds.has(file.file_id) ? '' : ' (attached by user)'}${
+          displaced ? ` (uploaded as ${file.filename})` : ''
+        }`;
+  return `\n\t- /mnt/data/${destination}${origin}${getPreviewContextSuffix(file)}`;
 };
 
 const appendVisibleCodeFileContext = (toolContext, contextLine) => {
@@ -1169,8 +1182,12 @@ const primeFiles = async (options) => {
   /* Claim order decides which record keeps the bare `/mnt/data/<name>` path
    * when several share a filename, so it is fixed here rather than inherited
    * from `getFiles`'s `updatedAt` sort — usage accounting and re-upload both
-   * bump `updatedAt`, which would repoint paths between turns. */
-  const orderedFiles = sortCodeFilesByDestinationPriority(dbFiles);
+   * bump `updatedAt`, which would repoint paths between turns. `file_ids` are
+   * this agent's own resources; every other candidate came from the
+   * conversation and is therefore seen by every agent in the run, so shared
+   * files rank first and land on the same destination whichever agent primes
+   * them. */
+  const orderedFiles = sortCodeFilesByDestinationPriority(dbFiles, agentResourceIds);
   const destinations = createCodeDestinationSet();
 
   /* Per-file path counters — emitted at the bottom so a single
@@ -1218,7 +1235,7 @@ const primeFiles = async (options) => {
       /* Claimed here rather than up front so files that never reach the
        * sandbox — no code-env ref, or a failed re-upload — do not reserve a
        * name and push a file that does reach it onto a counter. */
-      const destination = claimCodeDestination(destinations, file.filename);
+      const destination = claimCodeDestination(destinations, file.filename, file.file_id);
       if (destination !== file.filename) {
         logger.debug(
           `[primeCodeFiles] file=${file.file_id} destination=${destination} ` +

@@ -180,7 +180,7 @@ const ARTIFACT_PATH_TOTAL_MAX_BYTES = 512;
  * collision becomes likely, vs. the realistic ceiling of single-digit
  * artifacts per turn).
  */
-function deterministicHexSuffix(input: string): string {
+export function deterministicHexSuffix(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex').slice(0, 6);
 }
 

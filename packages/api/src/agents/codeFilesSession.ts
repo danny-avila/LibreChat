@@ -136,6 +136,18 @@ export function collectCodeExecutionProfileRoutes(
  * so first-seen also wins the destination, and the later copy of an
  * already-mounted name is dropped rather than renamed to a path nothing
  * told the model about.
+ *
+ * Each agent resolves destinations over its own candidate set, so this can
+ * still drop a genuinely distinct file: two agents whose *private*
+ * resources share a filename each claim the bare name locally, and only the
+ * first survives here while the second agent's tool context keeps
+ * advertising its own file at that path. `sortCodeFilesByDestinationPriority`
+ * ranks conversation-scoped files above private ones precisely so the shared
+ * majority cannot diverge that way; closing the private-versus-private case
+ * needs one assignment across contributors, which means resolving
+ * destinations before any agent renders its tool context. Until then this
+ * drop is the failure floor — before it, the pair reached codeapi together
+ * and took the whole run down with a rejected request.
  */
 export function seedCodeFilesIntoSessions(
   files: CodeEnvFile[] | undefined,

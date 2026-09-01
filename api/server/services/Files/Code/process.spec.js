@@ -115,28 +115,40 @@ jest.mock('@librechat/api', () => {
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
     /* Sandbox destination assignment, mirrored the same way the identity
      * helpers above are. The real policy — directory-prefix conflicts, the
-     * byte cap, flattening — lives in
+     * byte cap, flattening, the hashed suffix — lives in
      * `packages/api/src/files/code/destinations.ts` under its own
-     * `destinations.spec.ts`; these stubs carry just enough of it (a counter
-     * per repeated name, newest-first ordering) for the `primeFiles` tests to
-     * assert that it is wired to `name` and to the tool context at all. */
+     * `destinations.spec.ts`; these stubs carry just enough of its shape
+     * (an identity-derived suffix, shared-then-newest ordering) for the
+     * `primeFiles` tests to assert that it is wired to `name` and to the tool
+     * context at all. The suffix here is the raw identity rather than a
+     * digest so the expectations below read as names. */
     createCodeDestinationSet: () => new Set(),
-    claimCodeDestination: (set, name) => {
-      let destination = name;
+    claimCodeDestination: (set, name, identity) => {
       const dot = name.lastIndexOf('.');
       const stem = dot > 0 ? name.slice(0, dot) : name;
       const extension = dot > 0 ? name.slice(dot) : '';
-      for (let counter = 2; set.has(destination); counter++) {
-        destination = `${stem}-${counter}${extension}`;
+      let destination = name;
+      for (let counter = 1; set.has(destination); counter++) {
+        const tail = counter === 1 ? '' : `-${counter}`;
+        destination = `${stem}-${identity}${tail}${extension}`;
       }
       set.add(destination);
       return destination;
     },
-    sortCodeFilesByDestinationPriority: (files) =>
-      [...files].sort((a, b) => {
-        const delta = new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
-        return delta !== 0 ? delta : (a.file_id ?? '').localeCompare(b.file_id ?? '');
-      }),
+    sortCodeFilesByDestinationPriority: (files, privateFileIds) => {
+      const isPrivate = (file) => (privateFileIds?.has(file?.file_id) ? 1 : 0);
+      const contentTime = (file) =>
+        Math.max(
+          file?.metadata?.sourceDispatchedAt ?? 0,
+          new Date(file?.createdAt ?? 0).getTime() || 0,
+        );
+      return [...files].sort((a, b) => {
+        const scope = isPrivate(a) - isPrivate(b);
+        if (scope !== 0) return scope;
+        const delta = contentTime(b) - contentTime(a);
+        return delta !== 0 ? delta : (a?.file_id ?? '').localeCompare(b?.file_id ?? '');
+      });
+    },
   };
 });
 
@@ -2889,7 +2901,14 @@ describe('Code Process', () => {
     const { getFiles } = require('~/models');
     const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 
-    const codeFile = ({ file_id, filename, storage_session_id, createdAt, context }) => ({
+    const codeFile = ({
+      file_id,
+      filename,
+      storage_session_id,
+      createdAt,
+      context,
+      sourceDispatchedAt,
+    }) => ({
       file_id,
       filename,
       createdAt,
@@ -2897,6 +2916,7 @@ describe('Code Process', () => {
       source: 'local',
       filepath: `/uploads/${file_id}`,
       metadata: {
+        ...(sourceDispatchedAt != null ? { sourceDispatchedAt } : {}),
         codeEnvRef: {
           kind: 'user',
           id: 'user-123',
@@ -2916,12 +2936,15 @@ describe('Code Process', () => {
       mockAxios.mockResolvedValue({ data: { lastModified: new Date().toISOString() } });
     }
 
-    const prime = () =>
+    const prime = (tool_resources) =>
       primeFiles({
         req: { user: { id: 'user-123', role: 'USER' } },
-        tool_resources: { execute_code: { file_ids: ['older', 'newer'] } },
+        tool_resources: tool_resources ?? { execute_code: { file_ids: ['older', 'newer'] } },
         agentId: 'agent-id',
       });
+
+    const bySession = (result) =>
+      Object.fromEntries(result.files.map((f) => [f.storage_session_id, f.name]));
 
     it('gives two uploads sharing a filename distinct destinations', async () => {
       setupActiveSessions();
@@ -2947,10 +2970,15 @@ describe('Code Process', () => {
       /* The newest record keeps the bare path: when an execution rewrote an
        * uploaded file in place, the model's next read of that path has to
        * find its own edit rather than the superseded original. */
-      expect(files.find((f) => f.storage_session_id === 'sess-newer').name).toBe('image.png');
-      expect(files.find((f) => f.storage_session_id === 'sess-older').name).toBe('image-2.png');
+      expect(bySession({ files })).toEqual({
+        'sess-newer': 'image.png',
+        'sess-older': 'image-older.png',
+      });
       expect(toolContext).toContain('/mnt/data/image.png');
-      expect(toolContext).toContain('/mnt/data/image-2.png');
+      /* The displaced file is advertised at the path it actually mounts on,
+       * alongside the name the user knows it by. */
+      expect(toolContext).toContain('/mnt/data/image-older.png');
+      expect(toolContext).toContain('(uploaded as image.png)');
     });
 
     it('assigns the same destinations regardless of the order getFiles returns', async () => {
@@ -2981,12 +3009,10 @@ describe('Code Process', () => {
       getFiles.mockResolvedValue([newer, older]);
       const descending = await prime();
 
-      const byFileId = (result) =>
-        Object.fromEntries(result.files.map((f) => [f.storage_session_id, f.name]));
-      expect(byFileId(ascending)).toEqual(byFileId(descending));
-      expect(byFileId(ascending)).toEqual({
+      expect(bySession(ascending)).toEqual(bySession(descending));
+      expect(bySession(ascending)).toEqual({
         'sess-newer': 'image.png',
-        'sess-older': 'image-2.png',
+        'sess-older': 'image-older.png',
       });
     });
 
@@ -3010,12 +3036,105 @@ describe('Code Process', () => {
 
       const { files, toolContext } = await prime();
 
-      expect(files.find((f) => f.storage_session_id === 'sess-output').name).toBe('data.csv');
-      expect(files.find((f) => f.storage_session_id === 'sess-upload').name).toBe('data-2.csv');
-      /* Generated outputs are never listed in the tool context — the model
-       * already knows what it wrote — so only the displaced upload appears. */
-      expect(toolContext).toContain('/mnt/data/data-2.csv');
+      expect(bySession({ files })).toEqual({
+        'sess-output': 'data.csv',
+        'sess-upload': 'data-older.csv',
+      });
+      /* The output keeps the path it wrote, so it stays out of the context
+       * exactly as an undisplaced generated file does. */
+      expect(toolContext).toContain('/mnt/data/data-older.csv');
       expect(toolContext).not.toContain('/mnt/data/data.csv');
+    });
+
+    it('advertises a generated output that a newer upload displaced', async () => {
+      /**
+       * The model only knows it wrote `/mnt/data/report.png`. Once a newer
+       * upload takes that path, silence would leave it reading the upload or
+       * failing to find its own artifact.
+       */
+      setupActiveSessions();
+      getFiles.mockResolvedValue([
+        codeFile({
+          file_id: 'older',
+          filename: 'report.png',
+          storage_session_id: 'sess-output',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          context: 'execute_code',
+        }),
+        codeFile({
+          file_id: 'newer',
+          filename: 'report.png',
+          storage_session_id: 'sess-upload',
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+        }),
+      ]);
+
+      const { toolContext } = await prime();
+
+      expect(toolContext).toContain('/mnt/data/report-older.png (written earlier as report.png)');
+    });
+
+    it('ranks a rewritten output above an upload created after it', async () => {
+      setupActiveSessions();
+      getFiles.mockResolvedValue([
+        codeFile({
+          file_id: 'older',
+          filename: 'data.csv',
+          storage_session_id: 'sess-output',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          context: 'execute_code',
+          sourceDispatchedAt: Date.parse('2026-03-01T00:00:00Z'),
+        }),
+        codeFile({
+          file_id: 'newer',
+          filename: 'data.csv',
+          storage_session_id: 'sess-upload',
+          createdAt: new Date('2026-02-01T00:00:00Z'),
+        }),
+      ]);
+
+      const { files } = await prime();
+
+      expect(bySession({ files })).toEqual({
+        'sess-output': 'data.csv',
+        'sess-upload': 'data-newer.csv',
+      });
+    });
+
+    it("lets a conversation file outrank the agent's own file of the same name", async () => {
+      /**
+       * Every agent in a run primes the conversation's files plus its own, so
+       * a private file taking the bare path in one agent and not in another
+       * would leave two agents advertising different paths for the same
+       * shared file into one mount namespace.
+       */
+      setupActiveSessions();
+      getFiles.mockResolvedValue([
+        codeFile({
+          file_id: 'shared',
+          filename: 'data.csv',
+          storage_session_id: 'sess-shared',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        }),
+        codeFile({
+          file_id: 'agent-own',
+          filename: 'data.csv',
+          storage_session_id: 'sess-agent',
+          createdAt: new Date('2026-06-01T00:00:00Z'),
+        }),
+      ]);
+
+      const { files } = await prime({
+        execute_code: {
+          file_ids: ['agent-own'],
+          files: [{ file_id: 'shared' }],
+        },
+      });
+
+      expect(bySession({ files })).toEqual({
+        'sess-shared': 'data.csv',
+        'sess-agent': 'data-agent-own.csv',
+      });
     });
 
     it('leaves a single file on its own filename', async () => {
@@ -3033,6 +3152,7 @@ describe('Code Process', () => {
 
       expect(files.map((f) => f.name)).toEqual(['report.pdf']);
       expect(toolContext).toContain('/mnt/data/report.pdf');
+      expect(toolContext).not.toContain('uploaded as');
     });
   });
 });
