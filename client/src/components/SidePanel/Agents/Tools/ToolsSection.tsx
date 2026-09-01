@@ -19,16 +19,18 @@ import {
 } from '@librechat/client';
 import type { TPlugin } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import type { CapabilityFileCounts } from './items/capabilities';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
 import {
+  useAgentFileEntries,
   useAgentItems,
   useResolvedSkills,
-  useAgentFileEntries,
   useUninstallToolCredentials,
 } from './hooks';
 import { computeToggleAction, skillsEnabledTransition } from './items/mutations';
 import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
+import { requiresFileManagerRemoval } from './items/capabilities';
 import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
 import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
 import { useLocalize, useHasAccess } from '~/hooks';
@@ -117,7 +119,6 @@ export default function ToolsSection({ agentId }: Props) {
   );
 
   const uninstallToolCredentials = useUninstallToolCredentials();
-  const { knowledgeFiles, codeFiles } = useAgentFileEntries();
 
   const { selected, tools } = useAgentItems({
     agentId,
@@ -125,27 +126,16 @@ export default function ToolsSection({ agentId }: Props) {
     skillsPermission: showSkills,
   });
 
-  /** File-backed built-ins stay selected while they hold files, so flipping
-   * the capability flag off would leave the row visible. Route their removal
-   * to the config dialog (where files are managed) instead, mirroring the
-   * file-only `context` built-in. */
+  const { knowledgeFiles, codeFiles } = useAgentFileEntries();
+  const fileCounts: CapabilityFileCounts = useMemo(
+    () => ({ knowledge_files: knowledgeFiles.length, code_files: codeFiles.length }),
+    [knowledgeFiles, codeFiles],
+  );
+
   const opensFileManagerOnRemove = useCallback(
-    (item: AgentItem): boolean => {
-      if (item.kind !== 'builtin') {
-        return false;
-      }
-      if (item.id === 'context') {
-        return true;
-      }
-      if (item.id === 'execute_code') {
-        return codeFiles.length > 0;
-      }
-      if (item.id === 'file_search') {
-        return knowledgeFiles.length > 0;
-      }
-      return false;
-    },
-    [codeFiles, knowledgeFiles],
+    (item: AgentItem): boolean =>
+      item.kind === 'builtin' && requiresFileManagerRemoval(item.id, fileCounts),
+    [fileCounts],
   );
 
   const handleQuickRemove = useCallback(

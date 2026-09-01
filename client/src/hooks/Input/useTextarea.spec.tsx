@@ -20,6 +20,8 @@ const mockShowToast = jest.fn();
 const mockOpenModal = jest.fn();
 const mockLocalize = jest.fn((key: string) => key);
 const mockSetActivePrompt = jest.fn();
+const mockSetPendingComposerText = jest.fn();
+let mockPendingComposerText: string | undefined;
 
 let useTextarea: typeof import('./useTextarea').default;
 let mockIndex = 0;
@@ -43,7 +45,11 @@ jest.mock('~/utils', () => ({
 
 jest.mock('recoil', () => ({
   useRecoilValue: jest.fn(() => true),
-  useRecoilState: jest.fn(() => [undefined, mockSetActivePrompt]),
+  useRecoilState: jest.fn((atom: { key?: string }) =>
+    atom?.key === 'pendingComposerText'
+      ? [mockPendingComposerText, mockSetPendingComposerText]
+      : [undefined, mockSetActivePrompt],
+  ),
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -57,6 +63,7 @@ jest.mock('~/store', () => ({
     saveDrafts: { key: 'saveDrafts' },
     pasteLongTextAsFile: { key: 'pasteLongTextAsFile' },
     activePromptByIndex: jest.fn(() => ({ key: 'activePrompt' })),
+    pendingComposerTextByConvoId: jest.fn(() => ({ key: 'pendingComposerText' })),
   },
 }));
 
@@ -163,6 +170,7 @@ describe('useTextarea long-paste fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    mockPendingComposerText = undefined;
     mockIndex = 0;
     mockIsSubmitting = false;
     mockIsUploadConfigPending = false;
@@ -947,5 +955,33 @@ describe('useTextarea long-paste fallback', () => {
     await act(async () => {
       finish(false);
     });
+  });
+});
+
+describe('useTextarea composer handoff', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPendingComposerText = undefined;
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
+  });
+
+  /** A surface the reader is leaving (a continued subagent thread) hands its
+   *  words to the destination conversation. It travels in memory, so it is
+   *  delivered whatever the Save Drafts preference is. */
+  it('drains text handed to this conversation into the composer exactly once', () => {
+    mockPendingComposerText = 'Take this further.';
+    const { textArea } = renderTextareaHook();
+
+    expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, 'Take this further.');
+    expect(mockForceResize).toHaveBeenCalledWith(textArea);
+    expect(mockSetPendingComposerText).toHaveBeenCalledWith(undefined);
+    expect(getDraft('convo-1')).toBe('');
+  });
+
+  it('leaves the composer alone when nothing was handed to this conversation', () => {
+    renderTextareaHook();
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockSetPendingComposerText).not.toHaveBeenCalled();
   });
 });

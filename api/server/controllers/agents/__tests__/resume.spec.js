@@ -431,7 +431,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         parentMessageId: req.body.parentMessageId,
         files: req.body.files,
         isTemporary: req.body.isTemporary,
-        conversationCreatedAt: req.conversationCreatedAt,
+        turnStartedAt: req.turnStartedAt,
         isScheduledFire: req._isScheduledFire,
         timezone: req.body.timezone,
         checkpointNamespace,
@@ -1356,14 +1356,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   });
 
   describe('temporal context restore', () => {
-    it('restores req.conversationCreatedAt from the convo before initializeClient', async () => {
-      // Temporal prompt vars must resolve against the paused anchor, not resume wall-clock.
-      mockGetConvo.mockResolvedValue({ createdAt: new Date('2020-01-02T03:04:05.000Z') });
-      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+    it('restores the paused turn start from the durable job before initializeClient', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob({ createdAt: 1234 }));
       const res = await post(approveBody());
       expect(res.status).toBe(200);
       await settled;
-      expect(capturedInit.conversationCreatedAt).toBe('2020-01-02T03:04:05.000Z');
+      expect(capturedInit.turnStartedAt).toBe(1234);
     });
 
     /**
@@ -1390,15 +1388,6 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         mockGenerationJobManager.rearmQueuedPreempts.mockResolvedValue(0);
       }
     }, 15000);
-
-    it('leaves conversationCreatedAt unset when the convo lookup yields nothing', async () => {
-      mockGetConvo.mockResolvedValue(null);
-      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
-      const res = await post(approveBody());
-      expect(res.status).toBe(200);
-      await settled;
-      expect(capturedInit.conversationCreatedAt).toBeUndefined();
-    });
   });
 
   describe('content policy preflight', () => {

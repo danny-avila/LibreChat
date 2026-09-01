@@ -43,6 +43,8 @@ export interface AgentContinuationAdmissionSource {
   sourceId: string;
   claimId: string;
   claimBy: string;
+  effectivePredecessorCreatedAt?: number;
+  lineagePredecessorId?: string;
 }
 
 export type AgentTriggerContinuePreparation =

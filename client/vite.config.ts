@@ -1,11 +1,12 @@
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
+import { constants } from 'zlib';
 import { defineConfig } from 'vite';
 import { createRequire } from 'module';
 import { VitePWA } from 'vite-plugin-pwa';
-import { compression } from 'vite-plugin-compression2';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import { compression, defineAlgorithm } from 'vite-plugin-compression2';
 import type { Plugin } from 'vite';
 
 const require = createRequire(import.meta.url);
@@ -178,6 +179,20 @@ export default defineConfig(({ command }) => ({
     ...(buildSourceMap ? [sourcemapExclude({ excludeNodeModules: true })] : []),
     compression({
       threshold: 10240,
+      /**
+       * Brotli's default quality of 11 costs ~13s of single-threaded CPU on this bundle
+       * against ~0.5s for gzip, and the plugin's scheduler serializes quality >= 10 as a
+       * high-memory operation. Quality 5 compresses in ~0.2s, still lands under gzip
+       * (4.3MB vs 5.0MB), and parallelizes. `.br` is only served when
+       * ENABLE_STATIC_ASSET_BROTLI is set, so the extra 0.5MB buys far less than it costs
+       * on every build of every platform.
+       */
+      algorithms: [
+        defineAlgorithm('gzip', { level: 9 }),
+        defineAlgorithm('brotliCompress', {
+          params: { [constants.BROTLI_PARAM_QUALITY]: 5 },
+        }),
+      ],
     }),
   ],
   optimizeDeps: {

@@ -1637,7 +1637,7 @@ export async function initializeAgent(
     const resolvedInstructions = replaceSpecialVars({
       text: agent.instructions,
       user: user ? (user as unknown as TUser) : null,
-      now: runtime.conversationCreatedAt,
+      now: runtime.turnStartedAt,
       timezone: runtime.requestBody.timezone,
     });
     if (hasTemporalSpecialVars(agent.instructions)) {

@@ -103,8 +103,18 @@ function QueuedRow({
   const quoteCount = message.quotes?.length ?? 0;
   const isRecovered = message.recoverySteerId != null;
   const isRejected = message.server?.status === 'rejected';
+  const isIndeterminate = message.server?.status === 'indeterminate';
   const isUnconfirmed =
     message.server?.status === 'uncertain' && message.server.reconciliationExpired === true;
+  let statusLabel:
+    | 'com_ui_queued_turn_reconciliation_required'
+    | 'com_ui_steer_delivery_unconfirmed'
+    | 'com_ui_queued_turn_failed' = 'com_ui_queued_turn_failed';
+  if (isIndeterminate) {
+    statusLabel = 'com_ui_queued_turn_reconciliation_required';
+  } else if (isUnconfirmed) {
+    statusLabel = 'com_ui_steer_delivery_unconfirmed';
+  }
   const requiresDiscard = isRecovered || message.server?.id != null;
   const serverActionable =
     message.server == null ||
@@ -198,7 +208,7 @@ function QueuedRow({
 
   return (
     <div role="listitem" className={ROW_CLASS} data-testid="queued-message-row">
-      {isRejected || isUnconfirmed ? (
+      {isRejected || isUnconfirmed || isIndeterminate ? (
         <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />
       ) : (
         <Clock className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
@@ -216,12 +226,8 @@ function QueuedRow({
           0: String(fileCount),
         })}
       />
-      {(isRejected || isUnconfirmed) && (
-        <span className="shrink-0 text-xs text-text-warning">
-          {localize(
-            isUnconfirmed ? 'com_ui_steer_delivery_unconfirmed' : 'com_ui_queued_turn_failed',
-          )}
-        </span>
+      {(isRejected || isUnconfirmed || isIndeterminate) && (
+        <span className="shrink-0 text-xs text-text-warning">{localize(statusLabel)}</span>
       )}
       {showPrimary && (
         <button

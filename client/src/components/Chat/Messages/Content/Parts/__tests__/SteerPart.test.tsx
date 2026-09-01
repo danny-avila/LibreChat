@@ -17,7 +17,7 @@ jest.mock('~/Providers', () => ({
 
 jest.mock('~/components/Chat/Messages/ui/MessageTimestamp', () => ({
   __esModule: true,
-  default: () => null,
+  default: () => <time data-testid="steer-timestamp" />,
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
@@ -118,6 +118,19 @@ describe('SteerPart author label', () => {
     // hunting: no hover-capable-pointer opacity gate like the old "?" had.
     const receipt = screen.getByTestId('steer-receipt');
     expect(receipt.className).not.toContain('opacity-0');
+  });
+
+  it('anchors the receipt after the timestamp, at the trailing edge of the row', () => {
+    renderPart();
+    // The timestamp is the hover-revealed half of the row and its width changes
+    // as the relative string ticks; leading the checks with it would park the
+    // one always-visible mark at a moving offset from the bubble's corner.
+    const row = screen.getByTestId('steer-receipt').parentElement;
+    const children = Array.from(row?.children ?? []);
+    expect(children.map((child) => child.getAttribute('data-testid'))).toEqual([
+      'steer-timestamp',
+      'steer-receipt',
+    ]);
   });
 });
 

@@ -10,6 +10,11 @@ export interface IThemeRGB {
   'rgb-text-tertiary'?: string;
   'rgb-text-warning'?: string;
   'rgb-text-destructive'?: string;
+  /** Bright and dipped stops of the in-flight label sweep (`.shimmer`). Their
+   *  opacities stay in CSS as `--shimmer-*-alpha`, the way the border roles
+   *  keep `--border-*-alpha`. */
+  'rgb-shimmer-base'?: string;
+  'rgb-shimmer-dip'?: string;
 
   // Link and accent colors
   'rgb-link'?: string;
@@ -113,6 +118,8 @@ export interface IThemeVariables {
   '--text-tertiary': string;
   '--text-warning': string;
   '--text-destructive': string;
+  '--shimmer-base': string;
+  '--shimmer-dip': string;
   '--link': string;
   '--link-hover': string;
   '--link-visited': string;

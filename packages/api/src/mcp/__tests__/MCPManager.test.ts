@@ -3878,13 +3878,27 @@ describe('MCPManager', () => {
         )?.[1];
         const tools: t.MCPTool[] = [{ name: 'current', inputSchema: { type: 'object' } }];
         listener(tools);
-        const snapshot = await manager.getServerToolFunctionsSnapshot(userId, serverName);
+        const deadlineMs = Date.now() + 3000;
+        const snapshot = await manager.getServerToolFunctionsSnapshot(
+          userId,
+          serverName,
+          undefined,
+          {
+            deadlineMs,
+          },
+        );
 
         expect(generationSpy).toHaveBeenCalledWith({ userId, serverName });
         expect(snapshot).toEqual({
           tools: expectedToolFunctions,
           publicationGeneration: 'generation-a',
         });
+        expect(MCPServerInspector.getToolCatalog).toHaveBeenCalledWith(
+          serverName,
+          mockConnection,
+          deadlineMs,
+          expect.any(AbortSignal),
+        );
         expect(notifySpy).toHaveBeenCalledWith({
           tools,
           userId,
