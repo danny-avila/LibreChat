@@ -380,99 +380,103 @@ const refreshController = async (req, res) => {
 
       const refreshUserId =
         req.session?.openidTokens?.appUserId ?? getValidOpenIDReuseUserId(parsedCookies);
-      const refreshUser = refreshUserId
-        ? await runAsSystem(() => getUserById(refreshUserId, AUTH_REFRESH_USER_PROJECTION))
-        : null;
-      if (!refreshUser) {
+      if (!refreshUserId) {
         return res.status(403).send('Invalid OpenID refresh token');
       }
 
-      let successfulRefreshToken = refreshToken;
-      let refreshResult;
-      try {
-        refreshResult = await refreshOpenIDUser({
-          req,
-          res,
-          user: refreshUser,
-          refreshToken,
-          browserRefreshToken: parsedCookies.refreshToken,
-          strategyName: 'refreshController',
-          deferPublication: true,
-        });
-      } catch (error) {
-        if (!fallbackRefreshToken || !isInvalidGrantError(error)) {
-          throw error;
+      return await runAsSystem(async () => {
+        const refreshUser = await getUserById(refreshUserId, AUTH_REFRESH_USER_PROJECTION);
+        if (!refreshUser) {
+          return res.status(403).send('Invalid OpenID refresh token');
         }
-        logger.info(
-          '[refreshController] Session refresh token was rejected; retrying the distinct browser token',
-        );
-        successfulRefreshToken = fallbackRefreshToken;
-        refreshResult = await refreshOpenIDUser({
+
+        let successfulRefreshToken = refreshToken;
+        let refreshResult;
+        try {
+          refreshResult = await refreshOpenIDUser({
+            req,
+            res,
+            user: refreshUser,
+            refreshToken,
+            browserRefreshToken: parsedCookies.refreshToken,
+            strategyName: 'refreshController',
+            deferPublication: true,
+          });
+        } catch (error) {
+          if (!fallbackRefreshToken || !isInvalidGrantError(error)) {
+            throw error;
+          }
+          logger.info(
+            '[refreshController] Session refresh token was rejected; retrying the distinct browser token',
+          );
+          successfulRefreshToken = fallbackRefreshToken;
+          refreshResult = await refreshOpenIDUser({
+            req,
+            res,
+            user: refreshUser,
+            refreshToken: fallbackRefreshToken,
+            browserRefreshToken: parsedCookies.refreshToken,
+            strategyName: 'refreshController (browser fallback)',
+            deferPublication: true,
+          });
+        }
+        const { tokenset, claims, openidIssuer, user, error, migration } = refreshResult;
+
+        if (error || !user) {
+          logger.warn(
+            `[refreshController] Redirecting to /login: error=${error ?? 'null'}, user=${user ? 'exists' : 'null'}`,
+          );
+          return res.status(401).redirect('/login');
+        }
+
+        // Handle migration: update user with openidId if found by email without openidId
+        // Also handle case where user has mismatched openidId (e.g., after database switch)
+        if (migration || user.openidId !== claims.sub) {
+          const reason = migration ? 'migration' : 'openidId mismatch';
+          await updateUser(user._id.toString(), {
+            provider: 'openid',
+            openidId: claims.sub,
+            ...(openidIssuer ? { openidIssuer } : {}),
+          });
+          logger.info(
+            `[refreshController] Updated user ${user.email} openidId (${reason}): ${user.openidId ?? 'null'} -> ${claims.sub}`,
+          );
+        }
+
+        if (
+          successfulRefreshToken !== refreshToken &&
+          req.session?.openidTokens?.refreshToken === refreshToken
+        ) {
+          delete req.session.openidTokens;
+        }
+
+        const token = await sendOpenIDAuthResponse({
+          tokenset,
+          user,
+          existingRefreshToken: successfulRefreshToken,
+          openidSubject: claims?.sub,
+          openidIssuer,
+          predecessorIdentity: {
+            userId: refreshUser._id.toString(),
+            tenantId: refreshUser.tenantId,
+            openidIssuer: refreshUser.openidIssuer,
+          },
+          rejectedRefreshTokens: successfulRefreshToken === refreshToken ? [] : [refreshToken],
           req,
           res,
-          user: refreshUser,
-          refreshToken: fallbackRefreshToken,
-          browserRefreshToken: parsedCookies.refreshToken,
-          strategyName: 'refreshController (browser fallback)',
-          deferPublication: true,
         });
-      }
-      const { tokenset, claims, openidIssuer, user, error, migration } = refreshResult;
-
-      if (error || !user) {
-        logger.warn(
-          `[refreshController] Redirecting to /login: error=${error ?? 'null'}, user=${user ? 'exists' : 'null'}`,
+        return await withOpenIDResponseDelivery(
+          {
+            res,
+            openidTokens: req.session?.openidTokens,
+            context: 'refreshController',
+          },
+          (sendAuthorized) =>
+            sendAuthorized(() =>
+              res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) }),
+            ),
         );
-        return res.status(401).redirect('/login');
-      }
-
-      // Handle migration: update user with openidId if found by email without openidId
-      // Also handle case where user has mismatched openidId (e.g., after database switch)
-      if (migration || user.openidId !== claims.sub) {
-        const reason = migration ? 'migration' : 'openidId mismatch';
-        await updateUser(user._id.toString(), {
-          provider: 'openid',
-          openidId: claims.sub,
-          ...(openidIssuer ? { openidIssuer } : {}),
-        });
-        logger.info(
-          `[refreshController] Updated user ${user.email} openidId (${reason}): ${user.openidId ?? 'null'} -> ${claims.sub}`,
-        );
-      }
-
-      if (
-        successfulRefreshToken !== refreshToken &&
-        req.session?.openidTokens?.refreshToken === refreshToken
-      ) {
-        delete req.session.openidTokens;
-      }
-
-      const token = await sendOpenIDAuthResponse({
-        tokenset,
-        user,
-        existingRefreshToken: successfulRefreshToken,
-        openidSubject: claims?.sub,
-        openidIssuer,
-        predecessorIdentity: {
-          userId: refreshUser._id.toString(),
-          tenantId: refreshUser.tenantId,
-          openidIssuer: refreshUser.openidIssuer,
-        },
-        rejectedRefreshTokens: successfulRefreshToken === refreshToken ? [] : [refreshToken],
-        req,
-        res,
       });
-      return await withOpenIDResponseDelivery(
-        {
-          res,
-          openidTokens: req.session?.openidTokens,
-          context: 'refreshController',
-        },
-        (sendAuthorized) =>
-          sendAuthorized(() =>
-            res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) }),
-          ),
-      );
     } catch (error) {
       if (isOpenIDRefreshOwnershipError(error)) {
         clearOpenIDAuthTokens(

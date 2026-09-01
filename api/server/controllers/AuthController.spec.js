@@ -1,4 +1,12 @@
-const mockRunAsSystem = jest.fn((fn) => fn());
+let mockSystemContextActive = false;
+const mockRunAsSystem = jest.fn(async (fn) => {
+  mockSystemContextActive = true;
+  try {
+    return await fn();
+  } finally {
+    mockSystemContextActive = false;
+  }
+});
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn(), info: jest.fn() },
   runAsSystem: (fn) => mockRunAsSystem(fn),
@@ -508,6 +516,7 @@ describe('refreshController – OpenID path', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSystemContextActive = false;
     delete process.env.OPENID_SCOPE;
     delete process.env.OPENID_REFRESH_AUDIENCE;
     process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
@@ -1052,6 +1061,10 @@ describe('refreshController – OpenID path', () => {
         openidIssuer: baseClaims.iss,
       },
     };
+    findOpenIDUser.mockImplementationOnce(async () => {
+      expect(mockSystemContextActive).toBe(true);
+      return { user: { ...defaultUser }, error: null, migration: false };
+    });
 
     await refreshController(req, res);
 
