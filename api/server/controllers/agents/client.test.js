@@ -6711,10 +6711,11 @@ describe('AgentClient - finalizeSubagentContent', () => {
     ];
 
     client.finalizeSubagentContent();
-    client.stampMcpServerIdentities();
-
     const inner = client.contentParts[0].tool_call.subagent_content[0].tool_call;
     expect(resolveMcpServerName).toHaveBeenCalledWith('lookup_mcp_foo_mcp_bar', 'member');
+    expect(inner.mcpServerName).toBe('bar');
+
+    client.stampMcpServerIdentities();
     expect(inner.mcpServerName).toBe('bar');
 
     const emptyMemberResolver = jest.fn(() => 'bar');
@@ -6895,6 +6896,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
     applyHideSequentialOutputsFilter: jest.fn(),
     rebaseActivityPhaseBounds: jest.fn(),
     finalizeSubagentContent: jest.fn(),
+    stampMcpServerIdentities: jest.fn(),
     settleActivityLabels: jest.fn().mockResolvedValue(undefined),
     recordCollectedUsage: jest.fn().mockResolvedValue(undefined),
   });

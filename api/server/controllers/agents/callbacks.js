@@ -334,6 +334,29 @@ function feedSubagentAggregator(aggregator, event) {
   const graphEvent = subagentPhaseToGraphEvent(event);
   if (!graphEvent) return;
   aggregator.aggregateContent({ event: graphEvent, data: event.data });
+
+  /** The SDK aggregator intentionally projects run-step tool calls onto its
+   * public content shape, so host-only routing metadata is not copied. Restore
+   * the server-owned identity by call id after that projection; otherwise the
+   * persistence fallback has to parse an ambiguous delimiter-bearing name. */
+  const identities = new Map(
+    (event.data?.stepDetails?.tool_calls ?? [])
+      .filter(
+        (toolCall) =>
+          typeof toolCall?.id === 'string' && typeof toolCall?.mcpServerName === 'string',
+      )
+      .map((toolCall) => [toolCall.id, toolCall.mcpServerName]),
+  );
+  if (identities.size === 0 || !Array.isArray(aggregator.contentParts)) {
+    return;
+  }
+  for (const part of aggregator.contentParts) {
+    const toolCall = part?.tool_call;
+    const serverName = identities.get(toolCall?.id);
+    if (serverName) {
+      toolCall.mcpServerName = serverName;
+    }
+  }
 }
 
 /**
