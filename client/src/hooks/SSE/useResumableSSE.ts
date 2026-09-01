@@ -398,10 +398,15 @@ export default function useResumableSSE(
               win.__bklSources = win.__bklSources ?? {};
               win.__bklSourcesByRid = win.__bklSourcesByRid ?? {};
               win.__bklSourcesByRid[data.request_id] = data.sources;
+              // rid 를 여기서도 확보한다. `request_id` 이벤트도 본문의
+              // `bkl_rid` 주석도 못 받은 경우 final 에서 __bklRids 매핑이
+              // 비어, 인용 패널이 rid 기반 재조회를 할 수 없게 된다.
+              _bklRid = _bklRid ?? data.request_id;
 
               const pendingKey = `_pending_${currentStreamId}`;
               win.__bklSources[pendingKey] = data.sources;
               _sourcesReplaced = true;
+              notifyBklSourcesChanged();
               console.log('[ResumableSSE] Cached sources_replace for rid:', data.request_id);
               return;
             }

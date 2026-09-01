@@ -215,6 +215,10 @@ export default function useSSE(
           const win = window as any;
           win.__bklSourcesByRid = win.__bklSourcesByRid ?? {};
           win.__bklSourcesByRid[data.request_id] = data.sources;
+          // `request_id` 이벤트를 놓쳐도 rid 를 알 수 있게 여기서도 채운다.
+          // 이게 없으면 final 에서 rid 가 없다는 이유로 messageId 캐시 이관이
+          // 통째로 스킵돼 전문 읽기 인용이 빈 출처로 남는다.
+          bklRequestId = bklRequestId ?? data.request_id;
           return;
         }
 
