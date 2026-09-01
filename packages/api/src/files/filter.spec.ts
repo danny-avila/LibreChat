@@ -56,6 +56,38 @@ describe('filterFilesByEndpointRuntimeConfig', () => {
 
     expect(deferred).toHaveLength(1);
   });
+
+  it('screens a converted image by the type it was accepted as', () => {
+    /* The allowlist admitted a png, conversion rewrote the stored type, and screening it
+     * by that drops a file the same allowlist accepted minutes earlier. */
+    const narrowConfig = {
+      fileConfig: {
+        endpoints: { default: { disabled: false, supportedMimeTypes: ['^image/png$'] } },
+      },
+    } as unknown as AppConfig;
+    const converted = {
+      ...sizedFile('photo.png', 1000),
+      type: 'image/webp',
+      metadata: { routingMimeType: 'image/png' },
+    } as unknown as IMongoFile;
+
+    expect(
+      filterFilesByEndpointRuntimeConfig(narrowConfig, { files: [converted], endpoint: 'default' }),
+    ).toHaveLength(1);
+  });
+
+  it('still screens an unconverted file by its own type', () => {
+    const narrowConfig = {
+      fileConfig: {
+        endpoints: { default: { disabled: false, supportedMimeTypes: ['^image/png$'] } },
+      },
+    } as unknown as AppConfig;
+    const webp = { ...sizedFile('photo.webp', 1000), type: 'image/webp' } as unknown as IMongoFile;
+
+    expect(
+      filterFilesByEndpointRuntimeConfig(narrowConfig, { files: [webp], endpoint: 'default' }),
+    ).toHaveLength(0);
+  });
 });
 
 describe('filterFilesByEndpointConfig', () => {

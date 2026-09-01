@@ -102,11 +102,13 @@ export function filterFilesByEndpointRuntimeConfig(
     });
   }
 
-  /** Filter by MIME type */
+  /** Filter by MIME type, against the type the upload was accepted as. Conversion rewrites
+   *  `type`, so screening a converted image by its stored format drops a file the same
+   *  allowlist admitted minutes earlier. */
   if (supportedMimeTypes && supportedMimeTypes.length > 0) {
-    filteredFiles = filteredFiles.filter((file) => {
-      return isMimeTypeSupported(file.type, supportedMimeTypes);
-    });
+    filteredFiles = filteredFiles.filter((file) =>
+      isMimeTypeSupported(file.metadata?.routingMimeType ?? file.type, supportedMimeTypes),
+    );
   }
 
   /** Filter by total size limit - keep files until total exceeds limit */
