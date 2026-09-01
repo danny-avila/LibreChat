@@ -588,6 +588,9 @@ interface RuntimeJobState {
    * its own abort registration. Keep this runtime's transport callbacks as a
    * channel handoff bridge until the successor explicitly releases them. */
   replacementTransportHold?: boolean;
+  /** Stored-terminal discovery proved that this held predecessor needs the
+   * receipt-aware retirement lifecycle once the successor releases the hold. */
+  replacementRetirementPending?: boolean;
   /**
    * Cooperative-seal requests for THIS generation. Armed by `requestPreempt`
    * (locally or via a fenced cross-replica publish), polled O(1) by the run's
@@ -1122,14 +1125,23 @@ class GenerationJobManagerClass {
     this.reconcileInactiveGeneration(streamId, createdAt, currentJob, observedRuntime);
   }
 
-  private reconcileDiscoveredSuccessor(
+  private async reconcileDiscoveredSuccessor(
     streamId: string,
     runtime: RuntimeJobState,
     successor: SerializableJobData,
-  ): void {
+  ): Promise<void> {
     const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
-    this.recordFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
-    this.reconcileInactiveGeneration(streamId, runtime.createdAt, successor, runtime);
+    if (!runtime.abortController.signal.aborted) {
+      runtime.abortController.abort();
+    }
+    const abortProofPersisted = await this.persistFencedRuntimeAbortProof(
+      streamId,
+      runtime,
+      ownsExactProvider,
+    );
+    if (abortProofPersisted) {
+      this.reconcileInactiveGeneration(streamId, runtime.createdAt, successor, runtime);
+    }
     this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
   }
 
@@ -2490,7 +2502,7 @@ class GenerationJobManagerClass {
         // across same-stream replacement. This also lets a predecessor whose
         // registration was still becoming ready dispose itself without
         // briefly unsubscribing the successor.
-        this.releaseAbortSubscription(replacedRuntime, true);
+        this.releaseReplacementTransportHold(streamId, replacedRuntime);
       }
       // This epoch is not exposed to its controller until the durable bit and
       // owner listener agree. A replacement that wins before this write sees
@@ -2526,7 +2538,7 @@ class GenerationJobManagerClass {
       }
     } catch (error) {
       if (replacedRuntime != null && replacedRuntime !== runtime) {
-        this.releaseAbortSubscription(replacedRuntime, true);
+        this.releaseReplacementTransportHold(streamId, replacedRuntime);
       }
       // The durable job already exists, but the caller has not received its
       // generation identity yet. Finalize that exact epoch here so a controller
@@ -4923,7 +4935,7 @@ class GenerationJobManagerClass {
         let terminalJob = await this.jobStore.getJob(streamId);
         if (terminalJob?.createdAt !== runtime.createdAt) {
           if (terminalJob) {
-            this.reconcileDiscoveredSuccessor(streamId, runtime, terminalJob);
+            await this.reconcileDiscoveredSuccessor(streamId, runtime, terminalJob);
           } else {
             queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
           }
@@ -4936,7 +4948,7 @@ class GenerationJobManagerClass {
           terminalJob = await this.recoverStaleTerminalPersistence(terminalJob);
           if (terminalJob?.createdAt !== runtime.createdAt) {
             if (terminalJob) {
-              this.reconcileDiscoveredSuccessor(streamId, runtime, terminalJob);
+              await this.reconcileDiscoveredSuccessor(streamId, runtime, terminalJob);
             } else {
               queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
             }
@@ -6269,38 +6281,46 @@ class GenerationJobManagerClass {
     return true;
   }
 
+  private async persistFencedRuntimeAbortProof(
+    streamId: string,
+    runtime: RuntimeJobState,
+    ownsExactProvider: boolean,
+  ): Promise<boolean> {
+    const recordAbortAcknowledgement = this.eventTransport.recordAbortAcknowledgement;
+    if (!this._isRedis || !ownsExactProvider) {
+      return true;
+    }
+    if (recordAbortAcknowledgement == null) {
+      return false;
+    }
+
+    try {
+      const confirmed = await recordAbortAcknowledgement.call(
+        this.eventTransport,
+        streamId,
+        runtime.createdAt,
+      );
+      if (!confirmed) {
+        logger.warn(
+          `[GenerationJobManager] Abort proof was not persisted for fenced generation ${streamId}`,
+        );
+      }
+      return confirmed;
+    } catch (error) {
+      logger.error(
+        `[GenerationJobManager] Failed to persist abort proof for fenced generation ${streamId}:`,
+        error,
+      );
+      return false;
+    }
+  }
+
   private recordFencedRuntimeAbortProof(
     streamId: string,
     runtime: RuntimeJobState,
     ownsExactProvider: boolean,
   ): void {
-    const recordAbortAcknowledgement = this.eventTransport.recordAbortAcknowledgement;
-    if (!this._isRedis || recordAbortAcknowledgement == null || !ownsExactProvider) {
-      return;
-    }
-
-    try {
-      void recordAbortAcknowledgement
-        .call(this.eventTransport, streamId, runtime.createdAt)
-        .then((confirmed) => {
-          if (!confirmed) {
-            logger.warn(
-              `[GenerationJobManager] Abort proof was not persisted for fenced generation ${streamId}`,
-            );
-          }
-        })
-        .catch((error) => {
-          logger.error(
-            `[GenerationJobManager] Failed to persist abort proof for fenced generation ${streamId}:`,
-            error,
-          );
-        });
-    } catch (error) {
-      logger.error(
-        `[GenerationJobManager] Failed to start abort proof for fenced generation ${streamId}:`,
-        error,
-      );
-    }
+    void this.persistFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
   }
 
   private cleanupFencedRuntime(streamId: string, runtime: RuntimeJobState): void {
@@ -6373,6 +6393,7 @@ class GenerationJobManagerClass {
       return;
     }
     if (runtime.replacementTransportHold === true) {
+      runtime.replacementRetirementPending = true;
       return;
     }
     if (runtime.localErrorHandlers.size === 0) {
@@ -6382,6 +6403,15 @@ class GenerationJobManagerClass {
     const retirement: FencedRuntimeRetirementContext = { controller: new AbortController() };
     this.fencedRuntimeRetirements.set(runtime, retirement);
     this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now(), retirement);
+  }
+
+  private releaseReplacementTransportHold(streamId: string, runtime: RuntimeJobState): void {
+    const retirementPending = runtime.replacementRetirementPending === true;
+    runtime.replacementRetirementPending = false;
+    this.releaseAbortSubscription(runtime, true);
+    if (retirementPending) {
+      this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+    }
   }
 
   private isCurrentRuntime(streamId: string, runtime: RuntimeJobState): boolean {
@@ -7999,7 +8029,7 @@ class GenerationJobManagerClass {
           if (err instanceof GenerationPublicationFencedError) {
             const currentJob = await this.jobStore.getJob(streamId);
             if (currentJob) {
-              this.reconcileDiscoveredSuccessor(streamId, observedRuntime, currentJob);
+              await this.reconcileDiscoveredSuccessor(streamId, observedRuntime, currentJob);
             } else {
               this.reconcileInactiveGeneration(
                 streamId,

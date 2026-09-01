@@ -3366,10 +3366,87 @@ describe('GenerationJobManager startup telemetry', () => {
     }
   });
 
-  it('records abort proof when stored-terminal discovery stops a predecessor', async () => {
+  it('schedules predecessor retirement after a successor releases its transport hold', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    let signalHandoffStarted: (() => void) | undefined;
+    const handoffStarted = new Promise<void>((resolve) => {
+      signalHandoffStarted = resolve;
+    });
+    let releaseHandoff: (() => void) | undefined;
+    const handoffGate = new Promise<void>((resolve) => {
+      releaseHandoff = resolve;
+    });
+    jest.spyOn(eventTransport, 'emitDone').mockImplementation(async () => {
+      signalHandoffStarted?.();
+      await handoffGate;
+    });
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false, cleanupOnComplete: false });
+    manager.initialize();
+    const streamId = 'stream-successor-transport-hold-retirement';
+    const predecessor = await manager.createJob(streamId, 'user-1', streamId);
+    const predecessorError = jest.fn();
+    jest.useFakeTimers();
+    const predecessorSubscription = await manager.subscribe(
+      streamId,
+      () => undefined,
+      undefined,
+      predecessorError,
+    );
+    let creatingSuccessor: ReturnType<typeof manager.createJob> | undefined;
+
+    try {
+      creatingSuccessor = manager.createJob(streamId, 'user-1', streamId);
+      await handoffStarted;
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(0);
+
+      releaseHandoff?.();
+      const successor = await creatingSuccessor;
+
+      expect(successor.createdAt).toBeGreaterThan(predecessor.createdAt);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+      );
+      expect(predecessorError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats()).toMatchObject({
+        runtimeStateSize: 1,
+        fencedRuntimeRetirements: 0,
+      });
+    } finally {
+      releaseHandoff?.();
+      await creatingSuccessor?.catch(() => undefined);
+      jest.useRealTimers();
+      predecessorSubscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('retains the abort listener while stored-terminal abort proof is unavailable', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const abortHandlers = new Set<(generationId?: number) => void | boolean>();
+    let signalProofStarted: (() => void) | undefined;
+    const proofStarted = new Promise<void>((resolve) => {
+      signalProofStarted = resolve;
+    });
+    let resolveProof: ((confirmed: boolean) => void) | undefined;
+    const proofResult = new Promise<boolean>((resolve) => {
+      resolveProof = resolve;
+    });
     const eventTransport = Object.assign(new InMemoryEventTransport(), {
-      recordAbortAcknowledgement: jest.fn().mockResolvedValue(true),
+      onAbort: jest.fn(async (_streamId: string, handler: (generationId?: number) => boolean) => {
+        abortHandlers.add(handler);
+        return () => abortHandlers.delete(handler);
+      }),
+      recordAbortAcknowledgement: jest.fn(async () => {
+        signalProofStarted?.();
+        return proofResult;
+      }),
     });
     const manager = new GenerationJobManagerClass();
     manager.configure({ jobStore, eventTransport, isRedis: true, cleanupOnComplete: false });
@@ -3380,16 +3457,25 @@ describe('GenerationJobManager startup telemetry', () => {
     const successor = await jobStore.createJob(streamId, 'user-1', streamId);
 
     try {
+      await proofStarted;
+
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(abortHandlers).toHaveProperty('size', 1);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(0);
+
+      resolveProof?.(false);
       await new Promise<void>((resolve) => setImmediate(resolve));
 
       expect(successor.createdAt).toBeGreaterThan(predecessor.createdAt);
-      expect(predecessor.abortController.signal.aborted).toBe(true);
       expect(eventTransport.recordAbortAcknowledgement).toHaveBeenCalledWith(
         streamId,
         predecessor.createdAt,
       );
+      expect(abortHandlers).toHaveProperty('size', 1);
+      expect([...abortHandlers][0]?.(predecessor.createdAt)).toBe(true);
       expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
     } finally {
+      resolveProof?.(false);
       predecessorSubscription?.unsubscribe();
       await manager.destroy();
     }
