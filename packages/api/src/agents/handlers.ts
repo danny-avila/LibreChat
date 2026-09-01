@@ -450,6 +450,7 @@ export interface ToolExecuteOptions {
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    executionRouteKey?: string;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
   /**
@@ -470,6 +471,7 @@ export interface ToolExecuteOptions {
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    executionRouteKey?: string;
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
     req?: ServerRequest;
@@ -554,6 +556,7 @@ function getCodeExecutionContext(
 function codeExecutionRequestParams(context?: CodeExecutionContext): {
   codeApiBaseUrl?: string;
   executionProfile?: CodeExecutionContext['executionProfile'];
+  executionRouteKey?: string;
   runtime_session_hint?: string;
 } {
   if (!context) {
@@ -562,6 +565,7 @@ function codeExecutionRequestParams(context?: CodeExecutionContext): {
   return {
     codeApiBaseUrl: context.baseUrl,
     executionProfile: context.executionProfile,
+    ...(context.executionRouteKey ? { executionRouteKey: context.executionRouteKey } : {}),
     ...(context.runtimeSessionHint ? { runtime_session_hint: context.runtimeSessionHint } : {}),
   };
 }
