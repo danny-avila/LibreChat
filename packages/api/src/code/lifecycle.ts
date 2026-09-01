@@ -12,6 +12,13 @@ const REVOCATION_RETRY_MS = 5 * 60_000;
 let reconcileTimer: NodeJS.Timeout | undefined;
 let reconcileInFlight: Promise<void> | undefined;
 
+function agentReferenceFilter(environmentId: string, tenantId?: string) {
+  return {
+    code_environment_id: environmentId,
+    ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+  };
+}
+
 export async function reconcileCodeEnvironmentLifecycle({
   mongoose,
   readSecret = readCodeBridgeSecret,
@@ -48,7 +55,9 @@ export async function reconcileCodeEnvironmentLifecycle({
       const Agent = mongoose.models.Agent;
       if (
         Agent != null &&
-        (await Agent.exists({ code_environment_id: environment.environmentId })) != null
+        (await Agent.exists(
+          agentReferenceFilter(environment.environmentId, environment.tenantId),
+        )) != null
       ) {
         await methods.cancelCodeEnvironmentRemoval(environment._id, leaseId);
         continue;
@@ -139,7 +148,7 @@ export async function reconcileCodeEnvironmentLifecycle({
       };
       const tokenEnv = environment.revocationTokenEnv;
       const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;
-      if (environment.workerId != null) {
+      if (environment.workerId != null && environment.workerPrincipal?.type !== 'deployment') {
         if (!token) {
           await deferRegistration();
           continue;

@@ -880,6 +880,8 @@ describe('code environment registry', () => {
           type: 'attached',
           baseURL: 'https://code.example.com',
           controlPlaneId: 'shared-code-api',
+          workerId: 'shared-deployment-worker',
+          workerPrincipal: { type: 'deployment', id: 'shared-code-api' },
         },
       }),
     ).rejects.toThrow('redis unavailable');
@@ -1121,6 +1123,56 @@ describe('code environment registry', () => {
         environmentId: 'tenant-reusable-id',
         tenantId: 'tenant-b',
       });
+    });
+  });
+
+  test('scopes recovered agent references to the environment tenant', async () => {
+    const ownerId = new Types.ObjectId();
+    let tenantAEnvironmentId!: Types.ObjectId;
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      const environment = await createMethods(mongoose).createCodeEnvironment({
+        environmentId: 'shared-tenant-environment-id',
+        name: 'Tenant A environment',
+        type: 'attached',
+        baseURL: 'https://tenant-a.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: ownerId,
+      });
+      tenantAEnvironmentId = environment._id;
+      await mongoose.models.CodeEnvironment.updateOne(
+        { _id: environment._id },
+        {
+          $unset: { registrationPendingAt: 1 },
+          $set: {
+            deletionStartedAt: new Date(Date.now() - 10_000),
+            deletionLeaseId: 'expired-tenant-a-removal',
+            deletionLeaseExpiresAt: new Date(Date.now() - 1_000),
+          },
+        },
+      );
+    });
+    await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+      await createMethods(mongoose).createAgent({
+        id: 'agent_tenant_b_shared_environment_id',
+        name: 'Tenant B agent',
+        author: ownerId,
+        model: 'test-model',
+        provider: 'test-provider',
+        code_environment_id: 'shared-tenant-environment-id',
+      });
+    });
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose });
+
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await expect(
+        mongoose.models.CodeEnvironment.findById(tenantAEnvironmentId),
+      ).resolves.toBeNull();
+    });
+    await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+      await expect(
+        mongoose.models.Agent.findOne({ id: 'agent_tenant_b_shared_environment_id' }),
+      ).resolves.not.toBeNull();
     });
   });
 });

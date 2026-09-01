@@ -62,6 +62,13 @@ export type CodeEnvironmentLifecycleTarget = CodeEnvironmentSummary & {
   workerPrincipal?: CodeEnvironmentRegistration['workerPrincipal'];
 };
 
+function agentReferenceFilter(environmentId: string, tenantId?: string) {
+  return {
+    code_environment_id: environmentId,
+    ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+  };
+}
+
 const ENVIRONMENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_PRINCIPAL_ID_PATTERN = /^\S(?:.{0,254}\S)?$/;
@@ -167,6 +174,7 @@ export function createCodeEnvironmentRegistry(
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
   listRegisteredIds: () => Promise<string[]>;
   invalidateAccessibleConfigurations: (tenantId?: string) => Promise<void>;
+  markRevocationPending: (environmentId: string) => Promise<void>;
   remove: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environmentId: string;
@@ -315,6 +323,22 @@ export function createCodeEnvironmentRegistry(
       const permission = permissions.get(environment._id.toString()) ?? 0;
       return toSummary(environment, (permission & PermissionBits.DELETE) === PermissionBits.DELETE);
     });
+  }
+
+  async function markRevocationPending(environmentId: string): Promise<void> {
+    const CodeEnvironment = mongoose.models.CodeEnvironment;
+    const result = await CodeEnvironment.updateOne(
+      { environmentId, deletionCommittedAt: { $exists: false } },
+      {
+        $set: { revocationPendingAt: new Date() },
+        $inc: { revocationAttempts: 1 },
+        $unset: { revocationLastError: 1, revocationReconcileAfter: 1 },
+      },
+    );
+    if (result.matchedCount !== 1) {
+      throw new Error('Code environment cleanup target is unavailable');
+    }
+    await invalidateAccessibleConfigurations();
   }
 
   async function listAccessibleConfigurations(
@@ -467,7 +491,10 @@ export function createCodeEnvironmentRegistry(
     let externalLifecycleStarted = false;
     try {
       const Agent = mongoose.models.Agent;
-      if (Agent != null && (await Agent.exists({ code_environment_id: environmentId })) != null) {
+      if (
+        Agent != null &&
+        (await Agent.exists(agentReferenceFilter(environmentId, environment.tenantId))) != null
+      ) {
         throw new CodeEnvironmentInUseError(environmentId);
       }
       if (beforeDelete != null) {
@@ -503,6 +530,7 @@ export function createCodeEnvironmentRegistry(
 
   return {
     register,
+    markRevocationPending,
     listAccessible,
     listAccessibleConfigurations,
     listRegisteredIds,

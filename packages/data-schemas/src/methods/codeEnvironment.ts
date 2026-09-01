@@ -46,6 +46,13 @@ function ownerSlotId(ownerId: Types.ObjectId, slot: number): Types.ObjectId {
   return new Types.ObjectId(hex);
 }
 
+function agentReferenceFilter(environmentId: string, tenantId?: string) {
+  return {
+    code_environment_id: environmentId,
+    ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+  };
+}
+
 export type CodeEnvironmentReferenceReservation = {
   environmentId: string;
   reservationId: string;
@@ -442,7 +449,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
       if (claimed == null || claimed.deletionLeaseId == null) continue;
       const referenced =
         Agent != null &&
-        (await Agent.exists({ code_environment_id: claimed.environmentId })) != null;
+        (await Agent.exists(agentReferenceFilter(claimed.environmentId, claimed.tenantId))) != null;
       if (referenced) {
         await cancelCodeEnvironmentRemoval(candidate._id, claimed.deletionLeaseId);
         continue;

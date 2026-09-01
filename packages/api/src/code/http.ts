@@ -43,6 +43,7 @@ type Registry = {
     environmentId: string;
     beforeDelete?: (target: CodeEnvironmentLifecycleTarget) => Promise<void>;
   }) => Promise<CodeEnvironmentSummary | null>;
+  markRevocationPending?: (environmentId: string) => Promise<void>;
 };
 
 type StatefulCodeConfig = NonNullable<
@@ -387,6 +388,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         : res.status(409).json({ error: 'Account deletion is already in progress' });
     }
 
+    let registrationCommitted = false;
     try {
       const environment = await deps.registry.register({
         actor: principal,
@@ -402,6 +404,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           workerPrincipal: { type: 'user', id: principal.userId.toString() },
         },
       });
+      registrationCommitted = true;
       let activeAfterRegistration = false;
       try {
         activeAfterRegistration = await principalIsActive(principal.userId.toString());
@@ -441,6 +444,17 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         },
       });
     } catch (error) {
+      if (registrationCommitted) {
+        try {
+          if (deps.registry.markRevocationPending == null) {
+            throw new Error('Code environment cleanup scheduling is unavailable');
+          }
+          await deps.registry.markRevocationPending(workerId);
+        } catch (markerError) {
+          logger.error('[codeEnvironments] failed to persist pairing cleanup intent:', markerError);
+          return res.status(503).json({ error: 'Code environment cleanup could not be scheduled' });
+        }
+      }
       try {
         await revokeCodeBridgeWorker({
           baseURL: controlPlane.baseURL,

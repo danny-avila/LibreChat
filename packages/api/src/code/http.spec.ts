@@ -410,6 +410,79 @@ describe('code environment HTTP handlers', () => {
     );
   });
 
+  test('persists cleanup intent before compensating a registered pairing after removal fails', async () => {
+    const markRevocationPending = jest.fn().mockResolvedValue(undefined);
+    const remove = jest.fn().mockRejectedValue(new Error('registry removal failed'));
+    const principalIsActive = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const fetchImpl = jest.fn(
+      async (input: string | URL | Request) =>
+        ({
+          ok: true,
+          json: async () =>
+            String(input).endsWith('/bridge/pairings')
+              ? {
+                  protocolVersion: 1,
+                  workerId: 'code-generated',
+                  code: 'a'.repeat(32),
+                  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+                }
+              : { protocolVersion: 1, revoked: true },
+        }) as Response,
+    );
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example/v1',
+                  owner: 'deployment',
+                  pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig),
+      registry: {
+        register: jest.fn().mockResolvedValue({ id: 'code-generated' }),
+        listAccessible: jest.fn(),
+        remove,
+        markRevocationPending,
+      },
+      createEnvironmentId: () => 'code-generated',
+      readSecret: () => 'administrator-token',
+      principalAuthEnabled: () => true,
+      principalAuthReady: jest.fn(),
+      principalIsActive,
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.pair(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: { name: 'Personal VM', controlPlaneId: 'shared-code-api' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(500);
+    expect(markRevocationPending).toHaveBeenCalledWith('code-generated');
+    expect(markRevocationPending.mock.invocationCallOrder[0]).toBeLessThan(
+      fetchImpl.mock.invocationCallOrder.at(-1) ?? 0,
+    );
+  });
+
   test('revokes an issued pairing when the post-issue principal check is unavailable', async () => {
     const register = jest.fn();
     const principalIsActive = jest

@@ -2685,6 +2685,63 @@ describe('Agent Methods', () => {
       expect(compensate).toHaveBeenCalledWith(undefined);
     });
 
+    test('does not overwrite an intervening Agent update when acquiring an environment reference', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const environmentId = `environment_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      await createAgent({
+        id: agentId,
+        name: 'Original agent name',
+        author: authorId,
+        model: 'test-model',
+        provider: 'test-provider',
+      });
+      await mongoose.models.CodeEnvironment.create({
+        environmentId,
+        name: 'Concurrent update environment',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: authorId,
+      });
+      const CodeEnvironment = mongoose.models.CodeEnvironment;
+      const reserve = CodeEnvironment.findOneAndUpdate.bind(CodeEnvironment);
+      let enteredReserve!: () => void;
+      let releaseReserve!: () => void;
+      const entered = new Promise<void>((resolve) => (enteredReserve = resolve));
+      const release = new Promise<void>((resolve) => (releaseReserve = resolve));
+      const reserveSpy = jest.spyOn(CodeEnvironment, 'findOneAndUpdate').mockImplementationOnce(
+        (...args: Parameters<typeof CodeEnvironment.findOneAndUpdate>) =>
+          ({
+            lean: async () => {
+              enteredReserve();
+              await release;
+              return await reserve(...args).lean();
+            },
+          }) as ReturnType<typeof CodeEnvironment.findOneAndUpdate>,
+      );
+      const guardedUpdate = updateAgent(
+        { id: agentId },
+        { name: 'Guarded update name', code_environment_id: environmentId },
+      );
+      await entered;
+      await Agent.updateOne(
+        { id: agentId },
+        { $set: { description: 'Intervening update survived' } },
+      );
+      releaseReserve();
+
+      await expect(guardedUpdate).resolves.toBeNull();
+      await expect(Agent.findOne({ id: agentId }).lean()).resolves.toMatchObject({
+        name: 'Original agent name',
+        description: 'Intervening update survived',
+      });
+      await expect(Agent.findOne({ id: agentId }).lean()).resolves.not.toHaveProperty(
+        'code_environment_id',
+      );
+      reserveSpy.mockRestore();
+    });
+
     test('should prune deleted skill ids when reverting to an older version', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();

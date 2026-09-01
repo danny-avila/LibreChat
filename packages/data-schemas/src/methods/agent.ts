@@ -722,6 +722,7 @@ export function createAgentMethods(
     let suppressedVersionEntry = false;
 
     const currentAgent = await Agent.findOne(searchParameter);
+    const currentRevision = (currentAgent as (IAgent & { updatedAt: Date }) | null)?.updatedAt;
     if (currentAgent) {
       const currentObject = currentAgent.toObject() as unknown as Record<string, unknown>;
       const { __v, _id, id: __id, versions, author: _author, ...versionData } = currentObject;
@@ -881,7 +882,9 @@ export function createAgentMethods(
       nextEnvironmentId,
       async () =>
         (await Agent.findOneAndUpdate(
-          searchParameter,
+          currentAgent == null
+            ? searchParameter
+            : { ...searchParameter, _id: currentAgent._id, updatedAt: currentRevision },
           updateData,
           mongoOptions,
         ).lean()) as IAgent | null,
@@ -1288,6 +1291,7 @@ export function createAgentMethods(
     }
 
     const revertToVersion = { ...(agent.versions[versionIndex] as Record<string, unknown>) };
+    const originalRevision = (agent as unknown as IAgent & { updatedAt: Date }).updatedAt;
     delete revertToVersion._id;
     delete revertToVersion.id;
     delete revertToVersion.versions;
@@ -1326,9 +1330,11 @@ export function createAgentMethods(
         ? revertToVersion.code_environment_id
         : undefined,
       async () =>
-        await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
-          new: true,
-        }).lean<IAgent>(),
+        await Agent.findOneAndUpdate(
+          { ...searchParameter, _id: agent._id, updatedAt: originalRevision },
+          revertUpdate,
+          { new: true },
+        ).lean<IAgent>(),
       undefined,
       async (agentAfterRevert) => {
         if (agentAfterRevert == null || typeof revertToVersion.code_environment_id !== 'string') {
