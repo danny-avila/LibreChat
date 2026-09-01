@@ -52,6 +52,7 @@ const {
   loadAgentTools,
   loadToolsForExecution,
   getAccessibleMcpServerNames,
+  getCachedMcpToolNamesForPlaceholders,
   isFatalAgentInitializationError,
 } = require('~/server/services/ToolService');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
@@ -1002,12 +1003,22 @@ const initializeClient = async ({
     )
       ? await resolveHistoricalMcpServerNames()
       : [];
+    const mcpWildcardToolNames = configuredAndSkillToolNames.some((name) =>
+      name.startsWith(`${Constants.mcp_all}${Constants.mcp_delimiter}`),
+    )
+      ? await getCachedMcpToolNamesForPlaceholders({
+          userId: req.user.id,
+          toolNames: configuredAndSkillToolNames,
+          rawServerNames: rawMcpServerNames,
+        })
+      : [];
     const historicalToolNames = Array.from(
       buildHistoricalToolNames({
         configuredToolNames: agent.tools,
         alwaysApplyToolNames: alwaysApplySkillPrimes.flatMap((prime) => prime.allowedTools ?? []),
         toolOptions: agent.tool_options,
         rawMcpServerNames,
+        mcpWildcardToolNames,
         codeExecutionAvailable: lazyCodeEnvAvailable,
         memoryAvailable: memoryAvailable === true && agent.tools?.includes(Tools.memory) === true,
         skillsAvailable: scopedSkillIds.length > 0,

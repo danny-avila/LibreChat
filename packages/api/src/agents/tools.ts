@@ -1,4 +1,4 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants, normalizeActionToolName } from 'librechat-data-provider';
 import {
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
@@ -49,6 +49,7 @@ export interface BuildHistoricalToolNamesConfig {
   alwaysApplyToolNames?: readonly string[];
   toolOptions?: AgentToolOptions;
   rawMcpServerNames?: readonly string[];
+  mcpWildcardToolNames?: readonly string[];
   codeExecutionAvailable?: boolean;
   memoryAvailable?: boolean;
   skillsAvailable?: boolean;
@@ -69,7 +70,19 @@ export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig)
     toolOptions: config.toolOptions,
     rawServerNames: config.rawMcpServerNames ?? [],
   });
-  const toolNames = new Set(normalized.tools ?? []);
+  const toolNames = new Set([
+    ...(normalized.tools ?? []).map(normalizeActionToolName),
+    ...(config.mcpWildcardToolNames ?? []),
+  ]);
+
+  const normalizedOptions: AgentToolOptions = {};
+  for (const [name, options] of Object.entries(normalized.toolOptions ?? {})) {
+    const normalizedName = normalizeActionToolName(name);
+    normalizedOptions[normalizedName] =
+      normalizedName !== name
+        ? { ...options, ...normalizedOptions[normalizedName] }
+        : { ...normalizedOptions[name], ...options };
+  }
 
   for (const name of [...toolNames]) {
     for (const child of toolkitExpansion[name as keyof typeof toolkitExpansion] ?? []) {
@@ -97,7 +110,7 @@ export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig)
     toolNames.add(EDIT_FILE_TOOL_NAME);
   }
 
-  const options = normalized.toolOptions ?? {};
+  const options = normalizedOptions;
   const hasDeferredTool = [...toolNames].some((name) => options[name]?.defer_loading === true);
   if (config.deferredToolsAvailable === true && hasDeferredTool) {
     toolNames.add('tool_search');

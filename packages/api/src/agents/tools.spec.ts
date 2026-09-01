@@ -320,6 +320,26 @@ describe('buildHistoricalToolNames', () => {
       ]),
     );
   });
+
+  it('includes cached MCP wildcard children and normalizes Action names and options', () => {
+    expect(
+      buildHistoricalToolNames({
+        configuredToolNames: ['mcp_all_mcp_warehouse', 'lookup_action_api---example---com'],
+        mcpWildcardToolNames: ['run_query_mcp_warehouse'],
+        toolOptions: {
+          'lookup_action_api---example---com': { defer_loading: true },
+        },
+        deferredToolsAvailable: true,
+      }),
+    ).toEqual(
+      new Set([
+        'mcp_all_mcp_warehouse',
+        'run_query_mcp_warehouse',
+        'lookup_action_api_example_com',
+        'tool_search',
+      ]),
+    );
+  });
 });
 
 describe('registerCodeExecutionTools', () => {
