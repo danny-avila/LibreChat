@@ -22,7 +22,10 @@ const {
   getStorageMetadata,
   getCodeExecutionBaseUrl,
   buildCodeEnvDownloadQuery,
+  claimCodeDestination,
+  createCodeDestinationSet,
   CODE_API_EXPECTED_PROFILE_HEADER,
+  sortCodeFilesByDestinationPriority,
 } = require('@librechat/api');
 const {
   Tools,
@@ -1030,13 +1033,26 @@ const getPreviewContextSuffix = (file) => {
     : ' (preview unavailable)';
 };
 
-const getVisibleCodeFileContextLine = (file, agentResourceIds) => {
-  if (file.context === FileContext.execute_code) {
+/**
+ * A generated output is normally left out — the model already knows what it
+ * wrote. That only holds while the file is still where it wrote it: once a
+ * newer same-named file takes the bare path, the output mounts under a
+ * suffixed name the model has never seen, and silence would leave it reading
+ * the newcomer or failing to find its own artifact.
+ */
+const getVisibleCodeFileContextLine = (file, agentResourceIds, destination) => {
+  const displaced = destination !== file.filename;
+  if (file.context === FileContext.execute_code && !displaced) {
     return '';
   }
 
-  const fileSuffix = agentResourceIds.has(file.file_id) ? '' : ' (attached by user)';
-  return `\n\t- /mnt/data/${file.filename}${fileSuffix}${getPreviewContextSuffix(file)}`;
+  const origin =
+    file.context === FileContext.execute_code
+      ? ` (written earlier as ${file.filename})`
+      : `${agentResourceIds.has(file.file_id) ? '' : ' (attached by user)'}${
+          displaced ? ` (uploaded as ${file.filename})` : ''
+        }`;
+  return `\n\t- /mnt/data/${destination}${origin}${getPreviewContextSuffix(file)}`;
 };
 
 const appendVisibleCodeFileContext = (toolContext, contextLine) => {
@@ -1163,6 +1179,17 @@ const primeFiles = async (options) => {
   const sessions = new Map();
   let toolContext = '';
 
+  /* Claim order decides which record keeps the bare `/mnt/data/<name>` path
+   * when several share a filename, so it is fixed here rather than inherited
+   * from `getFiles`'s `updatedAt` sort — usage accounting and re-upload both
+   * bump `updatedAt`, which would repoint paths between turns. `file_ids` are
+   * this agent's own resources; every other candidate came from the
+   * conversation and is therefore seen by every agent in the run, so shared
+   * files rank first and land on the same destination whichever agent primes
+   * them. */
+  const orderedFiles = sortCodeFilesByDestinationPriority(dbFiles, agentResourceIds);
+  const destinations = createCodeDestinationSet();
+
   /* Per-file path counters — emitted at the bottom so a single
    * grep on `[primeCodeFiles]` shows the input volume, the per-file
    * paths taken, and the final dispatch summary in one trace. */
@@ -1171,8 +1198,8 @@ const primeFiles = async (options) => {
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
 
-  for (let i = 0; i < dbFiles.length; i++) {
-    const file = dbFiles[i];
+  for (let i = 0; i < orderedFiles.length; i++) {
+    const file = orderedFiles[i];
     if (!file) {
       continue;
     }
@@ -1205,9 +1232,19 @@ const primeFiles = async (options) => {
      * tenant prefix from auth context).
      */
     const pushFile = (overrideSessionId, overrideId) => {
+      /* Claimed here rather than up front so files that never reach the
+       * sandbox — no code-env ref, or a failed re-upload — do not reserve a
+       * name and push a file that does reach it onto a counter. */
+      const destination = claimCodeDestination(destinations, file.filename, file.file_id);
+      if (destination !== file.filename) {
+        logger.debug(
+          `[primeCodeFiles] file=${file.file_id} destination=${destination} ` +
+            `reason=name-collision filename=${file.filename}`,
+        );
+      }
       toolContext = appendVisibleCodeFileContext(
         toolContext,
-        getVisibleCodeFileContextLine(file, agentResourceIds),
+        getVisibleCodeFileContextLine(file, agentResourceIds, destination),
       );
       /* `id` is the storage file_id (drives codeapi's upload-key
        * existence check), `resource_id` is the entity that owns
@@ -1219,7 +1256,7 @@ const primeFiles = async (options) => {
         id: overrideId ?? id,
         resource_id: sourceRef.id,
         storage_session_id: overrideSessionId ?? session_id,
-        name: file.filename,
+        name: destination,
         kind: sourceRef.kind,
         ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
       });

@@ -1,4 +1,8 @@
-import { ErrorTypes } from 'librechat-data-provider';
+import {
+  ErrorTypes,
+  parseLangChainErrorCode,
+  stripLangChainTroubleshootingUrl,
+} from 'librechat-data-provider';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
 
@@ -45,4 +49,55 @@ export function isFatalAgentInitializationError(
     code === ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED ||
     (code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE && options.allowExpectedMCPFallback !== true)
   );
+}
+
+/** Fallback shown when provider error text must not reach the user. */
+export const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
+
+/**
+ * LangChain error codes we answer with localized copy. Codes absent here keep the provider's own
+ * message (minus the docs URL), which is more specific than any generic string we could write.
+ */
+const LANGCHAIN_ERROR_TYPES: Record<string, ErrorTypes> = {
+  MODEL_NOT_FOUND: ErrorTypes.MODEL_NOT_FOUND,
+  MODEL_RATE_LIMIT: ErrorTypes.MODEL_RATE_LIMIT,
+};
+
+/**
+ * Reads LangChain's classification off the error, falling back to the docs URL it stamps into the
+ * message so a re-thrown or serialized error still classifies.
+ */
+export function getLangChainErrorCode(error: unknown): string | undefined {
+  if (error == null || typeof error !== 'object') {
+    return parseLangChainErrorCode(error);
+  }
+  const { lc_error_code: code, message } = error as { lc_error_code?: unknown; message?: unknown };
+  if (typeof code === 'string' && code.length > 0) {
+    return code.toUpperCase();
+  }
+  return parseLangChainErrorCode(message);
+}
+
+/**
+ * Typed payload the client localizes for a classified LangChain failure, or `undefined` when the
+ * code has no localized copy and the provider's own message should be shown instead.
+ */
+export function resolveLangChainError(error: unknown): string | undefined {
+  const code = getLangChainErrorCode(error);
+  const type = code == null ? undefined : LANGCHAIN_ERROR_TYPES[code];
+  return type == null ? undefined : JSON.stringify({ type });
+}
+
+/**
+ * Provider failure text for OpenAI-compatible responses, which carry raw strings rather than the
+ * typed payloads the LibreChat client localizes.
+ */
+export function getUserFacingProviderError(error: unknown, protectionEnabled: boolean): string {
+  if (protectionEnabled) {
+    return GENERIC_PROVIDER_ERROR;
+  }
+  if (!(error instanceof Error)) {
+    return 'An error occurred';
+  }
+  return stripLangChainTroubleshootingUrl(error.message) || GENERIC_PROVIDER_ERROR;
 }
