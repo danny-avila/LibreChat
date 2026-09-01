@@ -481,6 +481,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     endpointConfig,
     fileConfig,
     endpoint: configEndpoint,
+    useResponsesApi: metadata.useResponsesApi ?? req.body?.useResponsesApi,
   });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
@@ -509,7 +510,12 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     llmDeliveryPath,
     /* The image route persists through here directly, so the choice has to be recorded
      * on this path too. Absent, a later turn substitutes its own endpoint's mode. */
-    metadata: { legacyUploadChoice: endpointConfig?.legacyFileUploadUX === true },
+    metadata: {
+      legacyUploadChoice: endpointConfig?.legacyFileUploadUX === true,
+      ...(`image/${appConfig.imageOutputType}` !== file.mimetype
+        ? { routingMimeType: file.mimetype }
+        : {}),
+    },
   };
 
   /* Callers asking for the file are converting an image for a record of their own, under
@@ -757,6 +763,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     endpointConfig,
     fileConfig,
     endpoint,
+    useResponsesApi: metadata.useResponsesApi ?? req.body?.useResponsesApi,
   });
 
   /* Destination and acceptability are one decision, made by shared policy rather than
@@ -1223,7 +1230,14 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       filename: filename ?? sanitizeFilename(file.originalname),
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       model: messageAttachment ? undefined : req.body.model,
-      metadata: { ...(fileInfoMetadata ?? {}), ...uploadChoiceMetadata },
+      metadata: {
+        ...(fileInfoMetadata ?? {}),
+        ...uploadChoiceMetadata,
+        /* The route was resolved against the upload's own type, and delivery re-resolves
+         * it later. Conversion changes `type`, so without this the second answer is drawn
+         * from a format the administrator never configured a route for. */
+        ...(storedType !== file.mimetype ? { routingMimeType: file.mimetype } : {}),
+      },
       type: storedType,
       embedded,
       source,

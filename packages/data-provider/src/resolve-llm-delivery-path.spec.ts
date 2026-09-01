@@ -267,13 +267,45 @@ describe('resolveDefaultLLMDeliveryPath', () => {
     );
   });
 
-  it('keeps the system default for a custom endpoint name', () => {
+  it('keeps documents on the provider path for a custom endpoint name', () => {
+    /* A custom endpoint is usually OpenAI- or Anthropic-compatible, and both carry
+     * documents, so judging capability from a name we cannot identify would downgrade
+     * something the real provider delivers. */
     expect(resolveDefaultLLMDeliveryPath('application/pdf', undefined, undefined, 'MyOpenAI')).toBe(
       'provider',
     );
+  });
+
+  it('downgrades media for a custom endpoint name', () => {
+    /* Media is different: the encoders emit a payload only for the providers they name,
+     * so a custom endpoint receives nothing whatever it proxies to. Left on the provider
+     * path the model gets neither the media nor a transcript. */
     expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'MyOpenAI')).toBe(
+      'text',
+    );
+    expect(resolveDefaultLLMDeliveryPath('video/mp4', undefined, undefined, 'MyOpenAI')).toBe(
+      'none',
+    );
+  });
+
+  it('leaves media alone when no endpoint is resolved at all', () => {
+    /* An ephemeral agent reports no usable endpoint, which is not the same as naming one
+     * we cannot identify. */
+    expect(resolveDefaultLLMDeliveryPath('audio/mpeg')).toBe('provider');
+    expect(resolveDefaultLLMDeliveryPath('audio/mpeg', undefined, undefined, 'agents')).toBe(
       'provider',
     );
+  });
+
+  it('honors the Responses API when routing Azure documents', () => {
+    /* Azure is out of the document set because native documents need Responses, so the
+     * encoder's own condition decides rather than the endpoint alone. */
+    expect(
+      resolveDefaultLLMDeliveryPath('application/pdf', undefined, undefined, 'azureOpenAI'),
+    ).toBe('text');
+    expect(
+      resolveDefaultLLMDeliveryPath('application/pdf', undefined, undefined, 'azureOpenAI', true),
+    ).toBe('provider');
   });
 
   it('should export SYSTEM_LLM_DELIVERY_DEFAULTS with correct shape', () => {

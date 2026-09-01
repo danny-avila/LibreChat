@@ -150,6 +150,12 @@ const file: Schema<IMongoFile> = new Schema(
         type: Boolean,
         default: undefined,
       },
+      /** The type the delivery route was resolved against, kept when conversion changes
+       *  the stored type so a later resolution asks the same question. */
+      routingMimeType: {
+        type: String,
+        default: undefined,
+      },
     },
     llmDeliveryPath: {
       /* What upload time inferred about delivery, from the endpoint and MIME type it saw.

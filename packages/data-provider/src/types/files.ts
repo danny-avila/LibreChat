@@ -178,6 +178,8 @@ export type TFile = {
     embeddedEntities?: string[];
     /** The destination came from the legacy chooser, so absent ones were declined. */
     legacyUploadChoice?: boolean;
+    /** The type the delivery route was resolved against, when conversion changed it. */
+    routingMimeType?: string;
   };
   llmDeliveryPath?: 'provider' | 'text' | 'none';
   createdAt?: string | Date;

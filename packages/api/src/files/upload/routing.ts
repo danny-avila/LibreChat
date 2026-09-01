@@ -17,6 +17,8 @@ export interface UploadMetadata {
   endpoint?: string;
   agent_id?: string;
   tool_resource?: string | null;
+  /** Azure carries native documents only through the Responses API. */
+  useResponsesApi?: boolean;
 }
 
 /** The uploaded file fields routing depends on. */
@@ -113,6 +115,7 @@ export async function resolveEffectiveToolResource({
     endpointConfig,
     fileConfig,
     endpoint,
+    useResponsesApi: metadata.useResponsesApi,
   });
   return path === 'text' ? EToolResources.context : undefined;
 }

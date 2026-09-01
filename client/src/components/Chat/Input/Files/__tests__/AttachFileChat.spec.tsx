@@ -325,6 +325,18 @@ describe('AttachFileChat upload config gating', () => {
     expect(mockAttachFileMenuProps.disabled).toBe(true);
   });
 
+  it('does not wait on a provider an ephemeral agent will never have', () => {
+    /* There is no record to fetch for one, so gating on its provider never lifts and the
+     * attach control stays disabled for the whole conversation. */
+    mockFileConfigLoaded = true;
+    mockAgentsMap = {};
+    mockAgentQueryData = undefined;
+
+    renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'ephemeral-convo-1' });
+
+    expect(mockAttachFileMenuProps.disabled).toBe(false);
+  });
+
   it('enables it once that provider resolves', () => {
     mockFileConfigLoaded = true;
     mockAgentQueryData = { provider: 'openAI' } as Partial<Agent>;
