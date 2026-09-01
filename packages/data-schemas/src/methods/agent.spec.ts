@@ -2642,6 +2642,46 @@ describe('Agent Methods', () => {
       ).resolves.toMatchObject({ pendingAgentReferences: [] });
     });
 
+    test('rejects a guarded write when its code environment reference lease is lost', async () => {
+      const environmentId = `environment_${uuidv4()}`;
+      await mongoose.models.CodeEnvironment.create({
+        environmentId,
+        name: 'Lost lease environment',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: new mongoose.Types.ObjectId(),
+      });
+      let settleWrite: (() => void) | undefined;
+      const guardedWrite = withCodeEnvironmentReference(
+        mongoose,
+        environmentId,
+        async () =>
+          await new Promise<void>((resolve) => {
+            settleWrite = resolve;
+          }),
+        10,
+      );
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const environment = await mongoose.models.CodeEnvironment.findOne({
+          environmentId,
+          pendingAgentReferences: { $exists: true },
+        });
+        if (environment != null) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await mongoose.models.CodeEnvironment.updateOne(
+        { environmentId },
+        { $set: { deletionStartedAt: new Date() } },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      settleWrite?.();
+
+      await expect(guardedWrite).rejects.toMatchObject({
+        name: 'CodeEnvironmentReferenceError',
+      });
+    });
+
     test('should prune deleted skill ids when reverting to an older version', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();

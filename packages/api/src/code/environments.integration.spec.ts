@@ -551,6 +551,46 @@ describe('code environment registry', () => {
     ).resolves.toBeNull();
   });
 
+  test('reconciles an unmarked user worker after its owner document is deleted', async () => {
+    const ownerId = new Types.ObjectId();
+    await mongoose.models.User.collection.insertOne({
+      _id: ownerId,
+      email: 'departed-worker-owner@example.com',
+    });
+    await createCodeEnvironmentRegistry(mongoose).register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'unmarked-orphan-worker',
+        name: 'Unmarked orphan worker',
+        type: 'attached',
+        baseURL: 'https://code.example.com/v1',
+        controlPlaneId: 'shared-code-api',
+        workerId: 'unmarked-orphan-worker',
+        revocationTokenEnv: 'CODE_ADMIN_TOKEN',
+        workerPrincipal: { type: 'user', id: ownerId.toString() },
+      },
+    });
+    await mongoose.models.User.deleteOne({ _id: ownerId });
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ protocolVersion: 1, revoked: true }),
+    });
+
+    await reconcileCodeEnvironmentLifecycle({
+      mongoose,
+      readSecret: () => 'administrator-token',
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.example.com/v1/bridge/workers/unmarked-orphan-worker/revoke',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    await expect(
+      mongoose.models.CodeEnvironment.findOne({ environmentId: 'unmarked-orphan-worker' }),
+    ).resolves.toBeNull();
+  });
+
   test('removes creator-owned environment records and grants when the user is deleted', async () => {
     const registry = createCodeEnvironmentRegistry(mongoose);
     const methods = createMethods(mongoose);

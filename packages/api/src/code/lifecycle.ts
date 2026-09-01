@@ -179,6 +179,44 @@ export async function reconcileCodeEnvironmentLifecycle({
       await methods.deleteCodeEnvironmentById(environment._id);
     }
 
+    /** A failed marker write after an account deletion must not strand live worker
+     * credentials. The missing owner is itself durable retry intent, so discover
+     * unmarked orphans independently of the account-deletion request path. */
+    const orphanedUserEnvironments = await CodeEnvironment.aggregate<{
+      _id: CodeEnvironmentDocument['_id'];
+    }>([
+      {
+        $match: {
+          'workerPrincipal.type': 'user',
+          workerId: { $exists: true },
+          revocationPendingAt: { $exists: false },
+          deletionCommittedAt: { $exists: false },
+        },
+      },
+      {
+        $lookup: {
+          from: mongoose.models.User.collection.name,
+          localField: 'createdBy',
+          foreignField: '_id',
+          as: 'owner',
+        },
+      },
+      { $match: { owner: { $size: 0 } } },
+      { $sort: { _id: 1 } },
+      { $limit: limit },
+      { $project: { _id: 1 } },
+    ]);
+    if (orphanedUserEnvironments.length > 0) {
+      await CodeEnvironment.updateMany(
+        { _id: { $in: orphanedUserEnvironments.map(({ _id }) => _id) } },
+        {
+          $set: { revocationPendingAt: now },
+          $inc: { revocationAttempts: 1 },
+          $unset: { revocationLastError: 1, revocationReconcileAfter: 1 },
+        },
+      );
+    }
+
     const candidates = await CodeEnvironment.find({
       revocationPendingAt: { $exists: true },
       $and: [

@@ -139,21 +139,35 @@ export async function withCodeEnvironmentReference<T>(
   environmentId: string | undefined,
   operation: () => Promise<T>,
   renewIntervalMs: number = REFERENCE_RENEW_INTERVAL_MS,
+  onReferenceLoss?: (result: T) => Promise<void>,
 ): Promise<T> {
   const reservation = await reserveCodeEnvironmentReference(mongoose, environmentId);
   if (reservation == null) return await operation();
 
   let renewal = Promise.resolve();
+  let renewalError: unknown;
   const timer = setInterval(() => {
     renewal = renewal
       .then(() => renewCodeEnvironmentReference(mongoose, reservation))
       .catch((error) => {
+        renewalError ??= error;
         logger.error('[code-environments] agent reference lease renewal failed:', error);
       });
   }, renewIntervalMs);
   timer.unref();
   try {
-    return await operation();
+    const result = await operation();
+    await renewal;
+    if (renewalError != null) {
+      try {
+        await renewCodeEnvironmentReference(mongoose, reservation);
+        renewalError = undefined;
+      } catch (error) {
+        await onReferenceLoss?.(result);
+        throw error;
+      }
+    }
+    return result;
   } finally {
     clearInterval(timer);
     await renewal;

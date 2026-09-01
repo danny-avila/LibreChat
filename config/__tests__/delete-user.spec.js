@@ -49,10 +49,12 @@ jest.mock('@librechat/api', () => ({
     abortJob: (...args) => mockAbortJob(...args),
     destroy: (...args) => mockDestroy(...args),
   },
-  getAppConfig: (...args) => mockGetAppConfig(...args),
   revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
 }));
 jest.mock('~/cache/getLogStores', () => jest.fn());
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: (...args) => mockGetAppConfig(...args),
+}));
 jest.mock('../helpers', () => ({
   ...jest.requireActual('../helpers'),
   askQuestion: mockAskQuestion,

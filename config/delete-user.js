@@ -34,11 +34,11 @@ require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const {
   GenerationJobManager,
   createStreamServices,
-  getAppConfig,
   revokeUserCodeEnvironmentWorkers,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
+const { getAppConfig } = require('~/server/services/Config');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 

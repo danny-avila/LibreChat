@@ -590,6 +590,10 @@ export function createAgentMethods(
       mongoose,
       typeof agentData.code_environment_id === 'string' ? agentData.code_environment_id : undefined,
       async () => (await Agent.create(initialAgentData)).toObject() as IAgent,
+      undefined,
+      async (createdAgent) => {
+        await Agent.deleteOne({ _id: createdAgent._id });
+      },
     );
   }
 
@@ -853,6 +857,17 @@ export function createAgentMethods(
           updateData,
           mongoOptions,
         ).lean()) as IAgent | null,
+      undefined,
+      async (agentAfterUpdate) => {
+        if (agentAfterUpdate == null || nextEnvironmentId == null) return;
+        const previousEnvironmentId = currentAgent?.code_environment_id;
+        await Agent.updateOne(
+          { _id: agentAfterUpdate._id, code_environment_id: nextEnvironmentId },
+          previousEnvironmentId == null
+            ? { $unset: { code_environment_id: 1 } }
+            : { $set: { code_environment_id: previousEnvironmentId } },
+        );
+      },
     );
 
     /** `version` is a response-only field holding the count of `versions`. It is reported
@@ -1286,6 +1301,21 @@ export function createAgentMethods(
         await Agent.findOneAndUpdate(searchParameter, revertUpdate, {
           new: true,
         }).lean<IAgent>(),
+      undefined,
+      async (agentAfterRevert) => {
+        if (agentAfterRevert == null || typeof revertToVersion.code_environment_id !== 'string') {
+          return;
+        }
+        await Agent.updateOne(
+          {
+            _id: agentAfterRevert._id,
+            code_environment_id: revertToVersion.code_environment_id,
+          },
+          agent.code_environment_id == null
+            ? { $unset: { code_environment_id: 1 } }
+            : { $set: { code_environment_id: agent.code_environment_id } },
+        );
+      },
     );
     if (!revertedAgent) {
       throw new Error('Agent not found');
