@@ -18,7 +18,7 @@ describe('checkAgentUploadAuth', () => {
 
   it('denies a permanent upload with no tool resource from a user without edit permission', async () => {
     const result = await checkAgentUploadAuth(
-      { userId: 'attacker-id', userRole: SystemRoles.USER, agentId: 'victim-agent' },
+      { userId: 'attacker-id', userRole: SystemRoles.USER, agentId: 'agent_victim01' },
       { getAgent, checkPermission },
     );
 
@@ -30,7 +30,7 @@ describe('checkAgentUploadAuth', () => {
     checkPermission.mockResolvedValue(true);
 
     const result = await checkAgentUploadAuth(
-      { userId: 'editor-id', userRole: SystemRoles.USER, agentId: 'shared-agent' },
+      { userId: 'editor-id', userRole: SystemRoles.USER, agentId: 'agent_shared01' },
       { getAgent, checkPermission },
     );
 
@@ -39,7 +39,7 @@ describe('checkAgentUploadAuth', () => {
 
   it('allows the agent author without consulting permissions', async () => {
     const result = await checkAgentUploadAuth(
-      { userId: 'owner-id', userRole: SystemRoles.USER, agentId: 'own-agent' },
+      { userId: 'owner-id', userRole: SystemRoles.USER, agentId: 'agent_own0001' },
       { getAgent, checkPermission },
     );
 
@@ -58,7 +58,7 @@ describe('checkAgentUploadAuth', () => {
       {
         userId: 'viewer-id',
         userRole: SystemRoles.USER,
-        agentId: 'shared-agent',
+        agentId: 'agent_shared01',
         messageFile: 'true',
       },
       { getAgent, checkPermission },
@@ -75,13 +75,31 @@ describe('checkAgentUploadAuth', () => {
       {
         userId: 'attacker-id',
         userRole: SystemRoles.USER,
-        agentId: 'victim-agent',
+        agentId: 'agent_victim01',
         messageFile: 'true',
       },
       { getAgent, checkPermission },
     );
 
     expect(result.allowed).toBe(false);
+  });
+
+  it('allows a message attachment in an ephemeral conversation', async () => {
+    /* An ephemeral id names no stored agent, so there is nothing to authorize against and
+     * nothing for the provider resolution to read. Requiring view access refuses every
+     * attachment in those conversations. */
+    const result = await checkAgentUploadAuth(
+      {
+        userId: 'any-user',
+        userRole: SystemRoles.USER,
+        agentId: 'ephemeral-convo-1',
+        messageFile: 'true',
+      },
+      { getAgent, checkPermission },
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(getAgent).not.toHaveBeenCalled();
   });
 
   it('leaves an upload naming no agent alone', async () => {
@@ -99,7 +117,7 @@ describe('checkAgentUploadAuth', () => {
       {
         userId: 'attacker-id',
         userRole: SystemRoles.USER,
-        agentId: 'victim-agent',
+        agentId: 'agent_victim01',
         toolResource: 'context',
       },
       { getAgent, checkPermission },
@@ -135,7 +153,7 @@ describe('verifyAgentUploadPermission', () => {
     const denied = await verifyAgentUploadPermission({
       req,
       res: makeRes(),
-      metadata: { agent_id: 'victim-agent' },
+      metadata: { agent_id: 'agent_victim01' },
       getAgent,
       checkPermission,
       hasUploadBypass: async () => true,
@@ -149,7 +167,7 @@ describe('verifyAgentUploadPermission', () => {
     const denied = await verifyAgentUploadPermission({
       req,
       res: makeRes(),
-      metadata: { agent_id: 'victim-agent' },
+      metadata: { agent_id: 'agent_victim01' },
       getAgent,
       checkPermission,
       hasUploadBypass: async () => false,
@@ -162,7 +180,7 @@ describe('verifyAgentUploadPermission', () => {
     const denied = await verifyAgentUploadPermission({
       req,
       res: makeRes(),
-      metadata: { agent_id: 'victim-agent' },
+      metadata: { agent_id: 'agent_victim01' },
       getAgent,
       checkPermission,
       hasUploadBypass: async () => {
