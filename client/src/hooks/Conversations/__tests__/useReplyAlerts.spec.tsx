@@ -1,12 +1,11 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
+import { Provider as JotaiProvider, createStore } from 'jotai';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import type { MutableSnapshot } from 'recoil';
 import type { ReplyReadState, UnseenConversation } from '../useUnseenConversations';
+import { replyNotificationsAtom, replyNotificationSoundAtom } from '../replyNotificationSettings';
 import useReplyAlerts, { requestReplyNotificationPermission } from '../useReplyAlerts';
 import { consumeFocusSuppression } from '../notificationNavigation';
-import store from '~/store';
 
 /* The hooks barrel is circular with ~/data-provider; mocking it wholesale keeps the
    suite off that cycle while still exercising the hook's real diff/notify logic. */
@@ -100,18 +99,17 @@ function setup(
     return null;
   };
 
-  const initialize = (snapshot: MutableSnapshot) => {
-    snapshot.set(store.replyNotifications, notifications);
-    snapshot.set(store.replyNotificationSound, sound);
-  };
+  const settings = createStore();
+  settings.set(replyNotificationsAtom, notifications);
+  settings.set(replyNotificationSoundAtom, sound);
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot initializeState={initialize}>
+    <JotaiProvider store={settings}>
       <MemoryRouter initialEntries={[initialRoute]}>
         {children}
         <Probe />
       </MemoryRouter>
-    </RecoilRoot>
+    </JotaiProvider>
   );
 
   return {

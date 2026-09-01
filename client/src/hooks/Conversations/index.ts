@@ -6,6 +6,11 @@ export {
   unlockReplyNotificationSound,
   requestReplyNotificationPermission,
 } from './useReplyAlerts';
+export {
+  unseenTabBadgeAtom,
+  replyNotificationsAtom,
+  replyNotificationSoundAtom,
+} from './replyNotificationSettings';
 export { default as useReplyWatcher } from './useReplyWatcher';
 export { default as useDefaultConvo } from './useDefaultConvo';
 export { default as useSearchEnabled } from './useSearchEnabled';
