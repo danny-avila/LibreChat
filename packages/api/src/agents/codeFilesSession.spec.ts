@@ -57,6 +57,24 @@ describe('mergeCodeFilesIntoContext', () => {
     expect(merged?.files.map((f) => f.id)).toEqual(['a']);
   });
 
+  it('drops a provisioned file whose destination the context already claimed', () => {
+    /**
+     * The destination constraint has to hold on this path too. Lazy provisioning
+     * folds its uploads into a context the graph seeded at run start, so a name
+     * the seed already claimed reaches codeapi as a duplicate destination and
+     * takes the whole `/exec` call down, exactly as in the seeding path.
+     */
+    const prior: CodeSessionContext = {
+      session_id: 'exec-1',
+      files: [file('id-A', 'sess-A', 'data.csv')],
+      lastUpdated: 1,
+    };
+
+    const merged = mergeCodeFilesIntoContext(prior, [file('id-B', 'sess-B', 'data.csv')]);
+
+    expect(merged?.files.map((f) => f.id)).toEqual(['id-A']);
+  });
+
   it('reports nothing to record when there are no files', () => {
     expect(mergeCodeFilesIntoContext({ session_id: 'exec-1' }, [])).toBeUndefined();
   });
