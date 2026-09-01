@@ -2277,6 +2277,22 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(error).not.toHaveBeenCalled();
 
       await manager.finishTerminalJob(claim!);
+
+      const failedStreamId = `${streamId}-persistence-failed`;
+      const failedJob = await manager.createJob(failedStreamId, 'user-1', failedStreamId);
+      const failedClaim = await manager.claimTerminalJob(
+        failedStreamId,
+        'complete',
+        undefined,
+        failedJob.createdAt,
+        { persistencePending: true },
+      );
+      expect(failedClaim).not.toBeNull();
+      await expect(manager.publishTerminalClaim(failedClaim!, null)).resolves.toMatchObject({
+        persistenceFailed: true,
+        publicationFenced: true,
+      });
+      await manager.finishTerminalJob(failedClaim!);
     } finally {
       warn.mockRestore();
       error.mockRestore();

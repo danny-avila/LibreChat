@@ -3681,6 +3681,11 @@ class GenerationJobManagerClass {
     } else if (runtime) {
       runtime.finalEvent = publicationEvent;
     }
+    const persistenceFailed =
+      finalEvent == null ||
+      !durable ||
+      publicationEvent !== finalEvent ||
+      ('reconcile' in publicationEvent && publicationEvent.reconcile === true);
 
     try {
       if (runtime?.createdEventPublication) {
@@ -3695,7 +3700,7 @@ class GenerationJobManagerClass {
         );
         return {
           finalEvent: publicationEvent,
-          persistenceFailed: false,
+          persistenceFailed,
           publicationFenced: true,
         };
       }
@@ -3726,11 +3731,6 @@ class GenerationJobManagerClass {
       throw publicationError;
     }
 
-    const persistenceFailed =
-      finalEvent == null ||
-      !durable ||
-      publicationEvent !== finalEvent ||
-      ('reconcile' in publicationEvent && publicationEvent.reconcile === true);
     if (!persistenceFailed && runtime?.startupTelemetry) {
       this.recordStartupEvent(runtime, publicationEvent);
     }
