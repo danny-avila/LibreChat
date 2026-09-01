@@ -435,16 +435,19 @@ export function isChatSelectableMCPServer(
  * (`modelSpec.mcpServers`) are the operator's choice and stay attached even
  * when hidden, so they must be added after this call, not through it.
  *
- * Names are deduplicated before any lookup — the selection is request-supplied,
- * and a body repeating one name must not launch a resolver per occurrence — and
- * resolved through the same normalized-name aliasing that tool loading uses, so
- * a hidden server cannot be reached under its normalized spelling.
+ * The accessible set comes from the registry — the same resolution that feeds
+ * the client's catalog, with its own tier precedence already applied — rather
+ * than being re-derived from the request's config overlay. A user-tier or
+ * process-backed server outranks a config entry of the same name, and this must
+ * agree with whatever the picker was actually offered.
  *
- * `chatMenu` lives on the config tier, so the request's own overlay settles it
- * and outranks whatever the registry holds; the registry supplies `consumeOnly`,
- * which it derives per user. Lookups run concurrently, and a failing one keeps
- * its server: this narrows an already-authenticated selection and is not the
- * authorization boundary.
+ * Names are deduplicated before the lookup, since the selection is
+ * request-supplied, and are matched through the same normalized-name aliasing
+ * that tool loading uses, built over the whole accessible set so an exact name
+ * always wins over another server's normalized form. A name the registry does
+ * not know is request-tier — declared on the body, never registered — and is
+ * kept, as is every name if the lookup fails: this narrows an
+ * already-authenticated selection and is not the authorization boundary.
  *
  * Returns the names as they were sent, so callers keep addressing servers the
  * way the rest of the request does.
@@ -453,58 +456,44 @@ export async function filterChatSelectableMCPServers(
   selectedServers: string[] | null | undefined,
   {
     userId,
-    mcpConfig,
-    getServerConfig,
+    role,
+    getAccessibleMCPServers,
   }: {
     userId: string;
-    mcpConfig?: Record<string, Pick<ParsedServerConfig, 'chatMenu'> | undefined> | null;
-    getServerConfig?: (
+    role?: string;
+    getAccessibleMCPServers?: (
       userId: string,
-      serverName: string,
-    ) => Promise<Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'> | undefined>;
+      role?: string,
+    ) => Promise<Record<string, Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'>>>;
   },
 ): Promise<string[]> {
   if (!Array.isArray(selectedServers) || selectedServers.length === 0) {
     return [];
   }
   const uniqueServers = [...new Set(selectedServers)];
-  const configNames = mcpConfig ? Object.keys(mcpConfig) : [];
-  const aliases = configNames.length > 0 ? buildServerNameAliases(configNames) : undefined;
-  /** A selection may spell a server the normalized way; the config keys the raw
-   *  name and tool loading maps the two together, so the flags must be read
-   *  through the same mapping. */
-  const canonicalName = (serverName: string): string => {
-    if (mcpConfig?.[serverName] != null) {
-      return serverName;
-    }
-    return aliases?.get(normalizeServerName(serverName)) ?? serverName;
-  };
+  if (getAccessibleMCPServers == null) {
+    return uniqueServers;
+  }
 
-  const decide = async (serverName: string): Promise<string | null> => {
-    const canonical = canonicalName(serverName);
-    const overlay = mcpConfig?.[canonical];
-    if (overlay?.chatMenu === false) {
-      return null;
-    }
-    if (getServerConfig == null) {
-      return serverName;
-    }
-    let resolved: Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'> | undefined;
-    try {
-      resolved = await getServerConfig(userId, canonical);
-    } catch (error) {
-      logger.warn(
-        `[MCP] Could not resolve "${canonical}" while narrowing a chat selection; keeping it`,
-        error,
-      );
-      return serverName;
-    }
-    const effective = overlay?.chatMenu === true ? { ...resolved, chatMenu: true } : resolved;
-    return isChatSelectableMCPServer(effective) ? serverName : null;
-  };
+  let accessible: Record<string, Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'>>;
+  try {
+    accessible = await getAccessibleMCPServers(userId, role);
+  } catch (error) {
+    logger.warn('[MCP] Could not resolve accessible servers; keeping the chat selection', error);
+    return uniqueServers;
+  }
 
-  const selectable = await Promise.all(uniqueServers.map(decide));
-  return selectable.filter((serverName): serverName is string => serverName != null);
+  const accessibleNames = Object.keys(accessible ?? {});
+  if (accessibleNames.length === 0) {
+    return uniqueServers;
+  }
+  const aliases = buildServerNameAliases(accessibleNames);
+
+  return uniqueServers.filter((serverName) => {
+    const resolved =
+      accessible[serverName] ?? accessible[aliases.get(normalizeServerName(serverName)) ?? ''];
+    return isChatSelectableMCPServer(resolved);
+  });
 }
 
 /**

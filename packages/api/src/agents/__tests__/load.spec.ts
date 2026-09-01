@@ -19,12 +19,12 @@ let createAgent: ReturnType<typeof createMethods>['createAgent'];
 let getAgent: ReturnType<typeof createMethods>['getAgent'];
 
 const mockGetMCPServerTools = jest.fn();
-const mockGetServerConfig = jest.fn();
+const mockGetAccessibleMCPServers = jest.fn();
 
 const deps: LoadAgentDeps = {
   getAgent: (searchParameter) => getAgent(searchParameter) as Promise<LibreChatAgent | null>,
   getMCPServerTools: mockGetMCPServerTools,
-  getServerConfig: mockGetServerConfig,
+  getAccessibleMCPServers: mockGetAccessibleMCPServers,
 };
 
 describe('loadAgent', () => {
@@ -172,13 +172,17 @@ describe('loadAgent', () => {
   describe('chat-selectable MCP narrowing', () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 
-    const loadEphemeral = (config: Record<string, unknown>, mcp: string[], spec?: string) =>
+    const loadEphemeral = (
+      config: Record<string, unknown>,
+      body: { ephemeralAgent: { mcp: string[] } },
+      spec?: string,
+    ) =>
       loadAgent(
         {
           req: {
-            user: { id: 'user123' },
+            user: { id: 'user123', role: 'USER' },
             config: config as unknown as AppConfig,
-            body: { ephemeralAgent: { mcp } },
+            body,
           },
           spec,
           agent_id: EPHEMERAL_AGENT_ID as string,
@@ -191,7 +195,11 @@ describe('loadAgent', () => {
     const selectedServerNames = () => mockGetMCPServerTools.mock.calls.map((call) => call[1]);
 
     beforeEach(() => {
-      mockGetServerConfig.mockResolvedValue(undefined);
+      mockGetAccessibleMCPServers.mockResolvedValue({
+        visible: { chatMenu: true },
+        hidden: { chatMenu: false },
+        'agent-only': { consumeOnly: true },
+      });
       mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => ({
         [`tool_mcp_${server}`]: {},
       }));
@@ -199,17 +207,10 @@ describe('loadAgent', () => {
 
     test('drops a server the chat menu hides', async () => {
       const result = await loadEphemeral(
+        { mcpConfig: {} },
         {
-          mcpConfig: {
-            visible: { type: 'streamable-http', url: 'https://mcp.example.com/visible/mcp' },
-            hidden: {
-              type: 'streamable-http',
-              url: 'https://mcp.example.com/hidden/mcp',
-              chatMenu: false,
-            },
-          },
+          ephemeralAgent: { mcp: ['visible', 'hidden'] },
         },
-        ['visible', 'hidden'],
       );
 
       expect(selectedServerNames()).toEqual(['visible']);
@@ -218,26 +219,26 @@ describe('loadAgent', () => {
     });
 
     test('drops a server the user only reaches through an agent', async () => {
-      mockGetServerConfig.mockImplementation(async (_userId: string, server: string) =>
-        server === 'agent-only' ? { consumeOnly: true } : undefined,
+      const result = await loadEphemeral(
+        { mcpConfig: {} },
+        {
+          ephemeralAgent: { mcp: ['visible', 'agent-only'] },
+        },
       );
 
-      const result = await loadEphemeral({ mcpConfig: {} }, ['direct', 'agent-only']);
-
-      expect(selectedServerNames()).toEqual(['direct']);
+      expect(selectedServerNames()).toEqual(['visible']);
       expect(result?.tools).not.toContain('tool_mcp_agent-only');
+    });
+
+    test('resolves the accessible catalog with the requesting user role', async () => {
+      await loadEphemeral({ mcpConfig: {} }, { ephemeralAgent: { mcp: ['visible'] } });
+      expect(mockGetAccessibleMCPServers).toHaveBeenCalledWith('user123', 'USER');
     });
 
     test('keeps a spec-pinned server even when the chat menu hides it', async () => {
       const result = await loadEphemeral(
         {
-          mcpConfig: {
-            hidden: {
-              type: 'streamable-http',
-              url: 'https://mcp.example.com/hidden/mcp',
-              chatMenu: false,
-            },
-          },
+          mcpConfig: {},
           modelSpecs: {
             list: [
               {
@@ -249,7 +250,7 @@ describe('loadAgent', () => {
             ],
           },
         },
-        [],
+        { ephemeralAgent: { mcp: [] } },
         'pins-hidden',
       );
 
@@ -257,48 +258,57 @@ describe('loadAgent', () => {
       expect(result?.tools).toContain('tool_mcp_hidden');
     });
 
-    test('narrows the request body, so the instruction path cannot see a hidden server', async () => {
-      const config = {
-        mcpConfig: {
-          visible: { type: 'streamable-http', url: 'https://mcp.example.com/visible/mcp' },
-          hidden: {
-            type: 'streamable-http',
-            url: 'https://mcp.example.com/hidden/mcp',
-            chatMenu: false,
-          },
-        },
-      };
-      const body = { ephemeralAgent: { mcp: ['visible', 'hidden'] } };
-
-      await loadAgent(
-        {
-          req: { user: { id: 'user123' }, config: config as unknown as AppConfig, body },
-          agent_id: EPHEMERAL_AGENT_ID as string,
-          endpoint: 'openai',
-          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
-        },
-        deps,
-      );
-
-      /** `applyContextToAgent` reads this straight off the body and prefers it
-       *  over the agent's tools when loading `serverInstructions`. */
-      expect(body.ephemeralAgent.mcp).toEqual(['visible']);
-    });
-
     test('keeps a request-tier server the registry cannot resolve', async () => {
-      const result = await loadEphemeral({ mcpConfig: {} }, ['body-scoped']);
+      const result = await loadEphemeral(
+        { mcpConfig: {} },
+        {
+          ephemeralAgent: { mcp: ['body-scoped'] },
+        },
+      );
 
       expect(selectedServerNames()).toEqual(['body-scoped']);
       expect(result?.tools).toContain('tool_mcp_body-scoped');
     });
 
-    test('keeps a server whose config lookup fails', async () => {
-      mockGetServerConfig.mockRejectedValue(new Error('registry unavailable'));
+    test('keeps the selection when the catalog lookup fails', async () => {
+      mockGetAccessibleMCPServers.mockRejectedValue(new Error('registry unavailable'));
 
-      const result = await loadEphemeral({ mcpConfig: {} }, ['flaky']);
+      const result = await loadEphemeral(
+        { mcpConfig: {} },
+        {
+          ephemeralAgent: { mcp: ['flaky'] },
+        },
+      );
 
       expect(selectedServerNames()).toEqual(['flaky']);
       expect(result?.tools).toContain('tool_mcp_flaky');
+    });
+
+    test('publishes the servers actually in play back onto the request body', async () => {
+      const body = { ephemeralAgent: { mcp: ['visible', 'hidden'] } };
+
+      await loadEphemeral(
+        {
+          mcpConfig: {},
+          modelSpecs: {
+            list: [
+              {
+                name: 'pins-hidden',
+                label: 'Pins Hidden',
+                preset: { endpoint: 'openai', model: 'gpt-4' },
+                mcpServers: ['hidden'],
+              },
+            ],
+          },
+        },
+        body,
+        'pins-hidden',
+      );
+
+      /** `applyContextToAgent` reads this straight off the body and prefers it
+       *  over the agent's tools when loading `serverInstructions`: the hidden
+       *  pick is gone, the spec's pin stays. */
+      expect(body.ephemeralAgent.mcp).toEqual(['visible', 'hidden']);
     });
   });
 

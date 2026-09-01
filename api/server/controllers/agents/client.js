@@ -169,7 +169,8 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
-const { getMCPServerTools, getMCPServerConfigForUser } = require('~/server/services/Config');
+const { getMCPServerTools } = require('~/server/services/Config');
+const { getAccessibleMCPServers } = require('~/server/services/MCP');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
@@ -178,7 +179,7 @@ const loadAgent = (params) =>
   loadAgentFn(params, {
     getAgent: db.getAgent,
     getMCPServerTools,
-    getServerConfig: getMCPServerConfigForUser,
+    getAccessibleMCPServers,
   });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;

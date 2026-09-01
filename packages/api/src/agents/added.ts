@@ -61,14 +61,17 @@ export interface LoadAddedAgentDeps {
     serverName: string,
     serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
-  /** Resolves a server's effective config for one user, so a chat selection can
-   *  be narrowed to what the chat menu offers. Omitted, the selection is used
-   *  as sent. */
-  getServerConfig?: (userId: string, serverName: string) => Promise<ParsedServerConfig | undefined>;
+  /** The MCP servers this user can reach, with the registry's tier precedence
+   *  already applied — the resolution behind the client's catalog. Omitted, the
+   *  chat selection is used as sent. */
+  getAccessibleMCPServers?: (
+    userId: string,
+    role?: string,
+  ) => Promise<Record<string, ParsedServerConfig>>;
 }
 
 interface LoadAddedAgentParams {
-  req: { user?: { id?: string }; config?: Record<string, unknown> };
+  req: { user?: { id?: string; role?: string }; config?: Record<string, unknown> };
   conversation: TConversation | null;
   primaryAgent?: Agent | null;
 }
@@ -196,8 +199,8 @@ export async function loadAddedAgent(
   const mcpServers = new Set<string>(
     await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
       userId,
-      mcpConfig: appConfig?.mcpConfig,
-      getServerConfig: deps.getServerConfig,
+      role: req.user?.role,
+      getAccessibleMCPServers: deps.getAccessibleMCPServers,
     }),
   );
 

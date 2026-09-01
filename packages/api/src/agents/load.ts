@@ -37,15 +37,18 @@ export interface LoadAgentDeps {
     serverName: string,
     serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
-  /** Resolves a server's effective config for one user, so a chat selection can
-   *  be narrowed to what the chat menu offers. Omitted, the selection is used
-   *  as sent. */
-  getServerConfig?: (userId: string, serverName: string) => Promise<ParsedServerConfig | undefined>;
+  /** The MCP servers this user can reach, with the registry's tier precedence
+   *  already applied — the resolution behind the client's catalog. Omitted, the
+   *  chat selection is used as sent. */
+  getAccessibleMCPServers?: (
+    userId: string,
+    role?: string,
+  ) => Promise<Record<string, ParsedServerConfig>>;
 }
 
 export interface LoadAgentParams {
   req: {
-    user?: { id?: string };
+    user?: { id?: string; role?: string };
     config?: AppConfig;
     body?: {
       promptPrefix?: string;
@@ -76,23 +79,24 @@ export async function loadEphemeralAgent(
   /** The picker's own selection is narrowed to what the picker may offer; a
    *  spec's servers are the operator's choice and are added after, so pinning a
    *  chat-hidden server to a spec keeps working. */
-  const selectedMCPServers = await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
-    userId,
-    mcpConfig: req.config?.mcpConfig,
-    getServerConfig: deps.getServerConfig,
-  });
-  /** Narrow the request's own selection, not just this loader's copy. The
-   *  instruction path reads `req.body.ephemeralAgent.mcp` straight from the body
-   *  and prefers it over the agent's tools, so a hidden server would still have
-   *  its `serverInstructions` injected after its tools were dropped. */
-  if (ephemeralAgent != null && Array.isArray(ephemeralAgent.mcp)) {
-    ephemeralAgent.mcp = selectedMCPServers;
-  }
-  const mcpServers = new Set<string>(selectedMCPServers);
+  const mcpServers = new Set<string>(
+    await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
+      userId,
+      role: req.user?.role,
+      getAccessibleMCPServers: deps.getAccessibleMCPServers,
+    }),
+  );
   if (modelSpec?.mcpServers) {
     for (const mcpServer of modelSpec.mcpServers) {
       mcpServers.add(mcpServer);
     }
+  }
+  /** Publish the servers this request will actually use back onto the body. The
+   *  instruction path reads `req.body.ephemeralAgent.mcp` directly and prefers
+   *  it over the agent's tools, so it would otherwise both inject a hidden
+   *  server's `serverInstructions` and omit a spec-pinned server's. */
+  if (ephemeralAgent != null && Array.isArray(ephemeralAgent.mcp)) {
+    ephemeralAgent.mcp = [...mcpServers];
   }
   const tools: string[] = [];
   if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
