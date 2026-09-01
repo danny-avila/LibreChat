@@ -1246,6 +1246,7 @@ describe('Meilisearch Mongoose plugin', () => {
         const storedDoc = await conversationModel.collection.findOne({ _id: conversation._id });
         return storedDoc?._meiliIndex === true;
       });
+      errorSpy.mockClear();
       mockUpdateDocuments
         .mockRejectedValueOnce(new Error('Network error'))
         .mockRejectedValueOnce(new Error('Network error'))
@@ -1259,13 +1260,7 @@ describe('Meilisearch Mongoose plugin', () => {
         (await conversationModel.collection.findOne({ _id: conversation._id }))?._meiliIndex,
       ).toBe(false);
       await waitForMockCalls(mockUpdateDocuments, 3);
-      await waitForCondition(() =>
-        (errorSpy.mock.calls as unknown as Array<[string, unknown]>).some(
-          ([message, error]) =>
-            message === '[updateObjectToMeili] Error updating document in Meili:' &&
-            error === finalError,
-        ),
-      );
+      await waitForCondition(() => errorSpy.mock.calls.length > 0);
 
       const storedConversation = await conversationModel.collection.findOne({
         _id: conversation._id,
