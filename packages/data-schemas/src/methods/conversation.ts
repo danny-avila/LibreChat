@@ -2631,6 +2631,7 @@ export function createConversationMethods(
         const searchParams: SearchParams = {
           filter: `user = "${user}"`,
           limit: MEILI_SEARCH_LIMIT,
+          attributesToRetrieve: ['conversationId'],
         };
         const [convoResults, messageHits] = await Promise.all([
           ConversationMeili.meiliSearch(search, searchParams),

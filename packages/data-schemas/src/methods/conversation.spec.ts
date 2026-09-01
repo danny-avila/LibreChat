@@ -6521,7 +6521,11 @@ describe('Conversation Operations', () => {
 
       const result = await getConvosByCursor('user123', { search: 'keyword' });
 
-      const searchParams = { filter: 'user = "user123"', limit: MEILI_SEARCH_LIMIT };
+      const searchParams = {
+        filter: 'user = "user123"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId'],
+      };
       expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
       expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
       const convoIds = result?.conversations.map((c) => c.conversationId);
@@ -6566,7 +6570,11 @@ describe('Conversation Operations', () => {
 
       const result = await getConvosByCursor('user123', { search: 'keyword' });
 
-      const searchParams = { filter: 'user = "user123"', limit: MEILI_SEARCH_LIMIT };
+      const searchParams = {
+        filter: 'user = "user123"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId'],
+      };
       expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
       expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
       const convoIds = result?.conversations.map((c) => c.conversationId);
