@@ -51,6 +51,7 @@ const {
   hasModelBoundContentProtection,
   isContentFilterError,
   getSafeErrorMetadata,
+  getUserFacingProviderError,
   createToolExecuteHandler,
   getRemoteAgentPermissions,
   resolveAgentScopedSkillIds,
@@ -113,14 +114,6 @@ const db = require('~/models');
 
 const filterFilesByRemoteAgentAccess = (params) =>
   filterFilesByAgentAccess({ ...params, resourceType: ResourceType.REMOTE_AGENT });
-const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
-
-function getUserFacingProviderError(error, protectionEnabled) {
-  if (protectionEnabled) {
-    return GENERIC_PROVIDER_ERROR;
-  }
-  return error instanceof Error ? error.message : 'An error occurred';
-}
 
 function handleExecutionError({ error, res, appConfig }) {
   logger.error('[Responses API] Error:', getSafeErrorMetadata(error));
@@ -511,10 +504,12 @@ const executeResponse = async (envelope, { req, res }) => {
   // Request-backed tool adapters still observe the validated envelope payload;
   // shared initialization receives the transport-free runtime below.
   req.body = request;
+  req.turnStartedAt = envelope.receivedAt;
   const agentRuntime = createAgentExecutionContext({
     user: req.user,
     appConfig,
     requestBody: request,
+    turnStartedAt: envelope.receivedAt,
     conversationCreatedAt: req.conversationCreatedAt,
     resolvedConversation: req.resolvedConversation,
     hasResolvedConversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation'),

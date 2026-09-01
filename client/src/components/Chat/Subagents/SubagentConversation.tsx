@@ -1,23 +1,22 @@
 import { useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import { ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
-import { Bot, ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
-import {
-  hasTruncatedActivityDetails,
-  SubagentActivityContent,
-  SubagentStatus,
-} from './SubagentActivity';
+import { SubagentActivityContent, SubagentStatus } from './SubagentActivity';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
+import { isAbnormalTerminalStatus, isLiveSubagentStatus } from './status';
+import { messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { isAbnormalTerminalStatus } from './status';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 const TRIGGER_LABELS = {
@@ -191,10 +190,9 @@ function ChildMessage({
   const agentsMap = useAgentsMapContext();
   const agent = agentId == null ? undefined : agentsMap?.[agentId];
   const label = agent?.name ?? turn.activity.title;
-  const wholeActivityTruncated = turn.activity.activityTruncated === true;
-  const detailsLimited = wholeActivityTruncated || hasTruncatedActivityDetails(turn.activity);
+  const detailsLimited = turn.activity.activityTruncated === true;
   let limitedNotice: ReactNode;
-  if (wholeActivityTruncated && onLoadDetails != null && detailState !== 'unavailable') {
+  if (detailsLimited && onLoadDetails != null && detailState !== 'unavailable') {
     limitedNotice = (
       <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
         {detailState === 'error'
@@ -202,16 +200,24 @@ function ChildMessage({
           : localize('com_ui_subagent_show_full_activity')}
       </Button>
     );
-  } else if (wholeActivityTruncated) {
-    limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
   } else {
-    /** Only item-level fields were shortened for display; the run's full
-     *  activity is otherwise present, so avoid the alarming "unavailable"
-     *  framing there. */
-    limitedNotice = (
-      <span className="italic">{localize('com_ui_subagent_activity_details_truncated')}</span>
-    );
+    limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
   }
+  let footerContent: ReactNode = null;
+  if (isAbnormalTerminalStatus(turn.activity.status)) {
+    footerContent = <SubagentStatus activity={turn.activity} />;
+  } else if (isLiveSubagentStatus(turn.activity.status)) {
+    const triggeredAt = turn.trigger.createdAt ?? turn.trigger.externalEvent?.occurredAt;
+    const startedAt = triggeredAt == null ? NaN : Date.parse(triggeredAt);
+    footerContent = <ElapsedTimer start={Number.isFinite(startedAt) ? startedAt : undefined} />;
+  }
+  /** The main chat footer's own metrics, held whether or not anything occupies
+   *  the slot: the timer leaving at completion must not step the turns below it
+   *  upward, and the reading has to be sized by the same `text-xs` its main
+   *  chat counterpart inherits rather than by the panel's body size. */
+  const footer = (
+    <div className={cn('mt-1 flex justify-start gap-3', messageFooterClasses)}>{footerContent}</div>
+  );
   const iconData = {
     endpoint: EModelEndpoint.agents,
     modelLabel: label,
@@ -220,21 +226,12 @@ function ChildMessage({
   return (
     <MessageRow
       id={`${turn.taskId}:assistant`}
-      icon={
-        agent == null ? (
-          <span className="flex size-6 items-center justify-center rounded-full bg-surface-tertiary text-text-secondary">
-            <Bot size={14} aria-hidden />
-          </span>
-        ) : (
-          <MessageIcon iconData={iconData} agent={agent} />
-        )
-      }
+      /** The main chat author glyph, unconditionally: with no resolved agent it
+       *  falls back to the endpoint icon there too, so an unresolved child does
+       *  not get a differently-inset placeholder of its own. */
+      icon={<MessageIcon iconData={iconData} agent={agent} />}
       label={label}
-      footer={
-        isAbnormalTerminalStatus(turn.activity.status) ? (
-          <SubagentStatus activity={turn.activity} />
-        ) : null
-      }
+      footer={footer}
       ariaLabel={label}
       headerPrefix=""
       isCreatedByUser={false}
@@ -245,8 +242,8 @@ function ChildMessage({
         activityId={`${turn.taskId}:assistant`}
         state={state}
         showPrompt={false}
-        showDetailTruncationNotice={false}
         conversationId={conversationId}
+        underHeaderIcon
         onCancelControl={onCancelControl}
       />
       {detailsLimited && detailState !== 'loading' && (

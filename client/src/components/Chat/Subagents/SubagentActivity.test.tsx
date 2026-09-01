@@ -287,7 +287,7 @@ describe('SubagentActivity', () => {
     expect(screen.getByTestId('tool-approval')).toBeInTheDocument();
   });
 
-  it('marks bounded tool details as shortened without claiming history is missing', () => {
+  it('renders bounded tool details without any shortening caption', () => {
     render(
       <SubagentActivity
         activity={{
@@ -307,7 +307,9 @@ describe('SubagentActivity', () => {
     );
 
     expect(screen.queryByText('bounded input')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_activity_details_truncated')).toBeInTheDocument();
+    expect(
+      screen.queryByText('com_ui_subagent_activity_details_truncated'),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
   });
 

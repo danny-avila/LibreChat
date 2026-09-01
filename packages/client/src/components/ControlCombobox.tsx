@@ -43,6 +43,10 @@ interface ControlComboboxProps {
    * the popover is not clipped.
    */
   portal?: boolean;
+  /** Told when the popover opens and closes, for hosts that must behave
+   *  differently while it is up — e.g. a focus-trapped panel whose own Escape
+   *  handler must not fire while an open popover owns the key. */
+  onOpenChange?: (open: boolean) => void;
 }
 
 const ROW_HEIGHT = 36;
@@ -73,6 +77,7 @@ function ControlCombobox({
   variant = 'default',
   gutter = 4,
   portal = true,
+  onOpenChange,
 }: ControlComboboxProps): JSX.Element {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -98,6 +103,7 @@ function ControlCombobox({
     defaultItems: items.map(getItem),
     value: selectedValue,
     setValue,
+    setOpen: onOpenChange,
     placement,
   });
 
