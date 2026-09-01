@@ -1679,7 +1679,7 @@ describe('createRemoteAgentAuth', () => {
       expect(req.user).toMatchObject({ role: 'user' });
     });
 
-    it('does not apply fallback when API group overage is unresolved', async () => {
+    it('applies fallback when API group overage cannot be resolved', async () => {
       enableApiRoleSync({ OPENID_ROLE_SYNC_CLAIM: 'groups' });
       setupOidcMocks({
         sub: 'sub123',
@@ -1688,11 +1688,12 @@ describe('createRemoteAgentAuth', () => {
       });
 
       const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ role: 'STANDARD-USER' }));
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
       await createRemoteAgentAuth(asDeps(deps))(req as Request, makeRes().res, mockNext);
 
-      expect(deps.updateUser).not.toHaveBeenCalled();
-      expect(req.user).toMatchObject({ role: 'user' });
+      expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'USER' });
+      expect(req.user).toMatchObject({ role: 'USER' });
     });
 
     it('runs role lookup and persistence in the resolved user tenant context', async () => {
