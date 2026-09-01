@@ -1760,11 +1760,11 @@ describe('Meilisearch Mongoose plugin', () => {
     beforeEach(() => {
       mockGetDocuments = jest.fn();
       mockDeleteDocuments.mockClear();
-      mockIndex.mockReturnValue({
-        getRawInfo: jest.fn(),
-        getSettings: mockGetSettings,
-        updateSettings: mockUpdateSettings,
-        addDocuments: mockAddDocuments,
+        mockIndex.mockReturnValue({
+          getRawInfo: jest.fn(),
+          getSettings: mockGetSettings,
+          updateSettings: mockUpdateSettings,
+          addDocuments: mockAddDocuments,
         addDocumentsInBatches: mockAddDocumentsInBatches,
         updateDocuments: mockUpdateDocuments,
         deleteDocument: mockDeleteDocument,
