@@ -199,13 +199,30 @@ const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
   return namespaceId != null && file.metadata?.embeddedEntities?.includes(namespaceId) === true;
 };
 
+/** The scope a code upload would be filed under this turn, mirroring what
+ *  provisionToCodeEnv records: an agent's own resource file belongs to the agent, and
+ *  everything else to the requesting user. */
+interface CodeEnvScope {
+  kind: 'agent' | 'user';
+  id?: string;
+}
+
 /**
  * Whether this file already has a sandbox reference for the route the agent will execute
- * on. A reference for another deployment does not make the file reachable here, so it has
- * to be provisioned again rather than treated as done.
+ * on, under the identity this turn would use. A reference for another deployment does not
+ * make the file reachable here, and neither does one owned by another agent or user:
+ * `kind` and `id` are what Code API derives its session key from, so reusing a foreign
+ * reference points the tool at a session this caller cannot read. References this
+ * pipeline does not write, skill files being the case in point, are left to their owner.
  */
-const hasCodeRefForRoute = (file: TFile, routeKey: string): boolean =>
-  getCodeEnvRefs(file.metadata).some(([key]) => key === routeKey);
+const hasCodeRefForRoute = (file: TFile, routeKey: string, scope: CodeEnvScope): boolean =>
+  getCodeEnvRefs(file.metadata).some(
+    ([key, ref]) =>
+      key === routeKey &&
+      (ref.kind !== 'agent' && ref.kind !== 'user'
+        ? true
+        : ref.kind === scope.kind && ref.id === scope.id),
+  );
 
 /** Mirrors the lazy provisioning writer: agent-scoped search files live in
  *  `file_ids`, which is the only shape fileSearch treats as agent-owned. */
@@ -461,6 +478,15 @@ const computeProvisionState = async ({
       continue;
     }
 
+    /* Mirrors entityIdForFile in the provisioning callback: membership in the agent's own
+     * resources decides both the vector namespace and the sandbox identity, so the queue
+     * asks about the scope the upload will actually write under. */
+    const isAgentScoped = scopedIds.has(file.file_id);
+    const namespaceId = isAgentScoped ? agentId : resourcePrincipal?.id;
+    const codeScope: CodeEnvScope = isAgentScoped
+      ? { kind: 'agent', id: agentId }
+      : { kind: 'user', id: resourcePrincipal?.id };
+
     /** Text-source records keep their content in the database with no backing object
      *  to stream, so provisioning them would fail and, for code, abort the turn.
      *  Provisioning them from their stored text is tracked as follow-up work. */
@@ -500,7 +526,7 @@ const computeProvisionState = async ({
           codeEnvRefs: Object.keys(remainingRefs).length > 0 ? remainingRefs : undefined,
         };
         codeEnvFiles.push(file);
-      } else if (!hasCodeRefForRoute(file, activeCodeRouteKey)) {
+      } else if (!hasCodeRefForRoute(file, activeCodeRouteKey, codeScope)) {
         /* Judged by the active route rather than by any reference at all: a file
          * provisioned to another deployment is not reachable from this one, and priming
          * resolves only this route, so it would be omitted from the sandbox call. The
@@ -518,10 +544,6 @@ const computeProvisionState = async ({
     }
 
     const isImage = file.type?.startsWith('image') ?? false;
-    /* Mirrors entityIdForFile in the provisioning callback: membership in the agent's own
-     * resources decides the namespace, so the queue asks about the namespace the upload
-     * will actually write to. */
-    const namespaceId = scopedIds.has(file.file_id) ? agentId : resourcePrincipal?.id;
     if (
       needsVectorDB &&
       !isImage &&

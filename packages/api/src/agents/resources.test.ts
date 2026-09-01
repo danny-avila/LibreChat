@@ -2276,6 +2276,67 @@ describe('primeResources', () => {
       expect(bothRoutesFile.metadata?.codeEnvRefs?.['stateful:abc']).toEqual(statefulRef);
     });
 
+    it('reprovisions a sandbox reference owned by another agent', async () => {
+      /* Code API derives its session key from the reference kind and id, so an agent-owned
+       * reference points at a session this caller cannot read. Reusing it adds the file to
+       * the second agent's code resources while the bytes live in the first agent's. */
+      const foreignRef = {
+        kind: 'agent' as const,
+        id: 'other-agent',
+        storage_session_id: 'sess-other',
+        file_id: 'remote-other',
+      };
+      const foreignScopedFile = makeCodeFile({
+        file_id: 'foreign-code-file',
+        metadata: { codeEnvRef: foreignRef, codeEnvRefs: { default: foreignRef } },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([foreignScopedFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+      });
+
+      expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toEqual([
+        'foreign-code-file',
+      ]);
+    });
+
+    it('keeps a sandbox reference already owned by the requesting user', async () => {
+      /* The converse: a message attachment is provisioned under the user, so a matching
+       * user reference is reusable and must not be uploaded again every turn. */
+      const ownRef = {
+        kind: 'user' as const,
+        id: 'user1',
+        storage_session_id: 'sess-own',
+        file_id: 'remote-own',
+      };
+      const ownScopedFile = makeCodeFile({
+        file_id: 'own-code-file',
+        metadata: { codeEnvRef: ownRef, codeEnvRefs: { default: ownRef } },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        tool_resources: {},
+        attachments: Promise.resolve([ownScopedFile]),
+        requestFileSet,
+        agentId: 'agent1',
+        enabledToolResources: new Set([EToolResources.execute_code]),
+      });
+
+      expect(result.provisionState?.codeEnvFiles ?? []).toEqual([]);
+    });
+
     it('queues a file whose only reference names another code route', async () => {
       /* Priming resolves the active route alone, so a reference to a different deployment
        * would leave the sandbox call without the attachment. */
