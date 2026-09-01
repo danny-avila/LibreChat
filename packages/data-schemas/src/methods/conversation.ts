@@ -539,8 +539,7 @@ export function createConversationMethods(
     fieldsToSelect: string | null = 'conversationId user',
   ) {
     try {
-      const Conversation = mongoose.models.Conversation as Model<IConversation> &
-        Pick<SchemaWithMeiliMethods, 'meiliSearch'>;
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
       return await Conversation.findOne({ conversationId }, fieldsToSelect).lean<IConversation>();
     } catch (error) {
       logger.error('[searchConversation] Error searching conversation', error);
