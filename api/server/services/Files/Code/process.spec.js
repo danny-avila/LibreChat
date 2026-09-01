@@ -68,6 +68,20 @@ jest.mock('@librechat/api', () => {
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    /* Mirrors the real parser (packages/api/src/utils/code.ts): header
+     * first, `retry_after_seconds` body as the fallback. */
+    getCodeApiRetryAfterMs: jest.fn((error) => {
+      if (error?.response?.status !== 429) {
+        return null;
+      }
+      const header = error.response.headers?.['retry-after'];
+      const headerSeconds = Number(Array.isArray(header) ? header[0] : header);
+      if (Number.isFinite(headerSeconds) && headerSeconds >= 0) {
+        return headerSeconds * 1000;
+      }
+      const bodySeconds = Number(error.response.data?.retry_after_seconds);
+      return Number.isFinite(bodySeconds) && bodySeconds >= 0 ? bodySeconds * 1000 : null;
+    }),
     getCodeExecutionBaseUrl: jest.fn((profile) =>
       profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
     ),
@@ -2795,17 +2809,124 @@ describe('Code Process', () => {
       expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
     });
 
-    it('names the real cause when a chunk overflows the runner stdout cap', async () => {
+    it('names the real cause when every narrowed window overflows the stdout cap', async () => {
       /* The runner truncates stdout and SIGKILLs with status `OL`; the old
        * reader parsed the truncated base64 and reported a misleading
-       * "unexpected output" instead of the fixable limit. */
+       * "unexpected output" instead of the fixable limit. A runner that
+       * rejects every window size still has to name the limit. Isolated on
+       * its own base URL: narrowing is remembered per Code API. */
       mockAxios.mockResolvedValue({
         data: { stdout: '{"total":999999,"n":32768,"b64":"iVBORw0KGg', status: 'OL', code: 137 },
       });
 
-      await expect(readSandboxImage({ file_path: '/mnt/data/big.png' })).rejects.toThrow(
-        /exceeded the sandbox stdout limit/,
+      await expect(
+        readSandboxImage({
+          file_path: '/mnt/data/big.png',
+          codeApiBaseUrl: 'https://always-overflows.example.com',
+        }),
+      ).rejects.toThrow(/exceeded the sandbox stdout limit/);
+    });
+
+    it('narrows the window and re-reads the same offset when the runner truncates', async () => {
+      /* A runner whose stdout cap is smaller than this deployment assumed
+       * used to fail the whole image. The window halves and the read
+       * resumes, so the only cost is the truncated round-trip. */
+      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(8 * 1024)]);
+      const accepted = 32 * 1024;
+      const windows = [];
+      mockAxios.mockImplementation(async ({ data }) => {
+        const payload = JSON.parse(
+          Buffer.from(JSON.parse(/payload = ("[^"]+")/.exec(data.code)[1]), 'base64').toString(),
+        );
+        windows.push(payload.chunk);
+        if (payload.chunk > accepted) {
+          return { data: { stdout: '{"total":8200,"n":40000,"b64":"iVBOR', status: 'OL' } };
+        }
+        const slice = source.subarray(payload.offset, payload.offset + payload.chunk);
+        return {
+          data: {
+            stdout: JSON.stringify({
+              total: source.length,
+              n: slice.length,
+              b64: slice.toString('base64'),
+            }),
+          },
+        };
+      });
+
+      const result = await readSandboxImage({
+        file_path: '/mnt/data/x.png',
+        codeApiBaseUrl: 'https://small-stdout.example.com',
+      });
+
+      expect(windows[0]).toBeGreaterThan(accepted);
+      expect(windows[1]).toBeLessThanOrEqual(accepted);
+      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
+    });
+
+    it('waits out a rate limit and finishes the read', async () => {
+      /* Every window is one `/exec` call against the Code API's per-user
+       * execution limiter, so a read that starts near the end of a window
+       * used to throw away the bytes it had already pulled. */
+      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(1024)]);
+      const rateLimited = Object.assign(new Error('Request failed with status code 429'), {
+        isAxiosError: true,
+        response: { status: 429, headers: { 'retry-after': '1' }, data: {} },
+      });
+      let attempts = 0;
+      mockAxios.mockImplementation(async ({ data }) => {
+        attempts++;
+        if (attempts === 1) {
+          throw rateLimited;
+        }
+        const payload = JSON.parse(
+          Buffer.from(JSON.parse(/payload = ("[^"]+")/.exec(data.code)[1]), 'base64').toString(),
+        );
+        const slice = source.subarray(payload.offset, payload.offset + payload.chunk);
+        return {
+          data: {
+            stdout: JSON.stringify({
+              total: source.length,
+              n: slice.length,
+              b64: slice.toString('base64'),
+            }),
+          },
+        };
+      });
+
+      const result = await readSandboxImage({ file_path: '/mnt/data/x.png' });
+
+      expect(attempts).toBe(2);
+      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
+    });
+
+    it('names the rate limit even when the response carries no usable delay', async () => {
+      /* Otherwise a bare "Request failed with status code 429" reaches the
+       * model as an unspecified failure instead of one that clears itself. */
+      mockAxios.mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 429'), {
+          isAxiosError: true,
+          response: { status: 429, headers: {}, data: {} },
+        }),
       );
+
+      await expect(readSandboxImage({ file_path: '/mnt/data/x.png' })).rejects.toThrow(
+        /rate limit reached while reading/,
+      );
+    });
+
+    it('names the rate limit when the wait exceeds what one read may spend', async () => {
+      mockAxios.mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 429'), {
+          isAxiosError: true,
+          response: { status: 429, headers: {}, data: { retry_after_seconds: 300 } },
+        }),
+      );
+
+      await expect(readSandboxImage({ file_path: '/mnt/data/x.png' })).rejects.toThrow(
+        /rate limit reached while reading "\/mnt\/data\/x\.png".*retry in 300s/,
+      );
+      expect(mockAxios).toHaveBeenCalledTimes(1);
     });
 
     it('honors LIBRECHAT_CODE_IMAGE_CHUNK_BYTES', async () => {
@@ -2843,7 +2964,7 @@ describe('Code Process', () => {
 
       const result = await readSandboxImage({ file_path: '/mnt/data/huge.png' });
 
-      expect(result).toEqual({ tooLarge: true, bytes: 9 * 1024 * 1024 });
+      expect(result).toEqual({ tooLarge: true, reason: 'size', bytes: 9 * 1024 * 1024 });
       expect(mockAxios).toHaveBeenCalledTimes(1);
     });
   });

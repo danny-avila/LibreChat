@@ -473,7 +473,14 @@ export interface ToolExecuteOptions {
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
     req?: ServerRequest;
-  }) => Promise<{ base64: string; bytes: number } | { tooLarge: true; bytes: number } | null>;
+  }) => Promise<
+    | { base64: string; bytes: number }
+    /** `size`: over `maxBytes`. `round_trips`: within the byte cap, but more
+     *  windowed `/exec` reads than one call may spend on the Code API's
+     *  per-user execution limiter. */
+    | { tooLarge: true; reason?: 'size' | 'round_trips'; bytes: number }
+    | null
+  >;
   /**
    * Writes a UTF-8 text file into the code-execution sandbox via the
    * sandbox `/exec` endpoint. Mirrors `readSandboxFile` session forwarding
@@ -1849,14 +1856,37 @@ function looksBinary(content: string): boolean {
 }
 
 /**
+ * Model-visible error for an image the sandbox could not hand back. The
+ * read is a supported operation that FAILED, so the message must not reuse
+ * the "images cannot be read as text" phrasing — that reads as a permanent
+ * capability limit and stops the model from ever retrying. State the real
+ * cause and the affordance that matches it: a rate-limited or truncated
+ * read is worth retrying, a missing path is worth listing, and only a
+ * genuine transport dead end falls back to `bash_tool`. Classification is
+ * by message, matching how `isSandboxMissingFileError` already reads
+ * sandbox failures; the rate-limit wording is the one `readSandboxImage`
+ * throws when the Code API limiter turns a chunk away.
+ */
+function buildImageReadError(filePath: string, reason: string): string {
+  const detail = reason.replace(/\.$/, '');
+  if (isSandboxMissingFileError(reason)) {
+    return `"${filePath}" was not found in the code-execution sandbox (${detail}). List the directory with \`bash_tool\` (e.g. \`ls /mnt/data\`) to find the correct path.`;
+  }
+  if (/rate limit/i.test(reason)) {
+    return `Could not read image "${filePath}": ${detail}. Wait for the sandbox to accept requests again, then read it once more.`;
+  }
+  return `Could not read image "${filePath}" from the code-execution sandbox: ${detail}. Retry the read; if it keeps failing, inspect the file with \`bash_tool\` (e.g. \`file ${filePath}\`).`;
+}
+
+/**
  * Reads a sandbox image as a viewable artifact so `read_file` can hand the
  * bytes to vision-capable models instead of refusing them. Fetches the file
  * base64-encoded from the sandbox (`readSandboxImage`), verifies the decoded
  * length matches the size the sandbox reported (guards against codeapi
  * truncating a large `/exec` stdout into a corrupt image), sniffs the real
- * MIME, and returns the shared image-artifact result. Degrades to the
- * text-oriented binary hint when the reader is unavailable, the image is
- * over the inline cap, or the read fails — never throws.
+ * MIME, and returns the shared image-artifact result. Never throws: a
+ * mislabeled or corrupt image degrades to the binary hint, while a failed
+ * read reports what actually went wrong (see {@link buildImageReadError}).
  */
 async function handleSandboxImageRead(
   tc: ToolCallRequest,
@@ -1879,12 +1909,21 @@ async function handleSandboxImageRead(
     content: '',
     errorMessage: buildBinaryFileError(filePath, ext),
   });
+  const readFailure = (reason: string): ToolExecuteResult => ({
+    toolCallId: tc.id,
+    status: 'error',
+    content: '',
+    errorMessage: buildImageReadError(filePath, reason),
+  });
   if (!readSandboxImage) {
     return binaryHint();
   }
 
   const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
-  let read: { base64: string; bytes: number } | { tooLarge: true; bytes: number } | null;
+  let read:
+    | { base64: string; bytes: number }
+    | { tooLarge: true; reason?: 'size' | 'round_trips'; bytes: number }
+    | null;
   try {
     read = await readSandboxImage({
       file_path: filePath,
@@ -1895,9 +1934,9 @@ async function handleSandboxImageRead(
       ...(req ? { req } : {}),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getThrownValueMessage(error);
     logger.warn(`[handleReadFileCall] Sandbox image read failed for "${filePath}": ${message}`);
-    return binaryHint();
+    return readFailure(message);
   }
 
   if (!read) {
@@ -1905,10 +1944,14 @@ async function handleSandboxImageRead(
   }
   if ('tooLarge' in read) {
     onSuccess?.();
+    const overBudget =
+      read.reason === 'round_trips'
+        ? 'needed more sandbox round-trips than one read may spend'
+        : `over the ${MAX_SANDBOX_INLINE_IMAGE_BYTES}-byte inline limit`;
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `Image "${filePath}" is ${read.bytes} bytes, over the ${MAX_SANDBOX_INLINE_IMAGE_BYTES}-byte inline limit. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata).`,
+      content: `Image "${filePath}" is ${read.bytes} bytes, ${overBudget}. Downscale it in the sandbox with \`bash_tool\` and read the smaller copy to view it, or inspect it with \`bash_tool\` (e.g. \`file ${filePath}\` for metadata).`,
     };
   }
 
@@ -1917,7 +1960,9 @@ async function handleSandboxImageRead(
     logger.warn(
       `[handleReadFileCall] Sandbox image byte mismatch for "${filePath}" (decoded ${buffer.length} != reported ${read.bytes})`,
     );
-    return binaryHint();
+    return readFailure(
+      `the sandbox returned ${buffer.length} of ${read.bytes} bytes (truncated transfer)`,
+    );
   }
   // Resolve the MIME from the actual bytes, never the extension: a file
   // routed here by its `.png`/`.jpg`/... name whose header matches none of
