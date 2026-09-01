@@ -3257,7 +3257,7 @@ describe('GenerationJobManager startup telemetry', () => {
     }
   });
 
-  it('does not deliver a terminal successor through a predecessor recovery callback', async () => {
+  it('reconnect-closes a predecessor instead of delivering a terminal successor', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const eventTransport = new InMemoryEventTransport();
     const manager = new GenerationJobManagerClass();
@@ -3297,13 +3297,23 @@ describe('GenerationJobManager startup telemetry', () => {
     jest.spyOn(eventTransport, 'emitDone').mockImplementation((_streamId, _event, generationId) => {
       throw new GenerationPublicationFencedError('done', streamId, generationId);
     });
+    jest.useFakeTimers();
 
     try {
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await jest.advanceTimersByTimeAsync(0);
 
       expect(predecessorDone).not.toHaveBeenCalled();
       expect(predecessorError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(
+        REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+      );
+
+      expect(predecessorError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
     } finally {
+      jest.useRealTimers();
       predecessorSubscription?.unsubscribe();
       await manager.destroy();
     }

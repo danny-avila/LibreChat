@@ -4911,6 +4911,12 @@ class GenerationJobManagerClass {
 
         let terminalJob = await this.jobStore.getJob(streamId);
         if (terminalJob?.createdAt !== runtime.createdAt) {
+          if (terminalJob) {
+            this.reconcileInactiveGeneration(streamId, runtime.createdAt, terminalJob, runtime);
+            this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+          } else {
+            queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+          }
           return;
         }
         if (
@@ -4919,6 +4925,12 @@ class GenerationJobManagerClass {
         ) {
           terminalJob = await this.recoverStaleTerminalPersistence(terminalJob);
           if (terminalJob?.createdAt !== runtime.createdAt) {
+            if (terminalJob) {
+              this.reconcileInactiveGeneration(streamId, runtime.createdAt, terminalJob, runtime);
+              this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+            } else {
+              queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+            }
             return;
           }
           if (terminalJob?.terminalPersistencePending === true) {
@@ -6338,7 +6350,15 @@ class GenerationJobManagerClass {
     const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
     runtime.abortController.abort();
     this.recordFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
-    if (this.shuttingDown) {
+    this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+  }
+
+  private preserveFencedRuntimeUntilHandoff(streamId: string, runtime: RuntimeJobState): void {
+    if (
+      this.shuttingDown ||
+      this.runtimeState.get(streamId) !== runtime ||
+      this.fencedRuntimeRetirements.has(runtime)
+    ) {
       return;
     }
     if (runtime.replacementTransportHold === true) {
@@ -7973,6 +7993,7 @@ class GenerationJobManagerClass {
               currentJob,
               observedRuntime,
             );
+            this.preserveFencedRuntimeUntilHandoff(streamId, observedRuntime);
             continue;
           }
           logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);

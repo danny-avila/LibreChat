@@ -455,6 +455,7 @@ describe('GenerationJobManager - generation abort on reaping', () => {
       expect(onError).not.toHaveBeenCalled();
       expect(transport.getSubscriberCount(streamId)).toBe(1);
       expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(1);
       await transport.emitDone(
         streamId,
         { final: true, generationCreatedAt: successorCreatedAt },
@@ -464,6 +465,8 @@ describe('GenerationJobManager - generation abort on reaping', () => {
         final: true,
         generationCreatedAt: successorCreatedAt,
       });
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      expect(manager.getRuntimeStats().fencedRuntimeRetirements).toBe(0);
 
       subscription?.unsubscribe();
       await manager.destroy();
