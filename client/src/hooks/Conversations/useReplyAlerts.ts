@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import type { ReplyReadState } from './useUnseenConversations';
 import { replyNotificationsAtom, replyNotificationSoundAtom } from './replyNotificationSettings';
 import { suppressFocusAcknowledgement } from './notificationNavigation';
+import { startFocusLease, isAnotherTabFocused } from './focusLease';
 import { useLocalize } from '~/hooks';
 
 let sharedContext: AudioContext | null = null;
@@ -157,6 +158,11 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
   const knownRef = useRef<Map<string, string> | null>(null);
   const unlockedRef = useRef(false);
 
+  /* Published for the other tabs of this origin, and read by them below: a reply announced by
+     a background tab while the user reads a focused one is exactly the interruption the focus
+     guard exists to prevent, and `document.hasFocus()` cannot see across tabs. */
+  useEffect(() => startFocusLease(), []);
+
   /* The setting survives a reload but the audio output does not, and the toggle gesture that
      opened it last session is not replayed. Without this the first chime of a restored session
      would try to open the output while the tab is unfocused, which browsers refuse, and every
@@ -217,7 +223,9 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
         !conversation.flagged &&
         priorStamps.get(conversation.conversationId) !== conversation.lastResponseAt,
     );
-    if (arrivals.length === 0 || document.hasFocus()) {
+    /* "Away" means away from LibreChat, not away from this tab: a second tab holding focus is
+       the user reading the app, and the sidebar dot already covers them there. */
+    if (arrivals.length === 0 || document.hasFocus() || isAnotherTabFocused()) {
       return;
     }
 

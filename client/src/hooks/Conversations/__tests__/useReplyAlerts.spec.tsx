@@ -354,6 +354,33 @@ describe('useReplyAlerts', () => {
     expect(createdNotifications[0].options?.tag).toBe('convo-b');
   });
 
+  it('stays quiet while another tab of the app holds focus', () => {
+    /* `document.hasFocus()` answers only for this tab, so without the shared lease a
+       background tab would chime over the one the user is reading. */
+    window.localStorage.setItem('replyAlerts:focusedAt', String(Date.now()));
+    const { rerender } = setup({ notifications: true, sound: true });
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+
+    expect(createdNotifications).toHaveLength(0);
+    expect(createOscillator).not.toHaveBeenCalled();
+    /* Unclaimed, so the tab the user later leaves can still announce the reply. */
+    expect(window.localStorage.getItem('replyAlerts:announced:notification')).toBeNull();
+  });
+
+  it('announces again once a stale focus lease has expired', async () => {
+    window.localStorage.setItem('replyAlerts:focusedAt', String(Date.now() - 120_000));
+    const { rerender } = setup({ notifications: true });
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+
+    await waitFor(() => expect(createdNotifications).toHaveLength(1));
+  });
+
   it('falls back to the untitled label when the conversation has no title', async () => {
     const { rerender } = setup({ notifications: true });
 
