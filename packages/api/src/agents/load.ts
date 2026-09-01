@@ -76,13 +76,19 @@ export async function loadEphemeralAgent(
   /** The picker's own selection is narrowed to what the picker may offer; a
    *  spec's servers are the operator's choice and are added after, so pinning a
    *  chat-hidden server to a spec keeps working. */
-  const mcpServers = new Set<string>(
-    await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
-      userId,
-      mcpConfig: req.config?.mcpConfig,
-      getServerConfig: deps.getServerConfig,
-    }),
-  );
+  const selectedMCPServers = await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
+    userId,
+    mcpConfig: req.config?.mcpConfig,
+    getServerConfig: deps.getServerConfig,
+  });
+  /** Narrow the request's own selection, not just this loader's copy. The
+   *  instruction path reads `req.body.ephemeralAgent.mcp` straight from the body
+   *  and prefers it over the agent's tools, so a hidden server would still have
+   *  its `serverInstructions` injected after its tools were dropped. */
+  if (ephemeralAgent != null && Array.isArray(ephemeralAgent.mcp)) {
+    ephemeralAgent.mcp = selectedMCPServers;
+  }
+  const mcpServers = new Set<string>(selectedMCPServers);
   if (modelSpec?.mcpServers) {
     for (const mcpServer of modelSpec.mcpServers) {
       mcpServers.add(mcpServer);

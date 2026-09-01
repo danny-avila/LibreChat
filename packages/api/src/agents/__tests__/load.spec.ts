@@ -257,6 +257,34 @@ describe('loadAgent', () => {
       expect(result?.tools).toContain('tool_mcp_hidden');
     });
 
+    test('narrows the request body, so the instruction path cannot see a hidden server', async () => {
+      const config = {
+        mcpConfig: {
+          visible: { type: 'streamable-http', url: 'https://mcp.example.com/visible/mcp' },
+          hidden: {
+            type: 'streamable-http',
+            url: 'https://mcp.example.com/hidden/mcp',
+            chatMenu: false,
+          },
+        },
+      };
+      const body = { ephemeralAgent: { mcp: ['visible', 'hidden'] } };
+
+      await loadAgent(
+        {
+          req: { user: { id: 'user123' }, config: config as unknown as AppConfig, body },
+          agent_id: EPHEMERAL_AGENT_ID as string,
+          endpoint: 'openai',
+          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+        },
+        deps,
+      );
+
+      /** `applyContextToAgent` reads this straight off the body and prefers it
+       *  over the agent's tools when loading `serverInstructions`. */
+      expect(body.ephemeralAgent.mcp).toEqual(['visible']);
+    });
+
     test('keeps a request-tier server the registry cannot resolve', async () => {
       const result = await loadEphemeral({ mcpConfig: {} }, ['body-scoped']);
 

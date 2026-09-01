@@ -1147,6 +1147,62 @@ describe('filterChatSelectableMCPServers', () => {
     ).resolves.toEqual(['direct']);
   });
 
+  it('resolves one config lookup per distinct name, however often it repeats', async () => {
+    const getServerConfig = jest.fn(async () => ({}));
+    await expect(
+      filterChatSelectableMCPServers(['a', 'a', 'b', 'a', 'b'], {
+        userId: 'user123',
+        mcpConfig: {},
+        getServerConfig,
+      }),
+    ).resolves.toEqual(['a', 'b']);
+    expect(getServerConfig).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a hidden server named by its normalized spelling', async () => {
+    const getServerConfig = jest.fn(async () => undefined);
+    await expect(
+      filterChatSelectableMCPServers(['private_server'], {
+        userId: 'user123',
+        mcpConfig: { 'private server': { chatMenu: false } },
+        getServerConfig,
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('keeps a visible server named by its normalized spelling, as sent', async () => {
+    const getServerConfig = jest.fn(async () => ({}));
+    await expect(
+      filterChatSelectableMCPServers(['private_server'], {
+        userId: 'user123',
+        mcpConfig: { 'private server': { chatMenu: true } },
+        getServerConfig,
+      }),
+    ).resolves.toEqual(['private_server']);
+  });
+
+  it('lets a request overlay re-enable a server the registry still hides', async () => {
+    const getServerConfig = jest.fn(async () => ({ chatMenu: false }));
+    await expect(
+      filterChatSelectableMCPServers(['revived'], {
+        userId: 'user123',
+        mcpConfig: { revived: { chatMenu: true } },
+        getServerConfig,
+      }),
+    ).resolves.toEqual(['revived']);
+  });
+
+  it('still drops an overlay-enabled server the user only reaches via an agent', async () => {
+    const getServerConfig = jest.fn(async () => ({ consumeOnly: true }));
+    await expect(
+      filterChatSelectableMCPServers(['revived'], {
+        userId: 'user123',
+        mcpConfig: { revived: { chatMenu: true } },
+        getServerConfig,
+      }),
+    ).resolves.toEqual([]);
+  });
+
   it('keeps a server the registry cannot resolve', async () => {
     const getServerConfig = jest.fn(async () => undefined);
     await expect(
