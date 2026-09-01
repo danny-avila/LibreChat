@@ -4928,6 +4928,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     );
                   }
                 };
+                const persistSettledBackgroundResult = async (params: {
+                  output?: string;
+                  artifact?: unknown;
+                  status: 'completed' | 'error';
+                }): Promise<void> => {
+                  if (harvestEnabled) {
+                    await persistBackgroundResult(params);
+                    return;
+                  }
+                  backgroundTaskRegistry.markCompletionPersistencePending(
+                    backgroundUserId,
+                    backgroundConversationId,
+                    task.id,
+                  );
+                  try {
+                    await persistBackgroundResult(params);
+                  } finally {
+                    backgroundTaskRegistry.markCompletionPersistenceFinished(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                    );
+                  }
+                };
                 let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
                 const backgroundAbortController = new AbortController();
                 try {
@@ -5105,7 +5129,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         registryError,
                         { harvestStarted: harvestEnabled },
                       );
-                      await persistBackgroundResult({ output: errorOutput, status: 'error' });
+                      await persistSettledBackgroundResult({
+                        output: errorOutput,
+                        status: 'error',
+                      });
                       await wakeDetachedActor();
                       return;
                     }
@@ -5162,7 +5189,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       task.id,
                       { content, artifact: result.artifact, harvestStarted: harvestEnabled },
                     );
-                    await persistBackgroundResult({
+                    await persistSettledBackgroundResult({
                       /** Use the registry's canonical bounded serialization so
                        * structured content cannot leave the durable card on its
                        * synthetic running handle. */
@@ -5211,7 +5238,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  the dispatch card on the handle JSON forever. */
                       { harvestStarted: harvestEnabled },
                     );
-                    await persistBackgroundResult({ output: deliveredError, status: 'error' });
+                    await persistSettledBackgroundResult({
+                      output: deliveredError,
+                      status: 'error',
+                    });
                     await wakeDetachedActor();
                   } finally {
                     if (producerRetirementTimeout != null) {

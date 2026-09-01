@@ -1621,6 +1621,203 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u-pending-harvest', 'c-second', second.task.id)?.result).toBeUndefined();
   });
 
+  it('does not evict an ordinary task while completion persistence is pending', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const first = registry.create({
+      userId: 'u-pending-persistence',
+      conversationId: 'c-first',
+      toolCallId: 'call_first',
+      toolName: 'search_mcp_docs',
+    });
+    const second = registry.create({
+      userId: 'u-pending-persistence',
+      conversationId: 'c-second',
+      toolCallId: 'call_second',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in first || 'atCapacity' in second) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-pending-persistence', 'c-first', first.task.id, {
+      content: 'first',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+    });
+    registry.markCompletionPersistencePending('u-pending-persistence', 'c-first', first.task.id);
+    registry.complete('u-pending-persistence', 'c-second', second.task.id, {
+      content: 'second',
+      artifact: { payload: 'b'.repeat(9_000_000) },
+    });
+    expect(registry.get('u-pending-persistence', 'c-first', first.task.id)).toBeDefined();
+    expect(
+      registry.get('u-pending-persistence', 'c-second', second.task.id)?.result,
+    ).toBeUndefined();
+  });
+
+  it('skips zero-byte records when evicting retained payloads', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const empty = registry.create({
+      userId: 'u-zero-byte',
+      conversationId: 'c-empty',
+      toolCallId: 'call_empty',
+      toolName: 't',
+    });
+    const retained = registry.create({
+      userId: 'u-zero-byte',
+      conversationId: 'c-retained',
+      toolCallId: 'call_retained',
+      toolName: 't',
+    });
+    const incoming = registry.create({
+      userId: 'u-zero-byte',
+      conversationId: 'c-incoming',
+      toolCallId: 'call_incoming',
+      toolName: 't',
+    });
+    if ('atCapacity' in empty || 'atCapacity' in retained || 'atCapacity' in incoming) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-zero-byte', 'c-empty', empty.task.id, { content: '' });
+    registry.complete('u-zero-byte', 'c-retained', retained.task.id, {
+      content: 'retained',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+    });
+    registry.complete('u-zero-byte', 'c-incoming', incoming.task.id, {
+      content: 'incoming',
+      artifact: { payload: 'b'.repeat(8_000_000) },
+    });
+    expect(registry.get('u-zero-byte', 'c-empty', empty.task.id)).toBeDefined();
+    expect(registry.get('u-zero-byte', 'c-retained', retained.task.id)).toBeUndefined();
+    expect(registry.get('u-zero-byte', 'c-incoming', incoming.task.id)?.artifact).toBeDefined();
+  });
+
+  it('does not partially evict global tasks when user retention cannot be satisfied', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let index = 0; index < 400; index++) {
+      const conversationId = `c-atomic-${Math.floor(index / 200)}`;
+      const created = registry.create({
+        userId: 'u-atomic',
+        conversationId,
+        toolCallId: `call_atomic_${index}`,
+        toolName: 't',
+        harvestStarted: true,
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${index}: ${created.scope}`);
+      }
+      registry.complete('u-atomic', conversationId, created.task.id, {
+        content: '',
+        harvestStarted: true,
+      });
+    }
+
+    let oldestGlobalTask: { userId: string; conversationId: string; taskId: string } | undefined;
+    for (let userIndex = 0; userIndex < 8; userIndex++) {
+      for (let taskIndex = 0; taskIndex < 200; taskIndex++) {
+        const userId = `u-global-${userIndex}`;
+        const conversationId = `c-global-${userIndex}`;
+        const created = registry.create({
+          userId,
+          conversationId,
+          toolCallId: `call_global_${userIndex}_${taskIndex}`,
+          toolName: 't',
+        });
+        if ('atCapacity' in created) {
+          throw new Error('unexpected capacity');
+        }
+        registry.complete(userId, conversationId, created.task.id, { content: '' });
+        oldestGlobalTask ??= { userId, conversationId, taskId: created.task.id };
+      }
+    }
+
+    const rejected = registry.create({
+      userId: 'u-atomic',
+      conversationId: 'c-atomic-new',
+      toolCallId: 'call_atomic_rejected',
+      toolName: 't',
+    });
+    expect(rejected).toEqual({ atCapacity: true, scope: 'user_retention' });
+    if (oldestGlobalTask == null) {
+      throw new Error('expected a global eviction candidate');
+    }
+    expect(
+      registry.get(
+        oldestGlobalTask.userId,
+        oldestGlobalTask.conversationId,
+        oldestGlobalTask.taskId,
+      ),
+    ).toBeDefined();
+  });
+
+  it('does not partially evict global payloads when user payload retention cannot be satisfied', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let index = 0; index < 2; index++) {
+      const conversationId = `c-payload-protected-${index}`;
+      const created = registry.create({
+        userId: 'u-payload-atomic',
+        conversationId,
+        toolCallId: `call_payload_protected_${index}`,
+        toolName: 't',
+        harvestStarted: true,
+      });
+      if ('atCapacity' in created) {
+        throw new Error('unexpected capacity');
+      }
+      registry.complete('u-payload-atomic', conversationId, created.task.id, {
+        content: 'protected',
+        artifact: { payload: 'p'.repeat(7_999_000) },
+        harvestStarted: true,
+      });
+    }
+
+    let oldestGlobalTask: { userId: string; conversationId: string; taskId: string } | undefined;
+    for (let index = 0; index < 6; index++) {
+      const userId = `u-payload-global-${index}`;
+      const conversationId = `c-payload-global-${index}`;
+      const created = registry.create({
+        userId,
+        conversationId,
+        toolCallId: `call_payload_global_${index}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error('unexpected capacity');
+      }
+      registry.complete(userId, conversationId, created.task.id, {
+        content: 'global',
+        artifact: { payload: 'g'.repeat(7_999_000) },
+      });
+      oldestGlobalTask ??= { userId, conversationId, taskId: created.task.id };
+    }
+
+    const incoming = registry.create({
+      userId: 'u-payload-atomic',
+      conversationId: 'c-payload-incoming',
+      toolCallId: 'call_payload_incoming',
+      toolName: 't',
+    });
+    if ('atCapacity' in incoming) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-payload-atomic', 'c-payload-incoming', incoming.task.id, {
+      content: 'incoming',
+      artifact: { payload: 'i'.repeat(20_000) },
+    });
+
+    expect(registry.get('u-payload-atomic', 'c-payload-incoming', incoming.task.id)?.result).toBe(
+      undefined,
+    );
+    if (oldestGlobalTask == null) {
+      throw new Error('expected a global payload eviction candidate');
+    }
+    expect(
+      registry.get(
+        oldestGlobalTask.userId,
+        oldestGlobalTask.conversationId,
+        oldestGlobalTask.taskId,
+      ),
+    ).toBeDefined();
+  });
+
   it('drops terminal errors when non-evictable payloads exhaust the user budget', () => {
     const registry = new BackgroundTaskRegistryClass();
     const first = registry.create({

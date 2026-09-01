@@ -646,6 +646,8 @@ export interface BackgroundTask {
    * finalize and deadlocking that same generation. */
   liveArtifactPollRequired?: boolean;
   completionWakeup?: boolean;
+  /** True while the terminal result is being persisted for automatic delivery. */
+  completionPersistencePending?: boolean;
   /** Process-local cancellation handle for the preregistered durable delivery.
    * A same-generation manual claim retires it before exposing the result. */
   completionWakeupRetire?: BackgroundToolWakeupAdmission['retire'];
@@ -956,13 +958,17 @@ export class BackgroundTaskRegistryClass {
     return undefined;
   }
 
-  private evictOldestSettled(params: {
+  private settledCandidates(params: {
     userId?: string;
+    bucket?: TaskBucket;
     excludeTask?: BackgroundTask;
-    whileOverLimit: () => boolean;
-  }): void {
+    requirePayload?: boolean;
+  }): Array<{ bucket: TaskBucket; task: BackgroundTask }> {
     const candidates: Array<{ bucket: TaskBucket; task: BackgroundTask }> = [];
     for (const bucket of this.buckets.values()) {
+      if (params.bucket != null && bucket !== params.bucket) {
+        continue;
+      }
       if (params.userId != null && bucket.userId !== params.userId) {
         continue;
       }
@@ -970,83 +976,136 @@ export class BackgroundTaskRegistryClass {
         if (
           task.status !== 'running' &&
           task.harvestPending !== true &&
-          task !== params.excludeTask
+          task.completionPersistencePending !== true &&
+          task !== params.excludeTask &&
+          (params.requirePayload !== true || this.payloadChars(task) > 0)
         ) {
           candidates.push({ bucket, task });
         }
       }
     }
-    candidates.sort((a, b) => a.task.updatedAt - b.task.updatedAt);
-    for (const { bucket, task } of candidates) {
-      if (!params.whileOverLimit()) {
-        break;
-      }
+    return candidates.sort((a, b) => a.task.updatedAt - b.task.updatedAt);
+  }
+
+  private evictSelected(selected: Map<BackgroundTask, TaskBucket>): void {
+    const touched = new Set<TaskBucket>();
+    for (const [task, bucket] of selected) {
       bucket.tasks.delete(task.id);
-      this.sweepBucketTasks(bucket, Date.now());
+      touched.add(bucket);
+    }
+    const now = Date.now();
+    for (const bucket of touched) {
+      this.sweepBucketTasks(bucket, now);
       if (bucket.tasks.size === 0 && bucket.capacityPermits.size === 0) {
         this.buckets.delete(bucket.key);
       }
     }
   }
 
-  private makeBucketTaskRoom(bucket: TaskBucket): boolean {
-    if (bucket.tasks.size + bucket.capacityPermits.size < MAX_TASKS_PER_BUCKET) {
-      return true;
-    }
-    const settledOldestFirst = [...bucket.tasks.values()]
-      .filter((task) => task.status !== 'running' && task.harvestPending !== true)
-      .sort((a, b) => a.updatedAt - b.updatedAt);
-    let toEvict = bucket.tasks.size + bucket.capacityPermits.size - MAX_TASKS_PER_BUCKET + 1;
-    for (const task of settledOldestFirst) {
-      if (toEvict <= 0) {
-        break;
-      }
-      bucket.tasks.delete(task.id);
-      toEvict--;
-    }
-    this.sweepBucketTasks(bucket, Date.now());
-    return bucket.tasks.size + bucket.capacityPermits.size < MAX_TASKS_PER_BUCKET;
-  }
-
-  private makeTaskRoom(userId: string): boolean {
-    this.evictOldestSettled({
-      userId,
-      whileOverLimit: () => this.aggregateUsage(userId).tasksForUser >= MAX_TASKS_PER_USER,
-    });
-    this.evictOldestSettled({
-      whileOverLimit: () => this.aggregateUsage(userId).tasksGlobal >= MAX_TASKS_GLOBAL,
-    });
+  private makeTaskRoom(userId: string, bucket?: TaskBucket): boolean {
     const usage = this.aggregateUsage(userId);
-    return usage.tasksForUser < MAX_TASKS_PER_USER && usage.tasksGlobal < MAX_TASKS_GLOBAL;
+    const bucketRequired = Math.max(
+      0,
+      (bucket?.tasks.size ?? 0) + (bucket?.capacityPermits.size ?? 0) - MAX_TASKS_PER_BUCKET + 1,
+    );
+    const userRequired = Math.max(0, usage.tasksForUser - MAX_TASKS_PER_USER + 1);
+    const globalRequired = Math.max(0, usage.tasksGlobal - MAX_TASKS_GLOBAL + 1);
+    const selected = new Map<BackgroundTask, TaskBucket>();
+
+    const selectCount = (
+      candidates: Array<{ bucket: TaskBucket; task: BackgroundTask }>,
+      required: number,
+    ): boolean => {
+      let remaining = required;
+      for (const candidate of candidates) {
+        if (remaining <= 0) {
+          break;
+        }
+        if (selected.has(candidate.task)) {
+          continue;
+        }
+        selected.set(candidate.task, candidate.bucket);
+        remaining--;
+      }
+      return remaining === 0;
+    };
+
+    if (bucket != null && !selectCount(this.settledCandidates({ bucket }), bucketRequired)) {
+      return false;
+    }
+    const selectedForUser = [...selected.values()].filter(
+      (selectedBucket) => selectedBucket.userId === userId,
+    ).length;
+    if (
+      !selectCount(this.settledCandidates({ userId }), Math.max(0, userRequired - selectedForUser))
+    ) {
+      return false;
+    }
+    if (!selectCount(this.settledCandidates({}), Math.max(0, globalRequired - selected.size))) {
+      return false;
+    }
+    this.evictSelected(selected);
+    return true;
   }
 
-  private taskCapacityScope(userId: string): 'user_retention' | 'global_retention' {
+  private taskCapacityScope(
+    userId: string,
+    bucket?: TaskBucket,
+  ): 'conversation_retention' | 'user_retention' | 'global_retention' {
+    if (bucket != null && bucket.tasks.size + bucket.capacityPermits.size >= MAX_TASKS_PER_BUCKET) {
+      return 'conversation_retention';
+    }
     return this.aggregateUsage(userId).tasksForUser >= MAX_TASKS_PER_USER
       ? 'user_retention'
       : 'global_retention';
   }
 
   private makeRetainedRoom(userId: string, task: BackgroundTask, chars: number): boolean {
-    this.evictOldestSettled({
-      userId,
-      excludeTask: task,
-      whileOverLimit: () => {
-        const usage = this.aggregateUsage(userId);
-        return usage.retainedForUser + chars > MAX_RETAINED_CHARS_PER_USER;
-      },
-    });
-    this.evictOldestSettled({
-      excludeTask: task,
-      whileOverLimit: () => {
-        const usage = this.aggregateUsage(userId);
-        return usage.retainedGlobal + chars > MAX_RETAINED_CHARS_GLOBAL;
-      },
-    });
     const usage = this.aggregateUsage(userId);
-    return (
-      usage.retainedForUser + chars <= MAX_RETAINED_CHARS_PER_USER &&
-      usage.retainedGlobal + chars <= MAX_RETAINED_CHARS_GLOBAL
-    );
+    const userRequired = Math.max(0, usage.retainedForUser + chars - MAX_RETAINED_CHARS_PER_USER);
+    const globalRequired = Math.max(0, usage.retainedGlobal + chars - MAX_RETAINED_CHARS_GLOBAL);
+    const selected = new Map<BackgroundTask, TaskBucket>();
+
+    const selectChars = (
+      candidates: Array<{ bucket: TaskBucket; task: BackgroundTask }>,
+      required: number,
+    ): boolean => {
+      let retained = 0;
+      for (const candidate of candidates) {
+        if (retained >= required) {
+          break;
+        }
+        if (selected.has(candidate.task)) {
+          continue;
+        }
+        selected.set(candidate.task, candidate.bucket);
+        retained += this.payloadChars(candidate.task);
+      }
+      return retained >= required;
+    };
+
+    if (
+      !selectChars(
+        this.settledCandidates({ userId, excludeTask: task, requirePayload: true }),
+        userRequired,
+      )
+    ) {
+      return false;
+    }
+    let selectedChars = 0;
+    for (const selectedTask of selected.keys()) {
+      selectedChars += this.payloadChars(selectedTask);
+    }
+    if (
+      !selectChars(
+        this.settledCandidates({ excludeTask: task, requirePayload: true }),
+        Math.max(0, globalRequired - selectedChars),
+      )
+    ) {
+      return false;
+    }
+    this.evictSelected(selected);
+    return true;
   }
 
   /** Acquires process-local capacity before a caller persists launch authority.
@@ -1087,11 +1146,8 @@ export class BackgroundTaskRegistryClass {
     if (runningScope != null) {
       return { atCapacity: true, scope: runningScope };
     }
-    if (existingBucket != null && !this.makeBucketTaskRoom(existingBucket)) {
-      return { atCapacity: true, scope: 'conversation_retention' };
-    }
-    if (!this.makeTaskRoom(params.userId)) {
-      return { atCapacity: true, scope: this.taskCapacityScope(params.userId) };
+    if (!this.makeTaskRoom(params.userId, existingBucket)) {
+      return { atCapacity: true, scope: this.taskCapacityScope(params.userId, existingBucket) };
     }
     const bucket =
       this.buckets.get(bucketKey) ?? this.getBucket(params.userId, params.conversationId, now);
@@ -1194,11 +1250,8 @@ export class BackgroundTaskRegistryClass {
         return { atCapacity: true, scope: runningScope };
       }
     }
-    if (existingBucket != null && !this.makeBucketTaskRoom(existingBucket)) {
-      return { atCapacity: true, scope: 'conversation_retention' };
-    }
-    if (!this.makeTaskRoom(params.userId)) {
-      return { atCapacity: true, scope: this.taskCapacityScope(params.userId) };
+    if (!this.makeTaskRoom(params.userId, existingBucket)) {
+      return { atCapacity: true, scope: this.taskCapacityScope(params.userId, existingBucket) };
     }
     /** Aggregate eviction may have removed `existingBucket` when its only
      * settled task was the oldest candidate. Never register into that detached map. */
@@ -1462,8 +1515,17 @@ export class BackgroundTaskRegistryClass {
     });
   }
 
+  markCompletionPersistencePending(userId: string, conversationId: string, taskId: string): void {
+    this.update(userId, conversationId, taskId, { completionPersistencePending: true });
+  }
+
+  markCompletionPersistenceFinished(userId: string, conversationId: string, taskId: string): void {
+    this.update(userId, conversationId, taskId, { completionPersistencePending: undefined });
+  }
+
   markCompletionPersistenceFailed(userId: string, conversationId: string, taskId: string): void {
     this.update(userId, conversationId, taskId, {
+      completionPersistencePending: undefined,
       completionPersistenceFailed: true,
       completionWakeupRetire: undefined,
     });
