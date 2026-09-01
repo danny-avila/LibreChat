@@ -34,6 +34,7 @@ const {
   MAX_SUBAGENT_DEPTH,
   isAgentsEndpoint,
   AgentCapabilities,
+  normalizeServerName,
   Constants,
   Tools,
   MAX_SUBAGENT_GRAPH_NODES,
@@ -322,6 +323,22 @@ const initializeClient = async ({
    * }>}
    */
   const agentToolContexts = new Map();
+  const resolveMcpServerName = (toolName, agentId) => {
+    if (typeof toolName !== 'string' || typeof agentId !== 'string') {
+      return undefined;
+    }
+    const context = agentToolContexts.get(agentId);
+    const registered = context?.toolRegistry?.get?.(toolName);
+    if (typeof registered?.mcpRawServerName === 'string') {
+      return normalizeServerName(registered.mcpRawServerName);
+    }
+    for (const [serverName, tools] of Object.entries(context?.mcpAvailableTools ?? {})) {
+      if (tools?.[toolName]?.function) {
+        return normalizeServerName(serverName);
+      }
+    }
+    return undefined;
+  };
   /** Attach only the host-resolved route for the actually executing agent.
    * Runnable metadata is transport data and may contain caller-controlled
    * keys, so discard any incoming route context before resolving from the
@@ -1606,6 +1623,7 @@ const initializeClient = async ({
     contextUsageSink,
     usageEmitSink,
     eventChildActivity,
+    resolveMcpServerName,
   });
 
   const client = new AgentClient({

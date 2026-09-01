@@ -811,6 +811,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         handoffAgentConfigs.values(),
         undefined,
         openaiMessages,
+        true,
       );
       const formatted = formatAgentMessages(stripActivityLabelParts(openaiMessages), {}, toolSet);
       const formattedMessages = formatted.messages;

@@ -362,6 +362,7 @@ function feedSubagentAggregator(aggregator, event) {
  *   used to persist the breakdown only when the final call emitted usage.
  * @param {Array<TTokenUsageEvent>} [options.usageEmitSink] - Array collecting each emitted
  *   `on_token_usage` payload (incl. cost) so the response's usage rollup can be persisted.
+ * @param {(toolName: string, agentId?: string) => string | undefined} [options.resolveMcpServerName]
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
@@ -383,6 +384,7 @@ function getDefaultHandlers({
   contextUsageSink = null,
   usageEmitSink = null,
   eventChildActivity = null,
+  resolveMcpServerName = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -496,6 +498,15 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        for (const toolCall of data?.stepDetails?.tool_calls ?? []) {
+          const serverName = resolveMcpServerName?.(
+            toolCall?.name,
+            metadata?.agent_id ?? metadata?.agentId,
+          );
+          if (serverName) {
+            toolCall.mcpServerName = serverName;
+          }
+        }
         aggregateContent({ event, data });
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           await emitForJob({ event, data });
@@ -699,6 +710,12 @@ function getDefaultHandlers({
        * consistent "don't record" rule for subagent traces.
        */
       if (!visible) return;
+      for (const toolCall of data?.data?.stepDetails?.tool_calls ?? []) {
+        const serverName = resolveMcpServerName?.(toolCall?.name, data?.subagentAgentId);
+        if (serverName) {
+          toolCall.mcpServerName = serverName;
+        }
+      }
       if (subagentAggregatorsByToolCallId && data?.parentToolCallId) {
         const key = data.parentToolCallId;
         let aggregator = subagentAggregatorsByToolCallId.get(key);

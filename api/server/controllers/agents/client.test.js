@@ -6567,7 +6567,7 @@ describe('AgentClient - finalizeSubagentContent', () => {
    *  `ON_SUBAGENT_UPDATE` handler so we exercise the same get-or-create
    *  aggregator logic the live request uses, rather than constructing
    *  aggregators directly in the test. */
-  const runSubagentEvents = async (events) => {
+  const runSubagentEvents = async (events, resolveMcpServerName) => {
     const map = new Map();
     const handlers = getDefaultHandlers({
       res: { write: jest.fn(), writableEnded: false },
@@ -6575,6 +6575,7 @@ describe('AgentClient - finalizeSubagentContent', () => {
       toolEndCallback: jest.fn(),
       collectedUsage: [],
       subagentAggregatorsByToolCallId: map,
+      resolveMcpServerName,
     });
     const handler = handlers[GraphEvents.ON_SUBAGENT_UPDATE];
     for (const e of events) {
@@ -6680,6 +6681,38 @@ describe('AgentClient - finalizeSubagentContent', () => {
     expect(client.contentParts[0].tool_call.subagent_content[0].tool_call.mcpServerName).toBe(
       'bar',
     );
+  });
+
+  it('retains the resolved lazy-agent MCP identity for an ambiguous nested key', async () => {
+    const resolveMcpServerName = jest.fn(() => 'bar');
+    const buffer = await runSubagentEvents(
+      [
+        event('run_step', {
+          id: 'step_tool',
+          index: 0,
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'inner_1', name: 'lookup_mcp_foo_mcp_bar', args: '{}' }],
+          },
+        }),
+      ],
+      resolveMcpServerName,
+    );
+    const client = makeClient(buffer);
+    client.options.agent.accessibleMcpServerNames = ['bar', 'foo_mcp_bar'];
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_sub', name: Constants.SUBAGENT, args: '{}' },
+      },
+    ];
+
+    client.finalizeSubagentContent();
+    client.stampMcpServerIdentities();
+
+    const inner = client.contentParts[0].tool_call.subagent_content[0].tool_call;
+    expect(resolveMcpServerName).toHaveBeenCalledWith('lookup_mcp_foo_mcp_bar', 'child');
+    expect(inner.mcpServerName).toBe('bar');
   });
 
   it('ignores tool_call parts whose name is not SUBAGENT', async () => {

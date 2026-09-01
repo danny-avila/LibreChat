@@ -1009,6 +1009,7 @@ const executeResponse = async (envelope, { req, res }) => {
         handoffAgentConfigs.values(),
         undefined,
         allMessages,
+        true,
       );
       const formatted = formatAgentMessages(stripActivityLabelParts(allMessages), {}, toolSet);
       const formattedMessages = formatted.messages;

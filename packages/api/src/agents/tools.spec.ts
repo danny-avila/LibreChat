@@ -375,6 +375,7 @@ describe('buildHistoricalToolNames', () => {
       {
         tool_calls: [{ name: 'gitlab-get_mcp_server_version_mcp_bar', mcpServerName: 'bar' }],
       },
+      { tool_calls: [{ name: 'legacy_mcp_tool_mcp_bar' }] },
     ];
 
     expect(buildRunToolSet(primary, null, null, messages)).toEqual(
@@ -389,6 +390,9 @@ describe('buildHistoricalToolNames', () => {
         'legacy_mcp_Connector__Company',
         'gitlab-get_mcp_server_version_mcp_bar',
       ]),
+    );
+    expect(buildRunToolSet(primary, null, null, messages, true)).toContain(
+      'legacy_mcp_tool_mcp_bar',
     );
   });
 

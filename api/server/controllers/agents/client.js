@@ -546,7 +546,7 @@ class AgentClient extends BaseClient {
       if (!toolCall || typeof toolCall.name !== 'string') {
         return;
       }
-      let serverName = serverByToolName.get(toolCall.name);
+      let serverName = toolCall.mcpServerName ?? serverByToolName.get(toolCall.name);
       if (serverName == null && toolCall.name.includes(Constants.mcp_delimiter)) {
         const [toolName, parsedServerName] = splitMCPToolKey(toolCall.name, knownNames);
         if (toolName && parsedServerName) {

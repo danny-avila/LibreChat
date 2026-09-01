@@ -231,6 +231,7 @@ export function buildRunToolSet(
   additionalConfigs?: Iterable<RunToolSetConfig | null | undefined> | null,
   hostGeneratedToolNames?: Iterable<string> | null,
   historicalMessages?: Iterable<unknown> | null,
+  allowAmbiguousMcpToolNamesWithoutIdentity = false,
 ): Set<string> {
   const roots = [primaryConfig];
   if (additionalConfigs) {
@@ -287,7 +288,8 @@ export function buildRunToolSet(
       if (
         serverName != null &&
         toolName.length > 0 &&
-        !toolName.includes(Constants.mcp_delimiter) &&
+        (allowAmbiguousMcpToolNamesWithoutIdentity ||
+          !toolName.includes(Constants.mcp_delimiter)) &&
         wildcardServerNames.has(normalizeServerName(serverName))
       ) {
         toolSet.add(name);
