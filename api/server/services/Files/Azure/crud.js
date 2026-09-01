@@ -253,14 +253,17 @@ async function uploadFileToAzure({
  */
 async function getAzureFileStream(_req, fileURL) {
   try {
-    const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
-    const rawPath = fileURL.split(`${AZURE_CONTAINER_NAME}/`)[1];
-    if (!rawPath) {
+    const segments = new URL(fileURL).pathname.split('/').filter(Boolean);
+    const containerIndex = segments.indexOf(AZURE_CONTAINER_NAME);
+    if (containerIndex === -1 || containerIndex === segments.length - 1) {
       throw new Error('Blob path could not be derived from the file URL');
     }
-    const blobPath = decodeURIComponent(rawPath.split('?')[0]);
-    const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
-    const downloadResponse = await blockBlobClient.download();
+    const blobPath = segments
+      .slice(containerIndex + 1)
+      .map(decodeURIComponent)
+      .join('/');
+    const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
+    const downloadResponse = await containerClient.getBlockBlobClient(blobPath).download();
     return downloadResponse.readableStreamBody;
   } catch (error) {
     logger.error('[getAzureFileStream] Error getting blob stream:', error);
