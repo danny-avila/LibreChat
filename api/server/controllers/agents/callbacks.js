@@ -711,7 +711,10 @@ function getDefaultHandlers({
        */
       if (!visible) return;
       for (const toolCall of data?.data?.stepDetails?.tool_calls ?? []) {
-        const serverName = resolveMcpServerName?.(toolCall?.name, data?.subagentAgentId);
+        const serverName = resolveMcpServerName?.(
+          toolCall?.name,
+          data?.memberAgentId ?? data?.subagentAgentId,
+        );
         if (serverName) {
           toolCall.mcpServerName = serverName;
         }
