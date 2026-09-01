@@ -260,14 +260,14 @@ export function buildRunToolSet(
 
   if (wildcardServerNames.size > 0) {
     /** A wildcard authorizes every callable under one exact normalized server identity.
-     * Resolve the longest known boundary and fail closed when the remaining tool half
-     * still contains a delimiter, which could hide a removed longer server name. */
+     * Resolve the longest known boundary so delimiter-bearing tool names remain valid
+     * while a distinct longer server identity cannot masquerade as a selected suffix. */
     const boundaryNames = [...knownServerNames];
     for (const name of collectHistoricalToolCallNames(historicalMessages)) {
       const [toolName, serverName] = splitMCPToolKey(name, boundaryNames);
       if (
         serverName != null &&
-        !toolName.includes(Constants.mcp_delimiter) &&
+        toolName.length > 0 &&
         wildcardServerNames.has(normalizeServerName(serverName))
       ) {
         toolSet.add(name);
