@@ -2456,6 +2456,64 @@ describe('unreachable unified uploads', () => {
   });
 });
 
+describe('permanent unified uploads and unknown tool sets', () => {
+  const zipReq = () => {
+    const req = makeReq({ mimetype: 'application/zip', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+    return req;
+  };
+
+  test('does not refuse when the agent tools are unknown', async () => {
+    /* An ephemeral agent has no record to read, so the route reports no tool set and
+     * processing must not conclude that nothing can consume the file. */
+    const error = await processAgentFileUpload({
+      req: zipReq(),
+      res: mockRes,
+      metadata: { agent_id: 'agent-abc', message_file: 'true', file_id: 'f-eph' },
+    }).catch((thrown) => thrown);
+
+    expect(String(error?.message ?? '')).not.toMatch(/code interpreter or file search/i);
+  });
+
+  test('files a permanent upload under the tool that will consume it', async () => {
+    const { addAgentResourceFile } = require('~/models');
+    setupStoredFileUpload();
+    /* The code-env branch streams the upload from disk after this assertion resolves, and
+     * an unhandled stream error would take down the worker. Left in place rather than
+     * cleaned up, since the read happens later than the test body. */
+    jest.requireActual('fs').writeFileSync('/tmp/upload.bin', 'zip');
+
+    await processAgentFileUpload({
+      req: zipReq(),
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        file_id: 'f-perm',
+        agentTools: [EToolResources.execute_code],
+      },
+    }).catch(() => {});
+
+    expect(addAgentResourceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ tool_resource: EToolResources.execute_code }),
+    );
+  });
+
+  test('refuses a permanent upload that would land on no agent resource', async () => {
+    /* Delivered straight to the model, with no agent resource to hold it, storing it
+     * would report success while leaving the agent without a reference. */
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await expect(
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { agent_id: 'agent-abc', file_id: 'f-orphan', agentTools: [] },
+      }),
+    ).rejects.toThrow(/cannot be saved to an agent on their own/i);
+  });
+});
+
 describe('filterFile endpoint resolution', () => {
   /* getEndpointFileConfig consults endpointType ahead of endpoint, so a composer upload
    * carrying `agents` would keep the Agents policy and shadow the provider the caller
