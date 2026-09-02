@@ -24,6 +24,8 @@
  * 보장이 없어서 로컬파트 → 전체 UPN 순으로 시도하고, 성공한 값을
  * `bkl_login_id` 에 캐시해 다음 로그인부터는 한 번에 맞춘다.
  *
+ * UPN 자체는 `upn` 클레임에서 읽는다 (bklIdCandidates 주석 참고).
+ *
  * 실패 정책
  * ---------
  *   BIMS 200 + sid          → 정상 연결
@@ -83,12 +85,20 @@ async function readUserDoc(userId) {
 /**
  * OIDC 클레임에서 BIMS 로그인 id 후보를 우선순위대로 만든다.
  *
+ * UPN 은 `upn` 클레임에서 읽는다. `preferred_username` 은 OIDC 명세상
+ * "표시용이며 고유하지도 불변하지도 않다"고 못박힌 값이라 계정 식별에 쓸
+ * 물건이 아니다 — Azure 도 로그인 이름 변경 / 대체 로그인 ID 설정에 따라
+ * `upn` 과 다른 값을 실어 보낸다. `upn` 은 Azure v2.0 토큰에서 선택적
+ * 클레임이므로, 없으면 기존 순서(preferred_username → email)로 내려간다.
+ *
  * @param {Record<string, unknown>} claims  id_token 클레임
  * @param {string|null} [cachedLoginId]     지난 로그인에서 성공한 id
  * @returns {string[]} 중복 제거된 후보 목록
  */
 function bklIdCandidates(claims, cachedLoginId) {
-  const upn = String(claims?.preferred_username || claims?.email || '').trim();
+  const upn = String(
+    claims?.upn || claims?.preferred_username || claims?.email || '',
+  ).trim();
   const candidates = [];
 
   if (cachedLoginId) {
@@ -172,7 +182,7 @@ async function linkBimsIdentity(tokenset, user) {
 
   if (!candidates.length) {
     logger.error(
-      '[BKL SSO] AD ID 를 만들 클레임이 없음 (preferred_username / email 모두 비어 있음)',
+      '[BKL SSO] AD ID 를 만들 클레임이 없음 (upn / preferred_username / email 모두 비어 있음)',
     );
     return { ok: false, message: 'BIMS 계정 연동에 실패했습니다.' };
   }
