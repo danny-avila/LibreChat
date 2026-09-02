@@ -187,6 +187,18 @@ function hasActivePatterns(
   );
 }
 
+function blocksFindings(
+  pii:
+    | {
+        readonly action?: 'block' | 'audit';
+        readonly starterPatterns?: readonly string[];
+      }
+    | null
+    | undefined,
+): boolean {
+  return pii?.action !== 'audit';
+}
+
 function isScopedTraversalProtected(
   scopes: readonly ContentTraversalScope[],
   source: ContentSource,
@@ -199,7 +211,7 @@ function isScopedTraversalProtected(
     | null
     | undefined,
 ): boolean {
-  if (!hasActivePatterns(pii)) {
+  if (!hasActivePatterns(pii) || !blocksFindings(pii)) {
     return false;
   }
   const sourceScopes = scopes.filter((scope) => scope.source === source);
@@ -216,7 +228,10 @@ function isScopedFileTraversalProtected(
   scopes: readonly ContentTraversalScope[],
   pii: NonNullable<FiltersConfig['files']>['pii'],
 ): boolean {
-  if (pii == null || (!hasActivePatterns(pii) && pii.uninspectable !== 'block')) {
+  if (
+    pii == null ||
+    ((!hasActivePatterns(pii) || !blocksFindings(pii)) && pii.uninspectable !== 'block')
+  ) {
     return false;
   }
   const fileScopes = scopes.filter((scope) => scope.source === 'file');
@@ -237,6 +252,7 @@ export function isNestedMessageTraversalProtected(params: {
   if (
     hasActivePatterns(params.legacyPii) ||
     (hasActivePatterns(params.filters?.messages?.pii) &&
+      blocksFindings(params.filters?.messages?.pii) &&
       (isFieldEnabled(params.filters?.messages?.pii, 'content_part') ||
         isFieldEnabled(params.filters?.messages?.pii, 'assembled_context')))
   ) {
@@ -246,6 +262,7 @@ export function isNestedMessageTraversalProtected(params: {
   if (
     roles.some((role) => role === 'system' || role === 'developer') &&
     hasActivePatterns(params.filters?.agentInstructions?.pii) &&
+    blocksFindings(params.filters?.agentInstructions?.pii) &&
     isFieldEnabled(params.filters?.agentInstructions?.pii, 'instructions')
   ) {
     return true;
@@ -253,6 +270,7 @@ export function isNestedMessageTraversalProtected(params: {
   return (
     roles.some((role) => role === 'tool') &&
     hasActivePatterns(params.filters?.toolArguments?.pii) &&
+    blocksFindings(params.filters?.toolArguments?.pii) &&
     isFieldEnabled(params.filters?.toolArguments?.pii, 'output')
   );
 }
@@ -262,7 +280,7 @@ export function isModelParameterTraversalProtected(params: {
   readonly filters?: FiltersConfig;
 }): boolean {
   const pii = params.filters?.modelParameters?.pii;
-  if (!hasActivePatterns(pii)) {
+  if (!hasActivePatterns(pii) || !blocksFindings(pii)) {
     return false;
   }
   const scopes = getContentTraversalScopes(params.error).filter(

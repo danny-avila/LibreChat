@@ -57,6 +57,21 @@ describe('filtersConfigSchema', () => {
     ).toBe(false);
   });
 
+  it('supports audit-only rollout while preserving block as the omitted default', () => {
+    expect(
+      filtersConfigSchema.parse({
+        messages: { pii: { action: 'audit' } },
+        prompts: { pii: { action: 'block' } },
+      }),
+    ).toEqual({
+      messages: { pii: { action: 'audit' } },
+      prompts: { pii: { action: 'block' } },
+    });
+    expect(filtersConfigSchema.safeParse({ messages: { pii: { action: 'redact' } } }).success).toBe(
+      false,
+    );
+  });
+
   it('combines active-pattern and selected-field checks', () => {
     expect(hasActivePiiFields({}, ['arguments'])).toBe(true);
     expect(hasActivePiiFields({ fields: ['name'] }, ['arguments'])).toBe(false);

@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import {
   MAX_PII_CUSTOM_PATTERNS_TOTAL,
   MAX_PII_CUSTOM_REGEX_CHARACTERS,
@@ -6,7 +7,11 @@ import {
   MAX_PII_PATTERNS_PER_SOURCE,
   getPiiRegexProgramSize,
 } from 'librechat-data-provider';
-import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
+import type {
+  FilterPiiAction,
+  FiltersConfig,
+  MessageFilterPiiConfig,
+} from 'librechat-data-provider';
 import type {
   PatternContentInspector,
   PatternContentInspectorConfig,
@@ -29,6 +34,7 @@ import { isLegacyPiiFragment } from './legacy';
 
 interface CompiledFilter {
   readonly detectorId: string;
+  readonly action: FilterPiiAction;
   readonly sources: ReadonlySet<ContentSource>;
   readonly fields: ReadonlySet<string> | null;
   readonly applies?: (fragment: TextContentFragment) => boolean;
@@ -67,6 +73,7 @@ const MAX_LINEAR_REGEX_SET_MEMORY_BYTES = 8 * 1_024 * 1_024;
 
 interface FilterCompilationPlan {
   readonly detectorId: string;
+  readonly action: FilterPiiAction;
   readonly config: PatternContentInspectorConfig;
   readonly sources: readonly ContentSource[];
   readonly fields: ReadonlySet<string> | null;
@@ -134,7 +141,12 @@ function snapshotFilterFields(
 
 function appendFilterPlan(
   plans: FilterCompilationPlan[],
-  config: (PatternContentInspectorConfig & { readonly fields?: readonly string[] }) | undefined,
+  config:
+    | (PatternContentInspectorConfig & {
+        readonly action?: FilterPiiAction;
+        readonly fields?: readonly string[];
+      })
+    | undefined,
   sources: readonly ContentSource[],
 ): void {
   if (config == null) {
@@ -142,6 +154,7 @@ function appendFilterPlan(
   }
   plans.push({
     detectorId: 'pii-pattern',
+    action: config.action ?? 'block',
     config,
     sources,
     fields: snapshotFilterFields(config),
@@ -227,6 +240,7 @@ function createCompilationPlans(
   if (legacyPii != null) {
     plans.unshift({
       detectorId: 'legacy-pattern',
+      action: 'block',
       config: legacyPii,
       sources: ['message', 'assembled_context', 'tool_argument'],
       fields: null,
@@ -270,6 +284,7 @@ function compilePlans(plans: readonly FilterCompilationPlan[]): readonly Compile
     }
     compiled.push({
       detectorId: plan.detectorId,
+      action: plan.action,
       sources: new Set(plan.sources),
       fields: plan.fields,
       applies: plan.applies,
@@ -324,10 +339,23 @@ function createInspector(rules: readonly CompiledFilter[]): ConfiguredContentIns
       }
       const finding = rule.inspector.inspectFragment(fragment);
       if (finding != null) {
-        return {
+        const configuredFinding = {
           ...finding,
           detectorId: rule.detectorId,
         };
+        if (rule.action === 'audit') {
+          logger.info('[content-filter] Audit-only finding', {
+            action: rule.action,
+            detectorId: configuredFinding.detectorId,
+            ruleId: configuredFinding.ruleId,
+            label: configuredFinding.label,
+            source: configuredFinding.source,
+            field: configuredFinding.field,
+            provenance: configuredFinding.provenance,
+          });
+          continue;
+        }
+        return configuredFinding;
       }
     }
     return null;
