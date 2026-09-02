@@ -1,11 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Plus } from 'lucide-react';
-import { useFormContext } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { Label, OGDialog, OGDialogTemplate, useToastContext } from '@librechat/client';
 import {
   PermissionTypes,
   Permissions,
+  SkillsScope,
   AgentCapabilities,
+  resolveAgentSkillsScope,
   removeCodeExecutionCaller,
 } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
@@ -45,7 +47,7 @@ export default function ToolsSection({ agentId }: Props) {
   const [pendingActionRemoval, setPendingActionRemoval] = useState<string | null>(null);
   const [pendingMcpRemoval, setPendingMcpRemoval] = useState<string | null>(null);
 
-  const { getValues, setValue } = useFormContext<AgentForm>();
+  const { control, getValues, setValue } = useFormContext<AgentForm>();
   const { agentsConfig, regularTools, mcpServersMap } = useAgentPanelContext();
   const mcpServerNames = useMemo(() => Array.from(mcpServersMap?.keys() ?? []), [mcpServersMap]);
   const { removeTool: removeMCPTool } = useRemoveMCPTool({ serverNames: mcpServerNames });
@@ -85,7 +87,14 @@ export default function ToolsSection({ agentId }: Props) {
     () => (skillsData ? skillsData.pages.flatMap((page) => page.skills) : undefined),
     [skillsData],
   );
-  const resolvedSkills = useResolvedSkills(skillSummaries);
+  const skillsValue = useWatch({ control, name: 'skills' });
+  const skillsEnabledValue = useWatch({ control, name: 'skills_enabled' });
+  const skillsScopeValue = useWatch({ control, name: 'skills_scope' });
+  /** Only Selected renders allowlist rows, so the per-id fallback lookups are
+   *  worth issuing only there. An All-scoped agent keeps its previous picks,
+   *  which would otherwise cost one request per retained id on every view. */
+  const skillsMode = resolveAgentSkillsScope(skillsValue, skillsEnabledValue, skillsScopeValue);
+  const resolvedSkills = useResolvedSkills(skillSummaries, skillsMode === SkillsScope.selected);
 
   const uninstallToolCredentials = useUninstallToolCredentials();
 

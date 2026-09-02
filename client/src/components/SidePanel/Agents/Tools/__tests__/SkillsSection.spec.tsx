@@ -9,6 +9,8 @@ import SkillsSection from '../SkillsSection';
 let mockFormValues: Record<string, unknown> = {};
 const mockSetValue = jest.fn();
 const mockUseSkillsInfiniteQuery = jest.fn();
+/** Every fixture skill is runtime-active unless a test says otherwise. */
+const mockIsActive = jest.fn((_skill: { _id: string }) => true);
 
 let mockInfiniteResult: {
   data: { pages: Array<{ skills: TSkillSummary[] }> };
@@ -27,10 +29,10 @@ jest.mock('react-hook-form', () => ({
   }),
   useWatch: ({ name }: { name: string }) => mockFormValues[name],
 }));
-
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useAuthContext: () => ({ user: { id: 'user-1' } }),
+  useSkillActiveState: () => ({ isActive: (skill: { _id: string }) => mockIsActive(skill) }),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -103,6 +105,8 @@ beforeEach(() => {
   mockFormValues = {};
   mockSetValue.mockClear();
   mockUseSkillsInfiniteQuery.mockClear();
+  mockIsActive.mockReset();
+  mockIsActive.mockReturnValue(true);
   setAvailableSkills([]);
   mockUseSkillsInfiniteQuery.mockImplementation(() => mockInfiniteResult);
 });
@@ -440,6 +444,34 @@ describe('SkillsSection All mode body', () => {
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
 
     expect(mockInfiniteResult.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('reports loading rather than an empty catalog before the first page lands', () => {
+    setAvailableSkills([]);
+    mockInfiniteResult.data = undefined as never;
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(screen.getByText('com_ui_loading')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count')).not.toBeInTheDocument();
+  });
+
+  test('counts and lists only the skills the runtime would inject', () => {
+    /** The list endpoint returns everything the user can VIEW; a shared skill
+     *  left inactive is not part of the agent's catalog. */
+    setAvailableSkills([[makeSkill('s1', 'Active skill'), makeSkill('s2', 'Inactive skill')]]);
+    mockIsActive.mockImplementation((skill: { _id: string }) => skill._id === 's1');
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(screen.getByText('com_ui_skills_available_count_one')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_skills_available_count/ }));
+
+    expect(screen.getByText('Active skill')).toBeInTheDocument();
+    expect(screen.queryByText('Inactive skill')).not.toBeInTheDocument();
   });
 });
 

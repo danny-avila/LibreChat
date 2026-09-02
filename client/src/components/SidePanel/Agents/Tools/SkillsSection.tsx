@@ -8,8 +8,8 @@ import type { ReactNode } from 'react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
+import { useLocalize, useAuthContext, useSkillActiveState } from '~/hooks';
 import { useSkillsInfiniteQuery } from '~/data-provider';
-import { useLocalize, useAuthContext } from '~/hooks';
 import { buildSkillItems } from './items/catalog';
 import { getIconForItem } from './items/icons';
 import { cn } from '~/utils';
@@ -109,6 +109,7 @@ function MorphHeight({ open, children }: { open: boolean; children: ReactNode })
 export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props) {
   const localize = useLocalize();
   const { user } = useAuthContext();
+  const { isActive } = useSkillActiveState();
   const { setValue, control } = useFormContext<AgentForm>();
   const [allExpanded, setAllExpanded] = useState(false);
 
@@ -177,12 +178,17 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
     }
   }, [mode, allExpanded, hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
 
+  /** The list endpoint returns every skill the user can VIEW, but the runtime
+   *  injects only the ones `resolveSkillActive` keeps: a per-user override in
+   *  `skillStates`, else the owner/`defaultActiveOnShare` default. Counting the
+   *  raw list would promise skills the agent will never receive, so this shares
+   *  the same `isActive` predicate the chat-side picker filters on. */
   const availableSkills = useMemo(() => {
     const all: TSkillSummary[] = [];
     const seen = new Set<string>();
     for (const page of data?.pages ?? []) {
       for (const skill of page.skills) {
-        if (seen.has(skill._id)) {
+        if (seen.has(skill._id) || !isActive(skill)) {
           continue;
         }
         seen.add(skill._id);
@@ -190,7 +196,7 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
       }
     }
     return buildSkillItems(all, user?.id);
-  }, [data?.pages, user?.id]);
+  }, [data?.pages, user?.id, isActive]);
 
   /** The mode is the single source of truth for catalog exposure, so each
    *  segment writes it outright. `skills` is deliberately left alone: `all` and
@@ -223,7 +229,12 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
   );
 
   const count = availableSkills.length;
-  const countLabel = localize(availableCountKey(count, hasNextPage === true), { count });
+  /** Before the first page lands there is no catalog to count, and printing
+   *  zero would report an empty deployment while it is merely loading. */
+  const countLabel =
+    data == null
+      ? localize('com_ui_loading')
+      : localize(availableCountKey(count, hasNextPage === true), { count });
 
   const handleRetry = useCallback(() => {
     void refetch();
