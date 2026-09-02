@@ -23,15 +23,20 @@ const MESSAGE = { messageId: 'response-1' } as TMessage;
 type NoticeChatContext = NonNullable<React.ContextType<typeof ChatContext>>;
 
 /**
- * Only the fields the notice reads. The real context is far larger, so this is
- * a partial of the provider value with a single assertion at the seam.
+ * The notice only reads `ask`, `isSubmitting`, and `latestMessageId`. The real
+ * context is a large helper return type, so a partial cannot overlap it for
+ * TypeScript without going through `unknown`.
  */
+function chatContextValue(context: Partial<NoticeChatContext>): NoticeChatContext {
+  return context as unknown as NoticeChatContext;
+}
+
 function renderNotice(context?: Partial<NoticeChatContext>, message: TMessage = MESSAGE) {
   if (context == null) {
     return render(<ToolCallLimitNotice message={message} />);
   }
   return render(
-    <ChatContext.Provider value={context as NoticeChatContext}>
+    <ChatContext.Provider value={chatContextValue(context)}>
       <ToolCallLimitNotice message={message} />
     </ChatContext.Provider>,
   );
@@ -135,7 +140,7 @@ describe('ToolCallLimitNotice', () => {
 
     rerender(
       <ChatContext.Provider
-        value={{ ask, isSubmitting: false, latestMessageId: 'response-2' } as NoticeChatContext}
+        value={chatContextValue({ ask, isSubmitting: false, latestMessageId: 'response-2' })}
       >
         <ToolCallLimitNotice message={{ messageId: 'response-2' } as TMessage} />
       </ChatContext.Provider>,

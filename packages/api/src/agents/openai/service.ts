@@ -73,8 +73,8 @@ import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/c
 import { contentFilterUninspectableResponse } from '~/protection/files';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { getUserFacingProviderError } from '../errors';
-import { resolveRecursionLimit } from '../config';
 import { collectReachableAgents } from '../traversal';
+import { resolveRecursionLimit } from '../config';
 import { getDynamicToolContexts } from '../hitl';
 import { createSafeUser } from '~/utils';
 
@@ -166,6 +166,7 @@ interface InitializedAgent {
   subagentAgentConfigs?: InitializedAgent[];
   /** Names of tools with the host-injected `intent` label param (see `agents/intent.ts`). */
   intentToolNames?: string[];
+  recursion_limit?: number;
   [key: string]: unknown;
 }
 
