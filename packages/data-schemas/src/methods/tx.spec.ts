@@ -1556,6 +1556,7 @@ describe('Google Model Tests', () => {
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
     'gemini-3.1-flash-lite-preview',
+    'gemini-3.8-flash',
     'gemini-3.7-flash',
     'gemini-3.6-flash',
     'gemini-3.5-flash',
@@ -1607,6 +1608,7 @@ describe('Google Model Tests', () => {
       'gemini-3.1-pro-preview': 'gemini-3.1',
       'gemini-3.1-pro-preview-customtools': 'gemini-3.1',
       'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite',
+      'gemini-3.8-flash': 'gemini-3.8-flash',
       'gemini-3.7-flash': 'gemini-3.7-flash',
       'gemini-3.6-flash': 'gemini-3.6-flash',
       'gemini-3.5-flash': 'gemini-3.5-flash',
@@ -1761,8 +1763,24 @@ describe('Google Model Tests', () => {
     );
   });
 
-  it('should apply the introductory Flash rates to Gemini 3.6 and 3.7 Flash', () => {
-    for (const model of ['gemini-3.6-flash', 'gemini-3.7-flash']) {
+  it('should return correct rates for Gemini 3.8 Flash', () => {
+    const model = 'gemini-3.8-flash';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.8-flash'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.8-flash'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.8-flash'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.8-flash'].read,
+    );
+  });
+
+  it('should apply the introductory Flash rates to Gemini 3.6, 3.7 and 3.8 Flash', () => {
+    for (const model of ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash']) {
       expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
         0.75,
       );
