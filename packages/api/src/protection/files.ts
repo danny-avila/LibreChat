@@ -923,7 +923,7 @@ function getCanonicalFileReferenceIds(input: unknown): CanonicalReferenceTravers
 
 function getActivePatternFileField(filters: FiltersConfig | undefined): FileFilterField | null {
   const pii = getFilePii(filters);
-  if (!hasActivePiiPatterns(pii)) {
+  if (!hasActivePiiPatterns(pii) || pii?.action === 'audit') {
     return null;
   }
   return pii?.fields?.[0] ?? (pii?.fields == null ? FILE_FILTER_FIELDS[0] : null);

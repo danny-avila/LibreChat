@@ -201,6 +201,7 @@ function isScopedTraversalProtected(
         readonly fields?: readonly string[];
         readonly starterPatterns?: readonly string[];
         readonly customPatterns?: readonly unknown[];
+        readonly action?: PiiActionConfig['action'];
       }
     | null
     | undefined,
