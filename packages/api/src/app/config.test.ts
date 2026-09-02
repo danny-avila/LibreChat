@@ -1,6 +1,12 @@
 import { logger, encryptV3 } from '@librechat/data-schemas';
 import { FileSources, EModelEndpoint } from 'librechat-data-provider';
-import type { TCustomConfig, TEndpoint } from 'librechat-data-provider';
+import type {
+  TCustomConfig,
+  TEndpoint,
+  TAzureConfig,
+  TAzureGroupMap,
+  TAzureModelGroupMap,
+} from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import {
   getBalanceConfig,
@@ -36,6 +42,31 @@ const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
     ...overrides,
   };
 };
+
+/** Builds azureOpenAI `groupMap` entries with the required `apiKey`/`models` fields. */
+const createAzureGroupMap = (groups: Record<string, string[] | undefined>): TAzureGroupMap =>
+  Object.fromEntries(
+    Object.entries(groups).map(([groupName, dropParams]) => [
+      groupName,
+      {
+        apiKey: 'test-key',
+        models: {},
+        ...(dropParams ? { dropParams } : {}),
+      },
+    ]),
+  );
+
+/** Builds a minimal, valid azureOpenAI endpoint config for testing `getEndpointsDropParamsMap`. */
+const createAzureConfig = (
+  groupMap: TAzureGroupMap,
+  modelGroupMap: TAzureModelGroupMap,
+): TAzureConfig => ({
+  isValid: true,
+  errors: [],
+  modelNames: Object.keys(modelGroupMap),
+  groupMap,
+  modelGroupMap,
+});
 
 jest.mock('@librechat/data-schemas', () => {
   process.env.CREDS_KEY =
@@ -419,19 +450,18 @@ describe('getEndpointsDropParamsMap', () => {
   });
 
   it('keeps azureOpenAI dropParams model-specific instead of merging across groups', () => {
-    const endpoints = {
-      [EModelEndpoint.azureOpenAI]: {
-        groupMap: {
-          groupA: { dropParams: ['temperature'] },
-          groupB: { dropParams: ['temperature', 'top_p'] },
-        },
-        modelGroupMap: {
+    const endpoints: AppConfig['endpoints'] = {
+      [EModelEndpoint.azureOpenAI]: createAzureConfig(
+        createAzureGroupMap({
+          groupA: ['temperature'],
+          groupB: ['temperature', 'top_p'],
+        }),
+        {
           'model-a': { group: 'groupA' },
           'model-b': { group: 'groupB' },
         },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any as AppConfig['endpoints'];
+      ),
+    };
 
     const result = getEndpointsDropParamsMap(endpoints);
 
@@ -442,19 +472,18 @@ describe('getEndpointsDropParamsMap', () => {
   });
 
   it('omits an azureOpenAI model from the map when its group has no dropParams', () => {
-    const endpoints = {
-      [EModelEndpoint.azureOpenAI]: {
-        groupMap: {
-          groupA: { dropParams: ['temperature'] },
-          groupB: {},
-        },
-        modelGroupMap: {
+    const endpoints: AppConfig['endpoints'] = {
+      [EModelEndpoint.azureOpenAI]: createAzureConfig(
+        createAzureGroupMap({
+          groupA: ['temperature'],
+          groupB: undefined,
+        }),
+        {
           'model-a': { group: 'groupA' },
           'model-b': { group: 'groupB' },
         },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any as AppConfig['endpoints'];
+      ),
+    };
 
     expect(getEndpointsDropParamsMap(endpoints)).toEqual({
       [EModelEndpoint.azureOpenAI]: { 'model-a': ['temperature'] },
@@ -462,13 +491,11 @@ describe('getEndpointsDropParamsMap', () => {
   });
 
   it('excludes azureOpenAI when no group has dropParams', () => {
-    const endpoints = {
-      [EModelEndpoint.azureOpenAI]: {
-        groupMap: { groupA: {} },
-        modelGroupMap: { 'model-a': { group: 'groupA' } },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any as AppConfig['endpoints'];
+    const endpoints: AppConfig['endpoints'] = {
+      [EModelEndpoint.azureOpenAI]: createAzureConfig(createAzureGroupMap({ groupA: undefined }), {
+        'model-a': { group: 'groupA' },
+      }),
+    };
 
     expect(getEndpointsDropParamsMap(endpoints)).toEqual({});
   });

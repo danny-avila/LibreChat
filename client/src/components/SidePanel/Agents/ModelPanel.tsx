@@ -12,11 +12,13 @@ import {
   SettingDefinition,
   agentParamSettings,
   applyModelAwareDefaults,
+  normalizeEndpointName,
+  dropParamsBackendToUIKey,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
-import { useGetEndpointsQuery } from '~/data-provider';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
@@ -66,6 +68,7 @@ export default function ModelPanel({
   const selectionDisabled = !modelsReady || modelsError;
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const { data: startupConfig } = useGetStartupConfig();
 
   const bedrockRegions = useMemo(() => {
     return endpointsConfig?.[provider]?.availableRegions ?? [];
@@ -80,19 +83,30 @@ export default function ModelPanel({
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model ?? '');
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
+    const dropParamsMap = startupConfig?.endpointsDropParamsMap;
+    const dropParamsEntry =
+      dropParamsMap?.[provider] ?? dropParamsMap?.[normalizeEndpointName(provider)];
+    const resolvedDropParams = Array.isArray(dropParamsEntry)
+      ? dropParamsEntry
+      : dropParamsEntry?.[model ?? ''];
+    const dropParamsSet = new Set(
+      (Array.isArray(resolvedDropParams) ? resolvedDropParams : []).map(
+        (param) => dropParamsBackendToUIKey[param] ?? param,
+      ),
+    );
     const defaultParams =
       agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     const modelAwareParams = applyModelAwareDefaults(
-      defaultParams.filter((param) => param != null),
+      defaultParams.filter((param) => param != null && !dropParamsSet.has(param.key)),
       overriddenEndpointKey,
       model ?? '',
     );
     return modelAwareParams.map(
       (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
     );
-  }, [endpointType, endpointsConfig, model, provider]);
+  }, [endpointType, endpointsConfig, model, provider, startupConfig]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
     setValue(`model_parameters.${optionKey}`, value);

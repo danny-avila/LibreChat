@@ -1190,6 +1190,19 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
   [EModelEndpoint.google]: googleConfig,
 };
 
+/**
+ * Maps effective backend param names for OpenAI-compatible/Azure endpoints (as deleted from
+ * `llmConfig` via `dropParams`, e.g. `maxTokens`) to their corresponding UI/conversation keys
+ * (e.g. `max_tokens`), so admin-configured `dropParams` entries using either form hide the
+ * matching control.
+ */
+export const dropParamsBackendToUIKey: Record<string, string> = {
+  maxTokens: 'max_tokens',
+  topP: 'top_p',
+  frequencyPenalty: 'frequency_penalty',
+  presencePenalty: 'presence_penalty',
+};
+
 const openAIColumns = {
   col1: openAICol1,
   col2: openAICol2,
