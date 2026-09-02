@@ -1,6 +1,7 @@
 const { CLIENT_MESSAGE_SELECT, MEILI_SEARCH_LIMIT } = require('@librechat/data-schemas');
 const express = require('express');
 const request = require('supertest');
+const mockGetTenantId = jest.fn();
 
 jest.mock('@librechat/agents', () => ({
   sleep: jest.fn(),
@@ -122,6 +123,7 @@ jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({}));
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
+  getTenantId: mockGetTenantId,
   logger: {
     debug: jest.fn(),
     info: jest.fn(),
@@ -257,6 +259,7 @@ describe('message route conversation ownership filters', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetTenantId.mockReturnValue(undefined);
     canReadActiveJobConversation.mockResolvedValue(false);
     prepareMessageRequestValidation.mockImplementation((req, res, next) => {
       req.messageRequestValidation = {
@@ -512,6 +515,33 @@ describe('message route conversation ownership filters', () => {
       );
     },
   );
+
+  it.each([
+    {
+      name: 'active tenant with escaped characters',
+      tenantId: 'tenant"\\id',
+      filter: `user = "${authenticatedUserId}" AND tenantId = "tenant\\"\\\\id"`,
+    },
+    {
+      name: 'system context',
+      tenantId: '__SYSTEM__',
+      filter: `user = "${authenticatedUserId}"`,
+    },
+  ])('uses the tenant-aware message search filter in $name', async ({ tenantId, filter }) => {
+    mockGetTenantId.mockReturnValue(tenantId);
+    searchMessages.mockResolvedValue({ hits: [] });
+    getConvosQueried.mockResolvedValue({ convoMap: {} });
+    getMessages.mockResolvedValue([]);
+
+    const response = await request(app).get('/api/messages?search=needle');
+
+    expect(response.status).toBe(200);
+    expect(searchMessages).toHaveBeenCalledWith(
+      'needle',
+      { filter, limit: 25 },
+      true,
+    );
+  });
 
   it('returns indistinguishable not-found responses for child and missing query reads', async () => {
     getConvoOwnership.mockResolvedValueOnce({
