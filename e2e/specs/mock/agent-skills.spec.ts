@@ -138,12 +138,12 @@ async function settleCleanup(tasks: Promise<unknown>[]): Promise<void> {
 }
 
 async function openSkillsDialog(page: Page, form: Locator): Promise<Locator> {
-  const enableSkillsSwitch = form.getByRole('switch', { name: 'Enable skills' });
-  if ((await enableSkillsSwitch.getAttribute('aria-checked')) !== 'true') {
-    await enableSkillsSwitch.click();
-    await expect(enableSkillsSwitch).toHaveAttribute('aria-checked', 'true');
+  const selectedSkillsRadio = form.getByRole('radio', { name: 'Selected', exact: true });
+  if ((await selectedSkillsRadio.getAttribute('aria-checked')) !== 'true') {
+    await selectedSkillsRadio.click();
+    await expect(selectedSkillsRadio).toHaveAttribute('aria-checked', 'true');
   }
-  await form.getByRole('button', { name: 'Add Skills', exact: true }).click();
+  await form.getByRole('button', { name: /Add skill/ }).click();
   const dialog = page
     .getByRole('dialog')
     .filter({ hasText: 'Browse and add skills to your agent.' });
@@ -508,17 +508,19 @@ test.describe('Agent Builder skills', () => {
       await selectMockModel(page, true);
       form = page.getByRole('form', { name: 'Agent configuration form' });
 
-      const enableSkillsSwitch = form.getByRole('switch', { name: 'Enable skills' });
-      const useAllSwitch = form.getByRole('switch', { name: 'Use all skills' });
-      await expect(enableSkillsSwitch).toHaveAttribute('aria-checked', 'false');
-      await expect(useAllSwitch).toHaveAttribute('aria-checked', 'false');
-      await expect(useAllSwitch).toBeDisabled();
-      await enableSkillsSwitch.click();
-      await expect(enableSkillsSwitch).toHaveAttribute('aria-checked', 'true');
-      await expect(useAllSwitch).toBeEnabled();
-      await useAllSwitch.click();
-      await expect(useAllSwitch).toHaveAttribute('aria-checked', 'true');
-      await expect(form.getByRole('button', { name: 'Add Skills', exact: true })).toHaveCount(0);
+      const offSkillsRadio = form.getByRole('radio', { name: 'Off', exact: true });
+      const allSkillsRadio = form.getByRole('radio', { name: 'All', exact: true });
+      await expect(offSkillsRadio).toHaveAttribute('aria-checked', 'true');
+      await expect(allSkillsRadio).toHaveAttribute('aria-checked', 'false');
+      await allSkillsRadio.click();
+      await expect(allSkillsRadio).toHaveAttribute('aria-checked', 'true');
+      await expect(offSkillsRadio).toHaveAttribute('aria-checked', 'false');
+      const allSkillsSummary = form.getByRole('button', { name: /\d+ skills? available/ });
+      await expect(allSkillsSummary).toBeVisible();
+      await expect(allSkillsSummary).toHaveAttribute('aria-expanded', 'false');
+      // The Selected body stays mounted so mode switches tween; it is inert and
+      // aria-hidden while All is active, so its Add row must not be reachable.
+      await expect(form.getByRole('button', { name: /Add skill/ })).toBeHidden();
 
       const createResponsePromise = waitForAgentMutation(page, 'POST');
       await form.getByRole('button', { name: 'Create', exact: true }).click();
@@ -549,11 +551,12 @@ test.describe('Agent Builder skills', () => {
 
       form = await openAgentBuilder(page);
       await selectAgent(page, form, agentName);
-      await expect(form.getByRole('switch', { name: 'Use all skills' })).toHaveAttribute(
+      await expect(form.getByRole('radio', { name: 'All', exact: true })).toHaveAttribute(
         'aria-checked',
         'true',
       );
-      await expect(form.getByRole('button', { name: 'Add Skills', exact: true })).toHaveCount(0);
+      await expect(form.getByRole('button', { name: /\d+ skills? available/ })).toBeVisible();
+      await expect(form.getByRole('button', { name: /Add skill/ })).toBeHidden();
 
       futureSkill = await createInlineSkill(page, token, futureSkillName);
       await form.getByRole('button', { name: 'Select Agent' }).click();
@@ -577,10 +580,10 @@ test.describe('Agent Builder skills', () => {
 
       form = await openAgentBuilder(page);
       await selectAgent(page, form, agentName);
-      const persistedUseAllSwitch = form.getByRole('switch', { name: 'Use all skills' });
-      await persistedUseAllSwitch.click();
-      await expect(persistedUseAllSwitch).toHaveAttribute('aria-checked', 'false');
-      await expect(form.getByRole('button', { name: 'Add Skills', exact: true })).toBeVisible();
+      const persistedOffSkillsRadio = form.getByRole('radio', { name: 'Off', exact: true });
+      await persistedOffSkillsRadio.click();
+      await expect(persistedOffSkillsRadio).toHaveAttribute('aria-checked', 'true');
+      await expect(form.getByRole('button', { name: /Add skill/ })).toBeHidden();
 
       const updateResponsePromise = waitForAgentMutation(page, 'PATCH', createdAgentId);
       await form.getByRole('button', { name: 'Save', exact: true }).click();
@@ -601,11 +604,11 @@ test.describe('Agent Builder skills', () => {
 
       form = await openAgentBuilder(page);
       await selectAgent(page, form, agentName);
-      await expect(form.getByRole('switch', { name: 'Use all skills' })).toHaveAttribute(
+      await expect(form.getByRole('radio', { name: 'Off', exact: true })).toHaveAttribute(
         'aria-checked',
-        'false',
+        'true',
       );
-      await expect(form.getByRole('button', { name: 'Add Skills', exact: true })).toBeVisible();
+      await expect(form.getByRole('button', { name: /Add skill/ })).toBeHidden();
 
       await form.getByRole('button', { name: 'Select Agent' }).click();
       const disabledPickerSearch = await openSkillPicker(page);
