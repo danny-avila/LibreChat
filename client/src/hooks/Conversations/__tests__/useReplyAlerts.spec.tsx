@@ -398,6 +398,37 @@ describe('useReplyAlerts', () => {
     expect(window.localStorage.getItem('replyAlerts:focusedAt')).not.toBeNull();
   });
 
+  it('announces a reply that arrived while the permission prompt was still open', async () => {
+    /* The reply must not be baselined while the answer is pending: retiring it there would
+       lose the first notification the user turned the setting on for. */
+    FakeNotification.permission = 'default';
+    let grant!: (value: NotificationPermission) => void;
+    permissionRequest.mockImplementation(
+      () =>
+        new Promise<NotificationPermission>((resolve) => {
+          grant = resolve;
+        }),
+    );
+
+    const { rerender } = setup({ notifications: true });
+    act(() => {
+      requestReplyNotificationPermission();
+    });
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+    expect(createdNotifications).toHaveLength(0);
+
+    await act(async () => {
+      FakeNotification.permission = 'granted';
+      grant('granted');
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(createdNotifications).toHaveLength(1));
+  });
+
   it('falls back to the untitled label when the conversation has no title', async () => {
     const { rerender } = setup({ notifications: true });
 

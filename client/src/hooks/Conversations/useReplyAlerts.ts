@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { ReplyReadState } from './useUnseenConversations';
@@ -122,6 +122,19 @@ const claimReplyAnnouncement = (
   }
 };
 
+const notificationPermission = (): NotificationPermission | null =>
+  'Notification' in window ? Notification.permission : null;
+
+/** Notified when a pending permission prompt settles; see `requestReplyNotificationPermission`. */
+const permissionListeners = new Set<() => void>();
+
+const subscribeToPermission = (listener: () => void): (() => void) => {
+  permissionListeners.add(listener);
+  return () => {
+    permissionListeners.delete(listener);
+  };
+};
+
 /**
  * Requests desktop-notification permission on behalf of the settings toggle.
  *
@@ -129,12 +142,21 @@ const claimReplyAnnouncement = (
  * An effect on the persisted toggle fires on load without one, and Chrome answers gestureless
  * requests by denying them, which locks the origin out of notifications until the user digs
  * into site settings.
+ *
+ * The answer is published rather than dropped: a reply can arrive while the prompt is still
+ * open, and nothing else would tell the hook that this tab may now notify.
  */
 export const requestReplyNotificationPermission = (): void => {
   if (!('Notification' in window) || Notification.permission !== 'default') {
     return;
   }
-  void Notification.requestPermission();
+  /* Wrapped rather than chained directly: the legacy callback form of this API returns
+     undefined, and older Safari still ships it. */
+  void Promise.resolve(Notification.requestPermission()).finally(() => {
+    for (const listener of permissionListeners) {
+      listener();
+    }
+  });
 };
 
 /**
@@ -162,6 +184,11 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
      a background tab while the user reads a focused one is exactly the interruption the focus
      guard exists to prevent, and `document.hasFocus()` cannot see across tabs. */
   useEffect(() => startFocusLease(), []);
+
+  /* The prompt the settings toggle opens settles long after its click, and nothing else would
+     tell this hook that the tab may now notify. */
+  const [permission, setPermission] = useState(notificationPermission);
+  useEffect(() => subscribeToPermission(() => setPermission(notificationPermission())), []);
 
   /* The setting survives a reload but the audio output does not, and the toggle gesture that
      opened it last session is not replayed. Without this the first chime of a restored session
@@ -205,8 +232,15 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
        Without the baseline that re-entry would look like a new reply and announce one that
        never happened. */
     const next = known === null ? new Map<string, string>() : known;
-    for (const [conversationId, lastResponseAt] of stamps) {
-      next.set(conversationId, lastResponseAt);
+    /* A prompt this tab opened is still unanswered, so a reply arriving now cannot be
+       announced yet. Baselining it would retire the arrival before the answer lands and lose
+       the first notification the user enabled the setting for; the subscription below re-runs
+       this pass once the prompt settles. */
+    const awaitingPermission = notificationsEnabled && permission === 'default';
+    if (!awaitingPermission) {
+      for (const [conversationId, lastResponseAt] of stamps) {
+        next.set(conversationId, lastResponseAt);
+      }
     }
     knownRef.current = next;
 
@@ -288,5 +322,5 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
         /* Constructor unsupported on this platform, or the notification was rejected. */
       }
     }
-  }, [state, soundEnabled, notificationsEnabled, localize, navigate]);
+  }, [state, soundEnabled, notificationsEnabled, permission, localize, navigate]);
 }
