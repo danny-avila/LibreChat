@@ -233,13 +233,6 @@ function normalizeEventActorContextMeta(contextMeta) {
 }
 
 /**
- * Captures calibration and fading state from a finished run for persistence
- * on the response message. Called from `finally`, so values survive an abort.
- * `getFadingTier` is optional so SDK versions without it persist calibration
- * alone, and it already returns only tiers that carry information; the
- * encoding is only resolved when there is something to persist.
- */
-/**
  * Seeds for a new run from the previous run's contextMeta: the calibration
  * ratio when the tokenizer encoding still matches, and the fading tier, which
  * is character-based and so seeds regardless of encoding.
@@ -260,6 +253,13 @@ function resolveRunSeeds(client) {
   return { calibrationRatio, fadingTier };
 }
 
+/**
+ * Captures calibration and fading state from a finished run for persistence
+ * on the response message. Called from `finally`, so values survive an abort.
+ * `getFadingTier` is optional so SDK versions without it persist calibration
+ * alone, and it already returns only tiers that carry information; the
+ * encoding is only resolved when there is something to persist.
+ */
 function captureRunContextMeta(client) {
   return resolveRunContextMeta({
     calibrationRatio: client.run?.getCalibrationRatio?.() ?? 0,

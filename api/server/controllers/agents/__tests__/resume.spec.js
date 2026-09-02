@@ -281,6 +281,7 @@ function makeClient(overrides = {}) {
     pendingApproval: false,
     buildResponseMetadata: jest.fn(() => null),
     resumeCompletion: jest.fn().mockResolvedValue(undefined),
+    seedContextMeta: jest.fn(),
     ...overrides,
   };
 }
@@ -2674,6 +2675,26 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           userMCPAuthMap: { server1: { token: 't' } },
           compactionSemanticIndex,
         }),
+      );
+    });
+
+    it('seeds the rebuilt client from the context meta captured at the pause', async () => {
+      const contextMeta = {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { contextMeta } }),
+      );
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
+      expect(client.seedContextMeta).toHaveBeenCalledWith(contextMeta);
+      expect(client.seedContextMeta.mock.invocationCallOrder[0]).toBeLessThan(
+        client.resumeCompletion.mock.invocationCallOrder[0],
       );
     });
 
