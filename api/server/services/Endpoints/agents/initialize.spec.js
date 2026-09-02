@@ -2479,7 +2479,7 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs.agentConfigs.has(HANDOFF_AND_SUB_ID)).toBe(true);
   });
 
-  it('keeps shared initialized agent children deterministic across parallel walkers', async () => {
+  it('preserves shared initialized agent children across parallel walkers', async () => {
     const leftId = 'agent_parallel_left';
     const rightId = 'agent_parallel_right';
     const sharedId = 'agent_parallel_shared';
@@ -2513,8 +2513,8 @@ describe('initializeClient — subagent loading', () => {
     const rightShared = right.subagentAgentConfigs[0];
     expect(leftShared).toBe(sharedConfig);
     expect(rightShared).toBe(sharedConfig);
-    expect(leftShared.subagentAgentConfigs).toEqual([]);
-    expect(rightShared.subagentAgentConfigs).toEqual([]);
+    expect(leftShared.subagentAgentConfigs.map((child) => child.id)).toEqual([leftId]);
+    expect(rightShared.subagentAgentConfigs.map((child) => child.id)).toEqual([leftId]);
     expect(agentClientArgs.agentConfigs.get(sharedId)).toBe(sharedConfig);
   });
 
