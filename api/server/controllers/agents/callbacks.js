@@ -825,7 +825,10 @@ function getDefaultHandlers({
             contextUsageSink.latest = data;
             contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
             contextUsageSink.latestUsageIndex = usageEmitSink?.length ?? 0;
-            contextUsageSink.onSnapshot?.();
+            /** Awaited so the run's context meta lands on the job before the
+             *  model call it describes begins; a Stop that reads the job after
+             *  this point sees the tier that produced the bytes in flight. */
+            await contextUsageSink.onSnapshot?.();
           }
           await emitForJob({ event, data });
         }

@@ -1053,6 +1053,16 @@ describe('AgentClient - interrupt discovery persistence', () => {
       jobCreatedAt: job.createdAt,
       contextUsageSink,
     });
+    const seed = { calibrationRatio: 1.05, encoding: client.getEncoding() };
+    client.contextMeta = seed;
+    const updateMetadata = jest.spyOn(GenerationJobManager, 'updateMetadata');
+
+    /** Before the run exists the inherited seed is what a Stop must carry. */
+    await client.publishRunContextMeta();
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: { contextMeta: seed },
+    });
+
     const tier = { v: 1, budgetTokens: 25_000, masked: true };
     let ratio = 1.1;
     client.run = {
@@ -1061,16 +1071,14 @@ describe('AgentClient - interrupt discovery persistence', () => {
         getFadingTier: () => tier,
       },
     };
-    const updateMetadata = jest.spyOn(GenerationJobManager, 'updateMetadata');
 
     expect(typeof contextUsageSink.onSnapshot).toBe('function');
-    contextUsageSink.onSnapshot();
-    contextUsageSink.onSnapshot();
+    await contextUsageSink.onSnapshot();
+    await contextUsageSink.onSnapshot();
     ratio = 1.3;
-    contextUsageSink.onSnapshot();
-    await Promise.all(updateMetadata.mock.results.map((result) => result.value));
+    await contextUsageSink.onSnapshot();
 
-    expect(updateMetadata).toHaveBeenCalledTimes(2);
+    expect(updateMetadata).toHaveBeenCalledTimes(3);
     expect(updateMetadata).toHaveBeenLastCalledWith(
       streamId,
       {
@@ -1089,6 +1097,108 @@ describe('AgentClient - interrupt discovery persistence', () => {
       fading: tier,
     });
     updateMetadata.mockRestore();
+  });
+
+  it('publishes the inherited context meta before the resumed run continues', async () => {
+    const streamId = 'conversation-context-meta-resume-seed';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    const seed = {
+      calibrationRatio: 1.15,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 30_000, masked: true },
+    };
+    client.seedContextMeta(seed);
+    let metaWhenResumed;
+    const resume = jest.fn(async () => {
+      metaWhenResumed = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
+    });
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      resume,
+      processStream: jest.fn().mockResolvedValue(),
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-resume-seed';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.resumeCompletion({
+      resumeValue: { decisions: [] },
+      streamId,
+      checkpointNamespace: 'resume-seed',
+    });
+
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(metaWhenResumed).toEqual(seed);
+  });
+
+  it('publishes the inherited context meta before a fresh run streams', async () => {
+    const streamId = 'conversation-context-meta-stream-seed';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    const seed = {
+      calibrationRatio: 1.15,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 30_000, masked: true },
+    };
+    client.contextMeta = seed;
+    let metaWhenStreamed;
+    const processStream = jest.fn(async () => {
+      metaWhenStreamed = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
+    });
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-stream-seed';
+    client.parentMessageId = 'parent-context-meta-stream-seed';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(processStream).toHaveBeenCalledTimes(1);
+    expect(metaWhenStreamed).toEqual(seed);
   });
 
   it('caps an event-bound pause at the inherited binding deadline', async () => {

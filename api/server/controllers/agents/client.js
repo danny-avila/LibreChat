@@ -1925,18 +1925,22 @@ class AgentClient extends BaseClient {
    * @param {unknown} contextMeta
    */
   /**
-   * Publishes the run's live calibration and fading tier onto the job after each
-   * pre-invoke context snapshot. A Stop persists the response from job data alone,
-   * so without this the stopped response would drop the tier and the next turn
-   * would re-derive truncation and rewrite the historical prompt prefix.
+   * Publishes the run's calibration and fading tier onto the job: the inherited
+   * seed before the run starts, then the live state after each pre-invoke context
+   * snapshot. A Stop persists the response from job data alone, on whichever
+   * replica handles it, so the write is awaited by its caller ahead of the model
+   * call it describes; a Stop that reads the job afterwards sees the tier that
+   * produced the bytes in flight, and one that reads earlier sees the previous
+   * snapshot's, which is consistent with what has been persisted so far.
    * Deduplicated on the serialized value; failures only log.
+   * @returns {Promise<void>}
    */
-  publishRunContextMeta() {
+  async publishRunContextMeta() {
     const streamId = this.options.req?._resumableStreamId;
     if (!streamId) {
       return;
     }
-    const contextMeta = captureRunContextMeta(this);
+    const contextMeta = captureRunContextMeta(this) ?? this.contextMeta;
     if (contextMeta == null) {
       return;
     }
@@ -1945,15 +1949,15 @@ class AgentClient extends BaseClient {
       return;
     }
     this.publishedContextMeta = serialized;
-    GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt).catch(
-      (err) => {
-        this.publishedContextMeta = undefined;
-        logger.warn(
-          `[AgentClient] Failed to publish context meta for ${streamId}`,
-          getSafeErrorMetadata(err),
-        );
-      },
-    );
+    try {
+      await GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt);
+    } catch (err) {
+      this.publishedContextMeta = undefined;
+      logger.warn(
+        `[AgentClient] Failed to publish context meta for ${streamId}`,
+        getSafeErrorMetadata(err),
+      );
+    }
   }
 
   seedContextMeta(contextMeta) {
@@ -4421,6 +4425,8 @@ class AgentClient extends BaseClient {
         if (this.activityLabelsMarkedPromise != null) {
           await this.activityLabelsMarkedPromise;
         }
+        /** The inherited tier must be on the job before any Stop can read it. */
+        await this.publishRunContextMeta?.();
         try {
           const invocationMessages =
             this.eventActorContinuation === 'warm' ? messages.slice(-1) : messages;
@@ -4933,6 +4939,7 @@ class AgentClient extends BaseClient {
       if (this.activityLabelsMarkedPromise != null) {
         await this.activityLabelsMarkedPromise;
       }
+      await this.publishRunContextMeta?.();
       try {
         await run.resume(
           resumeValue,

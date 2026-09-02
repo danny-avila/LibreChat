@@ -128,7 +128,13 @@ describe('resumable event generation fencing', () => {
     const { GenerationJobManager } = require('@librechat/api');
     const { GraphEvents } = jest.requireActual('@librechat/agents');
     const { getDefaultHandlers } = require('../callbacks');
-    const onSnapshot = jest.fn();
+    let releaseSnapshot;
+    const onSnapshot = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          releaseSnapshot = resolve;
+        }),
+    );
     const contextUsageSink = { latest: null, count: 0, onSnapshot };
     const usageEmitSink = [{ input_tokens: 10 }];
     const data = { contextBudget: 1000, remainingContextTokens: 400 };
@@ -143,12 +149,20 @@ describe('resumable event generation fencing', () => {
       usageEmitSink,
     });
 
-    await handlers[GraphEvents.ON_CONTEXT_USAGE].handle(GraphEvents.ON_CONTEXT_USAGE, data, {
-      hide_sequential_outputs: false,
-    });
+    let settled = false;
+    const handled = handlers[GraphEvents.ON_CONTEXT_USAGE]
+      .handle(GraphEvents.ON_CONTEXT_USAGE, data, { hide_sequential_outputs: false })
+      .then(() => {
+        settled = true;
+      });
+    await Promise.resolve();
 
     expect(contextUsageSink).toMatchObject({ latest: data, count: 1, latestUsageIndex: 1 });
     expect(onSnapshot).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+    releaseSnapshot();
+    await handled;
+    expect(settled).toBe(true);
     expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
       'conversation-1',
       { event: GraphEvents.ON_CONTEXT_USAGE, data },
