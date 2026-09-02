@@ -896,6 +896,16 @@ export const tMessageSchema = z.object({
         .describe(
           'Tokenizer encoding used when this ratio was computed (e.g. "claude", "o200k_base")',
         ),
+      fading: z
+        .object({
+          v: z.literal(1),
+          budgetTokens: z.number().positive(),
+          masked: z.boolean(),
+        })
+        .optional()
+        .describe(
+          'Latched context-fading tier; keeps historical tool-result truncation byte-stable across runs',
+        ),
     })
     .optional(),
   /**

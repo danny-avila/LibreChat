@@ -142,6 +142,8 @@ const {
   createCompactionSemanticIndexProjection,
   restoreCompactionSemanticIndexSnapshot,
   MAX_AGENT_CONTEXT_SKILLS,
+  isAgentFadingTier,
+  resolveRunContextMeta,
 } = require('@librechat/api');
 const {
   Run,
@@ -210,7 +212,7 @@ function normalizeEventActorContextMeta(contextMeta) {
   if (contextMeta == null) {
     return undefined;
   }
-  const { calibrationRatio, encoding } = contextMeta;
+  const { calibrationRatio, encoding, fading } = contextMeta;
   if (
     !Number.isFinite(calibrationRatio) ||
     calibrationRatio < 0.5 ||
@@ -218,11 +220,31 @@ function normalizeEventActorContextMeta(contextMeta) {
     (encoding != null &&
       (typeof encoding !== 'string' ||
         encoding.length === 0 ||
-        encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH))
+        encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)) ||
+    (fading != null && !isAgentFadingTier(fading))
   ) {
     throw new RangeError('Event actor context calibration is invalid');
   }
-  return { calibrationRatio, ...(encoding == null ? {} : { encoding }) };
+  return {
+    calibrationRatio,
+    ...(encoding == null ? {} : { encoding }),
+    ...(fading == null ? {} : { fading }),
+  };
+}
+
+/**
+ * Captures calibration and fading state from a finished run for persistence
+ * on the response message. Called from `finally`, so values survive an abort.
+ * `getFadingTier` is optional so SDK versions without it persist calibration
+ * alone; the encoding is only resolved when there is something to persist.
+ */
+function captureRunContextMeta(client) {
+  return resolveRunContextMeta({
+    calibrationRatio: client.run?.getCalibrationRatio() ?? 0,
+    fadingTier: client.run?.getFadingTier?.(),
+    maxContextTokens: client.maxContextTokens,
+    getEncoding: () => client.getEncoding(),
+  });
 }
 
 function getLatestEventActorSummary(contentParts) {
@@ -4149,10 +4171,12 @@ class AgentClient extends BaseClient {
         const encodingMatch = prevMeta?.encoding === currentEncoding;
         const calibrationRatio =
           encodingMatch && prevMeta?.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
+        /** The fading tier is character-based, so it seeds regardless of encoding */
+        const fadingTier = isAgentFadingTier(prevMeta?.fading) ? prevMeta.fading : undefined;
 
         if (prevMeta) {
           logger.debug(
-            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}`,
+            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}, fading=${fadingTier ? `${fadingTier.budgetTokens}/${fadingTier.masked}` : 'none'}`,
           );
         }
 
@@ -4260,6 +4284,7 @@ class AgentClient extends BaseClient {
             : { compactionSemanticIndex: continuationCompactionSemanticIndex }),
           initialSessions,
           calibrationRatio,
+          fadingTier,
           runId: this.responseMessageId,
           signal: abortController.signal,
           /** The phase wrapper stays outermost: it claims and offsets the
@@ -4479,17 +4504,7 @@ class AgentClient extends BaseClient {
        * the failure; retain that model-visible state for actor reconciliation. */
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
-      /** Capture calibration state from the run for persistence on the response message.
-       *  Runs in finally so values are captured even on abort. */
-      const ratio = this.run?.getCalibrationRatio() ?? 0;
-      if (ratio > 0 && ratio !== 1) {
-        this.contextMeta = {
-          calibrationRatio: Math.round(ratio * 1000) / 1000,
-          encoding: this.getEncoding(),
-        };
-      } else {
-        this.contextMeta = undefined;
-      }
+      this.contextMeta = captureRunContextMeta(this);
 
       this.finalizeSubagentContent();
       this.stampMcpServerIdentities();
@@ -4926,15 +4941,7 @@ class AgentClient extends BaseClient {
     } finally {
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
-      const ratio = this.run?.getCalibrationRatio() ?? 0;
-      if (ratio > 0 && ratio !== 1) {
-        this.contextMeta = {
-          calibrationRatio: Math.round(ratio * 1000) / 1000,
-          encoding: this.getEncoding(),
-        };
-      } else {
-        this.contextMeta = undefined;
-      }
+      this.contextMeta = captureRunContextMeta(this);
 
       this.finalizeSubagentContent();
       this.stampMcpServerIdentities();

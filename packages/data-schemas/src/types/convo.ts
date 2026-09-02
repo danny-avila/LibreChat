@@ -45,9 +45,23 @@ export interface IAgentEventActorSummary {
   tokenCount: number;
 }
 
+/**
+ * Latched context-fading tier from `@librechat/agents`. Caps for historical
+ * tool results derive from it alone, so persisting it keeps their truncated
+ * bytes stable across runs for prefix-based provider prompt caches.
+ */
+export interface IAgentFadingTier {
+  v: 1;
+  /** Token budget the caps derive from; never grows within a conversation. */
+  budgetTokens: number;
+  /** Whether observation masking has activated. */
+  masked: boolean;
+}
+
 export interface IAgentEventActorContextMeta {
   calibrationRatio: number;
   encoding?: string;
+  fading?: IAgentFadingTier;
 }
 
 /** Private committed checkpoint state for one event-bound child actor. */

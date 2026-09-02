@@ -235,6 +235,15 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: {
         calibrationRatio: { type: Number },
         encoding: { type: String },
+        fading: {
+          type: {
+            v: { type: Number },
+            budgetTokens: { type: Number },
+            masked: { type: Boolean },
+          },
+          _id: false,
+          default: undefined,
+        },
       },
       _id: false,
       default: undefined,

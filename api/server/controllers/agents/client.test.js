@@ -2236,7 +2236,11 @@ describe('AgentClient - startup telemetry', () => {
     client.eventActorContinuation = 'warm';
     client.eventActorDiscoveredToolNames = ['deferred_tool'];
     client.eventActorSummary = { text: 'summary of earlier turns', tokenCount: 40 };
-    client.contextMeta = { calibrationRatio: 1.25, encoding: client.getEncoding() };
+    client.contextMeta = {
+      calibrationRatio: 1.25,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 20_000, masked: true },
+    };
     client.compactionSemanticIndexSnapshot = baseCompactionSemanticIndexSnapshot;
     client.recordCollectedUsage = jest.fn().mockResolvedValue();
 
@@ -2255,6 +2259,7 @@ describe('AgentClient - startup telemetry', () => {
         indexTokenCountMap: {},
         initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
         calibrationRatio: 1.25,
+        fadingTier: { v: 1, budgetTokens: 20_000, masked: true },
         compactionSemanticIndex: evolvedCompactionSemanticIndexSnapshot.entries,
       }),
     );
@@ -7654,5 +7659,47 @@ describe('AgentClient - resumeCompletion content protection', () => {
       type: ContentTypes.ERROR,
       [ContentTypes.ERROR]: `An error occurred while resuming the request: ${providerMessage}`,
     });
+  });
+});
+
+describe('fading tier context meta', () => {
+  const fading = { v: 1, budgetTokens: 20_000, masked: true };
+
+  it('carries a valid fading tier through event actor context', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base', fading };
+    client.getEventActorContext = jest.fn().mockResolvedValue({
+      fingerprint: 'fingerprint-1',
+      skillManifest: [],
+      discoveredToolNames: [],
+      contextMeta,
+    });
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: 'fingerprint-1',
+        skillManifest: [],
+        discoveredToolNames: [],
+        contextMeta,
+      }),
+    ).resolves.toMatchObject({ contextMeta });
+    expect(client.contextMeta).toEqual(contextMeta);
+  });
+
+  it('rejects event actor context carrying a malformed fading tier', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    client.getEventActorContext = jest.fn();
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: 'fingerprint-1',
+        skillManifest: [],
+        discoveredToolNames: [],
+        contextMeta: { calibrationRatio: 1.25, fading: { v: 1, budgetTokens: -5, masked: true } },
+      }),
+    ).resolves.toBeUndefined();
+    expect(client.getEventActorContext).not.toHaveBeenCalled();
   });
 });

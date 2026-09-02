@@ -41,10 +41,10 @@ import type {
   ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
+import type { AppConfig, IAgentFadingTier, IUser } from '@librechat/data-schemas';
 import type { CallbackHandlerMethods } from '@langchain/core/callbacks/base';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Callbacks } from '@langchain/core/callbacks/manager';
-import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
@@ -1416,6 +1416,7 @@ export async function createRun({
   initialSummary,
   modelCallbacks,
   calibrationRatio,
+  fadingTier,
   appConfig,
   subagentUsageSink,
   subagentTasks,
@@ -1467,6 +1468,12 @@ export async function createRun({
   modelCallbacks?: readonly ModelBoundChatModelCallback[];
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
+  /**
+   * Latched context-fading tier from the previous run's contextMeta, seeds the
+   * pruner so historical tool results keep the same truncated bytes across
+   * runs. Ships in `@librechat/agents` > 3.7.14; older SDK versions ignore it.
+   */
+  fadingTier?: IAgentFadingTier | null;
   /**
    * Resolved app config. Used to translate custom-endpoint provider names
    * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
@@ -2108,6 +2115,7 @@ export async function createRun({
     customHandlers,
     initialSessions,
     calibrationRatio,
+    fadingTier,
     indexTokenCountMap,
     subagentUsageSink,
     subagentTasks,

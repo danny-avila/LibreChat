@@ -4,6 +4,7 @@ import type {
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
 import type { Document } from 'mongoose';
+import type { IAgentFadingTier } from './convo';
 
 export type SubagentTaskControlAction =
   | 'steer'
@@ -120,6 +121,7 @@ export interface IMessage extends Document {
   contextMeta?: {
     calibrationRatio?: number;
     encoding?: string;
+    fading?: IAgentFadingTier;
   };
   attachments?: unknown[];
   /** Skills the user invoked manually via the `$` popover on this turn. UI-only metadata for `SkillPills`. */

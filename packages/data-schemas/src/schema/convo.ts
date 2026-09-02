@@ -147,6 +147,15 @@ const convoSchema: Schema<IConversation> = new Schema(
               maxlength: MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
               default: undefined,
             },
+            fading: {
+              type: {
+                v: { type: Number, required: true },
+                budgetTokens: { type: Number, min: 1, required: true },
+                masked: { type: Boolean, required: true },
+              },
+              _id: false,
+              default: undefined,
+            },
           },
           _id: false,
           default: undefined,
