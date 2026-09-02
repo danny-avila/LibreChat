@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import mongoMeili, { type SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import mongoMeili, { MEILI_INDEX_SCHEMA_VERSION } from '~/models/plugins/mongoMeili';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
 
@@ -13,6 +14,7 @@ interface DynamicMeiliDocument extends mongoose.Document {
   expiredAt?: Date | null;
   _meiliIndex?: boolean;
   _meiliIndexAttempted?: boolean;
+  _meiliIndexSchemaVersion?: number;
   _meiliCleanupVersion?: number;
 }
 
@@ -1317,6 +1319,7 @@ describe('Meilisearch Mongoose plugin', () => {
         title: 'Indexed',
         endpoint: EModelEndpoint.openAI,
         _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -1336,6 +1339,36 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(progress.isComplete).toBe(false);
     });
 
+    test('reindexes documents from an older indexed schema version', async () => {
+      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId().toString(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Legacy Indexed Conversation',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION - 1,
+        expiredAt: null,
+      });
+
+      const progress = await conversationModel.getSyncProgress();
+
+      expect(progress.totalProcessed).toBe(0);
+      expect(progress.pendingIndexing).toBe(1);
+
+      await conversationModel.syncWithMeili();
+
+      expect(
+        (
+          await conversationModel
+            .findOne({ title: 'Legacy Indexed Conversation' })
+            .select('+_meiliIndexSchemaVersion')
+        )?._meiliIndexSchemaVersion,
+      ).toBe(MEILI_INDEX_SCHEMA_VERSION);
+    });
+
     test('getSyncProgress excludes TTL documents from counts', async () => {
       const conversationModel = createConversationModel(
         mongoose,
@@ -1349,6 +1382,7 @@ describe('Meilisearch Mongoose plugin', () => {
         title: 'Syncable Indexed',
         endpoint: EModelEndpoint.openAI,
         _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -1399,6 +1433,7 @@ describe('Meilisearch Mongoose plugin', () => {
         user: new mongoose.Types.ObjectId(),
         isCreatedByUser: true,
         _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -1408,6 +1443,7 @@ describe('Meilisearch Mongoose plugin', () => {
         user: new mongoose.Types.ObjectId(),
         isCreatedByUser: false,
         _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -2158,6 +2194,7 @@ describe('Meilisearch Mongoose plugin', () => {
           endpoint: EModelEndpoint.openAI,
           expiredAt: null,
           _meiliIndex: true,
+          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         },
       ]);
 
@@ -2196,6 +2233,7 @@ describe('Meilisearch Mongoose plugin', () => {
           isCreatedByUser: true,
           expiredAt: null,
           _meiliIndex: true,
+          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         },
         {
           messageId: new mongoose.Types.ObjectId(),
