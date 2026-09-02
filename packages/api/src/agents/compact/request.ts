@@ -713,8 +713,19 @@ export async function handleCompactRequest(
       };
     }
 
+    const rollbackSummary = async () => {
+      await deps
+        .deleteMessages({ conversationId, user: userId, messageId })
+        .catch((rollbackError) => {
+          logger.error(
+            '[compact] Could not roll back the compaction message after a failed conversation update',
+            rollbackError,
+          );
+        });
+    };
+    let savedConvo: unknown;
     try {
-      await deps.saveConvo(
+      savedConvo = await deps.saveConvo(
         persistenceContext,
         {
           conversationId,
@@ -733,15 +744,21 @@ export async function handleCompactRequest(
        *  reject with `BRANCH_MOVED`. Roll the message back so the failure
        *  leaves the branch exactly as it was found, then surface the error
        *  through the outer handler. */
-      await deps
-        .deleteMessages({ conversationId, user: userId, messageId })
-        .catch((rollbackError) => {
-          logger.error(
-            '[compact] Could not roll back the compaction message after a failed conversation update',
-            rollbackError,
-          );
-        });
+      await rollbackSummary();
       throw error;
+    }
+    /** The production `saveConvo` is fail-soft: a failed update resolves
+     *  `{ message: 'Error saving conversation' }` rather than rejecting, so
+     *  the error cannot be read off the exception. Only a conversation
+     *  document counts as applied; anything else means the summary's ID was
+     *  never appended, and the same orphan logic applies. */
+    if (savedConvo == null || typeof savedConvo !== 'object' || !('conversationId' in savedConvo)) {
+      await rollbackSummary();
+      return {
+        status: 500,
+        error: 'Failed to save the compaction message',
+        code: CompactErrorCodes.SAVE_FAILED,
+      };
     }
 
     return { status: 201, message: savedMessage };

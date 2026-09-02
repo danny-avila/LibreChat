@@ -40,6 +40,7 @@ import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedRespons
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
+import { useIsConversationCompacting } from './useCompactConversation';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
@@ -219,7 +220,7 @@ export default function useChatFunctions({
   const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
   const isTemporary = useRecoilValue(store.isTemporary);
-  const isCompacting = useRecoilValue(store.isCompactingFamily(index));
+  const isCompacting = useIsConversationCompacting(immutableConversation?.conversationId);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));

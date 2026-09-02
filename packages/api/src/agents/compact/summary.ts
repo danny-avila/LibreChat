@@ -54,6 +54,7 @@ import { extractLibreChatParams } from '~/utils/llm';
 import { getModelMaxTokens } from '~/utils/tokens';
 import { countTokens } from '~/utils/tokenizer';
 import { createSafeUser } from '~/utils/env';
+import { processTextWithTokenLimit } from '~/utils/text';
 
 /**
  * Resolves the bodies of skills invoked in the branch so the checkpoint can
@@ -529,15 +530,49 @@ async function hydrateAttachments(
       contextByMessageId.set(message.messageId, combined);
     }
   }
+  /**
+   * The policy filter must judge what was replayed, not what is stored. A
+   * text source contributes at most its inlined slice, truncated to
+   * `fileTokenLimit`, and every other source contributes only a manifest
+   * line: the remainder of a stored document never leaves the server, so it
+   * is withheld from `extracted_text` filtering as well. Manifest metadata
+   * (name, type) stays inspectable through the message content it rides on.
+   */
+  const replayedByFileId: Record<string, IMongoFile> = {};
+  const asReplayed = async (file: IMongoFile): Promise<IMongoFile> => {
+    const existing = replayedByFileId[file.file_id];
+    if (existing != null) {
+      return existing;
+    }
+    const replayed: IMongoFile =
+      fileTokenLimit != null && isInlinedTextSource(file)
+        ? {
+            ...file,
+            text: (
+              await processTextWithTokenLimit({
+                text: file.text as string,
+                tokenLimit: fileTokenLimit,
+                tokenCountFn: countTokens,
+              })
+            ).text,
+          }
+        : { ...file, text: undefined };
+    replayedByFileId[file.file_id] = replayed;
+    return replayed;
+  };
+  const replayedMessageFiles: Record<string, IMongoFile[]> = Object.create(null);
+  for (const [messageId, attachments] of Object.entries(messageFilesBySourceMessageId)) {
+    replayedMessageFiles[messageId] = await Promise.all(attachments.map(asReplayed));
+  }
   return {
     contextByMessageId,
     contextBySteerPart,
     ...projectModelBoundSourceFiles({
-      messageFilesBySourceMessageId,
+      messageFilesBySourceMessageId: replayedMessageFiles,
       sourceMessages: branch,
       steerFileIdsBySourceMessageId,
       replayHistoricalFiles: true,
-      historicalFiles: files,
+      historicalFiles: await Promise.all(files.map(asReplayed)),
     }),
   };
 }
