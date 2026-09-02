@@ -44,7 +44,8 @@ describe('createReadonlyRecovery', () => {
   });
 
   it('reconnects once per interval and keeps retrying while writes stay READONLY', async () => {
-    const recover = createReadonlyRecovery({ client, minIntervalMs: 200 });
+    let clock = 0;
+    const recover = createReadonlyRecovery({ client, minIntervalMs: 200, now: () => clock });
     server.readonly = true;
     const error = await readonlyWriteError(client);
     expect(error).toBeInstanceOf(Error);
@@ -57,7 +58,7 @@ describe('createReadonlyRecovery', () => {
     await waitFor(() => server.connections === 2 && client.isReady);
 
     expect(recover(await readonlyWriteError(client))).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    clock = 200;
     expect(recover(await readonlyWriteError(client))).toBe(true);
     await waitFor(() => server.connections === 3 && client.isReady);
 
@@ -80,6 +81,29 @@ describe('createReadonlyRecovery', () => {
     expect(client.isOpen).toBe(false);
     expect(recover(new Error(READONLY_MESSAGE))).toBe(true);
     await waitFor(() => server.connections === 2 && client.isReady);
+  });
+
+  it('retries on the next error of any kind after a failed reconnect', async () => {
+    client.destroy();
+    client = createClient({
+      url: server.url,
+      socket: { reconnectStrategy: false },
+    }) as RedisClientType;
+    client.on('error', () => undefined);
+    await client.connect();
+    const recover = createReadonlyRecovery({ client, minIntervalMs: 0 });
+    const { port } = server;
+    await server.close();
+
+    expect(recover(new Error(READONLY_MESSAGE))).toBe(true);
+    await waitFor(() => !client.isOpen);
+    expect(recover(new Error('ECONNRESET'))).toBe(true);
+    await waitFor(() => !client.isOpen);
+
+    server = await startRespServer(port);
+    expect(recover(new Error('The client is closed'))).toBe(true);
+    await waitFor(() => server.connections === 1 && client.isReady);
+    await expect(client.set('key', 'value')).resolves.toBe('OK');
   });
 });
 

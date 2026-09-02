@@ -9,6 +9,7 @@ import type { AddressInfo, Socket } from 'node:net';
  */
 export type RespServer = {
   url: string;
+  port: number;
   /** Total sockets accepted since start; a reconnect shows up as a new one. */
   connections: number;
   /** When true, write commands are rejected with the READONLY reply. */
@@ -64,7 +65,7 @@ function parseFrames(buffer: Buffer): { frames: string[][]; rest: Buffer } {
   return { frames, rest: buffer.subarray(offset) };
 }
 
-export async function startRespServer(): Promise<RespServer> {
+export async function startRespServer(port = 0): Promise<RespServer> {
   const store = new Map<string, string>();
   const sockets = new Set<Socket>();
   const state = { connections: 0, readonly: false, commands: [] as string[][] };
@@ -113,11 +114,12 @@ export async function startRespServer(): Promise<RespServer> {
     socket.on('error', () => undefined);
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  const { port: boundPort } = server.address() as AddressInfo;
 
   return {
-    url: `redis://127.0.0.1:${port}`,
+    url: `redis://127.0.0.1:${boundPort}`,
+    port: boundPort,
     get connections() {
       return state.connections;
     },

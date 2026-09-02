@@ -18,6 +18,8 @@ export type ReadonlyRecoveryOptions = {
    * spaced out and retried on the next error instead of given up on.
    */
   minIntervalMs: number;
+  /** Monotonic clock in milliseconds; defaults to `performance.now`. */
+  now?: () => number;
   /** Client label used in log lines. */
   label?: string;
 };
@@ -46,14 +48,23 @@ export function isReadonlyReplicaError(error: unknown): boolean {
  * does through `reconnectOnError`: it tears the socket down and reconnects, which
  * re-resolves the connection to whatever the master address now points at.
  *
+ * Tearing the socket down rejects the commands queued or in flight at that
+ * moment (reads included); node-redis cannot replay them the way ioredis does.
+ * That is a bounded, once-per-attempt cost, traded against every write failing
+ * until the process restarts.
+ *
  * READONLY replies surface from several places (the client's own error event,
  * the Keyv error funnel, and Lua scripts evaluated directly against the client),
  * so the handler is meant to be called from every one of them; it debounces
- * internally and never throws.
+ * internally and never throws. When a reconnect attempt itself fails, the client
+ * is left closed and later failures are no longer READONLY replies, so the next
+ * error of any kind retries the reconnect.
  */
 export function createReadonlyRecovery(options: ReadonlyRecoveryOptions): ReadonlyRecoveryHandler {
   const { client, minIntervalMs, label = '@keyv/redis' } = options;
+  const now = options.now ?? (() => performance.now());
   let inFlight = false;
+  let retryPending = false;
   let lastAttemptAt = Number.NEGATIVE_INFINITY;
 
   const reconnect = async (): Promise<void> => {
@@ -66,17 +77,21 @@ export function createReadonlyRecovery(options: ReadonlyRecoveryOptions): Readon
   };
 
   return function recoverIfReadonly(error: unknown): boolean {
-    if (inFlight || !isReadonlyReplicaError(error)) {
+    if (inFlight || (!retryPending && !isReadonlyReplicaError(error))) {
       return false;
     }
-    const now = Date.now();
-    if (now - lastAttemptAt < minIntervalMs) {
+    const attemptAt = now();
+    if (attemptAt - lastAttemptAt < minIntervalMs) {
       return false;
     }
     inFlight = true;
-    lastAttemptAt = now;
+    lastAttemptAt = attemptAt;
     void reconnect()
+      .then(() => {
+        retryPending = false;
+      })
       .catch((reconnectError: unknown) => {
+        retryPending = true;
         logger.error(`${label} client reconnect after READONLY error failed:`, reconnectError);
       })
       .finally(() => {

@@ -36,6 +36,34 @@ import { violationFile } from './keyvFiles';
 const inMemoryCacheMap = new Map<string, Keyv>();
 
 /**
+ * Deletes every key under a namespace through the raw client, which is the one
+ * write path that bypasses the Keyv error funnel; READONLY rejections are routed
+ * to failover recovery before propagating.
+ */
+async function clearRedisNamespace(namespace: string): Promise<void> {
+  if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
+    logger.warn(`Cannot clear namespace ${namespace}: Redis scanIterator not available`);
+    return;
+  }
+
+  const pattern = cacheConfig.REDIS_KEY_PREFIX
+    ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}${namespace}:*`
+    : `${namespace}:*`;
+
+  try {
+    const keysToDelete = await scanKeys(keyvRedisClient, pattern);
+    if (keysToDelete.length === 0) {
+      return;
+    }
+    await batchDeleteKeys(keyvRedisClient, keysToDelete);
+    logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
+  } catch (error) {
+    handleKeyvRedisError(error);
+    throw error;
+  }
+}
+
+/**
  * Creates a cache instance using Redis or a fallback store. Suitable for general caching needs.
  *
  * **In-memory mode** (no Redis, no custom fallbackStore): instances are memoized by
@@ -63,28 +91,7 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
       // Override clear() to handle namespace-aware deletion
       // The default Keyv clear() doesn't respect namespace due to the workaround above
       // Workaround for issue #10487 https://github.com/danny-avila/LibreChat/issues/10487
-      cache.clear = async () => {
-        // Type-safe check for Redis client with scanIterator support
-        if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
-          logger.warn(`Cannot clear namespace ${namespace}: Redis scanIterator not available`);
-          return;
-        }
-
-        // Build pattern: globalPrefix::namespace:* or namespace:*
-        const pattern = cacheConfig.REDIS_KEY_PREFIX
-          ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}${namespace}:*`
-          : `${namespace}:*`;
-
-        // Use utility functions for efficient scan and parallel deletion
-        const keysToDelete = await scanKeys(keyvRedisClient, pattern);
-
-        if (keysToDelete.length === 0) {
-          return;
-        }
-
-        await batchDeleteKeys(keyvRedisClient, keysToDelete);
-        logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
-      };
+      cache.clear = () => clearRedisNamespace(namespace);
 
       return instrumentRedisCache(cache, namespace);
     } catch (err) {

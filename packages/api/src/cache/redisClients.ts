@@ -6,7 +6,7 @@ import type { ScanOptions } from '@redis/client/dist/lib/commands/SCAN';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
 import type { Redis, Cluster } from 'ioredis';
 import type { ReadonlyRecoveryHandler } from './recovery';
-import { createReadonlyRecovery } from './recovery';
+import { createReadonlyRecovery, isReadonlyReplicaError } from './recovery';
 import { cacheConfig } from './cacheConfig';
 
 const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri)) || [];
@@ -64,8 +64,7 @@ if (cacheConfig.USE_REDIS) {
       return delay;
     },
     reconnectOnError: (err: Error) => {
-      const targetError = 'READONLY';
-      if (err.message.includes(targetError)) {
+      if (isReadonlyReplicaError(err)) {
         logger.warn('ioredis reconnecting due to READONLY error');
         return 2; // Return retry delay instead of boolean
       }
