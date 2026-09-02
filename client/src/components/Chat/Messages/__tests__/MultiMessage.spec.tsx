@@ -1,11 +1,11 @@
 import React from 'react';
-import { getDefaultStore } from 'jotai';
 import { RecoilRoot } from 'recoil';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { getDefaultStore } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TMessage } from 'librechat-data-provider';
-import MultiMessage from '../MultiMessage';
 import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
+import MultiMessage from '../MultiMessage';
 
 type RowProps = {
   message: TMessage;

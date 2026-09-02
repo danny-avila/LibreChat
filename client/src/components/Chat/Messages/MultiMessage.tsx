@@ -6,12 +6,12 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
 import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
+import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 import MessageContent from '~/components/Messages/MessageContent';
 import { useRowMountWindow } from '~/hooks/Messages';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
-import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 
 /** First-run sentinel for `parentRef`: `messageId` itself may legitimately be
  *  null/undefined at the root level, so those can't mark "not yet bound". */

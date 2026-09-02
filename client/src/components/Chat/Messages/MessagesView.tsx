@@ -5,6 +5,7 @@ import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
+import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
 import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
 import { MessagesViewProvider, useChatContext } from '~/Providers';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
@@ -15,7 +16,6 @@ import MultiMessage from './MultiMessage';
 import MessageNav from './MessageNav';
 import { cn } from '~/utils';
 import store from '~/store';
-import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
 
 const intersectionThreshold = 0.85;
 const visibilityDebounceRate = 150;
