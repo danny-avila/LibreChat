@@ -442,6 +442,12 @@ describe('message route conversation ownership filters', () => {
       isTemporary: false,
       files: [{ file_id: 'file-1' }],
       user: authenticatedUserId,
+      /** An existing server-authored row keeps its stored state through the update. */
+      contextMeta: {
+        calibrationRatio: 1.2,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+      },
     };
 
     saveMessage.mockResolvedValue(savedMessage);
@@ -484,6 +490,8 @@ describe('message route conversation ownership filters', () => {
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedMessageFieldPaths');
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('contextMeta');
+    expect(response.body.messageId).toBe(savedMessage.messageId);
+    expect(response.body).not.toHaveProperty('contextMeta');
     expect(saveConvo).toHaveBeenCalledWith(
       expect.objectContaining({ userId: authenticatedUserId }),
       {

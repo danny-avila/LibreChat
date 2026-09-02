@@ -216,6 +216,18 @@ router.get('/', async (req, res) => {
  * @param {string} req.body.agentId - The agentId to filter content by
  * @returns {TMessage} The newly created branch message
  */
+/**
+ * Projects a saved row for a client response. The context meta stays in the
+ * database for the next turn; no client-facing read or write response carries it.
+ * @param {TMessage} message
+ * @returns {TMessage}
+ */
+function toClientMessage(message) {
+  const clientMessage = { ...message };
+  delete clientMessage.contextMeta;
+  return clientMessage;
+}
+
 router.post('/branch', configMiddleware, async (req, res) => {
   try {
     const { messageId, agentId } = req.body;
@@ -349,10 +361,7 @@ router.post('/branch', configMiddleware, async (req, res) => {
       return res.status(500).json({ error: 'Failed to save branch message' });
     }
 
-    /** The context meta stays in the database for the next turn; client reads strip it. */
-    const clientMessage = { ...savedMessage };
-    delete clientMessage.contextMeta;
-    res.status(201).json(clientMessage);
+    res.status(201).json(toClientMessage(savedMessage));
   } catch (error) {
     if (isContentFilterError(error)) {
       return res.status(error.statusCode).json(error.body);
@@ -530,7 +539,7 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
       context: 'POST /api/messages/:conversationId',
       ...(savedMessage._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
-    res.status(201).json(savedMessage);
+    res.status(201).json(toClientMessage(savedMessage));
   } catch (error) {
     logger.error('Error saving message:', error);
     res.status(500).json({ error: 'Internal server error' });
