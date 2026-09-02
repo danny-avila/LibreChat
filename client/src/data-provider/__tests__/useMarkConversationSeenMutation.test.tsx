@@ -244,7 +244,7 @@ describe('useMarkConversationSeenMutation', () => {
     expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversation, CONVO_ID]);
   });
 
-  it('leaves the caches alone when the acknowledgement is accepted', async () => {
+  it('leaves untouched caches alone when the acknowledgement is accepted', async () => {
     mockMarkSeen.mockResolvedValue({ modified: true });
     const { result, queryClient } = setup(SEEN_AT);
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
@@ -257,6 +257,25 @@ describe('useMarkConversationSeenMutation', () => {
     });
 
     expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it('restarts a read it interrupted even when the acknowledgement is accepted', async () => {
+    /* The cancelled response was carrying rows this mutation never asked about, and the
+       optimistic write refreshed `dataUpdatedAt`, so nothing would refetch it. */
+    mockMarkSeen.mockResolvedValue({ modified: true });
+    const { result, queryClient } = setup(SEEN_AT);
+    const listQuery = queryClient.getQueryCache().find(listKey);
+    listQuery?.setState({ fetchStatus: 'fetching' } as never);
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+    });
+
+    expect(invalidate).toHaveBeenCalledWith(listKey, { exact: true });
   });
 
   it('does not undo a newer acknowledgement when an older request fails last', async () => {
