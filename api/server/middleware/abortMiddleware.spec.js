@@ -31,6 +31,9 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /** Real implementation: these tests exist to verify abort classification
+   *  itself, so mocking it would assert the mock rather than the behavior. */
+  isAbortError: jest.requireActual('@librechat/api').isAbortError,
   countTokens: jest.fn().mockResolvedValue(100),
   isEnabled: jest.fn().mockReturnValue(false),
   sendEvent: jest.fn(),
@@ -44,6 +47,9 @@ jest.mock('@librechat/api', () => ({
 }));
 
 jest.mock('librechat-data-provider', () => ({
+  /** Keep the module real: `@librechat/api` is partially un-mocked above and
+   *  reads constants (`CacheKeys`, ...) from it at import time. */
+  ...jest.requireActual('librechat-data-provider'),
   isAssistantsEndpoint: jest.fn().mockReturnValue(false),
   ErrorTypes: { INVALID_REQUEST: 'INVALID_REQUEST', NO_SYSTEM_MESSAGES: 'NO_SYSTEM_MESSAGES' },
 }));
