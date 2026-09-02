@@ -1,5 +1,5 @@
-import { executeWorkspaceTool } from './workspace';
 import type { CodeBridgeFetch } from './bridge';
+import { executeWorkspaceTool } from './workspace';
 
 describe('executeWorkspaceTool', () => {
   test('sends an authenticated bounded read to the selected attached worker', async () => {
