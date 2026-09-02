@@ -1,5 +1,6 @@
 import { Constants } from '@librechat/agents';
 import type { HookCallback } from '@librechat/agents';
+import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 
 const BYOM_APPROVAL_TOOLS = new Set<string>([
   Constants.BASH_TOOL,
@@ -9,7 +10,8 @@ const BYOM_APPROVAL_TOOLS = new Set<string>([
   Constants.WRITE_FILE,
   Constants.EDIT_FILE,
   Constants.COMPILE_CHECK,
-  'create_file',
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
 ]);
 
 type CodeEnvironmentPolicyAgent = {

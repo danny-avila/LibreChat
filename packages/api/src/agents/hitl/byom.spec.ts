@@ -41,6 +41,17 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
       decision: 'ask',
     });
   });
+
+  test.each(['create_file', 'edit_file'])(
+    'asks before the canonical host file action %s',
+    async (toolName) => {
+      const hook = createAttachedCodeEnvironmentPolicyHook(new Set(['attached-agent']));
+
+      await expect(
+        hook({ toolName, executingAgentId: 'attached-agent' } as never, signal),
+      ).resolves.toMatchObject({ decision: 'ask' });
+    },
+  );
 });
 
 describe('collectAttachedCodeEnvironmentAgentIds', () => {

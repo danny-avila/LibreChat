@@ -66,9 +66,9 @@ export function resolveToolApprovalPolicy(
 ): TToolApprovalPolicy | undefined {
   if (layers.attachedCodeEnvironment === true && layers.endpoint?.enabled !== false) {
     return {
+      ...layers.endpoint,
       enabled: true,
       mode: 'bypass',
-      ...layers.endpoint,
     };
   }
   return layers.endpoint;

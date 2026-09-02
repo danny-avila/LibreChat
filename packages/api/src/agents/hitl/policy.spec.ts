@@ -90,6 +90,19 @@ describe('resolveToolApprovalPolicy', () => {
     });
   });
 
+  test('keeps the BYOM bypass baseline when the endpoint normally uses default mode', () => {
+    expect(
+      resolveToolApprovalPolicy({
+        endpoint: { enabled: true, mode: 'default', deny: ['dangerous_tool'] },
+        attachedCodeEnvironment: true,
+      }),
+    ).toEqual({
+      enabled: true,
+      mode: 'bypass',
+      deny: ['dangerous_tool'],
+    });
+  });
+
   test('preserves the administrator emergency override for BYOM', () => {
     const endpoint: TToolApprovalPolicy = { enabled: false };
     expect(resolveToolApprovalPolicy({ endpoint, attachedCodeEnvironment: true })).toBe(endpoint);
