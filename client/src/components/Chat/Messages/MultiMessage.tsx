@@ -146,7 +146,8 @@ function MultiMessage({
 }: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
   const activeSpeechMessageId = useAtomValue(activeSpeechMessageIdAtom);
-  const mountWindow = useRowMountWindow();
+  const selectedMessage = messagesTree?.[(messagesTree?.length ?? 0) - siblingIdx - 1];
+  const rowMountState = useRowMountWindow(selectedMessage?.depth, selectedMessage?.messageId);
 
   const setSiblingIdxRev = useCallback(
     (value: number) => {
@@ -262,7 +263,7 @@ function MultiMessage({
   }
 
   const currentSiblingIdx = messagesTree.length - siblingIdx - 1;
-  const message = messagesTree[currentSiblingIdx] as TMessage | undefined;
+  const message = selectedMessage as TMessage | undefined;
 
   if (!message) {
     return null;
@@ -292,23 +293,14 @@ function MultiMessage({
   };
 
   const depth = message.depth ?? 0;
-  const measuredRow = mountWindow?.heights?.get(depth);
-  const isMeasuredMessage = measuredRow?.messageId === message.messageId;
-  const isInPrimaryWindow =
-    mountWindow != null && depth >= mountWindow.start && depth <= mountWindow.end;
-  const isInStreamTail = mountWindow?.tailStart != null && depth >= mountWindow.tailStart;
-  const isPinned = mountWindow?.pinnedRows?.get(depth) === message.messageId;
+  const measuredRow = rowMountState.measuredRow;
   /** A bounded row with no measurement must render once before it can become
    *  an exact-height slot. Editing also pins the row so local form state is
    *  never released while the editor is active. */
   const rowMounted =
-    mountWindow == null ||
-    isInPrimaryWindow ||
-    isInStreamTail ||
-    isPinned ||
+    rowMountState.windowMounted ||
     currentEditId === message.messageId ||
-    activeSpeechMessageId === message.messageId ||
-    (mountWindow.mode === 'bounded' && !isMeasuredMessage);
+    activeSpeechMessageId === message.messageId;
 
   let row: ReactElement | null = null;
   if (!rowMounted) {
@@ -342,7 +334,7 @@ function MultiMessage({
     return [{ id: `steer-${part.steerId}`, text: part[ContentTypes.STEER] }];
   });
   let rowSlot: ReactElement | null = null;
-  if (rowMounted || (mountWindow?.mode === 'bounded' && measuredRow)) {
+  if (rowMounted || (rowMountState.mode === 'bounded' && measuredRow)) {
     rowSlot = (
       <MessageRowSlot
         depth={depth}
@@ -352,8 +344,8 @@ function MultiMessage({
         searchContent={message.content}
         searchText={message.text}
         steerAnchors={steerAnchors}
-        measureRow={mountWindow?.mode === 'bounded' ? mountWindow.measureRow : undefined}
-        pinRow={mountWindow?.mode === 'bounded' ? mountWindow.pinRow : undefined}
+        measureRow={rowMountState.measureRow}
+        pinRow={rowMountState.pinRow}
       >
         {rowMounted ? row : null}
         {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (

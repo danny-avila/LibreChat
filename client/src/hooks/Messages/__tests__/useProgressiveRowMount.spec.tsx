@@ -1,7 +1,9 @@
 import React from 'react';
-import { act, renderHook } from '@testing-library/react';
+import { act, render, renderHook } from '@testing-library/react';
 import type { RowMountWindow } from '../useProgressiveRowMount';
 import {
+  RowMountProvider,
+  useRowMountWindow,
   useProgressiveRowMount,
   completeProgressiveRowMounts,
   withAllRowsMountedImmediately,
@@ -326,6 +328,9 @@ describe('useProgressiveRowMount', () => {
       layoutKey: 'maximized',
     });
     flushFrames();
+    expect(result.current?.mode).toBe('progressive');
+    flushFrames();
+    flushFrames();
     expect(result.current?.mode).toBe('bounded');
     expect(result.current?.tailStart).toBe(266);
   });
@@ -354,6 +359,9 @@ describe('useProgressiveRowMount', () => {
       });
       container.appendChild(slot);
     }
+    const pendingLayout = document.createElement('div');
+    pendingLayout.dataset.rowLayoutPending = 'true';
+    container.appendChild(pendingLayout);
     scrollableRef.current = container;
     const { result, rerender } = setup({ tailDepth: 39 });
     expect(result.current).toBeNull();
@@ -366,8 +374,63 @@ describe('useProgressiveRowMount', () => {
     });
     flushFrames();
 
+    expect(result.current?.mode).toBe('progressive');
+    flushFrames();
+    flushFrames();
+    expect(result.current?.mode).toBe('progressive');
+    act(() => {
+      pendingLayout.remove();
+      mutationCallback(
+        [
+          {
+            type: 'childList',
+            addedNodes: [] as unknown as NodeList,
+            removedNodes: [pendingLayout] as unknown as NodeList,
+          } as MutationRecord,
+        ],
+        {} as MutationObserver,
+      );
+    });
+    flushFrames();
+    flushFrames();
+
     expect(result.current?.mode).toBe('bounded');
     expect(result.current?.heights?.size).toBe(41);
+  });
+
+  it('notifies only rows whose mount snapshot changes', () => {
+    const renderCounts = [0, 0, 0];
+    const Probe = React.memo(({ depth }: { depth: number }) => {
+      renderCounts[depth] += 1;
+      const state = useRowMountWindow(depth, `message-${depth}`);
+      return <span data-depth={depth}>{String(state.windowMounted)}</span>;
+    });
+    const probes = (
+      <>
+        <Probe depth={0} />
+        <Probe depth={1} />
+        <Probe depth={2} />
+      </>
+    );
+    const heights = new Map<number, { messageId: string; height: number }>(
+      [0, 1, 2].map((depth) => [depth, { messageId: `message-${depth}`, height: 100 }]),
+    );
+    const firstWindow: NonNullable<RowMountWindow> = {
+      mode: 'bounded',
+      start: 0,
+      end: 0,
+      heights,
+    };
+    const view = render(<RowMountProvider mountWindow={firstWindow}>{probes}</RowMountProvider>);
+    expect(renderCounts).toEqual([1, 1, 1]);
+
+    view.rerender(
+      <RowMountProvider mountWindow={{ ...firstWindow, start: 1, end: 1 }}>
+        {probes}
+      </RowMountProvider>,
+    );
+
+    expect(renderCounts).toEqual([2, 2, 1]);
   });
 
   it('rebuilds the scroll index when the active message path shrinks', () => {
@@ -473,7 +536,7 @@ describe('useProgressiveRowMount', () => {
   });
 
   it('re-arms a fresh window when the conversation changes', () => {
-    const { result, rerender } = setup();
+    const { result, rerender } = setup({ layoutKey: 'layout-a' });
 
     while (result.current != null) {
       flushFrames();
@@ -485,6 +548,7 @@ describe('useProgressiveRowMount', () => {
       anchorBottom: false,
       isSubmitting: false,
       conversationId: 'convo-b',
+      layoutKey: 'layout-b',
     });
     expect(result.current).toEqual({ mode: 'progressive', start: 0, end: 15 });
   });

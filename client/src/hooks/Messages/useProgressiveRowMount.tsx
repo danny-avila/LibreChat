@@ -6,6 +6,7 @@ import {
   useCallback,
   createContext,
   useLayoutEffect,
+  useSyncExternalStore,
   startTransition,
 } from 'react';
 import { flushSync } from 'react-dom';
@@ -24,7 +25,112 @@ export type RowMountWindow = {
   pinRow?: (depth: number, messageId: string) => void;
 } | null;
 
-const RowMountContext = createContext<RowMountWindow>(null);
+type RowMountRowState = {
+  mode: 'full' | 'progressive' | 'bounded';
+  windowMounted: boolean;
+  measuredRow?: MeasuredRow;
+  measureRow?: (depth: number, messageId: string, height: number) => void;
+  pinRow?: (depth: number, messageId: string) => void;
+};
+
+function deriveRowState(
+  mountWindow: RowMountWindow,
+  depth: number | undefined,
+  messageId: string | undefined,
+): RowMountRowState {
+  if (mountWindow == null || depth == null || messageId == null) {
+    return { mode: 'full', windowMounted: true };
+  }
+  const measuredRow = mountWindow.heights?.get(depth);
+  const isMeasuredMessage = measuredRow?.messageId === messageId;
+  return {
+    mode: mountWindow.mode,
+    windowMounted:
+      (depth >= mountWindow.start && depth <= mountWindow.end) ||
+      (mountWindow.tailStart != null && depth >= mountWindow.tailStart) ||
+      mountWindow.pinnedRows?.get(depth) === messageId ||
+      (mountWindow.mode === 'bounded' && !isMeasuredMessage),
+    measuredRow: isMeasuredMessage ? measuredRow : undefined,
+    measureRow: mountWindow.mode === 'bounded' ? mountWindow.measureRow : undefined,
+    pinRow: mountWindow.mode === 'bounded' ? mountWindow.pinRow : undefined,
+  };
+}
+
+function equalRowState(left: RowMountRowState, right: RowMountRowState): boolean {
+  return (
+    left.mode === right.mode &&
+    left.windowMounted === right.windowMounted &&
+    left.measuredRow === right.measuredRow &&
+    left.measureRow === right.measureRow &&
+    left.pinRow === right.pinRow
+  );
+}
+
+class RowMountStore {
+  private mountWindow: RowMountWindow = null;
+  private readonly listeners = new Map<string, Set<() => void>>();
+  private readonly snapshots = new Map<string, RowMountRowState>();
+  private readonly pendingKeys = new Set<string>();
+
+  private key(depth: number | undefined, messageId: string | undefined): string {
+    return `${depth ?? ''}\u0000${messageId ?? ''}`;
+  }
+
+  prepare(mountWindow: RowMountWindow): void {
+    if (this.mountWindow === mountWindow) return;
+    this.mountWindow = mountWindow;
+    for (const key of this.listeners.keys()) {
+      const separator = key.indexOf('\u0000');
+      const depthText = key.slice(0, separator);
+      const messageId = key.slice(separator + 1) || undefined;
+      const depth = depthText === '' ? undefined : Number(depthText);
+      const next = deriveRowState(mountWindow, depth, messageId);
+      const previous = this.snapshots.get(key);
+      if (!previous || !equalRowState(previous, next)) {
+        this.snapshots.set(key, next);
+        this.pendingKeys.add(key);
+      }
+    }
+  }
+
+  flush(): void {
+    for (const key of this.pendingKeys) {
+      for (const listener of this.listeners.get(key) ?? []) listener();
+    }
+    this.pendingKeys.clear();
+  }
+
+  subscribe(
+    depth: number | undefined,
+    messageId: string | undefined,
+    listener: () => void,
+  ): () => void {
+    const key = this.key(depth, messageId);
+    const listeners = this.listeners.get(key) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(key, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.listeners.delete(key);
+        this.snapshots.delete(key);
+        this.pendingKeys.delete(key);
+      }
+    };
+  }
+
+  getSnapshot(depth: number | undefined, messageId: string | undefined): RowMountRowState {
+    const key = this.key(depth, messageId);
+    const cached = this.snapshots.get(key);
+    if (cached) return cached;
+    const snapshot = deriveRowState(this.mountWindow, depth, messageId);
+    this.snapshots.set(key, snapshot);
+    return snapshot;
+  }
+}
+
+const defaultRowMountStore = new RowMountStore();
+const RowMountContext = createContext<RowMountStore>(defaultRowMountStore);
 
 export function RowMountProvider({
   mountWindow,
@@ -33,11 +139,25 @@ export function RowMountProvider({
   mountWindow: RowMountWindow;
   children: ReactNode;
 }) {
-  return <RowMountContext.Provider value={mountWindow}>{children}</RowMountContext.Provider>;
+  const storeRef = useRef<RowMountStore | null>(null);
+  if (!storeRef.current) storeRef.current = new RowMountStore();
+  const store = storeRef.current;
+  store.prepare(mountWindow);
+  useLayoutEffect(() => store.flush());
+  return <RowMountContext.Provider value={store}>{children}</RowMountContext.Provider>;
 }
 
-export function useRowMountWindow(): RowMountWindow {
-  return useContext(RowMountContext);
+export function useRowMountWindow(depth?: number, messageId?: string): RowMountRowState {
+  const store = useContext(RowMountContext);
+  const subscribe = useCallback(
+    (listener: () => void) => store.subscribe(depth, messageId, listener),
+    [depth, messageId, store],
+  );
+  const getSnapshot = useCallback(
+    () => store.getSnapshot(depth, messageId),
+    [depth, messageId, store],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 const MIN_WINDOWED_ROWS = 40;
@@ -143,6 +263,7 @@ export function useProgressiveRowMount({
   const leaseEpochRef = useRef(0);
   const remeasuringRef = useRef(false);
   const remeasureAnchorRef = useRef<{ messageId: string; viewportTop: number } | null>(null);
+  const previousLayoutKeyRef = useRef(layoutKey);
   const tailDepthRef = useRef(tailDepth);
   const isSubmittingRef = useRef(isSubmitting);
   tailDepthRef.current = tailDepth;
@@ -161,6 +282,7 @@ export function useProgressiveRowMount({
     leaseEpochRef.current += 1;
     remeasuringRef.current = false;
     remeasureAnchorRef.current = null;
+    previousLayoutKeyRef.current = layoutKey;
     setMountWindow(progressiveWindow(tailDepth, anchorBottom));
     anchorRef.current = null;
   }
@@ -520,12 +642,11 @@ export function useProgressiveRowMount({
     ) {
       return;
     }
-    const frameId = requestAnimationFrame(() => {
-      measureMountedRows();
-      setMountWindow(publishBoundedWindow());
-    });
+    const frameId = requestAnimationFrame(() =>
+      setMountWindow({ mode: 'progressive', start: 0, end: Number.POSITIVE_INFINITY }),
+    );
     return () => cancelAnimationFrame(frameId);
-  }, [mountWindow, tailDepth, measureMountedRows, publishBoundedWindow]);
+  }, [mountWindow, tailDepth]);
 
   useLayoutEffect(() => {
     const captured = anchorRef.current;
@@ -552,7 +673,6 @@ export function useProgressiveRowMount({
     if (mountWindow?.mode === 'bounded') remeasureAnchorRef.current = null;
   }, [mountWindow, scrollableRef]);
 
-  const previousLayoutKeyRef = useRef(layoutKey);
   useEffect(() => {
     if (previousLayoutKeyRef.current === layoutKey) return;
     previousLayoutKeyRef.current = layoutKey;

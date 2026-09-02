@@ -23,7 +23,9 @@ describe('ScreenshotContext', () => {
     target.dataset.screenshotKey = 'conversation-a';
     document.body.appendChild(target);
     const ref = result.current.screenshotTargetRef;
-    if (ref && !(ref instanceof Function)) ref.current = target;
+    if (ref && !(ref instanceof Function)) {
+      (ref as { current: HTMLDivElement | null }).current = target;
+    }
 
     let capture = Promise.resolve(new Blob());
     act(() => {
