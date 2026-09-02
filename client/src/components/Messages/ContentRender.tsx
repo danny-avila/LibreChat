@@ -11,11 +11,11 @@ import {
 } from '~/utils';
 import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import ToolCallLimitNotice from '~/components/Chat/Messages/Content/ToolCallLimitNotice';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
 import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
-import ToolCallLimitNotice from '~/components/Chat/Messages/Content/ToolCallLimitNotice';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';

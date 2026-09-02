@@ -1,13 +1,13 @@
 import { memo, Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Alert, DelayedRender } from '@librechat/client';
 import { Constants } from 'librechat-data-provider';
+import { Alert, DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import Error from '~/components/Messages/Content/Error';
-import CollapsibleText from './Parts/CollapsibleText';
 import ToolCallLimitNotice from './ToolCallLimitNotice';
+import CollapsibleText from './Parts/CollapsibleText';
 import { useMessageContext } from '~/Providers';
 import EmptyText from './Parts/EmptyText';
 import MarkdownLite from './MarkdownLite';
