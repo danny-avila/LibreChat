@@ -85,15 +85,9 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
     ).resolves.toMatchObject({ decision: 'deny' });
   });
 
-  test.each([
-    ['create_file', 'skills/reviewer/SKILL.md'],
-    ['edit_file', '/skills/reviewer/SKILL.md'],
-    ['create_file', './skills/reviewer/SKILL.md'],
-    ['edit_file', 'skills\\reviewer\\SKILL.md'],
-    ['create_file', 'workspace/../skills/reviewer/SKILL.md'],
-  ])(
-    'keeps persistent skill write %s:%s approval-gated when BYOM file writes are allowed',
-    async (toolName, skillPath) => {
+  test.each(['create_file', 'edit_file'])(
+    'keeps persistent skill write %s approval-gated when BYOM file writes are allowed',
+    async (toolName) => {
       const hook = createAttachedCodeEnvironmentPolicyHook(
         new Set(['attached-agent']),
         new Map([
@@ -106,6 +100,7 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
                 },
               },
               settings: { permissions: { fileWrite: 'allow' as const } },
+              skillAuthoringAvailable: true,
             },
           ],
         ]),
@@ -115,7 +110,7 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
         hook(
           {
             toolName,
-            toolInput: { path: skillPath },
+            toolInput: { path: 'skills/reviewer/SKILL.md' },
             executingAgentId: 'attached-agent',
           } as never,
           signal,
@@ -136,6 +131,40 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
       ).resolves.toEqual({ decision: 'allow' });
     },
   );
+
+  test.each([
+    '/skills/reviewer/SKILL.md',
+    './skills/reviewer/SKILL.md',
+    'skills\\reviewer\\SKILL.md',
+    'workspace/../skills/reviewer/SKILL.md',
+  ])('applies the BYOM file policy to sandbox-routed path %s', async (filePath) => {
+    const hook = createAttachedCodeEnvironmentPolicyHook(
+      new Set(['attached-agent']),
+      new Map([
+        [
+          'attached-agent',
+          {
+            configSchema: {
+              permissions: { fileWrite: { allowed: ['ask', 'deny'], default: 'deny' } },
+            },
+            settings: { permissions: { fileWrite: 'deny' as const } },
+            skillAuthoringAvailable: true,
+          },
+        ],
+      ]),
+    );
+
+    await expect(
+      hook(
+        {
+          toolName: 'create_file',
+          toolInput: { path: filePath },
+          executingAgentId: 'attached-agent',
+        } as never,
+        signal,
+      ),
+    ).resolves.toMatchObject({ decision: 'deny' });
+  });
 });
 
 describe('buildAttachedCodeEnvironmentAdmissionHooks', () => {
@@ -159,6 +188,7 @@ describe('buildAttachedCodeEnvironmentAdmissionHooks', () => {
           settings: {
             permissions: { fileWrite: 'allow' as const, commandExecution: 'deny' as const },
           },
+          skillAuthoringAvailable: true,
         },
       ],
     ]);
@@ -221,6 +251,32 @@ describe('buildAttachedCodeEnvironmentAdmissionHooks', () => {
       }),
     ).toBe(true);
   });
+
+  test('does not add a skill pause branch when skill authoring is unavailable', () => {
+    const attachedIds = new Set(['attached-agent']);
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'attached-agent',
+        {
+          configSchema: {
+            permissions: { fileWrite: { allowed: ['allow', 'deny'], default: 'allow' } },
+          },
+          settings: { permissions: { fileWrite: 'allow' } },
+          skillAuthoringAvailable: false,
+        },
+      ],
+    ]);
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [{ id: 'attached-agent', tools: ['create_file', 'edit_file'] }],
+        resolvedProgrammaticHooks: buildAttachedCodeEnvironmentAdmissionHooks(
+          attachedIds,
+          settings,
+        ),
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('collectAttachedCodeEnvironmentAgentIds', () => {
@@ -255,6 +311,7 @@ describe('collectAttachedCodeEnvironmentAgentIds', () => {
     expect(collectAttachedCodeEnvironmentPolicySettings(agents).get('attached-child')).toEqual({
       configSchema: undefined,
       settings: { permissions: { fileWrite: 'allow' } },
+      skillAuthoringAvailable: false,
     });
   });
 });

@@ -7,6 +7,7 @@ import type {
 import type { HookCallback } from '@librechat/agents';
 import type { ResolvedToolApprovalHook } from './hooks';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
+import { isSkillFilePath } from '~/agents/skills';
 
 const BYOM_FILE_WRITE_TOOLS = new Set<string>([
   Constants.WRITE_FILE,
@@ -26,12 +27,14 @@ const BYOM_COMMAND_EXECUTION_TOOLS = new Set<string>([
 export type AttachedCodeEnvironmentPolicySettings = {
   configSchema?: CodeEnvironmentUserConfigSchema;
   settings?: CodeEnvironmentUserSettings;
+  skillAuthoringAvailable?: boolean;
 };
 
 type PermissionCategory = 'fileWrite' | 'commandExecution';
 
 type CodeEnvironmentPolicyAgent = {
   id?: string;
+  skillAuthoringAvailable?: boolean;
   codeExecutionContext?: {
     environmentType?: string;
     codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
@@ -114,6 +117,7 @@ export function collectAttachedCodeEnvironmentPolicySettings(
       settingsByAgentId.set(agent.id, {
         configSchema: agent.codeExecutionContext.codeEnvironmentConfigSchema,
         settings: agent.codeExecutionContext.codeEnvironmentSettings,
+        skillAuthoringAvailable: agent.skillAuthoringAvailable === true,
       });
     }
   }
@@ -135,20 +139,6 @@ function exactToolMatcher(toolNames: ReadonlySet<string>): string {
   return `^(?:${Array.from(toolNames, (name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 }
 
-function isPersistentSkillPath(value: string): boolean {
-  const normalized = value.replace(/\\/g, '/');
-  const segments: string[] = [];
-  for (const segment of normalized.split('/')) {
-    if (segment === '' || segment === '.') continue;
-    if (segment === '..') {
-      segments.pop();
-      continue;
-    }
-    segments.push(segment);
-  }
-  return segments[0] === 'skills';
-}
-
 /** Describe only the BYOM hook branches that can actually return `ask` during admission. */
 export function buildAttachedCodeEnvironmentAdmissionHooks(
   attachedAgentIds: ReadonlySet<string>,
@@ -158,10 +148,12 @@ export function buildAttachedCodeEnvironmentAdmissionHooks(
   const hooks: ResolvedToolApprovalHook[] = [];
   const askFileAgents = new Set<string>();
   const askCommandAgents = new Set<string>();
+  const skillAuthoringAgents = new Set<string>();
   for (const agentId of attachedAgentIds) {
     const policy = settingsByAgentId.get(agentId);
     if (permissionDecision(policy, 'fileWrite') === 'ask') askFileAgents.add(agentId);
     if (permissionDecision(policy, 'commandExecution') === 'ask') askCommandAgents.add(agentId);
+    if (policy?.skillAuthoringAvailable === true) skillAuthoringAgents.add(agentId);
   }
   if (askFileAgents.size > 0) {
     hooks.push({ hook, matcher: exactToolMatcher(BYOM_FILE_WRITE_TOOLS), agentIds: askFileAgents });
@@ -173,11 +165,11 @@ export function buildAttachedCodeEnvironmentAdmissionHooks(
       agentIds: askCommandAgents,
     });
   }
-  if (attachedAgentIds.size > 0) {
+  if (skillAuthoringAgents.size > 0) {
     hooks.push({
       hook,
       matcher: exactToolMatcher(new Set([CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME])),
-      agentIds: attachedAgentIds,
+      agentIds: skillAuthoringAgents,
     });
   }
   return hooks;
@@ -209,7 +201,8 @@ export function createAttachedCodeEnvironmentPolicyHook(
       category === 'fileWrite' &&
       (input.toolName === CREATE_FILE_TOOL_NAME || input.toolName === EDIT_FILE_TOOL_NAME) &&
       typeof input.toolInput?.path === 'string' &&
-      isPersistentSkillPath(input.toolInput.path)
+      isSkillFilePath(input.toolInput.path) &&
+      settingsByAgentId.get(input.executingAgentId ?? '')?.skillAuthoringAvailable !== false
     ) {
       return {
         decision: 'ask',
