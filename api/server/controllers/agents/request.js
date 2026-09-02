@@ -1702,6 +1702,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           endpoint: endpointOption.endpoint,
           iconURL: resumeState.iconURL || endpointIconURL,
           model: resumeState.model || responseModel,
+          /** The run publishes its calibration and fading tiers onto the job; a
+           * partial response saved on disconnect must carry them like the Stop
+           * and pause paths do, or a turn continued from it re-derives its
+           * provider projection of history and loses the cached prefix. */
+          ...(resumeState.contextMeta != null && { contextMeta: resumeState.contextMeta }),
         };
 
         if (req.body?.agent_id) {

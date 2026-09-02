@@ -142,6 +142,12 @@ describe('ResumableAgentController tenant context', () => {
    * Drives the controller far enough to register the `allSubscribersLeft` handler,
    * fires it, and returns the tenant context that was active during `saveMessage`.
    */
+  const partialContextMeta = {
+    calibrationRatio: 1.2,
+    encoding: 'claude',
+    fading: { v: 1, budgetTokens: 50_000, masked: true },
+  };
+
   const firePartialDisconnect = async (user) => {
     let allSubscribersLeftHandler;
     mockGenerationJobManager.createJob.mockResolvedValue({
@@ -166,6 +172,7 @@ describe('ResumableAgentController tenant context', () => {
       userMessage: {
         messageId: 'user-message',
       },
+      contextMeta: partialContextMeta,
     });
 
     let tenantSeenBySave;
@@ -201,6 +208,20 @@ describe('ResumableAgentController tenant context', () => {
     await allSubscribersLeftHandler([{ type: 'text', text: 'Partial response' }]);
     return tenantSeenBySave;
   };
+
+  it('carries the context meta the run published onto the partial response saved on disconnect', async () => {
+    await firePartialDisconnect({ id: 'user-123', tenantId: 'tenant-a' });
+
+    expect(mockSaveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        messageId: 'response-message',
+        unfinished: true,
+        contextMeta: partialContextMeta,
+      }),
+      expect.any(Object),
+    );
+  });
 
   it('restores the authenticated tenant before saving a partial response on disconnect', async () => {
     const tenantSeenBySave = await firePartialDisconnect({ id: 'user-123', tenantId: 'tenant-a' });

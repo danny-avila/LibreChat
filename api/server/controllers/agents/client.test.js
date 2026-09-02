@@ -1253,15 +1253,19 @@ describe('AgentClient - interrupt discovery persistence', () => {
     };
     client.seedContextMeta(seed);
     let metaWhenResumed;
+    let metaWhenCreated;
     const resume = jest.fn(async () => {
       metaWhenResumed = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
     });
-    mockCreateRun.mockResolvedValueOnce({
-      Graph: null,
-      resume,
-      processStream: jest.fn().mockResolvedValue(),
-      getCalibrationRatio: jest.fn(() => 0),
-      getInterrupt: jest.fn(() => undefined),
+    mockCreateRun.mockImplementationOnce(async () => {
+      metaWhenCreated = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
+      return {
+        Graph: null,
+        resume,
+        processStream: jest.fn().mockResolvedValue(),
+        getCalibrationRatio: jest.fn(() => 0),
+        getInterrupt: jest.fn(() => undefined),
+      };
     });
     client.conversationId = streamId;
     client.responseMessageId = 'response-context-meta-resume-seed';
@@ -1274,6 +1278,7 @@ describe('AgentClient - interrupt discovery persistence', () => {
     });
 
     expect(resume).toHaveBeenCalledTimes(1);
+    expect(metaWhenCreated).toEqual(seed);
     expect(metaWhenResumed).toEqual(seed);
   });
 
@@ -1306,14 +1311,19 @@ describe('AgentClient - interrupt discovery persistence', () => {
     };
     client.contextMeta = seed;
     let metaWhenStreamed;
+    let metaWhenCreated;
     const processStream = jest.fn(async () => {
       metaWhenStreamed = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
     });
-    mockCreateRun.mockResolvedValueOnce({
-      Graph: null,
-      processStream,
-      getCalibrationRatio: jest.fn(() => 0),
-      getInterrupt: jest.fn(() => undefined),
+    /** Run creation is the first abortable setup stage; the seed must precede it. */
+    mockCreateRun.mockImplementationOnce(async () => {
+      metaWhenCreated = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
+      return {
+        Graph: null,
+        processStream,
+        getCalibrationRatio: jest.fn(() => 0),
+        getInterrupt: jest.fn(() => undefined),
+      };
     });
     client.conversationId = streamId;
     client.responseMessageId = 'response-context-meta-stream-seed';
@@ -1323,6 +1333,7 @@ describe('AgentClient - interrupt discovery persistence', () => {
     await client.chatCompletion({ payload: [] });
 
     expect(processStream).toHaveBeenCalledTimes(1);
+    expect(metaWhenCreated).toEqual(seed);
     expect(metaWhenStreamed).toEqual(seed);
   });
 

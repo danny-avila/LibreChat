@@ -342,7 +342,10 @@ router.post('/branch', configMiddleware, async (req, res) => {
       return res.status(500).json({ error: 'Failed to save branch message' });
     }
 
-    res.status(201).json(savedMessage);
+    /** The context meta stays in the database for the next turn; client reads strip it. */
+    const clientMessage = { ...savedMessage };
+    delete clientMessage.contextMeta;
+    res.status(201).json(clientMessage);
   } catch (error) {
     if (isContentFilterError(error)) {
       return res.status(error.statusCode).json(error.body);

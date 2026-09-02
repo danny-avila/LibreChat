@@ -354,6 +354,9 @@ describe('message route conversation ownership filters', () => {
     } else {
       expect(savedMessage.contextMeta).toEqual(contextMeta);
     }
+    /** Server-private state stays in the database; normal reads strip it, so must this response. */
+    expect(response.body).not.toHaveProperty('contextMeta');
+    expect(response.body.messageId).toBe(savedMessage.messageId);
   });
 
   it('does not hydrate branch files for an inert file policy', async () => {

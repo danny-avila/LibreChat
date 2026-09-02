@@ -1955,7 +1955,7 @@ class AgentClient extends BaseClient {
    * @returns {Promise<void>}
    */
   publishRunContextMeta({ live = false } = {}) {
-    const streamId = this.options.req?._resumableStreamId;
+    const streamId = this.options?.req?._resumableStreamId;
     if (!streamId) {
       return Promise.resolve();
     }
@@ -1994,6 +1994,7 @@ class AgentClient extends BaseClient {
       logger.warn('[AgentClient] Ignoring malformed context meta', getSafeErrorMetadata(err));
       this.contextMeta = undefined;
     }
+    void this.publishRunContextMeta?.();
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
@@ -2557,6 +2558,9 @@ class AgentClient extends BaseClient {
       orderedMessages.length >= 2 ? orderedMessages[orderedMessages.length - 2] : undefined;
     if (parentResponse?.contextMeta && !parentResponse.isCreatedByUser) {
       this.contextMeta = parentResponse.contextMeta;
+      /** Start the seed publish as soon as the parent's state is known: a Stop
+       * during the rest of setup must already find it on the job. */
+      void this.publishRunContextMeta?.();
     }
 
     const result = {
@@ -3905,6 +3909,9 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
+    /** The inherited state is on the job before any abortable setup begins; a
+     * publish already started while loading history is simply awaited. */
+    await this.publishRunContextMeta?.();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -4709,6 +4716,9 @@ class AgentClient extends BaseClient {
     activityPhaseSnapshot,
     compactionSemanticIndex,
   }) {
+    /** The seeded state is on the job before the run is rebuilt, so a Stop
+     * during rebuild still persists it onto the stopped response. */
+    await this.publishRunContextMeta?.();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */

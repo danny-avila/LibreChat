@@ -14,6 +14,37 @@ export interface ISubagentThreadLease {
   expiresAt: Date;
 }
 
+/** Server-private route from one authenticated event source to a child actor thread. */
+export interface IAgentEventBinding {
+  bindingId: string;
+  sourceKeyId: string;
+  actorId: string;
+}
+
+export interface IAgentEventActorCheckpoint {
+  threadId: string;
+  checkpointId: string;
+  checkpointNs: string;
+}
+
+export interface IAgentEventActorContextFingerprint {
+  algorithm: 'sha256';
+  version: number;
+  digest: string;
+}
+
+export interface IAgentEventActorSkillIdentity {
+  id: string;
+  name: string;
+  version: number;
+  contentDigest?: string;
+}
+
+export interface IAgentEventActorSummary {
+  text: string;
+  tokenCount: number;
+}
+
 /**
  * Latched context-fading tier from `@librechat/agents`. Every cap the SDK
  * applies to its provider-only projection of historical tool results derives
