@@ -395,7 +395,7 @@ describe('MessageNav', () => {
       expect(ribA.querySelector('span')).toHaveClass('bg-text-primary');
       expect(ribB.className).toContain('opacity-40');
       expect(ribB.className).toContain('high-contrast:opacity-50');
-      expect(ribB.querySelector('span')).toHaveClass('bg-border-heavy');
+      expect(ribB.querySelector('span')).toHaveClass('bg-text-tertiary');
       expect(ribA.querySelector('span')?.className).not.toMatch(/bg-gray-|dark:bg-gray-/);
       expect(ribB.querySelector('span')?.className).not.toMatch(/bg-gray-|dark:bg-gray-/);
 

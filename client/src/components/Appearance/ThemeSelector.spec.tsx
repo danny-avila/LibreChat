@@ -1,7 +1,7 @@
 // ThemeSelector.spec.tsx
 import 'test/matchMedia.mock';
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import { clickDropdown, flushDropdownEffects } from 'test/dropdown';
 import '@testing-library/jest-dom/extend-expect';
 import { RecoilRoot } from 'recoil';

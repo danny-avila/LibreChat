@@ -420,6 +420,9 @@ html {
 html.high-contrast {
   /* A 0.5rem bar is a small target to hit and a thin thing to see. */
   --scrollbar-size: 0.75rem;
+  /* Keep both animated text stops at the AAA ratios declared by the palette. */
+  --shimmer-base-alpha: 1;
+  --shimmer-dip-alpha: 1;
 }
 html.high-contrast ::-webkit-scrollbar-thumb {
   /* The 10%-alpha thumb is invisible against a pure black or white canvas. */

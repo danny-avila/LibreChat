@@ -173,6 +173,17 @@ describe.each([
     expect(below(theme, WCAG_AAA_NORMAL, textTokens, surfaces)).toEqual([]);
   });
 
+  it('keeps both shimmer stops at WCAG AAA on the page', () => {
+    expect(
+      below(
+        theme,
+        WCAG_AAA_NORMAL,
+        ['rgb-shimmer-base', 'rgb-shimmer-dip'],
+        ['rgb-surface-primary'],
+      ),
+    ).toEqual([]);
+  });
+
   it('makes the selected state visible without dropping its label below AA', () => {
     expect(below(theme, WCAG_NON_TEXT, activeFills, canvasSurfaces)).toEqual([]);
     expect(below(theme, WCAG_AA_NORMAL, textTokens, activeFills)).toEqual([]);

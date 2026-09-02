@@ -38,6 +38,8 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-text-tertiary': '0 0 0', // #000000
   'rgb-text-warning': '122 61 0', // #7a3d00
   'rgb-text-destructive': '161 0 0', // #a10000
+  'rgb-shimmer-base': '0 0 0', // #000000, 21:1 on white
+  'rgb-shimmer-dip': '77 77 77', // #4d4d4d, 8.45:1 on white
 
   // Link and accent colors
   'rgb-link': '0 0 204', // #0000cc
@@ -163,6 +165,8 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-text-tertiary': '255 255 255', // #ffffff
   'rgb-text-warning': '255 201 77', // #ffc94d
   'rgb-text-destructive': '255 143 143', // #ff8f8f
+  'rgb-shimmer-base': '255 255 255', // #ffffff, 21:1 on black
+  'rgb-shimmer-dip': '179 179 179', // #b3b3b3, 10.02:1 on black
 
   // Link and accent colors
   'rgb-link': '140 200 255', // #8cc8ff
