@@ -200,6 +200,31 @@ describe('SkillsSection mode derivation', () => {
     expect(getRadio('com_ui_skills_mode_all')).toHaveAttribute('aria-checked', 'true');
     expectNoFieldWrite('skill_authoring_enabled');
   });
+
+  test('clears the master flag when an explicit none scope resolves to Off', () => {
+    /** A valid API shape: enabled with `skills_scope: none`. The section shows
+     *  Off, but `skillDeps` reads the master flag alone as permission to
+     *  expose the authoring tools, and clicking Off cannot clear it. */
+    mockFormValues = {
+      skills_enabled: true,
+      skills_scope: SkillsScope.none,
+      skills: ['s1'],
+    };
+
+    renderSection([makeItem('s1', 'Selected skill')]);
+
+    expect(getRadio('com_ui_skills_mode_off')).toHaveAttribute('aria-checked', 'true');
+    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: false });
+  });
+
+  test('leaves the master flag alone while a catalog mode is active', () => {
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(getRadio('com_ui_skills_mode_all')).toHaveAttribute('aria-checked', 'true');
+    expectNoFieldWrite('skills_enabled');
+  });
 });
 
 describe('SkillsSection mode writes', () => {

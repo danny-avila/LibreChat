@@ -130,22 +130,30 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
 
   const authoringEnabledValue = useWatch({ control, name: 'skill_authoring_enabled' });
 
-  /** Two legacy shapes the section has to reconcile with what it displays.
-   *  Neither dirties the form: they are normalizations the user did not ask
-   *  for, and they must not light up Save on an untouched agent.
+  /** Two shapes the section has to reconcile with what it displays. Neither
+   *  dirties the form: they are normalizations the user did not ask for, and
+   *  they must not light up Save on an untouched agent.
    *
    *  1. `skills_enabled` with no explicit scope, where the meaning depends on
    *     whether the allowlist is empty. Pin the resolved scope so the next
    *     save persists the new shape.
-   *  2. Authoring left on under a resolved Off. `skillDeps` enables the
-   *     skill-authoring tools for either flag, so that shape runs with skills
-   *     the section says are disabled. Off means no skills at all, which is
-   *     what selecting Off already writes. */
+   *  2. Either capability flag left on under a resolved Off, which
+   *     `skills_enabled: true` with `skills_scope: none` produces through the
+   *     API. `skillDeps` exposes the skill-authoring tools for either flag, so
+   *     that shape runs with skills the section reports as disabled, and
+   *     clicking the already-selected Off segment cannot clear it. Off means
+   *     no skills at all, which is what selecting Off already writes. */
   useEffect(() => {
     if (skillsEnabledValue === true && skillsScopeValue === undefined) {
       setValue('skills_scope', mode, { shouldDirty: false });
     }
-    if (mode === SkillsScope.none && authoringEnabledValue === true) {
+    if (mode !== SkillsScope.none) {
+      return;
+    }
+    if (skillsEnabledValue === true) {
+      setValue('skills_enabled', false, { shouldDirty: false });
+    }
+    if (authoringEnabledValue === true) {
       setValue('skill_authoring_enabled', false, { shouldDirty: false });
     }
   }, [mode, skillsEnabledValue, skillsScopeValue, authoringEnabledValue, setValue]);
