@@ -1,8 +1,9 @@
 # Mobile Chat Performance Baseline
 
-Captured September 2, 2026 from LibreChat `434fa377c` on an Apple M4 Max with
+Captured September 2, 2026 from LibreChat `519e64769` on an Apple M4 Max with
 macOS 26.6, Node.js 24.16.0, Playwright 1.62.1, and Chromium at the iPhone 13
-viewport (`390x844`). The production client was used.
+descriptor's `390x664` viewport on a `390x844` screen. The production client
+was used.
 
 The stress conversation contained 150 user/assistant turns (300 rows) with
 prose, lists, code blocks, and tables. The continuation phase streamed three
@@ -12,30 +13,30 @@ utilization.
 
 ## Raw browser measurements
 
-| Phase                   |      Wall | Main-thread busy |     Task |   Script |  Style | Long tasks (total/worst) | Heap at end | DOM nodes |
-| ----------------------- | --------: | ---------------: | -------: | -------: | -----: | -----------------------: | ----------: | --------: |
-| Empty chat idle         |  3,015 ms |            12.8% |   387 ms |   220 ms |  48 ms |                 65/65 ms |     58.5 MB |     2,021 |
-| Load 300 rows           |  2,177 ms |            85.2% | 1,855 ms | 1,257 ms |  85 ms |               295/219 ms |    249.1 MB |   118,549 |
-| Long chat idle          |  3,034 ms |            22.1% |   672 ms |     7 ms | 188 ms |                   0/0 ms |    328.4 MB |   120,289 |
-| Four full scroll cycles |  3,765 ms |            89.9% | 3,386 ms | 1,123 ms | 330 ms |                   0/0 ms |    341.0 MB |   120,475 |
-| Three continuations     | 11,691 ms |            83.8% | 9,797 ms | 3,540 ms | 981 ms |             1,941/272 ms |    353.9 MB |   127,342 |
-| Typing after stress     |  1,229 ms |            58.8% |   723 ms |   162 ms | 106 ms |                   0/0 ms |    399.2 MB |   128,076 |
+| Phase                   |      Wall | Main-thread busy |      Task |   Script |  Style | Long tasks (total/worst) | Heap at end | DOM nodes |
+| ----------------------- | --------: | ---------------: | --------: | -------: | -----: | -----------------------: | ----------: | --------: |
+| Empty chat idle         |  3,007 ms |            15.9% |    479 ms |   273 ms |  64 ms |               102/102 ms |     52.6 MB |     2,063 |
+| Load 300 rows           |  2,909 ms |            84.4% |  2,455 ms | 1,717 ms | 119 ms |               347/250 ms |    271.2 MB |   121,371 |
+| Long chat idle          |  3,030 ms |            14.5% |    439 ms |     5 ms | 132 ms |                   0/0 ms |    349.5 MB |   123,427 |
+| Four full scroll cycles |  3,787 ms |            90.9% |  3,441 ms | 1,107 ms | 343 ms |                   0/0 ms |    348.4 MB |   123,587 |
+| Three continuations     | 11,182 ms |            95.2% | 10,646 ms | 4,208 ms | 872 ms |             2,791/325 ms |    511.6 MB |   126,234 |
+| Typing after stress     |  1,357 ms |            71.1% |    965 ms |   206 ms | 145 ms |                   0/0 ms |    541.7 MB |   127,013 |
 
 Heap figures are point-in-time values without forced garbage collection, so
 they do not establish a memory leak.
 
 ## React Scan diagnostic
 
-React Scan observed 44,641 render records while loading, 3,205 while scrolling,
-207,051 during the three streamed continuations, and 1,336 while typing. The
+React Scan observed 44,521 render records while loading, 2,852 while scrolling,
+201,013 during the three streamed continuations, and 1,334 while typing. The
 settled long conversation produced only 26 render records during its
 three-second idle phase. This points away from a continuous React rerender loop
 as the source of settled-idle work, but shows a very large amount of React work
 during streaming.
 
 React Scan materially perturbed the workload. During continuation, Chromium
-script time increased from 3,540 ms to 11,618 ms and task time increased from
-9,797 ms to 13,856 ms. Its instrumented production-build timings were reported
+script time increased from 4,208 ms to 12,332 ms and task time increased from
+10,646 ms to 14,991 ms. Its instrumented production-build timings were reported
 as zero and many component names were minified. Therefore the raw run is the
 performance baseline; React Scan is useful here only for comparative render
 counts and for narrowing a follow-up development-build profile.

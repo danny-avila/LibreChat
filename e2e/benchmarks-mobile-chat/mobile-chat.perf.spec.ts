@@ -13,7 +13,7 @@ import {
   NEW_CHAT_PATH,
   messagesView,
   selectMockEndpoint,
-  sendMessageAndWaitForCompletion,
+  sendMessage,
 } from '../specs/mock/helpers';
 import { getE2EUser } from '../setup/user';
 import {
@@ -130,15 +130,17 @@ async function runScenario(
 
   await runPhase('continue', page, results, reactScan, async () => {
     for (let turn = 1; turn <= CONTINUATIONS; turn += 1) {
-      await sendMessageAndWaitForCompletion(page, `Continue mobile stress turn ${turn}`, {
-        timeout: 90_000,
+      await sendMessage(page, `Continue mobile stress turn ${turn}`);
+      await expect(messagesView(page).getByText(STREAM_END_MARKER, { exact: true })).toHaveCount(
+        turn,
+        { timeout: 90_000 },
+      );
+      await expect(page.getByRole('button', { name: 'Stop generating' })).toBeHidden({
+        timeout: 30_000,
       });
-      await expect(messageRows(page)).toHaveCount(ROWS + turn * 2, { timeout: 30_000 });
     }
-    await expect(messagesView(page).getByText(STREAM_END_MARKER, { exact: true })).toHaveCount(
-      CONTINUATIONS,
-    );
   });
+  await expect(messageRows(page)).toHaveCount(ROWS + CONTINUATIONS * 2, { timeout: 30_000 });
 
   await runPhase('typing', page, results, reactScan, async () => {
     const input = page.getByRole('textbox', { name: 'Message input' });
@@ -151,7 +153,8 @@ async function runScenario(
 
   console.log(
     `\n=== Mobile chat stress: ${reactScan ? 'react-scan diagnostic' : 'raw browser metrics'} ` +
-      `(390x844, ${TURNS} seeded turns / ${ROWS} rows, ${CONTINUATIONS} continuations) ===`,
+      `(390x664 viewport, 390x844 screen, ${TURNS} seeded turns / ${ROWS} rows, ` +
+      `${CONTINUATIONS} continuations) ===`,
   );
   for (const [name, phase] of Object.entries(results.browser)) {
     console.log(formatBrowserPhase(name, phase));

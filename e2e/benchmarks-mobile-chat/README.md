@@ -1,8 +1,9 @@
 # Mobile Chat Performance Benchmark
 
-Measures long-conversation behavior in a `390x844` iPhone 13 viewport using a
-local production build and the mock-model pipeline. No provider credentials or
-external model calls are used.
+Measures long-conversation behavior with Playwright's iPhone 13 descriptor: a
+`390x664` browser viewport on a `390x844` screen. It uses a local production
+build and the mock-model pipeline; no provider credentials or external model
+calls are used.
 
 The benchmark seeds 150 user/assistant turns (300 rendered message rows), then
 captures six phases:
