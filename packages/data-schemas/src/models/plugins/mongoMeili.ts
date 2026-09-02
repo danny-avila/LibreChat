@@ -116,6 +116,7 @@ const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 const previouslyIndexedFlagKey = 'meiliPreviouslyIndexed';
 const meiliCleanupVersion = 1;
 const meiliRequestTimeoutMs = 10_000;
+const meiliSettingsTimeoutMs = 10 * 60_000;
 const meiliWriteMaxAttempts = 3;
 const meiliRetryBaseDelayMs = 250;
 const meiliVersionReconcileMaxAttempts = 3;
@@ -287,6 +288,7 @@ const createMeiliMongooseModel = ({
   excludeFromIndexPath,
   attributesToIndex,
   primaryKey,
+  settingsReady,
   syncOptions,
 }: {
   client: MeiliSearch;
@@ -296,6 +298,7 @@ const createMeiliMongooseModel = ({
   excludeFromIndexPath?: string;
   attributesToIndex: string[];
   primaryKey: string;
+  settingsReady: Promise<void>;
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
@@ -741,6 +744,7 @@ const createMeiliMongooseModel = ({
       params: SearchParams,
       populate: boolean,
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
+      await settingsReady;
       const data = await index.search(q, params);
 
       if (populate) {
@@ -1021,7 +1025,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   /** Create index only if it doesn't exist */
   const index = client.index<MeiliIndexable>(indexName);
 
-  (async () => {
+  const settingsReady = (async () => {
     try {
       await index.getRawInfo();
       logger.debug(`[mongoMeili] Index ${indexName} already exists`);
@@ -1078,9 +1082,16 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         return;
       }
 
-      await index.updateSettings({
+      const enqueued = await index.updateSettings({
         filterableAttributes,
       });
+      const task = await client.waitForTask(enqueued.taskUid, {
+        timeOutMs: meiliSettingsTimeoutMs,
+        intervalMs: 100,
+      });
+      if (task.status !== 'succeeded') {
+        throw new Error(`Meili settings task ${enqueued.taskUid} ended with ${task.status}`);
+      }
       logger.debug(
         `[mongoMeili] Updated index ${indexName} settings to make ${filterableAttributes.join(
           ' and ',
@@ -1088,8 +1099,10 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       );
     } catch (settingsError) {
       logger.error(`[mongoMeili] Error updating index settings for ${indexName}:`, settingsError);
+      throw settingsError;
     }
   })();
+  void settingsReady.catch(() => undefined);
 
   // Collect attributes from the schema that should be indexed
   const attributesToIndex: string[] = [
@@ -1115,6 +1128,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       excludeFromIndexPath: options.excludeFromIndexPath,
       attributesToIndex,
       primaryKey,
+      settingsReady,
       syncOptions,
     }),
   );
