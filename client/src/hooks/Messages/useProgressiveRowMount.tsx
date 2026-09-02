@@ -42,6 +42,7 @@ const INITIAL_ROWS = 16;
 const CHUNK_ROWS = 32;
 const WINDOW_OVERSCAN_ROWS = 8;
 const STREAM_TAIL_ROWS = 4;
+const SHORTCUT_TAIL_ROWS = 2;
 const MOUNTED_ROW_SLOT_SELECTOR = '[data-message-row-slot="true"][data-row-mounted="true"]';
 
 type ProgressiveRowMountOptions = {
@@ -255,9 +256,10 @@ export function useProgressiveRowMount({
       mode: 'bounded',
       start: Math.max(0, firstVisible - WINDOW_OVERSCAN_ROWS),
       end: Math.min(currentTailDepth, lastVisible + WINDOW_OVERSCAN_ROWS),
-      tailStart: isSubmittingRef.current
-        ? Math.max(0, currentTailDepth - STREAM_TAIL_ROWS + 1)
-        : undefined,
+      tailStart: Math.max(
+        0,
+        currentTailDepth - (isSubmittingRef.current ? STREAM_TAIL_ROWS : SHORTCUT_TAIL_ROWS) + 1,
+      ),
       heights: new Map(heightsRef.current),
       measureRow,
     };
@@ -283,8 +285,8 @@ export function useProgressiveRowMount({
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         measureMountedRows();
-        setMountWindow(boundedWindow());
         remeasuringRef.current = false;
+        if (leaseCountRef.current === 0) setMountWindow(boundedWindow());
       }),
     );
   }, [boundedWindow, measureMountedRows, scrollableRef]);
@@ -322,11 +324,66 @@ export function useProgressiveRowMount({
       return;
     }
     if (mountWindow.start <= 0 && mountWindow.end >= tailDepth) {
-      const frameId = requestAnimationFrame(() => {
+      const container = scrollableRef.current;
+      if (!container) {
+        const frameId = requestAnimationFrame(() => setMountWindow(null));
+        return () => cancelAnimationFrame(frameId);
+      }
+      let firstFrame: number | undefined;
+      let secondFrame: number | undefined;
+      let settled = false;
+      const pendingImages = new Set(
+        [
+          ...container.querySelectorAll<HTMLImageElement>(`${MOUNTED_ROW_SLOT_SELECTOR} img`),
+        ].filter((image) => !image.complete),
+      );
+      const finish = () => {
+        if (settled) return;
+        settled = true;
         measureMountedRows();
         setMountWindow(boundedWindow());
-      });
-      return () => cancelAnimationFrame(frameId);
+      };
+      const scheduleAfterQuietLayout = () => {
+        if (firstFrame != null) cancelAnimationFrame(firstFrame);
+        if (secondFrame != null) cancelAnimationFrame(secondFrame);
+        firstFrame = requestAnimationFrame(() => {
+          secondFrame = requestAnimationFrame(() => {
+            if (pendingImages.size === 0) finish();
+          });
+        });
+      };
+      const handleLayoutChange = () => {
+        measureMountedRows();
+        scheduleAfterQuietLayout();
+      };
+      const observer =
+        typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(handleLayoutChange);
+      for (const row of container.querySelectorAll<HTMLElement>(MOUNTED_ROW_SLOT_SELECTOR)) {
+        observer?.observe(row);
+      }
+      const handleImageSettled = (event: Event) => {
+        pendingImages.delete(event.currentTarget as HTMLImageElement);
+        handleLayoutChange();
+      };
+      for (const image of pendingImages) {
+        image.addEventListener('load', handleImageSettled, { once: true });
+        image.addEventListener('error', handleImageSettled, { once: true });
+      }
+      measureMountedRows();
+      scheduleAfterQuietLayout();
+      /** Never let a non-resolving remote asset defeat the DOM bound. */
+      const maximumWait = window.setTimeout(finish, 5_000);
+      return () => {
+        settled = true;
+        if (firstFrame != null) cancelAnimationFrame(firstFrame);
+        if (secondFrame != null) cancelAnimationFrame(secondFrame);
+        window.clearTimeout(maximumWait);
+        observer?.disconnect();
+        for (const image of pendingImages) {
+          image.removeEventListener('load', handleImageSettled);
+          image.removeEventListener('error', handleImageSettled);
+        }
+      };
     }
     const frameId = requestAnimationFrame(() => {
       captureAnchor();
@@ -345,7 +402,15 @@ export function useProgressiveRowMount({
       });
     });
     return () => cancelAnimationFrame(frameId);
-  }, [mountWindow, tailDepth, boundedWindow, captureAnchor, isSubmitting, measureMountedRows]);
+  }, [
+    mountWindow,
+    tailDepth,
+    boundedWindow,
+    captureAnchor,
+    isSubmitting,
+    measureMountedRows,
+    scrollableRef,
+  ]);
 
   useEffect(() => {
     if (
@@ -353,8 +418,7 @@ export function useProgressiveRowMount({
       remeasuringRef.current ||
       leaseCountRef.current > 0 ||
       tailDepth == null ||
-      tailDepth + 1 <= MIN_WINDOWED_ROWS ||
-      heightsRef.current.size > 0
+      tailDepth + 1 <= MIN_WINDOWED_ROWS
     ) {
       return;
     }

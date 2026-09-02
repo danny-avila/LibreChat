@@ -366,6 +366,7 @@ describe('MultiMessage row mount window', () => {
       mode: 'progressive' | 'bounded';
       start: number;
       end: number;
+      tailStart?: number;
       heights?: ReadonlyMap<number, { messageId: string; height: number }>;
     } | null,
     root: TMessage = chain(),
@@ -456,5 +457,16 @@ describe('MultiMessage row mount window', () => {
 
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toContain('m0');
     act(() => getDefaultStore().set(activeSpeechMessageIdAtom, null));
+  });
+
+  it('keeps shortcut controls in the conversation tail mounted', () => {
+    const heights = new Map([
+      [0, { messageId: 'm0', height: 120 }],
+      [1, { messageId: 'm1', height: 120 }],
+      [2, { messageId: 'm2', height: 120 }],
+    ]);
+    render(windowedTree({ mode: 'bounded', start: 0, end: 0, tailStart: 1, heights }));
+
+    expect(screen.getAllByTestId('row').map((row) => row.textContent)).toEqual(['m0', 'm1', 'm2']);
   });
 });

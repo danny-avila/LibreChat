@@ -15,6 +15,7 @@ import {
   parseBinding,
 } from '~/utils/shortcuts';
 import { mainTextareaId, NotificationSeverity } from '~/common';
+import { completeProgressiveRowMounts } from '~/hooks/Messages';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { useArchiveConvoMutation } from '~/data-provider';
 import { useHasAccess, useLocalize } from '~/hooks';
@@ -591,16 +592,26 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleCopyLastCode = useCallback(() => {
-    const blocks = document.querySelectorAll('.agent-turn pre code');
-    if (blocks.length === 0) {
-      return false;
+    const copyLastMountedCode = () => {
+      const blocks = document.querySelectorAll('.agent-turn pre code');
+      if (blocks.length === 0) return false;
+      const text = blocks[blocks.length - 1].textContent ?? '';
+      if (!text.trim()) return false;
+      return copy(text.trim(), { format: 'text/plain' });
+    };
+    if (!document.querySelector('[data-message-row-slot="true"][data-row-mounted="false"]')) {
+      return copyLastMountedCode();
     }
-    const last = blocks[blocks.length - 1];
-    const text = last.textContent ?? '';
-    if (!text.trim()) {
-      return false;
-    }
-    return copy(text.trim(), { format: 'text/plain' });
+    /** The last code block may be in any historical response. Lease the full
+     *  transcript until the DOM-backed shortcut has selected and copied it. */
+    void completeProgressiveRowMounts().then((release) => {
+      try {
+        copyLastMountedCode();
+      } finally {
+        release();
+      }
+    });
+    return true;
   }, []);
 
   const handleStopGenerating = useCallback(

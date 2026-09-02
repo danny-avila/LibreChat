@@ -32,14 +32,6 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
   const setActiveSpeechMessageId = useSetAtom(activeSpeechMessageIdAtom);
-
-  useEffect(() => {
-    setActiveSpeechMessageId((current) => {
-      if (isSpeaking && messageId) return messageId;
-      return current === messageId ? null : current;
-    });
-    return () => setActiveSpeechMessageId((current) => (current === messageId ? null : current));
-  }, [isSpeaking, messageId, setActiveSpeechMessageId]);
   const {
     cancelSpeech,
     generateSpeechExternal: generateSpeech,
@@ -52,6 +44,14 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
     isLast,
     index,
   });
+
+  useEffect(() => {
+    setActiveSpeechMessageId((current) => {
+      if ((isLoading || isSpeaking) && messageId) return messageId;
+      return current === messageId ? null : current;
+    });
+    return () => setActiveSpeechMessageId((current) => (current === messageId ? null : current));
+  }, [isLoading, isSpeaking, messageId, setActiveSpeechMessageId]);
 
   useEffect(() => {
     const firstVoice = voices[0];

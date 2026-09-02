@@ -107,7 +107,7 @@ describe('useProgressiveRowMount', () => {
     expect(ends[ends.length - 1]).toBeGreaterThanOrEqual(267 - 32);
   });
 
-  it('settles into a bounded window with exact-height slots and follows scrolling', () => {
+  it('settles asynchronous rows, follows scrolling, and preserves full-DOM leases', async () => {
     const container = document.createElement('div');
     Object.defineProperty(container, 'getBoundingClientRect', {
       value: () => ({ top: 0, bottom: 600, left: 0, right: 390, width: 390, height: 600 }),
@@ -125,6 +125,11 @@ describe('useProgressiveRowMount', () => {
           return { top, bottom: top + 100, left: 0, right: 390, width: 390, height: 100 };
         },
       });
+      if (depth === 267) {
+        const pendingImage = document.createElement('img');
+        pendingImage.src = 'https://example.test/pending.png';
+        slot.appendChild(pendingImage);
+      }
       container.appendChild(slot);
     }
     scrollableRef.current = container;
@@ -135,6 +140,10 @@ describe('useProgressiveRowMount', () => {
       flushFrames();
     }
 
+    expect(result.current?.mode).toBe('progressive');
+    act(() => container.querySelector('img')?.dispatchEvent(new Event('load')));
+    flushFrames();
+    flushFrames();
     expect(result.current?.mode).toBe('bounded');
     expect(result.current?.start).toBe(0);
     expect(result.current?.end).toBe(14);
@@ -170,6 +179,26 @@ describe('useProgressiveRowMount', () => {
     flushFrames();
     expect(result.current?.mode).toBe('bounded');
 
+    act(() => {
+      resizeCallback(
+        [{ contentRect: { width: 600 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      );
+    });
+    let releaseLease = () => {};
+    let lease: Promise<() => void> = Promise.resolve(() => {});
+    act(() => {
+      lease = completeProgressiveRowMounts();
+    });
+    flushFrames();
+    flushFrames();
+    await act(async () => {
+      releaseLease = await lease;
+    });
+    expect(result.current).toBeNull();
+    act(() => releaseLease());
+    expect(result.current?.mode).toBe('bounded');
+
     rerender({
       tailDepth: 267,
       anchorBottom: false,
@@ -181,6 +210,26 @@ describe('useProgressiveRowMount', () => {
     flushFrames();
     flushFrames();
     expect(result.current?.mode).toBe('bounded');
+
+    rerender({
+      tailDepth: 20,
+      anchorBottom: false,
+      isSubmitting: false,
+      conversationId: 'convo-a',
+      layoutKey: 'maximized',
+    });
+    flushFrames();
+    expect(result.current).toBeNull();
+    rerender({
+      tailDepth: 267,
+      anchorBottom: false,
+      isSubmitting: false,
+      conversationId: 'convo-a',
+      layoutKey: 'maximized',
+    });
+    flushFrames();
+    expect(result.current?.mode).toBe('bounded');
+    expect(result.current?.tailStart).toBe(266);
   });
 
   it('starts bounding a mounted conversation when it crosses the row threshold', () => {

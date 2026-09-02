@@ -132,7 +132,7 @@ function MessagesViewContent({
     isSubmitting,
     conversationId: treeConversationId,
     scrollableRef,
-    layoutKey: maximizeChatSpace,
+    layoutKey: `${maximizeChatSpace}:${fontSize}`,
   });
 
   /** The in-flight steer overlay floats above the composer over the bottom of
