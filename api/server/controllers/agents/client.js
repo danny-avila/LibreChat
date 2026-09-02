@@ -236,13 +236,34 @@ function normalizeEventActorContextMeta(contextMeta) {
  * Captures calibration and fading state from a finished run for persistence
  * on the response message. Called from `finally`, so values survive an abort.
  * `getFadingTier` is optional so SDK versions without it persist calibration
- * alone; the encoding is only resolved when there is something to persist.
+ * alone, and it already returns only tiers that carry information; the
+ * encoding is only resolved when there is something to persist.
  */
+/**
+ * Seeds for a new run from the previous run's contextMeta: the calibration
+ * ratio when the tokenizer encoding still matches, and the fading tier, which
+ * is character-based and so seeds regardless of encoding.
+ */
+function resolveRunSeeds(client) {
+  const prevMeta = client.contextMeta;
+  if (prevMeta == null) {
+    return {};
+  }
+  const currentEncoding = client.getEncoding();
+  const encodingMatch = prevMeta.encoding === currentEncoding;
+  const calibrationRatio =
+    encodingMatch && prevMeta.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
+  const fadingTier = isAgentFadingTier(prevMeta.fading) ? prevMeta.fading : undefined;
+  logger.debug(
+    `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}, fading=${fadingTier ? `${fadingTier.budgetTokens}/${fadingTier.masked}` : 'none'}`,
+  );
+  return { calibrationRatio, fadingTier };
+}
+
 function captureRunContextMeta(client) {
   return resolveRunContextMeta({
-    calibrationRatio: client.run?.getCalibrationRatio() ?? 0,
+    calibrationRatio: client.run?.getCalibrationRatio?.() ?? 0,
     fadingTier: client.run?.getFadingTier?.(),
-    maxContextTokens: client.maxContextTokens,
     getEncoding: () => client.getEncoding(),
   });
 }
@@ -1886,6 +1907,20 @@ class AgentClient extends BaseClient {
       ...(this.contextMeta == null ? {} : { contextMeta: this.contextMeta }),
       ...(compactionSemanticIndex == null ? {} : { compactionSemanticIndex }),
     };
+  }
+
+  /**
+   * Seeds context meta captured at a pause (or from a parent response) into a
+   * rebuilt client. Malformed values are dropped rather than trusted.
+   * @param {unknown} contextMeta
+   */
+  seedContextMeta(contextMeta) {
+    try {
+      this.contextMeta = normalizeEventActorContextMeta(contextMeta);
+    } catch (err) {
+      logger.warn('[AgentClient] Ignoring malformed context meta', getSafeErrorMetadata(err));
+      this.contextMeta = undefined;
+    }
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
@@ -3537,6 +3572,7 @@ class AgentClient extends BaseClient {
       ...(staged.compactionSemanticIndex == null
         ? {}
         : { compactionSemanticIndex: staged.compactionSemanticIndex }),
+      ...(staged.contextMeta == null ? {} : { contextMeta: staged.contextMeta }),
       persistencePending: true,
       ...(eventActorSuspension == null
         ? {}
@@ -3782,6 +3818,9 @@ class AgentClient extends BaseClient {
       compactionSemanticIndex: createCompactionSemanticIndexProjection(
         this.compactionSemanticIndexSnapshot,
       ),
+      // Calibration and fading state at the pause, so the resumed segment seeds
+      // its rebuilt pruner from the same tier and keeps historical bytes stable.
+      contextMeta: captureRunContextMeta({ run, getEncoding: () => this.getEncoding() }),
     };
     if (this.eventActorInvocationId != null) {
       return;
@@ -4165,20 +4204,7 @@ class AgentClient extends BaseClient {
           memoryPromise = this.runMemory(memoryMessages);
         }
 
-        /** Seed calibration state from previous run if encoding matches */
-        const currentEncoding = this.getEncoding();
-        const prevMeta = this.contextMeta;
-        const encodingMatch = prevMeta?.encoding === currentEncoding;
-        const calibrationRatio =
-          encodingMatch && prevMeta?.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
-        /** The fading tier is character-based, so it seeds regardless of encoding */
-        const fadingTier = isAgentFadingTier(prevMeta?.fading) ? prevMeta.fading : undefined;
-
-        if (prevMeta) {
-          logger.debug(
-            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}, fading=${fadingTier ? `${fadingTier.budgetTokens}/${fadingTier.masked}` : 'none'}`,
-          );
-        }
+        const { calibrationRatio, fadingTier } = resolveRunSeeds(this);
 
         const streamId = this.options.req?._resumableStreamId;
         // HITL: establish an empty checkpoint barrier for THIS immutable generation
@@ -4806,6 +4832,7 @@ class AgentClient extends BaseClient {
         // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
         discoveredToolNames,
         initialSessions,
+        ...resolveRunSeeds(this),
         runId: this.responseMessageId,
         signal: abortController.signal,
         // The rebuilt graph numbers content indices from 0, but the aggregator was

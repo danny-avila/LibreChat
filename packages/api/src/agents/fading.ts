@@ -1,47 +1,24 @@
+import { isAgentFadingTier, AGENT_FADING_TIER_VERSION } from '@librechat/data-schemas';
 import type { IAgentEventActorContextMeta, IAgentFadingTier } from '@librechat/data-schemas';
 
-const FADING_TIER_VERSION = 1;
-
-/** Whether a persisted value is a well-formed context-fading tier. */
-export function isAgentFadingTier(value: unknown): value is IAgentFadingTier {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const { v, budgetTokens, masked } = value as Partial<Record<keyof IAgentFadingTier, unknown>>;
-  return (
-    v === FADING_TIER_VERSION &&
-    typeof budgetTokens === 'number' &&
-    Number.isFinite(budgetTokens) &&
-    budgetTokens > 0 &&
-    typeof masked === 'boolean'
-  );
-}
+export { isAgentFadingTier };
 
 /**
- * Returns the tier worth persisting on the response message, or undefined.
- * A tier carries information once masking has activated or the budget sits
- * below the context window; a fresh tier would only seed what the next run
- * derives on its own.
+ * Normalizes the tier a run exposes for persistence, or undefined when there
+ * is none. `Run.getFadingTier()` already returns only tiers that carry
+ * information (masking active or a budget below the pruner's window), so the
+ * host only validates the shape and strips anything else the SDK may attach.
  */
-export function resolvePersistableFadingTier(
-  tier: unknown,
-  maxContextTokens?: number,
-): IAgentFadingTier | undefined {
+export function resolvePersistableFadingTier(tier: unknown): IAgentFadingTier | undefined {
   if (!isAgentFadingTier(tier)) {
     return undefined;
   }
-  const belowWindow =
-    maxContextTokens != null && maxContextTokens > 0 && tier.budgetTokens < maxContextTokens;
-  if (!tier.masked && !belowWindow) {
-    return undefined;
-  }
-  return { v: FADING_TIER_VERSION, budgetTokens: tier.budgetTokens, masked: tier.masked };
+  return { v: AGENT_FADING_TIER_VERSION, budgetTokens: tier.budgetTokens, masked: tier.masked };
 }
 
 export type RunContextMetaParams = {
   calibrationRatio: number;
   fadingTier: unknown;
-  maxContextTokens?: number;
   /** Resolved lazily: only consulted when there is something to persist. */
   getEncoding: () => string;
 };
@@ -56,7 +33,7 @@ export function resolveRunContextMeta(
   params: RunContextMetaParams,
 ): IAgentEventActorContextMeta | undefined {
   const { calibrationRatio } = params;
-  const fading = resolvePersistableFadingTier(params.fadingTier, params.maxContextTokens);
+  const fading = resolvePersistableFadingTier(params.fadingTier);
   const calibrated = calibrationRatio > 0 && calibrationRatio !== 1;
   if (!calibrated && fading == null) {
     return undefined;

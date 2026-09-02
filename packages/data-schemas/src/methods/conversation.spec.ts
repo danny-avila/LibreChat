@@ -4878,6 +4878,21 @@ describe('Conversation Operations', () => {
         methods.commitAgentEventActorState({
           user: 'actor-context-user',
           conversationId,
+          invocationId: 'invalid-fading',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          contextMeta: {
+            calibrationRatio: 1.25,
+            fading: { v: 1, budgetTokens: -5, masked: true },
+          },
+        }),
+      ).rejects.toThrow('Event actor context calibration is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
           invocationId: 'invalid-compaction-index',
           expectedEpoch: 0,
           action: { toolName: 'submit_move' },

@@ -2791,6 +2791,7 @@ class GenerationJobManagerClass {
         discoveredTools: jobData.discoveredTools,
         activityPhaseSnapshot: jobData.activityPhaseSnapshot,
         compactionSemanticIndex: jobData.compactionSemanticIndex,
+        contextMeta: jobData.contextMeta,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,

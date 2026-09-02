@@ -279,6 +279,23 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(paused?.metadata.compactionSemanticIndex).toEqual(compactionSemanticIndex);
     });
 
+    test('persists context meta in the same transition as the pause', async () => {
+      const streamId = 'stream-pause-context-meta';
+      await manager.createJob(streamId, 'user-1');
+      const contextMeta = {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1 as const, budgetTokens: 50_000, masked: true },
+      };
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId), { contextMeta })).toBe(
+        true,
+      );
+
+      const paused = await manager.getJob(streamId);
+      expect(paused?.metadata.contextMeta).toEqual(contextMeta);
+    });
+
     test('does not write a stale pause or discoveries onto a replacement job', async () => {
       const streamId = 'stream-pause-replaced';
       const original = await manager.createJob(streamId, 'user-1');

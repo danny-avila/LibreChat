@@ -921,6 +921,58 @@ describe('AgentClient - interrupt discovery persistence', () => {
     });
   });
 
+  it('makes the run context meta durable when the run pauses', async () => {
+    const streamId = 'conversation-context-meta-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-pause';
+    client.jobCreatedAt = job.createdAt;
+    const fading = { v: 1, budgetTokens: 50_000, masked: true };
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'ask-interrupt',
+          threadId: streamId,
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Proceed?' },
+          },
+        }),
+        getDiscoveredTools: () => [],
+        getRunMessages: () => [],
+        getCalibrationRatio: () => 1.2,
+        getFadingTier: () => fading,
+      },
+      streamId,
+    );
+
+    const paused = await GenerationJobManager.getJob(streamId);
+    expect(paused?.status).toBe('requires_action');
+    expect(paused?.metadata.contextMeta).toEqual({
+      calibrationRatio: 1.2,
+      encoding: client.getEncoding(),
+      fading,
+    });
+  });
+
   it('caps an event-bound pause at the inherited binding deadline', async () => {
     const now = Date.now();
     const streamId = 'conversation-event-bound-pause';
@@ -7701,5 +7753,25 @@ describe('fading tier context meta', () => {
       }),
     ).resolves.toBeUndefined();
     expect(client.getEventActorContext).not.toHaveBeenCalled();
+  });
+});
+
+describe('seedContextMeta', () => {
+  it('seeds valid context meta and drops a malformed fading tier', () => {
+    const client = Object.create(AgentClient.prototype);
+    const contextMeta = {
+      calibrationRatio: 1.25,
+      encoding: 'claude',
+      fading: { v: 1, budgetTokens: 20_000, masked: true },
+    };
+
+    client.seedContextMeta(contextMeta);
+    expect(client.contextMeta).toEqual(contextMeta);
+
+    client.seedContextMeta({ calibrationRatio: 1.25, fading: { v: 1, budgetTokens: 0 } });
+    expect(client.contextMeta).toBeUndefined();
+
+    client.seedContextMeta(undefined);
+    expect(client.contextMeta).toBeUndefined();
   });
 });

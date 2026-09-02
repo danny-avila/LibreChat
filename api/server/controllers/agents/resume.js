@@ -1797,6 +1797,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     client.checkpointNamespace = checkpointNamespace;
     client.responseMessageId = job.metadata.responseMessageId;
     client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
+    // Seed the rebuilt pruner from the tier and calibration captured at the pause, so the
+    // resumed segment keeps historical tool results byte-identical to the paused one.
+    client.seedContextMeta?.(job.metadata?.contextMeta);
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }

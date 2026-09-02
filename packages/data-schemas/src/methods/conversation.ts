@@ -38,6 +38,7 @@ import {
   buildRetentionVisibilityFilter,
   createFallbackRetentionDate,
 } from '~/utils/retention';
+import { isAgentFadingTier } from '~/utils/fading';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
@@ -1006,7 +1007,8 @@ export function createConversationMethods(
         input.contextMeta.calibrationRatio > 5 ||
         (input.contextMeta.encoding != null &&
           (input.contextMeta.encoding.length === 0 ||
-            input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)))
+            input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)) ||
+        (input.contextMeta.fading != null && !isAgentFadingTier(input.contextMeta.fading)))
     ) {
       throw new RangeError('Event actor context calibration is invalid');
     }

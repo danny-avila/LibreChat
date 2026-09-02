@@ -13,33 +13,12 @@ describe('isAgentFadingTier', () => {
 });
 
 describe('resolvePersistableFadingTier', () => {
-  it('persists a masked tier or a budget below the window, stripped to its fields', () => {
+  it('strips a valid tier to its fields and drops invalid input', () => {
     expect(
-      resolvePersistableFadingTier(
-        { v: 1, budgetTokens: 200_000, masked: true, extra: 1 },
-        200_000,
-      ),
-    ).toEqual({ v: 1, budgetTokens: 200_000, masked: true });
-    expect(
-      resolvePersistableFadingTier({ v: 1, budgetTokens: 50_000, masked: false }, 200_000),
-    ).toEqual({
-      v: 1,
-      budgetTokens: 50_000,
-      masked: false,
-    });
-  });
-
-  it('drops a fresh tier, an unknown window with nothing latched, and invalid input', () => {
-    expect(
-      resolvePersistableFadingTier({ v: 1, budgetTokens: 200_000, masked: false }, 200_000),
-    ).toBe(undefined);
-    expect(resolvePersistableFadingTier({ v: 1, budgetTokens: 50_000, masked: false })).toBe(
-      undefined,
-    );
-    expect(resolvePersistableFadingTier(undefined, 200_000)).toBe(undefined);
-    expect(resolvePersistableFadingTier({ v: 1, budgetTokens: -1, masked: true }, 200_000)).toBe(
-      undefined,
-    );
+      resolvePersistableFadingTier({ v: 1, budgetTokens: 50_000, masked: true, extra: 1 }),
+    ).toEqual({ v: 1, budgetTokens: 50_000, masked: true });
+    expect(resolvePersistableFadingTier(undefined)).toBeUndefined();
+    expect(resolvePersistableFadingTier({ v: 1, budgetTokens: -1, masked: true })).toBeUndefined();
   });
 });
 
@@ -50,35 +29,20 @@ describe('resolveRunContextMeta', () => {
   beforeEach(() => getEncoding.mockClear());
 
   it('persists a latched fading tier even at a neutral calibration ratio', () => {
-    expect(
-      resolveRunContextMeta({
-        calibrationRatio: 1,
-        fadingTier: fading,
-        maxContextTokens: 200_000,
-        getEncoding,
-      }),
-    ).toEqual({ calibrationRatio: 1, encoding: 'claude', fading });
+    expect(resolveRunContextMeta({ calibrationRatio: 1, fadingTier: fading, getEncoding })).toEqual(
+      { calibrationRatio: 1, encoding: 'claude', fading },
+    );
   });
 
   it('persists calibration alone when the run exposes no tier', () => {
     expect(
-      resolveRunContextMeta({
-        calibrationRatio: 1.2345,
-        fadingTier: undefined,
-        maxContextTokens: 200_000,
-        getEncoding,
-      }),
+      resolveRunContextMeta({ calibrationRatio: 1.2345, fadingTier: undefined, getEncoding }),
     ).toEqual({ calibrationRatio: 1.235, encoding: 'claude' });
   });
 
   it('persists nothing, without resolving the encoding, when there is nothing to keep', () => {
     expect(
-      resolveRunContextMeta({
-        calibrationRatio: 0,
-        fadingTier: { v: 1, budgetTokens: 200_000, masked: false },
-        maxContextTokens: 200_000,
-        getEncoding,
-      }),
+      resolveRunContextMeta({ calibrationRatio: 0, fadingTier: { v: 1 }, getEncoding }),
     ).toBeUndefined();
     expect(getEncoding).not.toHaveBeenCalled();
   });
