@@ -14,7 +14,7 @@ import session, { MemoryStore } from 'express-session';
 import { Time, CacheKeys } from 'librechat-data-provider';
 import { RedisStore as ConnectRedis } from 'connect-redis';
 import type { SendCommandFn } from 'rate-limit-redis';
-import { keyvRedisClient, ioredisClient } from './redisClients';
+import { keyvRedisClient, ioredisClient, handleKeyvRedisError } from './redisClients';
 import { batchDeleteKeys, scanKeys } from './redisUtils';
 import {
   instrumentIORedisClient,
@@ -57,6 +57,7 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
 
       cache.on('error', (err) => {
         logger.error(`Cache error in namespace ${namespace}:`, err);
+        handleKeyvRedisError(err);
       });
 
       // Override clear() to handle namespace-aware deletion
