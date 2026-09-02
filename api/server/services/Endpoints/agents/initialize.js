@@ -1199,13 +1199,10 @@ const initializeClient = async ({
             subagentGraphIds.add(subagentId);
           }
           countExpandedSubagentDescriptor(subagentId);
-          const existingChildren = await buildLazySubagentDescriptors(
-            existing,
-            depth + 1,
-            nextAncestors,
-          );
-          existing.lazySubagentConfigs = existingChildren.filter((child) => child.configId);
-          existing.subagentAgentConfigs = existingChildren.filter((child) => !child.configId);
+          /** Every initialized config is expanded independently in `rootSubagentConfigs`.
+           *  Descend here only to enforce path-sensitive depth and size limits; mutating the
+           *  shared object from this ancestor-specific walk would race its root expansion. */
+          await buildLazySubagentDescriptors(existing, depth + 1, nextAncestors);
           return existing;
         }
         const metadata = await loadSubagentMetadata(subagentId);

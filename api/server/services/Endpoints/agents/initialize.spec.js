@@ -2479,6 +2479,45 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs.agentConfigs.has(HANDOFF_AND_SUB_ID)).toBe(true);
   });
 
+  it('preserves shared initialized agent children across parallel walkers', async () => {
+    const leftId = 'agent_parallel_left';
+    const rightId = 'agent_parallel_right';
+    const sharedId = 'agent_parallel_shared';
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [leftId, rightId] },
+    });
+    const leftConfig = makeNestedSubagentConfig(leftId, [sharedId]);
+    const rightConfig = makeNestedSubagentConfig(rightId, [sharedId]);
+    const sharedConfig = makeNestedSubagentConfig(sharedId, [leftId]);
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+    processAddedConvo.mockImplementationOnce(async ({ agentConfigs }) => {
+      agentConfigs.set(leftId, leftConfig);
+      agentConfigs.set(rightId, rightConfig);
+      agentConfigs.set(sharedId, sharedConfig);
+      return { userMCPAuthMap: undefined };
+    });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    const subagentsById = new Map(
+      agentClientArgs.agent.subagentAgentConfigs.map((config) => [config.id, config]),
+    );
+    const left = subagentsById.get(leftId);
+    const right = subagentsById.get(rightId);
+    const leftShared = left.subagentAgentConfigs[0];
+    const rightShared = right.subagentAgentConfigs[0];
+    expect(leftShared).toBe(sharedConfig);
+    expect(rightShared).toBe(sharedConfig);
+    expect(leftShared.subagentAgentConfigs.map((child) => child.id)).toEqual([leftId]);
+    expect(rightShared.subagentAgentConfigs.map((child) => child.id)).toEqual([leftId]);
+    expect(agentClientArgs.agentConfigs.get(sharedId)).toBe(sharedConfig);
+  });
+
   it('clears subagents config on primary when the capability is disabled', async () => {
     /** Admin can turn subagents off at the endpoint level even if an agent was
      *  configured for them. The primary's `subagents` field should be
