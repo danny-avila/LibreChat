@@ -242,6 +242,10 @@ describe('code environment registry', () => {
 
   test('computes delete permissions for an environment list in one batch', async () => {
     const batchSpy = jest.spyOn(AccessControlService.prototype, 'getResourcePermissionsMap');
+    const principalBatchSpy = jest.spyOn(
+      AccessControlService.prototype,
+      'getResourcePermissionsMapForPrincipals',
+    );
     const singleSpy = jest.spyOn(AccessControlService.prototype, 'checkPermission');
     const registry = createCodeEnvironmentRegistry(mongoose);
     const ownerId = new Types.ObjectId();
@@ -261,10 +265,12 @@ describe('code environment registry', () => {
     await expect(
       registry.listAccessible({ userId: ownerId, role: 'USER', idOnTheSource: null }),
     ).resolves.toHaveLength(2);
-    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(principalBatchSpy).toHaveBeenCalledTimes(1);
     expect(singleSpy).not.toHaveBeenCalled();
 
     batchSpy.mockRestore();
+    principalBatchSpy.mockRestore();
     singleSpy.mockRestore();
   });
 

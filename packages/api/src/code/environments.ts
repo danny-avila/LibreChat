@@ -321,13 +321,17 @@ export function createCodeEnvironmentRegistry(
     const ids = await findAccessibleResourceIds(principals);
     const environments = await methods.findCodeEnvironmentsByIds(ids);
     const userId = actor.userId.toString();
-    return environments.filter(
-      (environment) =>
-        environment.registrationPendingAt == null &&
-        environment.deletionStartedAt == null &&
-        environment.deletionCommittedAt == null &&
-        (environment.workerPrincipal?.type !== 'user' || environment.workerPrincipal.id === userId),
-    );
+    return {
+      principals,
+      environments: environments.filter(
+        (environment) =>
+          environment.registrationPendingAt == null &&
+          environment.deletionStartedAt == null &&
+          environment.deletionCommittedAt == null &&
+          (environment.workerPrincipal?.type !== 'user' ||
+            environment.workerPrincipal.id === userId),
+      ),
+    };
   }
 
   async function listAccessible(
@@ -339,10 +343,9 @@ export function createCodeEnvironmentRegistry(
   async function listAccessibleDetails(
     actor: CodeEnvironmentPrincipalContext,
   ): Promise<AccessibleCodeEnvironmentDetails> {
-    const environments = await findAccessible(actor);
-    const permissions = await access.getResourcePermissionsMap({
-      userId: actor.userId,
-      role: actor.role ?? '',
+    const { environments, principals } = await findAccessible(actor);
+    const permissions = await access.getResourcePermissionsMapForPrincipals({
+      principalsList: principals,
       resourceType: ResourceType.CODE_ENVIRONMENT,
       resourceIds: environments.map((environment) => environment._id),
     });
