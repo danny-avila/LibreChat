@@ -223,9 +223,10 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     'gemini-3.5-flash': { prompt: 1.5, completion: 9 },
     'gemini-3.5-flash-lite': { prompt: 0.3, completion: 2.5 },
-    // Gemini 3.6/3.7 Flash introductory pricing through 2026-12-31; revert to { prompt: 1.5, completion: 7.5 } after.
+    // Gemini 3.6/3.7/3.8 Flash introductory pricing through 2026-12-31; revert to { prompt: 1.5, completion: 7.5 } after.
     'gemini-3.6-flash': { prompt: 0.75, completion: 3.75 },
     'gemini-3.7-flash': { prompt: 0.75, completion: 3.75 },
+    'gemini-3.8-flash': { prompt: 0.75, completion: 3.75 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 },
     'grok-beta': { prompt: 5.0, completion: 15.0 },
@@ -423,9 +424,10 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gemini-3.5-flash': { write: 1.5, read: 0.15 },
   // Gemini 3.5 Flash-Lite - cache write: $0.30/1M, cache read: $0.03/1M
   'gemini-3.5-flash-lite': { write: 0.3, read: 0.03 },
-  // Gemini 3.6/3.7 Flash introductory pricing through 2026-12-31; revert to { write: 1.5, read: 0.15 } after.
+  // Gemini 3.6/3.7/3.8 Flash introductory pricing through 2026-12-31; revert to { write: 1.5, read: 0.15 } after.
   'gemini-3.6-flash': { write: 0.75, read: 0.075 },
   'gemini-3.7-flash': { write: 0.75, read: 0.075 },
+  'gemini-3.8-flash': { write: 0.75, read: 0.075 },
 };
 
 /**
