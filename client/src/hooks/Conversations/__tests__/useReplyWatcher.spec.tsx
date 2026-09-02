@@ -712,6 +712,35 @@ describe('useReplyWatcher', () => {
 
     expect(invalidate).toHaveBeenCalledTimes(1);
   });
+
+  it('attempts the reveal again when a later reply reaches the same unknown conversation', async () => {
+    /* One attempt per reply, not per conversation: a row the refetched page could not reach
+       must not be muted for the rest of the session by its first miss. */
+    const laterResponseAt = '2026-08-16T10:10:00.000Z';
+    mockListConversations.mockResolvedValue({
+      conversations: [{ conversationId: 'elsewhere', lastResponseAt: RESPONDED_AT }],
+      nextCursor: null,
+    });
+
+    const { queryClient } = setup({ notifications: true });
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+
+    mockListConversations.mockResolvedValue({
+      conversations: [{ conversationId: 'elsewhere', lastResponseAt: laterResponseAt }],
+      nextCursor: null,
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+  });
 });
 
 function updateCachedTimestamps(queryClient: QueryClient) {
