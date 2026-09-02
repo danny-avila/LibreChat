@@ -1,7 +1,7 @@
+const mockGetTenantId = jest.fn();
 const { CLIENT_MESSAGE_SELECT, MEILI_SEARCH_LIMIT } = require('@librechat/data-schemas');
 const express = require('express');
 const request = require('supertest');
-const mockGetTenantId = jest.fn();
 
 jest.mock('@librechat/agents', () => ({
   sleep: jest.fn(),
@@ -536,11 +536,7 @@ describe('message route conversation ownership filters', () => {
     const response = await request(app).get('/api/messages?search=needle');
 
     expect(response.status).toBe(200);
-    expect(searchMessages).toHaveBeenCalledWith(
-      'needle',
-      { filter, limit: 25 },
-      true,
-    );
+    expect(searchMessages).toHaveBeenCalledWith('needle', { filter, limit: 25 }, true);
   });
 
   it('returns indistinguishable not-found responses for child and missing query reads', async () => {
