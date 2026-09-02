@@ -79,9 +79,11 @@ describe('field path policy', () => {
   it('rejects empty, non-string, and unsafe segments', () => {
     expect(isValidFieldPath('')).toBe(false);
     expect(isValidFieldPath(undefined)).toBe(false);
+    expect(isValidFieldPath('cache.\0value')).toBe(false);
     expect(isValidFieldPath('__proto__.polluted')).toBe(false);
     expect(isValidFieldPath('cache.__internal-key.value')).toBe(false);
     expect(isValidFieldPath('cache.__på.value')).toBe(false);
+    expect(fieldPathPolicyError('cache.\0value')).toMatch(/NUL byte/);
     expect(fieldPathPolicyError('__proto__.polluted')).toMatch(/forbidden segment/);
   });
 });
@@ -680,6 +682,107 @@ describe('tombstoneConfigField', () => {
 });
 
 describe('upsertConfig', () => {
+  it('retries base upserts after a CAS miss', async () => {
+    const Config = mongoose.models.Config;
+    await Config.collection.insertOne({
+      principalType: PrincipalType.ROLE,
+      principalId: '__base__',
+      principalModel: PrincipalModel.ROLE,
+      overrides: { cache: false },
+      tombstones: [],
+      priority: 10,
+      isActive: true,
+      configVersion: 1,
+      tenantId: null,
+    });
+
+    const findOneAndUpdateSpy = jest.spyOn(Config, 'findOneAndUpdate');
+    const startSessionSpy = jest.spyOn(Config.db, 'startSession');
+    startSessionSpy.mockImplementation(
+      (async () =>
+        ({
+          withTransaction: async () => {
+            throw new Error('Transaction numbers are only allowed on a replica set member');
+          },
+          endSession: async () => undefined,
+        }) as never) as never,
+    );
+    findOneAndUpdateSpy.mockImplementationOnce((async () => {
+      await Config.updateOne(
+        { principalId: '__base__' },
+        { $set: { priority: 20 }, $inc: { configVersion: 1 } },
+      );
+      return null;
+    }) as never);
+
+    try {
+      const result = await methods.upsertConfig(
+        PrincipalType.ROLE,
+        '__base__',
+        PrincipalModel.ROLE,
+        { cache: true },
+        10,
+        undefined,
+        { preservePriority: true },
+      );
+
+      expect(result!.overrides).toEqual({ cache: true });
+      expect(result!.priority).toBe(20);
+      expect(result!.configVersion).toBe(3);
+      expect(findOneAndUpdateSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      findOneAndUpdateSpy.mockRestore();
+      startSessionSpy.mockRestore();
+    }
+  });
+
+  it('retries base upserts after a concurrent create', async () => {
+    const Config = mongoose.models.Config;
+    const createSpy = jest.spyOn(Config, 'create');
+    const startSessionSpy = jest.spyOn(Config.db, 'startSession');
+    startSessionSpy.mockImplementation(
+      (async () =>
+        ({
+          withTransaction: async () => {
+            throw new Error('Transaction numbers are only allowed on a replica set member');
+          },
+          endSession: async () => undefined,
+        }) as never) as never,
+    );
+    createSpy.mockImplementationOnce((async () => {
+      await Config.collection.insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: '__base__',
+        principalModel: PrincipalModel.ROLE,
+        overrides: { cache: false },
+        tombstones: [],
+        priority: 10,
+        isActive: true,
+        configVersion: 1,
+        tenantId: null,
+      });
+      throw Object.assign(new Error('duplicate key'), { code: 11000 });
+    }) as never);
+
+    try {
+      const result = await methods.upsertConfig(
+        PrincipalType.ROLE,
+        '__base__',
+        PrincipalModel.ROLE,
+        { cache: true },
+        10,
+      );
+
+      expect(result!.overrides).toEqual({ cache: true });
+      expect(result!.configVersion).toBe(2);
+      expect(await Config.countDocuments({ principalId: '__base__' })).toBe(1);
+      expect(createSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      createSpy.mockRestore();
+      startSessionSpy.mockRestore();
+    }
+  });
+
   it('preserves tombstones when replacing overrides', async () => {
     await methods.tombstoneConfigField(
       PrincipalType.ROLE,

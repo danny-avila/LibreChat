@@ -430,6 +430,9 @@ export function fieldPathPolicyError(path: unknown): string | null {
   if (path.length === 0) {
     return 'field path must not be empty';
   }
+  if (path.includes('\0')) {
+    return 'field path contains NUL byte';
+  }
   if (path.startsWith('.') || path.endsWith('.') || path.includes('..')) {
     return 'field path has invalid structure';
   }
@@ -893,7 +896,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       }
     }
 
-    return withOwnedSession(Config, session, async (txn) => {
+    const applyOnce = async (txn?: ClientSession): Promise<IConfig | null | 'retry'> => {
       const current = await Config.findOne(query, null, { session: txn });
       if (!current) {
         const configVersion = await allocateBaseConfigVersion(Config, txn);
@@ -915,8 +918,11 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
           );
           return created[0] ?? null;
         } catch (err: unknown) {
-          if ((err as { code?: number }).code === 11000 && options?.expectEmpty) {
-            return null;
+          if ((err as { code?: number }).code === 11000) {
+            if (options?.expectEmpty) {
+              return null;
+            }
+            return 'retry';
           }
           throw err;
         }
@@ -939,11 +945,19 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
         { new: true, ...(txn ? { session: txn } : {}) },
       );
       if (!updated) {
-        throw new Error('Failed to upsert base config after concurrent update');
+        return 'retry';
       }
       if (txn) await raiseBaseConfigVersionEpoch(Config, nextVersion, txn);
       return updated;
-    });
+    };
+
+    for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
+      const result = await withOwnedSession(Config, session, (txn) => applyOnce(txn));
+      if (result !== 'retry') {
+        return result;
+      }
+    }
+    throw new Error('Failed to upsert base config after concurrent update retries');
   }
 
   async function patchConfigFields(

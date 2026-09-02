@@ -15,6 +15,10 @@ describe('isValidFieldPath', () => {
     expect(isValidFieldPath(42)).toBe(false);
   });
 
+  it('rejects NUL bytes before BSON persistence', () => {
+    expect(isValidFieldPath('cache.\0value')).toBe(false);
+  });
+
   it('rejects __proto__ and dunder-prefixed segments', () => {
     expect(isValidFieldPath('__proto__')).toBe(false);
     expect(isValidFieldPath('a.__proto__')).toBe(false);
