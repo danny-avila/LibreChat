@@ -318,6 +318,44 @@ describe('message route conversation ownership filters', () => {
     ]);
   });
 
+  it.each([
+    {
+      name: 'carries server-private context meta onto the branch',
+      contextMeta: {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+      },
+    },
+    { name: 'leaves context meta absent when the source has none', contextMeta: undefined },
+  ])('$name', async ({ contextMeta }) => {
+    getMessage.mockResolvedValue({
+      messageId: 'source-message',
+      conversationId: 'convo-1',
+      parentMessageId: 'parent-1',
+      isCreatedByUser: false,
+      ...(contextMeta == null ? {} : { contextMeta }),
+      content: [
+        { type: 'text', text: 'Different agent content', agentId: 'agent-2' },
+        { type: 'text', text: 'Assistant content', agentId: 'agent-1' },
+      ],
+    });
+    saveMessage.mockImplementation(async (_ctx, message) => message);
+
+    const response = await request(app).post('/api/messages/branch').send({
+      messageId: 'source-message',
+      agentId: 'agent-1',
+    });
+
+    expect(response.status).toBe(201);
+    const savedMessage = saveMessage.mock.calls[0][1];
+    if (contextMeta == null) {
+      expect(savedMessage).not.toHaveProperty('contextMeta');
+    } else {
+      expect(savedMessage.contextMeta).toEqual(contextMeta);
+    }
+  });
+
   it('does not hydrate branch files for an inert file policy', async () => {
     getMessage.mockResolvedValue({
       messageId: 'source-message',

@@ -4887,7 +4887,7 @@ describe('Conversation Operations', () => {
             fading: { v: 1, budgetTokens: -5, masked: true },
           },
         }),
-      ).rejects.toThrow('Event actor context calibration is invalid');
+      ).rejects.toThrow('Event actor context fading tier is invalid');
 
       await expect(
         methods.commitAgentEventActorState({

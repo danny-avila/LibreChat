@@ -149,7 +149,7 @@ const convoSchema: Schema<IConversation> = new Schema(
             },
             fading: {
               type: {
-                v: { type: Number, required: true },
+                v: { type: Number, enum: [1], required: true },
                 budgetTokens: { type: Number, min: 1, required: true },
                 masked: { type: Boolean, required: true },
               },

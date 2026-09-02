@@ -237,9 +237,9 @@ const messageSchema: Schema<IMessage> = new Schema(
         encoding: { type: String },
         fading: {
           type: {
-            v: { type: Number },
-            budgetTokens: { type: Number },
-            masked: { type: Boolean },
+            v: { type: Number, enum: [1], required: true },
+            budgetTokens: { type: Number, min: 1, required: true },
+            masked: { type: Boolean, required: true },
           },
           _id: false,
           default: undefined,

@@ -1007,10 +1007,12 @@ export function createConversationMethods(
         input.contextMeta.calibrationRatio > 5 ||
         (input.contextMeta.encoding != null &&
           (input.contextMeta.encoding.length === 0 ||
-            input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)) ||
-        (input.contextMeta.fading != null && !isAgentFadingTier(input.contextMeta.fading)))
+            input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)))
     ) {
       throw new RangeError('Event actor context calibration is invalid');
+    }
+    if (input.contextMeta?.fading != null && !isAgentFadingTier(input.contextMeta.fading)) {
+      throw new RangeError('Event actor context fading tier is invalid');
     }
     if (
       input.compactionSemanticIndex != null &&

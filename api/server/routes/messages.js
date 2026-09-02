@@ -298,6 +298,9 @@ router.post('/branch', configMiddleware, async (req, res) => {
       endpoint: sourceMessage.endpoint,
       sender: sourceMessage.sender,
       iconURL: sourceMessage.iconURL,
+      // Server-private context meta (calibration and fading tier) travels with the branch so
+      // the next turn seeds its pruner the same way it would from the source response.
+      ...(sourceMessage.contextMeta != null && { contextMeta: sourceMessage.contextMeta }),
       ...(typeof sourceMessage.isUserSubmitted === 'boolean' && {
         isUserSubmitted: sourceMessage.isUserSubmitted,
       }),

@@ -220,10 +220,12 @@ function normalizeEventActorContextMeta(contextMeta) {
     (encoding != null &&
       (typeof encoding !== 'string' ||
         encoding.length === 0 ||
-        encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)) ||
-    (fading != null && !isAgentFadingTier(fading))
+        encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH))
   ) {
     throw new RangeError('Event actor context calibration is invalid');
+  }
+  if (fading != null && !isAgentFadingTier(fading)) {
+    throw new RangeError('Event actor context fading tier is invalid');
   }
   return {
     calibrationRatio,
