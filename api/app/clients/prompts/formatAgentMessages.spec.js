@@ -622,4 +622,41 @@ describe('formatAgentMessages', () => {
       expect(result[0].content).toEqual(media);
     });
   });
+
+  describe('promptless sends', () => {
+    it('should drop a promptless user message that has no attachments to replay', () => {
+      const result = formatAgentMessages([
+        { role: 'user', content: '' },
+        { role: 'assistant', content: 'Hi' },
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Hi' }]);
+    });
+
+    it('should not emit a blank text block for a whitespace-only user message', () => {
+      const result = formatAgentMessages([{ role: 'user', content: '   ' }]);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('should keep a promptless user message that still carries its images', () => {
+      const image_urls = [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } }];
+      const result = formatAgentMessages([{ role: 'user', content: '', image_urls }]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].content).toEqual(image_urls);
+      expect(result[0].content).not.toContainEqual(
+        expect.objectContaining({ type: 'text', text: '' }),
+      );
+    });
+
+    it('should still format a user message that has text', () => {
+      const result = formatAgentMessages([{ role: 'user', content: 'hello' }]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(HumanMessage);
+      expect(result[0].content).toEqual([{ type: 'text', text: 'hello' }]);
+    });
+  });
 });
