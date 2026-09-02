@@ -464,7 +464,7 @@ describe('Agent Abort Endpoint', () => {
         );
       });
 
-      it('leaves context meta off the stopped response when the job has none', async () => {
+      it('unsets context meta on the stopped response when the job has none', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue({
           metadata: { userId: 'test-user-123' },
         });
@@ -490,7 +490,7 @@ describe('Agent Abort Endpoint', () => {
         const [, savedResponse] = mockSaveMessage.mock.calls.find(
           ([, message]) => message.messageId === 'response-msg-456',
         );
-        expect(savedResponse).not.toHaveProperty('contextMeta');
+        expect(savedResponse.contextMeta).toBeNull();
       });
 
       it('saves the aborted partial as temporary from job metadata, not the request body', async () => {

@@ -429,7 +429,7 @@ describe('abortMiddleware - transactions config', () => {
     expect(finalEvent.responseMessage.contextMeta).toEqual(contextMeta);
   });
 
-  it('leaves context meta off a stopped response when the job carries none', async () => {
+  it('unsets context meta on a stopped response when the job carries none', async () => {
     GenerationJobManager.abortJob.mockResolvedValue({
       success: true,
       jobData: buildJobData(),
@@ -441,7 +441,7 @@ describe('abortMiddleware - transactions config', () => {
     await handleAbort()(buildReq(), buildRes());
 
     const [, savedMessage] = db.saveMessage.mock.calls[0];
-    expect(savedMessage).not.toHaveProperty('contextMeta');
+    expect(savedMessage.contextMeta).toBeNull();
   });
 
   it('resolves the config from req and forwards it on the token-count fallback path', async () => {

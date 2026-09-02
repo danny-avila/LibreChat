@@ -5096,6 +5096,43 @@ describe('AgentClient - titleConvo', () => {
       ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
     });
 
+    it.each([
+      ['seeds the run from a server-authored parent response', undefined, true],
+      ['ignores context meta on a client-submitted parent response', true, false],
+    ])('%s', async (_label, isUserSubmitted, expectSeed) => {
+      const contextMeta = {
+        calibrationRatio: 1.2,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+      };
+      const parentResponse = {
+        messageId: 'assistant-seed',
+        parentMessageId: null,
+        sender: 'Assistant',
+        role: 'assistant',
+        isCreatedByUser: false,
+        ...(isUserSubmitted != null && { isUserSubmitted }),
+        text: 'Prior response',
+        contextMeta,
+      };
+      const userMessage = {
+        messageId: 'user-next',
+        parentMessageId: 'assistant-seed',
+        sender: 'User',
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'Next question',
+      };
+      client.setModelBoundStoredMessages([parentResponse, userMessage]);
+      client.contextMeta = undefined;
+      client.publishRunContextMeta = jest.fn().mockResolvedValue(undefined);
+
+      await client.buildMessages([parentResponse, userMessage], 'user-next', {}, {});
+
+      expect(client.contextMeta).toEqual(expectSeed ? contextMeta : undefined);
+      expect(client.publishRunContextMeta).toHaveBeenCalledTimes(expectSeed ? 1 : 0);
+    });
+
     it('preserves persisted source identity through both agent formatting passes', async () => {
       mockReq.config.filters = {
         messages: {

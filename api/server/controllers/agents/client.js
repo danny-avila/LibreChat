@@ -2541,7 +2541,13 @@ class AgentClient extends BaseClient {
      *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
     const parentResponse =
       orderedMessages.length >= 2 ? orderedMessages[orderedMessages.length - 2] : undefined;
-    if (parentResponse?.contextMeta && !parentResponse.isCreatedByUser) {
+    /** Only a server-authored response may seed the run: a client-submitted
+     * row carries no trusted calibration or fading state. */
+    if (
+      parentResponse?.contextMeta &&
+      !parentResponse.isCreatedByUser &&
+      parentResponse.isUserSubmitted !== true
+    ) {
       this.contextMeta = parentResponse.contextMeta;
       /** Start the seed publish as soon as the parent's state is known: a Stop
        * during the rest of setup must already find it on the job. */

@@ -1679,7 +1679,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return;
       }
 
-      const resumeState = await GenerationJobManager.getResumeState(streamId, jobCreatedAt);
+      const [resumeState, jobRecord] = await Promise.all([
+        GenerationJobManager.getResumeState(streamId, jobCreatedAt),
+        GenerationJobManager.getJobStore().getJob(streamId),
+      ]);
       if (!resumeState?.userMessage) {
         logger.debug('[ResumableAgentController] No user message to save partial response for');
         return;
@@ -1687,6 +1690,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
       partialResponseSaved = true;
       const responseConversationId = resumeState.conversationId || conversationId;
+      /** The run publishes its calibration and fading tiers onto the job; a
+       * partial response saved on disconnect must carry them like the Stop and
+       * pause paths do, or a turn continued from it re-derives its provider
+       * projection of history and loses the cached prefix. The same-epoch job
+       * record is the source, since the client-facing resume snapshot never
+       * carries server-private state. */
+      const contextMeta = jobRecord?.createdAt === jobCreatedAt ? jobRecord.contextMeta : undefined;
 
       try {
         const partialMessage = {
@@ -1702,11 +1712,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           endpoint: endpointOption.endpoint,
           iconURL: resumeState.iconURL || endpointIconURL,
           model: resumeState.model || responseModel,
-          /** The run publishes its calibration and fading tiers onto the job; a
-           * partial response saved on disconnect must carry them like the Stop
-           * and pause paths do, or a turn continued from it re-derives its
-           * provider projection of history and loses the cached prefix. */
-          ...(resumeState.contextMeta != null && { contextMeta: resumeState.contextMeta }),
+          ...(contextMeta != null && { contextMeta }),
         };
 
         if (req.body?.agent_id) {

@@ -504,6 +504,9 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
     delete message.isUserSubmitted;
     delete message.userSubmittedPaths;
     delete message.userSubmittedMessageFieldPaths;
+    /** Server-private run state: a client-authored row must never seed a run's
+     * calibration or fading tiers, so the field only ever comes from the server. */
+    delete message.contextMeta;
     const reqCtx = {
       userId: req?.user?.id,
       isTemporary: req?.body?.isTemporary,

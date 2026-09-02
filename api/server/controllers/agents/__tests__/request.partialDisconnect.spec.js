@@ -28,6 +28,7 @@ const mockGenerationJobManager = {
   beginProviderExecution: jest.fn(),
   markProviderExecutionDrained: jest.fn(),
   getResumeState: jest.fn(),
+  getJobStore: jest.fn(),
   updateMetadata: jest.fn(),
   claimGeneration: jest.fn(),
   releaseGeneration: jest.fn(),
@@ -148,8 +149,14 @@ describe('ResumableAgentController tenant context', () => {
     fading: { v: 1, budgetTokens: 50_000, masked: true },
   };
 
-  const firePartialDisconnect = async (user) => {
+  const firePartialDisconnect = async (
+    user,
+    jobRecord = { createdAt: 1000, contextMeta: partialContextMeta },
+  ) => {
     let allSubscribersLeftHandler;
+    mockGenerationJobManager.getJobStore.mockReturnValue({
+      getJob: jest.fn().mockResolvedValue(jobRecord),
+    });
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
       metadata: {
@@ -172,7 +179,6 @@ describe('ResumableAgentController tenant context', () => {
       userMessage: {
         messageId: 'user-message',
       },
-      contextMeta: partialContextMeta,
     });
 
     let tenantSeenBySave;
@@ -221,6 +227,16 @@ describe('ResumableAgentController tenant context', () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it('leaves context meta off the partial response when the job record belongs to another epoch', async () => {
+    await firePartialDisconnect(
+      { id: 'user-123', tenantId: 'tenant-a' },
+      { createdAt: 2000, contextMeta: partialContextMeta },
+    );
+
+    const [, savedMessage] = mockSaveMessage.mock.calls[0];
+    expect(savedMessage).not.toHaveProperty('contextMeta');
   });
 
   it('restores the authenticated tenant before saving a partial response on disconnect', async () => {

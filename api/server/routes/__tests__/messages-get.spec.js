@@ -461,6 +461,11 @@ describe('message route conversation ownership filters', () => {
         userSubmittedMessageFieldPaths: [
           { path: '/forged/model/output', field: 'decision_reason' },
         ],
+        contextMeta: {
+          calibrationRatio: 1,
+          encoding: 'claude',
+          fading: { v: 1, budgetTokens: 1, masked: true },
+        },
       });
 
     expect(response.status).toBe(201);
@@ -478,6 +483,7 @@ describe('message route conversation ownership filters', () => {
     expect(saveMessage.mock.calls[0][1].conversationId).not.toBe(bodyConversationId);
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
     expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedMessageFieldPaths');
+    expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('contextMeta');
     expect(saveConvo).toHaveBeenCalledWith(
       expect.objectContaining({ userId: authenticatedUserId }),
       {
