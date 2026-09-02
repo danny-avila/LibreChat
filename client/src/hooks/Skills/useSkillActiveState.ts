@@ -219,6 +219,8 @@ export default function useSkillActiveState() {
     toggle,
     isLoading: getQuery.isLoading,
     isError: getQuery.isError,
+    /** Lets a consumer that gates its own UI on resolved states retry them. */
+    refetch: getQuery.refetch,
     isUpdating: updateMutation.isLoading,
   };
 }

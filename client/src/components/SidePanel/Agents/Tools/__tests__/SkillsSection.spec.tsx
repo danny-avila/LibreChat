@@ -11,6 +11,8 @@ const mockSetValue = jest.fn();
 const mockUseSkillsInfiniteQuery = jest.fn();
 /** Every fixture skill is runtime-active unless a test says otherwise. */
 const mockIsActive = jest.fn((_skill: { _id: string }) => true);
+const mockRefetchStates = jest.fn();
+let mockStatesResult: { isLoading: boolean; isError: boolean };
 
 let mockInfiniteResult: {
   data: { pages: Array<{ skills: TSkillSummary[] }> };
@@ -32,7 +34,12 @@ jest.mock('react-hook-form', () => ({
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useAuthContext: () => ({ user: { id: 'user-1' } }),
-  useSkillActiveState: () => ({ isActive: (skill: { _id: string }) => mockIsActive(skill) }),
+  useSkillActiveState: () => ({
+    isActive: (skill: { _id: string }) => mockIsActive(skill),
+    isLoading: mockStatesResult.isLoading,
+    isError: mockStatesResult.isError,
+    refetch: mockRefetchStates,
+  }),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -107,6 +114,8 @@ beforeEach(() => {
   mockUseSkillsInfiniteQuery.mockClear();
   mockIsActive.mockReset();
   mockIsActive.mockReturnValue(true);
+  mockRefetchStates.mockClear();
+  mockStatesResult = { isLoading: false, isError: false };
   setAvailableSkills([]);
   mockUseSkillsInfiniteQuery.mockImplementation(() => mockInfiniteResult);
 });
@@ -472,6 +481,44 @@ describe('SkillsSection All mode body', () => {
 
     expect(screen.getByText('Active skill')).toBeInTheDocument();
     expect(screen.queryByText('Inactive skill')).not.toBeInTheDocument();
+  });
+
+  test('waits for the skill states before describing the catalog', () => {
+    /** The hook reports every skill active until the overrides land, so a
+     *  count taken then could list a deactivated skill as available. */
+    setAvailableSkills([[makeSkill('s1', 'First skill')]]);
+    mockStatesResult = { isLoading: true, isError: false };
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(screen.getByText('com_ui_loading')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count_one')).not.toBeInTheDocument();
+  });
+
+  test('reports an error when the skill states fail, not an unfiltered count', () => {
+    setAvailableSkills([[makeSkill('s1', 'First skill')]]);
+    mockStatesResult = { isLoading: false, isError: true };
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('com_ui_skills_load_error');
+    expect(
+      screen.queryByRole('button', { name: /com_ui_skills_available_count/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  test('retries both the catalog and the skill states', () => {
+    setAvailableSkills([]);
+    mockInfiniteResult.isError = true;
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+
+    expect(mockInfiniteResult.refetch).toHaveBeenCalledTimes(1);
+    expect(mockRefetchStates).toHaveBeenCalledTimes(1);
   });
 });
 

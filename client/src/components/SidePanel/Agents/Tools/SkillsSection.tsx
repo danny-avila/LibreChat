@@ -109,7 +109,15 @@ function MorphHeight({ open, children }: { open: boolean; children: ReactNode })
 export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props) {
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const { isActive } = useSkillActiveState();
+  /** The count is only as trustworthy as the per-user overrides behind it:
+   *  until they resolve the hook reports every skill active, which would list
+   *  a deliberately deactivated owned or deployment skill as available. */
+  const {
+    isActive,
+    isLoading: statesLoading,
+    isError: statesError,
+    refetch: refetchStates,
+  } = useSkillActiveState();
   const { setValue, control } = useFormContext<AgentForm>();
   const [allExpanded, setAllExpanded] = useState(false);
 
@@ -228,17 +236,20 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
     [localize],
   );
 
+  /** Both requests have to land before the catalog can be described: the
+   *  skills themselves, and the overrides that decide which of them the
+   *  runtime would actually inject. */
+  const catalogError = isError || statesError === true;
+  const catalogLoading = data == null || statesLoading === true;
   const count = availableSkills.length;
-  /** Before the first page lands there is no catalog to count, and printing
-   *  zero would report an empty deployment while it is merely loading. */
-  const countLabel =
-    data == null
-      ? localize('com_ui_loading')
-      : localize(availableCountKey(count, hasNextPage === true), { count });
+  const countLabel = catalogLoading
+    ? localize('com_ui_loading')
+    : localize(availableCountKey(count, hasNextPage === true), { count });
 
   const handleRetry = useCallback(() => {
     void refetch();
-  }, [refetch]);
+    void refetchStates?.();
+  }, [refetch, refetchStates]);
 
   /** Once something is selected the list carries its own affordance in the
    *  header, so the dashed card is only the empty state. */
@@ -278,7 +289,7 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
        *   Selected, and expanding the available list all tween the same
        *   measured height. */}
       <MorphHeight open={mode !== SkillsScope.none}>
-        {bodyMode === SkillsScope.all && isError && (
+        {bodyMode === SkillsScope.all && catalogError && (
           <>
             {/** A failed catalog request must not read as an empty catalog: the
              *  agent still uses every skill it can reach at runtime, so report
@@ -302,7 +313,7 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
             </div>
           </>
         )}
-        {bodyMode === SkillsScope.all && !isError && (
+        {bodyMode === SkillsScope.all && !catalogError && (
           <div className="overflow-hidden rounded-lg border-[0.5px] border-border-light">
             <button
               type="button"
