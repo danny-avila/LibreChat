@@ -3,6 +3,7 @@ import {
   Constants,
   EToolResources,
   ResourceType,
+  SkillsScope,
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
@@ -14,6 +15,21 @@ import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
 const { mcp_delimiter } = Constants;
+
+/**
+ * Whether emptying an allowlist has to fall back to disabling skills.
+ *
+ * An explicit `all` or `selected` scope already defines what an empty
+ * allowlist means, so neither is inferred from the array: `all` is the full
+ * catalog on purpose, and `selected` with nothing selected resolves to no
+ * skills on its own. Every other shape is: a missing scope, which is the
+ * legacy form whose meaning came from the array, and an explicit `none`
+ * carrying a true master flag, which the API accepts and which `skillDeps`
+ * reads as standing permission to expose the skill-authoring tools.
+ */
+function requiresSkillsDisable(scope: unknown): boolean {
+  return scope !== SkillsScope.all && scope !== SkillsScope.selected;
+}
 
 /**
  * Mirrors `TOOL_RESOURCE_KEYS` in `@librechat/api` — the subset of
@@ -612,9 +628,8 @@ export function createAgentMethods(
       agentData.skills = prunedSkills;
       /** Fail closed when pruning empties a non-empty allowlist: empty +
        *  enabled means the full catalog, and hygiene must never widen scope.
-       *  An explicit `skills_scope` already says what an empty allowlist
-       *  means, so only the legacy shape is inferred from the array. */
-      if (prunedSkills.length === 0 && agentData.skills_scope == null) {
+       *  See `requiresSkillsDisable` for which scopes opt out. */
+      if (prunedSkills.length === 0 && requiresSkillsDisable(agentData.skills_scope)) {
         agentData.skills_enabled = false;
       }
     }
@@ -764,10 +779,9 @@ export function createAgentMethods(
        *  `skills: []` submission skips this branch and keeps the
        *  full-catalog semantics.)
        *
-       *  Only agents without an explicit `skills_scope` are disabled that
-       *  way. Once a scope is persisted it defines what an empty allowlist
-       *  means, so failing closed would instead turn skills off on an agent
-       *  the author deliberately scoped to `all` or `selected`. */
+       *  An `all` or `selected` scope opts out, from the payload or the
+       *  stored document, because it already defines what an empty allowlist
+       *  means. See `requiresSkillsDisable`. */
       if (Array.isArray(directUpdates.skills) && directUpdates.skills.length > 0) {
         const prunedSkills = await filterExistingSkillIds(
           mongoose,
@@ -778,7 +792,7 @@ export function createAgentMethods(
         updateData.skills = prunedSkills;
         const effectiveScope =
           (directUpdates as Record<string, unknown>).skills_scope ?? currentObject.skills_scope;
-        if (prunedSkills.length === 0 && effectiveScope == null) {
+        if (prunedSkills.length === 0 && requiresSkillsDisable(effectiveScope)) {
           directUpdates.skills_enabled = false;
           updateData.skills_enabled = false;
         }
@@ -1414,8 +1428,8 @@ export function createAgentMethods(
       revertToVersion.skills = prunedSkills;
       /** The snapshot carries its own scope, and an All-scoped version keeps
        *  its allowlist, so failing closed here would restore the version as
-       *  Off. Only a snapshot with no scope is inferred from the array. */
-      if (prunedSkills.length === 0 && revertToVersion.skills_scope == null) {
+       *  Off. See `requiresSkillsDisable`. */
+      if (prunedSkills.length === 0 && requiresSkillsDisable(revertToVersion.skills_scope)) {
         revertToVersion.skills_enabled = false;
       }
     }

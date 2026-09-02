@@ -825,6 +825,30 @@ describe('Agent Methods', () => {
       expect(reloadedAgent!.skills_enabled).toBe(false);
     });
 
+    test('should fail closed when pruning empties the allowlist on create with none scope', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'None Scope Create Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [danglingId],
+        skills_enabled: true,
+        skills_scope: SkillsScope.none,
+      });
+
+      const reloadedAgent = await getAgent({ id: agentId });
+
+      expect(newAgent.skills).toEqual([]);
+      expect(newAgent.skills_enabled).toBe(false);
+      expect(reloadedAgent!.skills).toEqual([]);
+      expect(reloadedAgent!.skills_enabled).toBe(false);
+      expect(reloadedAgent!.skills_scope).toBe(SkillsScope.none);
+    });
+
     test('should preserve external skill ids on create', async () => {
       const { agentId, authorId } = createTestIds();
       const realSkill = await mongoose.models.Skill.create({
@@ -963,6 +987,30 @@ describe('Agent Methods', () => {
 
       expect(updatedAgent!.skills).toEqual([]);
       expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
+    test('should fail closed when pruning empties the allowlist for a none-scoped agent', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      /** An explicit `none` carrying a true master flag is contradictory: it
+       *  renders as Off while `skillDeps` still exposes the authoring tools,
+       *  so it must not opt out of the fail-closed branch. */
+      await createAgent({
+        id: agentId,
+        name: 'None Scope Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills_enabled: true,
+        skills_scope: SkillsScope.none,
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { skills: [danglingId] });
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(false);
+      expect(updatedAgent!.skills_scope).toBe(SkillsScope.none);
     });
 
     test('should keep full-catalog semantics for an explicit empty allowlist on update', async () => {

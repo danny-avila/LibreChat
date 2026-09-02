@@ -1,5 +1,6 @@
 import {
   ResourceType,
+  SkillsScope,
   SKILL_NAME_MAX_LENGTH,
   SKILL_DESCRIPTION_MAX_LENGTH,
   SKILL_DESCRIPTION_SHORT_THRESHOLD as SKILL_DESCRIPTION_SHORT_THRESHOLD_SHARED,
@@ -1667,8 +1668,13 @@ export function createSkillMethods(
       await Agent.updateMany(
         {
           skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } },
-          /** Matches an absent field as well as an explicit null. */
-          skills_scope: null,
+          /** Only `all` and `selected` opt out: each already defines what an
+           *  empty allowlist means. A missing field (matched here because
+           *  `$nin` also matches absent) is the legacy shape, and an explicit
+           *  `none` with the master flag still true is a contradictory shape
+           *  the API accepts, which `skillDeps` would otherwise keep reading
+           *  as permission to expose the skill-authoring tools. */
+          skills_scope: { $nin: [SkillsScope.all, SkillsScope.selected] },
         },
         { $set: { skills: [], skills_enabled: false } },
         { timestamps: false },

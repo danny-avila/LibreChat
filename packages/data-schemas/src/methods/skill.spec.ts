@@ -861,6 +861,30 @@ describe('Skill CRUD methods', () => {
     expect(agentAfter?.skills_scope).toBe('selected');
   });
 
+  it('deleteSkill disables skills when the entire allowlist is deleted from a none-scoped agent', async () => {
+    /** `skills_enabled: true` with `skills_scope: none` is a shape the API
+     *  accepts. It renders as Off, and `skillDeps` reads the master flag on
+     *  its own as permission to expose the authoring tools, so cleanup has to
+     *  clear it rather than treat the explicit scope as an opt-out. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'none-scoped-only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(
+      makeAgentDoc([skill._id.toString()], { skills_scope: 'none' }),
+    );
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
+    expect(agentAfter?.skills_scope).toBe('none');
+  });
+
   it('deleteSkill prunes the deleted id from agent skill allowlists', async () => {
     const { skill: doomed } = await methods.createSkill(makeSkillInput({ name: 'doomed-skill' }));
     const { skill: kept } = await methods.createSkill(makeSkillInput({ name: 'kept-skill' }));
