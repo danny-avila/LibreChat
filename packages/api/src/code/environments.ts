@@ -8,8 +8,8 @@ import {
   ResourceType,
   isSecureCodeEnvironmentControlURL,
 } from 'librechat-data-provider';
-import type { ResolvedPrincipal } from '~/types/principal';
 import type { CodeEnvironmentUserSettings } from 'librechat-data-provider';
+import type { ResolvedPrincipal } from '~/types/principal';
 import { AccessControlService } from '~/acl/accessControlService';
 
 export type CodeEnvironmentPrincipalContext = {

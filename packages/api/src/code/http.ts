@@ -31,11 +31,11 @@ import {
   getCodeApiTenantId,
   isCodeApiJwtAuthEnabled,
 } from '~/auth/codeapi';
-import { getAppConfigOptionsFromUser } from '~/app/service';
 import {
   CodeEnvironmentSettingsValidationError,
   validateCodeEnvironmentUserSettings,
 } from './settings';
+import { getAppConfigOptionsFromUser } from '~/app/service';
 
 type Registry = {
   register: (params: {

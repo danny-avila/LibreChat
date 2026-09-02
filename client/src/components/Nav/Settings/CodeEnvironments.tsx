@@ -123,10 +123,7 @@ function EnvironmentPermissions({ environment }: { environment: TCodeEnvironment
     <div className="mt-3 grid gap-3 border-t border-border-light pt-3 sm:grid-cols-2">
       {controls.map(({ category, label, field }) => {
         if (field == null) return null;
-        const value = effectivePermission(
-          field,
-          environment.settings?.permissions?.[category],
-        );
+        const value = effectivePermission(field, environment.settings?.permissions?.[category]);
         return (
           <div key={category} className="flex flex-col gap-1.5">
             <Label htmlFor={`${environment.id}-${category}`}>{localize(label)}</Label>

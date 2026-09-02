@@ -1,10 +1,10 @@
 import { Constants } from '@librechat/agents';
-import type { HookCallback } from '@librechat/agents';
 import type {
   CodeEnvironmentPermissionDecision,
   CodeEnvironmentUserConfigSchema,
   CodeEnvironmentUserSettings,
 } from 'librechat-data-provider';
+import type { HookCallback } from '@librechat/agents';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 
 const BYOM_FILE_WRITE_TOOLS = new Set<string>([
@@ -127,11 +127,12 @@ export function createAttachedCodeEnvironmentPolicyHook(
   settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings> = new Map(),
 ): HookCallback<'PreToolUse'> {
   return async (input) => {
-    const category = BYOM_FILE_WRITE_TOOLS.has(input.toolName)
-      ? 'fileWrite'
-      : BYOM_COMMAND_EXECUTION_TOOLS.has(input.toolName)
-        ? 'commandExecution'
-        : undefined;
+    let category: 'fileWrite' | 'commandExecution' | undefined;
+    if (BYOM_FILE_WRITE_TOOLS.has(input.toolName)) {
+      category = 'fileWrite';
+    } else if (BYOM_COMMAND_EXECUTION_TOOLS.has(input.toolName)) {
+      category = 'commandExecution';
+    }
     if (
       category == null ||
       (input.executingAgentId != null && !attachedAgentIds.has(input.executingAgentId))
