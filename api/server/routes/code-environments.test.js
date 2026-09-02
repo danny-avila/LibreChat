@@ -21,6 +21,7 @@ const mockHandlers = {
   list: jest.fn((_req, res) => res.status(200).json({ environments: [] })),
   register: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
   pair: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
+  updateSettings: jest.fn((_req, res) => res.status(200).json({ environment: { id: 'code-1' } })),
   remove: jest.fn((_req, res) => res.status(200).json({ environment: { id: 'code-1' } })),
 };
 
@@ -101,5 +102,15 @@ describe('code environment routes', () => {
 
     expect(middlewareCalls).toEqual(['jwt']);
     expect(mockHandlers.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an authenticated owner to update exposed environment settings', async () => {
+    await request(createApp())
+      .patch('/api/code-environments/code-1/settings')
+      .send({ settings: { permissions: { fileWrite: 'ask' } } })
+      .expect(200);
+
+    expect(middlewareCalls).toEqual(['jwt']);
+    expect(mockHandlers.updateSettings).toHaveBeenCalledTimes(1);
   });
 });

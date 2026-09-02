@@ -10,6 +10,11 @@ import type { Types } from 'mongoose';
 
 const BASE_CONFIG_KEY = '_BASE_';
 
+export type AppConfigPrincipal = {
+  principalType: string;
+  principalId?: string | Types.ObjectId;
+};
+
 /**
  * Materializes inferable model-spec fields (an omitted `preset.endpoint` for
  * agent specs) so every consumer of the effective config reads complete specs.
@@ -50,20 +55,18 @@ export interface AppConfigServiceDeps {
   /** The CacheKeys constants from librechat-data-provider. */
   cacheKeys: { APP_CONFIG: string };
   /** Fetch applicable DB config overrides for a set of principals. */
-  getApplicableConfigs: (
-    principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
-  ) => Promise<IConfig[]>;
+  getApplicableConfigs: (principals?: AppConfigPrincipal[]) => Promise<IConfig[]>;
   /** Resolve full principal list (user + role + groups) from userId/role. */
   getUserPrincipals: (params: {
     userId: string | Types.ObjectId;
     role?: string | null;
     idOnTheSource?: string | null;
-  }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
+  }) => Promise<AppConfigPrincipal[]>;
   /** Add mutable principal-scoped runtime configuration after cached overrides are resolved. */
   augmentConfig?: (context: {
     appConfig: AppConfig;
     baseConfig: AppConfig;
-    principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>;
+    principals: AppConfigPrincipal[];
     options: GetAppConfigOptions;
   }) => Promise<AppConfig>;
   /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
@@ -80,6 +83,10 @@ export interface GetAppConfigOptions {
   baseOnly?: boolean;
   /** Propagate principal, override, and augmentation failures for security-sensitive callers. */
   failClosed?: boolean;
+  /** Reuse principals already resolved by another authorization query in the same request. */
+  resolvedPrincipals?: AppConfigPrincipal[];
+  /** Skip mutable runtime augmentation when the caller has already loaded that data. */
+  skipRuntimeAugmentation?: boolean;
 }
 
 export interface AppConfigUserLike {
@@ -161,7 +168,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     role?: string,
     userId?: string,
     idOnTheSource?: string | null,
-  ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
+  ): Promise<AppConfigPrincipal[]> {
     if (userId) {
       const params: { userId: string; role?: string | null; idOnTheSource?: string | null } = {
         userId,
@@ -172,7 +179,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       }
       return getUserPrincipals(params);
     }
-    const principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }> = [];
+    const principals: AppConfigPrincipal[] = [];
     if (role) {
       principals.push({ principalType: PrincipalType.ROLE, principalId: role });
     }
@@ -216,7 +223,17 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * Use this for startup, auth strategies, and other pre-tenant code paths.
    */
   async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
-    const { role, userId, idOnTheSource, tenantId, refresh, baseOnly, failClosed } = options;
+    const {
+      role,
+      userId,
+      idOnTheSource,
+      tenantId,
+      refresh,
+      baseOnly,
+      failClosed,
+      resolvedPrincipals,
+      skipRuntimeAugmentation,
+    } = options;
 
     const baseConfig = await ensureBaseConfig(refresh);
 
@@ -224,13 +241,13 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return baseConfig;
     }
 
-    const principals = await buildPrincipals(role, userId, idOnTheSource).catch(
-      (error: unknown) => {
+    const principals =
+      resolvedPrincipals ??
+      (await buildPrincipals(role, userId, idOnTheSource).catch((error: unknown) => {
         if (failClosed) throw error;
         logger.error('[getAppConfig] Error building principals, falling back to base:', error);
         return null;
-      },
-    );
+      }));
     if (principals === null) {
       return baseConfig;
     }
@@ -253,7 +270,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     }
 
     const augment = async (appConfig: AppConfig): Promise<AppConfig> => {
-      if (augmentConfig == null) return appConfig;
+      if (augmentConfig == null || skipRuntimeAugmentation === true) return appConfig;
       try {
         return await augmentConfig({ appConfig, baseConfig, principals, options });
       } catch (error) {

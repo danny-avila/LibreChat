@@ -1,8 +1,12 @@
+import type { AttachedCodeEnvironmentPolicySettings } from './byom';
 import {
   assertAttachedCodeEnvironmentApprovalSupported,
+  buildAttachedCodeEnvironmentAdmissionHooks,
   collectAttachedCodeEnvironmentAgentIds,
+  collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
 } from './byom';
+import { canAgentGraphPause } from './admission';
 
 const signal = new AbortController().signal;
 
@@ -38,7 +42,7 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
     const hook = createAttachedCodeEnvironmentPolicyHook(new Set(['attached-agent']));
 
     await expect(hook({ toolName: 'write_file' } as never, signal)).resolves.toMatchObject({
-      decision: 'ask',
+      decision: 'deny',
     });
   });
 
@@ -52,6 +56,227 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
       ).resolves.toMatchObject({ decision: 'ask' });
     },
   );
+  test('applies admin-exposed environment settings by permission category', async () => {
+    const hook = createAttachedCodeEnvironmentPolicyHook(
+      new Set(['attached-agent']),
+      new Map([
+        [
+          'attached-agent',
+          {
+            configSchema: {
+              permissions: {
+                fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+                commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+              },
+            },
+            settings: {
+              permissions: { fileWrite: 'allow' as const, commandExecution: 'deny' as const },
+            },
+          },
+        ],
+      ]),
+    );
+
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'attached-agent' } as never, signal),
+    ).resolves.toEqual({ decision: 'allow' });
+    await expect(
+      hook({ toolName: 'bash_tool', executingAgentId: 'attached-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'deny' });
+  });
+
+  test.each(['create_file', 'edit_file'])(
+    'keeps persistent skill write %s approval-gated when BYOM file writes are allowed',
+    async (toolName) => {
+      const hook = createAttachedCodeEnvironmentPolicyHook(
+        new Set(['attached-agent']),
+        new Map([
+          [
+            'attached-agent',
+            {
+              configSchema: {
+                permissions: {
+                  fileWrite: { allowed: ['allow', 'ask'], default: 'ask' },
+                },
+              },
+              settings: { permissions: { fileWrite: 'allow' as const } },
+              skillAuthoringAvailable: true,
+            },
+          ],
+        ]),
+      );
+
+      await expect(
+        hook(
+          {
+            toolName,
+            toolInput: { path: 'skills/reviewer/SKILL.md' },
+            executingAgentId: 'attached-agent',
+          } as never,
+          signal,
+        ),
+      ).resolves.toEqual({
+        decision: 'ask',
+        reason: `${toolName} can modify a persistent LibreChat skill`,
+      });
+      await expect(
+        hook(
+          {
+            toolName,
+            toolInput: { path: '/mnt/data/output.txt' },
+            executingAgentId: 'attached-agent',
+          } as never,
+          signal,
+        ),
+      ).resolves.toEqual({ decision: 'allow' });
+    },
+  );
+
+  test.each([
+    '/skills/reviewer/SKILL.md',
+    './skills/reviewer/SKILL.md',
+    'skills\\reviewer\\SKILL.md',
+    'workspace/../skills/reviewer/SKILL.md',
+  ])('applies the BYOM file policy to sandbox-routed path %s', async (filePath) => {
+    const hook = createAttachedCodeEnvironmentPolicyHook(
+      new Set(['attached-agent']),
+      new Map([
+        [
+          'attached-agent',
+          {
+            configSchema: {
+              permissions: { fileWrite: { allowed: ['ask', 'deny'], default: 'deny' } },
+            },
+            settings: { permissions: { fileWrite: 'deny' as const } },
+            skillAuthoringAvailable: true,
+          },
+        ],
+      ]),
+    );
+
+    await expect(
+      hook(
+        {
+          toolName: 'create_file',
+          toolInput: { path: filePath },
+          executingAgentId: 'attached-agent',
+        } as never,
+        signal,
+      ),
+    ).resolves.toMatchObject({ decision: 'deny' });
+  });
+});
+
+describe('buildAttachedCodeEnvironmentAdmissionHooks', () => {
+  const bypassPolicy = { enabled: true, mode: 'bypass' as const };
+
+  test('does not classify allow/deny-only BYOM tools as pause-capable', () => {
+    const attachedIds = new Set(['attached-agent']);
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'attached-agent',
+        {
+          configSchema: {
+            permissions: {
+              fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+              commandExecution: {
+                allowed: ['allow', 'ask', 'deny'],
+                default: 'ask',
+              },
+            },
+          },
+          settings: {
+            permissions: { fileWrite: 'allow' as const, commandExecution: 'deny' as const },
+          },
+          skillAuthoringAvailable: true,
+        },
+      ],
+    ]);
+    const hooks = buildAttachedCodeEnvironmentAdmissionHooks(attachedIds, settings);
+
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [{ id: 'attached-agent', tools: ['write_file', 'bash_tool'] }],
+        resolvedProgrammaticHooks: hooks,
+      }),
+    ).toBe(false);
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [{ id: 'attached-agent', tools: ['create_file'] }],
+        resolvedProgrammaticHooks: hooks,
+      }),
+    ).toBe(true);
+  });
+
+  test('scopes BYOM pause capability to the attached agent that can ask', () => {
+    const attachedIds = new Set(['attached-agent']);
+    const hooks = buildAttachedCodeEnvironmentAdmissionHooks(
+      attachedIds,
+      new Map<string, AttachedCodeEnvironmentPolicySettings>([
+        [
+          'attached-agent',
+          {
+            configSchema: {
+              permissions: {
+                commandExecution: { allowed: ['allow', 'ask'], default: 'allow' },
+              },
+            },
+            settings: { permissions: { commandExecution: 'allow' as const } },
+          },
+        ],
+      ]),
+    );
+
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [
+          { id: 'attached-agent', tools: ['read_file'] },
+          { id: 'managed-agent', tools: ['bash_tool'] },
+        ],
+        resolvedProgrammaticHooks: hooks,
+      }),
+    ).toBe(false);
+  });
+
+  test('keeps the safe default ask-capable when no user setting is configured', () => {
+    const attachedIds = new Set(['attached-agent']);
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [{ id: 'attached-agent', tools: ['bash_tool'] }],
+        resolvedProgrammaticHooks: buildAttachedCodeEnvironmentAdmissionHooks(attachedIds),
+      }),
+    ).toBe(true);
+  });
+
+  test('does not add a skill pause branch when skill authoring is unavailable', () => {
+    const attachedIds = new Set(['attached-agent']);
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'attached-agent',
+        {
+          configSchema: {
+            permissions: { fileWrite: { allowed: ['allow', 'deny'], default: 'allow' } },
+          },
+          settings: { permissions: { fileWrite: 'allow' } },
+          skillAuthoringAvailable: false,
+        },
+      ],
+    ]);
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [{ id: 'attached-agent', tools: ['create_file', 'edit_file'] }],
+        resolvedProgrammaticHooks: buildAttachedCodeEnvironmentAdmissionHooks(
+          attachedIds,
+          settings,
+        ),
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('collectAttachedCodeEnvironmentAgentIds', () => {
@@ -61,7 +286,21 @@ describe('collectAttachedCodeEnvironmentAgentIds', () => {
         id: 'root',
         codeExecutionContext: { environmentType: 'managed' },
         subagentAgentConfigs: [
-          { id: 'attached-child', codeExecutionContext: { environmentType: 'attached' } },
+          {
+            id: 'attached-child',
+            skillAuthoringAvailable: true,
+            codeExecutionContext: {
+              environmentType: 'attached',
+              codeEnvironmentSettings: { permissions: { fileWrite: 'allow' as const } },
+            },
+          },
+        ],
+        lazySubagentConfigs: [
+          {
+            id: 'attached-lazy',
+            skillAuthoringAvailable: true,
+            codeExecutionContext: { environmentType: 'attached' },
+          },
         ],
         subagentGraphConfigs: [
           {
@@ -75,8 +314,18 @@ describe('collectAttachedCodeEnvironmentAgentIds', () => {
     ];
 
     expect(collectAttachedCodeEnvironmentAgentIds(agents)).toEqual(
-      new Set(['attached-child', 'attached-member']),
+      new Set(['attached-child', 'attached-lazy', 'attached-member']),
     );
+    expect(collectAttachedCodeEnvironmentPolicySettings(agents).get('attached-child')).toEqual({
+      configSchema: undefined,
+      settings: { permissions: { fileWrite: 'allow' } },
+      skillAuthoringAvailable: true,
+    });
+    expect(collectAttachedCodeEnvironmentPolicySettings(agents).get('attached-lazy')).toEqual({
+      configSchema: undefined,
+      settings: undefined,
+      skillAuthoringAvailable: true,
+    });
   });
 });
 

@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
-import type { StatefulCodeEnvironment, TAgentsEndpoint } from 'librechat-data-provider';
+import type {
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+  StatefulCodeEnvironment,
+  TAgentsEndpoint,
+} from 'librechat-data-provider';
 
 export const CODE_API_EXPECTED_PROFILE_HEADER = 'X-CodeAPI-Expected-Profile';
 export const CODE_API_BRIDGE_WORKER_HEADER = 'X-LibreChat-Code-Worker-ID';
@@ -23,6 +28,8 @@ export interface CodeExecutionContext {
   environmentId?: string;
   environmentType?: CodeEnvironmentConfig['type'];
   bridgeWorkerId?: string;
+  codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
+  codeEnvironmentSettings?: CodeEnvironmentUserSettings;
 }
 
 export function createCodeExecutionRouteKey(
@@ -169,6 +176,8 @@ export function resolveCodeExecutionContext(params: {
     environmentId: configuredEnvironment?.id,
     environmentType: configuredEnvironment?.type,
     bridgeWorkerId: configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+    codeEnvironmentConfigSchema: configuredEnvironment?.configSchema,
+    codeEnvironmentSettings: configuredEnvironment?.settings,
   };
 }
 
