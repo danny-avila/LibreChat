@@ -154,7 +154,7 @@ function MessagesViewContent({
               /** The mount hook pins the anchor row itself (document-space
                *  measurement); native scroll anchoring reacting to the same
                *  insertions would double-correct. */
-              overflowAnchor: mountWindow != null ? 'none' : undefined,
+              overflowAnchor: mountWindow?.mode === 'progressive' ? 'none' : undefined,
             }}
           >
             <div

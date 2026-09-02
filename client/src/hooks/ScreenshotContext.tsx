@@ -79,11 +79,15 @@ export const useScreenshot = () => {
     }
     /** A capture taken while a long thread is still progressively mounting
      *  would clone a truncated DOM; force the remaining rows in first. */
-    await completeProgressiveRowMounts();
-    if (ref?.current) {
-      return takeScreenShot(ref.current);
+    const releaseRowMounts = await completeProgressiveRowMounts();
+    try {
+      if (ref?.current) {
+        return await takeScreenShot(ref.current);
+      }
+      throw new Error('Ref is not attached to any element.');
+    } finally {
+      releaseRowMounts();
     }
-    throw new Error('Ref is not attached to any element.');
   };
 
   return { screenshotTargetRef: ref, captureScreenshot };

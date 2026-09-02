@@ -1,8 +1,8 @@
-import { memo, useEffect, useRef, useCallback } from 'react';
+import { memo, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import type { ReactElement } from 'react';
+import type { ReactNode, ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
 import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
 import MessageContent from '~/components/Messages/MessageContent';
@@ -14,6 +14,40 @@ import store from '~/store';
 /** First-run sentinel for `parentRef`: `messageId` itself may legitimately be
  *  null/undefined at the root level, so those can't mark "not yet bound". */
 const UNBOUND_PARENT: unique symbol = Symbol('multiMessageUnboundParent');
+
+function MountedRowSlot({
+  depth,
+  messageId,
+  measureRow,
+  children,
+}: {
+  depth: number;
+  messageId: string;
+  measureRow?: (depth: number, messageId: string, height: number) => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || !measureRow) {
+      return;
+    }
+    measureRow(depth, messageId, element.getBoundingClientRect().height);
+  }, [depth, measureRow, messageId]);
+
+  return (
+    <div
+      ref={ref}
+      data-message-row-slot="true"
+      data-row-mounted="true"
+      data-row-depth={depth}
+      data-row-message-id={messageId}
+    >
+      {children}
+    </div>
+  );
+}
 
 function MultiMessage({
   // messageId is used recursively here
@@ -168,12 +202,21 @@ function MultiMessage({
     setSiblingIdx: setSiblingIdxRev,
   };
 
-  /** A row outside the progressive mount window renders nothing while the
-   *  recursion continues, so descendants keep their atoms, effects, and
-   *  streaming spine; the window only ever widens, so rows never unmount. */
+  const depth = message.depth ?? 0;
+  const measuredRow = mountWindow?.heights?.get(depth);
+  const isMeasuredMessage = measuredRow?.messageId === message.messageId;
+  const isInPrimaryWindow =
+    mountWindow != null && depth >= mountWindow.start && depth <= mountWindow.end;
+  const isInStreamTail = mountWindow?.tailStart != null && depth >= mountWindow.tailStart;
+  /** A bounded row with no measurement must render once before it can become
+   *  an exact-height slot. Editing also pins the row so local form state is
+   *  never released while the editor is active. */
   const rowMounted =
     mountWindow == null ||
-    ((message.depth ?? 0) >= mountWindow.start && (message.depth ?? 0) <= mountWindow.end);
+    isInPrimaryWindow ||
+    isInStreamTail ||
+    currentEditId === message.messageId ||
+    (mountWindow.mode === 'bounded' && !isMeasuredMessage);
 
   let row: ReactElement | null = null;
   if (!rowMounted) {
@@ -202,6 +245,41 @@ function MultiMessage({
   const hasParallelContent =
     !message.isCreatedByUser && message.content?.some((part) => part?.groupId != null) === true;
 
+  let rowSlot: ReactElement | null = null;
+  if (rowMounted) {
+    rowSlot = (
+      <MountedRowSlot
+        depth={depth}
+        messageId={message.messageId}
+        measureRow={mountWindow?.mode === 'bounded' ? mountWindow.measureRow : undefined}
+      >
+        {row}
+        {!isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
+          <div className="w-full border-0 bg-transparent">
+            <EventSubagentActivityGroup
+              conversationId={message.conversationId ?? ''}
+              parentMessageIds={activityParentMessageIds}
+              hasParallelContent={hasParallelContent}
+            />
+          </div>
+        ) : null}
+      </MountedRowSlot>
+    );
+  } else if (mountWindow?.mode === 'bounded' && measuredRow) {
+    rowSlot = (
+      <div
+        id={message.messageId}
+        aria-hidden="true"
+        className="message-render w-full"
+        data-message-row-slot="true"
+        data-row-mounted="false"
+        data-row-depth={depth}
+        data-row-message-id={message.messageId}
+        style={{ height: measuredRow.height }}
+      />
+    );
+  }
+
   /**
    * The child recursion is a sibling of the row (not rendered inside it), so a
    * row that bails via its memo comparator never severs the walk that delivers
@@ -211,16 +289,7 @@ function MultiMessage({
    */
   return (
     <>
-      {row}
-      {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
-        <div className="w-full border-0 bg-transparent">
-          <EventSubagentActivityGroup
-            conversationId={message.conversationId ?? ''}
-            parentMessageIds={activityParentMessageIds}
-            hasParallelContent={hasParallelContent}
-          />
-        </div>
-      ) : null}
+      {rowSlot}
       <MemoizedMultiMessage
         messageId={message.messageId}
         messagesTree={message.children ?? []}

@@ -10,13 +10,16 @@ import {
 } from 'react';
 import type { ReactNode, RefObject } from 'react';
 
-/**
- * Depth range (inclusive) of visible-path rows allowed to mount; `null` means
- * no restriction. `MultiMessage` reads this to gate each row while always
- * continuing its recursion, so the tree's structure, sibling state, and
- * streaming spine are identical whether or not a window is active.
- */
-export type RowMountWindow = { start: number; end: number } | null;
+type MeasuredRow = { messageId: string; height: number };
+
+export type RowMountWindow = {
+  mode: 'progressive' | 'bounded';
+  start: number;
+  end: number;
+  tailStart?: number;
+  heights?: ReadonlyMap<number, MeasuredRow>;
+  measureRow?: (depth: number, messageId: string, height: number) => void;
+} | null;
 
 const RowMountContext = createContext<RowMountWindow>(null);
 
@@ -34,51 +37,49 @@ export function useRowMountWindow(): RowMountWindow {
   return useContext(RowMountContext);
 }
 
-/** Below this path length every row mounts in one commit, exactly as before. */
-const MIN_PROGRESSIVE_ROWS = 40;
-/** Rows in the first anchored commit — about one viewport plus overscan. */
+const MIN_WINDOWED_ROWS = 40;
 const INITIAL_ROWS = 16;
-/** Rows added per expansion step until the window covers the whole path. */
 const CHUNK_ROWS = 32;
+const WINDOW_OVERSCAN_ROWS = 8;
+const STREAM_TAIL_ROWS = 4;
+const ROW_SLOT_SELECTOR = '[data-message-row-slot="true"]';
+const MOUNTED_ROW_SLOT_SELECTOR = `${ROW_SLOT_SELECTOR}[data-row-mounted="true"]`;
 
 type ProgressiveRowMountOptions = {
-  /** Depth of the active branch tail (`latestMessageDepth` from ChatContext). */
   tailDepth: number | undefined;
-  /** True anchors the first commit at the newest rows (auto-scroll lands
-   *  there); false anchors at the conversation start, which is where a
-   *  default-settings load rests. */
   anchorBottom: boolean;
   isSubmitting: boolean;
   conversationId: string | null | undefined;
   scrollableRef: RefObject<HTMLDivElement | null>;
 };
 
-function initialWindow(
-  tailDepth: number | undefined,
-  anchorBottom: boolean,
-  isSubmitting: boolean,
-): RowMountWindow {
-  if (isSubmitting || tailDepth == null || tailDepth + 1 <= MIN_PROGRESSIVE_ROWS) {
+function progressiveWindow(tailDepth: number | undefined, anchorBottom: boolean): RowMountWindow {
+  if (tailDepth == null || tailDepth + 1 <= MIN_WINDOWED_ROWS) {
     return null;
   }
   if (anchorBottom) {
-    return { start: Math.max(0, tailDepth - INITIAL_ROWS + 1), end: Number.POSITIVE_INFINITY };
+    return {
+      mode: 'progressive',
+      start: Math.max(0, tailDepth - INITIAL_ROWS + 1),
+      end: Number.POSITIVE_INFINITY,
+    };
   }
-  return { start: 0, end: INITIAL_ROWS - 1 };
+  return { mode: 'progressive', start: 0, end: INITIAL_ROWS - 1 };
+}
+
+function rowMetadata(element: Element): { depth: number; messageId: string } | null {
+  const depth = Number(element.getAttribute('data-row-depth'));
+  const messageId = element.getAttribute('data-row-message-id');
+  if (!Number.isFinite(depth) || messageId == null) {
+    return null;
+  }
+  return { depth, messageId };
 }
 
 /**
- * Windowed first commit for long threads: mount only the rows around the
- * scroll anchor, then widen the window in transition-wrapped chunks until
- * every row is mounted, then drop the restriction entirely. The DOM converges
- * to the exact full structure — nothing ever unmounts — so message counts,
- * screenshot export, and the nav rail see the same document they always have,
- * just a few frames later.
- *
- * Bottom-anchored expansion inserts rows above the viewport; the layout
- * effect re-pins the previously first-mounted row to its pre-commit viewport
- * offset by measuring its actual shift, which also degrades to a no-op
- * wherever native scroll anchoring already compensated.
+ * Keeps long message paths bounded after their progressive first measurement.
+ * Every off-window row becomes one exact-height slot, preserving scroll
+ * geometry and message IDs for navigation while releasing its rich subtree.
  */
 export function useProgressiveRowMount({
   tailDepth,
@@ -88,25 +89,23 @@ export function useProgressiveRowMount({
   scrollableRef,
 }: ProgressiveRowMountOptions): RowMountWindow {
   const [mountWindow, setMountWindow] = useState<RowMountWindow>(() =>
-    initialWindow(tailDepth, anchorBottom, isSubmitting),
+    progressiveWindow(tailDepth, anchorBottom),
   );
+  const heightsRef = useRef(new Map<number, MeasuredRow>());
   const anchorRef = useRef<{ element: Element; documentOffset: number } | null>(null);
+  const updateFrameRef = useRef<number>();
+  const tailDepthRef = useRef(tailDepth);
+  const isSubmittingRef = useRef(isSubmitting);
+  tailDepthRef.current = tailDepth;
+  isSubmittingRef.current = isSubmitting;
 
-  /** Re-arm per conversation so every navigation gets the anchored fast
-   *  first commit (state adjustment during render, per React's guidance,
-   *  so the old conversation's window never gates the new tree). */
   const [prevConversationId, setPrevConversationId] = useState(conversationId);
   if (prevConversationId !== conversationId) {
     setPrevConversationId(conversationId);
-    setMountWindow(initialWindow(tailDepth, anchorBottom, isSubmitting));
+    heightsRef.current = new Map();
+    setMountWindow(progressiveWindow(tailDepth, anchorBottom));
     anchorRef.current = null;
   }
-
-  useEffect(() => {
-    if (isSubmitting && mountWindow != null) {
-      setMountWindow(null);
-    }
-  }, [isSubmitting, mountWindow]);
 
   const captureAnchor = useCallback(() => {
     const container = scrollableRef.current;
@@ -115,32 +114,138 @@ export function useProgressiveRowMount({
       return;
     }
     const element = container.querySelector('.message-render');
-    /** Document-space offset (viewport top + scrollTop): the widening commit
-     *  is transition-deferred, so the user may scroll between capture and
-     *  commit. User scrolling moves viewport coordinates but not document
-     *  ones, so measuring here isolates the inserted-row shift and never
-     *  folds the user's own movement into the correction. */
     anchorRef.current = element
       ? { element, documentOffset: element.getBoundingClientRect().top + container.scrollTop }
       : null;
   }, [anchorBottom, scrollableRef]);
 
+  const measureMountedRows = useCallback(() => {
+    const container = scrollableRef.current;
+    if (!container) {
+      return;
+    }
+    const rows = container.querySelectorAll<HTMLElement>(MOUNTED_ROW_SLOT_SELECTOR);
+    for (const row of rows) {
+      const metadata = rowMetadata(row);
+      if (!metadata) {
+        continue;
+      }
+      const height = row.getBoundingClientRect().height;
+      if (height <= 0) {
+        continue;
+      }
+      heightsRef.current.set(metadata.depth, { messageId: metadata.messageId, height });
+    }
+  }, [scrollableRef]);
+
+  const measureRow = useCallback((depth: number, messageId: string, height: number) => {
+    if (height <= 0) {
+      return;
+    }
+    const previous = heightsRef.current.get(depth);
+    heightsRef.current.set(depth, { messageId, height });
+    if (previous == null || previous.messageId === messageId) {
+      return;
+    }
+    setMountWindow((current) => {
+      if (current?.mode !== 'bounded') {
+        return current;
+      }
+      return { ...current, heights: new Map(heightsRef.current) };
+    });
+  }, []);
+
+  const boundedWindow = useCallback((): RowMountWindow => {
+    const container = scrollableRef.current;
+    const currentTailDepth = tailDepthRef.current;
+    if (!container || currentTailDepth == null || currentTailDepth + 1 <= MIN_WINDOWED_ROWS) {
+      return null;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    let firstVisible = Number.POSITIVE_INFINITY;
+    let lastVisible = Number.NEGATIVE_INFINITY;
+    const slots = container.querySelectorAll<HTMLElement>(ROW_SLOT_SELECTOR);
+    for (const slot of slots) {
+      const metadata = rowMetadata(slot);
+      if (!metadata) {
+        continue;
+      }
+      const rect = slot.getBoundingClientRect();
+      if (rect.bottom < containerRect.top || rect.top > containerRect.bottom) {
+        continue;
+      }
+      firstVisible = Math.min(firstVisible, metadata.depth);
+      lastVisible = Math.max(lastVisible, metadata.depth);
+    }
+
+    if (!Number.isFinite(firstVisible) || !Number.isFinite(lastVisible)) {
+      const anchor = anchorBottom ? currentTailDepth : 0;
+      firstVisible = anchor;
+      lastVisible = anchor;
+    }
+
+    return {
+      mode: 'bounded',
+      start: Math.max(0, firstVisible - WINDOW_OVERSCAN_ROWS),
+      end: Math.min(currentTailDepth, lastVisible + WINDOW_OVERSCAN_ROWS),
+      tailStart: isSubmittingRef.current
+        ? Math.max(0, currentTailDepth - STREAM_TAIL_ROWS + 1)
+        : undefined,
+      heights: new Map(heightsRef.current),
+      measureRow,
+    };
+  }, [anchorBottom, measureRow, scrollableRef]);
+
+  const refreshBoundedWindow = useCallback(() => {
+    measureMountedRows();
+    setMountWindow((current) => {
+      if (current?.mode !== 'bounded') {
+        return current;
+      }
+      const next = boundedWindow();
+      if (
+        next?.mode === 'bounded' &&
+        current.start === next.start &&
+        current.end === next.end &&
+        current.tailStart === next.tailStart
+      ) {
+        return current;
+      }
+      return next;
+    });
+  }, [boundedWindow, measureMountedRows]);
+
+  const scheduleBoundedRefresh = useCallback(() => {
+    if (updateFrameRef.current != null) {
+      return;
+    }
+    updateFrameRef.current = requestAnimationFrame(() => {
+      updateFrameRef.current = undefined;
+      refreshBoundedWindow();
+    });
+  }, [refreshBoundedWindow]);
+
   useEffect(() => {
-    if (mountWindow == null || tailDepth == null) {
+    if (mountWindow?.mode !== 'progressive' || tailDepth == null) {
       return;
     }
     if (mountWindow.start <= 0 && mountWindow.end >= tailDepth) {
-      setMountWindow(null);
-      return;
+      const frameId = requestAnimationFrame(() => {
+        measureMountedRows();
+        setMountWindow(boundedWindow());
+      });
+      return () => cancelAnimationFrame(frameId);
     }
     const frameId = requestAnimationFrame(() => {
       captureAnchor();
       startTransition(() => {
         setMountWindow((current) => {
-          if (current == null) {
+          if (current?.mode !== 'progressive') {
             return current;
           }
           return {
+            ...current,
             start: Math.max(0, current.start - CHUNK_ROWS),
             end: current.end >= tailDepth ? current.end : current.end + CHUNK_ROWS,
           };
@@ -148,7 +253,7 @@ export function useProgressiveRowMount({
       });
     });
     return () => cancelAnimationFrame(frameId);
-  }, [mountWindow, tailDepth, captureAnchor]);
+  }, [mountWindow, tailDepth, boundedWindow, captureAnchor, measureMountedRows]);
 
   useLayoutEffect(() => {
     const captured = anchorRef.current;
@@ -164,39 +269,77 @@ export function useProgressiveRowMount({
     }
   }, [mountWindow, scrollableRef]);
 
-  /** Registered while a window is active so `completeProgressiveRowMounts`
-   *  (screenshot capture) can force the remaining rows in and wait for the
-   *  commit to paint before cloning the DOM. */
+  useEffect(() => {
+    if (mountWindow?.mode !== 'bounded') {
+      return;
+    }
+    const container = scrollableRef.current;
+    if (!container) {
+      return;
+    }
+    container.addEventListener('scroll', scheduleBoundedRefresh, { passive: true });
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleBoundedRefresh);
+    resizeObserver?.observe(container);
+    return () => {
+      container.removeEventListener('scroll', scheduleBoundedRefresh);
+      resizeObserver?.disconnect();
+    };
+  }, [mountWindow?.mode, scheduleBoundedRefresh, scrollableRef]);
+
+  useEffect(() => {
+    if (mountWindow?.mode !== 'bounded') {
+      return;
+    }
+    scheduleBoundedRefresh();
+  }, [isSubmitting, tailDepth, mountWindow?.mode, scheduleBoundedRefresh]);
+
+  useEffect(
+    () => () => {
+      if (updateFrameRef.current != null) {
+        cancelAnimationFrame(updateFrameRef.current);
+      }
+    },
+    [],
+  );
+
   const isWindowActive = mountWindow != null;
   useEffect(() => {
     if (!isWindowActive) {
       return;
     }
     const complete = () =>
-      new Promise<void>((resolve) => {
+      new Promise<() => void>((resolve) => {
         setMountWindow(null);
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            resolve(() => {
+              measureMountedRows();
+              setMountWindow(boundedWindow());
+            });
+          }),
+        );
       });
     activeCompleters.add(complete);
     return () => {
       activeCompleters.delete(complete);
     };
-  }, [isWindowActive]);
+  }, [isWindowActive, boundedWindow, measureMountedRows]);
 
   return mountWindow;
 }
 
-const activeCompleters = new Set<() => Promise<void>>();
+const activeCompleters = new Set<() => Promise<() => void>>();
 
-/**
- * Forces every in-flight progressive mount to completion and resolves after
- * the resulting commit has painted. DOM consumers that clone the thread
- * (screenshot export) call this so a capture taken mid-widening cannot
- * silently truncate the rows still outside the window.
- */
-export async function completeProgressiveRowMounts(): Promise<void> {
+/** Temporarily mounts every row for a full-DOM consumer such as screenshot export. */
+export async function completeProgressiveRowMounts(): Promise<() => void> {
   if (activeCompleters.size === 0) {
-    return;
+    return () => {};
   }
-  await Promise.all([...activeCompleters].map((complete) => complete()));
+  const releases = await Promise.all([...activeCompleters].map((complete) => complete()));
+  return () => {
+    for (const release of releases) {
+      release();
+    }
+  };
 }

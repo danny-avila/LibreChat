@@ -358,7 +358,14 @@ describe('MultiMessage row mount window', () => {
     return { ...msg('m0'), depth: 0, children: [mid] } as TMessage;
   };
 
-  const windowedTree = (mountWindow: { start: number; end: number } | null) => (
+  const windowedTree = (
+    mountWindow: {
+      mode: 'progressive' | 'bounded';
+      start: number;
+      end: number;
+      heights?: ReadonlyMap<number, { messageId: string; height: number }>;
+    } | null,
+  ) => (
     <RecoilRoot>
       <RowMountProvider mountWindow={mountWindow}>
         <MultiMessage
@@ -377,16 +384,37 @@ describe('MultiMessage row mount window', () => {
   });
 
   it('gates rows outside the window while the recursion continues below them', () => {
-    render(windowedTree({ start: 2, end: 2 }));
+    render(windowedTree({ mode: 'progressive', start: 2, end: 2 }));
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m2']);
   });
 
   it('mounts newly windowed rows above without disturbing deeper rows', () => {
-    const view = render(windowedTree({ start: 2, end: 2 }));
-    view.rerender(windowedTree({ start: 1, end: 2 }));
+    const view = render(windowedTree({ mode: 'progressive', start: 2, end: 2 }));
+    view.rerender(windowedTree({ mode: 'progressive', start: 1, end: 2 }));
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m1', 'm2']);
 
     view.rerender(windowedTree(null));
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m0', 'm1', 'm2']);
+  });
+
+  it('replaces measured rows outside a bounded window with exact-height message slots', () => {
+    const heights = new Map([
+      [0, { messageId: 'm0', height: 120 }],
+      [1, { messageId: 'm1', height: 240 }],
+      [2, { messageId: 'm2', height: 360 }],
+    ]);
+    const { container } = render(windowedTree({ mode: 'bounded', start: 1, end: 1, heights }));
+
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m1']);
+    expect(container.querySelector<HTMLElement>('#m0')?.style.height).toBe('120px');
+    expect(container.querySelector<HTMLElement>('#m2')?.style.height).toBe('360px');
+    expect(container.querySelectorAll('[data-message-row-slot="true"]')).toHaveLength(3);
+  });
+
+  it('mounts a changed branch row until its new height is measured', () => {
+    const staleHeights = new Map([[0, { messageId: 'other-branch', height: 120 }]]);
+    render(windowedTree({ mode: 'bounded', start: 2, end: 2, heights: staleHeights }));
+
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m0', 'm1', 'm2']);
   });
 });
