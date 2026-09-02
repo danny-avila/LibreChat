@@ -1044,14 +1044,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       // the primary and any discovered handoff sub-agents)
       const userMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
 
-      const contextAgentsById = new Map(runAgents.map((runAgent) => [runAgent.id, runAgent]));
-      for (const runAgent of runAgents) {
-        for (const graph of runAgent.subagentGraphConfigs ?? []) {
-          for (const memberConfig of graph.memberConfigs) {
-            contextAgentsById.set(memberConfig.id, memberConfig);
-          }
-        }
-      }
+      const contextAgentsById = new Map(modelBoundAgentsById);
       const contextAgents = [...contextAgentsById.values()];
       const agentScopedContext = await buildAgentScopedContext({
         agentIds: contextAgents.map(({ id }) => id),
