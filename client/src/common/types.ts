@@ -624,6 +624,7 @@ export type NewConversationParams = {
   buildDefault?: boolean;
   keepAddedConvos?: boolean;
   disableParams?: boolean;
+  replace?: boolean;
 };
 
 export type ConvoGenerator = (params: NewConversationParams) => void | t.TConversation;

@@ -13,6 +13,7 @@ import {
   useChatHelpers,
   useQueueDrain,
   useLocalize,
+  useMissingConversationRecovery,
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import ConversationStarters from './Input/ConversationStarters';
@@ -23,7 +24,7 @@ import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
-import { cn } from '~/utils';
+import { cn, isNotFoundError } from '~/utils';
 import store from '~/store';
 
 function LoadingSpinner() {
@@ -51,6 +52,8 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   const {
     data: messagesTree = null,
+    error: messagesError,
+    isError: messagesQueryFailed,
     isLoading,
     isFetching,
   } = useGetMessagesByConvoId(
@@ -74,11 +77,16 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse();
-
+  const { conversation, newConversation } = chatHelpers;
   const activeConversation =
-    chatHelpers.conversation?.conversationId === conversationId
-      ? chatHelpers.conversation
-      : undefined;
+    conversation?.conversationId === conversationId ? conversation : undefined;
+  const recoverToNewConversation = useCallback(() => {
+    const chatProjectId = activeConversation?.chatProjectId ?? project?._id;
+    newConversation({
+      ...(chatProjectId && { template: { chatProjectId } }),
+      replace: true,
+    });
+  }, [activeConversation?.chatProjectId, newConversation, project?._id]);
   const activeSubagentThread = activeConversation?.subagentThread;
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
@@ -88,6 +96,12 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   // settle: a stale invalidated cache mounts with isLoading false while the
   // refetch is in flight, and resume must not build from (or race) it.
   useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading && !isFetching);
+
+  useMissingConversationRecovery({
+    conversationId,
+    enabled: messagesQueryFailed && isNotFoundError(messagesError),
+    onConfirmedMissing: recoverToNewConversation,
+  });
 
   // Auto-send queued follow-up messages once a run finishes cleanly.
   useQueueDrain(index, conversationId, chatHelpers.ask);

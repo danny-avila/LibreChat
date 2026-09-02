@@ -57,6 +57,7 @@ import { useAgentsMapContext } from '~/Providers';
 import { usePauseGlobalAudio } from './Audio';
 import { useHasAccess } from '~/hooks';
 import store from '~/store';
+import { navigateToNewConversation } from './useNewConvo.utils';
 
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
@@ -103,6 +104,7 @@ const useNewConvo = (index = 0) => {
         keepAddedConvos?: boolean,
         disableFocus?: boolean,
         _disableParams?: boolean,
+        replaceHistory?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
@@ -283,7 +285,7 @@ const useNewConvo = (index = 0) => {
           if (!disableFocus) {
             requestChatFocus();
           }
-          navigate(path);
+          navigateToNewConversation(navigate, path, replaceHistory);
           return;
         }
 
@@ -313,6 +315,7 @@ const useNewConvo = (index = 0) => {
       keepAddedConvos = false,
       keepComposerState = false,
       disableParams,
+      replace = false,
     }: {
       template?: Partial<TConversation>;
       preset?: Partial<TPreset>;
@@ -325,6 +328,7 @@ const useNewConvo = (index = 0) => {
        * in-flight attachments outlive the refresh. */
       keepComposerState?: boolean;
       disableParams?: boolean;
+      replace?: boolean;
     } = {}) {
       const nextConversationId = _template.conversationId ?? '';
       const keepsExistingDraft =
@@ -507,6 +511,7 @@ const useNewConvo = (index = 0) => {
         keepAddedConvos,
         disableFocus,
         disableParams,
+        replace,
       );
     },
     [

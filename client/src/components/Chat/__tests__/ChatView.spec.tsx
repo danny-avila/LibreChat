@@ -1,10 +1,13 @@
 import React from 'react';
 import '@testing-library/jest-dom';
+import type { TChatProject } from 'librechat-data-provider';
 import { render, screen } from 'test/layout-test-utils';
 import ChatView from '../ChatView';
 
 const mockParams = jest.fn();
 const mockConversation = jest.fn();
+const mockNewConversation = jest.fn();
+const mockUseMissingConversationRecovery = jest.fn();
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
@@ -28,9 +31,13 @@ jest.mock('~/data-provider', () => ({
  */
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => (key === 'com_ui_new_chat' ? 'New chat' : key),
-  useChatHelpers: () => ({ conversation: mockConversation() }),
+  useChatHelpers: () => ({
+    conversation: mockConversation(),
+    newConversation: mockNewConversation,
+  }),
   useAddedResponse: () => ({}),
   useAdaptiveSSE: jest.fn(),
+  useMissingConversationRecovery: (options: unknown) => mockUseMissingConversationRecovery(options),
   useResumeOnLoad: jest.fn(),
   useQueueDrain: jest.fn(),
 }));
@@ -50,6 +57,26 @@ describe('ChatView page heading', () => {
   beforeEach(() => {
     mockParams.mockReturnValue({});
     mockConversation.mockReturnValue(null);
+  });
+
+  test('preserves the route project instead of a stale conversation project during recovery', () => {
+    mockParams.mockReturnValue({ conversationId: 'convo-2' });
+    mockConversation.mockReturnValue({
+      conversationId: 'convo-1',
+      chatProjectId: 'stale-project',
+    });
+
+    render(<ChatView project={{ _id: 'route-project' } as TChatProject} />);
+
+    const { onConfirmedMissing } = mockUseMissingConversationRecovery.mock.calls[0][0] as {
+      onConfirmedMissing: () => void;
+    };
+    onConfirmedMissing();
+
+    expect(mockNewConversation).toHaveBeenCalledWith({
+      template: { chatProjectId: 'route-project' },
+      replace: true,
+    });
   });
 
   test('exposes a single h1 to assistive technology', () => {

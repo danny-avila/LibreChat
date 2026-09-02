@@ -5,6 +5,7 @@ import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
+import type { StreamStatusResponse } from '~/data-provider';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
@@ -887,29 +888,30 @@ describe('useResumeOnLoad', () => {
   it('reprocesses the same conversation when a stale attachment hands off to a newer epoch', async () => {
     const observedSubmissions: Array<TSubmission | null> = [];
     const staleSubmission = buildSubmission(CONVERSATION_ID);
+    const handoffStatus: StreamStatusResponse = {
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 2,
+      status: 'running',
+      streamId: CONVERSATION_ID,
+      createdAt: 2000,
+      resumeState: {
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'replacement content' }],
+        responseMessageId: 'replacement-response',
+        conversationId: CONVERSATION_ID,
+        userMessage: {
+          messageId: 'replacement-user',
+          parentMessageId: String(Constants.NO_PARENT),
+          conversationId: CONVERSATION_ID,
+          text: 'Replacement prompt',
+        },
+      },
+    };
     mockUseStreamStatus.mockReturnValue({
       isSuccess: true,
       isFetching: false,
-      data: {
-        active: true,
-        generationHandoff: true,
-        generationProtocolVersion: 2,
-        status: 'running',
-        streamId: CONVERSATION_ID,
-        createdAt: 2000,
-        resumeState: {
-          runSteps: [],
-          aggregatedContent: [{ type: 'text', text: 'replacement content' }],
-          responseMessageId: 'replacement-response',
-          conversationId: CONVERSATION_ID,
-          userMessage: {
-            messageId: 'replacement-user',
-            parentMessageId: Constants.NO_PARENT,
-            conversationId: CONVERSATION_ID,
-            text: 'Replacement prompt',
-          },
-        },
-      },
+      data: handoffStatus,
     });
 
     const rendered = renderUseResumeOnLoad({
@@ -931,18 +933,195 @@ describe('useResumeOnLoad', () => {
     expect(replacement.resumeGenerationCreatedAt).toBe(2000);
     expect(replacement.userMessage?.messageId).toBe('replacement-user');
 
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: { ...handoffStatus },
+    });
+    rendered.rerender();
+
     await act(async () => {
       rendered.setSubmission(null);
       await Promise.resolve();
     });
 
-    const replacementInstalls = observedSubmissions.filter(
-      (candidate) =>
-        (candidate as (TSubmission & { resumeGenerationCreatedAt?: number }) | null)
-          ?.resumeGenerationCreatedAt === 2000,
-    );
-    expect(replacementInstalls).toHaveLength(1);
     expect(observedSubmissions[observedSubmissions.length - 1]).toBeNull();
+  });
+
+  it('reprocesses a route when verification discovers a newly active generation', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    let status: StreamStatusResponse = { active: false };
+    mockUseStreamStatus.mockImplementation(() => ({
+      isSuccess: true,
+      isFetching: false,
+      data: status,
+    }));
+    const rendered = renderUseResumeOnLoad({
+      messages: [buildUserMessage(CONVERSATION_ID)],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(observedSubmissions.filter(Boolean)).toHaveLength(0);
+
+    status = {
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 2,
+      status: 'running',
+      streamId: CONVERSATION_ID,
+      createdAt: 2000,
+      resumeState: {
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'now active' }],
+        responseMessageId: RESPONSE_MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        userMessage: {
+          messageId: USER_MESSAGE_ID,
+          parentMessageId: String(Constants.NO_PARENT),
+          conversationId: CONVERSATION_ID,
+          text: 'Hello',
+        },
+      },
+    };
+    rendered.rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const resumed = observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+      resumeStreamId?: string;
+      resumeGenerationCreatedAt?: number;
+    };
+    expect(resumed.resumeStreamId).toBe(CONVERSATION_ID);
+    expect(resumed.resumeGenerationCreatedAt).toBe(2000);
+
+    await act(async () => {
+      rendered.setSubmission(null);
+      await Promise.resolve();
+    });
+    expect(
+      observedSubmissions.filter(
+        (candidate) =>
+          (candidate as (TSubmission & { resumeGenerationCreatedAt?: number }) | null)
+            ?.resumeGenerationCreatedAt === 2000,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('reprocesses a route when verification discovers an active protocol-v1 generation', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    let status: StreamStatusResponse = { active: false };
+    mockUseStreamStatus.mockImplementation(() => ({
+      isSuccess: true,
+      isFetching: false,
+      data: status,
+    }));
+    const rendered = renderUseResumeOnLoad({
+      messages: [buildUserMessage(CONVERSATION_ID)],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    status = {
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 1,
+      status: 'running',
+      streamId: CONVERSATION_ID,
+      resumeState: {
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'legacy generation' }],
+        responseMessageId: RESPONSE_MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        userMessage: {
+          messageId: USER_MESSAGE_ID,
+          parentMessageId: String(Constants.NO_PARENT),
+          conversationId: CONVERSATION_ID,
+          text: 'Hello',
+        },
+      },
+    };
+    rendered.rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const resumed = observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+      resumeStreamId?: string;
+      resumeGenerationProtocolVersion?: number;
+    };
+    expect(resumed.resumeStreamId).toBe(CONVERSATION_ID);
+    expect(resumed.resumeGenerationProtocolVersion).toBe(1);
+
+    await act(async () => {
+      rendered.setSubmission(null);
+      await Promise.resolve();
+    });
+    expect(
+      observedSubmissions.filter(
+        (candidate) =>
+          (candidate as (TSubmission & { resumeGenerationProtocolVersion?: number }) | null)
+            ?.resumeGenerationProtocolVersion === 1,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('treats the empty submission sentinel as idle for a verified handoff', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    let status: StreamStatusResponse = { active: false };
+    mockUseStreamStatus.mockImplementation(() => ({
+      isSuccess: true,
+      isFetching: false,
+      data: status,
+    }));
+    const rendered = renderUseResumeOnLoad({
+      submission: {} as TSubmission,
+      messages: [buildUserMessage(CONVERSATION_ID)],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    status = {
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 2,
+      status: 'running',
+      streamId: CONVERSATION_ID,
+      createdAt: 2000,
+      resumeState: {
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'handoff content' }],
+        responseMessageId: RESPONSE_MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        userMessage: {
+          messageId: USER_MESSAGE_ID,
+          parentMessageId: String(Constants.NO_PARENT),
+          conversationId: CONVERSATION_ID,
+          text: 'Hello',
+        },
+      },
+    };
+    rendered.rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const resumed = observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+      resumeGenerationCreatedAt?: number;
+    };
+    expect(resumed.resumeGenerationCreatedAt).toBe(2000);
   });
 
   it('strips the paused user/assistant rows from submission.messages (no duplicate on resume)', async () => {
