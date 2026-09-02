@@ -80,6 +80,13 @@ export type CompactRequestResult =
 
 type MessageFilter = { conversationId: string; user: string; parentMessageId?: string };
 
+type CompactPersistenceContext = {
+  userId: string;
+  isTemporary?: boolean;
+  interfaceConfig?: AppConfig['interfaceConfig'];
+};
+type SavedCompactMessage = TMessage & { _id?: unknown };
+
 /**
  * Persistence, pricing and policy seams, injected so `/api` keeps only its
  * Express adapter. Every function type is borrowed from the module that
@@ -96,10 +103,20 @@ export interface CompactRequestDeps
     BulkWriteDeps {
   getMessages: (filter: MessageFilter, select?: string) => Promise<TMessage[] | null>;
   saveMessage: (
-    ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
+    ctx: CompactPersistenceContext,
     message: Partial<TMessage> & { user: string },
     meta?: { context?: string },
-  ) => Promise<TMessage | undefined>;
+  ) => Promise<SavedCompactMessage | undefined>;
+  saveConvo: (
+    ctx: CompactPersistenceContext,
+    conversation: {
+      conversationId: string;
+      endpoint?: string;
+      model?: string | null;
+      iconURL?: string | null;
+    },
+    meta?: { context?: string; appendMessageIds?: unknown[] },
+  ) => Promise<unknown>;
   deleteMessages: (filter: {
     conversationId: string;
     user: string;
@@ -603,12 +620,13 @@ export async function handleCompactRequest(
     }
 
     const instructionTokens = priorInstructionTokens(priorResponse);
+    const persistenceContext: CompactPersistenceContext = {
+      userId,
+      isTemporary: body.isTemporary === true,
+      interfaceConfig: appConfig?.interfaceConfig,
+    };
     const savedMessage = await deps.saveMessage(
-      {
-        userId,
-        isTemporary: body.isTemporary === true,
-        interfaceConfig: appConfig?.interfaceConfig,
-      },
+      persistenceContext,
       {
         messageId,
         conversationId,
@@ -685,6 +703,20 @@ export async function handleCompactRequest(
         code: CompactErrorCodes.BRANCH_MOVED,
       };
     }
+
+    await deps.saveConvo(
+      persistenceContext,
+      {
+        conversationId,
+        ...(savedMessage.endpoint !== undefined && { endpoint: savedMessage.endpoint }),
+        ...(savedMessage.model !== undefined && { model: savedMessage.model }),
+        ...(savedMessage.iconURL !== undefined && { iconURL: savedMessage.iconURL }),
+      },
+      {
+        context: 'POST /api/agents/chat/compact',
+        ...(savedMessage._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
+      },
+    );
 
     return { status: 201, message: savedMessage };
   } catch (error) {

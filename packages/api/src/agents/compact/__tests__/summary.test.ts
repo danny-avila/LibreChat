@@ -381,6 +381,80 @@ describe('compactConversation', () => {
     expect(clientOptions.maxTokens).toBe(512);
   });
 
+  it('translates a summarization reasoning effort into model client options', async () => {
+    await compactConversation({
+      req: makeReq({ parameters: { reasoning_effort: 'low' } }),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    const clientOptions = mockInitializeModel.mock.calls[0]?.[0]?.clientOptions ?? {};
+    expect(clientOptions.reasoning_effort).toBeUndefined();
+    expect(clientOptions.reasoning).toEqual({ effort: 'low' });
+  });
+
+  it('blocks protected historical messages before contacting the summarizer', async () => {
+    const req = makeReq();
+    (req.config as AppConfig).filters = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-HISTORY' }],
+        },
+      },
+    };
+
+    await expect(
+      compactConversation({
+        req,
+        agent,
+        branch: [userMessage('private', Constants.NO_PARENT, 'PRIVATE-HISTORY')],
+        ids,
+        db: dbMethods,
+      }),
+    ).rejects.toThrow('Submitted content contains a private value');
+    expect(mockStream).not.toHaveBeenCalled();
+  });
+
+  it('blocks protected hydrated files before contacting the summarizer', async () => {
+    const req = makeReq();
+    (req.config as AppConfig).filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private file', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+    const withFile = {
+      ...userMessage('private-file', Constants.NO_PARENT, 'summarize the attached file'),
+      files: [{ file_id: 'file_private' }],
+    } as TMessage;
+
+    await expect(
+      compactConversation({
+        req,
+        agent: { ...agent, fileTokenLimit: 1_000 },
+        branch: [withFile],
+        ids,
+        db: dbMethods,
+        getFiles: jest.fn().mockResolvedValue([
+          {
+            file_id: 'file_private',
+            filename: 'private.txt',
+            source: 'text',
+            text: 'PRIVATE-FILE',
+          },
+        ]),
+      }),
+    ).rejects.toThrow('Submitted content contains a private file');
+    expect(mockStream).not.toHaveBeenCalled();
+  });
+
   it('runs the pre-flight gate before contacting the provider, and aborts when it throws', async () => {
     const order: string[] = [];
     mockStream.mockImplementation(() => {

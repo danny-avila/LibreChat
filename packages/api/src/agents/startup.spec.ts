@@ -303,6 +303,20 @@ describe('agentStartupTelemetryMiddleware', () => {
     expect(trace.getTracer).not.toHaveBeenCalled();
   });
 
+  it('skips compact requests', () => {
+    const span = createSpan();
+    mockTracer(span);
+    const req = createRequest('/compact');
+    const res = createResponse();
+    const next = jest.fn();
+
+    agentStartupTelemetryMiddleware(req, res as Response, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(getAgentStartupTelemetry(req)).toBeUndefined();
+    expect(trace.getTracer).not.toHaveBeenCalled();
+  });
+
   it('does not retain listeners or request state when telemetry is disabled', () => {
     const span = createSpan();
     span.isRecording.mockReturnValue(false);

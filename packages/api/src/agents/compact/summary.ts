@@ -3,6 +3,8 @@ import { Constants, ContentTypes, EModelEndpoint, FileSources } from 'librechat-
 import {
   Providers,
   HumanMessage,
+  appendProviderMessageProvenance,
+  getProviderSourceMessageIds,
   buildSummaryCarrierText,
   buildSummarizationInstruction,
   formatMessage,
@@ -23,6 +25,10 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ClientOptions } from '@librechat/agents';
 import type { Types } from 'mongoose';
+import type {
+  ModelBoundProviderContentInput,
+  ModelBoundSourceFileProjection,
+} from '~/middleware/modelBoundContent';
 import type { EndpointDbMethods, OpenAIConfiguration, RequestBody, ServerRequest } from '~/types';
 import type { FormattedMessageWithContent } from '~/agents/client';
 import type { EndpointTokenConfig } from '~/types/tokens';
@@ -33,10 +39,15 @@ import {
   collectMessageFileRefs,
   collectHistoricalFileIds,
 } from '~/files/history';
+import {
+  assertModelBoundProviderContent,
+  projectModelBoundSourceFiles,
+} from '~/middleware/modelBoundContent';
 import { extractInvokedSkillsFromPayload, shouldReplayReasoningContent } from '~/agents/run';
 import { createMultiAgentMapper, prependFileContext, prependQuotes } from '~/agents/client';
 import { getProviderConfig, providerConfigMap } from '~/endpoints/config/providers';
 import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
+import { resolveReasoningParams } from '~/endpoints/openai/llm';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { extractFileContext } from '~/files/context';
 import { extractLibreChatParams } from '~/utils/llm';
@@ -438,7 +449,14 @@ async function hydrateAttachments(
 ): Promise<HydratedAttachments> {
   const contextByMessageId = new Map<string, string>();
   const contextBySteerPart = new Map<string, string>();
-  const empty = { contextByMessageId, contextBySteerPart };
+  const empty = {
+    contextByMessageId,
+    contextBySteerPart,
+    ...projectModelBoundSourceFiles({
+      sourceMessages: branch,
+      replayHistoricalFiles: true,
+    }),
+  };
   if (!getFiles) {
     return empty;
   }
@@ -448,6 +466,8 @@ async function hydrateAttachments(
   }
   const files = (await getFiles(filter)) ?? [];
   const byId = new Map(files.map((file) => [file.file_id, file]));
+  const messageFilesBySourceMessageId: Record<string, IMongoFile[]> = Object.create(null);
+  const steerFileIdsBySourceMessageId = new Map<string, string[]>();
   /** Shallow clone rather than a mutation: the caller's request must keep its
    *  own body for the rest of its lifetime. Zero is carried like any other
    *  value: it is a valid configured limit, and it means inline nothing. */
@@ -487,23 +507,42 @@ async function hydrateAttachments(
     /** Steer refs FIRST, so a file the user attached mid-run is claimed by the
      *  part that replays it rather than by the enclosing assistant turn. */
     for (const { index, refs } of collectSteerFileRefs(message)) {
-      const combined = await describeAttachments(resolve(refs), extractionReq);
+      const attachments = resolve(refs);
+      if (attachments.length > 0) {
+        const fileIds = steerFileIdsBySourceMessageId.get(message.messageId) ?? [];
+        steerFileIdsBySourceMessageId.set(message.messageId, [
+          ...fileIds,
+          ...attachments.map((file) => file.file_id),
+        ]);
+      }
+      const combined = await describeAttachments(attachments, extractionReq);
       if (combined) {
         contextBySteerPart.set(`${message.messageId}#${index}`, combined);
       }
     }
-    const combined = await describeAttachments(
-      resolve(collectMessageFileRefs(message)),
-      extractionReq,
-    );
+    const attachments = resolve(collectMessageFileRefs(message));
+    if (attachments.length > 0) {
+      messageFilesBySourceMessageId[message.messageId] = attachments;
+    }
+    const combined = await describeAttachments(attachments, extractionReq);
     if (combined) {
       contextByMessageId.set(message.messageId, combined);
     }
   }
-  return empty;
+  return {
+    contextByMessageId,
+    contextBySteerPart,
+    ...projectModelBoundSourceFiles({
+      messageFilesBySourceMessageId,
+      sourceMessages: branch,
+      steerFileIdsBySourceMessageId,
+      replayHistoricalFiles: true,
+      historicalFiles: files,
+    }),
+  };
 }
 
-interface HydratedAttachments {
+interface HydratedAttachments extends ModelBoundSourceFileProjection {
   contextByMessageId: Map<string, string>;
   /** Keyed `${messageId}#${partIndex}`. */
   contextBySteerPart: Map<string, string>;
@@ -619,7 +658,7 @@ function toPayload(
     if (Array.isArray(message.quotes) && message.quotes.length > 0) {
       prependQuotes(formatted, message.quotes);
     }
-    return formatted as Partial<TMessage>;
+    return { ...formatted, messageId: message.messageId } as Partial<TMessage>;
   });
 }
 
@@ -832,6 +871,8 @@ export async function resolveCompactionModel({
   const { llmParams, maxSummaryTokens } = separateSummarizationParameters(
     summarization?.parameters,
   );
+  const resolvedLlmParams =
+    resolveReasoningParams({ provider, model, parameters: llmParams }) ?? llmParams;
   /** `configuration` carries the endpoint's routing and auth (baseURL,
    *  defaultHeaders, guarded fetch options). A shallow assign would let an
    *  unrelated override such as `defaultQuery` drop them and send the
@@ -847,7 +888,7 @@ export async function resolveCompactionModel({
     model: _paramModel,
     modelName: _paramModelName,
     ...topLevelParams
-  } = llmParams as Record<string, unknown>;
+  } = resolvedLlmParams;
   Object.assign(clientOptions, topLevelParams);
   if (isPlainObject(paramConfiguration)) {
     clientOptions.configuration = {
@@ -1385,10 +1426,22 @@ export async function compactConversation({
    *  uploaded files, and the normal history path returns before loading any.
    *  Re-inlining them here would send those documents again, possibly to a
    *  different configured summarization provider. */
-  const { contextByMessageId, contextBySteerPart } =
-    agent.resendFiles === false
-      ? { contextByMessageId: new Map<string, string>(), contextBySteerPart: new Map() }
-      : await hydrateAttachments(retained, req, getFiles, agent.fileTokenLimit);
+  const {
+    contextByMessageId,
+    contextBySteerPart,
+    fileIdsBySourceMessageId,
+    resolvedFiles,
+    overflowed: sourceFileProjectionOverflowed,
+  } = agent.resendFiles === false
+    ? {
+        contextByMessageId: new Map<string, string>(),
+        contextBySteerPart: new Map<string, string>(),
+        ...projectModelBoundSourceFiles({
+          sourceMessages: retained,
+          replayHistoricalFiles: false,
+        }),
+      }
+    : await hydrateAttachments(retained, req, getFiles, agent.fileTokenLimit);
   const agentConfigs = await resolveHistoryAgents(retained, getAgent);
   const payload = stripActivityLabelParts(
     toPayload(
@@ -1417,6 +1470,21 @@ export async function compactConversation({
   );
   if (messages.length === 0) {
     throw new NothingToCompactError();
+  }
+  for (const message of messages) {
+    if (message.getType() !== 'human') {
+      continue;
+    }
+    for (const sourceMessageId of getProviderSourceMessageIds(message)) {
+      if ((fileIdsBySourceMessageId.get(sourceMessageId)?.length ?? 0) === 0) {
+        continue;
+      }
+      /** Top-level persisted file refs do not have a `content` array index.
+       * Add a whole-source contribution for the exact HumanMessage that
+       * received their hydrated text, so file-scoped filters select the
+       * canonical rows without broadening unrelated provider messages. */
+      appendProviderMessageProvenance(message, { attribution: 'user', sourceMessageId });
+    }
   }
 
   const appConfig = req.config as AppConfig | undefined;
@@ -1561,7 +1629,23 @@ export async function compactConversation({
       updatePromptText,
       text || priorSummary?.text,
     );
-    const passMessages = [...chunk, new HumanMessage(instruction)] as BaseMessage[];
+    const passMessages = [
+      ...chunk,
+      new HumanMessage({
+        content: instruction,
+        additional_kwargs: { injected: true, source: 'system' },
+      }),
+    ] as BaseMessage[];
+    assertModelBoundProviderContent({
+      filters: appConfig?.filters as ModelBoundProviderContentInput['filters'],
+      legacyPii: appConfig?.messageFilter?.pii as ModelBoundProviderContentInput['legacyPii'],
+      storedMessages: retained as unknown as ModelBoundProviderContentInput['storedMessages'],
+      fileIdsBySourceMessageId,
+      resolvedFiles,
+      sourceFileProjectionOverflowed,
+      providerMessages:
+        passMessages as unknown as ModelBoundProviderContentInput['providerMessages'],
+    });
     const passInputTokens = await countPromptTokens(passMessages);
 
     let response: AIMessage | undefined;

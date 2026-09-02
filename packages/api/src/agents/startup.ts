@@ -54,7 +54,13 @@ interface AgentStartupState {
 
 const requestTelemetry = new WeakMap<ServerRequest, AgentStartupState>();
 const AGENT_STARTUP_STARTED_AT = Symbol('agentStartupStartedAt');
-const EXCLUDED_AGENT_CHAT_PATHS = new Set(['/abort', '/resume', '/steer', '/steer/cancel']);
+const EXCLUDED_AGENT_CHAT_PATHS = new Set([
+  '/abort',
+  '/compact',
+  '/resume',
+  '/steer',
+  '/steer/cancel',
+]);
 
 interface AgentStartupIngressTime {
   monotonic: number;
