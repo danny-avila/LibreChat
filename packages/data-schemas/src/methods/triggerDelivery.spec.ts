@@ -13,9 +13,14 @@ import {
   createAgentTriggerDeliveryMethods,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
+  AgentTriggerClaimContentionError,
+  CLAIM_CAS_MAX_ATTEMPTS,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 } from '~/types/triggerDelivery';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+} from '~/types/triggerDelivery';
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
 import { createAgentTriggerUserPurgeModel } from '../models/triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from '../models/triggerDelivery';
@@ -238,6 +243,28 @@ describe('agent trigger delivery methods', () => {
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
   });
 
+  it('surfaces exhausted claim contention as a retryable failure, not an empty queue', async () => {
+    const enqueued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    const casSpy = jest.spyOn(Delivery.collection, 'findOneAndUpdate').mockResolvedValue(null);
+    try {
+      await expect(
+        methods.claimNextAgentTriggerDelivery({
+          workerId: 'worker-contended',
+          claimToken: 'claim-contended',
+          now: START,
+          leaseUntil: new Date(START.getTime() + 60_000),
+        }),
+      ).rejects.toBeInstanceOf(AgentTriggerClaimContentionError);
+      expect(casSpy).toHaveBeenCalledTimes(CLAIM_CAS_MAX_ATTEMPTS);
+    } finally {
+      casSpy.mockRestore();
+    }
+    /** The losing worker owns nothing: the delivery stays claimable. */
+    await expect(Delivery.findById(enqueued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'pending',
+    });
+  });
+
   it('keeps capability work visible but nonclaimable to pre-capability consumers', async () => {
     const user = new mongoose.Types.ObjectId();
     const queued = await methods.enqueueAgentTriggerDelivery(
@@ -352,6 +379,74 @@ describe('agent trigger delivery methods', () => {
         workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
       }),
     ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
+  it('shields background completion work from workers that cannot resolve it', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    const claimInput = {
+      workerId: 'worker',
+      claimToken: 'claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    };
+
+    await expect(methods.claimNextAgentTriggerDelivery(claimInput)).resolves.toBeNull();
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        ...claimInput,
+        workerId: 'background-capable-worker',
+        claimToken: 'background-capable-claim',
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
+  });
+
+  it('renews and classifies process-local completion producer liveness idempotently', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const initialLease = new Date(START.getTime() + 30_000);
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-producer-lease',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        producerLeaseUntil: initialLease,
+      }),
+    );
+
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: START,
+      }),
+    ).resolves.toEqual({ status: 'live', leaseUntil: initialLease });
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: new Date(initialLease.getTime() + 1),
+      }),
+    ).resolves.toEqual({ status: 'expired', leaseUntil: initialLease });
+
+    const renewedUntil = new Date(START.getTime() + 60_000);
+    const renewal = {
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      leaseUntil: renewedUntil,
+    };
+    await expect(methods.renewAgentTriggerDeliveryProducerLease(renewal)).resolves.toBe(true);
+    await expect(methods.renewAgentTriggerDeliveryProducerLease(renewal)).resolves.toBe(true);
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: initialLease,
+      }),
+    ).resolves.toEqual({ status: 'live', leaseUntil: renewedUntil });
   });
 
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
@@ -489,6 +584,233 @@ describe('agent trigger delivery methods', () => {
         workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
       }),
     ).resolves.toMatchObject({ id: ordinary.delivery.id, status: 'leased' });
+  });
+
+  it('retires a failed internal completion admission and unblocks its lane successor', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'background-completion-lane';
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const first = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-1',
+        user,
+        orderingKey,
+        envelope: { event: { source } },
+      }),
+    );
+    const successor = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-2',
+        user,
+        orderingKey,
+        envelope: { event: { source } },
+      }),
+    );
+
+    const retirement = {
+      deliveryKey: first.delivery.deliveryKey,
+      sourceId: source.id,
+      settledAt: START,
+      reason: 'result persistence failed',
+    };
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    await expect(
+      methods.retireAgentTriggerDelivery({ ...retirement, sourceId: 'other-internal-source' }),
+    ).resolves.toBe(false);
+    await expect(
+      Delivery.findOne({ deliveryKey: first.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: {
+        status: 'settled',
+        backgroundToolCompletionRetired: true,
+        reason: 'result persistence failed',
+      },
+    });
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'successor-worker',
+        claimToken: 'successor-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+      }),
+    ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
+  it('treats an already successful internal delivery as terminal retirement evidence', async () => {
+    const source = { id: 'agent-queued-turn', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'queued-turn-already-succeeded',
+        envelope: { event: { source } },
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      now: START,
+    });
+    await methods.completeAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      attempt: attempt!,
+      result: { status: 'settled' },
+      settledAt: START,
+    });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: new Date(START.getTime() + 1),
+        reason: 'source already terminalized',
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { status: 'settled' },
+      settledAt: START,
+    });
+  });
+
+  it('does not retire a completion already leased by a resolver for a manual poll', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-leased',
+        user,
+        envelope: { event: { source } },
+      }),
+    );
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'completion-worker',
+        claimToken: 'completion-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({ status: 'leased', leaseBy: 'completion-worker' });
+  });
+
+  it('retires a capability-shielded completion before a private resolver claims it', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-shielded-pending',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'pending',
+    });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { backgroundToolCompletionRetired: true },
+    });
+  });
+
+  it('does not retire a capability completion after a private resolver claims it', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-private-lease',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'background-capable-worker',
+        claimToken: 'background-capable-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(false);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'leased',
+    });
+  });
+
+  it('reconciles only an irreversibly dead completion for manual polling', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-dead',
+        user,
+        envelope: { event: { source } },
+      }),
+    );
+    await Delivery.updateOne(
+      { _id: queued.delivery.id },
+      { $set: { status: 'dead', settledAt: START } },
+    );
+
+    const retirement = {
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      settledAt: new Date(START.getTime() + 1),
+      reason: 'manual poll recovered dead completion',
+      onlyIfDead: true,
+    } as const;
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    /** A later claim-release retry must recognize the recovery receipt even
+     * though the delivery no longer has a dead status. */
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    await expect(
+      Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { backgroundToolCompletionRetired: true },
+    });
   });
 
   it('claims older capability work before newer ordinary work', async () => {
@@ -3935,6 +4257,43 @@ describe('agent trigger delivery methods', () => {
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
   });
 
+  it('retains trigger purge state when queued-turn cleanup fails', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    let unavailable = true;
+    const purgeQueuedTurnsForUser = jest.fn(async () => {
+      if (unavailable) {
+        throw new Error('queued-turn store unavailable');
+      }
+    });
+    const purgeMethods = createAgentTriggerDeliveryMethods(mongoose, {
+      purgeQueuedTurnsForUser,
+    });
+    await User.create({
+      _id: user,
+      email: 'purge-callback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await purgeMethods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await purgeMethods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(purgeMethods.deleteAgentTriggerDeliveriesByUser(user)).rejects.toThrow(
+      'queued-turn store unavailable',
+    );
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    unavailable = false;
+    await expect(purgeMethods.deleteAgentTriggerDeliveriesByUser(user)).resolves.toBeUndefined();
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+    expect(purgeQueuedTurnsForUser).toHaveBeenCalledTimes(2);
+  });
+
   it('recovers an armed purge after the user deletion commits', async () => {
     const user = new mongoose.Types.ObjectId();
     const fenceStartedAt = new Date(START);
@@ -3953,6 +4312,42 @@ describe('agent trigger delivery methods', () => {
 
     await User.deleteOne({ _id: user });
     await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+  });
+
+  it('retains a recovery marker when queued-turn purge cannot be confirmed', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    let unavailable = true;
+    const purgeQueuedTurnsForUser = jest.fn(async () => {
+      if (unavailable) {
+        throw new Error('queued-turn store unavailable');
+      }
+    });
+    const purgeMethods = createAgentTriggerDeliveryMethods(mongoose, {
+      purgeQueuedTurnsForUser,
+    });
+    await User.create({
+      _id: user,
+      email: 'purge-recovery-callback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await purgeMethods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await purgeMethods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(purgeMethods.recoverAgentTriggerUserPurges()).rejects.toThrow(
+      'queued-turn store unavailable',
+    );
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    unavailable = false;
+    await expect(purgeMethods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
     expect(await Delivery.countDocuments({ user })).toBe(0);
     expect(await LaneSequence.countDocuments({ user })).toBe(0);
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);

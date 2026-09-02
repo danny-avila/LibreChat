@@ -447,6 +447,8 @@ async function finalizeResumedTurn({
   const preemptIncomplete =
     (preemptStats?.emptyBoundaries ?? 0) > 0 ||
     client?.run?.getHaltReason?.() === 'preempt_incomplete';
+  /** Same honest-incomplete contract for a resumed turn that runs out of steps. */
+  const stepLimitReached = client?.stepLimitReached === true;
 
   const responseMessage = {
     messageId: responseMessageId,
@@ -457,7 +459,8 @@ async function finalizeResumedTurn({
     endpoint: meta.endpoint,
     iconURL: meta.iconURL,
     model: meta.model,
-    unfinished: preemptIncomplete,
+    unfinished: preemptIncomplete || stepLimitReached,
+    ...(stepLimitReached && { finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON }),
     error: false,
     isCreatedByUser: false,
     user: userId,
@@ -612,11 +615,15 @@ async function finalizeResumedTurn({
         scheduledFor: meta.scheduledFor,
         streamId,
         jobCreatedAt: job.createdAt,
-        status: preemptIncomplete ? 'interrupted' : 'success',
+        status: preemptIncomplete || stepLimitReached ? 'interrupted' : 'success',
         conversationId,
         ...(preemptIncomplete && {
           error: 'Scheduled run was interrupted before completion',
         }),
+        ...(stepLimitReached &&
+          !preemptIncomplete && {
+            error: 'Scheduled run reached its tool call limit before completion',
+          }),
       });
     }
 
@@ -1736,23 +1743,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     generationProtocolVersion,
   );
 
-  // Restore the conversation's createdAt so temporal prompt vars ({{current_datetime}},
-  // {{iso_datetime}}, ...) resolve against the SAME anchor the paused graph used rather
-  // than the resume wall-clock. initializeAgent reads `req.conversationCreatedAt`; the
-  // normal path sets it from the convo timestamp (resolveConversationCreatedAt), so mirror
-  // that here. (The original `timezone` is replayed onto req.body via RESUME_CONTEXT_KEYS.)
-  try {
-    const resumedConvo = await getConvo(userId, conversationId);
-    const createdAt = resumedConvo?.createdAt ? new Date(resumedConvo.createdAt) : null;
-    if (createdAt && !Number.isNaN(createdAt.getTime())) {
-      req.conversationCreatedAt = createdAt.toISOString();
-    }
-  } catch (err) {
-    logger.warn(
-      '[ResumeAgentController] Failed to restore conversation timestamp anchor',
-      getSafeErrorMetadata(err),
-    );
-  }
+  req.turnStartedAt = job.createdAt;
 
   let client = null;
   /** Re-pause progress failures use the action/epoch-scoped terminal CAS. The
@@ -1823,6 +1814,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         // graph passes `messages: []`, so without these the model would lose their schemas.
         discoveredToolNames: job.metadata?.discoveredTools,
         activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
+        compactionSemanticIndex: job.metadata?.compactionSemanticIndex,
       });
     if (
       !(await GenerationJobManager.beginProviderExecution(

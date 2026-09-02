@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
+import { BACKGROUND_TASK_ABORT_GRACE_MS, BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
+import { backgroundTaskRegistry, CHECK_BACKGROUND_TASK_NAME } from './background';
 import { ContentFilterError } from '../middleware/contentFilter';
-import { CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
 
 interface BatchInput {
@@ -84,6 +85,522 @@ const runBatch = async (
 };
 
 describe('createToolExecuteHandler — background tool calls', () => {
+  it('pre-registers an ordinary completion before invoke and persists its terminal receipt', async () => {
+    const events: string[] = [];
+    const retire = jest.fn(async () => true);
+    const preregister = jest.fn(async () => {
+      events.push('preregister');
+      return { renew: jest.fn(async () => true), retire };
+    });
+    const persist = jest.fn(async () => {
+      events.push('persist');
+      return true;
+    });
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'search docs',
+      schema: z.object({ q: z.string() }),
+      invoke: jest.fn(async () => {
+        events.push('invoke');
+        return { content: 'durable result' };
+      }),
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister,
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-wakeup',
+          name: tool.name,
+          args: { q: 'continuations', run_in_background: true },
+          stepId: 'step-wakeup',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+
+    expect(events.slice(0, 2)).toEqual(['preregister', 'invoke']);
+    expect(JSON.parse(dispatch.content).message).toContain('host will resume you');
+    await flushMicrotasks();
+    expect(events).toEqual(['preregister', 'invoke', 'persist']);
+    expect(preregister).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCallId: 'call-wakeup',
+        conversationId: 'exec_convo',
+        parentMessageId: 'response-1',
+        parentAgentId: 'agent_parent_1',
+      }),
+    );
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: 'durable result',
+        stepId: 'step-wakeup',
+        backgroundTask: expect.objectContaining({
+          taskId: expect.any(String),
+          status: 'completed',
+        }),
+      }),
+    );
+    expect(retire).not.toHaveBeenCalled();
+  });
+
+  it('persists structured background content using the registry serialization', async () => {
+    const structuredContent = [
+      { type: 'text', text: 'structured result' },
+      { type: 'resource', uri: 'memory://result' },
+    ];
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'search docs',
+      schema: z.object({ q: z.string() }),
+      invoke: jest.fn(async () => ({ content: structuredContent })),
+    } as unknown as StructuredToolInterface;
+    const persist = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          retire: jest.fn(async () => true),
+        })),
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-structured-wakeup',
+          name: tool.name,
+          args: { q: 'structured', run_in_background: true },
+          stepId: 'step-structured-wakeup',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-structured' },
+    });
+    await flushMicrotasks();
+
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({ output: JSON.stringify(structuredContent) }),
+    );
+  });
+
+  it('keeps polling guidance when the completion adapter skips registration', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const preregister = jest.fn(async () => false as const);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister,
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-skipped-wakeup',
+          name: tool.name,
+          args: { q: 'ephemeral', run_in_background: true },
+          stepId: 'step-skipped-wakeup',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+
+    expect(preregister).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(dispatch.content).message).toContain('Call check_background_task');
+    expect(JSON.parse(dispatch.content).message).not.toContain('host will resume you');
+  });
+
+  it('keeps repeated provider ids poll-only when the host step identity is absent', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const preregister = jest.fn(async () => ({
+      renew: jest.fn(async () => true),
+      retire: jest.fn(async () => true),
+    }));
+    const persist = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister,
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-without-step',
+          name: tool.name,
+          args: { q: 'legacy', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+    await flushMicrotasks();
+
+    expect(preregister).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+    expect(JSON.parse(dispatch.content).message).toContain('Call check_background_task');
+    expect(JSON.parse(dispatch.content).message).not.toContain('host will resume you');
+  });
+
+  it('retires a preregistered delivery when terminal persistence fails', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const retire = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
+        persist: jest.fn(async () => false),
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-persistence-failure',
+          name: tool.name,
+          args: { q: 'retire', run_in_background: true },
+          stepId: 'step-persistence-failure',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(retire).toHaveBeenCalledWith('background tool result was not persisted', undefined);
+  });
+
+  it('keeps durable ownership active when an ambiguous persistence failure cannot retire a lease', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const retire = jest.fn(async () => false);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
+        persist: jest.fn(async () => {
+          throw new Error('write receipt lost');
+        }),
+        claim: jest.fn(async () => ({ status: 'claimed' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-ambiguous-persistence',
+          name: tool.name,
+          args: { q: 'ambiguous', run_in_background: true },
+          stepId: 'step-ambiguous-persistence',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-ambiguous' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const taskId = JSON.parse(dispatch.content).background_task_id as string;
+    expect(retire).toHaveBeenCalledWith('background tool result persistence failed', {
+      onlyIfUnclaimed: true,
+    });
+    const task = backgroundTaskRegistry.get('exec_user', 'exec_convo', taskId);
+    expect(task?.completionWakeup).toBe(true);
+    expect(task?.completionPersistenceFailed).toBeUndefined();
+  });
+
+  it('elects live polling only when the settled result actually contains an artifact', async () => {
+    const retire = jest.fn(async () => true);
+    const preregister = jest.fn(async () => ({
+      renew: jest.fn(async () => true),
+      retire,
+    }));
+    const persist = jest.fn(async () => true);
+    const tool = {
+      name: 'artifact_tool',
+      description: 'returns a live artifact',
+      schema: z.object({ q: z.string() }),
+      responseFormat: 'content_and_artifact',
+      invoke: jest.fn(async () => ({
+        content: 'artifact result',
+        artifact: { files: ['report.pdf'] },
+      })),
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister,
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-artifact-poll',
+          name: tool.name,
+          args: { q: 'artifact', run_in_background: true },
+          stepId: 'step-artifact-poll',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-artifact' },
+    });
+    await flushMicrotasks();
+
+    expect(preregister).toHaveBeenCalledTimes(1);
+    expect(retire).toHaveBeenCalledWith('background tool artifact requires live polling');
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backgroundTask: expect.not.objectContaining({ completionWakeup: true }),
+      }),
+    );
+    expect(JSON.parse(dispatch.content).message).toContain('must call check_background_task');
+    expect(JSON.parse(dispatch.content).message).toContain('do not end the turn');
+  });
+
+  it('keeps automatic completion for a declared artifact tool that returns content only', async () => {
+    const retire = jest.fn(async () => true);
+    const persist = jest.fn(async () => true);
+    const tool = {
+      name: 'optional_artifact_tool',
+      description: 'may return an artifact',
+      schema: z.object({ q: z.string() }),
+      responseFormat: 'content_and_artifact',
+      invoke: jest.fn(async () => ({ content: 'content-only result' })),
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          retire,
+        })),
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-optional-artifact',
+          name: tool.name,
+          args: { q: 'content', run_in_background: true },
+          stepId: 'step-optional-artifact',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-optional-artifact' },
+    });
+    await flushMicrotasks();
+
+    expect(retire).not.toHaveBeenCalled();
+    expect(JSON.parse(dispatch.content).message).toContain('must call check_background_task');
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backgroundTask: expect.objectContaining({ completionWakeup: true }),
+      }),
+    );
+  });
+
+  it('persists ordinary background failures in the renderer-recognized error shape', async () => {
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'search docs',
+      schema: z.object({ q: z.string() }),
+      invoke: jest.fn(async () => {
+        throw new Error('boom');
+      }),
+    } as unknown as StructuredToolInterface;
+    const persist = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          retire: jest.fn(async () => true),
+        })),
+        persist,
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-ordinary-failure',
+          name: tool.name,
+          args: { q: 'fail', run_in_background: true },
+          stepId: 'step-ordinary-failure',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+    await flushMicrotasks();
+
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: 'Error: [search_mcp_docs] tool call failed: boom',
+        backgroundTask: expect.objectContaining({ status: 'error' }),
+      }),
+    );
+  });
+
+  it('persists a terminal receipt when an admitted background task times out', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      const tool = {
+        name: 'search_mcp_docs',
+        description: 'search docs',
+        schema: z.object({ q: z.string() }),
+        invoke: jest.fn(
+          (_input: unknown, config?: { signal?: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              const signal = config?.signal;
+              if (signal?.aborted === true) {
+                reject(signal.reason);
+                return;
+              }
+              signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+            }),
+        ),
+      } as unknown as StructuredToolInterface;
+      const persist = jest.fn(async () => true);
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [tool] }),
+        backgroundToolCompletion: {
+          preregister: jest.fn(async () => ({
+            renew: jest.fn(async () => true),
+            retire: jest.fn(async () => true),
+          })),
+          persist,
+          claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        },
+      });
+
+      const [dispatch] = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-timeout-wakeup',
+            name: tool.name,
+            args: { q: 'hang', run_in_background: true },
+            stepId: 'step-timeout-wakeup',
+          },
+        ],
+        agentId: 'agent_parent_1',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'exec_convo', run_id: 'response-timeout' },
+      });
+
+      jest.advanceTimersByTime(31 * 60 * 1000);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(persist).toHaveBeenCalledWith(
+        expect.objectContaining({
+          output: 'Error: [search_mcp_docs] tool call failed: Background task timed out',
+          backgroundTask: expect.objectContaining({
+            taskId: JSON.parse(dispatch.content).background_task_id,
+            status: 'error',
+          }),
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('retires the automatic wakeup after an abort-resistant invocation exceeds its grace period', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      const tool = {
+        name: 'search_mcp_docs',
+        description: 'search docs',
+        schema: z.object({ q: z.string() }),
+        invoke: jest.fn(() => new Promise(() => undefined)),
+      } as unknown as StructuredToolInterface;
+      const persist = jest.fn(async () => true);
+      const renew = jest.fn(async () => true);
+      const retire = jest.fn(async () => true);
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [tool] }),
+        backgroundToolCompletion: {
+          preregister: jest.fn(async () => ({
+            renew,
+            retire,
+          })),
+          persist,
+          claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        },
+      });
+
+      const [dispatch] = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-timeout-resistant',
+            name: tool.name,
+            args: { q: 'hang', run_in_background: true },
+            stepId: 'step-timeout-resistant',
+          },
+        ],
+        agentId: 'agent_parent_1',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'exec_convo', run_id: 'response-timeout-resistant' },
+      });
+
+      jest.advanceTimersByTime(BACKGROUND_TASK_TIMEOUT_MS + BACKGROUND_TASK_ABORT_GRACE_MS);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      const taskId = JSON.parse(dispatch.content).background_task_id as string;
+      expect(backgroundTaskRegistry.get('exec_user', 'exec_convo', taskId)?.status).toBe('running');
+      expect(persist).not.toHaveBeenCalled();
+      expect(renew).toHaveBeenCalled();
+      expect(retire).toHaveBeenCalledWith(
+        'background task did not settle after its abort grace period',
+        { onlyIfUnclaimed: true },
+      );
+
+      const renewalsBefore = renew.mock.calls.length;
+      jest.advanceTimersByTime(3 * 60 * 1000);
+      await flushMicrotasks();
+      expect(renew).toHaveBeenCalledTimes(renewalsBefore);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('persists an Event Actor launch before invoking and terminal evidence before wakeup', async () => {
     const events: string[] = [];
     let finishTool: ((value: { content: string }) => void) | undefined;
@@ -761,6 +1278,39 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(state.calls).toBe(1);
   });
 
+  it('uses host step identity when repeated provider ids have no turn number', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeSearchTool(state)] }),
+    });
+
+    const results = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_repeated',
+          name: 'search_mcp_docs',
+          args: { q: 'first', run_in_background: true },
+          stepId: 'step-first',
+        },
+        {
+          id: 'call_repeated',
+          name: 'search_mcp_docs',
+          args: { q: 'second', run_in_background: true },
+          stepId: 'step-second',
+        },
+      ],
+      agentId: 'a',
+      configurable: buildConfig(),
+      metadata: { thread_id: 'exec_convo_repeated_steps', run_id: 'response-repeated' },
+    });
+    await flushMicrotasks();
+
+    expect(state.calls).toBe(2);
+    expect(JSON.parse(results[0].content).background_task_id).not.toBe(
+      JSON.parse(results[1].content).background_task_id,
+    );
+  });
+
   it('runs the tool synchronously when background is not requested', async () => {
     const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
     const searchTool = makeSearchTool(state);
@@ -1209,6 +1759,66 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     ...overrides,
   });
 
+  it('keeps step-less code harvests available to the legacy poll path', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const preregister = jest.fn(async () => ({
+      renew: jest.fn(async () => true),
+      retire: jest.fn(async () => true),
+    }));
+    const persistBackgroundCodeResult = jest.fn(async () => ({ attachments: [] }));
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult,
+      backgroundToolCompletion: {
+        preregister,
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_step_less_code', run_id: 'response-step-less' };
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_step_less_code', stepId: undefined, turn: undefined })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(preregister).not.toHaveBeenCalled();
+    expect(persistBackgroundCodeResult).toHaveBeenCalledWith(
+      expect.not.objectContaining({ backgroundTask: expect.anything() }),
+    );
+
+    const taskId = JSON.parse(dispatch.content).background_task_id;
+    const [poll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'poll_step_less_code',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: metadata.thread_id, run_id: 'poll-step-less' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+    await flushMicrotasks();
+
+    expect(JSON.parse(poll.content)).toMatchObject({ status: 'completed' });
+    expect(poll.artifact).toEqual(CODE_ARTIFACT);
+    expect(persistBackgroundCodeResult).toHaveBeenCalledTimes(2);
+    expect(persistBackgroundCodeResult).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reapply: true,
+        toolCallId: 'call_step_less_code',
+        stepId: undefined,
+      }),
+    );
+  });
+
   it('carries full code-session config into the detached invoke, harvests onto the dispatch turn, and re-emits on poll', async () => {
     const state: CodeToolState = { calls: 0 };
     const persistCalls: Array<Record<string, unknown>> = [];
@@ -1305,9 +1915,10 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         type: 'background_task_status',
         /** Agent-suffixed: sibling agents' `call_0` markers must not upsert
          *  over each other client-side. */
-        file_id: 'bg-call_code-a',
+        file_id: 'bg-call_code-a-step_1',
         messageId: 'msg-dispatch',
         toolCallId: 'call_code',
+        stepId: 'step_1',
         status: 'completed',
       }),
     ]);
@@ -1549,10 +2160,16 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       });
     });
     const toolEndCallback = jest.fn();
+    const retire = jest.fn(async () => true);
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [codeTool] }),
       toolEndCallback,
       persistBackgroundCodeResult,
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+      },
     });
     const configurable = buildConfig(['execute_code']);
     const metadata = {
@@ -1569,6 +2186,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     const taskId = JSON.parse(dispatch[0].content).background_task_id;
     await flushMicrotasks();
     await flushMicrotasks();
+    expect(retire).toHaveBeenCalledWith('background code result persistence failed', undefined);
     await flushMicrotasks();
 
     for (const pollId of ['call_policy_poll_1', 'call_policy_poll_2']) {
@@ -2040,7 +2658,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(JSON.stringify(polled)).not.toContain(detectorRule);
   });
 
-  it('re-anchors reaped (timed-out) tasks with the client-recognized failure wrapper', async () => {
+  it('re-anchors abort-confirmed timeout failures with the client-recognized wrapper', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate'] });
     try {
       const persistCalls: Array<Record<string, unknown>> = [];
@@ -2048,7 +2666,15 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         name: 'execute_code',
         description: 'never settles',
         schema: z.object({ lang: z.string(), code: z.string() }),
-        invoke: () => new Promise(() => undefined),
+        invoke: (_input: unknown, config?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            const signal = config?.signal;
+            if (signal?.aborted === true) {
+              reject(signal.reason);
+              return;
+            }
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
       } as unknown as StructuredToolInterface;
       const handler = createToolExecuteHandler({
         loadTools: async () => ({ loadedTools: [hangingTool] }),
@@ -2066,8 +2692,10 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         metadata: { thread_id: 'exec_convo_reap', run_id: 'msg-reap' },
       });
 
-      /** Past the running TTL the registry reaps the never-settling task. */
+      /** Past the deadline the tool acknowledges abort by rejecting. */
       jest.advanceTimersByTime(31 * 60 * 1000);
+      await flushMicrotasks();
+      await flushMicrotasks();
 
       const poll = await runBatch(handler, {
         toolCalls: [
@@ -2084,10 +2712,13 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       await flushMicrotasks();
 
       expect(JSON.parse(poll[0].content).status).toBe('error');
-      const reapply = persistCalls.find((call) => call.reapply === true);
-      expect(reapply).toBeDefined();
-      expect(String(reapply?.output)).toMatch(/^Error:\s*\[execute_code\]\s*tool call failed:/);
-      expect(String(reapply?.output)).toContain('timed out');
+      const timeoutPersistence = persistCalls.find((call) =>
+        String(call.output).includes('timed out'),
+      );
+      expect(timeoutPersistence).toBeDefined();
+      expect(String(timeoutPersistence?.output)).toMatch(
+        /^Error:\s*\[execute_code\]\s*tool call failed:/,
+      );
     } finally {
       jest.useRealTimers();
     }

@@ -1,4 +1,6 @@
-import { atom, atomFamily } from 'recoil';
+import { useEffect } from 'react';
+import { atomFamily } from 'jotai/utils';
+import { atom, useAtomValue, useStore } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   PartMetadata,
@@ -8,7 +10,8 @@ import type {
   TMessageContentParts,
   SubagentUpdateEvent,
 } from 'librechat-data-provider';
-import type { AtomEffect } from 'recoil';
+import type { Getter, PrimitiveAtom, WritableAtom } from 'jotai';
+import type { SetStateAction } from 'react';
 import type {
   SubagentAggregatorState,
   SubagentContentPart,
@@ -71,7 +74,9 @@ const MAX_LIVE_ACTIVITY_ITEMS = 100;
 const MAX_LIVE_ACTIVITY_BYTES = 64 * 1024;
 const MAX_SINGLE_ACTIVITY_ENCODED_BYTES = MAX_LIVE_ACTIVITY_BYTES - 2;
 const MAX_SINGLE_ACTIVITY_TEXT_BYTES = 60 * 1024;
-const REDACTED_REASONING_MARKER = '…';
+/** Substituted for reasoning text by pre-retention servers; current servers
+ *  transport the bounded reasoning text itself. */
+export const REDACTED_REASONING_MARKER = '…';
 
 const encodedBytes = (value: unknown): number =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -276,13 +281,13 @@ export type ActiveSubagentPanel = {
     progressKey: string;
     /** Message anchors merged into the same parent-owned activity group. */
     siblingParentMessageIds?: string[];
+    /** The selection deliberately targets a historical task; the panel must
+     *  not snap it forward when the actor thread receives a newer delivery. */
+    pinnedTask?: boolean;
   };
 };
 
-export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({
-  key: 'activeSubagentPanel',
-  default: null,
-});
+export const activeSubagentPanel = atom<ActiveSubagentPanel | null>(null);
 
 export type SubagentControlUiReceipt = Omit<SubagentControlReceipt, 'status'> & {
   status: SubagentControlReceipt['status'] | 'submitted';
@@ -362,42 +367,70 @@ const storedControlState = (value: unknown): SubagentControlUiState | null => {
   };
 };
 
-const subagentControlStorageEffect =
-  (identity: string): AtomEffect<SubagentControlUiState | null> =>
-  ({ setSelf, onSet }) => {
-    if (typeof window === 'undefined') return;
-    const storageKey = `${SUBAGENT_CONTROL_STORAGE_PREFIX}${encodeURIComponent(identity)}`;
+const controlStorageKey = (identity: string): string =>
+  `${SUBAGENT_CONTROL_STORAGE_PREFIX}${encodeURIComponent(identity)}`;
+
+const restoreControlState = (identity: string): SubagentControlUiState | null => {
+  if (typeof window === 'undefined') return null;
+  const storageKey = controlStorageKey(identity);
+  try {
+    const raw = window.sessionStorage.getItem(storageKey);
+    if (raw == null) return null;
+    const restored = storedControlState(JSON.parse(raw));
+    if (restored == null) window.sessionStorage.removeItem(storageKey);
+    return restored;
+  } catch {
     try {
-      const raw = window.sessionStorage.getItem(storageKey);
-      if (raw != null) {
-        const restored = storedControlState(JSON.parse(raw));
-        if (restored == null) window.sessionStorage.removeItem(storageKey);
-        else setSelf(restored);
-      }
+      window.sessionStorage.removeItem(storageKey);
     } catch {
-      try {
-        window.sessionStorage.removeItem(storageKey);
-      } catch {
-        // Some privacy modes deny session storage entirely.
-      }
+      // Some privacy modes deny session storage entirely.
     }
-    onSet((next, _previous, isReset) => {
-      try {
-        if (isReset || next?.retry == null) window.sessionStorage.removeItem(storageKey);
-        else window.sessionStorage.setItem(storageKey, JSON.stringify(next));
-      } catch {
-        // Storage is best-effort; the in-memory receipt still protects this mounted session.
-      }
-    });
-  };
+    return null;
+  }
+};
+
+const persistControlState = (identity: string, next: SubagentControlUiState | null): void => {
+  if (typeof window === 'undefined') return;
+  const storageKey = controlStorageKey(identity);
+  try {
+    /** Only an ambiguous retry has to outlive the tab's memory; anything else
+     *  is reconstructed from the durable receipts on the next read. */
+    if (next?.retry == null) window.sessionStorage.removeItem(storageKey);
+    else window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+  } catch {
+    // Storage is best-effort; the in-memory receipt still protects this mounted session.
+  }
+};
 
 /** Parent-owned control state survives closing the activity panel or selecting
  * another child. Ambiguous retries also survive a full page reload in this tab;
  * durable receipts clear both copies after authoritative reconciliation. */
-export const subagentControlStateByTask = atomFamily<SubagentControlUiState | null, string>({
-  key: 'subagentControlStateByTask',
-  default: null,
-  effects_UNSTABLE: (identity) => [subagentControlStorageEffect(identity)],
+const UNWRITTEN = Symbol('unwritten');
+
+export const subagentControlStateByTask = atomFamily<
+  string,
+  WritableAtom<SubagentControlUiState | null, [SetStateAction<SubagentControlUiState | null>], void>
+>((identity: string) => {
+  /** Restored per store rather than per family member: a member is created
+   *  once for the tab, and a reload has to see what the last one persisted. */
+  const restored = atom(() => restoreControlState(identity));
+  const held: PrimitiveAtom<SubagentControlUiState | null | typeof UNWRITTEN> = atom(
+    UNWRITTEN as SubagentControlUiState | null | typeof UNWRITTEN,
+  );
+  const read = (get: Getter): SubagentControlUiState | null => {
+    const current = get(held);
+    return current === UNWRITTEN ? get(restored) : current;
+  };
+  return atom(read, (get, set, update: SetStateAction<SubagentControlUiState | null>) => {
+    const next =
+      typeof update === 'function'
+        ? (update as (previous: SubagentControlUiState | null) => SubagentControlUiState | null)(
+            read(get),
+          )
+        : update;
+    set(held, next);
+    persistControlState(identity, next);
+  });
 });
 
 /** Stable identity for one subagent invocation in the parent conversation. */
@@ -408,21 +441,19 @@ export const subagentProgressKey = (
 ) => `${parentMessageId}\u0000${toolCallId}\u0000${partIndex}`;
 
 /** Progress state keyed by one concrete tool-call content-part occurrence. */
-export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, string>({
-  key: 'subagentProgressByToolCallId',
-  default: null,
-});
+export const subagentProgressByToolCallId = atomFamily((_key: string) =>
+  atom<SubagentProgress | null>(null),
+);
 
 /** Parent delivery remains authoritative until its ordered SSE close boundary. */
-export const subagentParentStreamOpenByToolCallId = atomFamily<boolean, string>({
-  key: 'subagentParentStreamOpenByToolCallId',
-  default: false,
-});
+export const subagentParentStreamOpenByToolCallId = atomFamily((_key: string) => atom(false));
 
 /**
  * Invocation atoms populated by either the parent generation stream or the selected detached
  * task stream. The conversation host drains this registry on navigation so both transports share
  * one cleanup boundary instead of leaking detached-only atom-family members for the app lifetime.
+ * Members a card created by reading are not enrolled here — they are freed at that card's unmount
+ * instead, since the routes that render one do not all own this drain.
  */
 const registeredSubagentProgressKeys = new Set<string>();
 
@@ -438,6 +469,58 @@ export function takeRegisteredSubagentProgressKeys(): string[] {
 
 export function listRegisteredSubagentProgressKeys(): string[] {
   return [...registeredSubagentProgressKeys];
+}
+
+/**
+ * Frees the family members held for one invocation. An `atomFamily` caches a
+ * member per key for the life of the tab, and every invocation key is unique,
+ * so the drain boundary has to release them or a long session accumulates two
+ * atom configurations per subagent call it ever saw. Callers clear the values
+ * first: `remove` drops the cached member without telling anything subscribed
+ * to it.
+ */
+export function removeSubagentProgressAtoms(invocationKey: string): void {
+  subagentProgressByToolCallId.remove(invocationKey);
+  subagentParentStreamOpenByToolCallId.remove(invocationKey);
+}
+
+/** How many mounted readers hold each invocation's member. Removing one while
+ *  a reader still has it is not merely wasteful: that reader stays subscribed
+ *  to the removed atom, the next write lands on the member the family makes to
+ *  replace it, and the two never meet again. */
+const subagentProgressReaders = new Map<string, number>();
+
+/**
+ * Reads one invocation's live progress, and frees the family member once the
+ * last reader lets go and nothing else has a claim on it.
+ *
+ * The read itself creates the member, and only the chat route owns the stream
+ * drain — a card rendered by a search result or by a conversation that finished
+ * streaming long ago would otherwise hold one for the life of the tab. Three
+ * things have to be true before one is freed: no reader is left, no stream
+ * registered the key (that member belongs to the drain), and it holds no folded
+ * activity (that member is the record of what the child did).
+ */
+export function useSubagentProgress(invocationKey: string): SubagentProgress | null {
+  const store = useStore();
+  useEffect(() => {
+    subagentProgressReaders.set(
+      invocationKey,
+      (subagentProgressReaders.get(invocationKey) ?? 0) + 1,
+    );
+    return () => {
+      const remaining = (subagentProgressReaders.get(invocationKey) ?? 1) - 1;
+      if (remaining > 0) {
+        subagentProgressReaders.set(invocationKey, remaining);
+        return;
+      }
+      subagentProgressReaders.delete(invocationKey);
+      if (registeredSubagentProgressKeys.has(invocationKey)) return;
+      if (store.get(subagentProgressByToolCallId(invocationKey)) != null) return;
+      removeSubagentProgressAtoms(invocationKey);
+    };
+  }, [invocationKey, store]);
+  return useAtomValue(subagentProgressByToolCallId(invocationKey));
 }
 
 const validActivitySequence = (value: number | undefined): value is number =>
@@ -596,10 +679,6 @@ export function reduceSubagentProgress(
     if (firstSequence != null) expected = firstSequence;
   }
 
-  const sanitizeSequencedEvent = (event: SubagentUpdateEvent): SubagentUpdateEvent =>
-    source === 'detached' && event.phase === 'reasoning_delta'
-      ? { ...event, data: undefined }
-      : event;
   const drainPending = () => {
     pending.sort((left, right) => (left.activitySequence ?? 0) - (right.activitySequence ?? 0));
     while (pending[0]?.activitySequence === expected) {
@@ -618,16 +697,15 @@ export function reduceSubagentProgress(
     if (key != null && seen.has(key)) continue;
     if (validActivitySequence(sequence)) {
       if (sequence < expected || pendingSequences.has(sequence)) continue;
-      const pendingEvent = sanitizeSequencedEvent(event);
       if (sequence === expected) {
-        directEvents.push(pendingEvent);
+        directEvents.push(event);
         expected += 1;
         drainPending();
       } else if (
         pending.length < MAX_PENDING_SEQUENCE_EVENTS &&
-        encodedBytes([...pending, pendingEvent]) <= MAX_PENDING_SEQUENCE_BYTES
+        encodedBytes([...pending, event]) <= MAX_PENDING_SEQUENCE_BYTES
       ) {
-        pending.push(pendingEvent);
+        pending.push(event);
         pendingSequences.add(sequence);
       }
     } else {

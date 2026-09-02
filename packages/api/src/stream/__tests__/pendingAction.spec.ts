@@ -1,8 +1,11 @@
 import type { Agents } from 'librechat-data-provider';
+import {
+  GenerationPublicationFencedError,
+  PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+} from '~/stream/interfaces/IJobStore';
 import { ApprovalLifecycle, PendingActionExpiredError } from '~/stream/ApprovalLifecycle';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
-import { PAUSE_PERSISTENCE_TIMEOUT_ERROR } from '~/stream/interfaces/IJobStore';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 
@@ -247,6 +250,33 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
 
       const paused = await manager.getJob(streamId);
       expect(paused?.metadata.activityPhaseSnapshot).toEqual(activityPhaseSnapshot);
+    });
+
+    test('persists compaction guidance in the same transition as the pause', async () => {
+      const streamId = 'stream-pause-compaction-index';
+      await manager.createJob(streamId, 'user-1');
+      const compactionSemanticIndex = {
+        version: 1 as const,
+        entries: [
+          {
+            type: 'activity_phase' as const,
+            sourceMessageId: 'assistant-history',
+            sourceContentIndex: 1,
+            revision: 1,
+            status: 'committed' as const,
+            text: 'Verified the release state',
+          },
+        ],
+      };
+
+      expect(
+        await manager.approvals.pause(streamId, buildAction(streamId), {
+          compactionSemanticIndex,
+        }),
+      ).toBe(true);
+
+      const paused = await manager.getJob(streamId);
+      expect(paused?.metadata.compactionSemanticIndex).toEqual(compactionSemanticIndex);
     });
 
     test('does not write a stale pause or discoveries onto a replacement job', async () => {
@@ -956,6 +986,22 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
         'Approval expired before a decision was made',
         job.createdAt,
       );
+
+      subscription?.unsubscribe();
+    });
+
+    test('does not invoke local expiry fallback when publication is fenced', async () => {
+      const streamId = 'stream-expire-publication-fenced';
+      const job = await manager.createJob(streamId, 'user-1');
+      const onError = jest.fn();
+      const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      jest.spyOn(eventTransport, 'emitError').mockImplementation(() => {
+        throw new GenerationPublicationFencedError('error', streamId, job.createdAt);
+      });
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
 
       subscription?.unsubscribe();
     });

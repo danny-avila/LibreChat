@@ -59,6 +59,13 @@ export interface AppConfigServiceDeps {
     role?: string | null;
     idOnTheSource?: string | null;
   }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
+  /** Add mutable principal-scoped runtime configuration after cached overrides are resolved. */
+  augmentConfig?: (context: {
+    appConfig: AppConfig;
+    baseConfig: AppConfig;
+    principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>;
+    options: GetAppConfigOptions;
+  }) => Promise<AppConfig>;
   /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
   overrideCacheTtl?: number;
 }
@@ -71,6 +78,8 @@ export interface GetAppConfigOptions {
   refresh?: boolean;
   /** When true, return only the YAML-derived base config — no DB override queries. */
   baseOnly?: boolean;
+  /** Propagate principal, override, and augmentation failures for security-sensitive callers. */
+  failClosed?: boolean;
 }
 
 export interface AppConfigUserLike {
@@ -142,6 +151,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     cacheKeys,
     getApplicableConfigs,
     getUserPrincipals,
+    augmentConfig,
     overrideCacheTtl = DEFAULT_OVERRIDE_CACHE_TTL,
   } = deps;
 
@@ -206,7 +216,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * Use this for startup, auth strategies, and other pre-tenant code paths.
    */
   async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
-    const { role, userId, idOnTheSource, tenantId, refresh, baseOnly } = options;
+    const { role, userId, idOnTheSource, tenantId, refresh, baseOnly, failClosed } = options;
 
     const baseConfig = await ensureBaseConfig(refresh);
 
@@ -214,16 +224,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return baseConfig;
     }
 
-    const cacheKey = overrideCacheKey(role, userId, tenantId);
-    if (!refresh) {
-      const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
-      if (cachedMerged) {
-        return cachedMerged;
-      }
-    }
-
     const principals = await buildPrincipals(role, userId, idOnTheSource).catch(
       (error: unknown) => {
+        if (failClosed) throw error;
         logger.error('[getAppConfig] Error building principals, falling back to base:', error);
         return null;
       },
@@ -249,21 +252,39 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       );
     }
 
+    const augment = async (appConfig: AppConfig): Promise<AppConfig> => {
+      if (augmentConfig == null) return appConfig;
+      try {
+        return await augmentConfig({ appConfig, baseConfig, principals, options });
+      } catch (error) {
+        if (failClosed) throw error;
+        logger.error('[getAppConfig] Error augmenting principal config:', error);
+        return appConfig;
+      }
+    };
+
+    const cacheKey = overrideCacheKey(role, userId, tenantId);
+    if (!refresh) {
+      const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
+      if (cachedMerged) {
+        return await augment(cachedMerged);
+      }
+    }
+
+    let merged = baseConfig;
     try {
       const configs = await getApplicableConfigs(principals);
-
-      if (configs.length === 0) {
-        await cache.set(cacheKey, baseConfig, overrideCacheTtl);
-        return baseConfig;
+      if (configs.length > 0) {
+        merged = materializeConfigModelSpecs(mergeConfigOverrides(baseConfig, configs));
       }
-
-      const merged = materializeConfigModelSpecs(mergeConfigOverrides(baseConfig, configs));
-      await cache.set(cacheKey, merged, overrideCacheTtl);
-      return merged;
     } catch (error) {
+      if (failClosed) throw error;
       logger.error('[getAppConfig] Error resolving config overrides, falling back to base:', error);
       return baseConfig;
     }
+
+    await cache.set(cacheKey, merged, overrideCacheTtl);
+    return await augment(merged);
   }
 
   /**

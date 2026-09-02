@@ -1,8 +1,13 @@
 import {
   DEFAULT_OAUTH_TOKEN_TTL_SECONDS,
+  getSkewedTokenCacheTtlMs,
+  getSkewedTokenExpiresAtMs,
   getTokenCacheTtlMs,
   getTokenExpiresAt,
+  getTokenExpiresAtMs,
+  hasUsableTokenExpiry,
   normalizeExpiresIn,
+  OPENID_EXPIRY_BUFFER_SECONDS,
 } from './expiry';
 
 describe('normalizeExpiresIn', () => {
@@ -74,10 +79,29 @@ describe('normalizeExpiresIn', () => {
 });
 
 describe('getTokenCacheTtlMs', () => {
-  it('converts a declared lifetime to milliseconds', () => {
-    expect(getTokenCacheTtlMs(1800, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(1_800_000);
+  it('converts a declared lifetime to milliseconds, less the in-transit buffer', () => {
+    expect(getTokenCacheTtlMs(1800, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(
+      (1800 - OPENID_EXPIRY_BUFFER_SECONDS) * 1000,
+    );
   });
 
+  /** The read side re-serves whatever is cached, so the entry must expire before the credential:
+   *  a token handed out in its final seconds expires in transit and 401s downstream. */
+  it('drops a credential from the cache before its last usable moment', () => {
+    expect(getTokenCacheTtlMs(3600, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBeLessThan(3_600_000);
+    expect(getTokenCacheTtlMs(3600, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(3_570_000);
+  });
+
+  /** A lifetime shorter than the buffer has no safe window left, but the credential is still real:
+   *  it gets the minimum usable TTL rather than a negative one or the elapsed-credential floor. */
+  it('floors a live lifetime shorter than the buffer instead of going negative', () => {
+    expect(getTokenCacheTtlMs(10, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(1000);
+    expect(getTokenCacheTtlMs(OPENID_EXPIRY_BUFFER_SECONDS, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(
+      1000,
+    );
+  });
+
+  /** An unknown lifetime has no declared expiry to protect, so the fallback is used unshortened */
   it('falls back rather than returning NaN when the provider omits `expires_in`', () => {
     expect(getTokenCacheTtlMs(undefined, DEFAULT_OAUTH_TOKEN_TTL_SECONDS)).toBe(3_600_000);
     expect(getTokenCacheTtlMs(NaN, 60)).toBe(60_000);
@@ -145,5 +169,78 @@ describe('getTokenExpiresAt', () => {
     for (const value of [undefined, null, NaN, Infinity, 'abc', '', 0, -60, 3600, '1e13', 1e300]) {
       expect(() => getTokenExpiresAt(value)?.toISOString()).not.toThrow();
     }
+  });
+});
+
+describe('getTokenExpiresAtMs', () => {
+  const now = 1_700_000_000_000;
+
+  it('prefers an absolute expiry the caller already holds', () => {
+    expect(getTokenExpiresAtMs({ expiresAt: now + 120_000, expiresIn: 3600, now })).toBe(
+      now + 120_000,
+    );
+  });
+
+  it('derives an expiry from the declared lifetime when no absolute one is given', () => {
+    expect(getTokenExpiresAtMs({ expiresIn: 300, now })).toBe(now + 300_000);
+    expect(getTokenExpiresAtMs({ expiresAt: NaN, expiresIn: '120', now })).toBe(now + 120_000);
+  });
+
+  it('falls back when the provider declares no usable lifetime', () => {
+    expect(getTokenExpiresAtMs({ expiresIn: undefined, now })).toBe(
+      now + DEFAULT_OAUTH_TOKEN_TTL_SECONDS * 1000,
+    );
+    expect(getTokenExpiresAtMs({ expiresIn: 'abc', fallbackSeconds: 60, now })).toBe(now + 60_000);
+  });
+
+  /** An explicitly elapsed lifetime stays elapsed rather than taking the fallback */
+  it('keeps an elapsed lifetime in the past', () => {
+    expect(getTokenExpiresAtMs({ expiresIn: 0, now })).toBe(now);
+    expect(getTokenExpiresAtMs({ expiresIn: -60, now })).toBe(now - 60_000);
+  });
+});
+
+describe('skew helpers', () => {
+  const now = 1_700_000_000_000;
+  const bufferMs = OPENID_EXPIRY_BUFFER_SECONDS * 1000;
+
+  it('pulls an expiry back by the in-transit buffer', () => {
+    const expiresAt = now + 120_000;
+
+    expect(getSkewedTokenExpiresAtMs(expiresAt, now)).toBe(now + 120_000 - bufferMs);
+    expect(getSkewedTokenCacheTtlMs(expiresAt, now)).toBe(120_000 - bufferMs);
+  });
+
+  it('floors a live lifetime shorter than the buffer to a usable minimum, never 0', () => {
+    const expiresAt = now + 10_000;
+
+    expect(getSkewedTokenExpiresAtMs(expiresAt, now)).toBe(now + 1000);
+    expect(getSkewedTokenCacheTtlMs(expiresAt, now)).toBe(1000);
+  });
+
+  /** The floor exists to keep a short-but-real credential usable, not to revive a dead one: a
+   *  provider that declares an elapsed expiry must not have it stamped into the future. */
+  it('leaves an already-elapsed expiry elapsed', () => {
+    expect(getSkewedTokenExpiresAtMs(now - 60_000, now)).toBe(now - 60_000);
+    expect(getSkewedTokenExpiresAtMs(now, now)).toBe(now);
+    expect(getSkewedTokenCacheTtlMs(now - 60_000, now)).toBe(1);
+    expect(getSkewedTokenCacheTtlMs(now, now)).toBe(1);
+  });
+});
+
+describe('hasUsableTokenExpiry', () => {
+  const now = 1_700_000_000_000;
+  const bufferMs = OPENID_EXPIRY_BUFFER_SECONDS * 1000;
+
+  it('requires the credential to outlive the trip downstream', () => {
+    expect(hasUsableTokenExpiry(now + bufferMs + 1, now)).toBe(true);
+    expect(hasUsableTokenExpiry(now + bufferMs, now)).toBe(false);
+    expect(hasUsableTokenExpiry(now + bufferMs - 1, now)).toBe(false);
+  });
+
+  it('rejects a missing or unusable expiry rather than assuming it is fresh', () => {
+    expect(hasUsableTokenExpiry(null, now)).toBe(false);
+    expect(hasUsableTokenExpiry(undefined, now)).toBe(false);
+    expect(hasUsableTokenExpiry(NaN, now)).toBe(false);
   });
 });

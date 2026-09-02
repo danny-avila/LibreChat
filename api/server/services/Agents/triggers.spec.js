@@ -2,12 +2,29 @@ const mockCreateAgentTriggerService = jest.fn();
 const mockGenerationJobManager = {
   supportsDetachedAgentEventActions: true,
   getJob: jest.fn(),
+  getGenerationAdmissionEvidence: jest.fn(),
+};
+const mockQueuedTurnLifecycle = {
+  prepareContinue: jest.fn(),
+  settleBeforeDeadLetter: jest.fn(),
+  recordExecutionAdmission: jest.fn(),
+  verifyExecutionAdmission: jest.fn(),
+  initialize: jest.fn(),
+  stop: jest.fn(),
+  schedule: jest.fn(),
+  cancel: jest.fn(),
 };
 
 jest.mock('@librechat/api', () => ({
   createAgentTriggerService: (...args) => mockCreateAgentTriggerService(...args),
+  createAgentContinuationResolver: jest.fn(() => jest.fn()),
   createAgentEventContinueResolver: jest.fn(() => jest.fn()),
+  createBackgroundToolCompletionWakeupResolver: jest.fn(() => jest.fn()),
   createSubagentCompletionWakeupResolver: jest.fn(() => jest.fn()),
+  createAgentQueuedTurnLifecycle: jest.fn(() => mockQueuedTurnLifecycle),
+  BACKGROUND_TOOL_COMPLETION_SOURCE: 'background-tool-completion',
+  SUBAGENT_COMPLETION_SOURCE: 'subagent-completion',
+  AGENT_QUEUED_TURN_SOURCE: 'agent-queued-turn',
   GenerationJobManager: mockGenerationJobManager,
 }));
 

@@ -8,6 +8,9 @@ jest.mock('~/utils', () => ({
       .flat(Infinity)
       .filter((c): c is string => typeof c === 'string' && c.length > 0)
       .join(' '),
+  /** Real implementation: URL resolution is what the cases below assert. */
+  toAbsoluteFilePath:
+    jest.requireActual<typeof import('~/utils/media')>('~/utils/media').toAbsoluteFilePath,
 }));
 
 jest.mock('librechat-data-provider', () => ({

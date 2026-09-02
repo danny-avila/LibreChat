@@ -19,7 +19,7 @@ type CreateRunArgs = {
   appConfig?: Record<string, unknown>;
   requestBody?: Record<string, unknown>;
 };
-type ProcessStreamConfig = { configurable?: Record<string, unknown> };
+type ProcessStreamConfig = { configurable?: Record<string, unknown>; recursionLimit?: number };
 
 function createMockReq(
   user?: Record<string, unknown>,
@@ -126,6 +126,19 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(streamConfig.configurable?.user_id).toBe('user-123');
   });
 
+  it('invokes the graph with the same resolved recursion limit the step-budget hook uses', async () => {
+    deps.appConfig = { endpoints: { agents: { recursionLimit: 123 } } };
+
+    await createAgentChatCompletion(
+      createMockReq({ id: 'user-123', role: 'USER' }),
+      createMockRes(),
+      deps,
+    );
+
+    const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
+    expect(streamConfig.recursionLimit).toBe(123);
+  });
+
   it('falls back to a bare id when no authenticated user is attached', async () => {
     const req = createMockReq(undefined);
 
@@ -139,6 +152,57 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     // No role present → the runtime MCP check fails closed.
     expect(streamConfig.configurable?.user).toEqual({ id: 'api-user' });
     expect(streamConfig.configurable?.user).not.toHaveProperty('role');
+  });
+
+  it('adapts runtime tool loading to the request-backed public dependency', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' });
+    const res = createMockRes();
+    const loadAgentTools = jest.fn().mockResolvedValue({
+      tools: [],
+      toolContextMap: {},
+    });
+    deps.loadAgentTools = loadAgentTools;
+    (deps.initializeAgent as jest.Mock).mockImplementation(
+      async ({
+        loadTools,
+      }: {
+        loadTools?: (params: Record<string, unknown>) => Promise<unknown>;
+      }) => {
+        await loadTools?.({
+          provider: 'openai',
+          agentId: 'agent_test',
+          tools: ['tool-a'],
+          model: 'gpt-4o-mini',
+          tool_options: undefined,
+          tool_resources: undefined,
+          requestBody: { conversationId: 'conversation-123' },
+          codeExecutionContext: { endpoint: 'openai' },
+        });
+        return {
+          id: 'agent_test',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          tools: [],
+          attachments: [],
+          toolContextMap: {},
+          maxContextTokens: 1000,
+          model_parameters: {},
+        };
+      },
+    );
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(loadAgentTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        req,
+        res,
+        provider: 'openai',
+        agentId: 'agent_test',
+        tools: ['tool-a'],
+        codeExecutionContext: { endpoint: 'openai' },
+      }),
+    );
   });
 
   it('threads the parent message id into the run and execution context', async () => {

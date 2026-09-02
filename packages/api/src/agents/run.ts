@@ -15,6 +15,7 @@ import type {
   SummarizationConfig as AgentSummarizationConfig,
   MultiAgentGraphConfig,
   ContextPruningConfig,
+  CompactionSemanticIndex,
   OpenAIClientOptions,
   StandardGraphConfig,
   StreamPreemption,
@@ -47,7 +48,9 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
+import type { TerminalSteerHook } from '~/agents/steering/runtime';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
+import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
@@ -63,6 +66,11 @@ import {
   usesSubagentCompletionWakeups,
 } from '~/agents/subagentDelivery';
 import {
+  isSteeringSupported,
+  isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
+} from '~/agents/steering/runtime';
+import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
   exemptAskUserQuestionFromApproval,
@@ -71,12 +79,15 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
+import {
+  resolveStreamLimits,
+  resolveSubagentMaxTurns,
+  resolveRecursionLimit,
+} from '~/agents/config';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
-import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
-import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -84,6 +95,7 @@ import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getPluginHookSource } from '~/agents/hooks/source';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { createStepBudgetHook } from '~/agents/stepBudget';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
@@ -397,6 +409,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   backgroundToolNames?: string[];
   /** Names of tools with the host-injected `intent` param (stripped from self-spawn inputs). */
   intentToolNames?: string[];
+  /** Marker-verified tool names whose intent labels are safe compaction guidance. */
+  semanticIntentToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -415,6 +429,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   statefulCodeEnvironment?: Agent['stateful_code_environment'];
   /** Trusted partition for transient code session ids and file references. */
   codeSessionKey?: string;
+  /** Trusted Code API route selected during initialization. */
+  codeExecutionContext?: CodeExecutionContext;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -458,6 +474,7 @@ type LazySubagentAgent = Pick<
   | 'codeEnvAvailable'
   | 'statefulCodeSessions'
   | 'statefulCodeEnvironment'
+  | 'codeExecutionContext'
   | 'codeSessionKey'
   | 'includeReasoningHistory'
   | 'mcpToolAliases'
@@ -479,6 +496,7 @@ type SubagentTreeNode = Pick<
   | 'codeEnvAvailable'
   | 'statefulCodeSessions'
   | 'statefulCodeEnvironment'
+  | 'codeExecutionContext'
   | 'codeSessionKey'
   | 'includeReasoningHistory'
   | 'mcpToolAliases'
@@ -1383,6 +1401,7 @@ export async function createRun({
   indexTokenCountMap,
   initialSessions,
   summarizationConfig,
+  compactionSemanticIndex,
   initialSummary,
   modelCallbacks,
   calibrationRatio,
@@ -1429,6 +1448,8 @@ export async function createRun({
    */
   discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
+  /** Bounded, source-addressed navigation guidance derived with provider messages. */
+  compactionSemanticIndex?: CompactionSemanticIndex;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
   /** Model-level guards inherited by root, summary, fallback, and subagent clients. */
@@ -1467,6 +1488,11 @@ export async function createRun({
      * when the SDK seals a model stream mid-generation on a preempt request.
      */
     preemptHook?: HookCallback<'PreemptBoundary'>;
+    /**
+     * Atomically claims queued steers at the SDK's terminal Stop boundary or
+     * seals admission so later messages become ordinary follow-up turns.
+     */
+    terminalHook?: TerminalSteerHook;
     /**
      * Level-triggered O(1) poll over the job's armed preempt requests
      * (`createSteerPreemptPoll`). Threaded into `RunConfig.preemption`, which
@@ -1730,6 +1756,7 @@ export async function createRun({
         !isSubagent && discoveredTools.size > 0 ? Array.from(discoveredTools) : undefined,
       summarizationEnabled: summarization.enabled,
       summarizationConfig: summarization.config,
+      ...(!isSubagent && compactionSemanticIndex != null ? { compactionSemanticIndex } : {}),
       initialSummary: isSubagent ? undefined : initialSummary,
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
@@ -1967,7 +1994,30 @@ export async function createRun({
     if (steering.preemptHook != null && isSteerPreemptSupported()) {
       hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
     }
+    if (steering.terminalHook != null && isSteerTerminalContinuationSupported()) {
+      const stopFinalizeRegistry = hooks as unknown as {
+        register: (event: 'StopFinalize', matcher: { hooks: TerminalSteerHook[] }) => () => void;
+      };
+      stopFinalizeRegistry.register('StopFinalize', { hooks: [steering.terminalHook] });
+    }
   }
+  /**
+   * Step-budget awareness. Registered unconditionally (no config, no checkpointer,
+   * no SDK capability gate, since `additionalContext` has been part of `BaseHookOutput`
+   * since hooks shipped) because running out of steps mid-turn is a failure mode on
+   * every ingress, and a model that knows its budget is running low usually avoids
+   * it. Registered after the label/steer hooks so their content-slot ordering is
+   * untouched; `additionalContexts` accumulate independently of injected messages.
+   */
+  hooks = hooks ?? new HookRegistry();
+  hooks.register('PostToolBatch', {
+    hooks: [
+      createStepBudgetHook({
+        recursionLimit: resolveRecursionLimit(agentsEndpointConfig, agents[0]),
+      }),
+    ],
+    internal: true,
+  });
   /**
    * Deployment-plugin hooks (Agent Plugins `ai.librechat/hooks/hooks.json`)
    * register last so internal policy hooks (HITL, labels, steering) keep

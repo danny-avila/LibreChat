@@ -1,5 +1,22 @@
+import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { PostToolUseHookInput } from '@librechat/agents';
-import { SUBAGENT_WAKEUP_GUIDANCE, createSubagentWakeupHandleHook } from './subagentDelivery';
+import {
+  SUBAGENT_WAKEUP_GUIDANCE,
+  backgroundCompletionWakeupsEnabled,
+  createSubagentWakeupHandleHook,
+} from './subagentDelivery';
+
+describe('background completion wakeup policy', () => {
+  it('defaults to automatic delivery and honors the administrator opt-out', () => {
+    expect(backgroundCompletionWakeupsEnabled(undefined)).toBe(true);
+    expect(backgroundCompletionWakeupsEnabled({} as TAgentsEndpoint)).toBe(true);
+    expect(
+      backgroundCompletionWakeupsEnabled({
+        backgroundTasks: { completionWakeups: false },
+      } as TAgentsEndpoint),
+    ).toBe(false);
+  });
+});
 
 const hookSignal = new AbortController().signal;
 

@@ -2082,6 +2082,45 @@ describe('SkillFile methods', () => {
       expect(file.codeEnvRefs?.stateful?.file_id).toBe('stateful-file');
     });
 
+    it('persists deployment-specific route keys and their reference metadata', async () => {
+      const { skill } = await methods.createSkill(makeSkillInput());
+      await methods.upsertSkillFile({
+        skillId: skill._id,
+        relativePath: 'scripts/a.sh',
+        file_id: 'f1',
+        filename: 'a.sh',
+        filepath: '/a',
+        source: 'local',
+        mimeType: 'text/plain',
+        bytes: 1,
+        author: owner._id,
+      });
+      const executionRouteKey = 'stateful:0123456789abcdef0123456789abcdef';
+
+      await methods.updateSkillFileCodeEnvIds([
+        {
+          skillId: skill._id,
+          relativePath: 'scripts/a.sh',
+          codeEnvRef: {
+            kind: 'skill',
+            id: skill._id.toString(),
+            version: 1,
+            storage_session_id: 'route-session',
+            file_id: 'route-file',
+            executionProfile: 'stateful',
+            executionRouteKey,
+          },
+        },
+      ]);
+
+      const [file] = await methods.listSkillFiles(skill._id);
+      expect(file.codeEnvRefs?.[executionRouteKey]).toMatchObject({
+        file_id: 'route-file',
+        executionProfile: 'stateful',
+        executionRouteKey,
+      });
+    });
+
     it('reports modifiedCount=0 when no SkillFile rows match the (skillId, relativePath) filter', async () => {
       const { skill } = await methods.createSkill(makeSkillInput());
       const result = await methods.updateSkillFileCodeEnvIds([

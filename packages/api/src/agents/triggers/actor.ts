@@ -78,6 +78,7 @@ export interface AgentEventActorContext {
   discoveredToolNames?: string[];
   summary?: IAgentEventActorState['summary'];
   contextMeta?: IAgentEventActorState['contextMeta'];
+  compactionSemanticIndex?: IAgentEventActorState['compactionSemanticIndex'];
   checkpointMessageOverlay?: AgentEventCheckpointMessageOverlay;
 }
 
@@ -685,6 +686,9 @@ export async function executeAgentEventActor<T>(
               ...(observedState.contextMeta == null
                 ? {}
                 : { contextMeta: observedState.contextMeta }),
+              ...(observedState.compactionSemanticIndex == null
+                ? {}
+                : { compactionSemanticIndex: observedState.compactionSemanticIndex }),
             };
       const committed = await deps.commitState({
         user: input.user,
@@ -712,6 +716,9 @@ export async function executeAgentEventActor<T>(
               ...(resultContext.contextMeta == null
                 ? {}
                 : { contextMeta: resultContext.contextMeta }),
+              ...(resultContext.compactionSemanticIndex == null
+                ? {}
+                : { compactionSemanticIndex: resultContext.compactionSemanticIndex }),
             }),
       });
       if (committed.status === 'stale') {
@@ -1172,6 +1179,9 @@ export async function resumeAgentEventActor<T>(
               ...(observedState.contextMeta == null
                 ? {}
                 : { contextMeta: observedState.contextMeta }),
+              ...(observedState.compactionSemanticIndex == null
+                ? {}
+                : { compactionSemanticIndex: observedState.compactionSemanticIndex }),
               ...(observedState.requiresColdStart === true ? { requiresColdStart: true } : {}),
             };
       const committed = await deps.commitState({
@@ -1196,6 +1206,9 @@ export async function resumeAgentEventActor<T>(
               ...(resultContext.contextMeta == null
                 ? {}
                 : { contextMeta: resultContext.contextMeta }),
+              ...(resultContext.compactionSemanticIndex == null
+                ? {}
+                : { compactionSemanticIndex: resultContext.compactionSemanticIndex }),
             }),
       });
       if (committed.status === 'stale') {

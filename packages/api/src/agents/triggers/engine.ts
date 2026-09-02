@@ -16,6 +16,8 @@ const ORDERING_RECHECK_MS = 250;
 const ACTIVE_HANDLING_RECHECK_MS = 5_000;
 const DEFAULT_DEFER_MS = 5_000;
 const MAX_RETRY_AFTER_MS = 24 * 60 * 60_000;
+const MAX_FAILURE_CODE_LENGTH = 128;
+const MAX_FAILURE_MESSAGE_LENGTH = 2048;
 
 function startedHandling(
   delivery: Pick<AgentTriggerDeliveryRecord, 'envelope'>,
@@ -200,8 +202,14 @@ export interface AgentTriggerDeliveryEngineDeps {
   store: AgentTriggerDeliveryStore;
   dispatch: (
     envelope: unknown,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; attempt?: number; maxAttempts?: number },
   ) => Promise<AgentTriggerExecutionResult>;
+  /** Source-owned terminalization must commit before its delivery can become
+   * dead, including recovery after a crash that exhausted the attempt budget. */
+  settleSourceBeforeDeadLetter?: (
+    envelope: unknown,
+    failure: AgentTriggerDeliveryFailure,
+  ) => Promise<void>;
   now?: () => Date;
   random?: () => number;
   workerId?: string;
@@ -258,6 +266,19 @@ function failure(error: unknown, attemptedAt: Date): AgentTriggerDeliveryFailure
     certainty: 'definite',
     retryable: true,
     attemptedAt,
+  };
+}
+
+function normalizeFailure(failure: AgentTriggerDeliveryFailure): AgentTriggerDeliveryFailure {
+  const code = failure.code.trim();
+  const message = failure.message.trim();
+  return {
+    ...failure,
+    code: (code.length === 0 ? 'DELIVERY_FAILED' : code).slice(0, MAX_FAILURE_CODE_LENGTH),
+    message: (message.length === 0 ? 'Agent trigger delivery failed' : message).slice(
+      0,
+      MAX_FAILURE_MESSAGE_LENGTH,
+    ),
   };
 }
 
@@ -362,9 +383,25 @@ export function createAgentTriggerDeliveryEngine(
     }
 
     if (delivery.attempts >= maxAttempts) {
-      const recorded =
+      const recorded = normalizeFailure(
         delivery.lastError ??
-        failure(new Error('Delivery attempt limit was already exhausted'), now());
+          failure(new Error('Delivery attempt limit was already exhausted'), now()),
+      );
+      try {
+        await deps.settleSourceBeforeDeadLetter?.(delivery.envelope, recorded);
+      } catch (error) {
+        logger.error('[agent-triggers] source terminalization failed before dead-lettering', {
+          deliveryKey: delivery.deliveryKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await deps.store.release({
+          id: delivery.id,
+          workerId,
+          claimToken: delivery.claimToken,
+          availableAt: now(),
+        });
+        return;
+      }
       const deadLettered = await deps.store.dead({
         id: delivery.id,
         workerId,
@@ -426,7 +463,11 @@ export function createAgentTriggerDeliveryEngine(
           members.length === 0
             ? delivery.envelope
             : createAgentTriggerBatchEnvelope(delivery, members);
-        result = await deps.dispatch(dispatchEnvelope, { signal: controller.signal });
+        result = await deps.dispatch(dispatchEnvelope, {
+          signal: controller.signal,
+          attempt,
+          maxAttempts,
+        });
       } catch (error) {
         const attemptedAt = now();
         const deletionCancelled = controller.signal.aborted && cancelledUsers.has(userId);
@@ -464,8 +505,26 @@ export function createAgentTriggerDeliveryEngine(
           }
           return;
         }
-        const recorded = failure(error, attemptedAt);
+        const recorded = normalizeFailure(failure(error, attemptedAt));
         if (!recorded.retryable || attempt >= maxAttempts) {
+          try {
+            await deps.settleSourceBeforeDeadLetter?.(delivery.envelope, recorded);
+          } catch (settlementError) {
+            logger.error('[agent-triggers] source terminalization failed before dead-lettering', {
+              deliveryKey: delivery.deliveryKey,
+              error:
+                settlementError instanceof Error
+                  ? settlementError.message
+                  : String(settlementError),
+            });
+            await deps.store.release({
+              id: delivery.id,
+              workerId,
+              claimToken: delivery.claimToken,
+              availableAt: attemptedAt,
+            });
+            return;
+          }
           const deadLettered = await deps.store.dead({
             id: delivery.id,
             workerId,

@@ -1,5 +1,12 @@
 import { Schema } from 'mongoose';
 import {
+  MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES,
+  MAX_COMPACTION_SEMANTIC_INDEX_IDENTITY_LENGTH,
+  MAX_COMPACTION_SEMANTIC_INDEX_SOURCE_CONTENT_INDEX,
+  MAX_COMPACTION_SEMANTIC_INDEX_TEXT_LENGTH,
+  isCompactionSemanticIndexProjection,
+} from '~/types/compaction';
+import {
   MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
   MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
   MAX_AGENT_EVENT_ACTOR_SKILLS,
@@ -143,6 +150,66 @@ const convoSchema: Schema<IConversation> = new Schema(
           },
           _id: false,
           default: undefined,
+        },
+        compactionSemanticIndex: {
+          type: {
+            version: { type: Number, enum: [1], required: true },
+            entries: {
+              type: [
+                {
+                  type: {
+                    type: String,
+                    enum: ['tool_intent', 'tool_outcome', 'activity_phase', 'reasoning_label'],
+                    required: true,
+                  },
+                  sourceMessageId: {
+                    type: String,
+                    minlength: 1,
+                    maxlength: MAX_COMPACTION_SEMANTIC_INDEX_IDENTITY_LENGTH,
+                    required: true,
+                  },
+                  sourceContentIndex: {
+                    type: Number,
+                    min: 0,
+                    max: MAX_COMPACTION_SEMANTIC_INDEX_SOURCE_CONTENT_INDEX,
+                    required: true,
+                  },
+                  revision: { type: Number, min: 0, required: true },
+                  status: { type: String, enum: ['committed', 'pending'], required: true },
+                  text: {
+                    type: String,
+                    maxlength: MAX_COMPACTION_SEMANTIC_INDEX_TEXT_LENGTH,
+                  },
+                  redacted: { type: Boolean, default: undefined },
+                  toolCallId: {
+                    type: String,
+                    minlength: 1,
+                    maxlength: MAX_COMPACTION_SEMANTIC_INDEX_IDENTITY_LENGTH,
+                    default: undefined,
+                  },
+                  reasoningStepId: {
+                    type: String,
+                    minlength: 1,
+                    maxlength: MAX_COMPACTION_SEMANTIC_INDEX_IDENTITY_LENGTH,
+                    default: undefined,
+                  },
+                  _id: false,
+                },
+              ],
+              validate: {
+                validator: (entries: unknown[]) =>
+                  entries.length <= MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES,
+                message: `Compaction semantic index exceeds ${MAX_COMPACTION_SEMANTIC_INDEX_ENTRIES} entries`,
+              },
+            },
+            providedEntryCount: { type: Number, min: 0, default: undefined },
+          },
+          _id: false,
+          default: undefined,
+          validate: {
+            validator: isCompactionSemanticIndexProjection,
+            message: 'Compaction semantic index projection is invalid',
+          },
         },
         previousCheckpoint: {
           type: {

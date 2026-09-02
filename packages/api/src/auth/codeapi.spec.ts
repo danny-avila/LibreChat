@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync, verify as cryptoVerify } from 'crypto';
 import type { KeyObject } from 'crypto';
 import type { ServerRequest } from '~/types';
-import { getCodeApiAuthHeaders, mintCodeApiToken } from './codeapi';
+import { assertCodeApiJwtSigningReady, getCodeApiAuthHeaders, mintCodeApiToken } from './codeapi';
 
 jest.mock(
   '@librechat/data-schemas',
@@ -170,6 +170,18 @@ describe('Code API JWT minting', () => {
     expect(decoded.claims).not.toHaveProperty('openid_token');
   });
 
+  it('validates that the configured signing key is usable by the selected algorithm', () => {
+    expect(() => assertCodeApiJwtSigningReady()).not.toThrow();
+
+    const rsaKeyPair = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    process.env.CODEAPI_JWT_PRIVATE_JWK_JSON = JSON.stringify(
+      rsaKeyPair.privateKey.export({ format: 'jwk' }),
+    );
+    process.env.CODEAPI_JWT_ALGORITHM = 'EdDSA';
+
+    expect(() => assertCodeApiJwtSigningReady()).toThrow();
+  });
+
   it('marks OpenID reuse callers without forwarding upstream credentials', async () => {
     process.env.OPENID_REUSE_TOKENS = 'true';
     const req = baseRequest({
@@ -209,6 +221,31 @@ describe('Code API JWT minting', () => {
 
     expect(claims.plan_id).toBe('prod_plan_123');
     expect(claims).not.toHaveProperty('planId');
+  });
+
+  it('binds cached Code API tokens to the selected code worker', async () => {
+    const req = baseRequest();
+    const first = await mintCodeApiToken(req, 'principal-worker-a');
+    const second = await mintCodeApiToken(req, 'principal-worker-b');
+
+    expect(decodeToken(first).claims.code_worker_id).toBe('principal-worker-a');
+    expect(decodeToken(second).claims.code_worker_id).toBe('principal-worker-b');
+    expect(second).not.toBe(first);
+  });
+
+  it('does not collide cache entries for colon-containing plans and worker IDs', async () => {
+    const first = await mintCodeApiToken(baseRequest({ subscription: { planId: 'basic:a' } }), 'b');
+    const second = await mintCodeApiToken(
+      baseRequest({ subscription: { planId: 'basic' } }),
+      'a:b',
+    );
+
+    expect(decodeToken(first).claims).toMatchObject({ plan_id: 'basic:a', code_worker_id: 'b' });
+    expect(decodeToken(second).claims).toMatchObject({
+      plan_id: 'basic',
+      code_worker_id: 'a:b',
+    });
+    expect(second).not.toBe(first);
   });
 
   it('uses the single-tenant namespace when tenant context is absent outside strict mode', async () => {

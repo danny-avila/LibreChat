@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
 const { GraphEvents, sleep } = require('@librechat/agents');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
+const { logger, decryptV2 } = require('@librechat/data-schemas');
 const {
   sendEvent,
   logAxiosError,
@@ -10,6 +10,8 @@ const {
   refreshAccessToken,
   GenerationJobManager,
   createSSRFSafeAgents,
+  encryptSensitiveValue,
+  decryptSensitiveValue,
   validateActionOAuthMetadata,
 } = require('@librechat/api');
 const {
@@ -405,27 +407,6 @@ async function createActionTool({
   return {
     _call,
   };
-}
-
-/**
- * Encrypts a sensitive value.
- * @param {string} value
- * @returns {Promise<string>}
- */
-async function encryptSensitiveValue(value) {
-  // Encode API key to handle special characters like ":"
-  const encodedValue = encodeURIComponent(value);
-  return await encryptV2(encodedValue);
-}
-
-/**
- * Decrypts a sensitive value.
- * @param {string} value
- * @returns {Promise<string>}
- */
-async function decryptSensitiveValue(value) {
-  const decryptedValue = await decryptV2(value);
-  return decodeURIComponent(decryptedValue);
 }
 
 /**

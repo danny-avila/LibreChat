@@ -1,4 +1,4 @@
-import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
+import { SkillsScope, AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
 import type { AgentItem } from './types';
 
 export type TogglePatch =
@@ -52,22 +52,24 @@ export function computeToggleAction(item: AgentItem, state: { selected: boolean 
 }
 
 /**
- * `skills_enabled` is the master opt-in for the skill allowlist, and an empty
- * allowlist with the flag on means the FULL accessible catalog ("use all
- * skills"). Selection edits sync the flag to the selection: any non-empty
- * selection needs the flag on to take effect (this also heals agents saved
- * with the since-removed Advanced kill switch off while skills were still
- * selected), and clearing the selection turns it off so the agent doesn't
- * silently escalate to the full catalog. Returns `undefined` when the flag
- * already matches. The "use all skills" state (flag on, empty selection) is
- * only ever set by its explicit toggle, never by selection edits.
+ * Selection edits enable the capability and move its catalog between an
+ * explicit allowlist and an authoring-only empty scope. They never produce
+ * the full-catalog state; only the "use all skills" control can do that.
  */
-export function skillsEnabledTransition(
+export function skillsSelectionTransition(
   next: string[],
   enabled: boolean | undefined,
-): boolean | undefined {
-  if (next.length > 0) {
-    return enabled === true ? undefined : true;
-  }
-  return enabled === true ? false : undefined;
+  authoringEnabled: boolean | undefined,
+  scope: SkillsScope | undefined,
+): { enabled?: boolean; authoringEnabled?: boolean; scope?: SkillsScope } {
+  const nextEnabled = next.length > 0;
+  const nextAuthoringEnabled = !nextEnabled;
+  const nextScope = next.length > 0 ? SkillsScope.selected : SkillsScope.none;
+  return {
+    ...(enabled === nextEnabled ? {} : { enabled: nextEnabled }),
+    ...(authoringEnabled === nextAuthoringEnabled
+      ? {}
+      : { authoringEnabled: nextAuthoringEnabled }),
+    ...(scope === nextScope ? {} : { scope: nextScope }),
+  };
 }

@@ -134,7 +134,7 @@ export class OAuthReconnectionManager {
   private cleanupOnFailedReconnect(userId: string, serverName: string): void {
     this.reconnectionsTracker.setFailed(userId, serverName);
     this.reconnectionsTracker.removeActive(userId, serverName);
-    this.mcpManager?.disconnectUserConnection(userId, serverName);
+    this.mcpManager?.disconnectUserConnection(userId, serverName, { reason: 'lifecycle' });
   }
 
   /**

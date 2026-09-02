@@ -5,6 +5,7 @@ export * from './artifacts';
 /* Admin */
 export * from './admin';
 export * from './cdn';
+export * from './code';
 /* Auth */
 export * from './auth';
 /* API Keys */
@@ -23,6 +24,7 @@ export * from './mcp/errors';
 export * from './mcp/cache';
 export * from './mcp/tools';
 export * from './mcp/catalog/store';
+export * from './mcp/catalog/recovery';
 export * from './mcp/assistants';
 export * from './mcp/request';
 /* Utilities */

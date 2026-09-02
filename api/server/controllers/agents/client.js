@@ -9,7 +9,7 @@ const {
   createRun,
   isEnabled,
   checkAccess,
-  buildToolSet,
+  buildRunToolSet,
   logToolError,
   sanitizeTitle,
   payloadParser,
@@ -55,6 +55,7 @@ const {
   getPluginHookSource,
   captureAgentCheckpointGeneration,
   isContentFilterError,
+  isStepLimitError,
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
@@ -65,9 +66,11 @@ const {
   createSteerIndexOffsetHandlers,
   createSteerDrainHook,
   createSteerPreemptBoundaryHook,
+  createSteerTerminalContinuationHook,
   createSteerPreemptPoll,
   isSteeringSupported,
   isSteerPreemptSupported,
+  isSteerTerminalContinuationSupported,
   buildSteerMedia,
   collectSteerStampTargets,
   stampSteerPartMedia,
@@ -115,6 +118,7 @@ const {
   hasYouTubeVideoParts,
   appendYouTubeVideoParts,
   resolveGoogleVideoError,
+  resolveLangChainError,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
@@ -124,11 +128,14 @@ const {
   hasModelBoundContentProtection,
   assertResumeRuntimeContentAllowed,
   collectReachableAgents,
+  stampMcpServerIdentities,
   getDynamicToolContexts,
   getSafeErrorMetadata,
   createInitializedAgentContextFingerprint,
   createSkillContentDigest,
   normalizeAgentEventActorDiscoveredTools,
+  createCompactionSemanticIndexProjection,
+  restoreCompactionSemanticIndexSnapshot,
   MAX_AGENT_CONTEXT_SKILLS,
 } = require('@librechat/api');
 const {
@@ -156,6 +163,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  stripLangChainTroubleshootingUrl,
   DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
@@ -163,11 +171,17 @@ const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
+const { getAccessibleMCPServers } = require('~/server/services/MCP');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
-const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+const loadAgent = (params) =>
+  loadAgentFn(params, {
+    getAgent: db.getAgent,
+    getMCPServerTools,
+    getAccessibleMCPServers,
+  });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
@@ -230,6 +244,12 @@ function getLatestEventActorSummary(contentParts) {
   return undefined;
 }
 
+/**
+ * User-visible text for a failed run. LangChain classifies provider errors by mutating
+ * `error.message` with a docs URL, so a classified failure becomes typed copy the client localizes
+ * and everything else keeps the provider's own wording with that URL removed. The untouched error
+ * still reaches the logs through `getSafeErrorMetadata`.
+ */
 function getUserFacingRequestError(baseMessage, error, appConfig) {
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,
@@ -238,7 +258,15 @@ function getUserFacingRequestError(baseMessage, error, appConfig) {
   if (protectionEnabled || !error?.message) {
     return baseMessage;
   }
-  return `${baseMessage}: ${error.message}`;
+  const typedError = resolveLangChainError(error);
+  if (typedError != null) {
+    return typedError;
+  }
+  const message = stripLangChainTroubleshootingUrl(error.message);
+  if (!message) {
+    return baseMessage;
+  }
+  return `${baseMessage}: ${message}`;
 }
 
 class AgentClient extends BaseClient {
@@ -287,6 +315,9 @@ class AgentClient extends BaseClient {
     this.eventActorSkillPrimeResult = undefined;
     this.eventActorDiscoveredToolNames = undefined;
     this.eventActorSummary = undefined;
+    /** Advisory compaction guidance retained and evolved across graph reconstruction.
+     * @type {import('@librechat/agents').CompactionSemanticIndexSnapshot | undefined} */
+    this.compactionSemanticIndexSnapshot = undefined;
 
     /** @type {AgentRun} */
     this.run;
@@ -357,6 +388,11 @@ class AgentClient extends BaseClient {
      *  these before returning — otherwise job cleanup can race the persist.
      *  @type {Promise<void>[]} */
     this.pendingSubagentEmits = [];
+    /** Set when the graph exhausted its per-turn step budget (`recursionLimit`).
+     *  Read by `request.js`/`resume.js` to persist the row as `unfinished` with
+     *  `Constants.TOOL_CALL_LIMIT_FINISH_REASON` instead of publishing an error.
+     *  @type {boolean} */
+    this.stepLimitReached = false;
     /** Stable per-generation sequence for subagent usage events. Detached
      * usage is billed outside `collectedUsage`, so array length is no longer
      * a valid sequence source. @type {number} */
@@ -397,11 +433,16 @@ class AgentClient extends BaseClient {
             hide_sequential_outputs: agent.hide_sequential_outputs,
             stateful_code_sessions: agent.stateful_code_sessions,
             stateful_code_environment: agent.stateful_code_environment,
+            execution_route_key:
+              agent.codeExecutionContext?.executionRouteKey ??
+              agent.codeExecutionContext?.executionProfile,
             artifacts: agent.artifacts,
             recursion_limit: agent.recursion_limit,
             subagents: agent.subagents,
             memory_scope: agent.memory_scope,
             skills_enabled: agent.skills_enabled,
+            skill_authoring_enabled: agent.skill_authoring_enabled,
+            skills_scope: agent.skills_scope,
             skills: agent.skills,
             backgroundToolNames: agent.backgroundToolNames,
             intentToolNames: agent.intentToolNames,
@@ -481,6 +522,15 @@ class AgentClient extends BaseClient {
     buffer.clear();
   }
 
+  /** Stamps host-resolved MCP identities onto persisted calls so future replay
+   * can distinguish delimiter-bearing tool names from longer server names. */
+  stampMcpServerIdentities() {
+    stampMcpServerIdentities({
+      contentParts: this.contentParts,
+      roots: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
+    });
+  }
+
   /**
    * Apply one drained steer to host state: append the steer content part at
    * the live content index, bump the shared index offset so subsequent SDK
@@ -552,9 +602,9 @@ class AgentClient extends BaseClient {
 
   /**
    * The `steering` fragment for `createRun`: the run-scoped PostToolBatch
-   * drain hook — plus, when the SDK can seal mid-stream, the PreemptBoundary
-   * twin and the preempt poll built from the SAME drain closures, so both
-   * boundaries inject byte-identical shapes. `undefined` when there is no
+   * drain hook — plus the capability-gated PreemptBoundary and terminal Stop
+   * twins built from the SAME drain closures, so every boundary injects
+   * byte-identical shapes. `undefined` when there is no
    * resumable job surface or the installed SDK cannot inject hook messages
    * (draining would drop them).
    *
@@ -586,6 +636,9 @@ class AgentClient extends BaseClient {
       ...(isSteerPreemptSupported() && {
         preemptHook: createSteerPreemptBoundaryHook(drainOptions),
         preemption: createSteerPreemptPoll(streamId),
+      }),
+      ...(isSteerTerminalContinuationSupported() && {
+        terminalHook: createSteerTerminalContinuationHook(drainOptions),
       }),
     };
   }
@@ -1662,6 +1715,7 @@ class AgentClient extends BaseClient {
       {
         provider: this.options.agent.provider,
         endpoint: this.options.endpoint,
+        imageDetail: this.options.imageDetail,
       },
       VisionModes.agents,
     );
@@ -1693,10 +1747,14 @@ class AgentClient extends BaseClient {
     let discoveredToolNames;
     let summary;
     let contextMeta;
+    let compactionSemanticIndex;
     try {
       discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
       summary = normalizeEventActorSummary(state.summary);
       contextMeta = normalizeEventActorContextMeta(state.contextMeta);
+      compactionSemanticIndex = restoreCompactionSemanticIndexSnapshot(
+        state.compactionSemanticIndex,
+      );
     } catch {
       return undefined;
     }
@@ -1724,6 +1782,7 @@ class AgentClient extends BaseClient {
     this.eventActorDiscoveredToolNames = discoveredToolNames;
     this.eventActorSummary = summary;
     this.contextMeta = contextMeta;
+    this.compactionSemanticIndexSnapshot = compactionSemanticIndex;
     const context = await this.getEventActorContext(storedManifest, discoveredToolNames);
     const skillBodies = new Map(skillPrimeResult?.skills ?? []);
     const rootAgentContext = this.eventActorAgentContextSources?.[0];
@@ -1782,6 +1841,9 @@ class AgentClient extends BaseClient {
     ]);
     const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
     this.eventActorSummary = summary;
+    const compactionSemanticIndex = createCompactionSemanticIndexProjection(
+      this.compactionSemanticIndexSnapshot,
+    );
     return {
       fingerprint: createInitializedAgentContextFingerprint({
         agents: this.eventActorAgentContextSources ?? agents,
@@ -1795,6 +1857,7 @@ class AgentClient extends BaseClient {
       discoveredToolNames,
       ...(summary == null ? {} : { summary }),
       ...(this.contextMeta == null ? {} : { contextMeta: this.contextMeta }),
+      ...(compactionSemanticIndex == null ? {} : { compactionSemanticIndex }),
     };
   }
 
@@ -1814,6 +1877,7 @@ class AgentClient extends BaseClient {
        * non-checkpointed state from durable history, never from that stale head. */
       this.eventActorSummary = undefined;
       this.contextMeta = undefined;
+      this.compactionSemanticIndexSnapshot = undefined;
     }
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
@@ -3442,6 +3506,9 @@ class AgentClient extends BaseClient {
       ...(staged.activityPhaseSnapshot == null
         ? {}
         : { activityPhaseSnapshot: staged.activityPhaseSnapshot }),
+      ...(staged.compactionSemanticIndex == null
+        ? {}
+        : { compactionSemanticIndex: staged.compactionSemanticIndex }),
       persistencePending: true,
       ...(eventActorSuspension == null
         ? {}
@@ -3684,6 +3751,9 @@ class AgentClient extends BaseClient {
       interruptType: interrupt.payload.type,
       discoveredTools,
       activityPhaseSnapshot: this.activityPhaseWiring?.snapshot?.(),
+      compactionSemanticIndex: createCompactionSemanticIndexProjection(
+        this.compactionSemanticIndexSnapshot,
+      ),
     };
     if (this.eventActorInvocationId != null) {
       return;
@@ -3806,7 +3876,12 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
-      const toolSet = buildToolSet(this.options.agent);
+      const toolSet = buildRunToolSet(
+        this.options.agent,
+        this.agentConfigs?.values(),
+        this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
+        payload,
+      );
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
@@ -3855,23 +3930,47 @@ class AgentClient extends BaseClient {
         alwaysApplySkillPrimes,
       });
       const useLegacyContent = this.options.agent?.useLegacyContent === true;
-      const formatOptions =
-        needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent
-          ? {
-              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
-              ...(freshSkillPrimeNames.size > 0
-                ? { skipSkillBodyNames: freshSkillPrimeNames }
-                : {}),
-              ...(useLegacyContent ? { legacyContent: true } : {}),
-            }
-          : undefined;
+      const reachableAgents = collectReachableAgents([
+        this.options.agent,
+        ...(this.agentConfigs?.values() ?? []),
+      ]);
+      const messageFormatOptions = {
+        ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
+        ...(freshSkillPrimeNames.size > 0 ? { skipSkillBodyNames: freshSkillPrimeNames } : {}),
+        ...(useLegacyContent ? { legacyContent: true } : {}),
+      };
+      const semanticIntentToolNames = new Set();
+      const semanticIntentBlockedToolNames = new Set();
+      for (const agent of reachableAgents) {
+        for (const toolName of agent.semanticIntentToolNames ?? []) {
+          semanticIntentToolNames.add(toolName);
+        }
+        for (const toolName of agent.semanticIntentBlockedToolNames ?? []) {
+          semanticIntentBlockedToolNames.add(toolName);
+        }
+      }
+      for (const toolName of semanticIntentBlockedToolNames) {
+        semanticIntentToolNames.delete(toolName);
+      }
+      const hasMessageFormatOptions =
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent;
+      const formatOptions = {
+        ...messageFormatOptions,
+        compactionSemanticIndex: {
+          ...(this.eventActorContinuation === 'warm' && this.compactionSemanticIndexSnapshot != null
+            ? { baseSnapshot: this.compactionSemanticIndexSnapshot }
+            : {}),
+          intentToolNames: semanticIntentToolNames,
+        },
+      };
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
+        compactionSemanticIndexSnapshot,
       } = formatAgentMessages(
-        stripActivityLabelParts(payload),
+        payload,
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
@@ -3880,8 +3979,12 @@ class AgentClient extends BaseClient {
       if (this.eventActorContinuation !== 'warm') {
         this.eventActorSummary = initialSummary;
       }
+      this.compactionSemanticIndexSnapshot =
+        compactionSemanticIndexSnapshot ??
+        (this.eventActorContinuation === 'warm' ? this.compactionSemanticIndexSnapshot : undefined);
       const continuationSummary =
         this.eventActorContinuation === 'warm' ? this.eventActorSummary : initialSummary;
+      const continuationCompactionSemanticIndex = this.compactionSemanticIndexSnapshot?.entries;
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -3932,10 +4035,7 @@ class AgentClient extends BaseClient {
       assertModelBoundContent({
         filters: appConfig?.filters,
         legacyPii: appConfig?.messageFilter?.pii,
-        agents: collectReachableAgents([
-          this.options.agent,
-          ...(this.agentConfigs?.values() ?? []),
-        ]),
+        agents: reachableAgents,
         skills: [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])],
         memories: this.modelBoundMemoryContexts,
         files: this.modelBoundFileContexts,
@@ -3965,7 +4065,7 @@ class AgentClient extends BaseClient {
               undefined,
               toolSet,
               skillPrimeResult?.skills,
-              formatOptions,
+              hasMessageFormatOptions ? messageFormatOptions : undefined,
             ).messages
           : initialMessages;
 
@@ -4134,6 +4234,9 @@ class AgentClient extends BaseClient {
           // rebuilt turns use the summary reconstructed from durable history.
           indexTokenCountMap: this.eventActorContinuation === 'warm' ? {} : indexTokenCountMap,
           initialSummary: continuationSummary,
+          ...(continuationCompactionSemanticIndex == null
+            ? {}
+            : { compactionSemanticIndex: continuationCompactionSemanticIndex }),
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
@@ -4310,6 +4413,25 @@ class AgentClient extends BaseClient {
           '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
           { conversationId: this.conversationId, ...getSafeErrorMetadata(err) },
         );
+      } else if (isStepLimitError(err)) {
+        /**
+         * The graph ran out of supersteps. Everything already streamed is real work,
+         * so this terminates the turn as incomplete rather than failed: no ERROR part,
+         * and `request.js` persists the row `unfinished` with the tool-call-limit
+         * finish reason so the UI can offer to continue. Mirrors the abort contract:
+         * a turn that stopped early is not a turn that broke.
+         */
+        this.stepLimitReached = true;
+        logger.warn(
+          '[api/server/controllers/agents/client.js #sendCompletion] Tool call limit reached; ending the turn as incomplete',
+          {
+            conversationId: this.conversationId,
+            recursionLimit: resolveRecursionLimit(
+              this.options.req.config?.endpoints?.[EModelEndpoint.agents],
+              this.options.agent,
+            ),
+          },
+        );
       } else {
         logger.error(
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
@@ -4349,6 +4471,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      this.stampMcpServerIdentities();
       await this.settleActivityLabels();
 
       /** Flush subagent usage emits the sink fired without awaiting, so their
@@ -4430,6 +4553,7 @@ class AgentClient extends BaseClient {
    * @param {Array} [params.seedContent] - content aggregated before the pause
    * @param {Array<import('@librechat/agents').RunStep>} [params.runSteps] - run steps emitted before the pause
    * @param {import('@librechat/api').ActivityPhaseSnapshot} [params.activityPhaseSnapshot]
+   * @param {import('@librechat/data-schemas').ICompactionSemanticIndexProjection} [params.compactionSemanticIndex]
    * @param {Array} [params.storedMessages] - persisted user messages restored for the resume
    * @param {AbortController} [params.abortController]
    * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
@@ -4444,6 +4568,7 @@ class AgentClient extends BaseClient {
     userMCPAuthMap,
     discoveredToolNames,
     activityPhaseSnapshot,
+    compactionSemanticIndex,
   }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -4504,6 +4629,8 @@ class AgentClient extends BaseClient {
       }
 
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      this.compactionSemanticIndexSnapshot =
+        restoreCompactionSemanticIndexSnapshot(compactionSemanticIndex);
       const agents = collectReachableAgents([
         this.options.agent,
         ...(this.agentConfigs?.size > 0 ? this.agentConfigs.values() : []),
@@ -4635,6 +4762,9 @@ class AgentClient extends BaseClient {
         // batches keep claiming slots and generating group headers.
         activityLabel,
         activityPhase,
+        ...(this.compactionSemanticIndexSnapshot == null
+          ? {}
+          : { compactionSemanticIndex: this.compactionSemanticIndexSnapshot.entries }),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so these names restore the schemas to the
         // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
@@ -4749,6 +4879,15 @@ class AgentClient extends BaseClient {
             ...getSafeErrorMetadata(err),
           },
         );
+      } else if (isStepLimitError(err)) {
+        /** Same contract as the initial turn: incomplete, not failed. A resumed run
+         *  inherits the budget of a turn that already spent steps before pausing, so
+         *  this boundary is if anything more likely to be reached here. */
+        this.stepLimitReached = true;
+        logger.warn(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Tool call limit reached; ending the resumed turn as incomplete',
+          { conversationId: this.conversationId },
+        );
       } else {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
@@ -4777,6 +4916,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      this.stampMcpServerIdentities();
       await this.settleActivityLabels();
 
       if (this.pendingSubagentEmits.length > 0) {

@@ -1,6 +1,7 @@
 import { Constants } from '@librechat/agents';
 import { isEphemeralAgentId } from 'librechat-data-provider';
 import type { HookCallback, PostToolUseHookOutput, SubagentTaskConfig } from '@librechat/agents';
+import type { TAgentsEndpoint } from 'librechat-data-provider';
 
 export const SUBAGENT_COMPLETION_DELIVERY = 'wakeup';
 
@@ -11,6 +12,11 @@ export interface HostSubagentTaskConfig extends SubagentTaskConfig {
 
 export const SUBAGENT_WAKEUP_GUIDANCE =
   'Automatic completion delivery is enabled for this subagent task. Continue independent work if available; otherwise end this turn and the host will resume you when the task finishes. Do not repeatedly poll an unchanged running task. Use check_background_task only for explicit status or control, or as a fallback if automatic delivery is unavailable.';
+
+/** Automatic conversational completion is default-on and has one administrator opt-out. */
+export function backgroundCompletionWakeupsEnabled(config: TAgentsEndpoint | undefined): boolean {
+  return config?.backgroundTasks?.completionWakeups !== false;
+}
 
 export function usesSubagentCompletionWakeups(
   config: SubagentTaskConfig | undefined,
