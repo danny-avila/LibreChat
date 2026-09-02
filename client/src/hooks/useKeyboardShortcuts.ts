@@ -15,7 +15,7 @@ import {
   parseBinding,
 } from '~/utils/shortcuts';
 import { mainTextareaId, NotificationSeverity } from '~/common';
-import { completeProgressiveRowMounts } from '~/hooks/Messages';
+import { withAllRowsMountedImmediately } from '~/hooks/Messages';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { useArchiveConvoMutation } from '~/data-provider';
 import { useHasAccess, useLocalize } from '~/hooks';
@@ -599,19 +599,10 @@ export function useShortcutActions(): ShortcutAction[] {
       if (!text.trim()) return false;
       return copy(text.trim(), { format: 'text/plain' });
     };
-    if (!document.querySelector('[data-message-row-slot="true"][data-row-mounted="false"]')) {
-      return copyLastMountedCode();
-    }
-    /** The last code block may be in any historical response. Lease the full
-     *  transcript until the DOM-backed shortcut has selected and copied it. */
-    void completeProgressiveRowMounts().then((release) => {
-      try {
-        copyLastMountedCode();
-      } finally {
-        release();
-      }
-    });
-    return true;
+    /** The last code block may be in any historical response. Mount the full
+     * transcript in this keyboard event so both selection and the clipboard
+     * result remain synchronous and the shortcut only claims a real action. */
+    return withAllRowsMountedImmediately(copyLastMountedCode);
   }, []);
 
   const handleStopGenerating = useCallback(

@@ -16,17 +16,22 @@ type RowProps = {
 /** Row stub exposing the sibling switcher contract (display-order index). */
 const createRowStub = () => {
   const { createElement } = jest.requireActual<typeof React>('react');
-  return ({ message, siblingIdx = 0, setSiblingIdx }: RowProps) =>
-    createElement(
+  return ({ message, siblingIdx = 0, setSiblingIdx }: RowProps) => {
+    const steer = message.content?.find((part) => part?.type === ContentTypes.STEER);
+    return createElement(
       'div',
       null,
       createElement('div', { 'data-testid': 'row' }, message.messageId),
+      steer?.steerId
+        ? createElement('div', { id: `steer-${steer.steerId}`, className: 'steer-render' })
+        : null,
       createElement(
         'button',
         { 'data-testid': 'prev', onClick: () => setSiblingIdx?.(siblingIdx - 1) },
         'prev',
       ),
     );
+  };
 };
 
 jest.mock('~/components/Messages/MessageContent', () => ({
@@ -368,6 +373,8 @@ describe('MultiMessage row mount window', () => {
       end: number;
       tailStart?: number;
       heights?: ReadonlyMap<number, { messageId: string; height: number }>;
+      pinnedRows?: ReadonlyMap<number, string>;
+      pinRow?: (depth: number, messageId: string) => void;
     } | null,
     root: TMessage = chain(),
   ) => (
@@ -450,6 +457,23 @@ describe('MultiMessage row mount window', () => {
     );
   });
 
+  it('transfers focus from a placeholder steer anchor to its mounted content', () => {
+    const root = chain();
+    root.content = [
+      { type: ContentTypes.STEER, steer: 'Keep this direction', steerId: 'steer-1' },
+    ] as TMessage['content'];
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    const view = render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }, root));
+    const placeholderAnchor = view.container.querySelector<HTMLElement>('#steer-steer-1');
+    placeholderAnchor?.setAttribute('tabindex', '-1');
+    placeholderAnchor?.focus();
+
+    view.rerender(windowedTree({ mode: 'bounded', start: 0, end: 2, heights }, root));
+
+    expect(document.activeElement).toHaveAttribute('id', 'steer-steer-1');
+    expect(document.activeElement).not.toHaveClass('sr-only');
+  });
+
   it('keeps the row owning active speech playback mounted', () => {
     const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
     getDefaultStore().set(activeSpeechMessageIdAtom, 'm0');
@@ -457,6 +481,34 @@ describe('MultiMessage row mount window', () => {
 
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toContain('m0');
     act(() => getDefaultStore().set(activeSpeechMessageIdAtom, null));
+  });
+
+  it('keeps an interacted row mounted outside the visible window', () => {
+    const heights = new Map([
+      [0, { messageId: 'm0', height: 120 }],
+      [1, { messageId: 'm1', height: 120 }],
+      [2, { messageId: 'm2', height: 120 }],
+    ]);
+    render(
+      windowedTree({
+        mode: 'bounded',
+        start: 1,
+        end: 2,
+        heights,
+        pinnedRows: new Map([[0, 'm0']]),
+      }),
+    );
+
+    expect(screen.getAllByTestId('row').map((row) => row.textContent)).toContain('m0');
+  });
+
+  it('pins a mounted row before its pointer interaction updates local state', () => {
+    const pinRow = jest.fn();
+    render(windowedTree({ mode: 'bounded', start: 0, end: 0, pinRow }));
+
+    fireEvent.pointerDown(screen.getAllByTestId('prev')[0]);
+
+    expect(pinRow).toHaveBeenCalledWith(0, 'm0');
   });
 
   it('keeps shortcut controls in the conversation tail mounted', () => {

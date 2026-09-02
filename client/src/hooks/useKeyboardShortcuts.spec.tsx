@@ -2,7 +2,7 @@ import copy from 'copy-to-clipboard';
 import { MemoryRouter } from 'react-router-dom';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, act, cleanup, waitFor, renderHook } from '@testing-library/react';
+import { render, act, cleanup, renderHook } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
@@ -15,7 +15,7 @@ import useKeyboardShortcuts, {
   useShortcutDisplay,
   useShortcutAriaKey,
 } from './useKeyboardShortcuts';
-import { completeProgressiveRowMounts } from '~/hooks/Messages';
+import { withAllRowsMountedImmediately } from '~/hooks/Messages';
 import store from '~/store';
 
 jest.mock('copy-to-clipboard', () => ({
@@ -29,13 +29,13 @@ jest.mock('./useNewConvo', () => ({
 }));
 
 jest.mock('~/hooks/Messages', () => ({
-  completeProgressiveRowMounts: jest.fn(async () => () => {}),
+  withAllRowsMountedImmediately: jest.fn((action: () => unknown) => action()),
 }));
 
 const STORAGE_KEY = 'customKeyboardShortcuts';
 const copyMock = copy as jest.MockedFunction<typeof copy>;
-const completeRowsMock = completeProgressiveRowMounts as jest.MockedFunction<
-  typeof completeProgressiveRowMounts
+const mountRowsImmediatelyMock = withAllRowsMountedImmediately as jest.MockedFunction<
+  typeof withAllRowsMountedImmediately
 >;
 
 function buildConversation(conversationId: string, title: string): TConversation {
@@ -87,8 +87,8 @@ function renderHarness(
 beforeEach(() => {
   window.localStorage.clear();
   copyMock.mockClear();
-  completeRowsMock.mockReset();
-  completeRowsMock.mockResolvedValue(() => {});
+  mountRowsImmediatelyMock.mockReset();
+  mountRowsImmediatelyMock.mockImplementation((action) => action());
 });
 
 afterEach(() => {
@@ -449,26 +449,33 @@ describe('clipboard shortcuts', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it('leases the full transcript before selecting the last code block', async () => {
+  it('mounts the full transcript before selecting the last code block', () => {
     const placeholder = document.createElement('div');
     placeholder.dataset.messageRowSlot = 'true';
     placeholder.dataset.rowMounted = 'false';
-    const release = jest.fn();
     renderHarness();
     appendCodeBlock('mounted but older');
     document.body.appendChild(placeholder);
-    completeRowsMock.mockImplementation(async () => {
+    mountRowsImmediatelyMock.mockImplementation((action) => {
       appendCodeBlock('unmounted and newest');
-      return release;
+      return action();
     });
 
     const event = dispatchKey({ key: 'k', ctrlKey: true, shiftKey: true });
 
     expect(event.defaultPrevented).toBe(true);
-    await waitFor(() =>
-      expect(copyMock).toHaveBeenCalledWith('unmounted and newest', { format: 'text/plain' }),
-    );
-    expect(release).toHaveBeenCalledTimes(1);
+    expect(copyMock).toHaveBeenCalledWith('unmounted and newest', { format: 'text/plain' });
+  });
+
+  it('does not claim the copy shortcut when the clipboard rejects the text', () => {
+    renderHarness();
+    appendCodeBlock('const rejected = true;');
+    copyMock.mockReturnValueOnce(false);
+
+    const event = dispatchKey({ key: 'k', ctrlKey: true, shiftKey: true });
+
+    expect(copyMock).toHaveBeenCalledWith('const rejected = true;', { format: 'text/plain' });
+    expect(event.defaultPrevented).toBe(false);
   });
 });
 

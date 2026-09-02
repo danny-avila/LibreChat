@@ -1,7 +1,11 @@
 import React from 'react';
 import { act, renderHook } from '@testing-library/react';
 import type { RowMountWindow } from '../useProgressiveRowMount';
-import { useProgressiveRowMount, completeProgressiveRowMounts } from '../useProgressiveRowMount';
+import {
+  useProgressiveRowMount,
+  completeProgressiveRowMounts,
+  withAllRowsMountedImmediately,
+} from '../useProgressiveRowMount';
 
 type HookProps = {
   tailDepth: number | undefined;
@@ -15,6 +19,7 @@ describe('useProgressiveRowMount', () => {
   let frames: Array<FrameRequestCallback | undefined>;
   let scrollableRef: React.MutableRefObject<HTMLDivElement | null>;
   let resizeCallback: ResizeObserverCallback;
+  let mutationCallback: MutationCallback;
 
   /** Runs only the frames scheduled BEFORE this flush, so one call advances
    *  the expansion by exactly one step even though each step schedules the
@@ -36,6 +41,10 @@ describe('useProgressiveRowMount', () => {
       resizeCallback = callback;
       return { observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn() };
     }) as unknown as typeof ResizeObserver;
+    window.MutationObserver = jest.fn((callback: MutationCallback) => {
+      mutationCallback = callback;
+      return { observe: jest.fn(), disconnect: jest.fn(), takeRecords: jest.fn() };
+    }) as unknown as typeof MutationObserver;
     window.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
       frames.push(callback);
       return frames.length;
@@ -130,6 +139,11 @@ describe('useProgressiveRowMount', () => {
         pendingImage.src = 'https://example.test/pending.png';
         slot.appendChild(pendingImage);
       }
+      if (depth === 266) {
+        const pendingLayout = document.createElement('div');
+        pendingLayout.dataset.rowLayoutPending = 'true';
+        slot.appendChild(pendingLayout);
+      }
       container.appendChild(slot);
     }
     scrollableRef.current = container;
@@ -142,6 +156,13 @@ describe('useProgressiveRowMount', () => {
 
     expect(result.current?.mode).toBe('progressive');
     act(() => container.querySelector('img')?.dispatchEvent(new Event('load')));
+    flushFrames();
+    flushFrames();
+    expect(result.current?.mode).toBe('progressive');
+    act(() => {
+      container.querySelector('[data-row-layout-pending="true"]')?.remove();
+      mutationCallback([], {} as MutationObserver);
+    });
     flushFrames();
     flushFrames();
     expect(result.current?.mode).toBe('bounded');
@@ -315,6 +336,21 @@ describe('useProgressiveRowMount', () => {
     act(() => release());
     expect(result.current).toBeNull();
     act(() => releaseOverlapping());
+  });
+
+  it('mounts every row synchronously for keyboard actions and releases afterward', async () => {
+    const { result } = setup();
+    expect(result.current).not.toBeNull();
+
+    let observedWindow: RowMountWindow = result.current;
+    act(() => {
+      withAllRowsMountedImmediately(() => {
+        observedWindow = result.current;
+      });
+    });
+
+    expect(observedWindow).toBeNull();
+    await act(async () => Promise.resolve());
   });
 
   it('re-arms a fresh window when the conversation changes', () => {

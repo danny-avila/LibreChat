@@ -34,6 +34,7 @@ function useTextToSpeechExternal({
   const playbackRate = useRecoilValue(store.playbackRate);
 
   const [downloadFile, setDownloadFile] = useState(false);
+  const [isCacheLoading, setIsCacheLoading] = useState(false);
 
   const promiseAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -147,16 +148,21 @@ function useTextToSpeechExternal({
   };
 
   const handleCachedResponse = async (text: string, download: boolean) => {
-    const cachedResponse = await caches.match(text);
-    if (!cachedResponse) {
-      return startMutation(text, download);
-    }
-    const audioBlob = await cachedResponse.blob();
-    const blobUrl = URL.createObjectURL(audioBlob);
-    if (download) {
-      downloadAudio(blobUrl);
-    } else {
-      playAudioPromise(blobUrl);
+    setIsCacheLoading(true);
+    try {
+      const cachedResponse = await caches.match(text);
+      if (!cachedResponse) {
+        return startMutation(text, download);
+      }
+      const audioBlob = await cachedResponse.blob();
+      const blobUrl = URL.createObjectURL(audioBlob);
+      if (download) {
+        downloadAudio(blobUrl);
+      } else {
+        playAudioPromise(blobUrl);
+      }
+    } finally {
+      setIsCacheLoading(false);
     }
   };
 
@@ -195,7 +201,7 @@ function useTextToSpeechExternal({
   return {
     generateSpeechExternal,
     cancelSpeech,
-    isLoading: isFetching || isLoading,
+    isLoading: isFetching || isLoading || isCacheLoading,
     audioRef,
     voices: voicesData,
   };

@@ -24,6 +24,7 @@ function MessageRowSlot({
   mounted,
   placeholderHeight,
   steerAnchors,
+  pinRow,
   children,
 }: {
   depth: number;
@@ -32,9 +33,23 @@ function MessageRowSlot({
   mounted: boolean;
   placeholderHeight?: number;
   steerAnchors?: Array<{ id: string; text: string }>;
+  pinRow?: (depth: number, messageId: string) => void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const focusedSteerIdRef = useRef<string>();
+
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const focusedSteerId = focusedSteerIdRef.current;
+    if (!focusedSteerId) return;
+    const target = document.getElementById(focusedSteerId);
+    if (target) {
+      if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      target.focus({ preventScroll: true });
+    }
+    focusedSteerIdRef.current = undefined;
+  }, [mounted]);
 
   useLayoutEffect(() => {
     const element = ref.current;
@@ -60,6 +75,24 @@ function MessageRowSlot({
       data-row-depth={depth}
       data-row-message-id={messageId}
       style={mounted ? undefined : { height: placeholderHeight }}
+      onFocusCapture={(event) => {
+        const focusedId = (event.target as HTMLElement).id;
+        if (focusedId && steerAnchors?.some((steer) => steer.id === focusedId)) {
+          focusedSteerIdRef.current = focusedId;
+        }
+        if (mounted) pinRow?.(depth, messageId);
+      }}
+      onPointerDownCapture={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          mounted &&
+          target.closest(
+            'button, a, input, textarea, select, [role="button"], [contenteditable="true"]',
+          )
+        ) {
+          pinRow?.(depth, messageId);
+        }
+      }}
     >
       {children}
       {!mounted
@@ -233,6 +266,7 @@ function MultiMessage({
   const isInPrimaryWindow =
     mountWindow != null && depth >= mountWindow.start && depth <= mountWindow.end;
   const isInStreamTail = mountWindow?.tailStart != null && depth >= mountWindow.tailStart;
+  const isPinned = mountWindow?.pinnedRows?.get(depth) === message.messageId;
   /** A bounded row with no measurement must render once before it can become
    *  an exact-height slot. Editing also pins the row so local form state is
    *  never released while the editor is active. */
@@ -240,6 +274,7 @@ function MultiMessage({
     mountWindow == null ||
     isInPrimaryWindow ||
     isInStreamTail ||
+    isPinned ||
     currentEditId === message.messageId ||
     activeSpeechMessageId === message.messageId ||
     (mountWindow.mode === 'bounded' && !isMeasuredMessage);
@@ -285,6 +320,7 @@ function MultiMessage({
         placeholderHeight={measuredRow?.height}
         steerAnchors={steerAnchors}
         measureRow={mountWindow?.mode === 'bounded' ? mountWindow.measureRow : undefined}
+        pinRow={mountWindow?.mode === 'bounded' ? mountWindow.pinRow : undefined}
       >
         {rowMounted ? row : null}
         {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (

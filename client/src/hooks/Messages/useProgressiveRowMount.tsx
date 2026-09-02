@@ -9,6 +9,7 @@ import {
   startTransition,
 } from 'react';
 import type { ReactNode, RefObject } from 'react';
+import { flushSync } from 'react-dom';
 
 type MeasuredRow = { messageId: string; height: number };
 
@@ -18,7 +19,9 @@ export type RowMountWindow = {
   end: number;
   tailStart?: number;
   heights?: ReadonlyMap<number, MeasuredRow>;
+  pinnedRows?: ReadonlyMap<number, string>;
   measureRow?: (depth: number, messageId: string, height: number) => void;
+  pinRow?: (depth: number, messageId: string) => void;
 } | null;
 
 const RowMountContext = createContext<RowMountWindow>(null);
@@ -94,6 +97,7 @@ export function useProgressiveRowMount({
     progressiveWindow(tailDepth, anchorBottom),
   );
   const heightsRef = useRef(new Map<number, MeasuredRow>());
+  const pinnedRowsRef = useRef(new Map<number, string>());
   const rowOffsetsRef = useRef<number[]>([]);
   const firstRowOffsetRef = useRef(0);
   const containerWidthRef = useRef<number>();
@@ -112,6 +116,7 @@ export function useProgressiveRowMount({
   if (prevConversationId !== conversationId) {
     setPrevConversationId(conversationId);
     heightsRef.current = new Map();
+    pinnedRowsRef.current = new Map();
     rowOffsetsRef.current = [];
     containerWidthRef.current = undefined;
     leaseCountRef.current = 0;
@@ -213,6 +218,16 @@ export function useProgressiveRowMount({
     [rebuildRowOffsets],
   );
 
+  const pinRow = useCallback((depth: number, messageId: string) => {
+    if (pinnedRowsRef.current.get(depth) === messageId) return;
+    pinnedRowsRef.current.set(depth, messageId);
+    setMountWindow((current) =>
+      current?.mode === 'bounded'
+        ? { ...current, pinnedRows: new Map(pinnedRowsRef.current) }
+        : current,
+    );
+  }, []);
+
   const boundedWindow = useCallback((): RowMountWindow => {
     const container = scrollableRef.current;
     const currentTailDepth = tailDepthRef.current;
@@ -261,9 +276,11 @@ export function useProgressiveRowMount({
         currentTailDepth - (isSubmittingRef.current ? STREAM_TAIL_ROWS : SHORTCUT_TAIL_ROWS) + 1,
       ),
       heights: new Map(heightsRef.current),
+      pinnedRows: new Map(pinnedRowsRef.current),
       measureRow,
+      pinRow,
     };
-  }, [anchorBottom, measureRow, scrollableRef]);
+  }, [anchorBottom, measureRow, pinRow, scrollableRef]);
 
   const restartMeasurement = useCallback(() => {
     if (remeasuringRef.current || leaseCountRef.current > 0) return;
@@ -337,6 +354,9 @@ export function useProgressiveRowMount({
           ...container.querySelectorAll<HTMLImageElement>(`${MOUNTED_ROW_SLOT_SELECTOR} img`),
         ].filter((image) => !image.complete),
       );
+      const hasPendingLayout = () =>
+        pendingImages.size > 0 ||
+        container.querySelector('[data-row-layout-pending="true"]') != null;
       const finish = () => {
         if (settled) return;
         settled = true;
@@ -348,7 +368,7 @@ export function useProgressiveRowMount({
         if (secondFrame != null) cancelAnimationFrame(secondFrame);
         firstFrame = requestAnimationFrame(() => {
           secondFrame = requestAnimationFrame(() => {
-            if (pendingImages.size === 0) finish();
+            if (!hasPendingLayout()) finish();
           });
         });
       };
@@ -358,6 +378,14 @@ export function useProgressiveRowMount({
       };
       const observer =
         typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(handleLayoutChange);
+      const mutationObserver =
+        typeof MutationObserver === 'undefined' ? null : new MutationObserver(handleLayoutChange);
+      mutationObserver?.observe(container, {
+        attributes: true,
+        attributeFilter: ['data-row-layout-pending'],
+        childList: true,
+        subtree: true,
+      });
       for (const row of container.querySelectorAll<HTMLElement>(MOUNTED_ROW_SLOT_SELECTOR)) {
         observer?.observe(row);
       }
@@ -379,6 +407,7 @@ export function useProgressiveRowMount({
         if (secondFrame != null) cancelAnimationFrame(secondFrame);
         window.clearTimeout(maximumWait);
         observer?.disconnect();
+        mutationObserver?.disconnect();
         for (const image of pendingImages) {
           image.removeEventListener('load', handleImageSettled);
           image.removeEventListener('error', handleImageSettled);
@@ -513,29 +542,35 @@ export function useProgressiveRowMount({
     if (tailDepth == null || tailDepth + 1 <= MIN_WINDOWED_ROWS) {
       return;
     }
+    const acquireLease = () => {
+      const leaseEpoch = leaseEpochRef.current;
+      leaseCountRef.current += 1;
+      if (leaseCountRef.current === 1) setMountWindow(null);
+      let released = false;
+      return () => {
+        if (released || leaseEpoch !== leaseEpochRef.current) return;
+        released = true;
+        leaseCountRef.current = Math.max(0, leaseCountRef.current - 1);
+        if (leaseCountRef.current === 0) {
+          measureMountedRows();
+          setMountWindow(boundedWindow());
+        }
+      };
+    };
     const complete = () =>
       new Promise<() => void>((resolve) => {
-        const leaseEpoch = leaseEpochRef.current;
-        leaseCountRef.current += 1;
-        if (leaseCountRef.current === 1) setMountWindow(null);
+        const release = acquireLease();
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
-            let released = false;
-            resolve(() => {
-              if (released || leaseEpoch !== leaseEpochRef.current) return;
-              released = true;
-              leaseCountRef.current = Math.max(0, leaseCountRef.current - 1);
-              if (leaseCountRef.current === 0) {
-                measureMountedRows();
-                setMountWindow(boundedWindow());
-              }
-            });
+            resolve(release);
           }),
         );
       });
     activeCompleters.add(complete);
+    activeImmediateCompleters.add(acquireLease);
     return () => {
       activeCompleters.delete(complete);
+      activeImmediateCompleters.delete(acquireLease);
     };
   }, [tailDepth, boundedWindow, measureMountedRows]);
 
@@ -543,6 +578,7 @@ export function useProgressiveRowMount({
 }
 
 const activeCompleters = new Set<() => Promise<() => void>>();
+const activeImmediateCompleters = new Set<() => () => void>();
 
 /** Temporarily mounts every row for a full-DOM consumer such as screenshot export. */
 export async function completeProgressiveRowMounts(): Promise<() => void> {
@@ -555,4 +591,19 @@ export async function completeProgressiveRowMounts(): Promise<() => void> {
       release();
     }
   };
+}
+
+/** Mounts every row in the current keyboard event so an action can report a truthful result. */
+export function withAllRowsMountedImmediately<T>(action: () => T): T {
+  let releases: Array<() => void> = [];
+  flushSync(() => {
+    releases = [...activeImmediateCompleters].map((complete) => complete());
+  });
+  try {
+    return action();
+  } finally {
+    queueMicrotask(() => {
+      for (const release of releases) release();
+    });
+  }
 }
