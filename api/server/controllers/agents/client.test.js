@@ -2053,6 +2053,103 @@ describe('AgentClient - startup telemetry', () => {
     );
   });
 
+  it('ends a step-limit turn as incomplete rather than as an error part', async () => {
+    jest.clearAllMocks();
+    const { GraphRecursionError } = require('@langchain/langgraph');
+    /** The exact error LangGraph throws once the graph runs out of supersteps. */
+    const stepLimitError = new GraphRecursionError(
+      'Recursion limit of 50 reached without hitting a stop condition.',
+      { lc_error_code: 'GRAPH_RECURSION_LIMIT' },
+    );
+
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn().mockRejectedValue(stepLimitError),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-step-limit',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      /** Work the turn already produced; it must survive the boundary. */
+      contentParts: [{ type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Partial findings' }],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-step-limit';
+    client.responseMessageId = 'response-step-limit';
+    client.parentMessageId = 'parent-step-limit';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(client.stepLimitReached).toBe(true);
+    expect(client.contentParts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
+    );
+    expect(client.contentParts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ [ContentTypes.TEXT]: 'Partial findings' }),
+      ]),
+    );
+  });
+
+  it('still surfaces an error part for an ordinary run failure', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn().mockRejectedValue(new Error('provider exploded')),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-plain-error',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-plain-error';
+    client.responseMessageId = 'response-plain-error';
+    client.parentMessageId = 'parent-plain-error';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(client.stepLimitReached).toBe(false);
+    expect(client.contentParts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
+    );
+  });
+
   it('evolves warm compaction guidance while injecting only the new event message', async () => {
     jest.clearAllMocks();
     const history = { _getType: () => 'human', content: 'old turn' };
