@@ -637,7 +637,7 @@ export async function handleCompactRequest(
       userId,
       isTemporary:
         body.isTemporary === true ||
-        (allMessages ?? []).some((message) => message.expiredAt != null) ||
+        (allMessages ?? []).some((message) => message.isTemporary === true) ||
         undefined,
       interfaceConfig: appConfig?.interfaceConfig,
     };
@@ -697,29 +697,9 @@ export async function handleCompactRequest(
       };
     }
 
-    /** The check above and this insert are not one operation, so confirm the
-     *  tail is still ours afterwards and roll back if a turn slipped in. The
-     *  compensating delete is what makes the outcome atomic for the reader.
-     *  Ordered as in `tailMoved`: the job read has to come first, or a turn
-     *  that saves and settles between the two reads is seen by neither. */
-    const racingTurn = await isGenerating(deps.getJob, conversationId, startedAt);
-    const siblings = racingTurn
-      ? undefined
-      : await deps.getMessages(
-          { conversationId, user: userId, parentMessageId: leafId },
-          'messageId',
-        );
-    if (racingTurn || (siblings?.length ?? 0) > 1) {
-      await deps.deleteMessages({ conversationId, user: userId, messageId }).catch((error) => {
-        logger.error('[compact] Could not roll back a raced compaction message', error);
-      });
-      return {
-        status: 409,
-        error: 'The conversation moved on during compaction',
-        code: CompactErrorCodes.BRANCH_MOVED,
-      };
-    }
-
+    /** Every read and write after the insert shares one compensating delete:
+     *  the summary is already a child of the leaf, so any failure past this
+     *  point must undo it or a retry reads its own orphan as a moved tail. */
     const rollbackSummary = async () => {
       await deps
         .deleteMessages({ conversationId, user: userId, messageId })
@@ -730,6 +710,35 @@ export async function handleCompactRequest(
           );
         });
     };
+
+    /** The check above and this insert are not one operation, so confirm the
+     *  tail is still ours afterwards and roll back if a turn slipped in. The
+     *  compensating delete is what makes the outcome atomic for the reader.
+     *  Ordered as in `tailMoved`: the job read has to come first, or a turn
+     *  that saves and settles between the two reads is seen by neither. */
+    let racingTurn: boolean;
+    let siblings: TMessage[] | null | undefined;
+    try {
+      racingTurn = await isGenerating(deps.getJob, conversationId, startedAt);
+      siblings = racingTurn
+        ? undefined
+        : await deps.getMessages(
+            { conversationId, user: userId, parentMessageId: leafId },
+            'messageId',
+          );
+    } catch (error) {
+      await rollbackSummary();
+      throw error;
+    }
+    if (racingTurn || (siblings?.length ?? 0) > 1) {
+      await rollbackSummary();
+      return {
+        status: 409,
+        error: 'The conversation moved on during compaction',
+        code: CompactErrorCodes.BRANCH_MOVED,
+      };
+    }
+
     let savedConvo: unknown;
     try {
       savedConvo = await deps.saveConvo(

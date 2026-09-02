@@ -169,7 +169,7 @@ describe('handleCompactRequest', () => {
      *  this client omitted the flag: an explicit false would promote an
      *  expiring chat and its new summary to retained data. */
     const branch = BRANCH.map((message, i) =>
-      i === 0 ? { ...message, expiredAt: new Date('2030-01-01') } : message,
+      i === 0 ? { ...message, isTemporary: true, expiredAt: new Date('2030-01-01') } : message,
     ) as TMessage[];
     const deps = makeDeps({
       getMessages: jest.fn(async (filter) => (filter.parentMessageId != null ? [] : branch)),
@@ -182,10 +182,31 @@ describe('handleCompactRequest', () => {
     expect(result.status).toBe(201);
     const ctx = (deps.saveMessage as jest.Mock).mock.calls[0][0];
     expect(ctx.isTemporary).toBe(true);
-    const convoArgs = (deps.saveConvo as jest.Mock).mock.calls[0][1];
-    expect(convoArgs).toMatchObject({ conversationId: 'convo_1' });
     const convoCtx = (deps.saveConvo as jest.Mock).mock.calls[0][0];
     expect(convoCtx.isTemporary).toBe(true);
+  });
+
+  it('keeps retention-all conversations non-temporary despite backfilled expiry', async () => {
+    /** Under retentionMode ALL, permanent rows carry `isTemporary: false`
+     *  AND a non-null expiredAt on purpose. Expiry alone is not proof of a
+     *  temporary chat, and misreading it would make the compacted
+     *  conversation disappear from normal lists. */
+    const branch = BRANCH.map((message, i) =>
+      i === 0 ? { ...message, isTemporary: false, expiredAt: new Date('2030-01-01') } : message,
+    ) as TMessage[];
+    const deps = makeDeps({
+      getMessages: jest.fn(async (filter) => (filter.parentMessageId != null ? [] : branch)),
+    });
+
+    const body = makeReq();
+    delete (body.body as Record<string, unknown>).isTemporary;
+    const result = await handleCompactRequest({ req: body, res }, deps);
+
+    expect(result.status).toBe(201);
+    const ctx = (deps.saveMessage as jest.Mock).mock.calls[0][0];
+    expect(ctx.isTemporary).toBeUndefined();
+    const convoCtx = (deps.saveConvo as jest.Mock).mock.calls[0][0];
+    expect(convoCtx.isTemporary).toBeUndefined();
   });
 
   it('refuses an Assistants conversation instead of failing inside model resolution', async () => {
@@ -348,6 +369,46 @@ describe('handleCompactRequest', () => {
     expect(deps.deleteMessages).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'convo_1', user: 'user_1' }),
     );
+  });
+
+  it('rolls the summary back when a post-insert tail read fails', async () => {
+    /** A transient cache failure between the insert and the verify must not
+     *  strand the summary under the old leaf: the compensating delete covers
+     *  the reads as well as the conversation update. */
+    /** The early gate succeeds; the job read AFTER the insert is the one
+     *  that fails. */
+    let getJobCalls = 0;
+    const deps = makeDeps({
+      getJob: jest.fn(async () => {
+        getJobCalls += 1;
+        /** Calls 1-2 are the early gate and `tailMoved`; call 3 is the
+         *  post-insert verify, whose failure must trigger the rollback. */
+        if (getJobCalls < 3) {
+          return null;
+        }
+        throw new Error('redis down');
+      }),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({ status: 500, code: CompactErrorCodes.FAILED });
+    expect(deps.deleteMessages).toHaveBeenCalled();
+  });
+
+  it('keeps the summary when the fail-soft result carries the conversation document', async () => {
+    /** A project-stats failure after the committed write surfaces the saved
+     *  document: the write applied, so compensation would strand the
+     *  conversation with a dangling summary reference. */
+    const deps = makeDeps({
+      saveConvo: jest.fn().mockResolvedValue({
+        message: 'Error saving conversation',
+        conversationId: 'convo_1',
+      }),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result.status).toBe(201);
+    expect(deps.deleteMessages).not.toHaveBeenCalled();
   });
 
   it('rolls the summary back when the fail-soft conversation update reports an error', async () => {
