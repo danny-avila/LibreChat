@@ -624,20 +624,38 @@ describe('formatAgentMessages', () => {
   });
 
   describe('promptless sends', () => {
-    it('should drop a promptless user message that has no attachments to replay', () => {
+    const PLACEHOLDER = [{ type: 'text', text: '(no text)' }];
+
+    it('should stand in for a replayed promptless turn instead of a blank block', () => {
       const result = formatAgentMessages([
         { role: 'user', content: '' },
         { role: 'assistant', content: 'Hi' },
       ]);
 
-      expect(result).toHaveLength(1);
-      expect(result[0].content).toEqual([{ type: 'text', text: 'Hi' }]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBeInstanceOf(HumanMessage);
+      expect(result[0].content).toEqual(PLACEHOLDER);
+      expect(result[0].content).not.toContainEqual(
+        expect.objectContaining({ type: 'text', text: '' }),
+      );
+    });
+
+    it('should keep the turn so assistant messages never become adjacent', () => {
+      const result = formatAgentMessages([
+        { role: 'assistant', content: 'first' },
+        { role: 'user', content: '' },
+        { role: 'assistant', content: 'second' },
+      ]);
+
+      expect(result).toHaveLength(3);
+      expect(result[1]).toBeInstanceOf(HumanMessage);
     });
 
     it('should not emit a blank text block for a whitespace-only user message', () => {
       const result = formatAgentMessages([{ role: 'user', content: '   ' }]);
 
-      expect(result).toHaveLength(0);
+      expect(result).toHaveLength(1);
+      expect(result[0].content).toEqual(PLACEHOLDER);
     });
 
     it('should keep a promptless user message that still carries its images', () => {
