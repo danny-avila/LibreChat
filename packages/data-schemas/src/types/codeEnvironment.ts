@@ -1,4 +1,5 @@
 import type { Document, Types } from 'mongoose';
+import type { CodeEnvironmentUserSettings } from 'librechat-data-provider';
 
 export type CodeEnvironment = {
   environmentId: string;
@@ -32,6 +33,7 @@ export type CodeEnvironment = {
     type: 'deployment' | 'tenant' | 'user' | 'role' | 'group';
     id: string;
   };
+  settings?: CodeEnvironmentUserSettings;
   tenantId?: string;
   createdAt: Date;
   updatedAt: Date;

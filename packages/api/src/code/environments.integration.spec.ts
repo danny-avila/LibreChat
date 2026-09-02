@@ -89,6 +89,44 @@ describe('code environment registry', () => {
     ]);
   });
 
+  test('persists owner settings and includes them in execution configuration', async () => {
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const ownerId = new Types.ObjectId();
+    await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'settings-vm',
+        name: 'Settings VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'self-service',
+      },
+    });
+
+    await expect(
+      registry.updateSettings({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environmentId: 'settings-vm',
+        settings: { permissions: { fileWrite: 'allow', commandExecution: 'deny' } },
+      }),
+    ).resolves.toMatchObject({
+      id: 'settings-vm',
+    });
+
+    await expect(
+      registry.listAccessibleConfigurations({
+        userId: ownerId,
+        role: 'USER',
+        idOnTheSource: null,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'settings-vm',
+        settings: { permissions: { fileWrite: 'allow', commandExecution: 'deny' } },
+      }),
+    ]);
+  });
+
   test('discovers environments granted through role and group principals', async () => {
     const registry = createCodeEnvironmentRegistry(mongoose);
     const methods = createMethods(mongoose);

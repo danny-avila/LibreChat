@@ -66,6 +66,70 @@ describe('bedrockEndpointSchema', () => {
   });
 });
 
+describe('attached code environment user config schema', () => {
+  it('accepts typed permission controls exposed by the administrator', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            environments: [
+              {
+                id: 'personal-vm',
+                name: 'Personal VM',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                default: true,
+                configSchema: {
+                  permissions: {
+                    fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+                    commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    if (!result.success) {
+      throw new Error(result.error.toString());
+    }
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a permission default the administrator did not expose', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            environments: [
+              {
+                id: 'personal-vm',
+                name: 'Personal VM',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                default: true,
+                configSchema: {
+                  permissions: {
+                    commandExecution: { allowed: ['ask', 'deny'], default: 'allow' },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('agent event runtime config', () => {
   it('accepts the routing choice and ignores removed rollout fields', () => {
     const result = configSchema.safeParse({

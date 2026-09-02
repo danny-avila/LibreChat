@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { createHash } from 'crypto';
 import { ResourceType } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
+import type { CodeEnvironmentUserSettings } from 'librechat-data-provider';
 import type { CodeEnvironmentDocument } from '~/types';
 import type { IAclEntry } from '~/types';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
@@ -203,6 +204,10 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   findCodeEnvironmentByEnvironmentId: (
     environmentId: string,
   ) => Promise<CodeEnvironmentDocument | null>;
+  updateCodeEnvironmentSettings: (
+    environmentId: string,
+    settings: CodeEnvironmentUserSettings,
+  ) => Promise<CodeEnvironmentDocument | null>;
   listCodeEnvironmentIds: () => Promise<string[]>;
   findCodeEnvironmentsByCreator: (
     userId: string | Types.ObjectId,
@@ -298,6 +303,24 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     environmentId: string,
   ): Promise<CodeEnvironmentDocument | null> {
     return await model().findOne({ environmentId }).lean<CodeEnvironmentDocument>();
+  }
+
+  async function updateCodeEnvironmentSettings(
+    environmentId: string,
+    settings: CodeEnvironmentUserSettings,
+  ): Promise<CodeEnvironmentDocument | null> {
+    return await model()
+      .findOneAndUpdate(
+        {
+          environmentId,
+          registrationPendingAt: { $exists: false },
+          deletionStartedAt: { $exists: false },
+          deletionCommittedAt: { $exists: false },
+        },
+        { $set: { settings } },
+        { new: true },
+      )
+      .lean<CodeEnvironmentDocument>();
   }
 
   async function listCodeEnvironmentIds(): Promise<string[]> {
@@ -483,6 +506,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     createCodeEnvironmentWithinOwnerLimit,
     findCodeEnvironmentsByIds,
     findCodeEnvironmentByEnvironmentId,
+    updateCodeEnvironmentSettings,
     listCodeEnvironmentIds,
     findCodeEnvironmentsByCreator,
     deleteCodeEnvironmentById,

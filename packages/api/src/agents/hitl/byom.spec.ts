@@ -1,6 +1,7 @@
 import {
   assertAttachedCodeEnvironmentApprovalSupported,
   collectAttachedCodeEnvironmentAgentIds,
+  collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
 } from './byom';
 
@@ -52,6 +53,34 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
       ).resolves.toMatchObject({ decision: 'ask' });
     },
   );
+  test('applies admin-exposed environment settings by permission category', async () => {
+    const hook = createAttachedCodeEnvironmentPolicyHook(
+      new Set(['attached-agent']),
+      new Map([
+        [
+          'attached-agent',
+          {
+            configSchema: {
+              permissions: {
+                fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+                commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+              },
+            },
+            settings: {
+              permissions: { fileWrite: 'allow' as const, commandExecution: 'deny' as const },
+            },
+          },
+        ],
+      ]),
+    );
+
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'attached-agent' } as never, signal),
+    ).resolves.toEqual({ decision: 'allow' });
+    await expect(
+      hook({ toolName: 'bash_tool', executingAgentId: 'attached-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'deny' });
+  });
 });
 
 describe('collectAttachedCodeEnvironmentAgentIds', () => {
@@ -61,7 +90,13 @@ describe('collectAttachedCodeEnvironmentAgentIds', () => {
         id: 'root',
         codeExecutionContext: { environmentType: 'managed' },
         subagentAgentConfigs: [
-          { id: 'attached-child', codeExecutionContext: { environmentType: 'attached' } },
+          {
+            id: 'attached-child',
+            codeExecutionContext: {
+              environmentType: 'attached',
+              codeEnvironmentSettings: { permissions: { fileWrite: 'allow' as const } },
+            },
+          },
         ],
         subagentGraphConfigs: [
           {
@@ -77,6 +112,10 @@ describe('collectAttachedCodeEnvironmentAgentIds', () => {
     expect(collectAttachedCodeEnvironmentAgentIds(agents)).toEqual(
       new Set(['attached-child', 'attached-member']),
     );
+    expect(collectAttachedCodeEnvironmentPolicySettings(agents).get('attached-child')).toEqual({
+      configSchema: undefined,
+      settings: { permissions: { fileWrite: 'allow' } },
+    });
   });
 });
 

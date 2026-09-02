@@ -52,6 +52,7 @@ const {
   resolveToolApprovalPolicy,
   buildToolApprovalHooks,
   collectAttachedCodeEnvironmentAgentIds,
+  collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
   agentRunUsesCheckpointer,
   canAgentGraphPause,
@@ -3792,6 +3793,8 @@ class AgentClient extends BaseClient {
       const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
       const attachedCodeEnvironmentAgentIds =
         collectAttachedCodeEnvironmentAgentIds(topLevelAgents);
+      const attachedCodeEnvironmentSettings =
+        collectAttachedCodeEnvironmentPolicySettings(topLevelAgents);
       const effectiveToolApprovalPolicy = resolveToolApprovalPolicy({
         endpoint: agentsEConfig?.toolApproval,
         attachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
@@ -3809,7 +3812,10 @@ class AgentClient extends BaseClient {
         ...(attachedCodeEnvironmentAgentIds.size > 0
           ? [
               {
-                hook: createAttachedCodeEnvironmentPolicyHook(attachedCodeEnvironmentAgentIds),
+                hook: createAttachedCodeEnvironmentPolicyHook(
+                  attachedCodeEnvironmentAgentIds,
+                  attachedCodeEnvironmentSettings,
+                ),
               },
             ]
           : []),

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
 import type {
+  CodeEnvironmentUserSettings,
   TCodeEnvironmentPairingResponse,
   TCodeEnvironmentsResponse,
 } from 'librechat-data-provider';
@@ -36,6 +37,20 @@ export function useDeleteCodeEnvironmentMutation() {
     Error,
     string
   >([MutationKeys.deleteCodeEnvironment], dataService.deleteCodeEnvironment, {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.codeEnvironments]);
+      queryClient.invalidateQueries([QueryKeys.endpoints]);
+    },
+  });
+}
+
+export function useUpdateCodeEnvironmentSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { environment: TCodeEnvironmentsResponse['environments'][number] },
+    Error,
+    { id: string; settings: CodeEnvironmentUserSettings }
+  >([MutationKeys.updateCodeEnvironmentSettings], dataService.updateCodeEnvironmentSettings, {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.codeEnvironments]);
       queryClient.invalidateQueries([QueryKeys.endpoints]);

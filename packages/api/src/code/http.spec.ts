@@ -111,6 +111,81 @@ describe('code environment HTTP handlers', () => {
     expect(register).not.toHaveBeenCalled();
   });
 
+  test('updates settings only through the selected control plane config schema', async () => {
+    const updateSettings = jest.fn().mockResolvedValue({
+      resourceId: '68b2f0c498f24c1e78fa0111',
+      id: 'personal-vm',
+      name: 'Personal VM',
+      type: 'attached',
+      canDelete: true,
+    });
+    const configSchema = {
+      permissions: {
+        fileWrite: { allowed: ['allow', 'ask', 'deny'] as const, default: 'ask' as const },
+      },
+    };
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              environments: [
+                {
+                  id: 'self-service',
+                  name: 'Self service',
+                  type: 'attached',
+                  baseURL: 'https://code.example.com/v1',
+                  owner: 'deployment',
+                  configSchema,
+                },
+              ],
+            },
+          },
+        },
+      } as unknown as AppConfig),
+      registry: {
+        register: jest.fn(),
+        listAccessible: jest.fn(),
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://code.example.com/v1',
+            controlPlaneId: 'self-service',
+            owner: 'principal',
+          },
+        ]),
+        updateSettings,
+        remove: jest.fn(),
+      },
+    });
+    const res = response();
+
+    await handlers.updateSettings(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        params: { environmentId: 'personal-vm' },
+        body: { settings: { permissions: { fileWrite: 'allow' } } },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSettings).toHaveBeenCalledWith({
+      actor: expect.objectContaining({ userId: '68b2f0c498f24c1e78fa0001' }),
+      environmentId: 'personal-vm',
+      settings: { permissions: { fileWrite: 'allow' } },
+    });
+    expect(res.body).toEqual({
+      environment: expect.objectContaining({
+        id: 'personal-vm',
+        configSchema,
+        settings: { permissions: { fileWrite: 'allow' } },
+      }),
+    });
+  });
+
   test('pairs a generated worker to the authenticated user and persists its private route', async () => {
     const register = jest.fn().mockResolvedValue({
       resourceId: '68b2f0c498f24c1e78fa0111',

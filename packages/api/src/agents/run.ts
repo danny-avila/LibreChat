@@ -57,6 +57,7 @@ import type * as t from '~/types';
 import {
   assertAttachedCodeEnvironmentApprovalSupported,
   collectAttachedCodeEnvironmentAgentIds,
+  collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
 } from '~/agents/hitl/byom';
 import {
@@ -1783,6 +1784,7 @@ export async function createRun({
 
   const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
   const attachedCodeEnvironmentAgentIds = collectAttachedCodeEnvironmentAgentIds(agents);
+  const attachedCodeEnvironmentSettings = collectAttachedCodeEnvironmentPolicySettings(agents);
   assertAttachedCodeEnvironmentApprovalSupported({
     hasAttachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
     hitlCapable,
@@ -1938,7 +1940,10 @@ export async function createRun({
           ...(attachedCodeEnvironmentAgentIds.size > 0
             ? [
                 {
-                  hook: createAttachedCodeEnvironmentPolicyHook(attachedCodeEnvironmentAgentIds),
+                  hook: createAttachedCodeEnvironmentPolicyHook(
+                    attachedCodeEnvironmentAgentIds,
+                    attachedCodeEnvironmentSettings,
+                  ),
                 },
               ]
             : []),
@@ -1948,6 +1953,10 @@ export async function createRun({
   registerResolvedMCPToolAliases = (resolvedAgent) => {
     if (resolvedAgent.codeExecutionContext?.environmentType === 'attached') {
       attachedCodeEnvironmentAgentIds.add(resolvedAgent.id);
+      attachedCodeEnvironmentSettings.set(resolvedAgent.id, {
+        configSchema: resolvedAgent.codeExecutionContext.codeEnvironmentConfigSchema,
+        settings: resolvedAgent.codeExecutionContext.codeEnvironmentSettings,
+      });
     }
     const discoveredAliases = collectRunMCPToolAliases([resolvedAgent]).filter(
       ({ name, aliasName }) => {

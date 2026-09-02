@@ -9,6 +9,7 @@ import {
   isSecureCodeEnvironmentControlURL,
 } from 'librechat-data-provider';
 import type { ResolvedPrincipal } from '~/types/principal';
+import type { CodeEnvironmentUserSettings } from 'librechat-data-provider';
 import { AccessControlService } from '~/acl/accessControlService';
 
 export type CodeEnvironmentPrincipalContext = {
@@ -48,6 +49,7 @@ export type AccessibleCodeEnvironmentConfiguration = {
   controlPlaneId: string;
   owner: 'principal';
   workerId?: string;
+  settings?: CodeEnvironmentUserSettings;
 };
 
 type CachedAccessibleCodeEnvironmentConfiguration = AccessibleCodeEnvironmentConfiguration & {
@@ -179,6 +181,11 @@ export function createCodeEnvironmentRegistry(
     actor: CodeEnvironmentPrincipalContext;
     environmentId: string;
     beforeDelete?: (target: CodeEnvironmentLifecycleTarget) => Promise<void>;
+  }) => Promise<CodeEnvironmentSummary | null>;
+  updateSettings: (params: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    settings: CodeEnvironmentUserSettings;
   }) => Promise<CodeEnvironmentSummary | null>;
 } {
   const methods = createMethods(mongoose);
@@ -389,6 +396,7 @@ export function createCodeEnvironmentRegistry(
             controlPlaneId: environment.controlPlaneId,
             owner: 'principal',
             workerId: environment.workerId,
+            settings: environment.settings,
           })),
       };
     };
@@ -528,6 +536,37 @@ export function createCodeEnvironmentRegistry(
     }
   }
 
+  async function updateSettings({
+    actor,
+    environmentId,
+    settings,
+  }: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    settings: CodeEnvironmentUserSettings;
+  }): Promise<CodeEnvironmentSummary | null> {
+    const environment = await methods.findCodeEnvironmentByEnvironmentId(environmentId);
+    if (environment == null) return null;
+    if (
+      environment.workerPrincipal?.type === 'user' &&
+      environment.workerPrincipal.id !== actor.userId.toString()
+    ) {
+      return null;
+    }
+    const allowed = await access.checkPermission({
+      userId: actor.userId.toString(),
+      role: actor.role,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment._id,
+      requiredPermission: PermissionBits.EDIT,
+    });
+    if (!allowed) return null;
+    const updated = await methods.updateCodeEnvironmentSettings(environmentId, settings);
+    if (updated == null) return null;
+    await invalidateAccessibleConfigurations();
+    return toSummary(updated, true);
+  }
+
   return {
     register,
     markRevocationPending,
@@ -536,6 +575,7 @@ export function createCodeEnvironmentRegistry(
     listRegisteredIds,
     invalidateAccessibleConfigurations,
     remove,
+    updateSettings,
   };
 }
 

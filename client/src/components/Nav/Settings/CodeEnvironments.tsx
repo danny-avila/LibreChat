@@ -14,11 +14,16 @@ import {
   Spinner,
   useToastContext,
 } from '@librechat/client';
+import type {
+  CodeEnvironmentPermissionDecision,
+  TCodeEnvironmentSummary,
+} from 'librechat-data-provider';
 import type { CodeEnvironmentPairingResponse } from '~/data-provider/CodeEnvironments';
 import {
   useCodeEnvironmentsQuery,
   useDeleteCodeEnvironmentMutation,
   usePairCodeEnvironmentMutation,
+  useUpdateCodeEnvironmentSettingsMutation,
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -54,6 +59,116 @@ function WorkerCommand({ pairing }: { pairing: CodeEnvironmentPairingResponse['p
       >
         {localize('com_ui_copy_to_clipboard')}
       </Button>
+    </div>
+  );
+}
+
+const permissionLabels = {
+  allow: 'com_ui_code_environment_permission_allow',
+  ask: 'com_ui_code_environment_permission_ask',
+  deny: 'com_ui_code_environment_permission_deny',
+} as const;
+
+function effectivePermission(
+  field: NonNullable<
+    NonNullable<NonNullable<TCodeEnvironmentSummary['configSchema']>['permissions']>['fileWrite']
+  >,
+  configured: CodeEnvironmentPermissionDecision | undefined,
+): CodeEnvironmentPermissionDecision {
+  return configured != null && field.allowed.includes(configured) ? configured : field.default;
+}
+
+function EnvironmentPermissions({ environment }: { environment: TCodeEnvironmentSummary }) {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const updateMutation = useUpdateCodeEnvironmentSettingsMutation();
+  const fields = environment.configSchema?.permissions;
+  if (fields == null) return null;
+
+  const updatePermission = (
+    category: 'fileWrite' | 'commandExecution',
+    value: CodeEnvironmentPermissionDecision,
+  ) => {
+    const permissions: NonNullable<
+      NonNullable<TCodeEnvironmentSummary['settings']>['permissions']
+    > = {};
+    if (fields.fileWrite != null) {
+      permissions.fileWrite =
+        category === 'fileWrite'
+          ? value
+          : effectivePermission(fields.fileWrite, environment.settings?.permissions?.fileWrite);
+    }
+    if (fields.commandExecution != null) {
+      permissions.commandExecution =
+        category === 'commandExecution'
+          ? value
+          : effectivePermission(
+              fields.commandExecution,
+              environment.settings?.permissions?.commandExecution,
+            );
+    }
+    updateMutation.mutate(
+      { id: environment.id, settings: { permissions } },
+      {
+        onSuccess: () =>
+          showToast({
+            message: localize('com_ui_code_environment_permissions_saved'),
+            status: 'success',
+          }),
+        onError: () =>
+          showToast({
+            message: localize('com_ui_code_environment_permissions_error'),
+            status: 'error',
+          }),
+      },
+    );
+  };
+
+  const controls = [
+    {
+      category: 'fileWrite' as const,
+      label: 'com_ui_code_environment_file_write' as const,
+      field: fields.fileWrite,
+    },
+    {
+      category: 'commandExecution' as const,
+      label: 'com_ui_code_environment_command_execution' as const,
+      field: fields.commandExecution,
+    },
+  ].filter((control) => control.field != null);
+
+  return (
+    <div className="mt-3 grid gap-3 border-t border-border-light pt-3 sm:grid-cols-2">
+      {controls.map(({ category, label, field }) => {
+        if (field == null) return null;
+        const value = effectivePermission(
+          field,
+          environment.settings?.permissions?.[category],
+        );
+        return (
+          <div key={category} className="flex flex-col gap-1.5">
+            <Label htmlFor={`${environment.id}-${category}`}>{localize(label)}</Label>
+            <Select
+              value={value}
+              disabled={updateMutation.isLoading}
+              onValueChange={(decision) =>
+                updatePermission(category, decision as CodeEnvironmentPermissionDecision)
+              }
+            >
+              <SelectTrigger id={`${environment.id}-${category}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {field.allowed.map((decision) => (
+                  <SelectItem key={decision} value={decision}>
+                    {localize(permissionLabels[decision])}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -161,50 +276,50 @@ export default function CodeEnvironments() {
 
       <div className="flex flex-col gap-2">
         {(query.data?.environments ?? []).map((environment) => (
-          <div
-            key={environment.id}
-            className="flex items-center justify-between gap-3 rounded-lg border border-border-medium p-3"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-text-primary">{environment.name}</p>
-              <p className="truncate text-xs text-text-secondary">{environment.id}</p>
+          <div key={environment.id} className="rounded-lg border border-border-medium p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-text-primary">{environment.name}</p>
+                <p className="truncate text-xs text-text-secondary">{environment.id}</p>
+              </div>
+              {environment.canDelete && (
+                <OGDialog>
+                  <OGDialogTrigger asChild>
+                    <Button type="button" variant="outline" size="sm">
+                      {localize('com_ui_delete')}
+                    </Button>
+                  </OGDialogTrigger>
+                  <OGDialogTemplate
+                    showCloseButton={false}
+                    title={localize('com_ui_code_environment_remove_title')}
+                    main={
+                      <p className="text-sm text-text-secondary">
+                        {localize('com_ui_code_environment_remove_description')}
+                      </p>
+                    }
+                    selection={{
+                      selectHandler: () =>
+                        deleteMutation.mutate(environment.id, {
+                          onSuccess: () =>
+                            showToast({
+                              message: localize('com_ui_code_environment_removed'),
+                              status: 'success',
+                            }),
+                          onError: () =>
+                            showToast({
+                              message: localize('com_ui_code_environment_remove_error'),
+                              status: 'error',
+                            }),
+                        }),
+                      selectClasses:
+                        'bg-surface-destructive text-text-on-status transition-all duration-200 hover:bg-surface-destructive-hover',
+                      selectText: localize('com_ui_delete'),
+                    }}
+                  />
+                </OGDialog>
+              )}
             </div>
-            {environment.canDelete && (
-              <OGDialog>
-                <OGDialogTrigger asChild>
-                  <Button type="button" variant="outline" size="sm">
-                    {localize('com_ui_delete')}
-                  </Button>
-                </OGDialogTrigger>
-                <OGDialogTemplate
-                  showCloseButton={false}
-                  title={localize('com_ui_code_environment_remove_title')}
-                  main={
-                    <p className="text-sm text-text-secondary">
-                      {localize('com_ui_code_environment_remove_description')}
-                    </p>
-                  }
-                  selection={{
-                    selectHandler: () =>
-                      deleteMutation.mutate(environment.id, {
-                        onSuccess: () =>
-                          showToast({
-                            message: localize('com_ui_code_environment_removed'),
-                            status: 'success',
-                          }),
-                        onError: () =>
-                          showToast({
-                            message: localize('com_ui_code_environment_remove_error'),
-                            status: 'error',
-                          }),
-                      }),
-                    selectClasses:
-                      'bg-surface-destructive text-text-on-status transition-all duration-200 hover:bg-surface-destructive-hover',
-                    selectText: localize('com_ui_delete'),
-                  }}
-                />
-              </OGDialog>
-            )}
+            <EnvironmentPermissions environment={environment} />
           </div>
         ))}
       </div>

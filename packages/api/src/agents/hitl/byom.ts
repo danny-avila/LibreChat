@@ -1,22 +1,39 @@
 import { Constants } from '@librechat/agents';
 import type { HookCallback } from '@librechat/agents';
+import type {
+  CodeEnvironmentPermissionDecision,
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+} from 'librechat-data-provider';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 
-const BYOM_APPROVAL_TOOLS = new Set<string>([
-  Constants.BASH_TOOL,
-  Constants.EXECUTE_CODE,
-  Constants.PROGRAMMATIC_TOOL_CALLING,
-  Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
+const BYOM_FILE_WRITE_TOOLS = new Set<string>([
   Constants.WRITE_FILE,
   Constants.EDIT_FILE,
-  Constants.COMPILE_CHECK,
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
 ]);
 
+const BYOM_COMMAND_EXECUTION_TOOLS = new Set<string>([
+  Constants.BASH_TOOL,
+  Constants.EXECUTE_CODE,
+  Constants.PROGRAMMATIC_TOOL_CALLING,
+  Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
+  Constants.COMPILE_CHECK,
+]);
+
+export type AttachedCodeEnvironmentPolicySettings = {
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
 type CodeEnvironmentPolicyAgent = {
   id?: string;
-  codeExecutionContext?: { environmentType?: string };
+  codeExecutionContext?: {
+    environmentType?: string;
+    codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
+    codeEnvironmentSettings?: CodeEnvironmentUserSettings;
+  };
   subagentAgentConfigs?: readonly (CodeEnvironmentPolicyAgent | null | undefined)[];
   lazySubagentConfigs?: readonly (CodeEnvironmentPolicyAgent | null | undefined)[];
   subagentGraphMemberMetadata?: readonly (CodeEnvironmentPolicyAgent | null | undefined)[];
@@ -24,6 +41,29 @@ type CodeEnvironmentPolicyAgent = {
     memberConfigs?: readonly (CodeEnvironmentPolicyAgent | null | undefined)[];
   }[];
 };
+
+function collectCodeEnvironmentPolicyAgents(
+  roots: readonly (CodeEnvironmentPolicyAgent | null | undefined)[],
+): CodeEnvironmentPolicyAgent[] {
+  const agents: CodeEnvironmentPolicyAgent[] = [];
+  const visited = new Set<CodeEnvironmentPolicyAgent>();
+  const pending = [...roots];
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null || visited.has(agent)) {
+      continue;
+    }
+    visited.add(agent);
+    agents.push(agent);
+    pending.push(...(agent.subagentAgentConfigs ?? []));
+    pending.push(...(agent.lazySubagentConfigs ?? []));
+    pending.push(...(agent.subagentGraphMemberMetadata ?? []));
+    for (const graph of agent.subagentGraphConfigs ?? []) {
+      pending.push(...(graph.memberConfigs ?? []));
+    }
+  }
+  return agents;
+}
 
 export class AttachedCodeEnvironmentApprovalError extends Error {
   readonly code = 'BYOM_TOOL_APPROVAL_UNSUPPORTED';
@@ -54,25 +94,27 @@ export function collectAttachedCodeEnvironmentAgentIds(
   roots: readonly (CodeEnvironmentPolicyAgent | null | undefined)[],
 ): Set<string> {
   const attachedAgentIds = new Set<string>();
-  const visited = new Set<CodeEnvironmentPolicyAgent>();
-  const pending = [...roots];
-  for (let index = 0; index < pending.length; index++) {
-    const agent = pending[index];
-    if (agent == null || visited.has(agent)) {
-      continue;
-    }
-    visited.add(agent);
+  for (const agent of collectCodeEnvironmentPolicyAgents(roots)) {
     if (agent.id && agent.codeExecutionContext?.environmentType === 'attached') {
       attachedAgentIds.add(agent.id);
     }
-    pending.push(...(agent.subagentAgentConfigs ?? []));
-    pending.push(...(agent.lazySubagentConfigs ?? []));
-    pending.push(...(agent.subagentGraphMemberMetadata ?? []));
-    for (const graph of agent.subagentGraphConfigs ?? []) {
-      pending.push(...(graph.memberConfigs ?? []));
-    }
   }
   return attachedAgentIds;
+}
+
+export function collectAttachedCodeEnvironmentPolicySettings(
+  roots: readonly (CodeEnvironmentPolicyAgent | null | undefined)[],
+): Map<string, AttachedCodeEnvironmentPolicySettings> {
+  const settingsByAgentId = new Map<string, AttachedCodeEnvironmentPolicySettings>();
+  for (const agent of collectCodeEnvironmentPolicyAgents(roots)) {
+    if (agent.id && agent.codeExecutionContext?.environmentType === 'attached') {
+      settingsByAgentId.set(agent.id, {
+        configSchema: agent.codeExecutionContext.codeEnvironmentConfigSchema,
+        settings: agent.codeExecutionContext.codeEnvironmentSettings,
+      });
+    }
+  }
+  return settingsByAgentId;
 }
 
 /**
@@ -82,16 +124,33 @@ export function collectAttachedCodeEnvironmentAgentIds(
  */
 export function createAttachedCodeEnvironmentPolicyHook(
   attachedAgentIds: ReadonlySet<string>,
+  settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings> = new Map(),
 ): HookCallback<'PreToolUse'> {
   return async (input) => {
+    const category = BYOM_FILE_WRITE_TOOLS.has(input.toolName)
+      ? 'fileWrite'
+      : BYOM_COMMAND_EXECUTION_TOOLS.has(input.toolName)
+        ? 'commandExecution'
+        : undefined;
     if (
-      !BYOM_APPROVAL_TOOLS.has(input.toolName) ||
+      category == null ||
       (input.executingAgentId != null && !attachedAgentIds.has(input.executingAgentId))
     ) {
       return {};
     }
+    const policy =
+      input.executingAgentId == null ? undefined : settingsByAgentId.get(input.executingAgentId);
+    const field = policy?.configSchema?.permissions?.[category];
+    const configuredDecision = policy?.settings?.permissions?.[category];
+    const decision: CodeEnvironmentPermissionDecision =
+      configuredDecision != null && field?.allowed.includes(configuredDecision) === true
+        ? configuredDecision
+        : (field?.default ?? 'ask');
+    if (decision === 'allow') {
+      return { decision };
+    }
     return {
-      decision: 'ask',
+      decision,
       reason: `${input.toolName} can modify your attached code environment`,
     };
   };

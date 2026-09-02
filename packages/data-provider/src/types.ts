@@ -16,6 +16,7 @@ import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
 import type { ProviderId } from './providers';
+import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
 
 export * from './schemas';
 export * from './types/subagents';
@@ -532,6 +533,8 @@ export type TPublicCodeEnvironment = {
   type: 'managed' | 'attached';
   default?: boolean;
   pairingAvailable?: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
 };
 
 export type TCodeEnvironmentSummary = {
@@ -540,11 +543,14 @@ export type TCodeEnvironmentSummary = {
   name: string;
   type: 'managed' | 'attached';
   canDelete: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
 };
 
 export type TCodeControlPlane = {
   id: string;
   name: string;
+  configSchema?: CodeEnvironmentUserConfigSchema;
 };
 
 export type TCodeEnvironmentsResponse = {
