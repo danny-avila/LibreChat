@@ -599,7 +599,7 @@ describe('Meilisearch Mongoose plugin', () => {
     mockWaitForTask.mockResolvedValueOnce({ status: 'failed' });
 
     await expect(conversationModel.syncWithMeili()).rejects.toThrow(
-      'Meilisearch indexing task 1 ended with failed',
+      'Meilisearch task 1 ended with failed',
     );
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
 
@@ -1222,7 +1222,33 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(await conversationModel.countDocuments({ _meiliIndex: true })).toBe(1);
     });
 
-    test('does not acknowledge a Mongo document changed while its task was running', async () => {
+    test('acknowledges an explicit null updatedAt snapshot without requeueing it', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches
+        .mockResolvedValueOnce([{ taskUid: 1 }])
+        .mockRejectedValueOnce(new Error('null snapshot was requeued'));
+      const _id = new mongoose.Types.ObjectId();
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Null timestamp snapshot',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+        updatedAt: null,
+      });
+
+      await expect(conversationModel.syncWithMeili()).resolves.toBeUndefined();
+
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledTimes(1);
+      expect(await conversationModel.countDocuments({ _id, _meiliIndex: true })).toBe(1);
+    });
+
+    test('requeues a Mongo document changed while its task was running', async () => {
       const conversationModel = createConversationModel(
         mongoose,
       ) as unknown as SchemaWithMeiliMethods;
@@ -1261,7 +1287,161 @@ describe('Meilisearch Mongoose plugin', () => {
       finishTask?.({ status: 'succeeded' });
       await syncing;
 
-      expect(await conversationModel.countDocuments({ _id, _meiliIndex: true })).toBe(0);
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledTimes(2);
+      expect(mockAddDocumentsInBatches).toHaveBeenLastCalledWith(
+        [expect.objectContaining({ title: 'Newer snapshot' })],
+        undefined,
+        { primaryKey: 'conversationId' },
+      );
+      expect(await conversationModel.countDocuments({ _id, _meiliIndex: true })).toBe(1);
+    });
+
+    test('removes a stale task snapshot when the Mongo document becomes excluded', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+      const _id = new mongoose.Types.ObjectId();
+      const conversationId = new mongoose.Types.ObjectId();
+      const originalUpdatedAt = new Date('2026-09-01T10:00:00.000Z');
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        title: 'Visible snapshot',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+        updatedAt: originalUpdatedAt,
+      });
+
+      const syncing = conversationModel.syncWithMeili();
+      await waitForMock(mockWaitForTask);
+      await conversationModel.collection.updateOne(
+        { _id },
+        {
+          $set: {
+            subagentThread: {
+              rootConversationId: 'root-conversation',
+              parentConversationId: 'parent-conversation',
+              parentMessageId: 'parent-message',
+              parentToolCallId: 'parent-tool-call',
+              subagentType: 'agent-child',
+              subagentKind: 'agent',
+              depth: 1,
+            },
+            updatedAt: new Date(originalUpdatedAt.getTime() + 1000),
+          },
+        },
+      );
+      finishTask?.({ status: 'succeeded' });
+      await syncing;
+
+      expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId.toString()]);
+      const storedDoc = await conversationModel.collection.findOne({ _id });
+      expect(storedDoc?._meiliIndex).toBeUndefined();
+      expect(storedDoc?._meiliIndexAttempted).toBeUndefined();
+    });
+
+    test('removes a stale task snapshot when the Mongo document is deleted', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+      const _id = new mongoose.Types.ObjectId();
+      const conversationId = new mongoose.Types.ObjectId();
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        title: 'Deleted snapshot',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      const syncing = conversationModel.syncWithMeili();
+      await waitForMock(mockWaitForTask);
+      await conversationModel.collection.deleteOne({ _id });
+      finishTask?.({ status: 'succeeded' });
+      await syncing;
+
+      expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId.toString()]);
+      expect(await conversationModel.collection.findOne({ _id })).toBeNull();
+    });
+
+    test('requeues a document re-included before an older cleanup task completes', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishDeletion: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishDeletion = resolve;
+          }),
+      );
+      const _id = new mongoose.Types.ObjectId();
+      const conversationId = new mongoose.Types.ObjectId();
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        title: 'Re-included conversation',
+        endpoint: EModelEndpoint.openAI,
+        subagentThread: {
+          rootConversationId: 'root-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool-call',
+          subagentType: 'agent-child',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        _meiliIndex: true,
+        expiredAt: null,
+      });
+
+      const cleanup = conversationModel.cleanupExcludedMeiliIndex();
+      await waitForMock(mockWaitForTask);
+      await conversationModel.collection.updateOne(
+        { _id },
+        {
+          $unset: { subagentThread: '' },
+          $set: { _meiliIndex: true },
+        },
+      );
+      finishDeletion?.({ status: 'succeeded' });
+      await cleanup;
+
+      const pendingDoc = await conversationModel.collection.findOne({ _id });
+      expect(pendingDoc?._meiliIndex).toBe(false);
+      expect(pendingDoc?._meiliIndexAttempted).toBe(true);
+
+      mockWaitForTask.mockClear();
+      await conversationModel.syncWithMeili();
+
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(
+        [expect.objectContaining({ conversationId })],
+        undefined,
+        { primaryKey: 'conversationId' },
+      );
+      expect((await conversationModel.collection.findOne({ _id }))?._meiliIndex).toBe(true);
     });
 
     test('a transient document-write failure retries without delaying MongoDB persistence', async () => {

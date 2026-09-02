@@ -20,6 +20,7 @@ const mockWaitForTask = jest.fn();
 const mockBatchResetMeiliFlags = jest.fn();
 const mockIsEnabled = jest.fn();
 const mockRunDistributedJob = jest.fn();
+const mockWaitForMeiliTask = jest.fn();
 const mockGetLogStores = jest.fn();
 
 // Create mock models that will be reused
@@ -55,6 +56,7 @@ jest.mock('./utils', () => ({
 jest.mock('@librechat/api', () => ({
   isEnabled: mockIsEnabled,
   runDistributedJob: mockRunDistributedJob,
+  waitForMeiliTask: mockWaitForMeiliTask,
   FlowStateManager: jest.fn(),
 }));
 
@@ -103,6 +105,12 @@ describe('performSync() - syncThreshold logic', () => {
     // Mock isEnabled
     mockIsEnabled.mockImplementation((val) => val === 'true' || val === true);
     mockRunDistributedJob.mockImplementation((_collection, _jobId, handler) => handler());
+    mockWaitForMeiliTask.mockImplementation(async (client, taskUid, operation) => {
+      const task = await client.waitForTask(taskUid, { timeOutMs: 10_000, intervalMs: 100 });
+      if (task.status !== 'succeeded') {
+        throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
+      }
+    });
 
     // Mock MeiliSearch client responses
     mockMeiliHealth.mockResolvedValue({ status: 'available' });
@@ -173,7 +181,7 @@ describe('performSync() - syncThreshold logic', () => {
 
     const indexSync = require('./indexSync');
 
-    await expect(indexSync()).rejects.toThrow('messages task 23 ended with canceled');
+    await expect(indexSync()).rejects.toThrow('messages cleanup task 23 ended with canceled');
     expect(deleteDocuments).toHaveBeenCalledWith(['legacy-document']);
   });
 

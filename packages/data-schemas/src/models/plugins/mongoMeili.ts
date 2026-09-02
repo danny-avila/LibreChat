@@ -308,7 +308,7 @@ const createMeiliMongooseModel = ({
           intervalMs: 100,
         });
         if (task.status !== 'succeeded') {
-          throw new Error(`Meilisearch indexing task ${taskUid} ended with ${task.status}`);
+          throw new Error(`Meilisearch task ${taskUid} ended with ${task.status}`);
         }
         return;
       } catch (error) {
@@ -318,6 +318,28 @@ const createMeiliMongooseModel = ({
         throw error;
       }
     }
+  };
+
+  const reconcileDeletedSnapshots = async (
+    model: SchemaWithMeiliMethods,
+    documentIds: unknown[],
+  ): Promise<void> => {
+    await model.updateMany(
+      { _id: { $in: documentIds } },
+      { $set: { _meiliIndex: false, _meiliIndexAttempted: true } },
+      { timestamps: false },
+    );
+    await model.updateMany(
+      {
+        _id: { $in: documentIds },
+        $nor: [getIndexableQuery()],
+      },
+      {
+        $set: { _meiliCleanupVersion: meiliCleanupVersion },
+        $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
+      },
+      { timestamps: false },
+    );
   };
 
   const loadLatestDocument = async (
@@ -514,9 +536,8 @@ const createMeiliMongooseModel = ({
       }
 
       let processedCount = 0;
-      let hasMore = true;
 
-      while (hasMore) {
+      while (true) {
         const indexableQuery = getIndexableQuery();
         const query: FilterQuery<unknown> = {
           $and: [
@@ -550,12 +571,8 @@ const createMeiliMongooseModel = ({
           processedCount += documents.length;
           logger.info(`[syncWithMeili] Processed: ${processedCount}`);
 
-          if (documents.length < batchSize) {
-            hasMore = false;
-          }
-
           // Add delay to prevent overwhelming resources
-          if (hasMore && delayMs > 0) {
+          if (documents.length === batchSize && delayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
         } catch (error) {
@@ -606,12 +623,17 @@ const createMeiliMongooseModel = ({
         // Update MongoDB to mark documents as indexed.
         // { timestamps: false } prevents Mongoose from touching updatedAt, preserving
         // original conversation/message timestamps (fixes sidebar chronological sort).
-        const snapshotFilter = documents.map((doc) => ({
-          _id: doc._id,
-          ...(doc.updatedAt == null
-            ? { updatedAt: { $exists: false } }
-            : { updatedAt: doc.updatedAt }),
-        }));
+        const snapshotFilter = documents.map((doc) => {
+          let updatedAtFilter: FilterQuery<unknown>;
+          if (doc.updatedAt === undefined) {
+            updatedAtFilter = { updatedAt: { $exists: false } };
+          } else if (doc.updatedAt === null) {
+            updatedAtFilter = { updatedAt: { $eq: null, $exists: true } };
+          } else {
+            updatedAtFilter = { updatedAt: doc.updatedAt };
+          }
+          return { _id: doc._id, ...updatedAtFilter };
+        });
         await this.updateMany(
           { ...getIndexableQuery(), $or: snapshotFilter },
           {
@@ -623,6 +645,24 @@ const createMeiliMongooseModel = ({
           },
           { timestamps: false },
         );
+
+        const currentIndexableDocuments = await this.find({
+          _id: { $in: docsIds },
+          ...getIndexableQuery(),
+        })
+          .select('_id')
+          .lean();
+        const currentIndexableIds = new Set(
+          currentIndexableDocuments.map((doc: Record<string, unknown>) => String(doc._id)),
+        );
+        const staleSnapshots = documents.filter((doc) => !currentIndexableIds.has(String(doc._id)));
+        if (staleSnapshots.length > 0) {
+          const staleDocumentIds = staleSnapshots.map((doc) => doc._id);
+          const stalePrimaryKeys = staleSnapshots.map((doc) => doc[primaryKey as keyof typeof doc]);
+          const deletion = await index.deleteDocuments(stalePrimaryKeys.map(String));
+          await waitForSuccessfulTask(deletion.taskUid);
+          await reconcileDeletedSnapshots(this, staleDocumentIds);
+        }
       } catch (error) {
         logger.error('[processSyncBatch] Error processing batch:', error);
         throw error;
@@ -653,16 +693,12 @@ const createMeiliMongooseModel = ({
         const pendingIds = pendingExcludedDocuments.map(
           (doc: Record<string, unknown>) => doc[primaryKey],
         );
+        const pendingDocumentIds = pendingExcludedDocuments.map(
+          (doc: Record<string, unknown>) => doc._id,
+        );
         const deletion = await index.deleteDocuments(pendingIds.map(String));
         await waitForSuccessfulTask(deletion.taskUid);
-        await this.updateMany(
-          { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
-          {
-            $set: { _meiliCleanupVersion: meiliCleanupVersion },
-            $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
-          },
-          { timestamps: false },
-        );
+        await reconcileDeletedSnapshots(this, pendingDocumentIds);
 
         if (pendingExcludedDocuments.length < batchSize) {
           break;

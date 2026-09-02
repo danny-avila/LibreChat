@@ -4,7 +4,7 @@ import type { Collection, Document, WithId } from 'mongodb';
 
 type JobStatus = 'running' | 'completed' | 'failed';
 
-interface DistributedJobState extends Document {
+interface JobState extends Document {
   _id: string;
   status: JobStatus;
   owner?: string;
@@ -31,7 +31,7 @@ const LEASE_SAFETY_MS = 5000;
 const sleep = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 
 async function tryAcquire(
-  collection: Collection<DistributedJobState>,
+  collection: Collection<JobState>,
   jobId: string,
   owner: string,
   leaseMs: number,
@@ -75,7 +75,7 @@ async function tryAcquire(
  * only when they can provide an equally safe fail-stop action.
  */
 export async function runDistributedJob<T>(
-  collection: Collection<DistributedJobState>,
+  collection: Collection<JobState>,
   jobId: string,
   handler: () => Promise<T>,
   options: DistributedJobOptions = {},
@@ -105,7 +105,7 @@ export async function runDistributedJob<T>(
 
   let acquiredExpiry: Date | undefined;
   while ((acquiredExpiry = await tryAcquire(collection, jobId, owner, leaseMs)) == null) {
-    const state = (await collection.findOne({ _id: jobId })) as WithId<DistributedJobState> | null;
+    const state = (await collection.findOne({ _id: jobId })) as WithId<JobState> | null;
     if (state?.status === 'completed' && state.expiresAt > new Date()) {
       return;
     }
