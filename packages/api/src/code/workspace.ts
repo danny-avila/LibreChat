@@ -218,17 +218,24 @@ export async function executeWorkspaceTool({
   baseURL,
   authHeaders,
   request,
+  signal,
   fetchImpl = fetch,
 }: {
   baseURL: string;
   authHeaders: Record<string, string>;
   request: WorkspaceToolRequest;
+  signal?: AbortSignal;
   fetchImpl?: CodeBridgeFetch;
 }): Promise<WorkspaceToolResult> {
   if (!isValidRequest(request)) {
     throw new WorkspaceToolHttpError('invalid');
   }
   try {
+    const timeoutSignal = AbortSignal.timeout(WORKSPACE_TOOL_TIMEOUT_MS);
+    const requestSignal =
+      signal != null && typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([signal, timeoutSignal])
+        : timeoutSignal;
     const response = await fetchImpl(
       `${baseURL.trim().replace(/\/+$/, '')}/workspace-tools/execute`,
       {
@@ -239,7 +246,7 @@ export async function executeWorkspaceTool({
         },
         body: JSON.stringify(request),
         redirect: 'error',
-        signal: AbortSignal.timeout(WORKSPACE_TOOL_TIMEOUT_MS),
+        signal: requestSignal,
       },
     );
     if (!response.ok) {
@@ -252,6 +259,12 @@ export async function executeWorkspaceTool({
     return result;
   } catch (error) {
     if (error instanceof WorkspaceToolHttpError) throw error;
+    if (
+      signal?.aborted === true &&
+      (error === signal.reason || (isRecord(error) && error.name === 'AbortError'))
+    ) {
+      throw error;
+    }
     if (error instanceof Error && error.name === 'TimeoutError') {
       throw new WorkspaceToolHttpError('timeout');
     }

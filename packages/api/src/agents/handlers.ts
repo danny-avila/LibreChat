@@ -451,6 +451,7 @@ export interface ToolExecuteOptions {
     executionProfile: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
     req?: ServerRequest;
+    signal?: AbortSignal;
   }) => Promise<WorkspaceReadResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
@@ -2167,6 +2168,7 @@ async function handleWorkspaceFileRead(
   options: ToolExecuteOptions,
   req: ServerRequest | undefined,
   codeExecutionContext: CodeExecutionContext,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const { readWorkspaceFile } = options;
   if (!readWorkspaceFile) {
@@ -2219,6 +2221,7 @@ async function handleWorkspaceFileRead(
         ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
         : {}),
       ...(req ? { req } : {}),
+      ...(signal ? { signal } : {}),
     });
     const filtered = filteredFileResult(tc, req, filePath, result.content);
     if (filtered != null) {
@@ -2250,6 +2253,7 @@ async function handleWorkspaceFileRead(
       content: numbered,
     };
   } catch (error) {
+    if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn('[handleReadFileCall] Attached workspace read failed', getSafeErrorMetadata(error));
     return {
       toolCallId: tc.id,
@@ -3652,6 +3656,7 @@ async function handleReadFileCall(
   options: ToolExecuteOptions,
   req?: ServerRequest,
   onSandboxReadSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
     options;
@@ -3684,6 +3689,7 @@ async function handleReadFileCall(
       options,
       req,
       codeExecutionContext,
+      signal,
     );
   }
 
@@ -5723,6 +5729,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           () => {
                             sandboxReadSucceeded = true;
                           },
+                          runSignal,
                         );
                       } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleCreateFileCall(
@@ -5763,10 +5770,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         });
                         return filteredError;
                       }
-                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                      const context = {
                         ...logContext,
                         toolCallArgsShape: getValueShape(tc.args),
-                      });
+                      };
+                      if (runSignal?.aborted === true && isAbortError(toolError)) {
+                        logger.debug(
+                          `[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`,
+                          context,
+                        );
+                      } else {
+                        logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, context);
+                      }
                       return {
                         toolCallId: tc.id,
                         status: 'error' as const,

@@ -1837,6 +1837,7 @@ describe('Code Process', () => {
 
   describe('readWorkspaceFile', () => {
     it('forwards authenticated reads to the selected attached worker', async () => {
+      const controller = new AbortController();
       const result = {
         protocolVersion: 1,
         operation: 'read_file',
@@ -1860,6 +1861,7 @@ describe('Code Process', () => {
           executionProfile: 'stateful',
           bridgeWorkerId: 'worker-user-1',
           req: mockReq,
+          signal: controller.signal,
         }),
       ).resolves.toBe(result);
 
@@ -1879,6 +1881,7 @@ describe('Code Process', () => {
           startLine: 1,
           maxLines: 200,
         },
+        signal: controller.signal,
       });
     });
   });

@@ -50,6 +50,72 @@ describe('executeWorkspaceTool', () => {
     );
   });
 
+  test('combines the caller abort signal with the workspace request timeout', async () => {
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | undefined;
+    const fetchImpl = jest.fn(async (_url: string, init?: RequestInit) => {
+      requestSignal = init?.signal ?? undefined;
+      return new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          operation: 'read_file',
+          workspaceId: 'primary',
+          path: 'notes.txt',
+          content: 'ready',
+          startLine: 1,
+          endLine: 1,
+          truncated: false,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+
+    await executeWorkspaceTool({
+      baseURL: 'https://code.example.com/v1',
+      authHeaders: { Authorization: 'Bearer jwt' },
+      signal: controller.signal,
+      request: {
+        protocolVersion: 1,
+        operation: 'read_file',
+        workspaceId: 'primary',
+        path: 'notes.txt',
+      },
+      fetchImpl,
+    });
+
+    expect(requestSignal?.aborted).toBe(false);
+    controller.abort();
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  test('preserves caller cancellation instead of relabeling it as a transport failure', async () => {
+    const controller = new AbortController();
+    const fetchImpl = jest.fn(
+      async (_url: string, init?: RequestInit) =>
+        await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    );
+
+    const request = executeWorkspaceTool({
+      baseURL: 'https://code.example.com/v1',
+      authHeaders: { Authorization: 'Bearer jwt' },
+      signal: controller.signal,
+      request: {
+        protocolVersion: 1,
+        operation: 'read_file',
+        workspaceId: 'primary',
+        path: 'notes.txt',
+      },
+      fetchImpl,
+    });
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   test('rejects a malformed worker result before it reaches the model', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response(

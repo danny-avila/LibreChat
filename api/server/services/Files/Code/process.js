@@ -1665,6 +1665,7 @@ async function readSandboxFile({
  * @param {'default' | 'stateful'} params.executionProfile
  * @param {string} [params.bridgeWorkerId]
  * @param {ServerRequest} [params.req]
+ * @param {AbortSignal} [params.signal]
  */
 async function readWorkspaceFile({
   file_path,
@@ -1675,6 +1676,7 @@ async function readWorkspaceFile({
   executionProfile,
   bridgeWorkerId,
   req,
+  signal,
 }) {
   const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   return executeWorkspaceTool({
@@ -1691,6 +1693,7 @@ async function readWorkspaceFile({
       startLine: start_line,
       maxLines: max_lines,
     },
+    ...(signal ? { signal } : {}),
   });
 }
 

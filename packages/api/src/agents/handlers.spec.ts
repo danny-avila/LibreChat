@@ -4627,6 +4627,50 @@ describe('createToolExecuteHandler', () => {
       });
     });
 
+    it('forwards the run abort signal to attached workspace reads', async () => {
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'notes.txt',
+        content: 'ready',
+        startLine: 1,
+        endLine: 1,
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+      const controller = new AbortController();
+
+      await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_workspace_abort',
+              name: Constants.READ_FILE,
+              args: { path: 'workspace/notes.txt' },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(readWorkspaceFile).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
     it('uses bounded pagination for attached workspace reads', async () => {
       const readWorkspaceFile = jest.fn(async () => ({
         protocolVersion: 1 as const,
