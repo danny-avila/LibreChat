@@ -1,6 +1,21 @@
 import { Schema } from 'mongoose';
 import type { CodeEnvironmentDocument } from '~/types';
 
+const workerPrincipalSchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: ['deployment', 'tenant', 'user', 'role', 'group'],
+      required: true,
+    },
+    id: {
+      type: String,
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
 const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEnvironmentDocument>(
   {
     environmentId: {
@@ -30,8 +45,53 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
       required: true,
       index: true,
     },
+    ownerSlot: {
+      type: Number,
+      min: 0,
+    },
+    pendingAgentReferences: {
+      type: [
+        new Schema(
+          {
+            reservationId: { type: String, required: true },
+            expiresAt: { type: Date, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: undefined,
+    },
+    deletionStartedAt: {
+      type: Date,
+    },
+    deletionLeaseId: { type: String },
+    deletionLeaseExpiresAt: { type: Date },
+    deletionCommittedAt: { type: Date },
+    registrationPendingAt: { type: Date },
+    registrationLeaseId: { type: String },
+    registrationLeaseExpiresAt: { type: Date },
+    registrationReconcileAfter: { type: Date },
+    revocationPendingAt: {
+      type: Date,
+    },
+    revocationAttempts: {
+      type: Number,
+      min: 0,
+    },
+    revocationLastError: {
+      type: String,
+    },
+    revocationReconcileAfter: { type: Date },
+    revocationLeaseId: { type: String },
+    revocationLeaseExpiresAt: { type: Date },
     workerId: {
       type: String,
+    },
+    revocationTokenEnv: {
+      type: String,
+    },
+    workerPrincipal: {
+      type: workerPrincipalSchema,
     },
     tenantId: {
       type: String,

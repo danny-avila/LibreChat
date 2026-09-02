@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { agentSchema, aclEntrySchema, fileSchema, userSchema } = require('@librechat/data-schemas');
 const {
   Tools,
+  SkillsScope,
   FileSources,
   PermissionBits,
   PrincipalModel,
@@ -262,6 +263,42 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         model: 'gpt-4',
         stateful_code_sessions: true,
         code_environment_id: 'missing-vm',
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(await Agent.countDocuments()).toBe(0);
+    });
+
+    test('rejects a pairing-only control plane as a code environment id', async () => {
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'personal-workers',
+                  name: 'Personal workers',
+                  type: 'attached',
+                  baseURL: 'https://code.example.com/v1',
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      };
+      mockReq.body = {
+        name: 'Invalid Control Plane Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        stateful_code_sessions: true,
+        code_environment_id: 'personal-workers',
       };
 
       await createAgentHandler(mockReq, mockRes);
@@ -3208,6 +3245,34 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.data).toHaveLength(1);
       expect(response.data[0].skills).toBeUndefined();
       expect(response.data[0].skills_enabled).toBe(true);
+    });
+
+    test('should preserve an enabled empty catalog for VIEW list callers', async () => {
+      await Agent.findByIdAndUpdate(agentA1._id, {
+        skills_enabled: false,
+        skill_authoring_enabled: true,
+        skills_scope: SkillsScope.none,
+        skills: [],
+      });
+
+      mockReq.user.id = userB.toString();
+      mockReq.query.requiredPermission = String(PermissionBits.VIEW);
+      findAccessibleResources.mockImplementation(({ resourceType }) => {
+        if (resourceType === ResourceType.AGENT) {
+          return Promise.resolve([agentA1._id]);
+        }
+        return Promise.resolve([]);
+      });
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].skills).toBeUndefined();
+      expect(response.data[0].skills_enabled).toBeUndefined();
+      expect(response.data[0].skill_authoring_enabled).toBe(true);
+      expect(response.data[0].skills_scope).toBeUndefined();
     });
 
     test('should return raw skill configuration for EDIT list callers', async () => {

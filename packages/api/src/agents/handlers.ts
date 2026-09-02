@@ -389,6 +389,7 @@ export interface ToolExecuteOptions {
     read_only?: boolean;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -400,6 +401,7 @@ export interface ToolExecuteOptions {
     route?: {
       baseUrl?: string;
       executionProfile?: CodeExecutionContext['executionProfile'];
+      bridgeWorkerId?: string;
     },
   ) => Promise<string | null>;
   /** 23-hour freshness check */
@@ -450,6 +452,8 @@ export interface ToolExecuteOptions {
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    executionRouteKey?: string;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
   /**
@@ -470,6 +474,8 @@ export interface ToolExecuteOptions {
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    executionRouteKey?: string;
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
     req?: ServerRequest;
@@ -554,6 +560,8 @@ function getCodeExecutionContext(
 function codeExecutionRequestParams(context?: CodeExecutionContext): {
   codeApiBaseUrl?: string;
   executionProfile?: CodeExecutionContext['executionProfile'];
+  bridgeWorkerId?: string;
+  executionRouteKey?: string;
   runtime_session_hint?: string;
 } {
   if (!context) {
@@ -562,6 +570,8 @@ function codeExecutionRequestParams(context?: CodeExecutionContext): {
   return {
     codeApiBaseUrl: context.baseUrl,
     executionProfile: context.executionProfile,
+    ...(context.executionRouteKey ? { executionRouteKey: context.executionRouteKey } : {}),
+    ...(context.bridgeWorkerId ? { bridgeWorkerId: context.bridgeWorkerId } : {}),
     ...(context.runtimeSessionHint ? { runtime_session_hint: context.runtimeSessionHint } : {}),
   };
 }
@@ -4580,7 +4590,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 return {
                   toolCallId: tc.id,
                   status: 'success' as const,
-                  content: buildBackgroundCapacityContent(tc.name),
+                  content: buildBackgroundCapacityContent(tc.name, capacityAdmission.scope),
                 };
               }
               const capacityPermit =
@@ -4661,7 +4671,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 return {
                   toolCallId: tc.id,
                   status: 'success' as const,
-                  content: buildBackgroundCapacityContent(tc.name),
+                  content: buildBackgroundCapacityContent(tc.name, created.scope),
                 };
               }
               const { task, isNew } = created;
@@ -4924,6 +4934,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     );
                   }
                 };
+                const persistSettledBackgroundResult = async (params: {
+                  output?: string;
+                  artifact?: unknown;
+                  status: 'completed' | 'error';
+                }): Promise<void> => {
+                  if (harvestEnabled) {
+                    await persistBackgroundResult(params);
+                    return;
+                  }
+                  backgroundTaskRegistry.markCompletionPersistencePending(
+                    backgroundUserId,
+                    backgroundConversationId,
+                    task.id,
+                  );
+                  try {
+                    await persistBackgroundResult(params);
+                  } finally {
+                    backgroundTaskRegistry.markCompletionPersistenceFinished(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                    );
+                  }
+                };
                 let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
                 const backgroundAbortController = new AbortController();
                 try {
@@ -5101,7 +5135,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         registryError,
                         { harvestStarted: harvestEnabled },
                       );
-                      await persistBackgroundResult({ output: errorOutput, status: 'error' });
+                      await persistSettledBackgroundResult({
+                        output: errorOutput,
+                        status: 'error',
+                      });
                       await wakeDetachedActor();
                       return;
                     }
@@ -5158,7 +5195,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       task.id,
                       { content, artifact: result.artifact, harvestStarted: harvestEnabled },
                     );
-                    await persistBackgroundResult({
+                    await persistSettledBackgroundResult({
                       /** Use the registry's canonical bounded serialization so
                        * structured content cannot leave the durable card on its
                        * synthetic running handle. */
@@ -5207,7 +5244,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  the dispatch card on the handle JSON forever. */
                       { harvestStarted: harvestEnabled },
                     );
-                    await persistBackgroundResult({ output: deliveredError, status: 'error' });
+                    await persistSettledBackgroundResult({
+                      output: deliveredError,
+                      status: 'error',
+                    });
                     await wakeDetachedActor();
                   } finally {
                     if (producerRetirementTimeout != null) {

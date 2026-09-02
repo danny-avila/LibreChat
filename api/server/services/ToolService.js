@@ -44,6 +44,7 @@ const {
   isNormalizationSensitiveName,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
+  codeExecutionAuthHeaders,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
   getTransactionsConfig,
@@ -1393,6 +1394,9 @@ async function loadToolDefinitionsWrapper({
         codeApiBaseUrl: resolvedCodeExecutionContext.baseUrl,
         executionProfile: resolvedCodeExecutionContext.executionProfile,
         executionRouteKey: resolvedCodeExecutionContext.executionRouteKey,
+        ...(resolvedCodeExecutionContext.bridgeWorkerId
+          ? { bridgeWorkerId: resolvedCodeExecutionContext.bridgeWorkerId }
+          : {}),
       });
       if (toolContext) {
         dynamicToolContextMap[Tools.execute_code] = toolContext;
@@ -1692,7 +1696,11 @@ async function loadAgentTools({
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
-      authHeaders: () => getCodeApiAuthHeaders(req),
+      authHeaders: () =>
+        codeExecutionAuthHeaders(
+          (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+          codeExecutionContext,
+        ),
       codeExecutionContext,
     });
 
@@ -2077,7 +2085,11 @@ async function loadToolsForExecution({
        */
       for (const name of ptcToolNames) {
         const ptcTool = createBashProgrammaticToolCallingTool({
-          authHeaders: () => getCodeApiAuthHeaders(req),
+          authHeaders: () =>
+            codeExecutionAuthHeaders(
+              (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+              codeExecutionContext,
+            ),
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
@@ -2103,7 +2115,11 @@ async function loadToolsForExecution({
   if (isBashTool) {
     try {
       const bashTool = createBashExecutionTool({
-        authHeaders: () => getCodeApiAuthHeaders(req),
+        authHeaders: () =>
+          codeExecutionAuthHeaders(
+            (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+            codeExecutionContext,
+          ),
         ...codeExecutionContext,
       });
       allLoadedTools.push(bashTool);

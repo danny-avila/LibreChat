@@ -158,7 +158,11 @@ function canEditSkill({ req, skillId }) {
   });
 }
 
-function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
+function isAgentSkillAuthoringEnabledForRun({
+  agent,
+  skillsCapabilityEnabled,
+  ephemeralSkillsToggle,
+}) {
   if (!skillsCapabilityEnabled) {
     return false;
   }
@@ -171,7 +175,7 @@ function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralS
     }
     return ephemeralSkillsToggle === true;
   }
-  return agent.skills_enabled === true;
+  return agent.skills_enabled === true || agent.skill_authoring_enabled === true;
 }
 
 function canAuthorSkillFiles({
@@ -182,7 +186,11 @@ function canAuthorSkillFiles({
   ephemeralSkillsToggle,
 }) {
   return (
-    isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) &&
+    isAgentSkillAuthoringEnabledForRun({
+      agent,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    }) &&
     (scopedEditableSkillIds.length > 0 || skillCreateAllowed === true)
   );
 }
@@ -397,7 +405,7 @@ function getSkillToolDeps() {
 module.exports = {
   getSkillToolDeps,
   canAuthorSkillFiles,
-  isAgentSkillsEnabledForRun,
+  isAgentSkillAuthoringEnabledForRun,
   getSkillDbMethods,
   withDeploymentSkillIds,
   getSkillStrategyFunctions,

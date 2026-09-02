@@ -1892,6 +1892,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     let terminalPersistenceChecked = false;
     let terminalWasAborted = false;
     let preemptIncomplete = false;
+    /** The graph exhausted its per-turn step budget. Like `preemptIncomplete`, an
+     *  honest `unfinished` outcome rather than an error: the partial turn is real
+     *  work and the user is offered a way to carry on. */
+    let stepLimitReached = false;
     /** A pause-row write failure is terminalized through the exact action/epoch
      * barrier. Once that path starts, neither generic background error handler
      * may call completeJob: the pause may already have been replaced by a newer
@@ -1929,6 +1933,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       preemptIncomplete =
         (preemptStats?.emptyBoundaries ?? 0) > 0 ||
         client?.run?.getHaltReason?.() === 'preempt_incomplete';
+      stepLimitReached = client?.stepLimitReached === true;
       terminalClaim = await GenerationJobManager.claimTerminalJob(
         streamId,
         terminalWasAborted ? 'aborted' : 'complete',
@@ -2712,13 +2717,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         /** BaseClient can add the id to savedMessageIds even when its model-layer
          * save resolved falsy. Re-save the terminal row idempotently and require
          * the returned durable row before publishing the normal FINAL. */
-        const responseIsUnfinished = terminalWasAborted || preemptIncomplete;
+        const responseIsUnfinished = terminalWasAborted || preemptIncomplete || stepLimitReached;
         const savedResponseMessage = await saveMessage(
           reqCtx,
           {
             ...response,
             user: userId,
             unfinished: responseIsUnfinished,
+            /** Distinguishes "ran out of steps" from a user stop, so the client can
+             *  render the actionable tool-call-limit notice rather than the generic
+             *  incomplete-response warning. */
+            ...(stepLimitReached && {
+              finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON,
+            }),
           },
           {
             context: responseIsUnfinished
@@ -2778,9 +2789,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           scheduleCompletionError = 'Scheduled run was stopped';
         } else if (preemptIncomplete) {
           scheduleCompletionError = 'Scheduled run was interrupted before completion';
+        } else if (stepLimitReached) {
+          scheduleCompletionError = 'Scheduled run reached its tool call limit before completion';
         }
         await settleScheduledRun({
-          status: terminalWasAborted || preemptIncomplete ? 'interrupted' : 'success',
+          status: responseIsUnfinished ? 'interrupted' : 'success',
           ...(scheduleCompletionError != null && { error: scheduleCompletionError }),
         });
 
@@ -2794,7 +2807,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: {
               ...response,
-              ...((terminalWasAborted || preemptIncomplete) && { unfinished: true }),
+              ...(responseIsUnfinished && { unfinished: true }),
+              ...(stepLimitReached && {
+                finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON,
+              }),
             },
             ...(pendingSteers.length > 0 && { pendingSteers }),
           };

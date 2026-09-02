@@ -178,6 +178,22 @@ Multi-line imports count total character length across all lines. Consolidate va
 - React Query (`@tanstack/react-query`) for all API interactions; proper query invalidation on mutations.
 - QueryKeys and MutationKeys in `packages/data-provider/src/keys.ts`.
 
+### Client State Ownership
+
+The client is migrating from Recoil to Jotai. Convert the areas you touch rather than
+migrating wholesale, and split the work by who owns the state:
+
+- **Feature-owned state** — atoms a single feature both writes and reads. Convert these to
+  Jotai as you touch them, and keep them inside the feature.
+- **App-global state** — preferences and shell state a feature merely consumes
+  (`maximizeChatSpace`, `showScrollButton`, `enterToSend`, artifact visibility). A feature
+  that could plausibly be extracted must not reach into `~/store` for these; accept them
+  through props or a small context the host supplies.
+
+Passing app-global state in — rather than reaching for it — is what lets a feature move to
+its own workspace later without a rewrite, and it keeps the Jotai conversion scoped to the
+state a feature actually owns instead of dragging the global migration forward early.
+
 ### Data-Provider Integration
 
 - Endpoints: `packages/data-provider/src/api-endpoints.ts`

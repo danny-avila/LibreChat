@@ -2,6 +2,7 @@ import { Document, Types } from 'mongoose';
 import type {
   GraphEdge,
   MemoryScope,
+  SkillsScope,
   AgentToolOptions,
   AgentToolResources,
   AgentSubagentsConfig,
@@ -30,6 +31,8 @@ export interface IAgent extends Omit<Document, 'model'> {
   tools?: string[];
   skills?: string[];
   skills_enabled?: boolean;
+  skill_authoring_enabled?: boolean;
+  skills_scope?: SkillsScope;
   tool_kwargs?: Array<unknown>;
   actions?: string[];
   author: Types.ObjectId;

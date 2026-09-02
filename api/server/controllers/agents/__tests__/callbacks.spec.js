@@ -124,6 +124,41 @@ describe('resumable event generation fencing', () => {
     );
   });
 
+  it('resolves MCP identity from a function-shaped root tool call', async () => {
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const resolveMcpServerName = jest.fn(() => 'server');
+    const data = {
+      id: 'step-function-tool',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [
+          {
+            id: 'call-function-tool',
+            function: { name: 'lookup_mcp_server', arguments: '{}' },
+          },
+        ],
+      },
+    };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      resolveMcpServerName,
+    });
+
+    await handlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data, {
+      agent_id: 'lazy-agent',
+    });
+
+    expect(resolveMcpServerName).toHaveBeenCalledWith('lookup_mcp_server', 'lazy-agent');
+    expect(data.stepDetails.tool_calls[0]).toEqual(
+      expect.objectContaining({ name: 'lookup_mcp_server', mcpServerName: 'server' }),
+    );
+  });
+
   it('publishes root event-child progress through the child activity transport', async () => {
     const { nanoid } = require('nanoid');
     nanoid.mockReturnValueOnce('invocation-1').mockReturnValueOnce('invocation-2');

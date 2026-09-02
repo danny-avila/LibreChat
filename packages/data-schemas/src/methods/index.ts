@@ -341,6 +341,7 @@ export function createMethods(
   const conversationMethods = createConversationMethods(mongoose, {
     getMessages: messageMethods.getMessages,
     deleteMessages: messageMethods.deleteMessages,
+    searchMessages: messageMethods.searchMessages,
     deleteAgentQueuedTurns: async (user, conversations) => {
       /** Queued-turn ownership is ObjectId-backed. Conversation methods also
        * support synthetic/non-ObjectId owners in embedded integrations and

@@ -52,6 +52,7 @@ describe('preflightCodeOutputBatch Code API routing', () => {
       codeExecutionContext: {
         baseUrl: 'https://code-stateful.example.com',
         executionProfile: 'stateful',
+        executionRouteKey: 'stateful:route',
       },
     });
 
@@ -64,6 +65,7 @@ describe('preflightCodeOutputBatch Code API routing', () => {
       inspectContent: true,
       codeApiBaseUrl: 'https://code-stateful.example.com',
       executionProfile: 'stateful',
+      executionRouteKey: 'stateful:route',
     });
   });
 });

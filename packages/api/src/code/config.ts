@@ -13,6 +13,19 @@ type ConfigurationRegistry = {
   listRegisteredIds: () => Promise<string[]>;
 };
 
+type StatefulCodeConfig = NonNullable<
+  NonNullable<AppConfig['endpoints']>[EModelEndpoint.agents]
+>['statefulCodeSessions'];
+type CodeEnvironmentConfig = NonNullable<NonNullable<StatefulCodeConfig>['environments']>[number];
+
+function isExecutableCodeEnvironment(environment: CodeEnvironmentConfig): boolean {
+  return !(
+    environment.pairing?.allowPrincipalWorkers === true &&
+    environment.pairing.workerId == null &&
+    environment.workerId == null
+  );
+}
+
 function retainDeploymentCodeEnvironments(
   appConfig: AppConfig,
   deploymentConfig: AppConfig,
@@ -115,14 +128,29 @@ export async function mergeAccessibleCodeEnvironments({
   ) {
     return appConfig;
   }
-  const mergedEnvironments = [...filteredEnvironments, ...effectivePrincipalEnvironments];
+  let mergedEnvironments = [...filteredEnvironments, ...effectivePrincipalEnvironments].map(
+    (environment) =>
+      !isExecutableCodeEnvironment(environment) &&
+      'default' in environment &&
+      environment.default === true
+        ? { ...environment, default: false as const }
+        : environment,
+  );
   if (
     mergedEnvironments.length > 0 &&
     !mergedEnvironments.some(
-      (environment) => 'default' in environment && environment.default === true,
+      (environment) =>
+        isExecutableCodeEnvironment(environment) &&
+        'default' in environment &&
+        environment.default === true,
     )
   ) {
-    mergedEnvironments[0] = { ...mergedEnvironments[0], default: true };
+    const defaultIndex = mergedEnvironments.findIndex(isExecutableCodeEnvironment);
+    if (defaultIndex >= 0) {
+      mergedEnvironments = mergedEnvironments.map((environment, index) =>
+        index === defaultIndex ? { ...environment, default: true as const } : environment,
+      );
+    }
   }
 
   return {

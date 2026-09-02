@@ -95,6 +95,7 @@ export enum QueryKeys {
   schedule = 'schedule',
   parentSubagents = 'parentSubagents',
   subagentThread = 'subagentThread',
+  codeEnvironments = 'codeEnvironments',
   agentQueuedTurns = 'agentQueuedTurns',
 }
 
@@ -151,4 +152,6 @@ export enum MutationKeys {
   updateSchedule = 'updateSchedule',
   deleteSchedule = 'deleteSchedule',
   runSchedule = 'runSchedule',
+  pairCodeEnvironment = 'pairCodeEnvironment',
+  deleteCodeEnvironment = 'deleteCodeEnvironment',
 }

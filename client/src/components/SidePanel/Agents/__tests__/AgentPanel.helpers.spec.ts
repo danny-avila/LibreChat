@@ -159,6 +159,18 @@ describe('composeAgentUpdatePayload', () => {
 
     expect(payload.code_environment_id).toBeUndefined();
   });
+
+  it('persists standalone skill authoring separately from catalog access', () => {
+    const form = createForm();
+    form.skills = [];
+    form.skills_enabled = false;
+    form.skill_authoring_enabled = true;
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.skills_enabled).toBe(false);
+    expect(payload.skill_authoring_enabled).toBe(true);
+  });
 });
 
 describe('persistAvatarChanges', () => {
