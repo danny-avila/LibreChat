@@ -54,7 +54,7 @@ export interface StampedSteerMedia {
 /** The model-bound body for a steer: quoted excerpts prepended as Markdown
  *  blockquotes, exactly like `prependQuotes` does for regular user turns. The
  *  persisted part keeps `steer`/`quotes` separate; only this boundary merges. */
-function mergeSteerModelText(text: string, quotes?: string[] | null): string {
+export function mergeSteerModelText(text: string, quotes?: string[] | null): string {
   const normalized = getReferencedQuotes(quotes);
   return normalized != null ? mergeQuotedText(text, normalized) : text;
 }

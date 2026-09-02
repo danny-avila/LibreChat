@@ -1265,6 +1265,35 @@ describe('compactConversation', () => {
     }
   });
 
+  it('merges quoted steer excerpts into the summarized payload', async () => {
+    /** The steer's quotes ride on the persisted part, and the normal replay
+     *  merges them at this boundary. A checkpoint that omits them drops the
+     *  referenced material permanently once it becomes the boundary. */
+    const steeredBranch: TMessage[] = [
+      userMessage('sq1', Constants.NO_PARENT, 'draft the license section'),
+      assistantMessage('sq2', 'sq1', [
+        { type: ContentTypes.TEXT, text: 'on it' },
+        {
+          type: ContentTypes.STEER,
+          steer: 'add the MIT clause now',
+          quotes: ['UNIQUE-QUOTE-SENTINEL'],
+        },
+      ] as unknown as TMessage['content']),
+    ];
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: steeredBranch,
+      ids: { ...ids, parentMessageId: 'sq2' },
+      db: dbMethods,
+    });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    expect(JSON.stringify(sent)).toContain('UNIQUE-QUOTE-SENTINEL');
+    expect(JSON.stringify(sent)).toContain('add the MIT clause now');
+  });
+
   it('applies a summary cap where a GPT-5 model expects it', async () => {
     /** `getOptions` already moved the inherited cap into `modelKwargs` and
      *  deleted the top-level key; writing the override back there would send
