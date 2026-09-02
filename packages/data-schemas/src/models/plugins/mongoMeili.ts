@@ -114,7 +114,7 @@ const hasSchemaPath = (schema: Schema, path: string): boolean =>
 /** Bump when the indexed document shape or projection changes for every index. */
 export const MEILI_INDEX_SCHEMA_VERSION = 2;
 /** Bump for conversation-only projection changes. */
-export const MEILI_CONVERSATION_INDEX_SCHEMA_VERSION = MEILI_INDEX_SCHEMA_VERSION + 1;
+export const MEILI_CONVERSATION_INDEX_SCHEMA_VERSION: number = MEILI_INDEX_SCHEMA_VERSION + 1;
 
 /**
  * Encodes a conversation ID for use as a MeiliSearch document primary key.
@@ -737,10 +737,7 @@ const createMeiliMongooseModel = ({
               : meiliIds;
 
           const existingDocs = await this.find({
-            $and: [
-              { [primaryKey]: { $in: candidateMongoIds } },
-              getIndexableQuery(),
-            ],
+            $and: [{ [primaryKey]: { $in: candidateMongoIds } }, getIndexableQuery()],
           })
             .select(primaryKey)
             .lean();
