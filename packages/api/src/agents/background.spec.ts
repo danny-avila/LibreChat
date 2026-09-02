@@ -516,6 +516,15 @@ describe('selection policy at injection time', () => {
     expect(backgroundToolNames).toEqual([]);
   });
 
+  it('keeps host-side workspace file listing in the foreground', () => {
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('list_workspace_files')],
+      toolRegistry: undefined,
+      toolOptions: { list_workspace_files: { run_in_background: true } },
+    });
+    expect(backgroundToolNames).toEqual([]);
+  });
+
   it('rejects and diagnoses a marker whose runtime definitions are all excluded', () => {
     /** `runInBackground: ['memory']` used to record a successful-looking
      *  option under the marker while set_memory/delete_memory — the

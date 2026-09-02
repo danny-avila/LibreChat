@@ -56,13 +56,18 @@ import {
   type BackgroundToolWakeupAdmission,
 } from './backgroundCompletion';
 import {
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
+  SEARCH_WORKSPACE_TOOL_NAME,
+  LIST_WORKSPACE_FILES_TOOL_NAME,
+} from './tools';
+import {
   resolveToolOption,
   getSelectionNames,
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
 import { SUBAGENT_WAKEUP_GUIDANCE, agentUsesSubagentCompletionWakeups } from './subagentDelivery';
-import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME, SEARCH_WORKSPACE_TOOL_NAME } from './tools';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
@@ -113,6 +118,7 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
+  LIST_WORKSPACE_FILES_TOOL_NAME,
   SET_MEMORY_TOOL_NAME,
   DELETE_MEMORY_TOOL_NAME,
   ASK_USER_QUESTION_TOOL_NAME,

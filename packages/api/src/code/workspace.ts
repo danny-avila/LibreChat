@@ -132,10 +132,18 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
+function normalizeRelativePath(value: string): string {
+  return value
+    .split('/')
+    .filter((segment) => segment !== '' && segment !== '.')
+    .join('/');
+}
+
 function isWithinRequestedPath(candidate: string, requestedPath: string | undefined): boolean {
-  if (requestedPath == null || requestedPath === '.') return true;
-  const prefix = requestedPath.replace(/\/+$/, '');
-  return candidate === prefix || candidate.startsWith(`${prefix}/`);
+  const prefix = requestedPath == null ? '' : normalizeRelativePath(requestedPath);
+  if (prefix === '') return true;
+  const normalizedCandidate = normalizeRelativePath(candidate);
+  return normalizedCandidate === prefix || normalizedCandidate.startsWith(`${prefix}/`);
 }
 
 async function readBoundedJson(response: Response, signal?: AbortSignal): Promise<unknown> {
