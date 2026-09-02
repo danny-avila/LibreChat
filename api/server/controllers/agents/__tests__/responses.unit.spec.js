@@ -266,6 +266,7 @@ jest.mock('@librechat/api', () => ({
     };
   }),
   resolveSubagentGraphs: jest.fn().mockResolvedValue(undefined),
+  resolveSubagents: jest.fn().mockResolvedValue(undefined),
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
@@ -707,6 +708,63 @@ describe('createResponse controller', () => {
     const { createRun } = require('@librechat/api');
     expect(createRun).toHaveBeenCalledWith(
       expect.objectContaining({ initialSessions: mockInitialSessions }),
+    );
+  });
+
+  it('resolves explicit agent_ids subagents for remote Responses API runs', async () => {
+    const { initializeAgent, resolveSubagents } = require('@librechat/api');
+    const primaryConfig = {
+      id: 'agent-123',
+      model: 'claude-3',
+      endpointTokenConfig: { 'claude-3': { prompt: 1 } },
+      model_parameters: {},
+      toolRegistry: {},
+      edges: [],
+      agentContextAttachments: [],
+      subagents: {
+        enabled: true,
+        agent_ids: ['agent-child'],
+      },
+    };
+    initializeAgent.mockResolvedValueOnce(primaryConfig);
+    const childConfig = {
+      id: 'agent-child',
+      endpointTokenConfig: { 'custom-model': { prompt: 7 } },
+      agentContextAttachments: [{ file_id: 'child-file' }],
+    };
+    resolveSubagents.mockImplementationOnce(async ({ primaryConfig: config }, deps) => {
+      config.subagentAgentConfigs = [childConfig];
+      deps.onAgentInitialized(childConfig.id, childConfig, childConfig);
+    });
+    req.config.endpoints.agents.capabilities = ['subagents'];
+
+    await createResponse(req, res);
+
+    expect(resolveSubagents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        primaryConfig,
+        subagentsCapabilityEnabled: true,
+        resourceType: ResourceType.REMOTE_AGENT,
+        memoryAvailable: true,
+      }),
+      expect.objectContaining({ getAgent: expect.any(Function) }),
+    );
+    expect(mockBuildAgentContextAttachmentsByAgentId).toHaveBeenCalledWith([
+      primaryConfig,
+      childConfig,
+    ]);
+    expect(mockBuildAgentScopedContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agentIds: ['agent-123', 'agent-child'] }),
+    );
+    expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: childConfig, agentId: 'agent-child' }),
+    );
+    expect(mockBuildInlineMemoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: childConfig, memoryAvailable: true }),
+    );
+    const usageParams = mockRecordCollectedUsage.mock.calls[0][1];
+    expect(usageParams.resolveEndpointTokenConfig({ agentId: childConfig.id })).toBe(
+      childConfig.endpointTokenConfig,
     );
   });
 

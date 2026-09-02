@@ -44,6 +44,7 @@ const {
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
   discoverConnectedAgents,
+  resolveSubagents,
   resolveSubagentGraphs,
   getBlockedOpaqueFileField,
   getContentTraversalFragments,
@@ -595,94 +596,117 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       let handoffAgentConfigs = new Map();
       let discoveredEdges = [];
       let discoveredMCPAuthMap;
+      let discoveredSkippedIds;
       const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
       const primaryHasGraphSubagents =
         subagentsCapabilityEnabled &&
         primaryConfig.subagents?.enabled === true &&
         (primaryConfig.subagents.graphs?.length ?? 0) > 0;
-      if (primaryConfig.edges?.length || primaryHasGraphSubagents) {
-        const modelsConfig = await getModelsConfig(req);
-        const discoveryParams = {
-          req,
-          res,
-          primaryConfig,
-          endpointOption,
-          allowedProviders,
-          modelsConfig,
-          loadTools,
-          requestFiles: [],
-          conversationId,
-          parentMessageId,
-          requestBody: mcpRequestBody,
-          resourceType: ResourceType.REMOTE_AGENT,
-          computeAccessibleSkillIds: (handoffAgent) =>
-            resolveAgentScopedSkillIds({
+      const primaryHasExplicitSubagents =
+        subagentsCapabilityEnabled &&
+        primaryConfig.subagents?.enabled === true &&
+        (primaryConfig.subagents.agent_ids?.length ?? 0) > 0;
+      const needsHandoffDiscovery = Boolean(primaryConfig.edges?.length);
+      const needsModelsConfig =
+        needsHandoffDiscovery || primaryHasGraphSubagents || primaryHasExplicitSubagents;
+      const modelsConfig = needsModelsConfig ? await getModelsConfig(req) : {};
+      const discoveryParams = {
+        req,
+        res,
+        primaryConfig,
+        endpointOption,
+        allowedProviders,
+        modelsConfig,
+        loadTools,
+        requestFiles: [],
+        conversationId,
+        parentMessageId,
+        requestBody: mcpRequestBody,
+        resourceType: ResourceType.REMOTE_AGENT,
+        computeAccessibleSkillIds: (handoffAgent) =>
+          resolveAgentScopedSkillIds({
+            agent: handoffAgent,
+            accessibleSkillIds,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+        computeSkillAuthoringAvailable: (handoffAgent) =>
+          canAuthorSkillFiles({
+            agent: handoffAgent,
+            scopedEditableSkillIds: resolveAgentScopedSkillIds({
               agent: handoffAgent,
-              accessibleSkillIds,
+              accessibleSkillIds: editableSkillIds,
               skillsCapabilityEnabled,
               ephemeralSkillsToggle,
             }),
-          computeSkillAuthoringAvailable: (handoffAgent) =>
-            canAuthorSkillFiles({
-              agent: handoffAgent,
-              scopedEditableSkillIds: resolveAgentScopedSkillIds({
-                agent: handoffAgent,
-                accessibleSkillIds: editableSkillIds,
-                skillsCapabilityEnabled,
-                ephemeralSkillsToggle,
-              }),
-              skillCreateAllowed,
-              skillsCapabilityEnabled,
-              ephemeralSkillsToggle,
-            }),
-          skillStates,
-          defaultActiveOnShare,
-          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
-          backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
-          toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
-          statefulSessionsAvailable: enabledCapabilities.has(
-            AgentCapabilities.stateful_code_sessions,
-          ),
-          allowedStatefulCodeEnvironments: agentsEConfig?.statefulCodeSessions?.allowedEnvironments,
-          memoryAvailable,
-        };
-        const discoveryDeps = {
-          getAgent: db.getAgent,
-          checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
-            const permissions = await getRemoteAgentPermissions(
-              { getEffectivePermissions },
-              userId,
-              role,
-              resourceId,
-            );
-            return hasPermissions(permissions, requiredPermission);
-          },
-          logViolation,
-          db: dbMethods,
-          onAgentInitialized: (loadedAgentId, loadedAgent, config) => {
-            agentToolContexts.set(
-              loadedAgentId,
-              buildAgentToolContext({ agent: loadedAgent, config }),
-            );
-          },
-          initializeAgent,
-        };
-        if (primaryConfig.edges?.length) {
-          ({
-            agentConfigs: handoffAgentConfigs,
-            edges: discoveredEdges,
-            userMCPAuthMap: discoveredMCPAuthMap,
-          } = await discoverConnectedAgents(discoveryParams, discoveryDeps));
-        }
-        if (subagentsCapabilityEnabled) {
-          discoveredMCPAuthMap = await resolveSubagentGraphs(
-            {
-              ...discoveryParams,
-              rootConfigs: [primaryConfig, ...handoffAgentConfigs.values()],
-            },
-            discoveryDeps,
+            skillCreateAllowed,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+        skillStates,
+        defaultActiveOnShare,
+        codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
+        statefulSessionsAvailable: enabledCapabilities.has(
+          AgentCapabilities.stateful_code_sessions,
+        ),
+        allowedStatefulCodeEnvironments: agentsEConfig?.statefulCodeSessions?.allowedEnvironments,
+        memoryAvailable,
+      };
+      const discoveryDeps = {
+        getAgent: db.getAgent,
+        checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
+          const permissions = await getRemoteAgentPermissions(
+            { getEffectivePermissions },
+            userId,
+            role,
+            resourceId,
           );
-        }
+          return hasPermissions(permissions, requiredPermission);
+        },
+        logViolation,
+        db: dbMethods,
+        onAgentInitialized: (loadedAgentId, loadedAgent, config) => {
+          agentToolContexts.set(
+            loadedAgentId,
+            buildAgentToolContext({ agent: loadedAgent, config }),
+          );
+        },
+        initializeAgent,
+      };
+      if (needsHandoffDiscovery) {
+        ({
+          agentConfigs: handoffAgentConfigs,
+          edges: discoveredEdges,
+          userMCPAuthMap: discoveredMCPAuthMap,
+          skippedAgentIds: discoveredSkippedIds,
+        } = await discoverConnectedAgents(discoveryParams, discoveryDeps));
+      }
+      if (subagentsCapabilityEnabled && (needsHandoffDiscovery || primaryHasGraphSubagents)) {
+        discoveredMCPAuthMap = await resolveSubagentGraphs(
+          {
+            ...discoveryParams,
+            rootConfigs: [primaryConfig, ...handoffAgentConfigs.values()],
+          },
+          discoveryDeps,
+        );
+      }
+      const explicitSubagentMCPAuthMap = await resolveSubagents(
+        {
+          ...discoveryParams,
+          agentConfigs: handoffAgentConfigs,
+          edges: discoveredEdges,
+          subagentsCapabilityEnabled,
+          skippedAgentIds: discoveredSkippedIds,
+        },
+        discoveryDeps,
+      );
+      if (explicitSubagentMCPAuthMap) {
+        discoveredMCPAuthMap = {
+          ...discoveredMCPAuthMap,
+          ...explicitSubagentMCPAuthMap,
+        };
       }
 
       primaryConfig.edges = discoveredEdges;
