@@ -46,6 +46,7 @@ const CHUNK_ROWS = 32;
 const WINDOW_OVERSCAN_ROWS = 8;
 const STREAM_TAIL_ROWS = 4;
 const SHORTCUT_TAIL_ROWS = 2;
+const MAX_PINNED_ROWS = 8;
 const MOUNTED_ROW_SLOT_SELECTOR = '[data-message-row-slot="true"][data-row-mounted="true"]';
 
 type ProgressiveRowMountOptions = {
@@ -98,6 +99,8 @@ export function useProgressiveRowMount({
   );
   const heightsRef = useRef(new Map<number, MeasuredRow>());
   const pinnedRowsRef = useRef(new Map<number, string>());
+  const publishedHeightsRef = useRef<ReadonlyMap<number, MeasuredRow>>(new Map());
+  const publishedPinnedRowsRef = useRef<ReadonlyMap<number, string>>(new Map());
   const rowOffsetsRef = useRef<number[]>([]);
   const firstRowOffsetRef = useRef(0);
   const containerWidthRef = useRef<number>();
@@ -117,6 +120,8 @@ export function useProgressiveRowMount({
     setPrevConversationId(conversationId);
     heightsRef.current = new Map();
     pinnedRowsRef.current = new Map();
+    publishedHeightsRef.current = new Map();
+    publishedPinnedRowsRef.current = new Map();
     rowOffsetsRef.current = [];
     containerWidthRef.current = undefined;
     leaseCountRef.current = 0;
@@ -211,7 +216,9 @@ export function useProgressiveRowMount({
           if (current?.mode !== 'bounded') {
             return current;
           }
-          return { ...current, heights: new Map(heightsRef.current) };
+          const publishedHeights = new Map(heightsRef.current);
+          publishedHeightsRef.current = publishedHeights;
+          return { ...current, heights: publishedHeights };
         });
       }
     },
@@ -219,12 +226,19 @@ export function useProgressiveRowMount({
   );
 
   const pinRow = useCallback((depth: number, messageId: string) => {
-    if (pinnedRowsRef.current.get(depth) === messageId) return;
+    if (pinnedRowsRef.current.get(depth) === messageId) {
+      pinnedRowsRef.current.delete(depth);
+    }
     pinnedRowsRef.current.set(depth, messageId);
+    while (pinnedRowsRef.current.size > MAX_PINNED_ROWS) {
+      const oldestDepth = pinnedRowsRef.current.keys().next().value;
+      if (oldestDepth == null) break;
+      pinnedRowsRef.current.delete(oldestDepth);
+    }
+    const publishedPinnedRows = new Map(pinnedRowsRef.current);
+    publishedPinnedRowsRef.current = publishedPinnedRows;
     setMountWindow((current) =>
-      current?.mode === 'bounded'
-        ? { ...current, pinnedRows: new Map(pinnedRowsRef.current) }
-        : current,
+      current?.mode === 'bounded' ? { ...current, pinnedRows: publishedPinnedRows } : current,
     );
   }, []);
 
@@ -275,12 +289,24 @@ export function useProgressiveRowMount({
         0,
         currentTailDepth - (isSubmittingRef.current ? STREAM_TAIL_ROWS : SHORTCUT_TAIL_ROWS) + 1,
       ),
-      heights: new Map(heightsRef.current),
-      pinnedRows: new Map(pinnedRowsRef.current),
+      heights: publishedHeightsRef.current,
+      pinnedRows: publishedPinnedRowsRef.current,
       measureRow,
       pinRow,
     };
   }, [anchorBottom, measureRow, pinRow, scrollableRef]);
+
+  const publishBoundedWindow = useCallback(
+    (window = boundedWindow()): RowMountWindow => {
+      if (window?.mode !== 'bounded') return window;
+      const publishedHeights = new Map(heightsRef.current);
+      const publishedPinnedRows = new Map(pinnedRowsRef.current);
+      publishedHeightsRef.current = publishedHeights;
+      publishedPinnedRowsRef.current = publishedPinnedRows;
+      return { ...window, heights: publishedHeights, pinnedRows: publishedPinnedRows };
+    },
+    [boundedWindow],
+  );
 
   const restartMeasurement = useCallback(() => {
     if (remeasuringRef.current || leaseCountRef.current > 0) return;
@@ -303,10 +329,10 @@ export function useProgressiveRowMount({
       requestAnimationFrame(() => {
         measureMountedRows();
         remeasuringRef.current = false;
-        if (leaseCountRef.current === 0) setMountWindow(boundedWindow());
+        if (leaseCountRef.current === 0) setMountWindow(publishBoundedWindow());
       }),
     );
-  }, [boundedWindow, measureMountedRows, scrollableRef]);
+  }, [measureMountedRows, publishBoundedWindow, scrollableRef]);
 
   const refreshBoundedWindow = useCallback(() => {
     setMountWindow((current) => {
@@ -322,9 +348,9 @@ export function useProgressiveRowMount({
       ) {
         return current;
       }
-      return next;
+      return publishBoundedWindow(next);
     });
-  }, [boundedWindow]);
+  }, [boundedWindow, publishBoundedWindow]);
 
   const scheduleBoundedRefresh = useCallback(() => {
     if (updateFrameRef.current != null) {
@@ -361,7 +387,7 @@ export function useProgressiveRowMount({
         if (settled) return;
         settled = true;
         measureMountedRows();
-        setMountWindow(boundedWindow());
+        setMountWindow(publishBoundedWindow());
       };
       const scheduleAfterQuietLayout = () => {
         if (firstFrame != null) cancelAnimationFrame(firstFrame);
@@ -448,10 +474,10 @@ export function useProgressiveRowMount({
   }, [
     mountWindow,
     tailDepth,
-    boundedWindow,
     captureAnchor,
     isSubmitting,
     measureMountedRows,
+    publishBoundedWindow,
     scrollableRef,
   ]);
 
@@ -467,10 +493,10 @@ export function useProgressiveRowMount({
     }
     const frameId = requestAnimationFrame(() => {
       measureMountedRows();
-      setMountWindow(boundedWindow());
+      setMountWindow(publishBoundedWindow());
     });
     return () => cancelAnimationFrame(frameId);
-  }, [mountWindow, tailDepth, boundedWindow, measureMountedRows]);
+  }, [mountWindow, tailDepth, measureMountedRows, publishBoundedWindow]);
 
   useLayoutEffect(() => {
     const captured = anchorRef.current;
@@ -562,8 +588,8 @@ export function useProgressiveRowMount({
       if (depth > tailDepth) pinnedRowsRef.current.delete(depth);
     }
     rebuildRowOffsets();
-    setMountWindow(boundedWindow());
-  }, [boundedWindow, mountWindow?.mode, rebuildRowOffsets, tailDepth]);
+    setMountWindow(publishBoundedWindow());
+  }, [mountWindow?.mode, publishBoundedWindow, rebuildRowOffsets, tailDepth]);
 
   useEffect(
     () => () => {
@@ -588,8 +614,23 @@ export function useProgressiveRowMount({
         released = true;
         leaseCountRef.current = Math.max(0, leaseCountRef.current - 1);
         if (leaseCountRef.current === 0) {
+          const container = scrollableRef.current;
+          const hasPendingLayout =
+            container != null &&
+            (container.querySelector('[data-row-layout-pending="true"]') != null ||
+              [
+                ...container.querySelectorAll<HTMLImageElement>(`${MOUNTED_ROW_SLOT_SELECTOR} img`),
+              ].some((image) => !image.complete));
+          if (hasPendingLayout) {
+            setMountWindow({
+              mode: 'progressive',
+              start: 0,
+              end: Number.POSITIVE_INFINITY,
+            });
+            return;
+          }
           measureMountedRows();
-          setMountWindow(boundedWindow());
+          setMountWindow(publishBoundedWindow());
         }
       };
     };
@@ -608,7 +649,7 @@ export function useProgressiveRowMount({
       activeCompleters.delete(complete);
       activeImmediateCompleters.delete(acquireLease);
     };
-  }, [tailDepth, boundedWindow, measureMountedRows]);
+  }, [tailDepth, measureMountedRows, publishBoundedWindow, scrollableRef]);
 
   return mountWindow;
 }

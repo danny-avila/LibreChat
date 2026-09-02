@@ -155,7 +155,9 @@ describe('useProgressiveRowMount', () => {
     }
 
     expect(result.current?.mode).toBe('progressive');
-    act(() => container.querySelector('img')?.dispatchEvent(new Event('load')));
+    const pendingImage = container.querySelector('img');
+    if (pendingImage) Object.defineProperty(pendingImage, 'complete', { value: true });
+    act(() => pendingImage?.dispatchEvent(new Event('load')));
     flushFrames();
     flushFrames();
     expect(result.current?.mode).toBe('progressive');
@@ -179,6 +181,21 @@ describe('useProgressiveRowMount', () => {
     expect(result.current?.start).toBe(0);
     expect(result.current?.end).toBe(14);
     expect(result.current?.heights?.size).toBe(268);
+    const publishedHeights = result.current?.heights;
+    act(() => {
+      container.scrollTop = 1;
+      container.dispatchEvent(new Event('scroll'));
+    });
+    flushFrames();
+    expect(result.current?.heights).toBe(publishedHeights);
+
+    act(() => {
+      for (let depth = 0; depth < 9; depth += 1) {
+        result.current?.pinRow?.(depth, `message-${depth}`);
+      }
+    });
+    expect(result.current?.pinnedRows?.size).toBe(8);
+    expect(result.current?.pinnedRows?.has(0)).toBe(false);
     const queriesAfterMeasurement = querySpy.mock.calls.length;
 
     act(() => {
@@ -227,7 +244,26 @@ describe('useProgressiveRowMount', () => {
       releaseLease = await lease;
     });
     expect(result.current).toBeNull();
+    const leasePendingLayout = document.createElement('div');
+    leasePendingLayout.dataset.rowLayoutPending = 'true';
+    container.appendChild(leasePendingLayout);
     act(() => releaseLease());
+    expect(result.current?.mode).toBe('progressive');
+    act(() => {
+      leasePendingLayout.remove();
+      mutationCallback(
+        [
+          {
+            type: 'childList',
+            addedNodes: [] as unknown as NodeList,
+            removedNodes: [leasePendingLayout] as unknown as NodeList,
+          } as MutationRecord,
+        ],
+        {} as MutationObserver,
+      );
+    });
+    flushFrames();
+    flushFrames();
     expect(result.current?.mode).toBe('bounded');
 
     rerender({

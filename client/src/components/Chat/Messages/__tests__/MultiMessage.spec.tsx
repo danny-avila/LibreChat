@@ -21,7 +21,11 @@ const createRowStub = () => {
     return createElement(
       'div',
       null,
-      createElement('div', { 'data-testid': 'row' }, message.messageId),
+      createElement(
+        'div',
+        { 'data-testid': 'row', id: message.messageId, role: 'group' },
+        message.messageId,
+      ),
       steer?.steerId
         ? createElement('div', { id: `steer-${steer.steerId}`, className: 'steer-render' })
         : null,
@@ -438,7 +442,9 @@ describe('MultiMessage row mount window', () => {
     slot?.focus();
 
     view.rerender(windowedTree({ mode: 'bounded', start: 0, end: 2, heights }));
-    expect(document.activeElement).toHaveAttribute('data-row-message-id', 'm0');
+    expect(document.activeElement).toHaveAttribute('id', 'm0');
+    expect(document.activeElement).toHaveAttribute('role', 'group');
+    expect(document.activeElement).not.toHaveAttribute('data-message-row-slot');
   });
 
   it('retains lightweight steer anchors in an off-window response', () => {

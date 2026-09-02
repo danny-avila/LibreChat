@@ -38,9 +38,18 @@ function MessageRowSlot({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const focusedSteerIdRef = useRef<string>();
+  const transferMessageFocusRef = useRef(false);
 
   useLayoutEffect(() => {
     if (!mounted) return;
+    if (transferMessageFocusRef.current) {
+      const target = document.getElementById(messageId);
+      if (target && target !== ref.current) {
+        if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+      }
+      transferMessageFocusRef.current = false;
+    }
     const focusedSteerId = focusedSteerIdRef.current;
     if (!focusedSteerId) return;
     const target = document.getElementById(focusedSteerId);
@@ -49,7 +58,7 @@ function MessageRowSlot({
       target.focus({ preventScroll: true });
     }
     focusedSteerIdRef.current = undefined;
-  }, [mounted]);
+  }, [messageId, mounted]);
 
   useLayoutEffect(() => {
     const element = ref.current;
@@ -77,6 +86,8 @@ function MessageRowSlot({
       style={mounted ? undefined : { height: placeholderHeight }}
       onFocusCapture={(event) => {
         const focusedId = (event.target as HTMLElement).id;
+        if (!mounted && event.target === event.currentTarget)
+          transferMessageFocusRef.current = true;
         if (focusedId && steerAnchors?.some((steer) => steer.id === focusedId)) {
           focusedSteerIdRef.current = focusedId;
         }
