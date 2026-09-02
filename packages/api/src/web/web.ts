@@ -19,6 +19,7 @@ const USER_PROVIDED_URL_KEYS = new Set<TWebSearchKeys>([
   'searxngInstanceUrl',
   'firecrawlApiUrl',
   'jinaApiUrl',
+  'cohereApiUrl',
 ]);
 
 /**
