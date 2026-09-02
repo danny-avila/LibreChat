@@ -657,6 +657,27 @@ describe('message route conversation ownership filters', () => {
       expect.objectContaining({ user: { id: authenticatedUserId } }),
       'active-convo',
     );
+    /** The paginated read projects like every other client read, so persisted
+     *  `contextMeta` never reaches the client through this endpoint. */
+    expect(getMessagesByCursor).toHaveBeenCalledWith(
+      { conversationId: 'active-convo', user: authenticatedUserId },
+      expect.objectContaining({ select: CLIENT_MESSAGE_SELECT }),
+    );
+  });
+
+  it('projects a single-message query read like every other client read', async () => {
+    getConvoOwnership.mockResolvedValue({ conversationId: 'convo-1' });
+    getMessages.mockResolvedValue([{ messageId: 'message-1', conversationId: 'convo-1' }]);
+
+    const response = await request(app).get(
+      '/api/messages?conversationId=convo-1&messageId=message-1',
+    );
+
+    expect(response.status).toBe(200);
+    expect(getMessages).toHaveBeenCalledWith(
+      { conversationId: 'convo-1', messageId: 'message-1', user: authenticatedUserId },
+      CLIENT_MESSAGE_SELECT,
+    );
   });
 
   it('should start conversation message reads before validation resolves', async () => {

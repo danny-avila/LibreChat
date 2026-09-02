@@ -1400,6 +1400,91 @@ describe('AgentClient - interrupt discovery persistence', () => {
     expect(metaWhenStreamed).toEqual(seed);
   });
 
+  it('keeps the inherited context meta when a fresh run fails before it exists', async () => {
+    const streamId = 'conversation-context-meta-setup-failure';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    const seed = {
+      calibrationRatio: 1.15,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 30_000, masked: true },
+    };
+    client.contextMeta = seed;
+    mockCreateRun.mockRejectedValueOnce(new Error('run creation failed'));
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-setup-failure';
+    client.parentMessageId = 'parent-context-meta-setup-failure';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] }).catch(() => undefined);
+
+    expect(client.run).toBeUndefined();
+    expect(client.contextMeta).toEqual(seed);
+  });
+
+  it('keeps the inherited context meta when a resumed run fails to rebuild', async () => {
+    const streamId = 'conversation-context-meta-resume-failure';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    const seed = {
+      calibrationRatio: 1.15,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 30_000, masked: true },
+    };
+    client.seedContextMeta(seed);
+    mockCreateRun.mockRejectedValueOnce(new Error('rebuild failed'));
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-resume-failure';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client
+      .resumeCompletion({
+        resumeValue: { decisions: [] },
+        streamId,
+        checkpointNamespace: 'resume-failure',
+      })
+      .catch(() => undefined);
+
+    expect(client.run).toBeUndefined();
+    expect(client.contextMeta).toEqual(seed);
+  });
+
   it('caps an event-bound pause at the inherited binding deadline', async () => {
     const now = Date.now();
     const streamId = 'conversation-event-bound-pause';

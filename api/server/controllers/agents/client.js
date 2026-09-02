@@ -4616,7 +4616,10 @@ class AgentClient extends BaseClient {
        * the failure; retain that model-visible state for actor reconciliation. */
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
-      this.contextMeta = captureRunContextMeta(this);
+      /** A run that never came to exist has no state of its own: keep the
+       * inherited meta so the persisted error response still seeds the next
+       * turn. A created run's neutral state may still clear it. */
+      this.contextMeta = this.run == null ? this.contextMeta : captureRunContextMeta(this);
 
       this.finalizeSubagentContent();
       this.stampMcpServerIdentities();
@@ -5058,7 +5061,10 @@ class AgentClient extends BaseClient {
     } finally {
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
-      this.contextMeta = captureRunContextMeta(this);
+      /** A run that never came to exist has no state of its own: keep the
+       * inherited meta so the persisted error response still seeds the next
+       * turn. A created run's neutral state may still clear it. */
+      this.contextMeta = this.run == null ? this.contextMeta : captureRunContextMeta(this);
 
       this.finalizeSubagentContent();
       this.stampMcpServerIdentities();

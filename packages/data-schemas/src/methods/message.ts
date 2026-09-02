@@ -3117,15 +3117,21 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       sortOrder?: 1 | -1;
       limit?: number;
       cursor?: string | null;
+      /** Projection for the page, e.g. `CLIENT_MESSAGE_SELECT` for client-facing reads. */
+      select?: string;
     } = {},
   ) {
     const Message = mongoose.models.Message as Model<IMessage>;
-    const { sortField = 'createdAt', sortOrder = -1, limit = 25, cursor } = options;
+    const { sortField = 'createdAt', sortOrder = -1, limit = 25, cursor, select } = options;
     const queryFilter = { ...filter };
     if (cursor) {
       queryFilter[sortField] = sortOrder === 1 ? { $gt: cursor } : { $lt: cursor };
     }
-    const messages = await Message.find(queryFilter)
+    const query = Message.find(queryFilter);
+    if (select) {
+      query.select(select);
+    }
+    const messages = await query
       .sort({ [sortField]: sortOrder })
       .limit(limit + 1)
       .lean<IMessage[]>();

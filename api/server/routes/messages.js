@@ -101,11 +101,12 @@ router.get('/', async (req, res) => {
     let scopedMessageRead;
     if (typeof conversationId === 'string') {
       const ownershipRead = db.getConvoOwnership(user, conversationId);
+      /** Client-facing reads never expose server-private fields such as `contextMeta`. */
       const messageRead = messageId
-        ? db.getMessages({ conversationId, messageId, user })
+        ? db.getMessages({ conversationId, messageId, user }, CLIENT_MESSAGE_SELECT)
         : db.getMessagesByCursor(
             { conversationId, user },
-            { sortField, sortOrder, limit: pageSize, cursor },
+            { sortField, sortOrder, limit: pageSize, cursor, select: CLIENT_MESSAGE_SELECT },
           );
       scopedMessageRead = Promise.resolve(messageRead).then(
         (value) => ({ ok: true, value }),
@@ -161,10 +162,13 @@ router.get('/', async (req, res) => {
         }
       }
 
-      const dbMessages = await db.getMessages({
-        user,
-        messageId: { $in: messageIds },
-      });
+      const dbMessages = await db.getMessages(
+        {
+          user,
+          messageId: { $in: messageIds },
+        },
+        CLIENT_MESSAGE_SELECT,
+      );
 
       const dbMessageMap = {};
       for (const dbMessage of dbMessages) {
