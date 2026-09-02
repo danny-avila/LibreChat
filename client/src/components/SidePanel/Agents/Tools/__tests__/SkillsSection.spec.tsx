@@ -1,7 +1,7 @@
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
-import { fireEvent, render, screen, within } from '@testing-library/react';
 import { SkillsScope } from 'librechat-data-provider';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { AgentItem } from '../items/types';
 import SkillsSection from '../SkillsSection';
@@ -157,6 +157,48 @@ describe('SkillsSection mode derivation', () => {
     renderSection([makeItem('s1', 'Selected skill')]);
 
     expect(getRadio('com_ui_skills_mode_selected')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('normalizes an ambiguous legacy scope without dirtying the form', () => {
+    mockFormValues = { skills_enabled: true, skills: ['s1'] };
+
+    renderSection([makeItem('s1', 'Selected skill')]);
+
+    expect(mockSetValue).toHaveBeenCalledWith('skills_scope', SkillsScope.selected, {
+      shouldDirty: false,
+    });
+  });
+
+  test('clears authoring left on under a resolved Off', () => {
+    /** `skillDeps` enables the authoring tools for either flag, so this shape
+     *  would run with skills the section reports as disabled. */
+    mockFormValues = {
+      skills_enabled: false,
+      skill_authoring_enabled: true,
+      skills_scope: SkillsScope.none,
+      skills: ['s1'],
+    };
+
+    renderSection([makeItem('s1', 'Selected skill')]);
+
+    expect(getRadio('com_ui_skills_mode_off')).toHaveAttribute('aria-checked', 'true');
+    expect(mockSetValue).toHaveBeenCalledWith('skill_authoring_enabled', false, {
+      shouldDirty: false,
+    });
+  });
+
+  test('leaves authoring alone while skills are enabled', () => {
+    mockFormValues = {
+      skills_enabled: true,
+      skill_authoring_enabled: true,
+      skills_scope: SkillsScope.all,
+      skills: [],
+    };
+
+    renderSection();
+
+    expect(getRadio('com_ui_skills_mode_all')).toHaveAttribute('aria-checked', 'true');
+    expectNoFieldWrite('skill_authoring_enabled');
   });
 });
 

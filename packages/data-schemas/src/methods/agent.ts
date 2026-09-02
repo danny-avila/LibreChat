@@ -610,9 +610,11 @@ export function createAgentMethods(
         isExternalSkillId,
       );
       agentData.skills = prunedSkills;
-      /** Fail closed when pruning empties a non-empty allowlist — empty +
-       *  enabled means the full catalog, and hygiene must never widen scope. */
-      if (prunedSkills.length === 0) {
+      /** Fail closed when pruning empties a non-empty allowlist: empty +
+       *  enabled means the full catalog, and hygiene must never widen scope.
+       *  An explicit `skills_scope` already says what an empty allowlist
+       *  means, so only the legacy shape is inferred from the array. */
+      if (prunedSkills.length === 0 && agentData.skills_scope == null) {
         agentData.skills_enabled = false;
       }
     }
@@ -1410,7 +1412,10 @@ export function createAgentMethods(
         isExternalSkillId,
       );
       revertToVersion.skills = prunedSkills;
-      if (prunedSkills.length === 0) {
+      /** The snapshot carries its own scope, and an All-scoped version keeps
+       *  its allowlist, so failing closed here would restore the version as
+       *  Off. Only a snapshot with no scope is inferred from the array. */
+      if (prunedSkills.length === 0 && revertToVersion.skills_scope == null) {
         revertToVersion.skills_enabled = false;
       }
     }

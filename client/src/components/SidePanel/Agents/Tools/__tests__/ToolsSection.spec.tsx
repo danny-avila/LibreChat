@@ -39,7 +39,7 @@ jest.mock('~/Providers', () => ({
 }));
 
 jest.mock('~/data-provider', () => ({
-  useListSkillsQuery: () => ({ data: { skills: [] } }),
+  useSkillsInfiniteQuery: () => ({ data: { pages: [{ skills: [] }] } }),
   useDeleteAgentAction: () => ({ mutate: jest.fn() }),
 }));
 

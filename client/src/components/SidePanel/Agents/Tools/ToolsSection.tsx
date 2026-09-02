@@ -18,16 +18,16 @@ import {
   useResolvedSkills,
   useUninstallToolCredentials,
 } from './hooks';
-import { computeToggleAction } from './items/mutations';
-import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
+import { useSkillsInfiniteQuery, useDeleteAgentAction } from '~/data-provider';
 import { requiresFileManagerRemoval } from './items/capabilities';
 import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
 import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
+import { computeToggleAction } from './items/mutations';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers';
-import { isEphemeralAgent } from '~/common';
 import ItemDialog from './ItemDialog/ItemDialog';
 import { mcpAllToken } from './items/selectors';
+import { isEphemeralAgent } from '~/common';
 import SkillsSection from './SkillsSection';
 import SkillsDialog from './SkillsDialog';
 import ToolRow from './ToolRow';
@@ -73,8 +73,19 @@ export default function ToolsSection({ agentId }: Props) {
     [agentsConfig],
   );
   const showSkills = hasSkillsAccess && skillsEnabled;
-  const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
-  const resolvedSkills = useResolvedSkills(skillsData?.skills);
+  /** The same infinite query the section and the picker use, so all three
+   *  consumers share one cache entry and one request. A plain list query hits
+   *  the same endpoint under a different key, which React Query cannot
+   *  deduplicate: the first page would be fetched twice. Only the first page
+   *  is needed here, and pagination stays driven by whoever opens a list. */
+  const { data: skillsData } = useSkillsInfiniteQuery({ limit: 100 }, { enabled: showSkills });
+  /** `undefined` until the first page lands: `useResolvedSkills` treats it as
+   *  "not loaded yet" and skips its per-id fallback lookups. */
+  const skillSummaries = useMemo(
+    () => (skillsData ? skillsData.pages.flatMap((page) => page.skills) : undefined),
+    [skillsData],
+  );
+  const resolvedSkills = useResolvedSkills(skillSummaries);
 
   const uninstallToolCredentials = useUninstallToolCredentials();
 

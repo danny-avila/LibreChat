@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Radio } from '@librechat/client';
 import { ChevronRight, Plus, X } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Radio } from '@librechat/client';
 import { SkillsScope, resolveAgentSkillsScope } from 'librechat-data-provider';
-import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
-import { useLocalize, useAuthContext } from '~/hooks';
 import { useSkillsInfiniteQuery } from '~/data-provider';
+import { useLocalize, useAuthContext } from '~/hooks';
 import { buildSkillItems } from './items/catalog';
 import { getIconForItem } from './items/icons';
 import { cn } from '~/utils';
@@ -128,16 +128,27 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
     setBodyMode(mode);
   }
 
-  /** The one ambiguous legacy shape is `skills_enabled` with no explicit
-   *  scope, where the meaning depends on whether the allowlist is empty.
-   *  Pin the resolved scope so the next save persists the new shape. Not
-   *  dirtying: this is a normalization the user did not ask for, and it must
-   *  not light up Save on an untouched agent. */
+  const authoringEnabledValue = useWatch({ control, name: 'skill_authoring_enabled' });
+
+  /** Two legacy shapes the section has to reconcile with what it displays.
+   *  Neither dirties the form: they are normalizations the user did not ask
+   *  for, and they must not light up Save on an untouched agent.
+   *
+   *  1. `skills_enabled` with no explicit scope, where the meaning depends on
+   *     whether the allowlist is empty. Pin the resolved scope so the next
+   *     save persists the new shape.
+   *  2. Authoring left on under a resolved Off. `skillDeps` enables the
+   *     skill-authoring tools for either flag, so that shape runs with skills
+   *     the section says are disabled. Off means no skills at all, which is
+   *     what selecting Off already writes. */
   useEffect(() => {
     if (skillsEnabledValue === true && skillsScopeValue === undefined) {
       setValue('skills_scope', mode, { shouldDirty: false });
     }
-  }, [mode, skillsEnabledValue, skillsScopeValue, setValue]);
+    if (mode === SkillsScope.none && authoringEnabledValue === true) {
+      setValue('skill_authoring_enabled', false, { shouldDirty: false });
+    }
+  }, [mode, skillsEnabledValue, skillsScopeValue, authoringEnabledValue, setValue]);
 
   /** Only `all` needs the deployment-wide catalog, for the count and the
    *  read-only list. Other modes never fetch it. Shares its cache with the
