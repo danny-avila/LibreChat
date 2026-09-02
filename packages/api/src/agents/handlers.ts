@@ -23,9 +23,9 @@ import type {
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
+import type { WorkspaceReadResult } from '~/code/workspace';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
-import type { WorkspaceReadResult } from '~/code/workspace';
 import type { TextContentFragment } from '~/protection';
 import type { ServerRequest } from '~/types';
 import {
