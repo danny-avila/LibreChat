@@ -4411,7 +4411,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
-      const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      const {
+        toolCalls,
+        agentId,
+        configurable,
+        metadata,
+        signal: runSignal,
+        resolve,
+        reject,
+      } = data;
       const callerCapabilityProjection = resolveCallerCapabilityProjectionSnapshot(
         (
           data as ToolExecuteBatchRequest & {
@@ -5884,6 +5892,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       toolCall: toolCallConfig,
                       configurable: mergedConfigurable,
                       metadata,
+                      /** The run's cancellation signal. Without it a foreground
+                       *  tool call keeps running after Stop: an MCP call never
+                       *  sends `notifications/cancelled`, and every other
+                       *  signal-aware tool keeps burning quota on a turn the
+                       *  user already abandoned. Detached background calls
+                       *  intentionally use their own controller instead. */
+                      ...(runSignal != null && { signal: runSignal }),
                     } as Record<string, unknown>);
 
                     /* Only sandbox-bound calls carry a runtime session hint, so
@@ -5981,6 +5996,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
                     }
                     const { message, logContext } = getSafeToolError(toolError);
+                    /** A user Stop rejects every in-flight call at once. That is
+                     *  the abort working, not a fault, so it stays out of the
+                     *  error log; the message still reaches the model turn. */
+                    if (runSignal?.aborted === true) {
+                      logger.debug(`[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`, {
+                        name: logContext.name,
+                      });
+                      return errorResult(tc, message);
+                    }
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
                     const filteredError = filteredToolOutputResult(tc, req, {
                       errorMessage: message,
