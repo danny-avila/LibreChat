@@ -16,10 +16,9 @@ const DEFAULT_REVIEW_DECISIONS: Agents.ToolApprovalDecisionType[] = ['approve', 
 /**
  * Layered sources that combine into the effective tool-approval policy for a turn.
  *
- * Only {@link ToolApprovalPolicyLayers.endpoint} is consumed today; `agent` and
- * `skills` are reserved seams so future per-agent / per-skill plumbing lands in
- * {@link resolveToolApprovalPolicy} rather than being threaded through the run
- * call site.
+ * Endpoint policy remains the administrative baseline. Attached code environments
+ * also activate LibreChat's built-in BYOM baseline; `agent` and `skills` remain
+ * reserved seams for future persisted overrides.
  */
 export interface ToolApprovalPolicyLayers {
   /**
@@ -39,6 +38,12 @@ export interface ToolApprovalPolicyLayers {
    * skill can never silently auto-approve a tool.
    */
   skills?: TToolApprovalPolicy[];
+  /**
+   * At least one agent in this run executes in an attached, user-operated environment.
+   * Attached environments get LibreChat's safe approval baseline without requiring
+   * an administrator to opt the whole endpoint into prompts.
+   */
+  attachedCodeEnvironment?: boolean;
 }
 
 /**
@@ -51,13 +56,21 @@ export interface ToolApprovalPolicyLayers {
  *   - `agent` overrides `mode`/`allow`/`deny`/`ask`/`reason`;
  *   - `skills` may only tighten (add `ask`/`deny`), never loosen.
  *
- * Today only `endpoint` is consumed, so the result is identical to reading
- * `endpoints.agents.toolApproval` directly — `agent`/`skills` are accepted but
- * not yet merged. Behaviour-preserving until those layers ship.
+ * The BYOM activation adds only `enabled: true, mode: 'bypass'`; an agent-scoped
+ * hook supplies the risky coding decisions. This avoids prompting managed sibling
+ * agents in the same graph. An explicit endpoint `enabled: false` remains the
+ * administrator emergency override. `agent`/`skills` are accepted but not yet merged.
  */
 export function resolveToolApprovalPolicy(
   layers: ToolApprovalPolicyLayers,
 ): TToolApprovalPolicy | undefined {
+  if (layers.attachedCodeEnvironment === true && layers.endpoint?.enabled !== false) {
+    return {
+      enabled: true,
+      mode: 'bypass',
+      ...layers.endpoint,
+    };
+  }
   return layers.endpoint;
 }
 

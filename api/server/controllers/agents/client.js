@@ -49,7 +49,10 @@ const {
   getAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
+  resolveToolApprovalPolicy,
   buildToolApprovalHooks,
+  collectAttachedCodeEnvironmentAgentIds,
+  createAttachedCodeEnvironmentPolicyHook,
   agentRunUsesCheckpointer,
   canAgentGraphPause,
   getPluginHookSource,
@@ -3786,7 +3789,14 @@ class AgentClient extends BaseClient {
        * spending on provider work. */
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
-      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const attachedCodeEnvironmentAgentIds =
+        collectAttachedCodeEnvironmentAgentIds(topLevelAgents);
+      const effectiveToolApprovalPolicy = resolveToolApprovalPolicy({
+        endpoint: agentsEConfig?.toolApproval,
+        attachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
+      });
+      const resolvedToolApprovalHooks = isHITLEnabled(effectiveToolApprovalPolicy)
         ? buildToolApprovalHooks({
             userId: this.options.req?.user?.id,
             conversationId: this.conversationId,
@@ -3794,19 +3804,28 @@ class AgentClient extends BaseClient {
             appConfig,
           })
         : undefined;
-      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const admissionToolApprovalHooks = [
+        ...(resolvedToolApprovalHooks ?? []),
+        ...(attachedCodeEnvironmentAgentIds.size > 0
+          ? [
+              {
+                hook: createAttachedCodeEnvironmentPolicyHook(attachedCodeEnvironmentAgentIds),
+              },
+            ]
+          : []),
+      ];
       const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
       const runCanPause = canAgentGraphPause({
-        policy: agentsEConfig?.toolApproval,
+        policy: effectiveToolApprovalPolicy,
         agents: topLevelAgents,
         hostGeneratedToolNames:
           this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
-        resolvedProgrammaticHooks: resolvedToolApprovalHooks,
+        resolvedProgrammaticHooks: admissionToolApprovalHooks,
         pluginHookSource: getPluginHookSource(),
         askUserQuestionAdminDisabled,
       });
       const runUsesCheckpointer = agentRunUsesCheckpointer({
-        policy: agentsEConfig?.toolApproval,
+        policy: effectiveToolApprovalPolicy,
         agents: topLevelAgents,
         askUserQuestionAdminDisabled,
       });
