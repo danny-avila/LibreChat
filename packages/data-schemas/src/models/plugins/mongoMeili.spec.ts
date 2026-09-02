@@ -20,7 +20,10 @@ interface DynamicMeiliDocument extends mongoose.Document {
 
 type DynamicMeiliModel = mongoose.Model<DynamicMeiliDocument> & SchemaWithMeiliMethods;
 
-const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
+const createDynamicMeiliModel = (
+  modelName: string,
+  syncOptions: { syncBatchSize?: number; syncDelayMs?: number } = {},
+): DynamicMeiliModel => {
   const schema = new mongoose.Schema<DynamicMeiliDocument>({
     docId: {
       type: String,
@@ -50,6 +53,7 @@ const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
     apiKey: 'bar',
     indexName: modelName.toLowerCase(),
     primaryKey: 'docId',
+    ...syncOptions,
   });
 
   return mongoose.model<DynamicMeiliDocument>(modelName, schema) as unknown as DynamicMeiliModel;
@@ -1294,6 +1298,46 @@ describe('Meilisearch Mongoose plugin', () => {
         { primaryKey: 'conversationId' },
       );
       expect(await conversationModel.countDocuments({ _id, _meiliIndex: true })).toBe(1);
+    });
+
+    test('bounds repeated retry passes when a document never stabilizes', async () => {
+      const modelName = `UnstableSync${Date.now()}`;
+      const Model = createDynamicMeiliModel(modelName, {
+        syncBatchSize: 1,
+        syncDelayMs: 1,
+      });
+      let updateVersion = 0;
+      try {
+        await Model.collection.insertOne({
+          docId: 'unstable-document',
+          user: 'user',
+          title: 'Initial title',
+          isTemporary: false,
+          expiredAt: null,
+          _meiliIndex: false,
+          updatedAt: new Date(0),
+        });
+        mockWaitForTask.mockImplementation(async () => {
+          updateVersion += 1;
+          await Model.collection.updateOne(
+            { docId: 'unstable-document' },
+            {
+              $set: {
+                title: `Updated ${updateVersion}`,
+                updatedAt: new Date(updateVersion),
+              },
+            },
+          );
+          return { status: 'succeeded' };
+        });
+
+        await expect(Model.syncWithMeili()).rejects.toThrow(
+          '[syncWithMeili] Reconciliation did not converge after 11 batches',
+        );
+        expect(mockAddDocumentsInBatches).toHaveBeenCalledTimes(11);
+      } finally {
+        mongoose.deleteModel(modelName);
+      }
     });
 
     test('removes a stale task snapshot when the Mongo document becomes excluded', async () => {

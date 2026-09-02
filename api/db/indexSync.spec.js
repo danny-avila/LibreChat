@@ -174,7 +174,7 @@ describe('performSync() - syncThreshold logic', () => {
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
       updateSettings: jest.fn(),
-      search: jest.fn().mockResolvedValue({ hits: [{ id: 'legacy-document' }] }),
+      search: jest.fn().mockResolvedValue({ hits: [{ messageId: 'legacy-document' }] }),
       deleteDocuments,
     });
     mockWaitForTask.mockResolvedValue({ status: 'canceled' });
@@ -193,10 +193,10 @@ describe('performSync() - syncThreshold logic', () => {
       .mockResolvedValueOnce({ taskUid: 32 });
     const search = jest
       .fn()
-      .mockResolvedValueOnce({ hits: [{ id: firstPageIds[0] }] })
+      .mockResolvedValueOnce({ hits: [{ messageId: firstPageIds[0] }] })
       .mockResolvedValueOnce({ hits: [] })
-      .mockResolvedValueOnce({ hits: firstPageIds.map((id) => ({ id })) })
-      .mockResolvedValueOnce({ hits: [{ id: 'legacy-final' }] })
+      .mockResolvedValueOnce({ hits: firstPageIds.map((messageId) => ({ messageId })) })
+      .mockResolvedValueOnce({ hits: [{ messageId: 'legacy-final' }] })
       .mockResolvedValueOnce({ hits: [] });
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
@@ -221,6 +221,44 @@ describe('performSync() - syncThreshold logic', () => {
     expect(search).toHaveBeenNthCalledWith(4, '', { limit: 1000, offset: 0 });
     expect(deleteDocuments).toHaveBeenNthCalledWith(1, firstPageIds);
     expect(deleteDocuments).toHaveBeenNthCalledWith(2, ['legacy-final']);
+  });
+
+  test('fails orphan cleanup when a legacy hit lacks the configured primary key', async () => {
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn(),
+      search: jest.fn().mockResolvedValue({ hits: [{ id: 'wrong-key' }] }),
+      deleteDocuments: jest.fn(),
+    });
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow(
+      '[indexSync] Cannot clean messages document without messageId',
+    );
+  });
+
+  test('fails orphan cleanup when a completed deletion does not advance the page', async () => {
+    const stalledPage = Array.from({ length: 1000 }, (_, index) => ({
+      messageId: `legacy-${index}`,
+    }));
+    const deleteDocuments = jest.fn().mockResolvedValue({ taskUid: 41 });
+    const search = jest
+      .fn()
+      .mockResolvedValueOnce({ hits: [{ messageId: stalledPage[0].messageId }] })
+      .mockResolvedValueOnce({ hits: [] })
+      .mockResolvedValue({ hits: stalledPage });
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn(),
+      search,
+      deleteDocuments,
+    });
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow('[indexSync] messages cleanup made no progress');
+    expect(deleteDocuments).toHaveBeenCalledTimes(1);
   });
 
   test('creates missing indexes immediately inside the distributed job', async () => {

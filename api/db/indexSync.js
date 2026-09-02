@@ -40,11 +40,13 @@ class MeiliSearchClient {
  * Deletes documents from MeiliSearch index that are missing the user field
  * @param {import('meilisearch').Index} index - MeiliSearch index instance
  * @param {string} indexName - Name of the index for logging
+ * @param {string} primaryKey - Primary key configured for the index
  * @returns {Promise<number>} - Number of documents deleted
  */
-async function deleteDocumentsWithoutUserField(index, indexName) {
+async function deleteDocumentsWithoutUserField(index, indexName, primaryKey) {
   let deletedCount = 0;
   let offset = 0;
+  let previousPageSignature;
   const batchSize = 1000;
 
   try {
@@ -58,7 +60,19 @@ async function deleteDocumentsWithoutUserField(index, indexName) {
         break;
       }
 
-      const idsToDelete = searchResult.hits.filter((hit) => !hit.user).map((hit) => hit.id);
+      const orphanedHits = searchResult.hits.filter((hit) => !hit.user);
+      const missingPrimaryKey = orphanedHits.some((hit) => hit[primaryKey] == null);
+      if (missingPrimaryKey) {
+        throw new Error(`[indexSync] Cannot clean ${indexName} document without ${primaryKey}`);
+      }
+      const pageSignature = `${offset}:${searchResult.hits
+        .map((hit) => String(hit[primaryKey]))
+        .join(',')}`;
+      if (pageSignature === previousPageSignature) {
+        throw new Error(`[indexSync] ${indexName} cleanup made no progress`);
+      }
+      previousPageSignature = pageSignature;
+      const idsToDelete = orphanedHits.map((hit) => hit[primaryKey]);
 
       if (idsToDelete.length > 0) {
         logger.info(
@@ -184,7 +198,7 @@ async function ensureFilterableAttributes(client) {
     if (hasOrphanedDocs) {
       try {
         const messagesIndex = client.index('messages');
-        await deleteDocumentsWithoutUserField(messagesIndex, 'messages');
+        await deleteDocumentsWithoutUserField(messagesIndex, 'messages', 'messageId');
       } catch (error) {
         if (error.code === 'index_not_found') {
           logger.debug('[indexSync] Messages index disappeared before cleanup');
@@ -195,7 +209,7 @@ async function ensureFilterableAttributes(client) {
 
       try {
         const convosIndex = client.index('convos');
-        await deleteDocumentsWithoutUserField(convosIndex, 'convos');
+        await deleteDocumentsWithoutUserField(convosIndex, 'convos', 'conversationId');
       } catch (error) {
         if (error.code === 'index_not_found') {
           logger.debug('[indexSync] Conversations index disappeared before cleanup');

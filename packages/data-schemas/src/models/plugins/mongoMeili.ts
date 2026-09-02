@@ -105,6 +105,7 @@ const getSyncConfig = () => ({
   batchSize: parseInt(process.env.MEILI_SYNC_BATCH_SIZE || '100', 10),
   delayMs: parseInt(process.env.MEILI_SYNC_DELAY_MS || '100', 10),
 });
+const MAX_SYNC_RETRY_PASSES = 10;
 
 const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
@@ -536,6 +537,8 @@ const createMeiliMongooseModel = ({
       }
 
       let processedCount = 0;
+      let batchPasses = 0;
+      const maxBatchPasses = Math.ceil(approxTotalCount / batchSize) + MAX_SYNC_RETRY_PASSES;
 
       while (true) {
         const indexableQuery = getIndexableQuery();
@@ -565,14 +568,20 @@ const createMeiliMongooseModel = ({
             logger.info('[syncWithMeili] No more documents to process');
             break;
           }
+          if (batchPasses >= maxBatchPasses) {
+            throw new Error(
+              `[syncWithMeili] Reconciliation did not converge after ${maxBatchPasses} batches`,
+            );
+          }
+          batchPasses += 1;
 
           // Process the batch
           await this.processSyncBatch(index, documents);
           processedCount += documents.length;
           logger.info(`[syncWithMeili] Processed: ${processedCount}`);
 
-          // Add delay to prevent overwhelming resources
-          if (documents.length === batchSize && delayMs > 0) {
+          // Add delay before every subsequent pass to prevent hot-looping on changed documents
+          if (delayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
         } catch (error) {
