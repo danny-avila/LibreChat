@@ -50,6 +50,9 @@ type Registry = {
   listAccessibleConfigurations?: (
     actor: CodeEnvironmentPrincipalContext,
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
+  resolvePrincipals?: (
+    actor: CodeEnvironmentPrincipalContext,
+  ) => Promise<NonNullable<CodeEnvironmentPrincipalContext['principals']>>;
   updateSettings?: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environmentId: string;
@@ -200,13 +203,20 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     let details: AccessibleCodeEnvironmentDetails;
     let appConfig: AppConfig;
     try {
+      const principals = await deps.registry.resolvePrincipals?.(principal);
+      const resolvedPrincipal = principals == null ? principal : { ...principal, principals };
       [details, appConfig] = await Promise.all([
-        deps.registry.listAccessibleDetails?.(principal) ??
+        deps.registry.listAccessibleDetails?.(resolvedPrincipal) ??
           Promise.all([
-            deps.registry.listAccessible(principal),
-            deps.registry.listAccessibleConfigurations?.(principal) ?? Promise.resolve([]),
+            deps.registry.listAccessible(resolvedPrincipal),
+            deps.registry.listAccessibleConfigurations?.(resolvedPrincipal) ?? Promise.resolve([]),
           ]).then(([summaries, configurations]) => ({ summaries, configurations })),
-        deps.getAppConfig({ ...getAppConfigOptionsFromUser(req.user), failClosed: true }),
+        deps.getAppConfig({
+          ...getAppConfigOptionsFromUser(req.user),
+          ...(principals == null ? {} : { resolvedPrincipals: principals }),
+          failClosed: true,
+          skipRuntimeAugmentation: true,
+        }),
       ]);
     } catch (error) {
       logger.error('[codeEnvironments] discovery policy resolution failed:', error);

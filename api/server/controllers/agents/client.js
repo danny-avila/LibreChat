@@ -53,7 +53,7 @@ const {
   buildToolApprovalHooks,
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
-  createAttachedCodeEnvironmentPolicyHook,
+  buildAttachedCodeEnvironmentAdmissionHooks,
   agentRunUsesCheckpointer,
   canAgentGraphPause,
   getPluginHookSource,
@@ -3809,16 +3809,10 @@ class AgentClient extends BaseClient {
         : undefined;
       const admissionToolApprovalHooks = [
         ...(resolvedToolApprovalHooks ?? []),
-        ...(attachedCodeEnvironmentAgentIds.size > 0
-          ? [
-              {
-                hook: createAttachedCodeEnvironmentPolicyHook(
-                  attachedCodeEnvironmentAgentIds,
-                  attachedCodeEnvironmentSettings,
-                ),
-              },
-            ]
-          : []),
+        ...buildAttachedCodeEnvironmentAdmissionHooks(
+          attachedCodeEnvironmentAgentIds,
+          attachedCodeEnvironmentSettings,
+        ),
       ];
       const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
       const runCanPause = canAgentGraphPause({

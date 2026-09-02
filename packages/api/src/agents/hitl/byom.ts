@@ -5,6 +5,7 @@ import type {
   CodeEnvironmentUserSettings,
 } from 'librechat-data-provider';
 import type { HookCallback } from '@librechat/agents';
+import type { ResolvedToolApprovalHook } from './hooks';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 
 const BYOM_FILE_WRITE_TOOLS = new Set<string>([
@@ -26,6 +27,8 @@ export type AttachedCodeEnvironmentPolicySettings = {
   configSchema?: CodeEnvironmentUserConfigSchema;
   settings?: CodeEnvironmentUserSettings;
 };
+
+type PermissionCategory = 'fileWrite' | 'commandExecution';
 
 type CodeEnvironmentPolicyAgent = {
   id?: string;
@@ -117,6 +120,55 @@ export function collectAttachedCodeEnvironmentPolicySettings(
   return settingsByAgentId;
 }
 
+function permissionDecision(
+  policy: AttachedCodeEnvironmentPolicySettings | undefined,
+  category: PermissionCategory,
+): CodeEnvironmentPermissionDecision {
+  const field = policy?.configSchema?.permissions?.[category];
+  const configuredDecision = policy?.settings?.permissions?.[category];
+  return configuredDecision != null && field?.allowed.includes(configuredDecision) === true
+    ? configuredDecision
+    : (field?.default ?? 'ask');
+}
+
+function exactToolMatcher(toolNames: ReadonlySet<string>): string {
+  return `^(?:${Array.from(toolNames, (name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
+}
+
+/** Describe only the BYOM hook branches that can actually return `ask` during admission. */
+export function buildAttachedCodeEnvironmentAdmissionHooks(
+  attachedAgentIds: ReadonlySet<string>,
+  settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings> = new Map(),
+): ResolvedToolApprovalHook[] {
+  const hook = createAttachedCodeEnvironmentPolicyHook(attachedAgentIds, settingsByAgentId);
+  const hooks: ResolvedToolApprovalHook[] = [];
+  const askFileAgents = new Set<string>();
+  const askCommandAgents = new Set<string>();
+  for (const agentId of attachedAgentIds) {
+    const policy = settingsByAgentId.get(agentId);
+    if (permissionDecision(policy, 'fileWrite') === 'ask') askFileAgents.add(agentId);
+    if (permissionDecision(policy, 'commandExecution') === 'ask') askCommandAgents.add(agentId);
+  }
+  if (askFileAgents.size > 0) {
+    hooks.push({ hook, matcher: exactToolMatcher(BYOM_FILE_WRITE_TOOLS), agentIds: askFileAgents });
+  }
+  if (askCommandAgents.size > 0) {
+    hooks.push({
+      hook,
+      matcher: exactToolMatcher(BYOM_COMMAND_EXECUTION_TOOLS),
+      agentIds: askCommandAgents,
+    });
+  }
+  if (attachedAgentIds.size > 0) {
+    hooks.push({
+      hook,
+      matcher: exactToolMatcher(new Set([CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME])),
+      agentIds: attachedAgentIds,
+    });
+  }
+  return hooks;
+}
+
 /**
  * Safe default for user-operated code environments. Read-only file and search
  * operations fall through to the run-wide policy; actions that can execute code
@@ -127,7 +179,7 @@ export function createAttachedCodeEnvironmentPolicyHook(
   settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings> = new Map(),
 ): HookCallback<'PreToolUse'> {
   return async (input) => {
-    let category: 'fileWrite' | 'commandExecution' | undefined;
+    let category: PermissionCategory | undefined;
     if (BYOM_FILE_WRITE_TOOLS.has(input.toolName)) {
       category = 'fileWrite';
     } else if (BYOM_COMMAND_EXECUTION_TOOLS.has(input.toolName)) {
@@ -150,14 +202,13 @@ export function createAttachedCodeEnvironmentPolicyHook(
         reason: `${input.toolName} can modify a persistent LibreChat skill`,
       };
     }
-    const policy =
-      input.executingAgentId == null ? undefined : settingsByAgentId.get(input.executingAgentId);
-    const field = policy?.configSchema?.permissions?.[category];
-    const configuredDecision = policy?.settings?.permissions?.[category];
-    const decision: CodeEnvironmentPermissionDecision =
-      configuredDecision != null && field?.allowed.includes(configuredDecision) === true
-        ? configuredDecision
-        : (field?.default ?? 'ask');
+    if (input.executingAgentId == null) {
+      return {
+        decision: 'deny',
+        reason: `${input.toolName} could not be attributed to an attached code environment`,
+      };
+    }
+    const decision = permissionDecision(settingsByAgentId.get(input.executingAgentId), category);
     if (decision === 'allow') {
       return { decision };
     }

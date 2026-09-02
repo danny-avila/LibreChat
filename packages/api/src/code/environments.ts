@@ -188,6 +188,7 @@ export function createCodeEnvironmentRegistry(
   listAccessibleConfigurations: (
     actor: CodeEnvironmentPrincipalContext,
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
+  resolvePrincipals: (actor: CodeEnvironmentPrincipalContext) => Promise<ResolvedPrincipal[]>;
   listRegisteredIds: () => Promise<string[]>;
   invalidateAccessibleConfigurations: (tenantId?: string) => Promise<void>;
   markRevocationPending: (environmentId: string) => Promise<void>;
@@ -316,8 +317,14 @@ export function createCodeEnvironmentRegistry(
     });
   }
 
+  async function resolvePrincipals(
+    actor: CodeEnvironmentPrincipalContext,
+  ): Promise<ResolvedPrincipal[]> {
+    return actor.principals ?? (await methods.getUserPrincipals(actor));
+  }
+
   async function findAccessible(actor: CodeEnvironmentPrincipalContext) {
-    const principals = actor.principals ?? (await methods.getUserPrincipals(actor));
+    const principals = await resolvePrincipals(actor);
     const ids = await findAccessibleResourceIds(principals);
     const environments = await methods.findCodeEnvironmentsByIds(ids);
     const userId = actor.userId.toString();
@@ -614,6 +621,7 @@ export function createCodeEnvironmentRegistry(
     listAccessible,
     listAccessibleDetails,
     listAccessibleConfigurations,
+    resolvePrincipals,
     listRegisteredIds,
     invalidateAccessibleConfigurations,
     remove,

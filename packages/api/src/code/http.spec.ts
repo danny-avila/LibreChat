@@ -27,30 +27,37 @@ describe('code environment HTTP handlers', () => {
       summaries: [],
       configurations: [],
     });
-    const handlers = createCodeEnvironmentHttpHandlers({
-      getAppConfig: jest.fn().mockResolvedValue({
-        endpoints: {
-          [EModelEndpoint.agents]: {
-            statefulCodeSessions: {
-              environments: [
-                {
-                  id: 'principal-workers',
-                  name: 'Principal workers',
-                  type: 'attached',
-                  baseURL: 'https://code.example.com/v1',
-                  owner: 'deployment',
-                  pairing: { allowPrincipalWorkers: true },
-                },
-              ],
-            },
+    const resolvedPrincipals = [
+      { principalType: 'role', principalId: 'USER' },
+      { principalType: 'user', principalId: '68b2f0c498f24c1e78fa0001' },
+    ];
+    const resolvePrincipals = jest.fn().mockResolvedValue(resolvedPrincipals);
+    const getAppConfig = jest.fn().mockResolvedValue({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'principal-workers',
+                name: 'Principal workers',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true },
+              },
+            ],
           },
         },
-      } as AppConfig),
+      },
+    } as AppConfig);
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
       registry: {
         register: jest.fn(),
         listAccessible,
         listAccessibleConfigurations,
         listAccessibleDetails,
+        resolvePrincipals,
         remove: jest.fn(),
       },
       principalAuthEnabled: () => false,
@@ -65,6 +72,16 @@ describe('code environment HTTP handlers', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ environments: [], controlPlanes: [] });
     expect(listAccessibleDetails).toHaveBeenCalledTimes(1);
+    expect(resolvePrincipals).toHaveBeenCalledTimes(1);
+    expect(listAccessibleDetails).toHaveBeenCalledWith(
+      expect.objectContaining({ principals: resolvedPrincipals }),
+    );
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resolvedPrincipals,
+        skipRuntimeAugmentation: true,
+      }),
+    );
     expect(listAccessible).not.toHaveBeenCalled();
     expect(listAccessibleConfigurations).not.toHaveBeenCalled();
   });
@@ -102,6 +119,7 @@ describe('code environment HTTP handlers', () => {
       idOnTheSource: undefined,
       tenantId: 'tenant-1',
       failClosed: true,
+      skipRuntimeAugmentation: true,
     });
   });
 

@@ -1,9 +1,12 @@
+import type { AttachedCodeEnvironmentPolicySettings } from './byom';
 import {
   assertAttachedCodeEnvironmentApprovalSupported,
+  buildAttachedCodeEnvironmentAdmissionHooks,
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
 } from './byom';
+import { canAgentGraphPause } from './admission';
 
 const signal = new AbortController().signal;
 
@@ -39,7 +42,7 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
     const hook = createAttachedCodeEnvironmentPolicyHook(new Set(['attached-agent']));
 
     await expect(hook({ toolName: 'write_file' } as never, signal)).resolves.toMatchObject({
-      decision: 'ask',
+      decision: 'deny',
     });
   });
 
@@ -127,6 +130,91 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
       ).resolves.toEqual({ decision: 'allow' });
     },
   );
+});
+
+describe('buildAttachedCodeEnvironmentAdmissionHooks', () => {
+  const bypassPolicy = { enabled: true, mode: 'bypass' as const };
+
+  test('does not classify allow/deny-only BYOM tools as pause-capable', () => {
+    const attachedIds = new Set(['attached-agent']);
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'attached-agent',
+        {
+          configSchema: {
+            permissions: {
+              fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+              commandExecution: {
+                allowed: ['allow', 'ask', 'deny'],
+                default: 'ask',
+              },
+            },
+          },
+          settings: {
+            permissions: { fileWrite: 'allow' as const, commandExecution: 'deny' as const },
+          },
+        },
+      ],
+    ]);
+    const hooks = buildAttachedCodeEnvironmentAdmissionHooks(attachedIds, settings);
+
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [{ id: 'attached-agent', tools: ['write_file', 'bash_tool'] }],
+        resolvedProgrammaticHooks: hooks,
+      }),
+    ).toBe(false);
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [{ id: 'attached-agent', tools: ['create_file'] }],
+        resolvedProgrammaticHooks: hooks,
+      }),
+    ).toBe(true);
+  });
+
+  test('scopes BYOM pause capability to the attached agent that can ask', () => {
+    const attachedIds = new Set(['attached-agent']);
+    const hooks = buildAttachedCodeEnvironmentAdmissionHooks(
+      attachedIds,
+      new Map<string, AttachedCodeEnvironmentPolicySettings>([
+        [
+          'attached-agent',
+          {
+            configSchema: {
+              permissions: {
+                commandExecution: { allowed: ['allow', 'ask'], default: 'allow' },
+              },
+            },
+            settings: { permissions: { commandExecution: 'allow' as const } },
+          },
+        ],
+      ]),
+    );
+
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [
+          { id: 'attached-agent', tools: ['read_file'] },
+          { id: 'managed-agent', tools: ['bash_tool'] },
+        ],
+        resolvedProgrammaticHooks: hooks,
+      }),
+    ).toBe(false);
+  });
+
+  test('keeps the safe default ask-capable when no user setting is configured', () => {
+    const attachedIds = new Set(['attached-agent']);
+    expect(
+      canAgentGraphPause({
+        policy: bypassPolicy,
+        agents: [{ id: 'attached-agent', tools: ['bash_tool'] }],
+        resolvedProgrammaticHooks: buildAttachedCodeEnvironmentAdmissionHooks(attachedIds),
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('collectAttachedCodeEnvironmentAgentIds', () => {
