@@ -205,6 +205,21 @@ describe('Meilisearch Mongoose plugin', () => {
     mongoose.deleteModel(modelName);
   });
 
+  test('retries filterable-attribute setup after a transient failure', async () => {
+    const modelName = `SettingsRetry${Date.now()}`;
+    mockWaitForTask
+      .mockRejectedValueOnce(new Error('temporary settings failure'))
+      .mockResolvedValue({ status: 'succeeded' });
+    const Model = createDynamicMeiliModel(modelName);
+    await waitForMock(mockWaitForTask);
+    await wait(0);
+
+    await expect(Model.meiliSearch('query')).resolves.toEqual({ hits: [] });
+    expect(mockUpdateSettings).toHaveBeenCalledTimes(2);
+    expect(mockSearch).toHaveBeenCalledWith('query', undefined);
+    mongoose.deleteModel(modelName);
+  });
+
   test('settles query updates and deletes when no document hook is available', async () => {
     const modelName = `QueryMiddlewareResult${Date.now()}`;
     const Model = createDynamicMeiliModel(modelName);

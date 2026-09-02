@@ -287,8 +287,8 @@ const createMeiliMongooseModel = ({
   getExcludedIndexedQuery,
   excludeFromIndexPath,
   attributesToIndex,
+  ensureSettingsReady,
   primaryKey,
-  settingsReady,
   syncOptions,
 }: {
   client: MeiliSearch;
@@ -297,8 +297,8 @@ const createMeiliMongooseModel = ({
   getExcludedIndexedQuery: () => FilterQuery<unknown> | null;
   excludeFromIndexPath?: string;
   attributesToIndex: string[];
+  ensureSettingsReady: () => Promise<void>;
   primaryKey: string;
-  settingsReady: Promise<void>;
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
@@ -744,7 +744,7 @@ const createMeiliMongooseModel = ({
       params: SearchParams,
       populate: boolean,
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
-      await settingsReady;
+      await ensureSettingsReady();
       const data = await index.search(q, params);
 
       if (populate) {
@@ -1025,7 +1025,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   /** Create index only if it doesn't exist */
   const index = client.index<MeiliIndexable>(indexName);
 
-  const settingsReady = (async () => {
+  const configureIndex = async (): Promise<void> => {
     try {
       await index.getRawInfo();
       logger.debug(`[mongoMeili] Index ${indexName} already exists`);
@@ -1101,8 +1101,22 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       logger.error(`[mongoMeili] Error updating index settings for ${indexName}:`, settingsError);
       throw settingsError;
     }
-  })();
-  void settingsReady.catch(() => undefined);
+  };
+  let settingsReady: Promise<void> | undefined;
+  const ensureSettingsReady = (): Promise<void> => {
+    if (settingsReady) {
+      return settingsReady;
+    }
+    const pending = configureIndex();
+    settingsReady = pending;
+    void pending.catch(() => {
+      if (settingsReady === pending) {
+        settingsReady = undefined;
+      }
+    });
+    return pending;
+  };
+  void ensureSettingsReady().catch(() => undefined);
 
   // Collect attributes from the schema that should be indexed
   const attributesToIndex: string[] = [
@@ -1127,8 +1141,8 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       getExcludedIndexedQuery: () => buildExcludedIndexedQuery(options.excludeFromIndexPath),
       excludeFromIndexPath: options.excludeFromIndexPath,
       attributesToIndex,
+      ensureSettingsReady,
       primaryKey,
-      settingsReady,
       syncOptions,
     }),
   );
