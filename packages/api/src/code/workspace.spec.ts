@@ -1,4 +1,5 @@
 import { executeWorkspaceTool } from './workspace';
+import type { CodeBridgeFetch } from './bridge';
 
 describe('executeWorkspaceTool', () => {
   test('sends an authenticated bounded read to the selected attached worker', async () => {
@@ -53,7 +54,7 @@ describe('executeWorkspaceTool', () => {
   test('combines the caller abort signal with the workspace request timeout', async () => {
     const controller = new AbortController();
     let requestSignal: AbortSignal | undefined;
-    const fetchImpl = jest.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async (_url, init) => {
       requestSignal = init?.signal ?? undefined;
       return new Response(
         JSON.stringify({
@@ -90,8 +91,8 @@ describe('executeWorkspaceTool', () => {
 
   test('preserves caller cancellation instead of relabeling it as a transport failure', async () => {
     const controller = new AbortController();
-    const fetchImpl = jest.fn(
-      async (_url: string, init?: RequestInit) =>
+    const fetchImpl: CodeBridgeFetch = jest.fn(
+      async (_url, init) =>
         await new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
             once: true,
