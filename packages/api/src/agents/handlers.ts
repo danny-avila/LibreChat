@@ -5997,26 +5997,33 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                     const { message, logContext } = getSafeToolError(toolError);
                     /** A user Stop rejects every in-flight call at once. That is
-                     *  the abort working, not a fault, so it stays out of the
-                     *  error log; the message still reaches the model turn. */
-                    if (runSignal?.aborted === true) {
-                      logger.debug(`[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`, {
-                        name: logContext.name,
-                      });
-                      return errorResult(tc, message);
-                    }
+                     *  the abort working, not a fault, so it is logged at debug.
+                     *  It only ever changes the log level: an aborted run says
+                     *  the turn is over, not that this particular rejection was
+                     *  the cancellation, so an unrelated failure racing the Stop
+                     *  must still take the same filtering and result path. */
+                    const logToolFailure = (context: Record<string, unknown>): void => {
+                      if (runSignal?.aborted === true) {
+                        logger.debug(
+                          `[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`,
+                          context,
+                        );
+                        return;
+                      }
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, context);
+                    };
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
                     const filteredError = filteredToolOutputResult(tc, req, {
                       errorMessage: message,
                     });
                     if (filteredError != null) {
-                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                      logToolFailure({
                         name: logContext.name,
                         contentFiltered: true,
                       });
                       return filteredError;
                     }
-                    logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                    logToolFailure({
                       ...logContext,
                       toolCallArgsShape: getValueShape(tc.args),
                       toolInputSchemaKind: getToolInputSchemaKind(tool),

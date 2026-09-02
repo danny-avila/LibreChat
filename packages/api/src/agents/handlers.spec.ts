@@ -384,6 +384,48 @@ describe('createToolExecuteHandler', () => {
         ),
       ).toHaveLength(0);
     });
+
+    /**
+     * An aborted run means the turn is over, not that this particular rejection
+     * was the cancellation — an unrelated failure can always race the Stop. The
+     * quiet-log branch must therefore never become a way around output filtering.
+     */
+    it('still filters a tool failure that rejects after the run was aborted', async () => {
+      const protectedValue = 'PROTECTED-CANCELLED-TOOL-OUTPUT';
+      const controller = new AbortController();
+      const tool = {
+        name: 'slow_tool',
+        invoke: jest.fn(
+          (_args: unknown, config: Record<string, unknown>) =>
+            new Promise((_resolve, reject) => {
+              const signal = config.signal as AbortSignal;
+              signal.addEventListener('abort', () => reject(new Error(protectedValue)), {
+                once: true,
+              });
+            }),
+        ),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        const request: ToolExecuteBatchRequest = {
+          toolCalls: [{ id: 'call-1', name: 'slow_tool', args: {} }] as ToolCallRequest[],
+          configurable: { req: protectedToolOutputRequest() },
+          signal: controller.signal,
+          resolve,
+          reject,
+        };
+        handler.handle('on_tool_execute', request);
+        setTimeout(() => controller.abort(new Error('Operation aborted by user')), 10);
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('content_filter_block');
+      expect(result.errorMessage).not.toContain(protectedValue);
+    });
   });
 
   describe('tool argument normalization', () => {

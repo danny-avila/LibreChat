@@ -1308,10 +1308,19 @@ function createToolInstance({
       }
       return result;
     } catch (error) {
-      logger.error(
-        `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
-        error,
-      );
+      /** A user Stop aborts every in-flight call at once. The rejection that
+       *  follows is the cancellation working, so it must not reach error-level
+       *  operational alerts; the wrapping below still reports it to the turn. */
+      if (config?.signal?.aborted === true) {
+        logger.debug(
+          `[MCP][${serverName}][${toolName}][User: ${userId}] Tool call cancelled by user abort`,
+        );
+      } else {
+        logger.error(
+          `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
+          error,
+        );
+      }
 
       /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
       if (error instanceof OpenIDReauthRequiredError) {

@@ -1610,6 +1610,76 @@ describe('User parameter passing tests', () => {
       expect(callTool).toHaveBeenCalledTimes(2);
     });
 
+    it('logs a user-aborted tool call as debug, not as an MCP error', async () => {
+      const mockUser = { id: 'cancel-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const abortController = new AbortController();
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetMCPManager.mockReturnValue({
+        callTool: jest.fn(
+          ({ options }) =>
+            new Promise((_resolve, reject) => {
+              const signal = options?.signal;
+              signal?.addEventListener(
+                'abort',
+                () => reject(new Error('This operation was aborted')),
+                {
+                  once: true,
+                },
+              );
+            }),
+        ),
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        config: { url: 'https://cancel.example.com/mcp' },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      const call = mcpTool.invoke(
+        {},
+        {
+          signal: abortController.signal,
+          configurable: { user: mockUser },
+          metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+          toolCall: {},
+        },
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      abortController.abort();
+      await expect(call).rejects.toThrow();
+      /** The wrapper rejects on abort while `_call` is still unwinding; let its
+       *  catch run before asserting on what it logged. */
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(logger.error).not.toHaveBeenCalledWith(
+        expect.stringContaining('Error calling MCP tool'),
+        expect.anything(),
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('Tool call cancelled by user abort'),
+      );
+    });
+
     it.each(['OAuth flow initiated - return early', 'Pending OAuth flow reused - return early'])(
       'preserves runtime-detected OAuth for the internal signal: %s',
       async (oauthSignal) => {
