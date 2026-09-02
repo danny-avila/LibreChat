@@ -124,7 +124,7 @@ export interface CompactRequestDeps
       model?: string | null;
       iconURL?: string | null;
     },
-    meta?: { context?: string; appendMessageIds?: unknown[] },
+    meta?: { context?: string; noUpsert?: boolean; appendMessageIds?: unknown[] },
   ) => Promise<unknown>;
   deleteMessages: (filter: {
     conversationId: string;
@@ -742,6 +742,10 @@ export async function handleCompactRequest(
         },
         {
           context: 'POST /api/agents/chat/compact',
+          /** Never resurrect a conversation that expired or was deleted in
+           *  another tab while the (potentially minutes-long) provider call
+           *  ran: a missing row is a save failure, not an insert. */
+          noUpsert: true,
           ...(savedMessage._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
         },
       );

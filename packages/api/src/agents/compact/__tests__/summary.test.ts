@@ -1231,6 +1231,40 @@ describe('compactConversation', () => {
     }
   });
 
+  it('refuses a run-endpoint user key whose expiry could not be read', async () => {
+    /** A transient expiry-lookup failure on the conversation's own endpoint
+     *  must fail closed too: falling back to the caller's marker would let
+     *  `never` stand in for an expiry that was never actually read. */
+    const originalOpenAIKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'user_provided';
+    try {
+      await expect(
+        compactConversation({
+          req: {
+            body: { key: 'never' },
+            user: { id: 'user_1' },
+            config: { endpoints: {} } as AppConfig,
+          } as unknown as ServerRequest,
+          agent,
+          branch,
+          ids,
+          db: {
+            ...dbMethods,
+            getUserKey: jest.fn(async () => 'target-key'),
+            getUserKeyExpiry: jest.fn().mockRejectedValue(new Error('cache down')),
+          },
+        }),
+      ).rejects.toThrow(/expired_user_key/);
+      expect(mockStream).not.toHaveBeenCalled();
+    } finally {
+      if (originalOpenAIKey == null) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalOpenAIKey;
+      }
+    }
+  });
+
   it('applies a summary cap where a GPT-5 model expects it', async () => {
     /** `getOptions` already moved the inherited cap into `modelKwargs` and
      *  deleted the top-level key; writing the override back there would send

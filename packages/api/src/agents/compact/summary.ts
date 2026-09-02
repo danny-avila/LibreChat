@@ -862,11 +862,15 @@ export async function resolveCompactionModel({
    * conversation's own marker would have the initializer validate the target's
    * stored credential against an unrelated endpoint's expiry: a marker of
    * `never` would let an expired target key through.
+   *
+   * A FAILED lookup fails closed on the run endpoint too: falling back to the
+   * original request would let a caller-supplied marker such as `never`
+   * stand in for the unread expiry and put an expired stored credential to
+   * work. Endpoints that authenticate without a user key ignore the marker.
    */
-  const keyMarker =
-    crossEndpoint && expiryLookupFailed ? UNVERIFIABLE_KEY_EXPIRY : (keyExpiry ?? undefined);
+  const keyMarker = expiryLookupFailed ? UNVERIFIABLE_KEY_EXPIRY : (keyExpiry ?? undefined);
   const optionsReq = (
-    crossEndpoint || keyExpiry != null
+    crossEndpoint || expiryLookupFailed || keyExpiry != null
       ? { ...req, body: { ...(req.body ?? {}), key: keyMarker } }
       : req
   ) as ServerRequest;
