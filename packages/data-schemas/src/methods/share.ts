@@ -979,7 +979,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           const searchResults = await Conversation.meiliSearch(search, {
             filter: `user = "${escapeMeiliFilterValue(user)}"${tenantFilter}`,
             limit: MEILI_SEARCH_LIMIT,
-            attributesToRetrieve: ['conversationId'],
+            attributesToRetrieve: ['conversationId', 'originalConversationId'],
           });
 
           if (!searchResults?.hits?.length) {

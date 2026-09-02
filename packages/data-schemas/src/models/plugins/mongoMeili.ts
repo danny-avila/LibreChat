@@ -814,14 +814,14 @@ const createMeiliMongooseModel = ({
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
       await ensureSettingsReady();
       const data = await index.search(q, params);
-      const originalConversationIds =
-        primaryKey === 'conversationId'
-          ? data.hits.map((hit) =>
-              typeof hit.originalConversationId === 'string'
-                ? hit.originalConversationId
-                : String(hit.conversationId),
-            )
-          : [];
+      let originalConversationIds: string[] = [];
+      if (populate && primaryKey === 'conversationId') {
+        originalConversationIds = data.hits.map((hit) =>
+          typeof hit.originalConversationId === 'string'
+            ? hit.originalConversationId
+            : String(hit.conversationId),
+        );
+      }
 
       for (const hit of data.hits) {
         normalizeSearchHit(hit, primaryKey);
