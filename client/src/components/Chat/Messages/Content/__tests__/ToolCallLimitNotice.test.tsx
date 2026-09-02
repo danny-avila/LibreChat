@@ -69,9 +69,10 @@ describe('ToolCallLimitNotice', () => {
     );
 
     expect(ask).toHaveBeenCalledTimes(1);
-    expect(ask).toHaveBeenCalledWith({
-      text: TRANSLATIONS.com_ui_tool_call_limit_continue_prompt,
-    });
+    expect(ask).toHaveBeenCalledWith(
+      { text: TRANSLATIONS.com_ui_tool_call_limit_continue_prompt },
+      { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+    );
   });
 
   it('asks for an immediate answer instead of more tool use', () => {
@@ -82,9 +83,10 @@ describe('ToolCallLimitNotice', () => {
       screen.getByRole('button', { name: TRANSLATIONS.com_ui_tool_call_limit_answer }),
     );
 
-    expect(ask).toHaveBeenCalledWith({
-      text: TRANSLATIONS.com_ui_tool_call_limit_answer_prompt,
-    });
+    expect(ask).toHaveBeenCalledWith(
+      { text: TRANSLATIONS.com_ui_tool_call_limit_answer_prompt },
+      { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+    );
   });
 
   it('offers no actions with no live chat behind it, as in a shared link or export', () => {

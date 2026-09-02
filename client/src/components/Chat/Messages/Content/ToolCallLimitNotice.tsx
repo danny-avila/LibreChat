@@ -54,6 +54,13 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
    */
   const canAct =
     chat?.ask != null && chat.isSubmitting !== true && chat.latestMessageId === message.messageId;
+  /**
+   * Empty overrides are authoritative: a recovery prompt is not the user's next
+   * compose, so `ask` must not attach or drain files, skills, or quotes already
+   * staged in the composer.
+   */
+  const recover = (text: string) =>
+    chat?.ask({ text }, { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] });
 
   return (
     <div
@@ -86,7 +93,7 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
           <Button
             size="sm"
             variant="submit"
-            onClick={() => chat.ask({ text: localize('com_ui_tool_call_limit_continue_prompt') })}
+            onClick={() => recover(localize('com_ui_tool_call_limit_continue_prompt'))}
           >
             <FastForward className="icon-md shrink-0" aria-hidden="true" />
             {localize('com_ui_tool_call_limit_continue')}
@@ -94,7 +101,7 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
           <Button
             size="sm"
             variant="outline"
-            onClick={() => chat.ask({ text: localize('com_ui_tool_call_limit_answer_prompt') })}
+            onClick={() => recover(localize('com_ui_tool_call_limit_answer_prompt'))}
           >
             <MessageSquareText className="icon-md shrink-0" aria-hidden="true" />
             {localize('com_ui_tool_call_limit_answer')}
