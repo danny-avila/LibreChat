@@ -7,6 +7,8 @@ import { startRespServer, waitFor } from './resp.helper';
 
 const READONLY_MESSAGE = "READONLY You can't write against a read only replica.";
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function readonlyWriteError(client: RedisClientType): Promise<unknown> {
   try {
     await client.set('key', 'value');
@@ -29,11 +31,17 @@ describe('createReadonlyRecovery', () => {
   let server: RespServer;
   let client: RedisClientType;
 
-  beforeEach(async () => {
-    server = await startRespServer();
-    client = createClient({ url: server.url }) as RedisClientType;
+  const connectClient = async (
+    reconnectStrategy: false | ((retries: number) => number),
+  ): Promise<void> => {
+    client = createClient({ url: server.url, socket: { reconnectStrategy } }) as RedisClientType;
     client.on('error', () => undefined);
     await client.connect();
+  };
+
+  beforeEach(async () => {
+    server = await startRespServer();
+    await connectClient(false);
   });
 
   afterEach(async () => {
@@ -71,32 +79,24 @@ describe('createReadonlyRecovery', () => {
     const recover = createReadonlyRecovery({ client, minIntervalMs: 0 });
     expect(recover(new Error('ECONNRESET'))).toBe(false);
     expect(recover(undefined)).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await sleep(50);
     expect(server.connections).toBe(1);
   });
 
-  it('reconnects a client whose socket is already closed', async () => {
-    const recover = createReadonlyRecovery({ client, minIntervalMs: 0 });
-    client.destroy();
-    expect(client.isOpen).toBe(false);
-    expect(recover(new Error(READONLY_MESSAGE))).toBe(true);
-    await waitFor(() => server.connections === 2 && client.isReady);
-  });
-
   it('retries on the next error of any kind after a failed reconnect', async () => {
-    client.destroy();
-    client = createClient({
-      url: server.url,
-      socket: { reconnectStrategy: false },
-    }) as RedisClientType;
-    client.on('error', () => undefined);
-    await client.connect();
     const recover = createReadonlyRecovery({ client, minIntervalMs: 0 });
     const { port } = server;
     await server.close();
-
-    expect(recover(new Error(READONLY_MESSAGE))).toBe(true);
     await waitFor(() => !client.isOpen);
+    expect(recover(new Error('The client is closed'))).toBe(false);
+
+    server = await startRespServer(port);
+    await client.connect();
+    server.readonly = true;
+    expect(recover(await readonlyWriteError(client))).toBe(true);
+    await server.close();
+    await waitFor(() => !client.isOpen && server.connections === 1);
+
     expect(recover(new Error('ECONNRESET'))).toBe(true);
     await waitFor(() => !client.isOpen);
 
@@ -105,6 +105,42 @@ describe('createReadonlyRecovery', () => {
     await waitFor(() => server.connections === 1 && client.isReady);
     await expect(client.set('key', 'value')).resolves.toBe('OK');
   });
+
+  it('stays out of the way while node-redis runs its own reconnect loop', async () => {
+    client.destroy();
+    await connectClient(() => 20);
+    const recover = createReadonlyRecovery({ client, minIntervalMs: 0 });
+    const { port } = server;
+    await server.close();
+    await waitFor(() => client.isOpen && !client.isReady);
+
+    expect(recover(new Error(READONLY_MESSAGE))).toBe(false);
+    expect(recover(new Error('ECONNRESET'))).toBe(false);
+
+    server = await startRespServer(port);
+    await waitFor(() => client.isReady);
+    await sleep(50);
+    expect(server.connections).toBe(1);
+  });
+
+  it('does not tear down a client that reconnected on its own after a failed attempt', async () => {
+    const recover = createReadonlyRecovery({ client, minIntervalMs: 0 });
+    const { port } = server;
+    server.readonly = true;
+    const error = await readonlyWriteError(client);
+    await server.close();
+    expect(recover(error)).toBe(true);
+    await waitFor(() => !client.isOpen);
+
+    server = await startRespServer(port);
+    await client.connect();
+    expect(
+      recover(new Error('WRONGTYPE Operation against a key holding the wrong kind of value')),
+    ).toBe(false);
+    await sleep(50);
+    expect(server.connections).toBe(1);
+    expect(client.isReady).toBe(true);
+  });
 });
 
 describe('standalone Keyv Redis client READONLY recovery', () => {
@@ -112,7 +148,7 @@ describe('standalone Keyv Redis client READONLY recovery', () => {
   let server: RespServer;
   let clients: typeof import('~/cache/redisClients');
   let cacheFactory: typeof import('~/cache/cacheFactory');
-  const keyvClientReady = (): boolean => (clients.keyvRedisClient as RedisClientType).isReady;
+  const keyvClient = (): RedisClientType => clients.keyvRedisClient as RedisClientType;
 
   beforeAll(async () => {
     originalEnv = { ...process.env };
@@ -123,6 +159,8 @@ describe('standalone Keyv Redis client READONLY recovery', () => {
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_KEY_PREFIX = 'readonly-recovery';
     process.env.REDIS_READONLY_RECOVERY_INTERVAL = '100';
+    process.env.REDIS_RETRY_MAX_ATTEMPTS = '2';
+    process.env.REDIS_RETRY_MAX_DELAY = '50';
     jest.resetModules();
     clients = await import('~/cache/redisClients');
     cacheFactory = await import('~/cache/cacheFactory');
@@ -141,7 +179,7 @@ describe('standalone Keyv Redis client READONLY recovery', () => {
     server.readonly = true;
 
     await cache.set('key', 'value');
-    await waitFor(() => server.connections === connectionsBefore + 1 && keyvClientReady());
+    await waitFor(() => server.connections === connectionsBefore + 1 && keyvClient().isReady);
 
     server.readonly = false;
     await expect(cache.set('key', 'value')).resolves.toBe(true);
@@ -149,14 +187,14 @@ describe('standalone Keyv Redis client READONLY recovery', () => {
   });
 
   it('reconnects when a Lua script is rejected with READONLY', async () => {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await sleep(100);
     const connectionsBefore = server.connections;
     server.readonly = true;
 
     await expect(
       clients.evalKeyvRedisScript('return 1', { keys: ['lock'], arguments: [] }),
     ).rejects.toThrow(READONLY_MESSAGE);
-    await waitFor(() => server.connections === connectionsBefore + 1 && keyvClientReady());
+    await waitFor(() => server.connections === connectionsBefore + 1 && keyvClient().isReady);
 
     server.readonly = false;
     await expect(
@@ -164,10 +202,45 @@ describe('standalone Keyv Redis client READONLY recovery', () => {
     ).resolves.toBe(1);
   });
 
-  it('routes client error events through the same recovery', async () => {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  it('reconnects when a namespace clear is rejected with READONLY', async () => {
+    await sleep(100);
+    const connectionsBefore = server.connections;
+    const cache = cacheFactory.standardCache('readonly-clear-test');
+    await cache.set('key', 'value');
+    server.readonly = true;
+
+    await expect(cache.clear()).rejects.toThrow(READONLY_MESSAGE);
+    await waitFor(() => server.connections === connectionsBefore + 1 && keyvClient().isReady);
+    server.readonly = false;
+  });
+
+  it('routes errors handed to handleKeyvRedisError through the same recovery', async () => {
+    await sleep(100);
     const connectionsBefore = server.connections;
     expect(clients.handleKeyvRedisError(new Error(READONLY_MESSAGE))).toBe(true);
-    await waitFor(() => server.connections === connectionsBefore + 1 && keyvClientReady());
+    await waitFor(() => server.connections === connectionsBefore + 1 && keyvClient().isReady);
+  });
+
+  it('recovers through Keyv auto-connect after a failed reconnect without duplicate connections', async () => {
+    await sleep(100);
+    const cache = cacheFactory.standardCache('readonly-outage-test');
+    const { port } = server;
+    server.readonly = true;
+
+    await expect(
+      clients.evalKeyvRedisScript('return 1', { keys: ['lock'], arguments: [] }),
+    ).rejects.toThrow(READONLY_MESSAGE);
+    await server.close();
+    await waitFor(() => !keyvClient().isOpen, 5000);
+
+    await cache.set('key', 'value');
+    await waitFor(() => !keyvClient().isOpen, 5000);
+
+    server = await startRespServer(port);
+    await expect(cache.set('key', 'value')).resolves.toBe(true);
+    await waitFor(() => keyvClient().isReady);
+    expect(server.connections).toBe(1);
+    await expect(cache.get('key')).resolves.toBe('value');
+    expect(server.connections).toBe(1);
   });
 });

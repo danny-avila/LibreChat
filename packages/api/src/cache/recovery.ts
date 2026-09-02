@@ -5,6 +5,7 @@ export const READONLY_ERROR_PREFIX = 'READONLY';
 
 export type ReconnectableClient = {
   readonly isOpen: boolean;
+  readonly isReady: boolean;
   destroy(): void;
   connect(): Promise<unknown>;
 };
@@ -53,12 +54,17 @@ export function isReadonlyReplicaError(error: unknown): boolean {
  * That is a bounded, once-per-attempt cost, traded against every write failing
  * until the process restarts.
  *
- * READONLY replies surface from several places (the client's own error event,
- * the Keyv error funnel, and Lua scripts evaluated directly against the client),
- * so the handler is meant to be called from every one of them; it debounces
- * internally and never throws. When a reconnect attempt itself fails, the client
- * is left closed and later failures are no longer READONLY replies, so the next
- * error of any kind retries the reconnect.
+ * READONLY replies reject straight to the command's promise and never reach the
+ * client's error event, so the handler is meant to be called from every error
+ * funnel that sees command failures: the Keyv cache error event, Lua scripts
+ * evaluated directly against the client, and namespace clears. It debounces
+ * internally and never throws.
+ *
+ * The hook only acts on a client it can reason about: a READONLY reply on a
+ * ready socket, or a client its own failed reconnect left closed. While
+ * node-redis runs its own reconnect loop (open but not ready) the hook stays
+ * out of the way, since a second `connect()` would start a concurrent loop
+ * that leaks sockets into one shared reply decoder.
  */
 export function createReadonlyRecovery(options: ReadonlyRecoveryOptions): ReadonlyRecoveryHandler {
   const { client, minIntervalMs, label = '@keyv/redis' } = options;
@@ -76,8 +82,16 @@ export function createReadonlyRecovery(options: ReadonlyRecoveryOptions): Readon
     logger.info(`${label} client reconnected after READONLY error`);
   };
 
+  const shouldReconnect = (error: unknown): boolean => {
+    if (client.isReady) {
+      retryPending = false;
+      return isReadonlyReplicaError(error);
+    }
+    return !client.isOpen && retryPending;
+  };
+
   return function recoverIfReadonly(error: unknown): boolean {
-    if (inFlight || (!retryPending && !isReadonlyReplicaError(error))) {
+    if (inFlight || !shouldReconnect(error)) {
       return false;
     }
     const attemptAt = now();

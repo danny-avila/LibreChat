@@ -25,6 +25,21 @@ function encodeBulk(value: string | null): string {
   return value == null ? '$-1\r\n' : `$${Buffer.byteLength(value)}\r\n${value}\r\n`;
 }
 
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+  return new RegExp(`^${escaped}$`);
+}
+
+function encodeScan(store: Map<string, string>, args: string[]): string {
+  const matchIndex = args.findIndex((arg) => arg.toUpperCase() === 'MATCH');
+  const matcher = matchIndex === -1 ? /^/ : globToRegExp(args[matchIndex + 1]);
+  const keys = [...store.keys()].filter((key) => matcher.test(key));
+  return `*2\r\n$1\r\n0\r\n*${keys.length}\r\n${keys.map(encodeBulk).join('')}`;
+}
+
 function parseFrames(buffer: Buffer): { frames: string[][]; rest: Buffer } {
   const frames: string[][] = [];
   let offset = 0;
@@ -92,7 +107,7 @@ export async function startRespServer(port = 0): Promise<RespServer> {
       case 'EVALSHA':
         return ':1\r\n';
       case 'SCAN':
-        return '*2\r\n$1\r\n0\r\n*0\r\n';
+        return encodeScan(store, args);
       default:
         return '+OK\r\n';
     }

@@ -274,7 +274,6 @@ if (cacheConfig.USE_REDIS) {
 
   keyvRedisClient.on('error', (err) => {
     logger.error('@keyv/redis client error:', err);
-    handleKeyvRedisError(err);
   });
 
   keyvRedisClient.on('connect', () => {
