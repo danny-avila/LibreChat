@@ -13,6 +13,7 @@ const {
   applyAxiosProxyConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { recordOpenAIImageUsage } = require('~/server/services/Billing/OpenAIImageBilling');
 const { getFiles } = require('~/models');
 
 const displayMessage =
@@ -196,15 +197,28 @@ Error Message: ${error.message}`);
         );
       }
 
-      // For gpt-image-1, the response contains base64-encoded images
-      // TODO: handle cost in `resp.usage`
-      const base64Image = resp.data[0].b64_json;
+      // GPT Image responses contain base64-encoded images.
+      const base64Image = resp.data?.[0]?.b64_json;
 
       if (!base64Image) {
         return returnValue(
           'No image data returned from OpenAI API. There may be a problem with the API or your configuration.',
         );
       }
+
+      const conversationId = runnableConfig?.configurable?.thread_id;
+      const messageId =
+        runnableConfig?.configurable?.run_id ??
+        runnableConfig?.configurable?.requestBody?.messageId;
+      recordOpenAIImageUsage({
+        req,
+        model: imageModel,
+        usage: resp.usage,
+        conversationId,
+        messageId,
+      }).catch((error) => {
+        logger.error('[ImageGenOAI] Failed to record image usage:', error);
+      });
 
       const content = [
         {
@@ -375,6 +389,20 @@ Error Message: ${error.message}`);
             'No image data returned from OpenAI API. There may be a problem with the API or your configuration.',
           );
         }
+
+        const conversationId = runnableConfig?.configurable?.thread_id;
+        const messageId =
+          runnableConfig?.configurable?.run_id ??
+          runnableConfig?.configurable?.requestBody?.messageId;
+        recordOpenAIImageUsage({
+          req,
+          model: imageModel,
+          usage: response.data.usage,
+          conversationId,
+          messageId,
+        }).catch((error) => {
+          logger.error('[ImageEditOAI] Failed to record image usage:', error);
+        });
 
         const content = [
           {
