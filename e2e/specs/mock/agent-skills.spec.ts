@@ -35,12 +35,14 @@ type SkillSummary = {
 type SkillAgentDetail = AgentDetail & {
   skills?: string[];
   skills_enabled?: boolean;
+  skills_scope?: string;
 };
 
 type AgentSkillPayload = {
   name?: string;
   skills?: string[];
   skills_enabled?: boolean;
+  skills_scope?: string;
   manualSkills?: string[];
 };
 
@@ -410,7 +412,7 @@ test.describe('Agent Builder skills', () => {
       const deploymentRow = form.locator('li').filter({ hasText: DEPLOYMENT_SKILL_NAME });
       await expect(deploymentRow).toHaveCount(1);
       await deploymentRow.hover();
-      await deploymentRow.getByRole('button', { name: 'Remove from agent' }).click();
+      await deploymentRow.getByRole('button', { name: /^Remove / }).click();
       await expect(form.getByText(DEPLOYMENT_SKILL_NAME, { exact: true })).toBeHidden();
 
       const updateResponsePromise = waitForAgentMutation(page, 'PATCH', createdAgentId);
@@ -440,25 +442,29 @@ test.describe('Agent Builder skills', () => {
       const finalSkillRow = form.locator('li').filter({ hasText: inlineSkillName });
       await expect(finalSkillRow).toHaveCount(1);
       await finalSkillRow.hover();
-      await finalSkillRow.getByRole('button', { name: 'Remove from agent' }).click();
+      await finalSkillRow.getByRole('button', { name: /^Remove / }).click();
       await expect(form.getByText(inlineSkillName, { exact: true })).toBeHidden();
 
-      const disableResponsePromise = waitForAgentMutation(page, 'PATCH', createdAgentId);
+      /** Emptying the allowlist stays in Selected: the mode is explicit now, so
+       *  removing the last skill no longer infers Off. Only `skills` is written,
+       *  and an explicit Selected with nothing selected resolves to no skills at
+       *  runtime, which the picker and the run below both confirm. */
+      const emptiedResponsePromise = waitForAgentMutation(page, 'PATCH', createdAgentId);
       await form.getByRole('button', { name: 'Save', exact: true }).click();
-      const disableResponse = await disableResponsePromise;
-      expect(disableResponse.status(), await disableResponse.text()).toBe(200);
-      expect(disableResponse.request().postDataJSON()).toMatchObject({
+      const emptiedResponse = await emptiedResponsePromise;
+      expect(emptiedResponse.status(), await emptiedResponse.text()).toBe(200);
+      expect(emptiedResponse.request().postDataJSON()).toMatchObject({
         skills: [],
-        skills_enabled: false,
       });
 
-      const disabledAgent = await fetchJson<SkillAgentDetail>(
+      const emptiedAgent = await fetchJson<SkillAgentDetail>(
         page,
         `/api/agents/${encodeURIComponent(createdAgentId)}/expanded`,
         token,
       );
-      expect(disabledAgent.skills).toEqual([]);
-      expect(disabledAgent.skills_enabled).toBe(false);
+      expect(emptiedAgent.skills).toEqual([]);
+      expect(emptiedAgent.skills_enabled).toBe(true);
+      expect(emptiedAgent.skills_scope).toBe('selected');
 
       form = await openAgentBuilder(page);
       await selectAgent(page, form, agentName);
@@ -530,15 +536,18 @@ test.describe('Agent Builder skills', () => {
       const createdAgent = (await createResponse.json()) as SkillAgentDetail;
       createdAgentId = createdAgent.id;
       const createPayload = createResponse.request().postDataJSON() as AgentSkillPayload;
+      /** All writes the mode outright and deliberately leaves `skills` alone, so
+       *  a fresh agent sends no allowlist at all rather than an empty one. That
+       *  is what lets a later return to Selected restore previous picks. */
       expect(createPayload).toMatchObject({
-        skills: [],
         skills_enabled: true,
+        skills_scope: 'all',
       });
 
       expect(createdAgent).toMatchObject({
         id: createdAgentId,
-        skills: [],
         skills_enabled: true,
+        skills_scope: 'all',
       });
 
       const persistedAgent = (await waitForPersistedAgent(
@@ -546,8 +555,8 @@ test.describe('Agent Builder skills', () => {
         agentName,
         agentDescription,
       )) as SkillAgentDetail;
-      expect(persistedAgent.skills).toEqual([]);
       expect(persistedAgent.skills_enabled).toBe(true);
+      expect(persistedAgent.skills_scope).toBe('all');
 
       form = await openAgentBuilder(page);
       await selectAgent(page, form, agentName);
@@ -589,9 +598,11 @@ test.describe('Agent Builder skills', () => {
       await form.getByRole('button', { name: 'Save', exact: true }).click();
       const updateResponse = await updateResponsePromise;
       expect(updateResponse.status(), await updateResponse.text()).toBe(200);
+      /** Off writes the mode and both capability flags, and still leaves the
+       *  allowlist untouched. */
       expect(updateResponse.request().postDataJSON()).toMatchObject({
-        skills: [],
         skills_enabled: false,
+        skills_scope: 'none',
       });
 
       const disabledAgent = await fetchJson<SkillAgentDetail>(
@@ -599,8 +610,8 @@ test.describe('Agent Builder skills', () => {
         `/api/agents/${encodeURIComponent(createdAgentId)}/expanded`,
         token,
       );
-      expect(disabledAgent.skills).toEqual([]);
       expect(disabledAgent.skills_enabled).toBe(false);
+      expect(disabledAgent.skills_scope).toBe('none');
 
       form = await openAgentBuilder(page);
       await selectAgent(page, form, agentName);
