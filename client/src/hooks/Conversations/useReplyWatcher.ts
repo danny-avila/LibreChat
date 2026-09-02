@@ -19,6 +19,14 @@ import { useActiveJobs } from '~/data-provider';
 
 const AWAY_POLL_MS = 30_000;
 /**
+ * How often a focused tab refreshes the list on its own.
+ *
+ * Deliberately far slower than the away poll: the user is looking at the sidebar, alerts are
+ * suppressed here anyway, and this exists only so a reply produced elsewhere while they sit
+ * still eventually shows its dot rather than waiting for an unrelated refetch.
+ */
+const FOCUSED_REFRESH_MS = 5 * 60_000;
+/**
  * How many conversations one away poll looks at.
  *
  * A reply lifts its conversation, so the newest activity is what the first page holds. The
@@ -354,7 +362,24 @@ export default function useReplyWatcher() {
       }
     };
 
+    /* A run started on another device, or by a schedule, has no stream and no active job this
+       tab ever saw: while the user sits here focused, nothing else asks the server whether a
+       reply landed. Refreshing the mounted list occasionally is that fallback, and it is the
+       same request the sidebar already makes on window focus rather than a second one. Far
+       slower than the away poll, because a focused user is looking at the list this refreshes.
+       Alerts stay suppressed while focused; this only keeps the dot and the badge honest. */
+    const focusedRefresh = async () => {
+      if (!document.hasFocus()) {
+        return;
+      }
+      await queryClient.invalidateQueries([QueryKeys.allConversations]);
+    };
+
     const timer = window.setInterval(poll, AWAY_POLL_MS);
-    return () => window.clearInterval(timer);
+    const focusedTimer = window.setInterval(focusedRefresh, FOCUSED_REFRESH_MS);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(focusedTimer);
+    };
   }, [notificationsEnabled, soundEnabled, badgeEnabled, queryClient]);
 }

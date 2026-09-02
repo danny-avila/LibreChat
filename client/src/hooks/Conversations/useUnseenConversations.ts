@@ -63,6 +63,9 @@ export type ReplyReadState = {
  */
 const LEFTOVER_CACHE_AGE_MS = 5 * 60_000;
 
+/** How often the aggregate re-checks that deadline on its own; see the effect below. */
+const LEFTOVER_SWEEP_MS = 60_000;
+
 const isLeftover = (query: Query, serverFetchedAt: Map<string, number>): boolean => {
   if (query.getObserversCount() > 0) {
     return false;
@@ -251,7 +254,14 @@ export default function useUnseenConversations(): ReplyReadState | null {
       refresh();
     });
     refresh();
-    return unsubscribe;
+    /* Crossing the leftover deadline is not a cache event, so an otherwise idle tab would keep
+       counting a phantom row until something else happened to touch the caches. Recomputing on
+       a slow tick costs a scan of what is already in memory and no request. */
+    const tick = window.setInterval(refresh, LEFTOVER_SWEEP_MS);
+    return () => {
+      window.clearInterval(tick);
+      unsubscribe();
+    };
   }, [queryClient, refresh]);
 
   return state;
