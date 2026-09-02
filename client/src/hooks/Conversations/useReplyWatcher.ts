@@ -197,7 +197,11 @@ export default function useReplyWatcher() {
   const activeJobIds = activeJobsData?.activeJobIds;
   const runningRef = useRef<Set<string> | null>(null);
   const observedStampRef = useRef<Map<string, string | undefined>>(new Map());
-  const unknownIdsRef = useRef<Set<string>>(new Set());
+  /** Reply stamps whose list refetch has already been attempted for a conversation no cache
+   *  knows, keyed by id. Keyed on the stamp rather than the id alone so a later reply to the
+   *  same conversation earns a fresh attempt, while repeated polls carrying the same reply do
+   *  not refetch the list on every tick. */
+  const unknownIdsRef = useRef<Map<string, string>>(new Map());
   /** Reply stamps whose aggregate-cache reveal has already succeeded; see `mergeTimestamps`. */
   const aggregateRevealedRef = useRef<Map<string, string>>(new Map());
 
@@ -284,11 +288,12 @@ export default function useReplyWatcher() {
         if (document.hasFocus()) {
           return;
         }
-        const unknownIds = new Set<string>();
+        const unknownStamps = new Map<string, string>();
+        const unknownConvos: Array<Partial<TConversation>> = [];
         let hasNewlyUnknownConversation = false;
 
         for (const convo of conversations) {
-          const { conversationId } = convo;
+          const { conversationId, lastResponseAt } = convo;
           if (!conversationId) {
             continue;
           }
@@ -297,28 +302,52 @@ export default function useReplyWatcher() {
             continue;
           }
           /* A conversation started on another device has no row here to merge into, and hand-
-             inserting one would fight the list's own ordering and pagination state. With a
-             sidebar filter cached, a conversation can also stay unknown forever, so only a
-             newly unknown id is worth a refetch. */
-          if (!unknownIdsRef.current.has(conversationId)) {
+             inserting one would fight the list's own ordering and pagination state, so the
+             list is refetched instead. Nothing to reveal without a reply stamp. */
+          if (!lastResponseAt) {
+            continue;
+          }
+          unknownStamps.set(conversationId, lastResponseAt);
+          unknownConvos.push(convo);
+          if (unknownIdsRef.current.get(conversationId) !== lastResponseAt) {
             hasNewlyUnknownConversation = true;
           }
-          unknownIds.add(conversationId);
+        }
+
+        /* A conversation that dropped off the page, or that some other path has since cached,
+           starts over: its next appearance here is worth an attempt again. */
+        for (const conversationId of [...unknownIdsRef.current.keys()]) {
+          if (!unknownStamps.has(conversationId)) {
+            unknownIdsRef.current.delete(conversationId);
+          }
         }
 
         if (!hasNewlyUnknownConversation) {
-          unknownIdsRef.current = unknownIds;
           return;
         }
-        /* Ids are committed as known-unknown only once the refetch meant to reveal them has
-           succeeded. Recording them first would let a transient list failure mute those
-           conversations for good: every later poll would read them as already known and never
-           invalidate again, even after the network recovered. A conversation a cached sidebar
-           filter legitimately hides is committed on the successful refetch that still did not
-           reveal it, which is what keeps the filtered list from being refetched every tick. */
+        /* Attempts are recorded only once the refetch meant to reveal them has succeeded.
+           Recording them first would let a transient list failure mute those conversations for
+           good: every later poll would read them as already attempted and never invalidate
+           again, even after the network recovered. */
         await queryClient.invalidateQueries([QueryKeys.allConversations]);
-        if (!didListRefreshFail(queryClient)) {
-          unknownIdsRef.current = unknownIds;
+        if (didListRefreshFail(queryClient)) {
+          return;
+        }
+
+        for (const convo of unknownConvos) {
+          const conversationId = convo.conversationId as string;
+          if (findConvoInAllQueries(queryClient, conversationId)) {
+            /* Revealed: merge it now rather than waiting a tick, and forget the attempt. */
+            unknownIdsRef.current.delete(conversationId);
+            await mergeTimestamps(queryClient, convo, aggregateRevealedRef.current);
+            continue;
+          }
+          /* Still in no cache: a sidebar filter hides it, or it sits past the page the sidebar
+             query loads. Recorded against this reply, so the next one to the same conversation
+             is attempted again while this one stops costing a refetch every tick. Covering a
+             batch larger than that page wants an unseen query on the server rather than a
+             wider refetch here. */
+          unknownIdsRef.current.set(conversationId, unknownStamps.get(conversationId) as string);
         }
       } catch {
         /* Offline or a dropped connection; the next tick retries. */

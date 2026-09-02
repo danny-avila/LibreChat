@@ -212,11 +212,16 @@ describe('Conversation Operations', () => {
       expect(convo?.lastResponseAt?.getTime()).toBe(stamp.getTime());
     });
 
-    it('stamps the reply at write time when asked to, past its own awaited reads', async () => {
-      /* The caller cannot hold a stamp across those reads: a catch-up recorded by `/seen`
-         while one is in flight would be newer, and `$max` would keep it, leaving the reply
-         this save persists reading as already seen. */
+    it('stamps the reply at write time and clears the catch-up it outranks', async () => {
+      /* `/seen` can match the previous reply while this save is in flight and record a
+         catch-up later than any timestamp the caller could hold. The stamp and the clear are
+         one conditional write, so the reply this save persists is never born seen. */
       const before = new Date();
+      await saveConvo(mockCtx, { ...mockConversationData });
+      await Conversation.updateOne(
+        { conversationId: mockConversationData.conversationId },
+        { $set: { lastSeenAt: new Date(Date.now() + 5_000) } },
+      );
 
       await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
 
@@ -225,6 +230,31 @@ describe('Conversation Operations', () => {
       });
       expect(convo?.lastResponseAt).toBeInstanceOf(Date);
       expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(convo?.lastSeenAt == null).toBe(true);
+    });
+
+    it('leaves a read conversation alone when an older response persists last', async () => {
+      /* Two responses in flight: the older one reaching the write last must neither walk the
+         stamp backwards nor relight a conversation whose newest reply was already read. */
+      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+      const stamped = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      const newer = new Date(Date.now() + 60_000);
+      const seenAt = new Date(Date.now() + 90_000);
+      await Conversation.updateOne(
+        { conversationId: mockConversationData.conversationId },
+        { $set: { lastResponseAt: newer, lastSeenAt: seenAt } },
+      );
+
+      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(stamped?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
+      expect(convo?.lastSeenAt?.getTime()).toBe(seenAt.getTime());
     });
 
     it('leaves the reply stamp alone for a save that does not carry one', async () => {

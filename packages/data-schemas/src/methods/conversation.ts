@@ -2245,14 +2245,6 @@ export function createConversationMethods(
         return operation;
       };
 
-      /* The reply stamp is assigned here, after every awaited read this function performs and
-       * immediately before the write: a catch-up recorded by `/seen` while one of those reads
-       * was in flight would otherwise be newer than a stamp captured earlier, and `$max` would
-       * keep it, leaving the reply this save is persisting to read as already seen. */
-      if (metadata?.stampReply === true) {
-        update.lastResponseAt = new Date();
-      }
-
       const baseFilter = { conversationId, user: userId };
       const canUpsert = metadata?.noUpsert !== true;
       const runUpdate = (
@@ -2333,6 +2325,42 @@ export function createConversationMethods(
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
+      }
+
+      /* The reply stamp is a write of its own, and a conditional one.
+       *
+       * `/seen` acknowledges the reply the client had on screen, matching on the stored
+       * `lastResponseAt`: while the save above is in flight it can still match the previous
+       * reply and record a catch-up later than any timestamp this function could have
+       * captured, which would leave the reply just persisted reading as already seen. Setting
+       * the stamp and clearing that catch-up in one update closes the gap, because a reply the
+       * user cannot have read yet is by definition unseen and the open tab re-acknowledges it
+       * as soon as it renders.
+       *
+       * The filter is what keeps it safe under concurrency: only a write that actually moves
+       * the stamp forward clears the catch-up, so an older response persisting last neither
+       * walks the stamp backwards nor relights a conversation whose newest reply was read.
+       * Classic operators only, for the DocumentDB targets. */
+      if (metadata?.stampReply === true) {
+        const replyStamp = new Date();
+        const stamped = await Conversation.updateOne(
+          {
+            _id: conversation._id,
+            $or: [
+              { lastResponseAt: null },
+              { lastResponseAt: { $exists: false } },
+              { lastResponseAt: { $lt: replyStamp } },
+            ],
+          },
+          { $set: { lastResponseAt: replyStamp }, $unset: { lastSeenAt: '' } },
+          { timestamps: false },
+        );
+        if (stamped.modifiedCount > 0) {
+          /* The caller hands this document to the client as the turn's conversation, and the
+             seen acknowledgement is bound to the stamp it carries. */
+          conversation.lastResponseAt = replyStamp;
+          conversation.lastSeenAt = undefined;
+        }
       }
 
       if (
