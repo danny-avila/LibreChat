@@ -2,12 +2,6 @@ import { useState, useMemo, useCallback, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import {
-  PermissionTypes,
-  Permissions,
-  AgentCapabilities,
-  removeCodeExecutionCaller,
-} from 'librechat-data-provider';
-import {
   Label,
   Switch,
   OGDialog,
@@ -17,6 +11,14 @@ import {
   OGDialogTemplate,
   useToastContext,
 } from '@librechat/client';
+import {
+  PermissionTypes,
+  Permissions,
+  SkillsScope,
+  AgentCapabilities,
+  resolveAgentSkillsScope,
+  removeCodeExecutionCaller,
+} from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { CapabilityFileCounts } from './items/capabilities';
@@ -28,7 +30,7 @@ import {
   useResolvedSkills,
   useUninstallToolCredentials,
 } from './hooks';
-import { computeToggleAction, skillsEnabledTransition } from './items/mutations';
+import { computeToggleAction, skillsSelectionTransition } from './items/mutations';
 import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
 import { requiresFileManagerRemoval } from './items/capabilities';
 import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
@@ -90,7 +92,16 @@ export default function ToolsSection({ agentId }: Props) {
 
   const skillsValue = useWatch({ control, name: 'skills' });
   const skillsEnabledValue = useWatch({ control, name: 'skills_enabled' });
-  const useAllSkills = skillsEnabledValue === true && (skillsValue ?? []).length === 0;
+  const skillAuthoringEnabledValue = useWatch({ control, name: 'skill_authoring_enabled' });
+  const skillsScopeValue = useWatch({ control, name: 'skills_scope' });
+  const explicitSkillsEnabled = skillsEnabledValue === true;
+  const skillsCapabilityEnabled = explicitSkillsEnabled || skillAuthoringEnabledValue === true;
+  const effectiveSkillsScope = resolveAgentSkillsScope(
+    skillsValue,
+    skillsEnabledValue,
+    skillsScopeValue,
+  );
+  const useAllSkills = explicitSkillsEnabled && effectiveSkillsScope === SkillsScope.all;
   /** Selection stashed when "use all skills" turns on, so turning it back off
    * restores the previous picks instead of destroying them. Cleared when the
    * agent changes — the section isn't remounted on switch (only the form
@@ -103,17 +114,65 @@ export default function ToolsSection({ agentId }: Props) {
     stashedSkillsRef.current = [];
   }
 
+  const handleSkillsEnabledChange = useCallback(
+    (checked: boolean) => {
+      if (!checked) {
+        setValue('skills_enabled', false, { shouldDirty: true });
+        setValue('skill_authoring_enabled', false, { shouldDirty: true });
+        return;
+      }
+      const current = (getValues('skills') ?? []) as string[];
+      if (current.length === 0 && getValues('skills_scope') === SkillsScope.all) {
+        setValue('skills_enabled', true, { shouldDirty: true });
+        setValue('skill_authoring_enabled', false, { shouldDirty: true });
+        return;
+      }
+      const transition = skillsSelectionTransition(
+        current,
+        getValues('skills_enabled'),
+        getValues('skill_authoring_enabled'),
+        getValues('skills_scope'),
+      );
+      if (transition.enabled !== undefined) {
+        setValue('skills_enabled', transition.enabled, { shouldDirty: true });
+      }
+      if (transition.authoringEnabled !== undefined) {
+        setValue('skill_authoring_enabled', transition.authoringEnabled, { shouldDirty: true });
+      }
+      if (transition.scope !== undefined) {
+        setValue('skills_scope', transition.scope, { shouldDirty: true });
+      }
+    },
+    [getValues, setValue],
+  );
+
   const handleUseAllSkillsChange = useCallback(
     (checked: boolean) => {
       if (checked) {
         stashedSkillsRef.current = (getValues('skills') ?? []) as string[];
         setValue('skills', [], { shouldDirty: true });
         setValue('skills_enabled', true, { shouldDirty: true });
+        setValue('skill_authoring_enabled', false, { shouldDirty: true });
+        setValue('skills_scope', SkillsScope.all, { shouldDirty: true });
         return;
       }
       const restored = stashedSkillsRef.current;
       setValue('skills', restored, { shouldDirty: true });
-      setValue('skills_enabled', restored.length > 0, { shouldDirty: true });
+      const transition = skillsSelectionTransition(
+        restored,
+        getValues('skills_enabled'),
+        getValues('skill_authoring_enabled'),
+        getValues('skills_scope'),
+      );
+      if (transition.enabled !== undefined) {
+        setValue('skills_enabled', transition.enabled, { shouldDirty: true });
+      }
+      if (transition.authoringEnabled !== undefined) {
+        setValue('skill_authoring_enabled', transition.authoringEnabled, { shouldDirty: true });
+      }
+      if (transition.scope !== undefined) {
+        setValue('skills_scope', transition.scope, { shouldDirty: true });
+      }
     },
     [getValues, setValue],
   );
@@ -168,9 +227,22 @@ export default function ToolsSection({ agentId }: Props) {
           const current = (getValues('skills') ?? []) as string[];
           const next = current.filter((s) => s !== patch.id);
           setValue('skills', next, { shouldDirty: true });
-          const flag = skillsEnabledTransition(next, getValues('skills_enabled'));
-          if (flag !== undefined) {
-            setValue('skills_enabled', flag, { shouldDirty: true });
+          const transition = skillsSelectionTransition(
+            next,
+            getValues('skills_enabled'),
+            getValues('skill_authoring_enabled'),
+            getValues('skills_scope'),
+          );
+          if (transition.enabled !== undefined) {
+            setValue('skills_enabled', transition.enabled, { shouldDirty: true });
+          }
+          if (transition.authoringEnabled !== undefined) {
+            setValue('skill_authoring_enabled', transition.authoringEnabled, {
+              shouldDirty: true,
+            });
+          }
+          if (transition.scope !== undefined) {
+            setValue('skills_scope', transition.scope, { shouldDirty: true });
           }
           break;
         }
@@ -288,9 +360,35 @@ export default function ToolsSection({ agentId }: Props) {
           onInfo={setDialogItem}
           onRemove={handleQuickRemove}
           badgeText={useAllSkills ? localize('com_ui_all_proper') : undefined}
-          showAdd={!useAllSkills}
-          showBody={!useAllSkills}
+          showAdd={skillsCapabilityEnabled && !useAllSkills}
+          showBody={skillsCapabilityEnabled && !useAllSkills}
         >
+          <div className="mb-1.5 flex items-center justify-between gap-3 px-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span
+                id="skills-enabled-label"
+                className="truncate text-[13px] font-medium text-text-primary"
+              >
+                {localize('com_ui_skills_enable')}
+              </span>
+              <HoverCard openDelay={50}>
+                <InfoTrigger />
+                <HoverCardPortal>
+                  <HoverCardContent side={ESide.Top} className="w-80">
+                    <p className="text-sm text-text-secondary">
+                      {localize('com_ui_skills_enable_hint')}
+                    </p>
+                  </HoverCardContent>
+                </HoverCardPortal>
+              </HoverCard>
+            </div>
+            <Switch
+              id="skills-enabled"
+              checked={skillsCapabilityEnabled}
+              onCheckedChange={handleSkillsEnabledChange}
+              aria-labelledby="skills-enabled-label"
+            />
+          </div>
           <div className="mb-1.5 flex items-center justify-between gap-3 px-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <span
@@ -313,6 +411,7 @@ export default function ToolsSection({ agentId }: Props) {
             <Switch
               id="use-all-skills"
               checked={useAllSkills}
+              disabled={!skillsCapabilityEnabled}
               onCheckedChange={handleUseAllSkillsChange}
               aria-labelledby="use-all-skills-label"
             />

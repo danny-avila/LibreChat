@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
-import { isEphemeralAgentId } from 'librechat-data-provider';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import { SkillsScope, isEphemeralAgentId, resolveAgentSkillsScope } from 'librechat-data-provider';
 import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
@@ -149,6 +149,11 @@ export const MAX_SKILL_NAME_LENGTH = 200;
  * Keep the trailing slash — call sites concatenate `${SKILL_FILE_PREFIX}${skillName}/...`.
  */
 export const SKILL_FILE_PREFIX = 'skills/';
+
+/** Whether a model-facing file path is routed to persistent LibreChat skill storage. */
+export function isSkillFilePath(filePath: string): boolean {
+  return filePath.startsWith(SKILL_FILE_PREFIX);
+}
 
 /**
  * Marker tagged onto every skill-primed message (as `additional_kwargs.source`
@@ -311,8 +316,8 @@ export async function resolveModelSpecSkillIds({
 }
 
 export interface ResolveAgentScopedSkillIdsParams {
-  /** Agent being initialized. Reads `id`, `skills`, and `skills_enabled`. */
-  agent: Pick<Agent, 'id' | 'skills' | 'skills_enabled'>;
+  /** Agent being initialized. Reads its persisted skill capability and catalog scope. */
+  agent: Pick<Agent, 'id' | 'skills' | 'skills_enabled' | 'skills_scope'>;
   /** Full set of skill IDs the user can VIEW (pre-scoped by ACL). */
   accessibleSkillIds: Types.ObjectId[];
   /** Admin capability: `AgentCapabilities.skills` on the agents endpoint. */
@@ -328,9 +333,9 @@ export interface ResolveAgentScopedSkillIdsParams {
  *    `true` = full accessible catalog, string list = scoped allowlist,
  *    empty list / `false` = no skills. Otherwise the skills badge toggle
  *    controls the full accessible catalog.
- *  - Persisted agent  → the builder's `skills_enabled` master switch.
- *    Enabled + empty allowlist = full catalog; enabled + non-empty
- *    allowlist = narrow to those ids; disabled (or undefined) = no skills.
+ *  - Persisted agent  → the builder's `skills_enabled` master switch and
+ *    optional explicit `skills_scope`. Legacy agents without a scope retain
+ *    enabled + empty = full catalog behavior.
  *
  * When not activated, returns `[]` so `injectSkillCatalog`,
  * `resolveManualSkills`, and `resolveAlwaysApplySkills` all no-op.
@@ -363,8 +368,15 @@ export function resolveAgentScopedSkillIds(
   if (agent.skills_enabled !== true) {
     return [];
   }
-  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
+  const scope = resolveAgentSkillsScope(agent.skills, agent.skills_enabled, agent.skills_scope);
+  if (scope === SkillsScope.none) {
+    return [];
+  }
+  if (scope === SkillsScope.all) {
     return scopeSkillIds(accessibleSkillIds, undefined);
+  }
+  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
+    return [];
   }
   return scopeSkillIds(accessibleSkillIds, agent.skills);
 }

@@ -106,7 +106,11 @@ describe('createAdminCodeEnvironmentHandlers', () => {
       throw new Error('Expected the test code environment');
     }
     overriddenEnvironment.baseURL = 'https://attacker.example.com/v1';
-    overriddenEnvironment.pairing = { workerId: 'vm-1', tokenEnv: 'DATABASE_URL' };
+    overriddenEnvironment.pairing = {
+      workerId: 'vm-1',
+      allowPrincipalWorkers: false,
+      tokenEnv: 'DATABASE_URL',
+    };
     const getAppConfig = jest.fn(async (options: { baseOnly?: boolean }) =>
       options.baseOnly === true ? config() : writableOverride,
     );

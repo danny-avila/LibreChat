@@ -464,6 +464,20 @@ describe('createAppConfigService', () => {
       });
     });
 
+    it('reuses caller-resolved principals without querying them again', async () => {
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+      const resolvedPrincipals = [
+        { principalType: 'role', principalId: 'USER' },
+        { principalType: 'user', principalId: 'uid1' },
+      ];
+
+      await getAppConfig({ role: 'USER', userId: 'uid1', resolvedPrincipals });
+
+      expect(deps.getUserPrincipals).not.toHaveBeenCalled();
+      expect(deps.getApplicableConfigs).toHaveBeenCalledWith(resolvedPrincipals);
+    });
+
     it('re-runs mutable principal config augmentation without rebuilding cached overrides', async () => {
       const augmentConfig = jest.fn(async ({ appConfig, principals }) => ({
         ...appConfig,
@@ -492,6 +506,20 @@ describe('createAppConfigService', () => {
       );
     });
 
+    it('skips mutable runtime augmentation when the caller already loaded it', async () => {
+      const augmentConfig = jest.fn(async ({ appConfig }) => appConfig);
+      const deps = createDeps({ augmentConfig });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig({
+        role: 'USER',
+        userId: 'uid1',
+        skipRuntimeAugmentation: true,
+      });
+
+      expect(augmentConfig).not.toHaveBeenCalled();
+    });
+
     it('preserves resolved principal restrictions when optional augmentation fails', async () => {
       const deps = createDeps({
         getApplicableConfigs: jest.fn().mockResolvedValue([
@@ -511,6 +539,36 @@ describe('createAppConfigService', () => {
         expect.objectContaining({
           endpoints: ['untrusted-override'],
         }),
+      );
+    });
+
+    it('propagates principal resolution failures for fail-closed callers', async () => {
+      const error = new Error('principal authorization unavailable');
+      const deps = createDeps({ getUserPrincipals: jest.fn().mockRejectedValue(error) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ role: 'USER', userId: 'uid1', failClosed: true })).rejects.toBe(
+        error,
+      );
+    });
+
+    it('propagates override resolution failures for fail-closed callers', async () => {
+      const error = new Error('override authorization unavailable');
+      const deps = createDeps({ getApplicableConfigs: jest.fn().mockRejectedValue(error) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ role: 'USER', userId: 'uid1', failClosed: true })).rejects.toBe(
+        error,
+      );
+    });
+
+    it('propagates principal augmentation failures for fail-closed callers', async () => {
+      const error = new Error('environment authorization unavailable');
+      const deps = createDeps({ augmentConfig: jest.fn().mockRejectedValue(error) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ role: 'USER', userId: 'uid1', failClosed: true })).rejects.toBe(
+        error,
       );
     });
 

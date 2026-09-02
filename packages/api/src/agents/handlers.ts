@@ -55,6 +55,7 @@ import {
   getBlockedUninspectableFileField,
   inspectContent,
   isContentTraversalLimitError,
+  isContentTraversalProtected,
 } from '~/protection';
 import {
   CREATE_FILE_TOOL_NAME,
@@ -78,8 +79,8 @@ import {
   INTENT_ARG,
 } from './intent';
 import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
-import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { createSkillContentDigest } from './compatibility';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
@@ -389,6 +390,7 @@ export interface ToolExecuteOptions {
     read_only?: boolean;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -400,6 +402,7 @@ export interface ToolExecuteOptions {
     route?: {
       baseUrl?: string;
       executionProfile?: CodeExecutionContext['executionProfile'];
+      bridgeWorkerId?: string;
     },
   ) => Promise<string | null>;
   /** 23-hour freshness check */
@@ -450,6 +453,7 @@ export interface ToolExecuteOptions {
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
     executionRouteKey?: string;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
@@ -471,6 +475,7 @@ export interface ToolExecuteOptions {
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
     executionRouteKey?: string;
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
@@ -556,6 +561,7 @@ function getCodeExecutionContext(
 function codeExecutionRequestParams(context?: CodeExecutionContext): {
   codeApiBaseUrl?: string;
   executionProfile?: CodeExecutionContext['executionProfile'];
+  bridgeWorkerId?: string;
   executionRouteKey?: string;
   runtime_session_hint?: string;
 } {
@@ -566,6 +572,7 @@ function codeExecutionRequestParams(context?: CodeExecutionContext): {
     codeApiBaseUrl: context.baseUrl,
     executionProfile: context.executionProfile,
     ...(context.executionRouteKey ? { executionRouteKey: context.executionRouteKey } : {}),
+    ...(context.bridgeWorkerId ? { bridgeWorkerId: context.bridgeWorkerId } : {}),
     ...(context.runtimeSessionHint ? { runtime_session_hint: context.runtimeSessionHint } : {}),
   };
 }
@@ -866,10 +873,13 @@ function filteredToolArgumentsResult(
     if (!isContentTraversalLimitError(error)) {
       throw error;
     }
-    return (
-      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
-      errorResult(tc, error.body.message)
-    );
+    const filtered = filteredContentResult(tc, req, getContentTraversalFragments(error));
+    if (filtered != null) {
+      return filtered;
+    }
+    return isContentTraversalProtected({ error, filters: req?.config?.filters })
+      ? errorResult(tc, error.body.message)
+      : null;
   }
 }
 
@@ -917,10 +927,13 @@ function filteredToolOutputResult(
     if (!isContentTraversalLimitError(error)) {
       throw error;
     }
-    return (
-      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
-      errorResult(tc, error.body.message)
-    );
+    const filtered = filteredContentResult(tc, req, getContentTraversalFragments(error));
+    if (filtered != null) {
+      return filtered;
+    }
+    return isContentTraversalProtected({ error, filters: req?.config?.filters })
+      ? errorResult(tc, error.body.message)
+      : null;
   }
 }
 
@@ -965,7 +978,7 @@ function isFilteredSkillProjection(
     return filteredSkillResult(tc, req, input) != null;
   } catch (error) {
     if (isContentTraversalLimitError(error)) {
-      return true;
+      return isContentTraversalProtected({ error, filters: req?.config?.filters });
     }
     throw error;
   }
@@ -3291,7 +3304,7 @@ async function handleCreateFileCall(
   }
 
   const overwrite = args.overwrite === true;
-  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
+  if (!isSkillFilePath(args.path)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
         tc,
@@ -3402,7 +3415,7 @@ async function handleEditFileCall(
     return errorResult(tc, edits);
   }
 
-  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
+  if (!isSkillFilePath(args.path)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
         tc,
@@ -4584,7 +4597,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 return {
                   toolCallId: tc.id,
                   status: 'success' as const,
-                  content: buildBackgroundCapacityContent(tc.name),
+                  content: buildBackgroundCapacityContent(tc.name, capacityAdmission.scope),
                 };
               }
               const capacityPermit =
@@ -4665,7 +4678,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 return {
                   toolCallId: tc.id,
                   status: 'success' as const,
-                  content: buildBackgroundCapacityContent(tc.name),
+                  content: buildBackgroundCapacityContent(tc.name, created.scope),
                 };
               }
               const { task, isNew } = created;
@@ -4928,6 +4941,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     );
                   }
                 };
+                const persistSettledBackgroundResult = async (params: {
+                  output?: string;
+                  artifact?: unknown;
+                  status: 'completed' | 'error';
+                }): Promise<void> => {
+                  if (harvestEnabled) {
+                    await persistBackgroundResult(params);
+                    return;
+                  }
+                  backgroundTaskRegistry.markCompletionPersistencePending(
+                    backgroundUserId,
+                    backgroundConversationId,
+                    task.id,
+                  );
+                  try {
+                    await persistBackgroundResult(params);
+                  } finally {
+                    backgroundTaskRegistry.markCompletionPersistenceFinished(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                    );
+                  }
+                };
                 let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
                 const backgroundAbortController = new AbortController();
                 try {
@@ -5105,7 +5142,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         registryError,
                         { harvestStarted: harvestEnabled },
                       );
-                      await persistBackgroundResult({ output: errorOutput, status: 'error' });
+                      await persistSettledBackgroundResult({
+                        output: errorOutput,
+                        status: 'error',
+                      });
                       await wakeDetachedActor();
                       return;
                     }
@@ -5162,7 +5202,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       task.id,
                       { content, artifact: result.artifact, harvestStarted: harvestEnabled },
                     );
-                    await persistBackgroundResult({
+                    await persistSettledBackgroundResult({
                       /** Use the registry's canonical bounded serialization so
                        * structured content cannot leave the durable card on its
                        * synthetic running handle. */
@@ -5211,7 +5251,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  the dispatch card on the handle JSON forever. */
                       { harvestStarted: harvestEnabled },
                     );
-                    await persistBackgroundResult({ output: deliveredError, status: 'error' });
+                    await persistSettledBackgroundResult({
+                      output: deliveredError,
+                      status: 'error',
+                    });
                     await wakeDetachedActor();
                   } finally {
                     if (producerRetirementTimeout != null) {

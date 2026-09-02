@@ -79,6 +79,7 @@ export interface CodeHarvestDeps {
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
     executionRouteKey?: string;
+    bridgeWorkerId?: string;
     preparedBuffer?: Buffer;
     downloadFallback?: boolean;
   }) => Promise<ProcessedCodeOutput | null>;
@@ -284,6 +285,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
           codeApiBaseUrl: codeExecutionContext?.baseUrl,
           executionProfile: codeExecutionContext?.executionProfile,
           executionRouteKey: codeExecutionContext?.executionRouteKey,
+          bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
           preparedBuffer,
           downloadFallback,
         });

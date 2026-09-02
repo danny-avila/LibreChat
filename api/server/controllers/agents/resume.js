@@ -447,6 +447,8 @@ async function finalizeResumedTurn({
   const preemptIncomplete =
     (preemptStats?.emptyBoundaries ?? 0) > 0 ||
     client?.run?.getHaltReason?.() === 'preempt_incomplete';
+  /** Same honest-incomplete contract for a resumed turn that runs out of steps. */
+  const stepLimitReached = client?.stepLimitReached === true;
 
   const responseMessage = {
     messageId: responseMessageId,
@@ -457,7 +459,8 @@ async function finalizeResumedTurn({
     endpoint: meta.endpoint,
     iconURL: meta.iconURL,
     model: meta.model,
-    unfinished: preemptIncomplete,
+    unfinished: preemptIncomplete || stepLimitReached,
+    ...(stepLimitReached && { finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON }),
     error: false,
     isCreatedByUser: false,
     user: userId,
@@ -612,11 +615,15 @@ async function finalizeResumedTurn({
         scheduledFor: meta.scheduledFor,
         streamId,
         jobCreatedAt: job.createdAt,
-        status: preemptIncomplete ? 'interrupted' : 'success',
+        status: preemptIncomplete || stepLimitReached ? 'interrupted' : 'success',
         conversationId,
         ...(preemptIncomplete && {
           error: 'Scheduled run was interrupted before completion',
         }),
+        ...(stepLimitReached &&
+          !preemptIncomplete && {
+            error: 'Scheduled run reached its tool call limit before completion',
+          }),
       });
     }
 

@@ -327,13 +327,30 @@ function subagentPhaseToGraphEvent(event) {
 /**
  * Folds a single {@link SubagentUpdateEvent} into the given content
  * aggregator. Silent no-op for phases outside the aggregator's domain.
- * @param {{ aggregateContent: Function }} aggregator
+ * @param {{ aggregateContent: Function, contentParts?: Array, stepMap?: Map }} aggregator
  * @param {SubagentUpdateEvent} event
  */
 function feedSubagentAggregator(aggregator, event) {
   const graphEvent = subagentPhaseToGraphEvent(event);
   if (!graphEvent) return;
   aggregator.aggregateContent({ event: graphEvent, data: event.data });
+
+  /** The SDK aggregator intentionally projects run-step tool calls onto its
+   * public content shape, so host-only routing metadata is not copied. Restore
+   * the server-owned identity by call id after that projection; otherwise the
+   * persistence fallback has to parse an ambiguous delimiter-bearing name. */
+  const toolCalls = event.data?.stepDetails?.tool_calls ?? [];
+  const stepIndex = aggregator.stepMap?.get(event.data?.id)?.index;
+  if (!Number.isInteger(stepIndex) || !Array.isArray(aggregator.contentParts)) {
+    return;
+  }
+  for (let index = 0; index < toolCalls.length; index++) {
+    const source = toolCalls[index];
+    const target = aggregator.contentParts[stepIndex + index]?.tool_call;
+    if (target?.id === source?.id && typeof source?.mcpServerName === 'string') {
+      target.mcpServerName = source.mcpServerName;
+    }
+  }
 }
 
 /**
@@ -362,6 +379,7 @@ function feedSubagentAggregator(aggregator, event) {
  *   used to persist the breakdown only when the final call emitted usage.
  * @param {Array<TTokenUsageEvent>} [options.usageEmitSink] - Array collecting each emitted
  *   `on_token_usage` payload (incl. cost) so the response's usage rollup can be persisted.
+ * @param {(toolName: string, agentId?: string) => string | undefined} [options.resolveMcpServerName]
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
@@ -383,6 +401,7 @@ function getDefaultHandlers({
   contextUsageSink = null,
   usageEmitSink = null,
   eventChildActivity = null,
+  resolveMcpServerName = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -496,6 +515,19 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        for (const toolCall of data?.stepDetails?.tool_calls ?? []) {
+          const toolName = toolCall?.name ?? toolCall?.function?.name;
+          if (toolCall?.name == null && typeof toolName === 'string') {
+            toolCall.name = toolName;
+          }
+          const serverName = resolveMcpServerName?.(
+            toolName,
+            metadata?.agent_id ?? metadata?.agentId,
+          );
+          if (serverName) {
+            toolCall.mcpServerName = serverName;
+          }
+        }
         aggregateContent({ event, data });
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           await emitForJob({ event, data });
@@ -699,6 +731,20 @@ function getDefaultHandlers({
        * consistent "don't record" rule for subagent traces.
        */
       if (!visible) return;
+      const memberAgentId =
+        typeof data?.memberAgentId === 'string' && data.memberAgentId.trim() !== ''
+          ? data.memberAgentId
+          : data?.subagentAgentId;
+      for (const toolCall of data?.data?.stepDetails?.tool_calls ?? []) {
+        const toolName = toolCall?.name ?? toolCall?.function?.name;
+        if (toolCall?.name == null && typeof toolName === 'string') {
+          toolCall.name = toolName;
+        }
+        const serverName = resolveMcpServerName?.(toolName, memberAgentId);
+        if (serverName) {
+          toolCall.mcpServerName = serverName;
+        }
+      }
       if (subagentAggregatorsByToolCallId && data?.parentToolCallId) {
         const key = data.parentToolCallId;
         let aggregator = subagentAggregatorsByToolCallId.get(key);
@@ -1048,6 +1094,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
           codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
           executionProfile: metadata.codeExecutionContext?.executionProfile,
           executionRouteKey: metadata.codeExecutionContext?.executionRouteKey,
+          bridgeWorkerId: metadata.codeExecutionContext?.bridgeWorkerId,
           preparedBuffer,
           downloadFallback,
         });
@@ -1393,6 +1440,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
           executionProfile: metadata.codeExecutionContext?.executionProfile,
           executionRouteKey: metadata.codeExecutionContext?.executionRouteKey,
+          bridgeWorkerId: metadata.codeExecutionContext?.bridgeWorkerId,
           preparedBuffer,
           downloadFallback,
         });

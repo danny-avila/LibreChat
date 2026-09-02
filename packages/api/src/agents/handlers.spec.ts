@@ -886,6 +886,60 @@ describe('createToolExecuteHandler', () => {
         expect.any(Object),
       );
     });
+
+    it('allows audit-only tool output that cannot be completely traversed', async () => {
+      const opaqueArtifact = new Proxy(
+        { value: 'hidden' },
+        {
+          ownKeys: () => {
+            throw new Error('opaque');
+          },
+        },
+      );
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'opaque_output_tool',
+        invoke: jest.fn(async () => ({ content: 'safe result', artifact: opaqueArtifact })),
+      };
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({
+          loadedTools: [tool] as never[],
+          configurable: {
+            req: {
+              config: {
+                filters: {
+                  toolArguments: {
+                    pii: {
+                      action: 'audit',
+                      fields: ['output'],
+                      starterPatterns: [],
+                      customPatterns: [
+                        {
+                          id: 'protected-value',
+                          label: 'protected value',
+                          regex: 'PROTECTED-[A-Z-]+',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        toolEndCallback,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_opaque_audit_output', name: 'opaque_output_tool', args: {} },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.artifact).toBe(opaqueArtifact);
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback.mock.calls[0][0].outputFiltered).toBeUndefined();
+      expect(toolEndCallback.mock.calls[0][0].output.artifact).toBe(opaqueArtifact);
+    });
   });
 
   describe('programmatic tool config', () => {
@@ -4430,6 +4484,7 @@ describe('createToolExecuteHandler', () => {
           baseUrl: 'https://stateful-code.example.com',
           codeSessionKey: 'execute_code:stateful:v1:user',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
           executionRouteKey: 'stateful:deployment-a',
           runtimeSessionHint: 'v1:user',
           statefulSessions: true,
@@ -4450,6 +4505,7 @@ describe('createToolExecuteHandler', () => {
         expect.objectContaining({
           codeApiBaseUrl: 'https://stateful-code.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
           executionRouteKey: 'stateful:deployment-a',
           runtime_session_hint: 'v1:user',
         }),

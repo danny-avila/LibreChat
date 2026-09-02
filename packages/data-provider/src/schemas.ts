@@ -361,6 +361,10 @@ export const defaultAgentFormValues = {
   /** Master toggle for skill use on this agent. `true` activates skills
    *  (full catalog unless `skills` narrows it). Anything else = inactive. */
   skills_enabled: undefined as boolean | undefined,
+  /** Enables runtime skill creation without exposing an existing skill catalog. */
+  skill_authoring_enabled: undefined as boolean | undefined,
+  /** Explicit catalog scope. Missing preserves the legacy enabled + empty = all behavior. */
+  skills_scope: undefined as SkillsScope | undefined,
   /** `undefined` = feature disabled by default (no subagent tool injected). */
   subagents: undefined as
     | {
@@ -929,6 +933,28 @@ export const tMessageSchema = z.object({
 export enum MemoryScope {
   user = 'user',
   agent = 'agent',
+}
+
+/** Catalog exposure for a persisted agent with skills enabled. */
+export enum SkillsScope {
+  all = 'all',
+  selected = 'selected',
+  none = 'none',
+}
+
+/** Resolves explicit and legacy persisted-agent skill catalog states. */
+export function resolveAgentSkillsScope(
+  skills: readonly string[] | undefined,
+  enabled: boolean | undefined,
+  scope: SkillsScope | undefined,
+): SkillsScope {
+  if (enabled !== true) {
+    return SkillsScope.none;
+  }
+  if (scope !== undefined) {
+    return scope;
+  }
+  return (skills ?? []).length > 0 ? SkillsScope.selected : SkillsScope.all;
 }
 
 export type MemoryArtifact = {
