@@ -1,2 +1,2 @@
 export { isLeader } from './LeaderElection';
-export { runDistributedJob } from './DistributedJob';
+export { runDistributedJob } from './job';
