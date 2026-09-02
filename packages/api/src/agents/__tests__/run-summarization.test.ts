@@ -126,6 +126,8 @@ type TestRunAgent = ReturnType<typeof makeAgent> & {
   subagentAgentConfigs?: TestRunAgent[];
 };
 
+type BuildChildInput = Parameters<typeof buildChildInputs>[0];
+
 function makeSubagentChain(hops: number): TestRunAgent {
   const agents = Array.from({ length: hops + 1 }, (_, index) =>
     makeAgent({
@@ -2010,7 +2012,7 @@ describe('subagentConfigs', () => {
     });
 
     expect(agents[0].maxSubagentDepth).toBe(MAX_SUBAGENT_DEPTH);
-    const childConfig = (agents[0].subagentConfigs as Parameters<typeof buildChildInputs>[0][])[0];
+    const childConfig = (agents[0].subagentConfigs as BuildChildInput[])[0];
     expect(childConfig.allowNested).toBe(true);
 
     const childInputs = buildChildInputs(childConfig, 'agent_child', MAX_SUBAGENT_DEPTH);
@@ -2055,7 +2057,7 @@ describe('subagentConfigs', () => {
       ],
     });
 
-    const rootConfigs = agents[0].subagentConfigs as Parameters<typeof buildChildInputs>[0][];
+    const rootConfigs = agents[0].subagentConfigs as BuildChildInput[];
     const rootConfigsByType = new Map(rootConfigs.map((config) => [config.type, config]));
     const leftConfig = rootConfigsByType.get('agent_left');
     const rightConfig = rootConfigsByType.get('agent_right');
@@ -2064,8 +2066,8 @@ describe('subagentConfigs', () => {
     }
     const leftInputs = buildChildInputs(leftConfig, 'agent_left', MAX_SUBAGENT_DEPTH);
     const rightInputs = buildChildInputs(rightConfig, 'agent_right', MAX_SUBAGENT_DEPTH);
-    const leftShared = leftInputs.subagentConfigs?.[0];
-    const rightShared = rightInputs.subagentConfigs?.[0];
+    const leftShared = leftInputs.subagentConfigs?.[0] as BuildChildInput | undefined;
+    const rightShared = rightInputs.subagentConfigs?.[0] as BuildChildInput | undefined;
     if (
       !leftShared ||
       !rightShared ||
