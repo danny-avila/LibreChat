@@ -12,7 +12,7 @@ type HookProps = {
 
 describe('useProgressiveRowMount', () => {
   let frames: Array<FrameRequestCallback | undefined>;
-  let scrollableRef: React.RefObject<HTMLDivElement | null>;
+  let scrollableRef: React.MutableRefObject<HTMLDivElement | null>;
 
   /** Runs only the frames scheduled BEFORE this flush, so one call advances
    *  the expansion by exactly one step even though each step schedules the
