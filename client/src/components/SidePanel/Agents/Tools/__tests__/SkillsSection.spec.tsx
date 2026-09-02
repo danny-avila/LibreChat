@@ -13,6 +13,7 @@ const mockUseSkillsInfiniteQuery = jest.fn();
 let mockInfiniteResult: {
   data: { pages: Array<{ skills: TSkillSummary[] }> };
   fetchNextPage: jest.Mock;
+  refetch: jest.Mock;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isError: boolean;
@@ -67,6 +68,7 @@ function setAvailableSkills(pages: TSkillSummary[][]) {
   mockInfiniteResult = {
     data: { pages: pages.map((skills) => ({ skills })) },
     fetchNextPage: jest.fn(),
+    refetch: jest.fn(),
     hasNextPage: false,
     isFetchingNextPage: false,
     isError: false,
@@ -240,6 +242,22 @@ describe('SkillsSection mode writes', () => {
     expect(mockSetValue).not.toHaveBeenCalled();
   });
 
+  test('re-enables an agent whose disabled state kept a stale scope', () => {
+    /** Produced by the old Off handler, which never rewrote `skills_scope`.
+     *  The section resolves it to Off, so clicking the retained scope has to
+     *  write, not match the raw field and no-op while `Radio` moves anyway. */
+    mockFormValues = { skills: [], skills_enabled: false, skills_scope: SkillsScope.all };
+
+    renderSection();
+    expect(getRadio('com_ui_skills_mode_off')).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(getRadio('com_ui_skills_mode_all'));
+
+    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', true, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_scope', SkillsScope.all, {
+      shouldDirty: true,
+    });
+  });
+
   test('arrow keys move the checked radio and write the next scope', () => {
     mockFormValues = { skills: [], skills_enabled: false, skills_scope: SkillsScope.none };
 
@@ -305,6 +323,56 @@ describe('SkillsSection All mode body', () => {
     expect(onInfo).toHaveBeenCalledTimes(1);
     expect(onInfo.mock.calls[0][0]).toMatchObject({ id: 's1', name: 'First skill' });
     expect(screen.queryByRole('button', { name: /com_ui_skills_remove/ })).not.toBeInTheDocument();
+  });
+
+  test('reports the count as a floor while more pages remain', () => {
+    setAvailableSkills([[makeSkill('s1', 'First skill')]]);
+    mockInfiniteResult.hasNextPage = true;
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(screen.getByText('com_ui_skills_available_count_more')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count')).not.toBeInTheDocument();
+  });
+
+  test('leaves the rest of the catalog unfetched until the list is expanded', () => {
+    setAvailableSkills([[makeSkill('s1', 'First skill')]]);
+    mockInfiniteResult.hasNextPage = true;
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(mockInfiniteResult.fetchNextPage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_skills_available_count/ }));
+
+    expect(mockInfiniteResult.fetchNextPage).toHaveBeenCalled();
+  });
+
+  test('reports a failed catalog request instead of an empty one', () => {
+    setAvailableSkills([]);
+    mockInfiniteResult.isError = true;
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('com_ui_skills_load_error');
+    expect(screen.queryByText('com_ui_skills_available_count')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /com_ui_skills_available_count/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  test('retries the catalog request from the error state', () => {
+    setAvailableSkills([]);
+    mockInfiniteResult.isError = true;
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+
+    expect(mockInfiniteResult.refetch).toHaveBeenCalledTimes(1);
   });
 });
 

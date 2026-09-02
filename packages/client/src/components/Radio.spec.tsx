@@ -128,6 +128,32 @@ describe('Radio keyboard navigation', () => {
     expect(document.activeElement).toBe(last);
   });
 
+  it('does not fire onChange when Home lands on the already-checked first option', async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    render(<Radio options={FIVE} value="hourly" onChange={onChange} />);
+
+    const first = screen.getByRole('radio', { name: 'Hourly' });
+    first.focus();
+    await user.keyboard('{Home}');
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('does not fire onChange when End lands on the already-checked last option', async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    render(<Radio options={FIVE} value="cron" onChange={onChange} />);
+
+    const last = screen.getByRole('radio', { name: 'Custom' });
+    last.focus();
+    await user.keyboard('{End}');
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(last);
+  });
+
   it('ignores keys other than the six navigation keys', async () => {
     const user = userEvent.setup();
     const onChange = jest.fn();

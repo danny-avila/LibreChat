@@ -73,8 +73,16 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
     event.preventDefault();
     // Wraps, so holding ArrowRight from the last segment returns to the first.
     const next = (target + options.length) % options.length;
-    handleChange(options[next].value);
+    const nextValue = options[next].value;
+    // Focus follows the key unconditionally; the selection only changes when it
+    // actually moves. Home on the first segment and End on the last land where
+    // they started, and firing `onChange` there would dirty a form for a
+    // selection that never changed.
     buttonRefs.current[next]?.focus();
+    if (nextValue === currentValue) {
+      return;
+    }
+    handleChange(nextValue);
   };
 
   const updateBackgroundStyle = useCallback(() => {

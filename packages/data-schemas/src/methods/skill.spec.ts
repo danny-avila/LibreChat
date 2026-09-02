@@ -821,6 +821,46 @@ describe('Skill CRUD methods', () => {
     expect(agentAfter?.skills_enabled).toBe(false);
   });
 
+  it('deleteSkill keeps skills enabled when the entire allowlist is deleted from an all-scoped agent', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'all-scoped-only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()], { skills_scope: 'all' }));
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(true);
+    expect(agentAfter?.skills_scope).toBe('all');
+  });
+
+  it('deleteSkill keeps skills enabled when the entire allowlist is deleted from a selected-scoped agent', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'selected-scoped-only-skill' }),
+    );
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(
+      makeAgentDoc([skill._id.toString()], { skills_scope: 'selected' }),
+    );
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(true);
+    expect(agentAfter?.skills_scope).toBe('selected');
+  });
+
   it('deleteSkill prunes the deleted id from agent skill allowlists', async () => {
     const { skill: doomed } = await methods.createSkill(makeSkillInput({ name: 'doomed-skill' }));
     const { skill: kept } = await methods.createSkill(makeSkillInput({ name: 'kept-skill' }));

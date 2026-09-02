@@ -1650,6 +1650,12 @@ export function createSkillMethods(
    * accessible catalog at runtime, so a plain `$pull` would silently widen
    * a deliberately restricted agent. Disabling skills preserves the
    * restriction until an author makes a new explicit choice.
+   *
+   * That inference only applies to agents with no explicit `skills_scope`.
+   * With a scope persisted, the field already says what an empty allowlist
+   * means -- `selected` resolves to no skills on its own, and `all` means the
+   * full catalog on purpose -- so disabling them would turn skills off behind
+   * the author's back.
    */
   async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<void> {
     if (skillIds.length === 0) {
@@ -1659,7 +1665,11 @@ export function createSkillMethods(
     const Agent = mongoose.models.Agent as Model<IAgent>;
     try {
       await Agent.updateMany(
-        { skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } } },
+        {
+          skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } },
+          /** Matches an absent field as well as an explicit null. */
+          skills_scope: null,
+        },
         { $set: { skills: [], skills_enabled: false } },
         { timestamps: false },
       );

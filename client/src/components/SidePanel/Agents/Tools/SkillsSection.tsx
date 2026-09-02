@@ -34,6 +34,18 @@ const MODE_LABELS: Record<SkillsScope, TranslationKeys> = {
 const ROW = 'flex items-center gap-2.5 px-3 py-2.5';
 const CHIP = 'flex size-[26px] shrink-0 items-center justify-center rounded-md';
 
+/**
+ * Which of the three count phrasings the header row uses. Only the pages
+ * already loaded are counted, so while more remain the number is a floor and
+ * has to read as one: printing a page size as the catalog size would be wrong.
+ */
+function availableCountKey(count: number, hasMore: boolean): TranslationKeys {
+  if (hasMore) {
+    return 'com_ui_skills_available_count_more';
+  }
+  return count === 1 ? 'com_ui_skills_available_count_one' : 'com_ui_skills_available_count';
+}
+
 function SkillIcon({ item }: { item: AgentItem }) {
   const { Icon, colorClass } = getIconForItem(item);
   return (
@@ -97,7 +109,7 @@ function MorphHeight({ open, children }: { open: boolean; children: ReactNode })
 export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props) {
   const localize = useLocalize();
   const { user } = useAuthContext();
-  const { getValues, setValue, control } = useFormContext<AgentForm>();
+  const { setValue, control } = useFormContext<AgentForm>();
   const [allExpanded, setAllExpanded] = useState(false);
 
   const skillsValue = useWatch({ control, name: 'skills' });
@@ -130,19 +142,21 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
   /** Only `all` needs the deployment-wide catalog, for the count and the
    *  read-only list. Other modes never fetch it. Shares its cache with the
    *  picker, which uses the same query key. */
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isError } = useSkillsInfiniteQuery(
-    { limit: 100 },
-    { enabled: mode === SkillsScope.all },
-  );
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isError, refetch } =
+    useSkillsInfiniteQuery({ limit: 100 }, { enabled: mode === SkillsScope.all });
 
+  /** The first page is enough for the collapsed header; the rest is only worth
+   *  fetching once the list is open. The accessible catalog is unbounded and
+   *  the endpoint caps a page at 100, so paging it eagerly would cost a serial
+   *  request per 100 skills merely to view an All-scoped agent. */
   useEffect(() => {
-    if (isError || mode !== SkillsScope.all) {
+    if (isError || mode !== SkillsScope.all || !allExpanded) {
       return;
     }
     if (hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
-  }, [mode, hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
+  }, [mode, allExpanded, hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
 
   const availableSkills = useMemo(() => {
     const all: TSkillSummary[] = [];
@@ -166,7 +180,11 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
   const handleModeChange = useCallback(
     (next: string) => {
       const scope = next as SkillsScope;
-      if (scope === getValues('skills_scope')) {
+      /** Compared against the resolved mode, not the persisted scope: a
+       *  disabled agent that kept `skills_scope: all` renders as Off, and
+       *  matching on the raw field would swallow the click that re-enables it
+       *  while `Radio` moved its own selection. */
+      if (scope === mode) {
         return;
       }
       setValue('skills_enabled', scope !== SkillsScope.none, { shouldDirty: true });
@@ -177,7 +195,7 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
         setValue('skill_authoring_enabled', false, { shouldDirty: true });
       }
     },
-    [getValues, setValue],
+    [mode, setValue],
   );
 
   const modeOptions = useMemo(
@@ -186,6 +204,11 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
   );
 
   const count = availableSkills.length;
+  const countLabel = localize(availableCountKey(count, hasNextPage === true), { count });
+
+  const handleRetry = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
   /** Once something is selected the list carries its own affordance in the
    *  header, so the dashed card is only the empty state. */
@@ -225,7 +248,31 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
        *   Selected, and expanding the available list all tween the same
        *   measured height. */}
       <MorphHeight open={mode !== SkillsScope.none}>
-        {bodyMode === SkillsScope.all ? (
+        {bodyMode === SkillsScope.all && isError && (
+          <>
+            {/** A failed catalog request must not read as an empty catalog: the
+             *  agent still uses every skill it can reach at runtime, so report
+             *  the failure and offer a retry instead of a count derived from
+             *  missing data. Mirrors the picker's alert. */}
+            <div
+              role="alert"
+              className={cn(
+                ROW,
+                'justify-between rounded-lg border-[0.5px] border-border-light text-sm text-text-secondary',
+              )}
+            >
+              <span className="truncate">{localize('com_ui_skills_load_error')}</span>
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="text-text-link shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+              >
+                {localize('com_ui_retry')}
+              </button>
+            </div>
+          </>
+        )}
+        {bodyMode === SkillsScope.all && !isError && (
           <div className="overflow-hidden rounded-lg border-[0.5px] border-border-light">
             <button
               type="button"
@@ -244,14 +291,7 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
                 )}
                 aria-hidden="true"
               />
-              <span className="truncate text-sm text-text-primary">
-                {localize(
-                  count === 1
-                    ? 'com_ui_skills_available_count_one'
-                    : 'com_ui_skills_available_count',
-                  { count },
-                )}
-              </span>
+              <span className="truncate text-sm text-text-primary">{countLabel}</span>
             </button>
             {/** Mounted only while expanded: an always-present wrapper left the
              *   container's divider stacked on its bottom border. */}
@@ -280,7 +320,8 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
               </ul>
             )}
           </div>
-        ) : (
+        )}
+        {bodyMode !== SkillsScope.all && (
           <div className="flex flex-col gap-1.5">
             {/** Rows own their hover so the whole item highlights, not just the
              *   name. `has-[...]` drops it while the remove button is hovered,

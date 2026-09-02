@@ -876,6 +876,49 @@ describe('Agent Methods', () => {
       expect(updatedAgent!.skills_enabled).toBe(false);
     });
 
+    test('should preserve skills when pruning empties the allowlist for an agent with all scope', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'All Scope Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills_enabled: true,
+        skills_scope: SkillsScope.all,
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { skills: [danglingId] });
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+      expect(updatedAgent!.skills_scope).toBe(SkillsScope.all);
+    });
+
+    test('should preserve skills when pruning empties the allowlist for an update-scoped legacy agent', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Selected Scope Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills_enabled: true,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId], skills_scope: SkillsScope.selected },
+      );
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
     test('should keep full-catalog semantics for an explicit empty allowlist on update', async () => {
       const { agentId, authorId } = createTestIds();
 

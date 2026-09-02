@@ -171,11 +171,17 @@ function AgentSelect({
        * the flag). The builder has no control left for it and the runtime
        * treats it as "no skills", yet the section would render the selection
        * as active. Normalize to enabled so the form matches what the UI
-       * shows and a later save persists the displayed behavior. */
+       * shows and a later save persists the displayed behavior.
+       *
+       * An explicit `skills_scope` is exempt: `none` deliberately keeps the
+       * allowlist so returning to `selected` restores it, and flipping the
+       * flag there would persist skills-enabled on an agent shown as Off,
+       * which `skillDeps` reads as permission to inject authoring tools. */
       if (
         Array.isArray(formValues.skills) &&
         formValues.skills.length > 0 &&
-        formValues.skills_enabled !== true
+        formValues.skills_enabled !== true &&
+        formValues.skills_scope === undefined
       ) {
         formValues.skills_enabled = true;
       }

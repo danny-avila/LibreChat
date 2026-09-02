@@ -2145,6 +2145,7 @@
   "com_ui_skills_always_apply_invoked": "Auto-applied skills",
   "com_ui_skills_always_apply_pin_title": "Always-applied skill (auto-primed on every turn)",
   "com_ui_skills_available_count": "{{count}} skills available",
+  "com_ui_skills_available_count_more": "{{count}}+ skills available",
   "com_ui_skills_available_count_one": "{{count}} skill available",
   "com_ui_skills_command_placeholder": "Select a Skill by name",
   "com_ui_skills_dialog_description": "Browse and add skills to your agent.",

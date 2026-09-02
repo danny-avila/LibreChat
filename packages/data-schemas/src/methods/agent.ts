@@ -755,12 +755,17 @@ export function createAgentMethods(
       /** Self-heal: drop allowlist ids whose skill no longer exists in the
        *  database or the external registry.
        *  A dangling id keeps the allowlist non-empty while scoping the
-       *  runtime catalog to an empty intersection — silently disabling
+       *  runtime catalog to an empty intersection, silently disabling
        *  skills for the agent. When pruning empties a non-empty allowlist,
        *  fail closed and disable skills: empty + enabled means the full
        *  catalog, and hygiene must never widen scope. (An explicit user
        *  `skills: []` submission skips this branch and keeps the
-       *  full-catalog semantics.) */
+       *  full-catalog semantics.)
+       *
+       *  Only agents without an explicit `skills_scope` are disabled that
+       *  way. Once a scope is persisted it defines what an empty allowlist
+       *  means, so failing closed would instead turn skills off on an agent
+       *  the author deliberately scoped to `all` or `selected`. */
       if (Array.isArray(directUpdates.skills) && directUpdates.skills.length > 0) {
         const prunedSkills = await filterExistingSkillIds(
           mongoose,
@@ -769,7 +774,9 @@ export function createAgentMethods(
         );
         directUpdates.skills = prunedSkills;
         updateData.skills = prunedSkills;
-        if (prunedSkills.length === 0) {
+        const effectiveScope =
+          (directUpdates as Record<string, unknown>).skills_scope ?? currentObject.skills_scope;
+        if (prunedSkills.length === 0 && effectiveScope == null) {
           directUpdates.skills_enabled = false;
           updateData.skills_enabled = false;
         }
