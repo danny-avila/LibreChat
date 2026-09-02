@@ -189,6 +189,11 @@ describe('useProgressiveRowMount', () => {
     flushFrames();
     expect(result.current?.heights).toBe(publishedHeights);
 
+    act(() => result.current?.measureRow?.(3, 'message-3', 175));
+    expect(result.current?.heights?.get(3)?.height).toBe(100);
+    act(() => result.current?.pinRow?.(0, 'message-0'));
+    expect(result.current?.heights?.get(3)?.height).toBe(175);
+
     act(() => {
       for (let depth = 0; depth < 9; depth += 1) {
         result.current?.pinRow?.(depth, `message-${depth}`);
@@ -219,7 +224,7 @@ describe('useProgressiveRowMount', () => {
     flushFrames();
 
     expect(result.current?.start).toBe(91);
-    expect(result.current?.end).toBe(114);
+    expect(result.current?.end).toBe(113);
     expect(querySpy).toHaveBeenCalledTimes(queriesAfterMeasurement);
 
     act(() => {
@@ -228,7 +233,11 @@ describe('useProgressiveRowMount', () => {
         {} as ResizeObserver,
       );
     });
-    expect(result.current).toBeNull();
+    expect(result.current).toEqual({
+      mode: 'progressive',
+      start: 0,
+      end: Number.POSITIVE_INFINITY,
+    });
     flushFrames();
     flushFrames();
     expect(result.current?.mode).toBe('bounded');
@@ -239,16 +248,28 @@ describe('useProgressiveRowMount', () => {
         {} as ResizeObserver,
       );
     });
+    const screenshotPendingLayout = document.createElement('div');
+    screenshotPendingLayout.dataset.rowLayoutPending = 'true';
+    container.appendChild(screenshotPendingLayout);
     let releaseLease = () => {};
     let lease: Promise<() => void> = Promise.resolve(() => {});
+    let leaseResolved = false;
     act(() => {
-      lease = completeProgressiveRowMounts();
+      lease = completeProgressiveRowMounts().then((release) => {
+        leaseResolved = true;
+        return release;
+      });
     });
+    flushFrames();
+    flushFrames();
+    expect(leaseResolved).toBe(false);
+    act(() => screenshotPendingLayout.remove());
     flushFrames();
     flushFrames();
     await act(async () => {
       releaseLease = await lease;
     });
+    expect(leaseResolved).toBe(true);
     expect(result.current).toBeNull();
     const leasePendingLayout = document.createElement('div');
     leasePendingLayout.dataset.rowLayoutPending = 'true';
@@ -279,7 +300,11 @@ describe('useProgressiveRowMount', () => {
       conversationId: 'convo-a',
       layoutKey: 'maximized',
     });
-    expect(result.current).toBeNull();
+    expect(result.current).toEqual({
+      mode: 'progressive',
+      start: 0,
+      end: Number.POSITIVE_INFINITY,
+    });
     flushFrames();
     flushFrames();
     expect(result.current?.mode).toBe('bounded');
@@ -501,7 +526,11 @@ describe('useProgressiveRowMount', () => {
         {} as ResizeObserver,
       );
     });
-    expect(result.current).toBeNull();
+    expect(result.current).toEqual({
+      mode: 'progressive',
+      start: 0,
+      end: Number.POSITIVE_INFINITY,
+    });
 
     rerender({
       tailDepth: 40,

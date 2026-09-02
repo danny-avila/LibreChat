@@ -425,6 +425,9 @@ describe('MultiMessage row mount window', () => {
     expect(container.querySelector<HTMLElement>('#m0')?.style.height).toBe('120px');
     expect(container.querySelector<HTMLElement>('#m2')?.style.height).toBe('360px');
     expect(container.querySelectorAll('[data-message-row-slot="true"]')).toHaveLength(3);
+    expect(container.querySelector('#m0 [data-message-search-text="true"]')).toHaveTextContent(
+      'm0',
+    );
   });
 
   it('mounts a changed branch row until its new height is measured', () => {

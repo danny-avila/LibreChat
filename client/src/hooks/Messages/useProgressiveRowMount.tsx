@@ -48,6 +48,7 @@ const STREAM_TAIL_ROWS = 4;
 const SHORTCUT_TAIL_ROWS = 2;
 const MAX_PINNED_ROWS = 8;
 const MOUNTED_ROW_SLOT_SELECTOR = '[data-message-row-slot="true"][data-row-mounted="true"]';
+const MAX_LAYOUT_WAIT_MS = 5_000;
 
 type ProgressiveRowMountOptions = {
   tailDepth: number | undefined;
@@ -79,6 +80,38 @@ function rowMetadata(element: Element): { depth: number; messageId: string } | n
     return null;
   }
   return { depth, messageId };
+}
+
+function waitForFullDomLayout(container: HTMLElement, isCurrent: () => boolean): Promise<void> {
+  return new Promise((resolve) => {
+    let frameId: number | undefined;
+    let quietFrames = 0;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (frameId != null) cancelAnimationFrame(frameId);
+      window.clearTimeout(maximumWait);
+      resolve();
+    };
+    const check = () => {
+      if (!isCurrent()) {
+        finish();
+        return;
+      }
+      const hasPendingLayout =
+        container.querySelector('[data-row-layout-pending="true"]') != null ||
+        [...container.querySelectorAll<HTMLImageElement>('img')].some((image) => !image.complete);
+      quietFrames = hasPendingLayout ? 0 : quietFrames + 1;
+      if (quietFrames >= 2) {
+        finish();
+        return;
+      }
+      frameId = requestAnimationFrame(check);
+    };
+    const maximumWait = window.setTimeout(finish, MAX_LAYOUT_WAIT_MS);
+    frameId = requestAnimationFrame(check);
+  });
 }
 
 /**
@@ -233,10 +266,14 @@ export function useProgressiveRowMount({
       if (oldestDepth == null) break;
       pinnedRowsRef.current.delete(oldestDepth);
     }
+    const publishedHeights = new Map(heightsRef.current);
     const publishedPinnedRows = new Map(pinnedRowsRef.current);
+    publishedHeightsRef.current = publishedHeights;
     publishedPinnedRowsRef.current = publishedPinnedRows;
     setMountWindow((current) =>
-      current?.mode === 'bounded' ? { ...current, pinnedRows: publishedPinnedRows } : current,
+      current?.mode === 'bounded'
+        ? { ...current, heights: publishedHeights, pinnedRows: publishedPinnedRows }
+        : current,
     );
   }, []);
 
@@ -322,17 +359,8 @@ export function useProgressiveRowMount({
     remeasuringRef.current = true;
     heightsRef.current = new Map();
     rowOffsetsRef.current = [];
-    setMountWindow(null);
-    const remeasureEpoch = leaseEpochRef.current;
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (remeasureEpoch !== leaseEpochRef.current) return;
-        measureMountedRows();
-        remeasuringRef.current = false;
-        if (leaseCountRef.current === 0) setMountWindow(publishBoundedWindow());
-      }),
-    );
-  }, [measureMountedRows, publishBoundedWindow, scrollableRef]);
+    setMountWindow({ mode: 'progressive', start: 0, end: Number.POSITIVE_INFINITY });
+  }, [scrollableRef]);
 
   const refreshBoundedWindow = useCallback(() => {
     setMountWindow((current) => {
@@ -387,6 +415,7 @@ export function useProgressiveRowMount({
         if (settled) return;
         settled = true;
         measureMountedRows();
+        remeasuringRef.current = false;
         setMountWindow(publishBoundedWindow());
       };
       const scheduleAfterQuietLayout = () => {
@@ -440,7 +469,7 @@ export function useProgressiveRowMount({
       measureMountedRows();
       scheduleAfterQuietLayout();
       /** Never let a non-resolving remote asset defeat the DOM bound. */
-      const maximumWait = window.setTimeout(finish, 5_000);
+      const maximumWait = window.setTimeout(finish, MAX_LAYOUT_WAIT_MS);
       return () => {
         settled = true;
         if (firstFrame != null) cancelAnimationFrame(firstFrame);
@@ -634,15 +663,15 @@ export function useProgressiveRowMount({
         }
       };
     };
-    const complete = () =>
-      new Promise<() => void>((resolve) => {
-        const release = acquireLease();
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            resolve(release);
-          }),
-        );
-      });
+    const complete = async () => {
+      const leaseEpoch = leaseEpochRef.current;
+      const release = acquireLease();
+      const container = scrollableRef.current;
+      if (container) {
+        await waitForFullDomLayout(container, () => leaseEpoch === leaseEpochRef.current);
+      }
+      return release;
+    };
     activeCompleters.add(complete);
     activeImmediateCompleters.add(acquireLease);
     return () => {

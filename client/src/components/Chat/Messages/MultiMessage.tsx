@@ -9,6 +9,7 @@ import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagen
 import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 import MessageContent from '~/components/Messages/MessageContent';
 import { useRowMountWindow } from '~/hooks/Messages';
+import { serializeMessageForClipboard } from '~/hooks/Messages/useCopyToClipboard';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
@@ -23,6 +24,7 @@ function MessageRowSlot({
   measureRow,
   mounted,
   placeholderHeight,
+  searchText,
   steerAnchors,
   pinRow,
   children,
@@ -32,6 +34,7 @@ function MessageRowSlot({
   measureRow?: (depth: number, messageId: string, height: number) => void;
   mounted: boolean;
   placeholderHeight?: number;
+  searchText?: string;
   steerAnchors?: Array<{ id: string; text: string }>;
   pinRow?: (depth: number, messageId: string) => void;
   children: ReactNode;
@@ -112,11 +115,18 @@ function MessageRowSlot({
     >
       {children}
       {!mounted
-        ? steerAnchors?.map((steer) => (
-            <span key={steer.id} id={steer.id} className="steer-render sr-only">
-              <span className="message-content">{steer.text}</span>
-            </span>
-          ))
+        ? [
+            searchText ? (
+              <span key="search-text" className="sr-only" data-message-search-text="true">
+                {searchText}
+              </span>
+            ) : null,
+            ...(steerAnchors?.map((steer) => (
+              <span key={steer.id} id={steer.id} className="steer-render sr-only">
+                <span className="message-content">{steer.text}</span>
+              </span>
+            )) ?? []),
+          ]
         : null}
     </div>
   );
@@ -326,6 +336,7 @@ function MultiMessage({
     if (part?.type !== ContentTypes.STEER || !part.steerId) return [];
     return [{ id: `steer-${part.steerId}`, text: part[ContentTypes.STEER] }];
   });
+  const searchText = serializeMessageForClipboard({ text: message.text, content: message.content });
   let rowSlot: ReactElement | null = null;
   if (rowMounted || (mountWindow?.mode === 'bounded' && measuredRow)) {
     rowSlot = (
@@ -334,6 +345,7 @@ function MultiMessage({
         messageId={message.messageId}
         mounted={rowMounted}
         placeholderHeight={measuredRow?.height}
+        searchText={searchText}
         steerAnchors={steerAnchors}
         measureRow={mountWindow?.mode === 'bounded' ? mountWindow.measureRow : undefined}
         pinRow={mountWindow?.mode === 'bounded' ? mountWindow.pinRow : undefined}
