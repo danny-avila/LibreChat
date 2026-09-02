@@ -1768,11 +1768,11 @@ describe('Meilisearch Mongoose plugin', () => {
     beforeEach(() => {
       mockGetDocuments = jest.fn();
       mockDeleteDocuments.mockClear();
-        mockIndex.mockReturnValue({
-          getRawInfo: jest.fn(),
-          getSettings: mockGetSettings,
-          updateSettings: mockUpdateSettings,
-          addDocuments: mockAddDocuments,
+      mockIndex.mockReturnValue({
+        getRawInfo: jest.fn(),
+        getSettings: mockGetSettings,
+        updateSettings: mockUpdateSettings,
+        addDocuments: mockAddDocuments,
         addDocumentsInBatches: mockAddDocumentsInBatches,
         updateDocuments: mockUpdateDocuments,
         deleteDocument: mockDeleteDocument,
@@ -2378,7 +2378,7 @@ describe('Meilisearch Mongoose plugin', () => {
           endpoint: EModelEndpoint.openAI,
           expiredAt: null,
           _meiliIndex: true,
-          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION + 1,
+          _meiliIndexSchemaVersion: MEILI_CONVERSATION_INDEX_SCHEMA_VERSION + 1,
         },
         {
           conversationId: staleId,
@@ -2387,7 +2387,7 @@ describe('Meilisearch Mongoose plugin', () => {
           endpoint: EModelEndpoint.openAI,
           expiredAt: null,
           _meiliIndex: true,
-          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION - 1,
+          _meiliIndexSchemaVersion: MEILI_CONVERSATION_INDEX_SCHEMA_VERSION - 1,
         },
       ]);
 
@@ -2401,14 +2401,14 @@ describe('Meilisearch Mongoose plugin', () => {
       ]);
 
       // Newer-stamped projection is left alone, not re-indexed nor downgraded.
-      expect(futureDoc?._meiliIndexSchemaVersion).toBe(MEILI_INDEX_SCHEMA_VERSION + 1);
+      expect(futureDoc?._meiliIndexSchemaVersion).toBe(MEILI_CONVERSATION_INDEX_SCHEMA_VERSION + 1);
       expect(futureDoc?._meiliIndex).toBe(true);
       expect(mockAddDocumentsInBatches).not.toHaveBeenCalledWith(
         expect.arrayContaining([expect.objectContaining({ conversationId: futureId })]),
       );
 
       // Strictly older projection is re-indexed and stamped forward to the local version.
-      expect(staleDoc?._meiliIndexSchemaVersion).toBe(MEILI_INDEX_SCHEMA_VERSION);
+      expect(staleDoc?._meiliIndexSchemaVersion).toBe(MEILI_CONVERSATION_INDEX_SCHEMA_VERSION);
       expect(staleDoc?._meiliIndex).toBe(true);
     });
 

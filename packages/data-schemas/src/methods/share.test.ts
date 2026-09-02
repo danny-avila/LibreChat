@@ -4,13 +4,13 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
-import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import {
   createShareMethods,
   anonymizeSharedContent,
   type ShareMethods,
   type SharedLinkContentSnapshot,
 } from './share';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import logger from '~/config/winston';
 
@@ -1266,20 +1266,13 @@ describe('Share Methods', () => {
       Conversation.meiliSearch = meiliSearchMock;
 
       await tenantStorage.run({ tenantId: 'tenant"\\id' }, () =>
-        shareMethods.getSharedLinks(
-          userId,
-          undefined,
-          10,
-          'createdAt',
-          'desc',
-          'search term',
-        ),
+        shareMethods.getSharedLinks(userId, undefined, 10, 'createdAt', 'desc', 'search term'),
       );
 
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: 'user = "user\\"\\\\id" AND tenantId = "tenant\\"\\\\id"',
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       });
     });
 
@@ -1289,20 +1282,13 @@ describe('Share Methods', () => {
       Conversation.meiliSearch = meiliSearchMock;
 
       await runAsSystem(() =>
-        shareMethods.getSharedLinks(
-          userId,
-          undefined,
-          10,
-          'createdAt',
-          'desc',
-          'search term',
-        ),
+        shareMethods.getSharedLinks(userId, undefined, 10, 'createdAt', 'desc', 'search term'),
       );
 
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId}"`,
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       });
     });
 
