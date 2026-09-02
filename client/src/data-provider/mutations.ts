@@ -5,7 +5,7 @@ import {
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
-import type { InfiniteData, QueryClient, UseMutationResult } from '@tanstack/react-query';
+import type { InfiniteData, QueryClient, QueryKey, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
   logger,
@@ -255,30 +255,52 @@ export const usePinConversationMutation = (
  * it holds data, though: cancelling ChatRoute's initial load would revert it to empty, and
  * with its refetches disabled nothing would ever restart that fetch.
  */
-const cancelConvoReadFetches = (
+const cancelConvoReadFetches = async (
   queryClient: QueryClient,
   conversationId: string,
-): Promise<void[]> => {
-  const cancellations = [
-    queryClient.cancelQueries([QueryKeys.allConversations]),
-    queryClient.cancelQueries([QueryKeys.pinnedConversations]),
-  ];
+): Promise<QueryKey[]> => {
   const pointKey = [QueryKeys.conversation, conversationId];
+  const roots = [[QueryKeys.allConversations], [QueryKeys.pinnedConversations]];
+  const cache = queryClient.getQueryCache();
+  /* Recorded before the cancellation, because a cancelled fetch was carrying rows this
+     mutation never asked about: other conversations' replies, renames, a page that had not
+     landed yet. Its own trigger is gone once it is cancelled, so settlement has to restart
+     exactly these. */
+  const interrupted = roots
+    .flatMap((root) => cache.findAll(root, { exact: false }))
+    .filter((query) => query.state.fetchStatus === 'fetching')
+    .map((query) => query.queryKey);
+
+  const cancellations = roots.map((root) => queryClient.cancelQueries(root));
   if (queryClient.getQueryData(pointKey) !== undefined) {
+    if (cache.find(pointKey)?.state.fetchStatus === 'fetching') {
+      interrupted.push(pointKey);
+    }
     cancellations.push(queryClient.cancelQueries(pointKey));
   }
-  return Promise.all(cancellations);
+  await Promise.all(cancellations);
+  return interrupted;
 };
 
 /**
- * Restarts the reads that `cancelConvoReadFetches` stopped.
+ * Restarts exactly the reads this mutation interrupted.
  *
- * "Whatever triggered the fetch triggers it again" only holds while something still asks: a
- * rejected acknowledgement means the server holds a newer reply than the one this tab observed,
- * and the fetch that would have delivered it was cancelled on the way in. The optimistic write
- * refreshed `dataUpdatedAt` on its way through, so the list reads as fresh for the rest of its
- * stale window and nothing refetches: the newer reply would stay out of the dot, the tab badge
- * and the alerts until an unrelated refetch happened to run.
+ * "Whatever triggered the fetch triggers it again" only holds while something still asks, and
+ * nothing does: the optimistic write refreshed `dataUpdatedAt` on its way through, so the list
+ * reads as fresh for the rest of its stale window. Whatever the cancelled response carried,
+ * this conversation's newer reply or another one's, would stay missing until an unrelated
+ * refetch happened to run.
+ */
+const restartInterruptedReads = (queryClient: QueryClient, keys: QueryKey[] | undefined): void => {
+  for (const key of keys ?? []) {
+    queryClient.invalidateQueries(key, { exact: true });
+  }
+};
+
+/**
+ * Refreshes the read caches wholesale, for a settlement that knows they are behind rather than
+ * merely interrupted: a rejected acknowledgement means the server has since stamped a reply
+ * this tab has not seen.
  */
 const refreshConvoReadCaches = (queryClient: QueryClient, conversationId: string): void => {
   queryClient.invalidateQueries([QueryKeys.allConversations]);
@@ -339,7 +361,7 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
     (payload: t.TMarkConversationSeenRequest) => dataService.markConversationSeen(payload),
     {
       onMutate: async (vars) => {
-        await cancelConvoReadFetches(queryClient, vars.conversationId);
+        const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
         /* Acknowledging exactly the observed reply, rather than the browser's idea of "now":
            a clock running behind the server would leave the row still unseen, and the cache
@@ -351,7 +373,7 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
           ...convo,
           lastSeenAt: acknowledged,
         }));
-        return { previous: cached?.lastSeenAt, acknowledged };
+        return { previous: cached?.lastSeenAt, acknowledged, interrupted };
       },
       onSuccess: (data, vars, context) => {
         /* A list refetch already in flight can have read the old catch-up before this write
@@ -374,6 +396,9 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
            older reply can fail after a newer one was acknowledged, and rolling back
            unconditionally would take that newer acknowledgement with it. */
         settleCatchUp(queryClient, vars.conversationId, context?.previous, context?.acknowledged);
+      },
+      onSettled: (_data, _error, _vars, context) => {
+        restartInterruptedReads(queryClient, context?.interrupted);
       },
     },
   );
@@ -425,7 +450,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
     (payload: t.TMarkConversationUnreadRequest) => dataService.markConversationUnread(payload),
     {
       onMutate: async (vars) => {
-        await cancelConvoReadFetches(queryClient, vars.conversationId);
+        const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
         const previous = findConvoInAllQueries(queryClient, vars.conversationId);
         /* The marker the optimistic pass writes, remembered so a rollback can tell its own
            state apart from a newer reply that arrived while the request was open. */
@@ -435,6 +460,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
           lastSeenAt: previous?.lastSeenAt,
           optimisticResponseAt,
           token: claimUnreadWrite(vars.conversationId),
+          interrupted,
         };
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
@@ -481,13 +507,14 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
            is the whole point of returning one. Anything else in the cache came from a reply
            that landed while the request was open, which is newer than the server read on the
            way in and has to survive. */
-        /* A catch-up in the cache that is not the one this mutation cleared is a newer
-           acknowledgement: the user opened the conversation and read the reply while the
-           request was open, and the server accepted that read after the unread write.
-           Clearing it would show a dot the server no longer backs, with the seen trigger's
-           attempt guard suppressing the re-send. Only the pre-mutation value is the stale
-           list refetch this settlement exists to defeat. */
+        /* A catch-up in the cache that is not the one this mutation cleared is an
+           acknowledgement this pass did not make, and the cache alone cannot say which write
+           the server settled on: the read may have been accepted after the unread write, or
+           before it, in which case the server holds the conversation unread while this tab
+           shows it read. Neither guess is safe, so the row is refetched and the server
+           decides. */
         if (cached?.lastSeenAt !== undefined && cached.lastSeenAt !== context?.lastSeenAt) {
+          refreshConvoReadCaches(queryClient, vars.conversationId);
           return;
         }
         const cachedResponseAt = cached?.lastResponseAt;
@@ -537,6 +564,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
       },
       onSettled: (_data, _error, vars, context) => {
         releaseUnreadWrite(vars.conversationId, context?.token);
+        restartInterruptedReads(queryClient, context?.interrupted);
       },
     },
   );

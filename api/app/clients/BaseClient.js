@@ -1255,6 +1255,11 @@ class BaseClient {
       { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
     );
 
+    /** Only a reply that is actually in the message history may light an indicator: a write
+     *  that resolved empty (duplicate-key recovery that could not re-read the row) would
+     *  otherwise announce a reply nobody can open. */
+    const persistedReply = savedMessage != null && message.isCreatedByUser === false;
+
     if (this.skipSaveConvo) {
       /* The secondary response of an override pair persists its message but deliberately skips
          the conversation-field save, so the stamp below is never reached. The reply still has
@@ -1264,7 +1269,7 @@ class BaseClient {
       /* `user` is the same id the message was just saved under; `reqCtx` only carries it when
          the request object is present, which the direct-save paths do not guarantee. */
       const stampUserId = reqCtx.userId ?? user ?? this.user;
-      if (message.isCreatedByUser === false && reqCtx.isTemporary !== true && stampUserId) {
+      if (persistedReply && reqCtx.isTemporary !== true && stampUserId) {
         try {
           await db.stampConvoLastResponse(stampUserId, message.conversationId);
         } catch (error) {
@@ -1333,7 +1338,7 @@ class BaseClient {
      *  turn. `saveConvo` assigns the timestamp itself, past its own awaited reads and against
      *  the write: a catch-up recorded by `/seen` while one of those reads is in flight would
      *  otherwise outrank a stamp captured here and leave this reply reading as already seen. */
-    const stampReply = message.isCreatedByUser === false && reqCtx.isTemporary !== true;
+    const stampReply = persistedReply && reqCtx.isTemporary !== true;
 
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',

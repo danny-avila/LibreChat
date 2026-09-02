@@ -1535,6 +1535,7 @@ describe('BaseClient', () => {
     test('asks saveConvo to stamp the assistant reply but never the user turn', async () => {
       /* The timestamp itself is assigned inside `saveConvo`, past its own awaited reads, so a
          catch-up recorded while one of them is in flight cannot outrank the reply. */
+      saveMessage.mockImplementation(async (_ctx, message) => message);
       const saveOptions = TestClient.getSaveOptions();
       TestClient.skipSaveConvo = false;
       saveConvo.mockClear();
@@ -1558,10 +1559,28 @@ describe('BaseClient', () => {
       expect(reply[2].stampReply).toBe(true);
     });
 
+    test('never stamps a reply whose message write resolved empty', async () => {
+      /* Duplicate-key recovery that cannot re-read the row leaves no message to open, so an
+         indicator would point at a reply that is not in the history. */
+      saveMessage.mockResolvedValueOnce(undefined);
+      const saveOptions = TestClient.getSaveOptions();
+      TestClient.skipSaveConvo = false;
+      saveConvo.mockClear();
+
+      await TestClient.saveMessageToDatabase(
+        { conversationId: 'convo-unseen', messageId: 'm7', isCreatedByUser: false, text: 'hello' },
+        saveOptions,
+        TestClient.user,
+      );
+
+      expect(saveConvo.mock.calls[0][2].stampReply).toBeUndefined();
+    });
+
     test('stamps the reply of a response that skips the conversation save', async () => {
       /* The secondary response of an override pair persists its message and returns before the
          conversation-field save. Without its own stamp, a reply that finishes after the primary
          one, or is the only one that persisted, would never light an indicator. */
+      saveMessage.mockImplementation(async (_ctx, message) => message);
       const saveOptions = TestClient.getSaveOptions();
       TestClient.skipSaveConvo = true;
       saveConvo.mockClear();
@@ -1585,6 +1604,7 @@ describe('BaseClient', () => {
     });
 
     test('never fails a persisted reply because its indicator stamp failed', async () => {
+      saveMessage.mockImplementation(async (_ctx, message) => message);
       const saveOptions = TestClient.getSaveOptions();
       TestClient.skipSaveConvo = true;
       stampConvoLastResponse.mockClear();
