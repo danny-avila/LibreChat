@@ -153,38 +153,46 @@ describe('code environment HTTP handlers', () => {
         fileWrite: { allowed: ['allow', 'ask', 'deny'] as const, default: 'ask' as const },
       },
     };
-    const handlers = createCodeEnvironmentHttpHandlers({
-      getAppConfig: jest.fn().mockResolvedValue({
-        endpoints: {
-          [EModelEndpoint.agents]: {
-            statefulCodeSessions: {
-              environments: [
-                {
-                  id: 'self-service',
-                  name: 'Self service',
-                  type: 'attached',
-                  baseURL: 'https://code.example.com/v1',
-                  owner: 'deployment',
-                  configSchema,
-                },
-              ],
-            },
+    const resolvedPrincipals = [
+      { principalType: 'role', principalId: 'USER' },
+      { principalType: 'user', principalId: '68b2f0c498f24c1e78fa0001' },
+    ];
+    const resolvePrincipals = jest.fn().mockResolvedValue(resolvedPrincipals);
+    const listAccessibleConfigurations = jest.fn().mockResolvedValue([
+      {
+        id: 'personal-vm',
+        name: 'Personal VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com/v1',
+        controlPlaneId: 'self-service',
+        owner: 'principal',
+      },
+    ]);
+    const getAppConfig = jest.fn().mockResolvedValue({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'self-service',
+                name: 'Self service',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                owner: 'deployment',
+                configSchema,
+              },
+            ],
           },
         },
-      } as unknown as AppConfig),
+      },
+    } as unknown as AppConfig);
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
       registry: {
         register: jest.fn(),
         listAccessible: jest.fn(),
-        listAccessibleConfigurations: jest.fn().mockResolvedValue([
-          {
-            id: 'personal-vm',
-            name: 'Personal VM',
-            type: 'attached',
-            baseURL: 'https://code.example.com/v1',
-            controlPlaneId: 'self-service',
-            owner: 'principal',
-          },
-        ]),
+        listAccessibleConfigurations,
+        resolvePrincipals,
         updateSettings,
         remove: jest.fn(),
       },
@@ -201,8 +209,18 @@ describe('code environment HTTP handlers', () => {
     );
 
     expect(res.statusCode).toBe(200);
+    expect(resolvePrincipals).toHaveBeenCalledTimes(1);
+    expect(listAccessibleConfigurations).toHaveBeenCalledWith(
+      expect.objectContaining({ principals: resolvedPrincipals }),
+    );
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ resolvedPrincipals, skipRuntimeAugmentation: true }),
+    );
     expect(updateSettings).toHaveBeenCalledWith({
-      actor: expect.objectContaining({ userId: '68b2f0c498f24c1e78fa0001' }),
+      actor: expect.objectContaining({
+        userId: '68b2f0c498f24c1e78fa0001',
+        principals: resolvedPrincipals,
+      }),
       environmentId: 'personal-vm',
       settings: { permissions: { fileWrite: 'allow' } },
     });

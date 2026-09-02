@@ -135,6 +135,20 @@ function exactToolMatcher(toolNames: ReadonlySet<string>): string {
   return `^(?:${Array.from(toolNames, (name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 }
 
+function isPersistentSkillPath(value: string): boolean {
+  const normalized = value.replace(/\\/g, '/');
+  const segments: string[] = [];
+  for (const segment of normalized.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return segments[0] === 'skills';
+}
+
 /** Describe only the BYOM hook branches that can actually return `ask` during admission. */
 export function buildAttachedCodeEnvironmentAdmissionHooks(
   attachedAgentIds: ReadonlySet<string>,
@@ -195,7 +209,7 @@ export function createAttachedCodeEnvironmentPolicyHook(
       category === 'fileWrite' &&
       (input.toolName === CREATE_FILE_TOOL_NAME || input.toolName === EDIT_FILE_TOOL_NAME) &&
       typeof input.toolInput?.path === 'string' &&
-      input.toolInput.path.startsWith('skills/')
+      isPersistentSkillPath(input.toolInput.path)
     ) {
       return {
         decision: 'ask',

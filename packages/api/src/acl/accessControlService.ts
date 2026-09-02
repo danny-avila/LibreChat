@@ -287,7 +287,18 @@ export class AccessControlService {
       return new Map();
     }
 
-    const principals = await this._dbMethods.getUserPrincipals({ userId, role });
+    let principals: ResolvedPrincipal[];
+    try {
+      principals = await this._dbMethods.getUserPrincipals({ userId, role });
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(
+          `[PermissionService.getResourcePermissionsMap] Error resolving principals: ${error.message}`,
+          error,
+        );
+      }
+      throw error;
+    }
     return await this.getResourcePermissionsMapForPrincipals({
       principalsList: principals,
       resourceType,

@@ -601,9 +601,9 @@ export function createCodeEnvironmentRegistry(
     ) {
       return null;
     }
-    const permissions = await access.getResourcePermissionsMap({
-      userId: actor.userId,
-      role: actor.role ?? '',
+    const principals = await resolvePrincipals(actor);
+    const permissions = await access.getResourcePermissionsMapForPrincipals({
+      principalsList: principals,
       resourceType: ResourceType.CODE_ENVIRONMENT,
       resourceIds: [environment._id],
     });

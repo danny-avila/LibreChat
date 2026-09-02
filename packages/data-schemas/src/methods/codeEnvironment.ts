@@ -326,7 +326,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
       return await model().findOne(lifecycleFilter).lean<CodeEnvironmentDocument>();
     }
     return await model()
-      .findOneAndUpdate(lifecycleFilter, { $set: updates }, { new: true })
+      .findOneAndUpdate(lifecycleFilter, { $set: updates }, { new: true, runValidators: true })
       .lean<CodeEnvironmentDocument>();
   }
 

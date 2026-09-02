@@ -561,10 +561,18 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
     let appConfig: AppConfig;
     let configurations: AccessibleCodeEnvironmentConfiguration[];
+    let resolvedPrincipal = principal;
     try {
+      const principals = await deps.registry.resolvePrincipals?.(principal);
+      resolvedPrincipal = principals == null ? principal : { ...principal, principals };
       [appConfig, configurations] = await Promise.all([
-        deps.getAppConfig({ ...getAppConfigOptionsFromUser(req.user), failClosed: true }),
-        deps.registry.listAccessibleConfigurations?.(principal) ?? Promise.resolve([]),
+        deps.getAppConfig({
+          ...getAppConfigOptionsFromUser(req.user),
+          ...(principals == null ? {} : { resolvedPrincipals: principals }),
+          failClosed: true,
+          skipRuntimeAugmentation: true,
+        }),
+        deps.registry.listAccessibleConfigurations?.(resolvedPrincipal) ?? Promise.resolve([]),
       ]);
     } catch (error) {
       logger.error('[codeEnvironments] settings policy resolution failed:', error);
@@ -595,7 +603,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       return res.status(503).json({ error: 'Code environment settings are unavailable' });
     }
     const environment = await deps.registry.updateSettings({
-      actor: principal,
+      actor: resolvedPrincipal,
       environmentId,
       settings,
     });

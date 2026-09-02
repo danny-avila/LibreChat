@@ -138,6 +138,12 @@ describe('code environment registry', () => {
         settings: { permissions: { fileWrite: 'ask', commandExecution: 'deny' } },
       }),
     ]);
+
+    await expect(
+      createMethods(mongoose).updateCodeEnvironmentSettings('settings-vm', {
+        permissions: { fileWrite: 'invalid' },
+      } as never),
+    ).rejects.toThrow();
   });
 
   test('discovers environments granted through role and group principals', async () => {

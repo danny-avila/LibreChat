@@ -85,9 +85,15 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
     ).resolves.toMatchObject({ decision: 'deny' });
   });
 
-  test.each(['create_file', 'edit_file'])(
-    'keeps persistent skill writes approval-gated when BYOM file writes are allowed',
-    async (toolName) => {
+  test.each([
+    ['create_file', 'skills/reviewer/SKILL.md'],
+    ['edit_file', '/skills/reviewer/SKILL.md'],
+    ['create_file', './skills/reviewer/SKILL.md'],
+    ['edit_file', 'skills\\reviewer\\SKILL.md'],
+    ['create_file', 'workspace/../skills/reviewer/SKILL.md'],
+  ])(
+    'keeps persistent skill write %s:%s approval-gated when BYOM file writes are allowed',
+    async (toolName, skillPath) => {
       const hook = createAttachedCodeEnvironmentPolicyHook(
         new Set(['attached-agent']),
         new Map([
@@ -109,7 +115,7 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
         hook(
           {
             toolName,
-            toolInput: { path: 'skills/reviewer/SKILL.md' },
+            toolInput: { path: skillPath },
             executingAgentId: 'attached-agent',
           } as never,
           signal,
