@@ -45,6 +45,7 @@ import {
   collectMessageFileRefs,
   collectHistoricalFileIds,
 } from '~/files/history';
+import { mergeSteerModelText } from '~/agents/steering/media';
 import {
   assertModelBoundProviderContent,
   projectModelBoundSourceFiles,
@@ -643,14 +644,15 @@ async function describeAttachments(attachments: IMongoFile[], req: ServerRequest
  * the context boundary.
  */
 /**
- * Moves a steer's hydrated attachments onto the steer part itself.
+ * Moves a steer's hydrated attachments and its own quoted excerpts onto the
+ * steer part itself.
  *
  * `formatAgentMessages` replays a steer as its own `HumanMessage`, built from
  * the part's media or its text. Prepending at MESSAGE level would attach the
  * user's document to the assistant turn that happens to contain the steer, so
  * the summarizer reads it as something the assistant produced.
  */
-function applySteerFileContext(
+function applySteerReplayContext(
   message: TMessage,
   contextBySteerPart: Map<string, string>,
 ): TMessage {
@@ -658,28 +660,34 @@ function applySteerFileContext(
     return message;
   }
   const content = message.content.map((part, index) => {
-    const context = contextBySteerPart.get(`${message.messageId}#${index}`);
-    if (part?.type !== ContentTypes.STEER || !context) {
+    if (part?.type !== ContentTypes.STEER) {
       return part;
     }
-    const steerPart = part as typeof part & { media?: unknown[] };
+    const steerPart = part as typeof part & { media?: unknown[]; quotes?: string[] | null };
+    const context = contextBySteerPart.get(`${message.messageId}#${index}`);
     /** Media wins over text in the replay, so the context has to ride with it
      *  when one is stored. */
-    if (Array.isArray(steerPart.media) && steerPart.media.length > 0) {
+    if (context && Array.isArray(steerPart.media) && steerPart.media.length > 0) {
       return {
         ...steerPart,
         media: [{ type: ContentTypes.TEXT, text: context }, ...steerPart.media],
       };
     }
-    const steerText = steerPart[ContentTypes.STEER];
+    const steerText =
+      typeof steerPart[ContentTypes.STEER] === 'string'
+        ? (steerPart[ContentTypes.STEER] as string)
+        : '';
+    const withContext = context ? `${context}\n${steerText}` : steerText;
+    /** The steer's quoted excerpts ride on the part, and the replay path
+     *  merges them exactly here. A checkpoint that leaves them out drops the
+     *  referenced material permanently once it becomes the boundary. */
     return {
       ...steerPart,
-      [ContentTypes.STEER]: `${context}\n${typeof steerText === 'string' ? steerText : ''}`,
+      [ContentTypes.STEER]: mergeSteerModelText(withContext, steerPart.quotes),
     };
   });
   return { ...message, content } as TMessage;
 }
-
 function toPayload(
   branch: TMessage[],
   fileContextByMessageId: Map<string, string>,
@@ -687,8 +695,7 @@ function toPayload(
   mapMultiAgent: (message: TMessage) => TMessage,
 ): Array<Partial<TMessage>> {
   return branch.map((original) => {
-    const source =
-      contextBySteerPart.size > 0 ? applySteerFileContext(original, contextBySteerPart) : original;
+    const source = applySteerReplayContext(original, contextBySteerPart);
     /** Added-convo responses carry per-agent groups and routing metadata; the
      *  normal send path maps them to each group's primary output before the
      *  model sees them, so a checkpoint built from the raw content would

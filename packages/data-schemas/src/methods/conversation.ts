@@ -2327,10 +2327,13 @@ export function createConversationMethods(
        * Project-stat work runs after the main write has committed, so its
        * failures are isolated here: the conversation row now references the
        * saved payload, and reporting the whole save as failed would make
-       * callers compensate a write that actually applied. Stats are derived
-       * data and can be recomputed on the next project save.
+       * callers compensate a write that actually applied. A transient error
+       * is retried a bounded number of times because a later ordinary save
+       * will not necessarily re-trigger this exact refresh (the chat is no
+       * longer new and its membership has stopped changing); recompute is
+       * idempotent, so retrying is safe.
        */
-      try {
+      const refreshStatsOnce = async () => {
         /**
          * A chat that moved between projects (e.g. a stale tab re-submitting an
          * older project id) must fully recompute the stats of the project it left;
@@ -2382,8 +2385,22 @@ export function createConversationMethods(
             );
           }
         }
-      } catch (error) {
-        logger.error('[saveConvo] Error refreshing project stats after save', error);
+      };
+      const STATS_REFRESH_ATTEMPTS = 3;
+      for (let attempt = 1; attempt <= STATS_REFRESH_ATTEMPTS; attempt++) {
+        try {
+          await refreshStatsOnce();
+          break;
+        } catch (error) {
+          if (attempt === STATS_REFRESH_ATTEMPTS) {
+            logger.error('[saveConvo] Error refreshing project stats after save', error);
+          } else {
+            logger.warn(
+              `[saveConvo] Project stats refresh attempt ${attempt} failed, retrying`,
+              error,
+            );
+          }
+        }
       }
 
       return conversation.toObject();
