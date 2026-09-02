@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
+import { useRecoilState } from 'recoil';
 import { ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
@@ -10,6 +11,7 @@ import { useRowMountWindow } from '~/hooks/Messages';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
+import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 
 /** First-run sentinel for `parentRef`: `messageId` itself may legitimately be
  *  null/undefined at the root level, so those can't mark "not yet bound". */
@@ -79,7 +81,7 @@ function MultiMessage({
   setCurrentEditId,
 }: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
-  const activeSpeechMessageId = useRecoilValue(store.activeSpeechMessageId);
+  const activeSpeechMessageId = useAtomValue(activeSpeechMessageIdAtom);
   const mountWindow = useRowMountWindow();
 
   const setSiblingIdxRev = useCallback(

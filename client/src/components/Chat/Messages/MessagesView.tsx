@@ -15,6 +15,7 @@ import MultiMessage from './MultiMessage';
 import MessageNav from './MessageNav';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
 
 const intersectionThreshold = 0.85;
 const visibilityDebounceRate = 150;
@@ -119,6 +120,7 @@ function MessagesViewContent({
   const { index, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const autoScroll = useAtomValue(autoScrollAtom);
+  const maximizeChatSpace = useOptionalChatSurface()?.maximizeChatSpace ?? false;
   /** Re-arm from the conversation that owns the RENDERED tree: the Recoil
    *  conversation id lags the route during warm-cache navigation, and keying
    *  off it would first mount the new tree unwindowed, then narrow it after
@@ -130,6 +132,7 @@ function MessagesViewContent({
     isSubmitting,
     conversationId: treeConversationId,
     scrollableRef,
+    layoutKey: maximizeChatSpace,
   });
 
   /** The in-flight steer overlay floats above the composer over the bottom of

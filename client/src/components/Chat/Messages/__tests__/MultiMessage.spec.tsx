@@ -1,10 +1,11 @@
 import React from 'react';
+import { getDefaultStore } from 'jotai';
 import { RecoilRoot } from 'recoil';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import MultiMessage from '../MultiMessage';
-import store from '~/store';
+import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 
 type RowProps = {
   message: TMessage;
@@ -367,12 +368,9 @@ describe('MultiMessage row mount window', () => {
       end: number;
       heights?: ReadonlyMap<number, { messageId: string; height: number }>;
     } | null,
-    activeSpeechMessageId: string | null = null,
     root: TMessage = chain(),
   ) => (
-    <RecoilRoot
-      initializeState={({ set }) => set(store.activeSpeechMessageId, activeSpeechMessageId)}
-    >
+    <RecoilRoot>
       <RowMountProvider mountWindow={mountWindow}>
         <MultiMessage
           messageId="parent-1"
@@ -442,7 +440,7 @@ describe('MultiMessage row mount window', () => {
     ] as TMessage['content'];
     const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
     const { container } = render(
-      windowedTree({ mode: 'bounded', start: 1, end: 2, heights }, null, root),
+      windowedTree({ mode: 'bounded', start: 1, end: 2, heights }, root),
     );
 
     expect(container.querySelector('#steer-steer-1')).toHaveClass('steer-render');
@@ -453,8 +451,10 @@ describe('MultiMessage row mount window', () => {
 
   it('keeps the row owning active speech playback mounted', () => {
     const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
-    render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }, 'm0'));
+    getDefaultStore().set(activeSpeechMessageIdAtom, 'm0');
+    render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }));
 
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toContain('m0');
+    act(() => getDefaultStore().set(activeSpeechMessageIdAtom, null));
   });
 });

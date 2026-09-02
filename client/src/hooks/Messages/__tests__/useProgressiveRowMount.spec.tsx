@@ -8,6 +8,7 @@ type HookProps = {
   anchorBottom: boolean;
   isSubmitting: boolean;
   conversationId: string | null | undefined;
+  layoutKey?: unknown;
 };
 
 describe('useProgressiveRowMount', () => {
@@ -129,7 +130,7 @@ describe('useProgressiveRowMount', () => {
     scrollableRef.current = container;
     const querySpy = jest.spyOn(container, 'querySelectorAll');
 
-    const { result } = setup();
+    const { result, rerender } = setup();
     for (let i = 0; i < 20 && result.current?.mode === 'progressive'; i += 1) {
       flushFrames();
     }
@@ -164,7 +165,62 @@ describe('useProgressiveRowMount', () => {
         {} as ResizeObserver,
       );
     });
-    expect(result.current?.mode).toBe('progressive');
+    expect(result.current).toBeNull();
+    flushFrames();
+    flushFrames();
+    expect(result.current?.mode).toBe('bounded');
+
+    rerender({
+      tailDepth: 267,
+      anchorBottom: false,
+      isSubmitting: false,
+      conversationId: 'convo-a',
+      layoutKey: 'maximized',
+    });
+    expect(result.current).toBeNull();
+    flushFrames();
+    flushFrames();
+    expect(result.current?.mode).toBe('bounded');
+  });
+
+  it('starts bounding a mounted conversation when it crosses the row threshold', () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientHeight', { value: 600 });
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ top: 0, bottom: 600, left: 0, right: 390, width: 390, height: 600 }),
+    });
+    for (let depth = 0; depth <= 40; depth += 1) {
+      const slot = document.createElement('div');
+      slot.dataset.messageRowSlot = 'true';
+      slot.dataset.rowMounted = 'true';
+      slot.dataset.rowDepth = String(depth);
+      slot.dataset.rowMessageId = `message-${depth}`;
+      Object.defineProperty(slot, 'getBoundingClientRect', {
+        value: () => ({
+          top: depth * 100,
+          bottom: depth * 100 + 100,
+          left: 0,
+          right: 390,
+          width: 390,
+          height: 100,
+        }),
+      });
+      container.appendChild(slot);
+    }
+    scrollableRef.current = container;
+    const { result, rerender } = setup({ tailDepth: 39 });
+    expect(result.current).toBeNull();
+
+    rerender({
+      tailDepth: 40,
+      anchorBottom: false,
+      isSubmitting: false,
+      conversationId: 'convo-a',
+    });
+    flushFrames();
+
+    expect(result.current?.mode).toBe('bounded');
+    expect(result.current?.heights?.size).toBe(41);
   });
 
   it('keeps progressive mounting bounded when a submission starts mid-expansion', () => {

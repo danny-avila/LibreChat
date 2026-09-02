@@ -50,6 +50,7 @@ type ProgressiveRowMountOptions = {
   isSubmitting: boolean;
   conversationId: string | null | undefined;
   scrollableRef: RefObject<HTMLDivElement | null>;
+  layoutKey?: unknown;
 };
 
 function progressiveWindow(tailDepth: number | undefined, anchorBottom: boolean): RowMountWindow {
@@ -86,6 +87,7 @@ export function useProgressiveRowMount({
   isSubmitting,
   conversationId,
   scrollableRef,
+  layoutKey,
 }: ProgressiveRowMountOptions): RowMountWindow {
   const [mountWindow, setMountWindow] = useState<RowMountWindow>(() =>
     progressiveWindow(tailDepth, anchorBottom),
@@ -97,6 +99,9 @@ export function useProgressiveRowMount({
   const anchorRef = useRef<{ element: Element; documentOffset: number } | null>(null);
   const updateFrameRef = useRef<number>();
   const leaseCountRef = useRef(0);
+  const leaseEpochRef = useRef(0);
+  const remeasuringRef = useRef(false);
+  const remeasureAnchorRef = useRef<{ messageId: string; viewportTop: number } | null>(null);
   const tailDepthRef = useRef(tailDepth);
   const isSubmittingRef = useRef(isSubmitting);
   tailDepthRef.current = tailDepth;
@@ -108,6 +113,10 @@ export function useProgressiveRowMount({
     heightsRef.current = new Map();
     rowOffsetsRef.current = [];
     containerWidthRef.current = undefined;
+    leaseCountRef.current = 0;
+    leaseEpochRef.current += 1;
+    remeasuringRef.current = false;
+    remeasureAnchorRef.current = null;
     setMountWindow(progressiveWindow(tailDepth, anchorBottom));
     anchorRef.current = null;
   }
@@ -178,13 +187,27 @@ export function useProgressiveRowMount({
         return;
       }
       heightsRef.current.set(depth, { messageId, height });
-      rebuildRowOffsets();
-      setMountWindow((current) => {
-        if (current?.mode !== 'bounded') {
-          return current;
+      const offsets = rowOffsetsRef.current;
+      const currentTailDepth = tailDepthRef.current;
+      if (previous && currentTailDepth != null && offsets.length === currentTailDepth + 2) {
+        const heightDelta = height - previous.height;
+        for (let index = depth + 1; index < offsets.length; index += 1) {
+          offsets[index] += heightDelta;
         }
-        return { ...current, heights: new Map(heightsRef.current) };
-      });
+      } else {
+        rebuildRowOffsets();
+      }
+      /** Same-message resizes only affect mounted rows. The next window
+       *  refresh publishes the cache before a resized row can become a slot,
+       *  avoiding an O(n) Map copy for every streamed height update. */
+      if (previous?.messageId !== messageId) {
+        setMountWindow((current) => {
+          if (current?.mode !== 'bounded') {
+            return current;
+          }
+          return { ...current, heights: new Map(heightsRef.current) };
+        });
+      }
     },
     [rebuildRowOffsets],
   );
@@ -239,6 +262,32 @@ export function useProgressiveRowMount({
       measureRow,
     };
   }, [anchorBottom, measureRow, scrollableRef]);
+
+  const restartMeasurement = useCallback(() => {
+    if (remeasuringRef.current || leaseCountRef.current > 0) return;
+    const container = scrollableRef.current;
+    if (!container) return;
+    const containerTop = container.getBoundingClientRect().top;
+    const slots = container.querySelectorAll<HTMLElement>('[data-message-row-slot="true"]');
+    const anchor = [...slots].find((slot) => slot.getBoundingClientRect().bottom >= containerTop);
+    remeasureAnchorRef.current = anchor
+      ? {
+          messageId: anchor.dataset.rowMessageId ?? '',
+          viewportTop: anchor.getBoundingClientRect().top,
+        }
+      : null;
+    remeasuringRef.current = true;
+    heightsRef.current = new Map();
+    rowOffsetsRef.current = [];
+    setMountWindow(null);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        measureMountedRows();
+        setMountWindow(boundedWindow());
+        remeasuringRef.current = false;
+      }),
+    );
+  }, [boundedWindow, measureMountedRows, scrollableRef]);
 
   const refreshBoundedWindow = useCallback(() => {
     setMountWindow((current) => {
@@ -298,6 +347,24 @@ export function useProgressiveRowMount({
     return () => cancelAnimationFrame(frameId);
   }, [mountWindow, tailDepth, boundedWindow, captureAnchor, isSubmitting, measureMountedRows]);
 
+  useEffect(() => {
+    if (
+      mountWindow != null ||
+      remeasuringRef.current ||
+      leaseCountRef.current > 0 ||
+      tailDepth == null ||
+      tailDepth + 1 <= MIN_WINDOWED_ROWS ||
+      heightsRef.current.size > 0
+    ) {
+      return;
+    }
+    const frameId = requestAnimationFrame(() => {
+      measureMountedRows();
+      setMountWindow(boundedWindow());
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [mountWindow, tailDepth, boundedWindow, measureMountedRows]);
+
   useLayoutEffect(() => {
     const captured = anchorRef.current;
     anchorRef.current = null;
@@ -311,6 +378,24 @@ export function useProgressiveRowMount({
       container.scrollTop += shift;
     }
   }, [mountWindow, scrollableRef]);
+
+  useLayoutEffect(() => {
+    const captured = remeasureAnchorRef.current;
+    const container = scrollableRef.current;
+    if (!captured || !container) return;
+    const anchor = [
+      ...container.querySelectorAll<HTMLElement>('[data-message-row-slot="true"]'),
+    ].find((slot) => slot.dataset.rowMessageId === captured.messageId);
+    if (anchor) container.scrollTop += anchor.getBoundingClientRect().top - captured.viewportTop;
+    if (mountWindow?.mode === 'bounded') remeasureAnchorRef.current = null;
+  }, [mountWindow, scrollableRef]);
+
+  const previousLayoutKeyRef = useRef(layoutKey);
+  useEffect(() => {
+    if (previousLayoutKeyRef.current === layoutKey) return;
+    previousLayoutKeyRef.current = layoutKey;
+    restartMeasurement();
+  }, [layoutKey, restartMeasurement]);
 
   useEffect(() => {
     if (mountWindow?.mode !== 'bounded') {
@@ -331,10 +416,8 @@ export function useProgressiveRowMount({
               return;
             }
             if (Math.abs(containerWidthRef.current - nextWidth) >= 0.5) {
-              heightsRef.current = new Map();
-              rowOffsetsRef.current = [];
               containerWidthRef.current = nextWidth;
-              setMountWindow(progressiveWindow(tailDepthRef.current, anchorBottom));
+              restartMeasurement();
               return;
             }
             scheduleBoundedRefresh();
@@ -344,7 +427,7 @@ export function useProgressiveRowMount({
       container.removeEventListener('scroll', scheduleBoundedRefresh);
       resizeObserver?.disconnect();
     };
-  }, [anchorBottom, mountWindow?.mode, scheduleBoundedRefresh, scrollableRef]);
+  }, [mountWindow?.mode, restartMeasurement, scheduleBoundedRefresh, scrollableRef]);
 
   useEffect(() => {
     if (mountWindow?.mode !== 'bounded') {
@@ -368,13 +451,14 @@ export function useProgressiveRowMount({
     }
     const complete = () =>
       new Promise<() => void>((resolve) => {
+        const leaseEpoch = leaseEpochRef.current;
         leaseCountRef.current += 1;
         if (leaseCountRef.current === 1) setMountWindow(null);
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
             let released = false;
             resolve(() => {
-              if (released) return;
+              if (released || leaseEpoch !== leaseEpochRef.current) return;
               released = true;
               leaseCountRef.current = Math.max(0, leaseCountRef.current - 1);
               if (leaseCountRef.current === 0) {
