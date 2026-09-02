@@ -187,15 +187,9 @@ function hasActivePatterns(
   );
 }
 
-function blocksFindings(
-  pii:
-    | {
-        readonly action?: 'block' | 'audit';
-        readonly starterPatterns?: readonly string[];
-      }
-    | null
-    | undefined,
-): boolean {
+type PiiActionConfig = Pick<NonNullable<NonNullable<FiltersConfig['messages']>['pii']>, 'action'>;
+
+function blocksFindings(pii: PiiActionConfig | null | undefined): boolean {
   return pii?.action !== 'audit';
 }
 

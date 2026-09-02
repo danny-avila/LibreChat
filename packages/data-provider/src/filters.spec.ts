@@ -57,7 +57,10 @@ describe('filtersConfigSchema', () => {
     ).toBe(false);
   });
 
-  it('supports audit-only rollout while preserving block as the omitted default', () => {
+  it('accepts omitted, audit, and block actions while rejecting unsupported actions', () => {
+    expect(filtersConfigSchema.parse({ messages: { pii: {} } })).toEqual({
+      messages: { pii: {} },
+    });
     expect(
       filtersConfigSchema.parse({
         messages: { pii: { action: 'audit' } },
