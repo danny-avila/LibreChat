@@ -123,10 +123,11 @@ function MessagesViewContent({
 
   const { index, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
-  const collapseLongUserMessages = useRecoilValue(store.collapseLongUserMessages);
-  const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const autoScroll = useAtomValue(autoScrollAtom);
-  const maximizeChatSpace = useOptionalChatSurface()?.maximizeChatSpace ?? false;
+  const chatSurface = useOptionalChatSurface();
+  const maximizeChatSpace = chatSurface?.maximizeChatSpace ?? false;
+  const collapseLongUserMessages = chatSurface?.collapseLongUserMessages ?? false;
+  const enableUserMsgMarkdown = chatSurface?.enableUserMsgMarkdown ?? true;
   const rowLayoutKey = useMemo(
     () => ({
       maximizeChatSpace,

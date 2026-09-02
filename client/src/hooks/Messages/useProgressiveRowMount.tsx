@@ -82,6 +82,7 @@ class RowMountStore {
   }
 
   private addRange(keys: Set<string>, start: number, end: number): void {
+    if (start > end) return;
     if (!Number.isFinite(start) || !Number.isFinite(end)) {
       for (const [depth, depthKeys] of this.keysByDepth) {
         if (depth != null && depth >= start && depth <= end) {
@@ -100,16 +101,12 @@ class RowMountStore {
     nextStart: number,
     nextEnd: number,
   ): void {
-    if (previousStart !== nextStart) {
-      this.addRange(
-        keys,
-        Math.min(previousStart, nextStart),
-        Math.max(previousStart, nextStart) - 1,
-      );
-    }
-    if (previousEnd !== nextEnd) {
-      this.addRange(keys, Math.min(previousEnd, nextEnd) + 1, Math.max(previousEnd, nextEnd));
-    }
+    /** Only membership in the old and new intervals can change. A scrollbar
+     *  jump between distant windows must not enumerate the intervening gap. */
+    this.addRange(keys, previousStart, Math.min(previousEnd, nextStart - 1));
+    this.addRange(keys, Math.max(previousStart, nextEnd + 1), previousEnd);
+    this.addRange(keys, nextStart, Math.min(nextEnd, previousStart - 1));
+    this.addRange(keys, Math.max(nextStart, previousEnd + 1), nextEnd);
   }
 
   private addMapDifferences<T>(
@@ -146,8 +143,16 @@ class RowMountStore {
         mountWindow.end,
       );
       if (previousWindow.tailStart !== mountWindow.tailStart) {
-        const tailStart = previousWindow.tailStart ?? mountWindow.tailStart;
-        if (tailStart != null) this.addRange(candidateKeys, tailStart, Number.POSITIVE_INFINITY);
+        if (previousWindow.tailStart != null && mountWindow.tailStart != null) {
+          this.addRange(
+            candidateKeys,
+            Math.min(previousWindow.tailStart, mountWindow.tailStart),
+            Math.max(previousWindow.tailStart, mountWindow.tailStart) - 1,
+          );
+        } else {
+          const tailStart = previousWindow.tailStart ?? mountWindow.tailStart;
+          if (tailStart != null) this.addRange(candidateKeys, tailStart, Number.POSITIVE_INFINITY);
+        }
       }
       this.addMapDifferences(candidateKeys, previousWindow.heights, mountWindow.heights);
       this.addMapDifferences(candidateKeys, previousWindow.pinnedRows, mountWindow.pinnedRows);

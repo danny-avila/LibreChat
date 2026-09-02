@@ -459,6 +459,31 @@ describe('useProgressiveRowMount', () => {
     expect(heightLookup).toHaveBeenCalledTimes(2);
   });
 
+  it('notifies rows newly covered when the retained tail expands backward', () => {
+    const mounted: boolean[][] = [[], [], []];
+    const Probe = ({ depth }: { depth: number }) => {
+      mounted[depth].push(useRowMountWindow(depth, `message-${depth}`).windowMounted);
+      return null;
+    };
+    const probes = [0, 1, 2].map((depth) => <Probe key={depth} depth={depth} />);
+    const heights = new Map<number, { messageId: string; height: number }>(
+      [0, 1, 2].map((depth) => [depth, { messageId: `message-${depth}`, height: 100 }]),
+    );
+    const view = render(
+      <RowMountProvider mountWindow={{ mode: 'bounded', start: 0, end: 0, tailStart: 2, heights }}>
+        {probes}
+      </RowMountProvider>,
+    );
+
+    view.rerender(
+      <RowMountProvider mountWindow={{ mode: 'bounded', start: 0, end: 0, tailStart: 1, heights }}>
+        {probes}
+      </RowMountProvider>,
+    );
+
+    expect(mounted).toEqual([[true], [false, true], [true]]);
+  });
+
   it('rebuilds the scroll index when the active message path shrinks', () => {
     const container = document.createElement('div');
     Object.defineProperty(container, 'clientHeight', { value: 600 });

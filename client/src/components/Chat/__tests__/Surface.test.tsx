@@ -31,14 +31,25 @@ describe('AppChatSurface', () => {
     const Preferences = () => {
       const setEnterToSend = useSetRecoilState(store.enterToSend);
       const setMaximize = useSetRecoilState(store.maximizeChatSpace);
+      const setCollapseLongUserMessages = useSetRecoilState(store.collapseLongUserMessages);
+      const setEnableUserMsgMarkdown = useSetRecoilState(store.enableUserMsgMarkdown);
       const setScrollButton = useSetRecoilState(store.showScrollButton);
       const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
       React.useEffect(() => {
         setEnterToSend(false);
         setMaximize(true);
+        setCollapseLongUserMessages(true);
+        setEnableUserMsgMarkdown(false);
         setScrollButton(false);
         setCurrentArtifactId('artifact-1');
-      }, [setCurrentArtifactId, setEnterToSend, setMaximize, setScrollButton]);
+      }, [
+        setCollapseLongUserMessages,
+        setCurrentArtifactId,
+        setEnableUserMsgMarkdown,
+        setEnterToSend,
+        setMaximize,
+        setScrollButton,
+      ]);
       return null;
     };
 
@@ -59,6 +70,8 @@ describe('AppChatSurface', () => {
     expect(seen.current).toMatchObject({
       enterToSend: false,
       maximizeChatSpace: true,
+      collapseLongUserMessages: true,
+      enableUserMsgMarkdown: false,
       showScrollButton: false,
       composerBindings: { shortcutsEnabled: expect.any(Boolean) },
     });

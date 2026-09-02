@@ -10,13 +10,17 @@ import { activeSubagentPanel } from './state';
  * it owns itself. Reading these through the host instead of the app store is
  * what keeps the feature liftable: a second host already exists (the shared
  * conversation view), and a host outside this repository would satisfy the
- * same six members without the feature learning where they come from.
+ * same host contract without the feature learning where the values come from.
  */
 export interface ChatSurface {
   /** Enter submits a composer; without it, Enter inserts a newline. */
   enterToSend: boolean;
   /** Message rows stretch to the container instead of the reading column. */
   maximizeChatSpace: boolean;
+  /** Long user turns render as an expandable preview. */
+  collapseLongUserMessages: boolean;
+  /** User-authored Markdown renders with rich formatting. */
+  enableUserMsgMarkdown: boolean;
   /** The reader wants a jump-to-bottom control on scrollable transcripts. */
   showScrollButton: boolean;
   /** The reader's effective composer shortcut bindings. */
