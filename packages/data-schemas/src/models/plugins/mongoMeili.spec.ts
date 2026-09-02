@@ -10,6 +10,7 @@ interface DynamicMeiliDocument extends mongoose.Document {
   docId: string;
   user: string;
   title: string;
+  tenantId?: string;
   isTemporary?: boolean;
   expiredAt?: Date | null;
   _meiliIndex?: boolean;
@@ -32,6 +33,10 @@ const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
       meiliIndex: true,
     },
     user: {
+      type: String,
+      meiliIndex: true,
+    },
+    tenantId: {
       type: String,
       meiliIndex: true,
     },
@@ -80,10 +85,14 @@ const mockDeleteDocument = jest.fn();
 const mockDeleteDocuments = jest.fn();
 const mockGetDocument = jest.fn();
 const mockGetDocuments = jest.fn().mockResolvedValue({ results: [] });
+const mockGetSettings = jest.fn().mockResolvedValue({ filterableAttributes: [] });
+const mockUpdateSettings = jest.fn().mockResolvedValue({ taskUid: 3 });
+const mockSearch = jest.fn().mockResolvedValue({ hits: [] });
 const mockWaitForTask = jest.fn().mockResolvedValue({ status: 'succeeded' });
 const mockIndex = jest.fn().mockReturnValue({
   getRawInfo: jest.fn(),
-  updateSettings: jest.fn(),
+  getSettings: mockGetSettings,
+  updateSettings: mockUpdateSettings,
   addDocuments: mockAddDocuments,
   addDocumentsInBatches: mockAddDocumentsInBatches,
   updateDocuments: mockUpdateDocuments,
@@ -91,6 +100,7 @@ const mockIndex = jest.fn().mockReturnValue({
   deleteDocuments: mockDeleteDocuments,
   getDocument: mockGetDocument,
   getDocuments: mockGetDocuments,
+  search: mockSearch,
 });
 jest.mock('meilisearch', () => {
   return {
@@ -129,6 +139,9 @@ describe('Meilisearch Mongoose plugin', () => {
     mockDeleteDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
     mockGetDocument.mockClear();
     mockGetDocuments.mockReset().mockResolvedValue({ results: [] });
+    mockGetSettings.mockReset().mockResolvedValue({ filterableAttributes: [] });
+    mockUpdateSettings.mockReset().mockResolvedValue({ taskUid: 3 });
+    mockSearch.mockReset().mockResolvedValue({ hits: [] });
     mockWaitForTask.mockReset().mockResolvedValue({ status: 'succeeded' });
   });
 
@@ -137,6 +150,74 @@ describe('Meilisearch Mongoose plugin', () => {
     await mongoServer.stop();
 
     process.env = OLD_ENV;
+  });
+
+  test('preserves custom filterable attributes while adding required attributes', async () => {
+    const modelName = `FilterableAttributes${Date.now()}`;
+    mockGetSettings.mockResolvedValueOnce({ filterableAttributes: ['customAttribute'] });
+
+    createDynamicMeiliModel(modelName);
+    await waitForMock(mockUpdateSettings);
+
+    expect(mockUpdateSettings).toHaveBeenCalledWith({
+      filterableAttributes: ['customAttribute', 'user', 'tenantId'],
+    });
+    expect(mockWaitForTask).toHaveBeenCalledWith(3, {
+      timeOutMs: 600_000,
+      intervalMs: 100,
+    });
+    mongoose.deleteModel(modelName);
+  });
+
+  test('does not update filterable attributes when required attributes are configured', async () => {
+    const modelName = `ConfiguredAttributes${Date.now()}`;
+    mockGetSettings.mockResolvedValueOnce({
+      filterableAttributes: ['user', 'tenantId', 'customAttribute'],
+    });
+
+    createDynamicMeiliModel(modelName);
+    await waitForMock(mockGetSettings);
+
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
+    mongoose.deleteModel(modelName);
+  });
+
+  test('waits for filterable attributes before searching', async () => {
+    const modelName = `SettingsReady${Date.now()}`;
+    let completeSettings: (task: { status: string }) => void = () => undefined;
+    const settingsTask = new Promise<{ status: string }>((resolve) => {
+      completeSettings = resolve;
+    });
+    mockUpdateSettings.mockResolvedValueOnce({ taskUid: 99 });
+    mockWaitForTask.mockImplementation((taskUid: number) =>
+      taskUid === 99 ? settingsTask : Promise.resolve({ status: 'succeeded' }),
+    );
+    const Model = createDynamicMeiliModel(modelName);
+    await waitForMock(mockUpdateSettings);
+
+    const search = Model.meiliSearch('query');
+    await wait(0);
+    expect(mockSearch).not.toHaveBeenCalled();
+
+    completeSettings({ status: 'succeeded' });
+    await search;
+    expect(mockSearch).toHaveBeenCalledWith('query', undefined);
+    mongoose.deleteModel(modelName);
+  });
+
+  test('retries filterable-attribute setup after a transient failure', async () => {
+    const modelName = `SettingsRetry${Date.now()}`;
+    mockWaitForTask
+      .mockRejectedValueOnce(new Error('temporary settings failure'))
+      .mockResolvedValue({ status: 'succeeded' });
+    const Model = createDynamicMeiliModel(modelName);
+    await waitForMock(mockWaitForTask);
+    await wait(0);
+
+    await expect(Model.meiliSearch('query')).resolves.toEqual({ hits: [] });
+    expect(mockUpdateSettings).toHaveBeenCalledTimes(2);
+    expect(mockSearch).toHaveBeenCalledWith('query', undefined);
+    mongoose.deleteModel(modelName);
   });
 
   test('settles query updates and deletes when no document hook is available', async () => {
@@ -1668,7 +1749,8 @@ describe('Meilisearch Mongoose plugin', () => {
       mockDeleteDocuments.mockClear();
       mockIndex.mockReturnValue({
         getRawInfo: jest.fn(),
-        updateSettings: jest.fn(),
+        getSettings: mockGetSettings,
+        updateSettings: mockUpdateSettings,
         addDocuments: mockAddDocuments,
         addDocumentsInBatches: mockAddDocumentsInBatches,
         updateDocuments: mockUpdateDocuments,
@@ -1676,6 +1758,7 @@ describe('Meilisearch Mongoose plugin', () => {
         deleteDocuments: mockDeleteDocuments,
         getDocument: mockGetDocument,
         getDocuments: mockGetDocuments,
+        search: mockSearch,
       });
     });
 
@@ -2218,6 +2301,57 @@ describe('Meilisearch Mongoose plugin', () => {
         _meiliIndex: true,
       });
       expect(docsWithMissingIndex).toBe(1);
+    });
+
+    test('syncWithMeili reindexes older projections but never downgrades newer ones', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      const futureId = new mongoose.Types.ObjectId();
+      const staleId = new mongoose.Types.ObjectId();
+      await conversationModel.collection.insertMany([
+        {
+          conversationId: futureId,
+          user: new mongoose.Types.ObjectId(),
+          title: 'Newer projection',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: true,
+          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION + 1,
+        },
+        {
+          conversationId: staleId,
+          user: new mongoose.Types.ObjectId(),
+          title: 'Stale projection',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: true,
+          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION - 1,
+        },
+      ]);
+
+      await conversationModel.syncWithMeili();
+
+      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+
+      const [futureDoc, staleDoc] = await Promise.all([
+        conversationModel.collection.findOne({ conversationId: futureId }),
+        conversationModel.collection.findOne({ conversationId: staleId }),
+      ]);
+
+      // Newer-stamped projection is left alone, not re-indexed nor downgraded.
+      expect(futureDoc?._meiliIndexSchemaVersion).toBe(MEILI_INDEX_SCHEMA_VERSION + 1);
+      expect(futureDoc?._meiliIndex).toBe(true);
+      expect(mockAddDocumentsInBatches).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ conversationId: futureId })]),
+      );
+
+      // Strictly older projection is re-indexed and stamped forward to the local version.
+      expect(staleDoc?._meiliIndexSchemaVersion).toBe(MEILI_INDEX_SCHEMA_VERSION);
+      expect(staleDoc?._meiliIndex).toBe(true);
     });
 
     test('getSyncProgress counts documents with missing _meiliIndex as not indexed', async () => {
