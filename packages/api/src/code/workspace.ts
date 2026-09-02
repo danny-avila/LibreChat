@@ -195,8 +195,10 @@ function isValidResult(
       Number.isSafeInteger(value.endLine) && Number(value.endLine) >= startLine - 1
         ? Number(value.endLine) - startLine + 1
         : -1;
-    const actualLineCount =
-      content == null ? -1 : content.length === 0 ? reportedLineCount : content.split('\n').length;
+    let actualLineCount = -1;
+    if (content != null) {
+      actualLineCount = content.length === 0 ? reportedLineCount : content.split('\n').length;
+    }
     return (
       hasOnlyKeys(value, READ_RESULT_KEYS) &&
       value.path === request.path &&
