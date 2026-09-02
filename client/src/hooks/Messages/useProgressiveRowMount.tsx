@@ -378,14 +378,23 @@ export function useProgressiveRowMount({
       };
       const observer =
         typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(handleLayoutChange);
+      const containsPendingLayout = (node: Node) =>
+        node instanceof Element &&
+        (node.matches('[data-row-layout-pending="true"]') ||
+          node.querySelector('[data-row-layout-pending="true"]') != null);
+      const handlePendingLayoutMutation: MutationCallback = (records) => {
+        const pendingLayoutChanged = records.some(
+          (record) =>
+            record.type === 'attributes' ||
+            [...record.addedNodes, ...record.removedNodes].some(containsPendingLayout),
+        );
+        if (pendingLayoutChanged) handleLayoutChange();
+      };
       const mutationObserver =
-        typeof MutationObserver === 'undefined' ? null : new MutationObserver(handleLayoutChange);
-      mutationObserver?.observe(container, {
-        attributes: true,
-        attributeFilter: ['data-row-layout-pending'],
-        childList: true,
-        subtree: true,
-      });
+        typeof MutationObserver === 'undefined' || !hasPendingLayout()
+          ? null
+          : new MutationObserver(handlePendingLayoutMutation);
+      mutationObserver?.observe(container, { childList: true, subtree: true });
       for (const row of container.querySelectorAll<HTMLElement>(MOUNTED_ROW_SLOT_SELECTOR)) {
         observer?.observe(row);
       }

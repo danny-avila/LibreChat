@@ -160,8 +160,18 @@ describe('useProgressiveRowMount', () => {
     flushFrames();
     expect(result.current?.mode).toBe('progressive');
     act(() => {
-      container.querySelector('[data-row-layout-pending="true"]')?.remove();
-      mutationCallback([], {} as MutationObserver);
+      const pendingLayout = container.querySelector('[data-row-layout-pending="true"]');
+      pendingLayout?.remove();
+      mutationCallback(
+        [
+          {
+            type: 'childList',
+            addedNodes: [] as unknown as NodeList,
+            removedNodes: [pendingLayout] as unknown as NodeList,
+          } as MutationRecord,
+        ],
+        {} as MutationObserver,
+      );
     });
     flushFrames();
     flushFrames();
