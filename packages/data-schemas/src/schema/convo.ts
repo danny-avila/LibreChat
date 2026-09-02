@@ -350,6 +350,7 @@ const convoSchema: Schema<IConversation> = new Schema(
     tenantId: {
       type: String,
       index: true,
+      meiliIndex: true,
     },
     pinned: {
       type: Boolean,

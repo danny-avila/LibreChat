@@ -10,6 +10,7 @@ import {
   type ShareMethods,
   type SharedLinkContentSnapshot,
 } from './share';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import logger from '~/config/winston';
 
@@ -1220,14 +1221,14 @@ describe('Share Methods', () => {
 
       // Mock meiliSearch method
       const meiliSearchMock = jest.fn().mockResolvedValue({
-        hits: [{ conversationId: 'conv1' }],
+        hits: [{ conversationId: 'conv|1', originalConversationId: 'conv|1' }],
       });
       Conversation.meiliSearch = meiliSearchMock;
 
       await SharedLink.create([
         {
           shareId: 'share1',
-          conversationId: 'conv1',
+          conversationId: 'conv|1',
           user: userId,
           title: 'Matching Share',
         },
@@ -1255,7 +1256,39 @@ describe('Share Methods', () => {
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId}"`,
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
+      });
+    });
+
+    test('scopes search to the active tenant and escapes filter values', async () => {
+      const userId = 'user"\\id';
+      const meiliSearchMock = jest.fn().mockResolvedValue({ hits: [] });
+      Conversation.meiliSearch = meiliSearchMock;
+
+      await tenantStorage.run({ tenantId: 'tenant"\\id' }, () =>
+        shareMethods.getSharedLinks(userId, undefined, 10, 'createdAt', 'desc', 'search term'),
+      );
+
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
+        filter: 'user = "user\\"\\\\id" AND tenantId = "tenant\\"\\\\id"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
+      });
+    });
+
+    test('keeps search unscoped in system context', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const meiliSearchMock = jest.fn().mockResolvedValue({ hits: [] });
+      Conversation.meiliSearch = meiliSearchMock;
+
+      await runAsSystem(() =>
+        shareMethods.getSharedLinks(userId, undefined, 10, 'createdAt', 'desc', 'search term'),
+      );
+
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
+        filter: `user = "${userId}"`,
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       });
     });
 
@@ -1334,7 +1367,7 @@ describe('Share Methods', () => {
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId1}"`,
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       });
 
       // Search as userId2
@@ -1355,7 +1388,7 @@ describe('Share Methods', () => {
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId2}"`,
         limit: MEILI_SEARCH_LIMIT,
-        attributesToRetrieve: ['conversationId'],
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
       });
     });
 

@@ -44,8 +44,10 @@ import {
 } from './chatProject';
 import { isCompactionSemanticIndexProjection } from '~/types/compaction';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { escapeMeiliFilterValue } from '~/utils/search';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
 
@@ -53,8 +55,6 @@ const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const MAX_AGENT_EVENT_ACTOR_SUSPENSION_BYTES = 64 * 1_024;
 /** MeiliSearch's default `pagination.maxTotalHits` ceiling. */
 const MEILI_SEARCH_LIMIT = 1000;
-const escapeMeiliFilterValue = (value: string): string =>
-  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 function validateAgentEventActorSuspension(
   conversationId: string,
@@ -2638,8 +2638,13 @@ export function createConversationMethods(
 
     if (search) {
       try {
+        const tenantId = getTenantId();
+        const tenantFilter =
+          tenantId && tenantId !== SYSTEM_TENANT_ID
+            ? ` AND tenantId = "${escapeMeiliFilterValue(tenantId)}"`
+            : '';
         const searchParams: SearchParams = {
-          filter: `user = "${escapeMeiliFilterValue(user)}"`,
+          filter: `user = "${escapeMeiliFilterValue(user)}"${tenantFilter}`,
           limit: MEILI_SEARCH_LIMIT,
           attributesToRetrieve: ['conversationId', 'originalConversationId'],
         };
