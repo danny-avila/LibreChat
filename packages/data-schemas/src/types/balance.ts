@@ -8,7 +8,7 @@ export interface IBalance extends Document {
   autoRefillEnabled: boolean;
   refillIntervalValue: number;
   refillIntervalUnit: RefillIntervalUnit;
-  lastRefill: Date;
+  lastRefill?: Date;
   refillAmount: number;
   tenantId?: string;
 }
