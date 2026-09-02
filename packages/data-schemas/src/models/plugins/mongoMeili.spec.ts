@@ -3,6 +3,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import mongoMeili, {
+  MEILI_CONVERSATION_INDEX_SCHEMA_VERSION,
   MEILI_INDEX_SCHEMA_VERSION,
   toMeiliConversationKey,
 } from '~/models/plugins/mongoMeili';
@@ -1258,9 +1259,10 @@ describe('Meilisearch Mongoose plugin', () => {
       await conversationModel.deleteMany({});
       mockAddDocumentsInBatches.mockClear();
       mockAddDocuments.mockClear();
+      const conversationId = 'batch|conversation';
 
       await conversationModel.collection.insertOne({
-        conversationId: new mongoose.Types.ObjectId(),
+        conversationId,
         user: new mongoose.Types.ObjectId(),
         title: 'Test Conversation',
         endpoint: EModelEndpoint.openAI,
@@ -1271,10 +1273,16 @@ describe('Meilisearch Mongoose plugin', () => {
       // Run sync which should call processSyncBatch internally
       await conversationModel.syncWithMeili();
 
-      // Verify addDocumentsInBatches was called with explicit primaryKey
-      expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(expect.any(Array), undefined, {
-        primaryKey: 'conversationId',
-      });
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            conversationId: 'batch--conversation',
+            originalConversationId: conversationId,
+          }),
+        ],
+        undefined,
+        { primaryKey: 'conversationId' },
+      );
     });
 
     test('a transient document-write failure retries without delaying MongoDB persistence', async () => {
@@ -1413,7 +1421,7 @@ describe('Meilisearch Mongoose plugin', () => {
         title: 'Indexed',
         endpoint: EModelEndpoint.openAI,
         _meiliIndex: true,
-        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+        _meiliIndexSchemaVersion: MEILI_CONVERSATION_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -1443,7 +1451,7 @@ describe('Meilisearch Mongoose plugin', () => {
         title: 'Legacy Indexed Conversation',
         endpoint: EModelEndpoint.openAI,
         _meiliIndex: true,
-        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION - 1,
+        _meiliIndexSchemaVersion: MEILI_CONVERSATION_INDEX_SCHEMA_VERSION - 1,
         expiredAt: null,
       });
 
@@ -1460,7 +1468,7 @@ describe('Meilisearch Mongoose plugin', () => {
             .findOne({ title: 'Legacy Indexed Conversation' })
             .select('+_meiliIndexSchemaVersion')
         )?._meiliIndexSchemaVersion,
-      ).toBe(MEILI_INDEX_SCHEMA_VERSION);
+      ).toBe(MEILI_CONVERSATION_INDEX_SCHEMA_VERSION);
     });
 
     test('getSyncProgress excludes TTL documents from counts', async () => {
@@ -1476,7 +1484,7 @@ describe('Meilisearch Mongoose plugin', () => {
         title: 'Syncable Indexed',
         endpoint: EModelEndpoint.openAI,
         _meiliIndex: true,
-        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+        _meiliIndexSchemaVersion: MEILI_CONVERSATION_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -2327,7 +2335,7 @@ describe('Meilisearch Mongoose plugin', () => {
           endpoint: EModelEndpoint.openAI,
           expiredAt: null,
           _meiliIndex: true,
-          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+          _meiliIndexSchemaVersion: MEILI_CONVERSATION_INDEX_SCHEMA_VERSION,
         },
       ]);
 
@@ -2634,6 +2642,49 @@ describe('Meilisearch Mongoose plugin', () => {
       const result = await conversationModel.meiliSearch('keyword', undefined, false);
 
       expect(result.hits[0].conversationId).toBe(conversationId);
+    });
+
+    test('populates normalized and legacy conversation hits from MongoDB', async () => {
+      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
+      const conversationId = 'populate|with|pipes';
+      const legacyConversationId = 'legacy-conversation';
+      await conversationModel.deleteMany({});
+      await conversationModel.collection.insertMany([
+        {
+          conversationId,
+          user: new mongoose.Types.ObjectId(),
+          title: 'Normalized Conversation',
+          endpoint: EModelEndpoint.openAI,
+        },
+        {
+          conversationId: legacyConversationId,
+          user: new mongoose.Types.ObjectId(),
+          title: 'Legacy Conversation',
+          endpoint: EModelEndpoint.openAI,
+        },
+      ]);
+      mockSearch.mockResolvedValue({
+        hits: [
+          {
+            conversationId: toMeiliConversationKey(conversationId),
+            originalConversationId: conversationId,
+          },
+          { conversationId: legacyConversationId },
+        ],
+      });
+
+      const result = await conversationModel.meiliSearch('keyword', undefined, true);
+
+      expect(result.hits).toEqual([
+        expect.objectContaining({
+          conversationId,
+          title: 'Normalized Conversation',
+        }),
+        expect.objectContaining({
+          conversationId: legacyConversationId,
+          title: 'Legacy Conversation',
+        }),
+      ]);
     });
   });
 });

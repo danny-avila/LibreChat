@@ -111,8 +111,10 @@ const getSyncConfig = () => ({
 const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
 
-/** Bump when the indexed document shape or projection changes. */
-export const MEILI_INDEX_SCHEMA_VERSION = 3;
+/** Bump when the indexed document shape or projection changes for every index. */
+export const MEILI_INDEX_SCHEMA_VERSION = 2;
+/** Bump for conversation-only projection changes. */
+export const MEILI_CONVERSATION_INDEX_SCHEMA_VERSION = MEILI_INDEX_SCHEMA_VERSION + 1;
 
 /**
  * Encodes a conversation ID for use as a MeiliSearch document primary key.
@@ -325,6 +327,7 @@ const createMeiliMongooseModel = ({
   excludeFromIndexPath,
   attributesToIndex,
   ensureSettingsReady,
+  indexSchemaVersion,
   primaryKey,
   syncOptions,
 }: {
@@ -335,6 +338,7 @@ const createMeiliMongooseModel = ({
   excludeFromIndexPath?: string;
   attributesToIndex: string[];
   ensureSettingsReady: () => Promise<void>;
+  indexSchemaVersion: number;
   primaryKey: string;
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
@@ -430,7 +434,7 @@ const createMeiliMongooseModel = ({
               _meiliCleanupVersion: meiliCleanupVersion,
             },
             /** Monotonic: never stamp a document back to an older projection version. */
-            $max: { _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION },
+            $max: { _meiliIndexSchemaVersion: indexSchemaVersion },
           },
         );
         if (acknowledgement.matchedCount > 0) {
@@ -474,7 +478,7 @@ const createMeiliMongooseModel = ({
               {
                 _meiliIndex: true,
                 /** Monotonic: only strictly older projections are stale; newer ones are already current. */
-                _meiliIndexSchemaVersion: { $not: { $gte: MEILI_INDEX_SCHEMA_VERSION } },
+                _meiliIndexSchemaVersion: { $not: { $gte: indexSchemaVersion } },
               },
             ],
           },
@@ -487,7 +491,7 @@ const createMeiliMongooseModel = ({
             indexableQuery,
             {
               _meiliIndex: true,
-              _meiliIndexSchemaVersion: { $gte: MEILI_INDEX_SCHEMA_VERSION },
+              _meiliIndexSchemaVersion: { $gte: indexSchemaVersion },
             },
           ],
         }),
@@ -549,7 +553,7 @@ const createMeiliMongooseModel = ({
                 {
                   _meiliIndex: true,
                   /** Monotonic: reindex only strictly older projections; never downgrade newer ones. */
-                  _meiliIndexSchemaVersion: { $not: { $gte: MEILI_INDEX_SCHEMA_VERSION } },
+                  _meiliIndexSchemaVersion: { $not: { $gte: indexSchemaVersion } },
                 },
               ],
             },
@@ -634,7 +638,7 @@ const createMeiliMongooseModel = ({
               _meiliCleanupVersion: meiliCleanupVersion,
             },
             /** Monotonic: never stamp a document back to an older projection version. */
-            $max: { _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION },
+            $max: { _meiliIndexSchemaVersion: indexSchemaVersion },
           },
           { timestamps: false },
         );
@@ -1104,6 +1108,10 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   /** Create index only if it doesn't exist */
   const index = client.index<MeiliIndexable>(indexName);
+  const indexSchemaVersion =
+    primaryKey === 'conversationId'
+      ? MEILI_CONVERSATION_INDEX_SCHEMA_VERSION
+      : MEILI_INDEX_SCHEMA_VERSION;
 
   const configureIndex = async (): Promise<void> => {
     try {
@@ -1222,6 +1230,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       excludeFromIndexPath: options.excludeFromIndexPath,
       attributesToIndex,
       ensureSettingsReady,
+      indexSchemaVersion,
       primaryKey,
       syncOptions,
     }),
