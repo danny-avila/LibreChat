@@ -20,20 +20,18 @@ jest.mock('~/hooks', () => ({
 
 const MESSAGE = { messageId: 'response-1' } as TMessage;
 
+type NoticeChatContext = NonNullable<React.ContextType<typeof ChatContext>>;
+
 /**
  * Only the fields the notice reads. The real context is far larger, so this is
- * cast once at the seam rather than reconstructed.
+ * a partial of the provider value with a single assertion at the seam.
  */
-function renderNotice(
-  context?: { ask?: jest.Mock; isSubmitting?: boolean; latestMessageId?: string },
-  message: TMessage = MESSAGE,
-) {
-  if (!context) {
+function renderNotice(context?: Partial<NoticeChatContext>, message: TMessage = MESSAGE) {
+  if (context == null) {
     return render(<ToolCallLimitNotice message={message} />);
   }
-  const value = context as unknown as React.ContextType<typeof ChatContext>;
   return render(
-    <ChatContext.Provider value={value}>
+    <ChatContext.Provider value={context as NoticeChatContext}>
       <ToolCallLimitNotice message={message} />
     </ChatContext.Provider>,
   );

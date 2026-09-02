@@ -5,7 +5,6 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { debug: jest.fn(), warn: jest.fn(), error: jest.fn(), info: jest.fn() },
 }));
 
-/** The hook ignores its input; only the number of dispatches matters. */
 function batch(toolNames: string[] = ['search']): PostToolBatchHookInput {
   return {
     hook_event_name: 'PostToolBatch',
@@ -114,6 +113,20 @@ describe('createStepBudgetHook', () => {
 
     /** The second run must still see a full budget, not the first run's tally. */
     expect(await second(batch(), signal)).toEqual({ additionalContext: buildBudgetNotice(2) });
+  });
+
+  it('does not count an empty batch against the budget', async () => {
+    const hook = createStepBudgetHook({ recursionLimit: 7 });
+
+    expect(await hook(batch([]), signal)).toEqual({});
+    expect(await hook(batch(), signal)).toEqual({ additionalContext: buildBudgetNotice(2) });
+  });
+
+  it('does not count a subagent-scoped batch against the parent budget', async () => {
+    const hook = createStepBudgetHook({ recursionLimit: 7 });
+
+    expect(await hook({ ...batch(), agentId: 'child' }, signal)).toEqual({});
+    expect(await hook(batch(), signal)).toEqual({ additionalContext: buildBudgetNotice(2) });
   });
 });
 

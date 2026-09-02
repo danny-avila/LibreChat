@@ -81,15 +81,18 @@ export interface StepBudgetHookOptions {
  *
  * Counts tool *rounds*, not tool calls: a parallel batch of six calls is one node
  * execution and costs one step, so per-call counting would overstate consumption
- * six-fold. The hook only fires for non-empty batches, which is exactly the set of
- * rounds worth counting.
+ * six-fold. Empty batches and subagent-scoped events are skipped so only a real
+ * root tool round advances the countdown.
  */
 export function createStepBudgetHook({
   recursionLimit,
 }: StepBudgetHookOptions): HookCallback<'PostToolBatch'> {
   let roundsUsed = 0;
 
-  return async () => {
+  return async (input) => {
+    if (input.agentId != null || input.entries.length === 0) {
+      return {};
+    }
     roundsUsed += 1;
     const remaining = remainingToolRounds(recursionLimit, roundsUsed);
     if (remaining > WARN_AT_REMAINING_ROUNDS) {

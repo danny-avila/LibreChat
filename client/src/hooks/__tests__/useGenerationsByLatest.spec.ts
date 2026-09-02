@@ -13,7 +13,7 @@ describe('useGenerationsByLatest', () => {
   it('withholds the hover Continue control when the turn ran out of tool steps', () => {
     const result = useGenerationsByLatest({
       ...base,
-      finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON,
+      finish_reason: String(Constants.TOOL_CALL_LIMIT_FINISH_REASON),
     });
 
     expect(result.continueSupported).toBe(false);
