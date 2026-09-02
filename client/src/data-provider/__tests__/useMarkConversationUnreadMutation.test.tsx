@@ -108,6 +108,29 @@ describe('useMarkConversationUnreadMutation', () => {
     expect(isConversationUnseen(cached())).toBe(false);
   });
 
+  it('refetches when a catch-up it did not write settles alongside the unread', async () => {
+    /* The read may have been accepted before the unread write, in which case the server holds
+       the conversation unread while this tab shows it read; the cache alone cannot tell, so
+       the row is refetched rather than guessed at. */
+    const request = deferred();
+    mockMarkUnread.mockReturnValue(request.promise);
+    const { result, queryClient } = setup(RESPONDED_AT, SEEN_AT);
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      const pending = result.current.mutateAsync({ conversationId: CONVO_ID });
+      await flush();
+      updateConvoInAllQueries(queryClient, CONVO_ID, (convo) => ({
+        ...convo,
+        lastSeenAt: RESPONDED_AT,
+      }));
+      request.resolve({ modified: true, lastResponseAt: RESPONDED_AT });
+      await pending;
+    });
+
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]);
+  });
+
   it('keeps a newer reply that arrived while the unread request was open', async () => {
     /* The server read the marker on the way in; a reply landing after that is newer than what
        it can return, and overwriting it would strand the dot behind a spent completion. */
