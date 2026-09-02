@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
+import { Spinner } from '@librechat/client';
 import { Constants } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { CurrencyConfig } from '~/utils';
@@ -131,13 +132,17 @@ function TokenUsageIndicator({
   }
 
   const hasMax = view.maxTokens != null && view.maxTokens > 0;
-  const ariaLabel = hasMax
+  const usageAriaLabel = hasMax
     ? localize('com_ui_context_usage_label', {
         0: formatTokens(view.usedTokens),
         1: formatTokens(view.maxTokens ?? 0),
         2: String(Math.round(view.percent)),
       })
     : localize('com_ui_context_usage_label_unknown', { 0: formatTokens(view.usedTokens) });
+  const ariaLabel = compaction.isCompacting
+    ? localize('com_ui_context_compaction_requested')
+    : usageAriaLabel;
+  const showCompactingIndicator = compaction.isCompacting && !popoverOpen;
 
   return (
     <>
@@ -151,6 +156,7 @@ function TokenUsageIndicator({
         type="button"
         data-testid="token-usage"
         aria-label={ariaLabel}
+        aria-busy={compaction.isCompacting}
         aria-haspopup="dialog"
         onPointerDown={() => {
           pinAtPointerDownRef.current = pinnedRef.current;
@@ -190,16 +196,20 @@ function TokenUsageIndicator({
           'duration-300 animate-in fade-in zoom-in-95',
         )}
       >
-        <span
-          role="meter"
-          aria-valuemin={0}
-          aria-valuemax={hasMax ? view.maxTokens : undefined}
-          aria-valuenow={view.usedTokens}
-          aria-label={localize('com_ui_context_usage')}
-          className="flex items-center justify-center"
-        >
-          <Gauge percent={view.percent} indeterminate={!hasMax} />
-        </span>
+        {showCompactingIndicator ? (
+          <Spinner className="size-5 text-text-secondary" />
+        ) : (
+          <span
+            role="meter"
+            aria-valuemin={0}
+            aria-valuemax={hasMax ? view.maxTokens : undefined}
+            aria-valuenow={view.usedTokens}
+            aria-label={localize('com_ui_context_usage')}
+            className="flex items-center justify-center"
+          >
+            <Gauge percent={view.percent} indeterminate={!hasMax} />
+          </span>
+        )}
       </Ariakit.PopoverDisclosure>
       {/* Focus the labelled dialog on keyboard/click open so screen readers
           enter and announce the breakdown, and so focus stays contained instead

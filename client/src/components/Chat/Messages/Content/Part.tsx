@@ -164,6 +164,7 @@ const Part = memo(function Part({
         model={part.model}
         provider={part.provider}
         tokenCount={part.tokenCount}
+        initiatedBy={part.initiatedBy}
         summarizing={part.summarizing}
       />
     );

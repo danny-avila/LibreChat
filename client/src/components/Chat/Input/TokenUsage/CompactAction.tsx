@@ -45,7 +45,7 @@ function CompactAction({ compact, canCompact, isCompacting }: CompactActionProps
               <ScrollText className="size-4" aria-hidden="true" />
             )}
             {isCompacting
-              ? localize('com_ui_context_compacting')
+              ? localize('com_ui_context_compaction_requested')
               : localize('com_ui_context_compact')}
           </Button>
         }

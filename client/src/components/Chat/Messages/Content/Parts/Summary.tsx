@@ -11,7 +11,7 @@ import { cn } from '~/utils';
 
 type SummaryProps = Pick<
   SummaryContentPart,
-  'content' | 'model' | 'provider' | 'tokenCount' | 'summarizing'
+  'content' | 'model' | 'provider' | 'tokenCount' | 'summarizing' | 'initiatedBy'
 >;
 
 function useCopyToClipboard(content?: string) {
@@ -210,7 +210,8 @@ const FloatingSummaryBar = memo(
   },
 );
 
-const Summary = memo(({ content, model, provider, tokenCount, summarizing }: SummaryProps) => {
+const Summary = memo((props: SummaryProps) => {
+  const { content, model, provider, tokenCount, summarizing, initiatedBy } = props;
   const contentId = useId();
   const localize = useLocalize();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -259,13 +260,15 @@ const Summary = memo(({ content, model, provider, tokenCount, summarizing }: Sum
     return parts.length > 0 ? parts.join(' \u00b7 ') : undefined;
   }, [model, provider, tokenCount, localize]);
 
-  const label = useMemo(
-    () =>
-      isActivelyStreaming
-        ? localize('com_ui_summarizing')
-        : localize('com_ui_conversation_summarized'),
-    [isActivelyStreaming, localize],
-  );
+  const label = useMemo(() => {
+    if (isActivelyStreaming) {
+      return localize('com_ui_summarizing');
+    }
+    if (initiatedBy === 'user') {
+      return localize('com_ui_context_compacted_by_you');
+    }
+    return localize('com_ui_conversation_summarized');
+  }, [initiatedBy, isActivelyStreaming, localize]);
 
   if (!summarizing && !text) {
     return null;
