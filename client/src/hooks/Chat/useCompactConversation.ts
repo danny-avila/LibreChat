@@ -1,10 +1,11 @@
 import { useCallback } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useCompactConversationMutation } from '~/data-provider';
 import { isTemporaryConversation } from '~/utils';
 import { NotificationSeverity } from '~/common';
-import { useGetEphemeralAgent } from '~/store';
+import store, { useGetEphemeralAgent } from '~/store';
 import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
 
@@ -44,7 +45,8 @@ export default function useCompactConversation() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const getEphemeralAgent = useGetEphemeralAgent();
-  const { conversation, latestMessageId, isSubmitting } = useChatContext();
+  const { conversation, latestMessageId, isSubmitting, index } = useChatContext();
+  const setIsCompacting = useSetRecoilState(store.isCompactingFamily(index));
   const { mutate, isLoading } = useCompactConversationMutation();
 
   const conversationId = conversation?.conversationId;
@@ -61,6 +63,9 @@ export default function useCompactConversation() {
     /** Everything the endpoint's own schema defines, minus the transcript the
      *  server reads from the database anyway. */
     const { messages: _messages, ...conversationFields } = conversation ?? {};
+    /** Publishing the pending state is what keeps a submit during the call
+     *  from racing the summary onto the same leaf. */
+    setIsCompacting(true);
     mutate(
       {
         ...conversationFields,
@@ -78,7 +83,19 @@ export default function useCompactConversation() {
             severity: NotificationSeverity.SUCCESS,
           }),
         onError: (error) => {
-          const known = TOAST_BY_CODE[(errorCode(error) ?? '') as keyof typeof TOAST_BY_CODE];
+          const code = errorCode(error);
+          if (code === 'CONTENT_FILTER_BLOCK') {
+            /** The server's denial body is pre-sanitized and says what has to
+             *  go, which a generic failure toast would not. */
+            const message = (error as { response?: { data?: { message?: string } } } | undefined)
+              ?.response?.data?.message;
+            showToast({
+              message: message ?? localize('com_ui_context_compact_failed'),
+              severity: NotificationSeverity.WARNING,
+            });
+            return;
+          }
+          const known = TOAST_BY_CODE[(code ?? '') as keyof typeof TOAST_BY_CODE];
           showToast(
             known
               ? { message: localize(known.key), severity: known.severity }
@@ -88,6 +105,7 @@ export default function useCompactConversation() {
                 },
           );
         },
+        onSettled: () => setIsCompacting(false),
       },
     );
   }, [
@@ -101,6 +119,7 @@ export default function useCompactConversation() {
     latestMessageId,
     hasConversation,
     getEphemeralAgent,
+    setIsCompacting,
   ]);
 
   return { compact, canCompact, isCompacting: isLoading };

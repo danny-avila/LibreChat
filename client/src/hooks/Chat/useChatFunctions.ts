@@ -219,6 +219,7 @@ export default function useChatFunctions({
   const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
   const isTemporary = useRecoilValue(store.isTemporary);
+  const isCompacting = useRecoilValue(store.isCompactingFamily(index));
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));
@@ -306,6 +307,10 @@ export default function useChatFunctions({
     const replayFileCount = overrideFiles?.length ?? 0;
     if (
       !!isSubmitting ||
+      /** A pending compaction is about to insert the branch's new boundary;
+       *  a turn starting now would either strand it on a sibling or get the
+       *  summary discarded after the provider call was already paid for. */
+      isCompacting ||
       (!isRegenerate && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
     ) {
       return false;

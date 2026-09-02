@@ -125,6 +125,7 @@ const ChatForm = memo(function ChatForm({
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
   const isTemporary = useRecoilValue(store.isTemporary);
+  const isCompacting = useRecoilValue(store.isCompactingFamily(index));
 
   const [badges, setBadges] = useRecoilState(store.chatBadges);
   const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
@@ -816,6 +817,7 @@ const ChatForm = memo(function ChatForm({
                             disableInputs ||
                             isNotAppendable ||
                             answerMode.composerLocked ||
+                            isCompacting ||
                             (isSubmitting && !answerMode.composerAnswers)
                           }
                         />

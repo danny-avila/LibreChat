@@ -37,6 +37,7 @@ import {
   compactConversation,
   selectBranchMessages,
   NothingToCompactError,
+  PartialCompactionError,
   DEFAULT_COMPACTION_PROMPT,
   DEFAULT_COMPACTION_UPDATE_PROMPT,
 } from '~/agents/compact/summary';
@@ -1044,6 +1045,43 @@ describe('compactConversation', () => {
      *  than one sized against the checkpoint-reduced budget. */
     expect(mockStream.mock.calls.length).toBeGreaterThan(1);
     expect(firstPass.length).toBeGreaterThan(secondPass.length);
+  });
+
+  it('bills the completed pass when a later pass is blocked by policy', async () => {
+    /** The blockable value rides in the final segment, so pass one reaches the
+     *  provider before the policy rejects pass two's request. */
+    const longBranch: TMessage[] = [];
+    let parent = Constants.NO_PARENT as string;
+    for (let i = 0; i < 8; i++) {
+      longBranch.push(userMessage(`L${i}`, parent, bulk(`seg${i}`, 850)));
+      parent = `L${i}`;
+    }
+    longBranch[7] = userMessage('L7', 'L6', `${bulk('seg7', 850)} PRIVATE-TAIL`);
+
+    const req = makeReq({ maxSummaryTokens: 6000 });
+    (req.config as AppConfig).filters = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-TAIL' }],
+        },
+      },
+    };
+
+    const error = await compactConversation({
+      req,
+      agent: smallWindowAgent,
+      branch: longBranch,
+      ids: { ...ids, parentMessageId: 'L7' },
+      db: dbMethods,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PartialCompactionError);
+    /** The branch chunks into seven passes under this budget; six completed
+     *  before policy rejected the last one, and all six are real spend. */
+    expect((error as PartialCompactionError).passes).toHaveLength(6);
+    expect(mockStream).toHaveBeenCalledTimes(6);
   });
 
   it('reconstructs reasoning content for a target that replays it', async () => {

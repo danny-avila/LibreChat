@@ -1636,16 +1636,27 @@ export async function compactConversation({
         additional_kwargs: { injected: true, source: 'system' },
       }),
     ] as BaseMessage[];
-    assertModelBoundProviderContent({
-      filters: appConfig?.filters as ModelBoundProviderContentInput['filters'],
-      legacyPii: appConfig?.messageFilter?.pii as ModelBoundProviderContentInput['legacyPii'],
-      storedMessages: retained as unknown as ModelBoundProviderContentInput['storedMessages'],
-      fileIdsBySourceMessageId,
-      resolvedFiles,
-      sourceFileProjectionOverflowed,
-      providerMessages:
-        passMessages as unknown as ModelBoundProviderContentInput['providerMessages'],
-    });
+    try {
+      assertModelBoundProviderContent({
+        filters: appConfig?.filters as ModelBoundProviderContentInput['filters'],
+        legacyPii: appConfig?.messageFilter?.pii as ModelBoundProviderContentInput['legacyPii'],
+        storedMessages: retained as unknown as ModelBoundProviderContentInput['storedMessages'],
+        fileIdsBySourceMessageId,
+        resolvedFiles,
+        sourceFileProjectionOverflowed,
+        providerMessages:
+          passMessages as unknown as ModelBoundProviderContentInput['providerMessages'],
+      });
+    } catch (error) {
+      /** The blocked pass made no provider call, but earlier passes already
+       *  did: carrying them in the billing error is what keeps a repeated
+       *  large prefix from consuming provider calls without ever charging. */
+      throw new PartialCompactionError({
+        ...billingDetails(),
+        cause: error,
+        message: error instanceof Error ? error.message : 'Compaction pass blocked',
+      });
+    }
     const passInputTokens = await countPromptTokens(passMessages);
 
     let response: AIMessage | undefined;
