@@ -1,13 +1,13 @@
 import type {
+  IAgentEventActorContextMeta,
+  ICompactionSemanticIndexProjection,
+} from '@librechat/data-schemas';
+import type {
   Agents,
   TFile,
   TPendingSteer,
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
-import type {
-  IAgentEventActorContextMeta,
-  ICompactionSemanticIndexProjection,
-} from '@librechat/data-schemas';
 import type { RunStep, StandardGraph } from '@librechat/agents';
 import type { AgentEventDetachedTerminalEvidence } from '~/agents/triggers/types';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';

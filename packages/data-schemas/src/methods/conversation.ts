@@ -38,7 +38,6 @@ import {
   buildRetentionVisibilityFilter,
   createFallbackRetentionDate,
 } from '~/utils/retention';
-import { isAgentFadingTier } from '~/utils/fading';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
@@ -48,6 +47,7 @@ import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
+import { isAgentFadingTier } from '~/utils/fading';
 import logger from '~/config/winston';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
