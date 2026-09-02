@@ -365,6 +365,7 @@ export function getBlockedUninspectableSkillFileField(
   const skillPii = filters?.skills?.pii;
   if (
     hasActivePiiPatterns(skillPii) &&
+    skillPii?.action !== 'audit' &&
     (skillPii?.fields == null || skillPii.fields.includes('file_text'))
   ) {
     return 'content';

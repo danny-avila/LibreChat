@@ -376,6 +376,17 @@ describe('file content inspection policy', () => {
         skills: { pii: { fields: ['file_text'], starterPatterns: [] } },
       } as FiltersConfig),
     ).toBeNull();
+    expect(
+      getBlockedUninspectableSkillFileField({
+        skills: { pii: { action: 'audit', fields: ['file_text'] } },
+      } as FiltersConfig),
+    ).toBeNull();
+    expect(
+      getBlockedUninspectableSkillFileField({
+        skills: { pii: { action: 'audit', fields: ['file_text'] } },
+        files: { pii: { fields: ['content'], uninspectable: 'block' } },
+      } as FiltersConfig),
+    ).toBe('content');
   });
 
   it('returns a stable raw-free block response', () => {

@@ -1,4 +1,5 @@
 import { StreamLimitExceededError } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import type { FiltersConfig } from 'librechat-data-provider';
 import {
   assertModelBoundContent,
@@ -99,6 +100,41 @@ describe('hasModelBoundContentProtection', () => {
 });
 
 describe('assertModelBoundContent', () => {
+  it('records later audit findings before returning an earlier blocking finding', () => {
+    const infoSpy = jest.spyOn(logger, 'info').mockImplementation(() => logger);
+
+    try {
+      expect(() =>
+        assertModelBoundContent({
+          legacyPii: {
+            starterPatterns: [],
+            customPatterns: [{ id: 'legacy-block', label: 'legacy block', regex: 'PRIVATE-BLOCK' }],
+          },
+          filters: {
+            skills: {
+              pii: {
+                action: 'audit',
+                fields: ['instructions'],
+                starterPatterns: [],
+                customPatterns: [
+                  { id: 'skill-audit', label: 'skill audit', regex: 'AUDIT-SECRET' },
+                ],
+              },
+            },
+          },
+          submittedMessages: [{ role: 'user', content: 'PRIVATE-BLOCK' }],
+          skills: [{ body: 'AUDIT-SECRET' }],
+        }),
+      ).toThrow('Submitted content contains a legacy block');
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"ruleId":"skill-audit"'),
+        expect.objectContaining({ action: 'audit', source: 'skill' }),
+      );
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
   it('does not traverse model-bound content for a zero-rule configuration', () => {
     const message = {
       isCreatedByUser: true,

@@ -52,6 +52,7 @@ export interface ConfiguredContentInspector {
 }
 
 export interface ConfiguredContentInspectionSession {
+  readonly hasAuditRules: boolean;
   inspectFragment(fragment: TextContentFragment): ProtectionFinding | null;
   inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
 }
@@ -386,6 +387,7 @@ function createInspector(rules: readonly CompiledFilter[]): ConfiguredContentIns
   const createSession = (): ConfiguredContentInspectionSession => {
     const inspectedTextByRule: Array<Set<string> | undefined> = new Array(rules.length);
     return {
+      hasAuditRules,
       inspectFragment(fragment) {
         return inspectFragment(fragment, inspectedTextByRule);
       },
