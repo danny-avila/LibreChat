@@ -7,6 +7,7 @@ const {
   FlowStateManager,
   evalKeyvRedisScript,
   runDistributedJob,
+  waitForMeiliTask,
 } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
 const { batchResetMeiliFlags } = require('./utils');
@@ -33,23 +34,6 @@ class MeiliSearchClient {
       });
     }
     return MeiliSearchClient.instance;
-  }
-}
-
-async function waitForSuccessfulTask(client, taskUid, operation) {
-  while (true) {
-    try {
-      const task = await client.waitForTask(taskUid, { timeOutMs: 10_000, intervalMs: 100 });
-      if (task.status !== 'succeeded') {
-        throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
-      }
-      return;
-    } catch (error) {
-      if (error instanceof MeiliSearchTimeOutError) {
-        continue;
-      }
-      throw error;
-    }
   }
 }
 
@@ -82,7 +66,12 @@ async function deleteDocumentsWithoutUserField(index, indexName) {
           `[indexSync] Deleting ${idsToDelete.length} documents without user field from ${indexName} index`,
         );
         const deletion = await index.deleteDocuments(idsToDelete);
-        await waitForSuccessfulTask(MeiliSearchClient.getInstance(), deletion.taskUid, indexName);
+        await waitForMeiliTask(
+          MeiliSearchClient.getInstance(),
+          deletion.taskUid,
+          `${indexName} cleanup`,
+          (error) => error instanceof MeiliSearchTimeOutError,
+        );
         deletedCount += idsToDelete.length;
       }
 
@@ -124,7 +113,12 @@ async function ensureFilterableAttributes(client) {
         const settingsTask = await messagesIndex.updateSettings({
           filterableAttributes: ['user'],
         });
-        await waitForSuccessfulTask(client, settingsTask.taskUid, 'messages settings');
+        await waitForMeiliTask(
+          client,
+          settingsTask.taskUid,
+          'messages settings',
+          (error) => error instanceof MeiliSearchTimeOutError,
+        );
         logger.info('[indexSync] Messages index configured for user filtering');
         settingsUpdated = true;
       }
@@ -158,7 +152,12 @@ async function ensureFilterableAttributes(client) {
         const settingsTask = await convosIndex.updateSettings({
           filterableAttributes: ['user'],
         });
-        await waitForSuccessfulTask(client, settingsTask.taskUid, 'convos settings');
+        await waitForMeiliTask(
+          client,
+          settingsTask.taskUid,
+          'convos settings',
+          (error) => error instanceof MeiliSearchTimeOutError,
+        );
         logger.info('[indexSync] Convos index configured for user filtering');
         settingsUpdated = true;
       }
