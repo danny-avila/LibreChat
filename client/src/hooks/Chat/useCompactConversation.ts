@@ -1,11 +1,11 @@
-import { useCallback, useEffect } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useCallback } from 'react';
+import { useIsMutating } from '@tanstack/react-query';
 import { useToastContext } from '@librechat/client';
-import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, MutationKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useCompactConversationMutation } from '~/data-provider';
 import { isTemporaryConversation } from '~/utils';
 import { NotificationSeverity } from '~/common';
-import store, { useGetEphemeralAgent } from '~/store';
+import { useGetEphemeralAgent } from '~/store';
 import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
 
@@ -33,6 +33,24 @@ const TOAST_BY_CODE = {
 } as const;
 
 /**
+ * True while a compaction of this conversation is still in flight, read from
+ * TanStack Query's mutation cache: the cache outlives any component, so the
+ * state survives navigating away and back and is discovered by a remounted
+ * composer without a cleared-on-unmount flag that can go stale in either
+ * direction.
+ */
+export function useIsConversationCompacting(conversationId?: string | null): boolean {
+  return (
+    useIsMutating({
+      mutationKey: [MutationKeys.compactConversation],
+      predicate: (mutation) =>
+        (mutation.state.variables as { conversationId?: string } | undefined)?.conversationId ===
+        conversationId,
+    }) > 0
+  );
+}
+
+/**
  * Manual context compaction: summarizes the active branch on demand and
  * persists the summary as the boundary every later turn starts from.
  *
@@ -45,30 +63,24 @@ export default function useCompactConversation() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const getEphemeralAgent = useGetEphemeralAgent();
-  const { conversation, latestMessageId, isSubmitting, index } = useChatContext();
-  const setIsCompacting = useSetRecoilState(store.isCompactingFamily(index));
-  const { mutate, isLoading } = useCompactConversationMutation();
-  /** TanStack Query v4 discards per-call `mutate` callbacks when the caller
-   *  unmounts, so leaving the route mid-compaction would wedge the pane's
-   *  submission gate shut until reload. The unmount path clears the lock. */
-  useEffect(() => () => setIsCompacting(false), [setIsCompacting]);
+  const { conversation, latestMessageId, isSubmitting } = useChatContext();
+  const { mutate } = useCompactConversationMutation();
+
   const conversationId = conversation?.conversationId;
+  const isCompacting = useIsConversationCompacting(conversationId);
   const hasConversation =
     conversationId != null &&
     conversationId !== Constants.NEW_CONVO &&
     conversationId !== Constants.PENDING_CONVO;
-  const canCompact = hasConversation && !isSubmitting && !isLoading;
+  const canCompact = hasConversation && !isSubmitting && !isCompacting;
 
   const compact = useCallback(() => {
-    if (!hasConversation || isSubmitting || isLoading) {
+    if (!hasConversation || isSubmitting || isCompacting) {
       return;
     }
     /** Everything the endpoint's own schema defines, minus the transcript the
      *  server reads from the database anyway. */
     const { messages: _messages, ...conversationFields } = conversation ?? {};
-    /** Publishing the pending state is what keeps a submit during the call
-     *  from racing the summary onto the same leaf. */
-    setIsCompacting(true);
     mutate(
       {
         ...conversationFields,
@@ -108,12 +120,11 @@ export default function useCompactConversation() {
                 },
           );
         },
-        onSettled: () => setIsCompacting(false),
       },
     );
   }, [
     mutate,
-    isLoading,
+    isCompacting,
     localize,
     showToast,
     conversation,
@@ -122,10 +133,9 @@ export default function useCompactConversation() {
     latestMessageId,
     hasConversation,
     getEphemeralAgent,
-    setIsCompacting,
   ]);
 
-  return { compact, canCompact, isCompacting: isLoading };
+  return { compact, canCompact, isCompacting };
 }
 
 /**

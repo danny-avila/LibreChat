@@ -1,80 +1,102 @@
-import { render, act } from '@testing-library/react';
-import { RecoilRoot, useRecoilValue } from 'recoil';
-import useCompactConversation from '../useCompactConversation';
-import store from '~/store';
+import { render, act, waitFor } from '@testing-library/react';
+import { useState } from 'react';
+import { RecoilRoot } from 'recoil';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import useCompactConversation, { useIsConversationCompacting } from '../useCompactConversation';
 
-const mockMutate = jest.fn();
+let mockSettle: (() => void) | null = null;
+
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({
     conversation: { conversationId: 'convo_1', endpoint: 'openAI' },
     latestMessageId: 'm2',
     isSubmitting: false,
-    index: 0,
   }),
 }));
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
-jest.mock('~/data-provider', () => ({
-  useCompactConversationMutation: () => ({ mutate: mockMutate, isLoading: false }),
-}));
+jest.mock('~/data-provider', () => {
+  const tanstack = jest.requireActual('@tanstack/react-query');
+  return {
+    useCompactConversationMutation: () =>
+      tanstack.useMutation({
+        mutationKey: ['compactConversation'],
+        mutationFn: () =>
+          new Promise<{ conversationId: string }>((resolve) => {
+            mockSettle = () => resolve({ conversationId: 'convo_1' });
+          }),
+      }),
+  };
+});
 jest.mock('~/hooks/useLocalize', () => () => (key: string) => key);
 
 let compactFn: () => void = () => undefined;
+let canCompactValue = true;
 let lockValue = false;
 
 function Consumer() {
-  const { compact } = useCompactConversation();
+  const { compact, canCompact } = useCompactConversation();
   compactFn = compact;
+  canCompactValue = canCompact;
   return null;
 }
 
 function Probe() {
-  lockValue = useRecoilValue(store.isCompactingFamily(0));
+  lockValue = useIsConversationCompacting('convo_1');
   return null;
 }
 
-/** The consumer and the probe are siblings so the probe survives the
- *  consumer's unmount and can still read the lock. */
+/** The consumer and the probe are siblings so the probe observes the lock
+ *  while the consumer is unmounted. */
 function Harness({ showConsumer }: { showConsumer: boolean }) {
+  const [queryClient] = useState(() => new QueryClient());
   return (
     <RecoilRoot>
-      {showConsumer ? <Consumer /> : null}
-      <Probe />
+      <QueryClientProvider client={queryClient}>
+        {showConsumer ? <Consumer /> : null}
+        <Probe />
+      </QueryClientProvider>
     </RecoilRoot>
   );
 }
 
 describe('useCompactConversation', () => {
   beforeEach(() => {
-    mockMutate.mockReset();
+    mockSettle = null;
     compactFn = () => undefined;
+    canCompactValue = true;
     lockValue = false;
   });
 
-  it('raises the lock while pending and clears it when the settle callback runs', () => {
-    const { rerender } = render(<Harness showConsumer />);
-    expect(lockValue).toBe(false);
-
+  it('raises the lock while pending and releases it when the mutation settles', async () => {
+    render(<Harness showConsumer />);
     act(() => compactFn());
-    expect(mockMutate).toHaveBeenCalledTimes(1);
-    expect(lockValue).toBe(true);
+    await waitFor(() => expect(lockValue).toBe(true));
 
-    const [, options] = mockMutate.mock.calls[0] as [unknown, { onSettled?: () => void }];
-    act(() => options.onSettled?.());
-    expect(lockValue).toBe(false);
-
-    rerender(<Harness showConsumer />);
+    await act(async () => {
+      mockSettle?.();
+    });
+    await waitFor(() => expect(lockValue).toBe(false));
   });
 
-  it('clears the lock when the caller unmounts mid-flight, as v4 drops its callbacks', () => {
+  it('keeps the lock across unmount and rediscovers it on remount', async () => {
     const { rerender } = render(<Harness showConsumer />);
     act(() => compactFn());
+    await waitFor(() => expect(lockValue).toBe(true));
+
+    /** The consumer unmounts while the mutation is still in the cache: the
+     *  lock must not clear, or a remounted composer would race the summary. */
+    rerender(<Harness showConsumer={false} />);
     expect(lockValue).toBe(true);
 
-    /** The settle callback never fires after unmount, so the unmount cleanup
-     *  is what must release the submission gate. */
-    rerender(<Harness showConsumer={false} />);
-    expect(lockValue).toBe(false);
+    rerender(<Harness showConsumer />);
+    await waitFor(() => expect(canCompactValue).toBe(false));
+
+    await act(async () => {
+      mockSettle?.();
+    });
+    await waitFor(() => expect(lockValue).toBe(false));
+    await waitFor(() => expect(canCompactValue).toBe(true));
   });
 });

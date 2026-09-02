@@ -98,7 +98,7 @@ function makeDeps(overrides: Partial<CompactRequestDeps> = {}): CompactRequestDe
     saveMessage: jest.fn(
       async (_ctx, message) => ({ ...message, _id: 'summary_record_1' }) as TMessage,
     ),
-    saveConvo: jest.fn().mockResolvedValue(undefined),
+    saveConvo: jest.fn().mockResolvedValue({ conversationId: 'convo_1' }),
     deleteMessages: jest.fn().mockResolvedValue(undefined),
     getModelsConfig: jest.fn().mockResolvedValue({ openAI: ['gpt-4o-mini'] }),
     getJob: jest.fn().mockResolvedValue(null),
@@ -321,6 +321,20 @@ describe('handleCompactRequest', () => {
     expect(result).toMatchObject({ status: 500, code: CompactErrorCodes.FAILED });
     /** The summary is already a child of the leaf, so leaving it would make
      *  every retry reject with BRANCH_MOVED. */
+    expect(deps.deleteMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: 'convo_1', user: 'user_1' }),
+    );
+  });
+
+  it('rolls the summary back when the fail-soft conversation update reports an error', async () => {
+    /** The production `saveConvo` resolves `{ message }` instead of rejecting
+     *  when the update fails, so the error must be read off the result. */
+    const deps = makeDeps({
+      saveConvo: jest.fn().mockResolvedValue({ message: 'Error saving conversation' }),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({ status: 500, code: CompactErrorCodes.SAVE_FAILED });
     expect(deps.deleteMessages).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'convo_1', user: 'user_1' }),
     );

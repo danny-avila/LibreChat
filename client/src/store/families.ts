@@ -261,15 +261,6 @@ const isSubmittingFamily = atomFamily({
   ],
 });
 
-/** True while a manual context compaction is in flight for this pane. New
- *  turns must not start against the leaf a compaction is about to replace:
- *  the summary lands as a child of the same message, so a concurrent submit
- *  either strands the paid summary on a sibling or discards it. */
-const isCompactingFamily = atomFamily({
-  key: 'isCompactingByIndex',
-  default: false,
-});
-
 const anySubmittingSelector = selector<boolean>({
   key: 'anySubmittingSelector',
   get: ({ get }) => {
@@ -789,7 +780,6 @@ export default {
   showStopButtonByIndex,
   abortScrollFamily,
   isSubmittingFamily,
-  isCompactingFamily,
   optionSettingsFamily,
   showPopoverFamily,
   messagesSiblingIdxFamily,

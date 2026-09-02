@@ -456,6 +456,81 @@ describe('compactConversation', () => {
     expect(mockStream).not.toHaveBeenCalled();
   });
 
+  it('filters only the replayed slice when the file token limit truncates it', async () => {
+    /** The sensitive value sits past the inlining budget, so it is never sent
+     *  to the summarizer and must not block the compaction either. */
+    const req = makeReq();
+    (req.config as AppConfig).filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private file', regex: 'PRIVATE-TAIL' }],
+        },
+      },
+    };
+    const withFile = {
+      ...userMessage('big-file', Constants.NO_PARENT, 'summarize the attached file'),
+      files: [{ file_id: 'file_big' }],
+    } as TMessage;
+
+    const result = await compactConversation({
+      req,
+      agent: { ...agent, fileTokenLimit: 20 },
+      branch: [withFile],
+      ids,
+      db: dbMethods,
+      getFiles: jest.fn().mockResolvedValue([
+        {
+          file_id: 'file_big',
+          filename: 'big.txt',
+          source: 'text',
+          text: `${bulk('safe', 400)} PRIVATE-TAIL`,
+        },
+      ]),
+    });
+    expect(mockStream).toHaveBeenCalled();
+    expect(result.summary.content?.[0]).toMatchObject({ type: ContentTypes.TEXT });
+  });
+
+  it('replays nothing from a file when the token limit is zero', async () => {
+    /** A zero limit means inline nothing, so a stored document full of
+     *  protected values never reaches the provider through compaction and
+     *  cannot block it either. */
+    const req = makeReq();
+    (req.config as AppConfig).filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private file', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+    const withFile = {
+      ...userMessage('private-file', Constants.NO_PARENT, 'summarize the attached file'),
+      files: [{ file_id: 'file_private' }],
+    } as TMessage;
+
+    const result = await compactConversation({
+      req,
+      agent: { ...agent, fileTokenLimit: 0 },
+      branch: [withFile],
+      ids,
+      db: dbMethods,
+      getFiles: jest.fn().mockResolvedValue([
+        {
+          file_id: 'file_private',
+          filename: 'private.txt',
+          source: 'text',
+          text: 'PRIVATE-FILE',
+        },
+      ]),
+    });
+    expect(mockStream).toHaveBeenCalled();
+    expect(result.summary.content?.[0]).toMatchObject({ type: ContentTypes.TEXT });
+  });
+
   it('runs the pre-flight gate before contacting the provider, and aborts when it throws', async () => {
     const order: string[] = [];
     mockStream.mockImplementation(() => {
