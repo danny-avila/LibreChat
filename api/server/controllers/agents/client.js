@@ -640,7 +640,7 @@ class AgentClient extends BaseClient {
       hook: createSteerDrainHook(drainOptions),
       ...(isSteerPreemptSupported() && {
         preemptHook: createSteerPreemptBoundaryHook(drainOptions),
-        preemption: createSteerPreemptPoll(streamId),
+        preemption: createSteerPreemptPoll(streamId, this.jobCreatedAt),
       }),
       ...(isSteerTerminalContinuationSupported() && {
         terminalHook: createSteerTerminalContinuationHook(drainOptions),
