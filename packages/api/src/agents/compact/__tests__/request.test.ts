@@ -308,6 +308,22 @@ describe('handleCompactRequest', () => {
     );
   });
 
+  it('rolls the summary back when the conversation update fails', async () => {
+    const deps = makeDeps({
+      saveConvo: jest.fn(async () => {
+        throw new Error('transient mongo failure');
+      }),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({ status: 500, code: CompactErrorCodes.FAILED });
+    /** The summary is already a child of the leaf, so leaving it would make
+     *  every retry reject with BRANCH_MOVED. */
+    expect(deps.deleteMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: 'convo_1', user: 'user_1' }),
+    );
+  });
+
   it('reads the job before the siblings so a settling turn cannot slip between', async () => {
     /** The terminal claim sets `terminalPersistencePending` before saving the
      *  response and clears it after, so a job that reads inactive has already

@@ -704,19 +704,36 @@ export async function handleCompactRequest(
       };
     }
 
-    await deps.saveConvo(
-      persistenceContext,
-      {
-        conversationId,
-        ...(savedMessage.endpoint !== undefined && { endpoint: savedMessage.endpoint }),
-        ...(savedMessage.model !== undefined && { model: savedMessage.model }),
-        ...(savedMessage.iconURL !== undefined && { iconURL: savedMessage.iconURL }),
-      },
-      {
-        context: 'POST /api/agents/chat/compact',
-        ...(savedMessage._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
-      },
-    );
+    try {
+      await deps.saveConvo(
+        persistenceContext,
+        {
+          conversationId,
+          ...(savedMessage.endpoint !== undefined && { endpoint: savedMessage.endpoint }),
+          ...(savedMessage.model !== undefined && { model: savedMessage.model }),
+          ...(savedMessage.iconURL !== undefined && { iconURL: savedMessage.iconURL }),
+        },
+        {
+          context: 'POST /api/agents/chat/compact',
+          ...(savedMessage._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
+        },
+      );
+    } catch (error) {
+      /** The summary is already a child of the leaf, so a 500 that leaves it in
+       *  place would make every retry read its own orphan as a moved tail and
+       *  reject with `BRANCH_MOVED`. Roll the message back so the failure
+       *  leaves the branch exactly as it was found, then surface the error
+       *  through the outer handler. */
+      await deps
+        .deleteMessages({ conversationId, user: userId, messageId })
+        .catch((rollbackError) => {
+          logger.error(
+            '[compact] Could not roll back the compaction message after a failed conversation update',
+            rollbackError,
+          );
+        });
+      throw error;
+    }
 
     return { status: 201, message: savedMessage };
   } catch (error) {
