@@ -35,6 +35,7 @@ import { NothingToCompactError } from '../summary';
 
 const SUMMARY = {
   type: ContentTypes.SUMMARY,
+  initiatedBy: 'user' as const,
   content: [{ type: ContentTypes.TEXT, text: '## Checkpoint' }],
   tokenCount: 120,
   model: 'gpt-4o-mini',
@@ -140,6 +141,7 @@ describe('handleCompactRequest', () => {
     expect(result.status).toBe(201);
     const saved = (deps.saveMessage as jest.Mock).mock.calls[0][1];
     expect(saved.content).toEqual([SUMMARY]);
+    expect(saved.content[0]).toMatchObject({ initiatedBy: 'user' });
     /** Summary tokens plus the branch's observed instruction overhead: the
      *  client stops adding its own once this marker exists. */
     expect(saved.metadata.summaryUsedTokens).toBe(520);

@@ -1641,6 +1641,7 @@ export async function compactConversation({
     model,
     summary: {
       type: ContentTypes.SUMMARY,
+      initiatedBy: 'user',
       content: [{ type: ContentTypes.TEXT, text }],
       tokenCount,
       model,

@@ -713,6 +713,8 @@ export type SummaryContentPart = {
   type: ContentTypes.SUMMARY;
   content?: Array<{ type: ContentTypes.TEXT; text: string }>;
   tokenCount?: number;
+  /** Set only when a person explicitly requested this summary. */
+  initiatedBy?: 'user';
   summarizing?: boolean;
   /** A summarize round that ended in error. Partial deltas already streamed
    *  into this slot are kept, so the renderer needs this to avoid presenting

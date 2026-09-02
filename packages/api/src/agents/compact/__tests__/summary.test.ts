@@ -217,7 +217,7 @@ describe('compactConversation', () => {
     expect(sent[sent.length - 1].content).toBe(DEFAULT_COMPACTION_PROMPT);
   });
 
-  it('returns a summary content part shaped like the automatic detour writes', async () => {
+  it('returns a summary content part with user-initiated provenance', async () => {
     const result = await compactConversation({
       req: makeReq(),
       agent,
@@ -232,6 +232,7 @@ describe('compactConversation', () => {
     ]);
     expect(result.summary.provider).toBe('openAI');
     expect(result.summary.model).toBe('gpt-4o-mini');
+    expect(result.summary).toMatchObject({ initiatedBy: 'user' });
     /** Counted from the persisted text plus the summary-carrier overhead,
      *  independent of what the provider billed as output. */
     expect(result.summary.tokenCount).toBeGreaterThan(33);
