@@ -397,6 +397,94 @@ describe('createActionTool OAuth flow cancellation', () => {
   });
 });
 
+describe('createActionTool OAuth stop behavior', () => {
+  /**
+   * Detaching is not the same as ignoring the Stop: the shared flow survives for
+   * other waiters and the browser callback, but a late authorization must not
+   * resume this call into the API request it was gating.
+   */
+  it('does not run the API request when the run is stopped mid-OAuth', async () => {
+    const preparedExecutor = {
+      setAuth: jest.fn().mockResolvedValue(undefined),
+      execute: jest.fn().mockResolvedValue({ data: { ok: true } }),
+    };
+    const requestBuilder = {
+      createExecutor: jest.fn(() => ({
+        setParams: jest.fn(() => preparedExecutor),
+      })),
+    };
+    mockFindToken.mockResolvedValue(null);
+    mockActionFlowManager.createFlowWithHandler.mockImplementation(
+      async (_flowId, _type, handler) => handler(),
+    );
+
+    /** The shared flow completes only after the user has pressed Stop, exactly
+     *  as it would when the browser callback lands late. */
+    let completeFlow;
+    mockActionFlowManager.createFlow.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          completeFlow = resolve;
+        }),
+    );
+
+    const actionTool = await createActionTool({
+      userId: 'action-user',
+      res: {},
+      action: {
+        action_id: 'action-1',
+        metadata: {
+          domain: 'https://api.example.com',
+          oauth_client_id: 'client-id',
+          auth: {
+            type: 'oauth',
+            authorization_url: 'https://auth.example.com/authorize',
+            client_url: 'https://auth.example.com/token',
+            scope: 'read',
+          },
+        },
+      },
+      requestBuilder,
+      encrypted: {
+        oauth_client_id: 'encrypted-client-id',
+        oauth_client_secret: 'encrypted-client-secret',
+      },
+      streamId: 'action-oauth-stream',
+      jobCreatedAt: 1234,
+    });
+
+    const controller = new AbortController();
+    const call = actionTool._call(
+      {},
+      {
+        signal: controller.signal,
+        metadata: { thread_id: 'thread-1', run_id: 'run-1' },
+        toolCall: {
+          id: 'tool-call-1',
+          stepId: 'step-1',
+          name: 'action-tool',
+          type: 'tool_call',
+        },
+      },
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort();
+
+    /** `_call` reports failures through logAxiosError rather than throwing. */
+    await call;
+
+    completeFlow({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      expires_in: 3600,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(preparedExecutor.execute).not.toHaveBeenCalled();
+  });
+});
+
 describe('validateAndUpdateTool', () => {
   const mockReq = { user: { id: 'user123' } };
 
