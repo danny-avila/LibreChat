@@ -11,6 +11,7 @@ interface DynamicMeiliDocument extends mongoose.Document {
   docId: string;
   user: string;
   title: string;
+  tenantId?: string;
   isTemporary?: boolean;
   expiredAt?: Date | null;
   _meiliIndex?: boolean;
@@ -33,6 +34,10 @@ const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
       meiliIndex: true,
     },
     user: {
+      type: String,
+      meiliIndex: true,
+    },
+    tenantId: {
       type: String,
       meiliIndex: true,
     },
@@ -81,11 +86,14 @@ const mockDeleteDocument = jest.fn();
 const mockDeleteDocuments = jest.fn();
 const mockGetDocument = jest.fn();
 const mockGetDocuments = jest.fn().mockResolvedValue({ results: [] });
+const mockGetSettings = jest.fn().mockResolvedValue({ filterableAttributes: [] });
+const mockUpdateSettings = jest.fn().mockResolvedValue({ taskUid: 3 });
+const mockSearch = jest.fn().mockResolvedValue({ hits: [] });
 const mockWaitForTask = jest.fn().mockResolvedValue({ status: 'succeeded' });
 const mockIndex = jest.fn().mockReturnValue({
   getRawInfo: jest.fn(),
-  getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }),
-  updateSettings: jest.fn(),
+  getSettings: mockGetSettings,
+  updateSettings: mockUpdateSettings,
   addDocuments: mockAddDocuments,
   addDocumentsInBatches: mockAddDocumentsInBatches,
   updateDocuments: mockUpdateDocuments,
@@ -93,6 +101,7 @@ const mockIndex = jest.fn().mockReturnValue({
   deleteDocuments: mockDeleteDocuments,
   getDocument: mockGetDocument,
   getDocuments: mockGetDocuments,
+  search: mockSearch,
 });
 jest.mock('meilisearch', () => {
   return {
@@ -131,6 +140,9 @@ describe('Meilisearch Mongoose plugin', () => {
     mockDeleteDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
     mockGetDocument.mockClear();
     mockGetDocuments.mockReset().mockResolvedValue({ results: [] });
+    mockGetSettings.mockReset().mockResolvedValue({ filterableAttributes: [] });
+    mockUpdateSettings.mockReset().mockResolvedValue({ taskUid: 3 });
+    mockSearch.mockReset().mockResolvedValue({ hits: [] });
     mockWaitForTask.mockReset().mockResolvedValue({ status: 'succeeded' });
   });
 
@@ -143,6 +155,59 @@ describe('Meilisearch Mongoose plugin', () => {
     await mongoServer.stop();
 
     process.env = OLD_ENV;
+  });
+
+  test('preserves custom filterable attributes while adding required attributes', async () => {
+    const modelName = `FilterableAttributes${Date.now()}`;
+    mockGetSettings.mockResolvedValueOnce({ filterableAttributes: ['customAttribute'] });
+
+    createDynamicMeiliModel(modelName);
+    await waitForMock(mockUpdateSettings);
+
+    expect(mockUpdateSettings).toHaveBeenCalledWith({
+      filterableAttributes: ['customAttribute', 'user', 'tenantId'],
+    });
+    expect(mockWaitForTask).toHaveBeenCalledWith(3, {
+      timeOutMs: 600_000,
+      intervalMs: 100,
+    });
+    mongoose.deleteModel(modelName);
+  });
+
+  test('does not update filterable attributes when required attributes are configured', async () => {
+    const modelName = `ConfiguredAttributes${Date.now()}`;
+    mockGetSettings.mockResolvedValueOnce({
+      filterableAttributes: ['user', 'tenantId', 'customAttribute'],
+    });
+
+    createDynamicMeiliModel(modelName);
+    await waitForMock(mockGetSettings);
+
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
+    mongoose.deleteModel(modelName);
+  });
+
+  test('waits for filterable attributes before searching', async () => {
+    const modelName = `SettingsReady${Date.now()}`;
+    let completeSettings: (task: { status: string }) => void = () => undefined;
+    const settingsTask = new Promise<{ status: string }>((resolve) => {
+      completeSettings = resolve;
+    });
+    mockUpdateSettings.mockResolvedValueOnce({ taskUid: 99 });
+    mockWaitForTask.mockImplementation((taskUid: number) =>
+      taskUid === 99 ? settingsTask : Promise.resolve({ status: 'succeeded' }),
+    );
+    const Model = createDynamicMeiliModel(modelName);
+    await waitForMock(mockUpdateSettings);
+
+    const search = Model.meiliSearch('query');
+    await wait(0);
+    expect(mockSearch).not.toHaveBeenCalled();
+
+    completeSettings({ status: 'succeeded' });
+    await search;
+    expect(mockSearch).toHaveBeenCalledWith('query', undefined);
+    mongoose.deleteModel(modelName);
   });
 
   test('settles query updates and deletes when no document hook is available', async () => {
@@ -1696,8 +1761,8 @@ describe('Meilisearch Mongoose plugin', () => {
       mockDeleteDocuments.mockClear();
       mockIndex.mockReturnValue({
         getRawInfo: jest.fn(),
-        getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }),
-        updateSettings: jest.fn(),
+        getSettings: mockGetSettings,
+        updateSettings: mockUpdateSettings,
         addDocuments: mockAddDocuments,
         addDocumentsInBatches: mockAddDocumentsInBatches,
         updateDocuments: mockUpdateDocuments,
@@ -1705,6 +1770,7 @@ describe('Meilisearch Mongoose plugin', () => {
         deleteDocuments: mockDeleteDocuments,
         getDocument: mockGetDocument,
         getDocuments: mockGetDocuments,
+        search: mockSearch,
       });
     });
 

@@ -15,6 +15,7 @@ const syncThreshold = process.env.MEILI_SYNC_THRESHOLD
   ? parseInt(process.env.MEILI_SYNC_THRESHOLD, 10)
   : defaultSyncThreshold;
 const requiredFilterableAttributes = ['user', 'tenantId'];
+const settingsTimeoutMs = 10 * 60 * 1000;
 
 function mergeFilterableAttributes(configuredAttributes) {
   const current = Array.isArray(configuredAttributes) ? configuredAttributes : [];
@@ -23,6 +24,17 @@ function mergeFilterableAttributes(configuredAttributes) {
     merged.length === current.length &&
     merged.every((attribute, index) => attribute === current[index]);
   return unchanged ? null : merged;
+}
+
+async function updateFilterableAttributes(client, index, filterableAttributes) {
+  const enqueued = await index.updateSettings({ filterableAttributes });
+  const task = await client.waitForTask(enqueued.taskUid, {
+    timeOutMs: settingsTimeoutMs,
+    intervalMs: 100,
+  });
+  if (task.status !== 'succeeded') {
+    throw new Error(`[indexSync] Meili settings task ${enqueued.taskUid} ended with ${task.status}`);
+  }
 }
 
 class MeiliSearchClient {
@@ -109,9 +121,7 @@ async function ensureFilterableAttributes(client) {
       const filterableAttributes = mergeFilterableAttributes(settings.filterableAttributes);
       if (filterableAttributes) {
         logger.info('[indexSync] Configuring messages index to filter by user and tenant...');
-        await messagesIndex.updateSettings({
-          filterableAttributes,
-        });
+        await updateFilterableAttributes(client, messagesIndex, filterableAttributes);
         logger.info('[indexSync] Messages index configured for user and tenant filtering');
         settingsUpdated = true;
       }
@@ -142,9 +152,7 @@ async function ensureFilterableAttributes(client) {
       const filterableAttributes = mergeFilterableAttributes(settings.filterableAttributes);
       if (filterableAttributes) {
         logger.info('[indexSync] Configuring convos index to filter by user and tenant...');
-        await convosIndex.updateSettings({
-          filterableAttributes,
-        });
+        await updateFilterableAttributes(client, convosIndex, filterableAttributes);
         logger.info('[indexSync] Convos index configured for user and tenant filtering');
         settingsUpdated = true;
       }
