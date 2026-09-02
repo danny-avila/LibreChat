@@ -109,6 +109,9 @@ describe('redisClients Integration Tests', () => {
 
     describe('address family', () => {
       test('should accept either address family on a single instance', async () => {
+        process.env.USE_REDIS_CLUSTER = 'false';
+        process.env.REDIS_URI = 'redis://127.0.0.1:6379';
+
         const clients = await import('../redisClients');
         ioredisClient = clients.ioredisClient;
 
