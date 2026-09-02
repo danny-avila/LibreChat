@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Radio } from '@librechat/client';
+import { Button, Radio } from '@librechat/client';
 import { ChevronRight, Plus, X } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { SkillsScope, resolveAgentSkillsScope } from 'librechat-data-provider';
@@ -303,13 +303,15 @@ export default function SkillsSection({ items, onInfo, onRemove, onAdd }: Props)
               )}
             >
               <span className="truncate">{localize('com_ui_skills_load_error')}</span>
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={handleRetry}
-                className="text-text-link shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+                className="shrink-0"
               >
                 {localize('com_ui_retry')}
-              </button>
+              </Button>
             </div>
           </>
         )}
