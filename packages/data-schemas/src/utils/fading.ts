@@ -3,9 +3,6 @@ import type { IAgentFadingTier, IAgentFadingTierEntry } from '~/types/convo';
 /** Version of the persisted context-fading tier shape; must match `@librechat/agents`. */
 export const AGENT_FADING_TIER_VERSION = 1;
 
-/** Upper bound on an agent ID inside a persisted per-agent tier entry. */
-export const MAX_AGENT_FADING_TIER_AGENT_ID_LENGTH = 256;
-
 /** Whether a persisted value is a well-formed context-fading tier. */
 export function isAgentFadingTier(value: unknown): value is IAgentFadingTier {
   if (typeof value !== 'object' || value === null) {
@@ -21,17 +18,17 @@ export function isAgentFadingTier(value: unknown): value is IAgentFadingTier {
   );
 }
 
-/** Whether a persisted value is a well-formed per-agent tier entry. */
+/**
+ * Whether a persisted value is a well-formed per-agent tier entry. Agent IDs
+ * are server-generated and unbounded (an ephemeral agent's ID encodes its
+ * endpoint, model and sender), so only emptiness is rejected.
+ */
 export function isAgentFadingTierEntry(value: unknown): value is IAgentFadingTierEntry {
   if (!isAgentFadingTier(value)) {
     return false;
   }
   const { agentId } = value as Partial<Record<'agentId', unknown>>;
-  return (
-    typeof agentId === 'string' &&
-    agentId.length > 0 &&
-    agentId.length <= MAX_AGENT_FADING_TIER_AGENT_ID_LENGTH
-  );
+  return typeof agentId === 'string' && agentId.length > 0;
 }
 
 /** Whether a persisted value is a list of per-agent tier entries with unique agent IDs. */

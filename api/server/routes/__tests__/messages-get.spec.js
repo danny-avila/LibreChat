@@ -554,6 +554,36 @@ describe('message route conversation ownership filters', () => {
     },
   );
 
+  it('strips server-private context meta from hydrated search hits', async () => {
+    searchMessages.mockResolvedValue({
+      hits: [
+        {
+          messageId: 'hit-1',
+          conversationId: 'convo-1',
+          text: 'needle in a haystack',
+          contextMeta: {
+            calibrationRatio: 1.2,
+            encoding: 'claude',
+            fading: { v: 1, budgetTokens: 50_000, masked: true },
+          },
+        },
+      ],
+    });
+    getConvosQueried.mockResolvedValue({
+      convoMap: { 'convo-1': { title: 'Found', model: 'gpt-4' } },
+    });
+    getMessages.mockResolvedValue([
+      { messageId: 'hit-1', isCreatedByUser: false, endpoint: 'agents', iconURL: null },
+    ]);
+
+    const response = await request(app).get('/api/messages?search=needle');
+
+    expect(response.status).toBe(200);
+    expect(response.body.messages).toHaveLength(1);
+    expect(response.body.messages[0]).toMatchObject({ messageId: 'hit-1', title: 'Found' });
+    expect(response.body.messages[0]).not.toHaveProperty('contextMeta');
+  });
+
   it('returns indistinguishable not-found responses for child and missing query reads', async () => {
     getConvoOwnership.mockResolvedValueOnce({
       user: authenticatedUserId,

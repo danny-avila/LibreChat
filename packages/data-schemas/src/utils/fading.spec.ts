@@ -1,9 +1,4 @@
-import {
-  isAgentFadingTier,
-  isAgentFadingTierEntries,
-  isAgentFadingTierEntry,
-  MAX_AGENT_FADING_TIER_AGENT_ID_LENGTH,
-} from './fading';
+import { isAgentFadingTier, isAgentFadingTierEntries, isAgentFadingTierEntry } from './fading';
 
 const tier = { v: 1, budgetTokens: 20_000, masked: true };
 
@@ -18,15 +13,11 @@ describe('isAgentFadingTier', () => {
 });
 
 describe('isAgentFadingTierEntry', () => {
-  it('requires a bounded, non-empty agent ID on a valid tier', () => {
+  it('requires a non-empty agent ID on a valid tier, however long', () => {
     expect(isAgentFadingTierEntry({ agentId: 'agent-a', ...tier })).toBe(true);
     expect(isAgentFadingTierEntry({ agentId: '', ...tier })).toBe(false);
-    expect(
-      isAgentFadingTierEntry({
-        agentId: 'a'.repeat(MAX_AGENT_FADING_TIER_AGENT_ID_LENGTH + 1),
-        ...tier,
-      }),
-    ).toBe(false);
+    /** Ephemeral agent IDs encode endpoint, model and sender without a bound. */
+    expect(isAgentFadingTierEntry({ agentId: 'ephemeral|'.repeat(200), ...tier })).toBe(true);
     expect(isAgentFadingTierEntry({ agentId: 'agent-a', ...tier, budgetTokens: -1 })).toBe(false);
     expect(isAgentFadingTierEntry(tier)).toBe(false);
   });

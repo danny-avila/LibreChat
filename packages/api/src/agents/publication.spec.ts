@@ -129,7 +129,13 @@ describe('selectRunContextMetaToPublish', () => {
 
   it('prefers the captured state and falls back to the inherited seed before the run', () => {
     expect(
-      selectRunContextMetaToPublish({ live: false, captured, inherited, hasPublished: false, getEncoding }),
+      selectRunContextMetaToPublish({
+        live: false,
+        captured,
+        inherited,
+        hasPublished: false,
+        getEncoding,
+      }),
     ).toBe(captured);
     expect(
       selectRunContextMetaToPublish({

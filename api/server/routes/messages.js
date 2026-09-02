@@ -179,9 +179,12 @@ router.get('/', async (req, res) => {
       for (const message of cleanedMessages) {
         const convo = result.convoMap[message.conversationId];
         const dbMessage = dbMessageMap[message.messageId];
+        /** Search hydrates every schema field; server-private state never leaves. */
+        const publicHit = { ...message };
+        delete publicHit.contextMeta;
 
         activeMessages.push({
-          ...message,
+          ...publicHit,
           title: convo.title,
           conversationId: message.conversationId,
           model: convo.model,

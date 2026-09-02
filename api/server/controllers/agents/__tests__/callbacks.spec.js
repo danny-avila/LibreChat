@@ -165,6 +165,38 @@ describe('resumable event generation fencing', () => {
     expect(JSON.stringify(contentParts[0])).not.toContain('[truncated:');
   });
 
+  it('publishes a hidden sequential agent snapshot without recording or forwarding it', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const onSnapshot = jest.fn(async () => undefined);
+    const contextUsageSink = { latest: null, count: 0, onSnapshot };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+      contextUsageSink,
+      usageEmitSink: [],
+    });
+
+    await handlers[GraphEvents.ON_CONTEXT_USAGE].handle(
+      GraphEvents.ON_CONTEXT_USAGE,
+      { contextBudget: 1000, remainingContextTokens: 400 },
+      {
+        hide_sequential_outputs: true,
+        last_agent_id: 'agent-final',
+        langgraph_node: 'agent-intermediate',
+      },
+    );
+
+    expect(onSnapshot).toHaveBeenCalledTimes(1);
+    expect(contextUsageSink).toMatchObject({ latest: null, count: 0 });
+    expect(GenerationJobManager.emitChunk).not.toHaveBeenCalled();
+  });
+
   it('records a context snapshot and notifies the sink before forwarding it', async () => {
     const { GenerationJobManager } = require('@librechat/api');
     const { GraphEvents } = jest.requireActual('@librechat/agents');

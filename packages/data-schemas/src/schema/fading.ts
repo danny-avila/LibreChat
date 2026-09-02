@@ -1,6 +1,4 @@
 import type { SchemaDefinitionProperty } from 'mongoose';
-import { MAX_AGENT_FADING_TIER_AGENT_ID_LENGTH } from '~/utils/fading';
-
 interface AgentFadingContextDefinition {
   fading: SchemaDefinitionProperty;
   fadingTiers: SchemaDefinitionProperty;
@@ -27,11 +25,7 @@ export const agentFadingContextDefinition: AgentFadingContextDefinition = {
   fadingTiers: {
     type: [
       {
-        agentId: {
-          type: String,
-          required: true,
-          maxlength: MAX_AGENT_FADING_TIER_AGENT_ID_LENGTH,
-        },
+        agentId: { type: String, required: true },
         ...agentFadingTierDefinition,
         _id: false,
       },
