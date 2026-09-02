@@ -364,6 +364,24 @@ describe('handleCompactRequest', () => {
     );
   });
 
+  it('never upserts and rolls back when the conversation vanished', async () => {
+    /** A conversation deleted or expired in another tab while the provider
+     *  call ran must not be resurrected as a skeletal row: noUpsert makes the
+     *  missing update a null result, which is a save failure. */
+    const deps = makeDeps({
+      saveConvo: jest.fn().mockResolvedValue(null),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({ status: 500, code: CompactErrorCodes.SAVE_FAILED });
+    expect(deps.saveConvo).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user_1' }),
+      expect.objectContaining({ conversationId: 'convo_1' }),
+      expect.objectContaining({ noUpsert: true }),
+    );
+    expect(deps.deleteMessages).toHaveBeenCalled();
+  });
+
   it('renders a content-policy denial with its status and safe body', async () => {
     const finding = {
       detectorId: 'test',
