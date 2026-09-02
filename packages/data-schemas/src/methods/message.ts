@@ -533,7 +533,10 @@ export interface MessageMethods {
       expiredAt?: Date;
       interfaceConfig?: AppConfig['interfaceConfig'];
     },
-    params: Partial<IMessage> & { newMessageId?: string },
+    params: Omit<Partial<IMessage>, 'contextMeta'> & {
+      newMessageId?: string;
+      contextMeta?: IMessage['contextMeta'] | null;
+    },
     metadata?: { context?: string },
   ): Promise<IMessage | null | undefined>;
   recordSubagentTaskControlReceipt(input: {
