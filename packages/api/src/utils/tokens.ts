@@ -183,6 +183,8 @@ const anthropicModels = {
   'claude-opus-5': 1000000,
   'claude-fable-5': 1000000,
   'claude-mythos-5': 1000000,
+  'claude-fable-5-1': 1000000,
+  'claude-mythos-5-1': 1000000,
 };
 
 const ANTHROPIC_CONTEXT_1M = 1000000;
@@ -539,6 +541,8 @@ const anthropicMaxOutputs = {
   'claude-opus-5': 128000,
   'claude-fable-5': 128000,
   'claude-mythos-5': 128000,
+  'claude-fable-5-1': 128000,
+  'claude-mythos-5-1': 128000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,

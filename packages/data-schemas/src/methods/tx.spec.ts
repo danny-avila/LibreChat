@@ -2661,6 +2661,38 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should pin Claude Fable 5.1 pricing to $10 / $50 per MTok', () => {
+    expect(tokenValues['claude-fable-5-1']).toEqual({ prompt: 10, completion: 50 });
+    expect(tokenValues['claude-mythos-5-1']).toEqual({ prompt: 10, completion: 50 });
+  });
+
+  it('should charge Claude Fable 5.1 cache reads at a quarter of the Fable 5 rate', () => {
+    expect(cacheTokenValues['claude-fable-5-1']).toEqual({ write: 12.5, read: 0.25 });
+    expect(cacheTokenValues['claude-mythos-5-1']).toEqual({ write: 12.5, read: 0.25 });
+    expect(getCacheMultiplier({ model: 'claude-fable-5-1', cacheType: 'read' })).toBe(0.25);
+    expect(getCacheMultiplier({ model: 'claude-fable-5-1', cacheType: 'write' })).toBe(12.5);
+    expect(getCacheMultiplier({ model: 'claude-fable-5', cacheType: 'read' })).toBe(1);
+  });
+
+  it('should handle Claude Fable 5.1 model name variations without collapsing to Fable 5', () => {
+    const modelVariations = [
+      'claude-fable-5-1',
+      'claude-fable-5-1-20260901',
+      'claude-fable-5-1-latest',
+      'anthropic/claude-fable-5-1',
+      'claude-fable-5-1/anthropic',
+      'anthropic.claude-fable-5-1',
+      'global.anthropic.claude-fable-5-1',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(getValueKey(model)).toBe('claude-fable-5-1');
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(0.25);
+    });
+
+    expect(getValueKey('claude-fable-5-20260609')).toBe('claude-fable-5');
+  });
+
   it('should return correct prompt and completion rates for Claude Sonnet 5', () => {
     expect(getMultiplier({ model: 'claude-sonnet-5', tokenType: 'prompt' })).toBe(
       tokenValues['claude-sonnet-5'].prompt,
