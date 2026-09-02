@@ -117,6 +117,42 @@ describe('executeWorkspaceTool', () => {
     await expect(request).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  test('preserves caller cancellation while reading the response body', async () => {
+    const controller = new AbortController();
+    const fetchImpl: CodeBridgeFetch = jest.fn(async (_url, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          init?.signal?.addEventListener(
+            'abort',
+            () => streamController.error(init.signal?.reason),
+            { once: true },
+          );
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const request = executeWorkspaceTool({
+      baseURL: 'https://code.example.com/v1',
+      authHeaders: { Authorization: 'Bearer jwt' },
+      signal: controller.signal,
+      request: {
+        protocolVersion: 1,
+        operation: 'read_file',
+        workspaceId: 'primary',
+        path: 'notes.txt',
+      },
+      fetchImpl,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    controller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   test('rejects a malformed worker result before it reaches the model', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response(
@@ -143,6 +179,39 @@ describe('executeWorkspaceTool', () => {
           operation: 'read_file',
           workspaceId: 'primary',
           path: 'src/app.ts',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
+  test('rejects read content that exceeds its declared line range', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          operation: 'read_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          content: 'first\nsecond',
+          startLine: 1,
+          endLine: 1,
+          truncated: false,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'read_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          maxLines: 1,
         },
         fetchImpl,
       }),

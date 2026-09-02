@@ -105,7 +105,7 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
-async function readBoundedJson(response: Response): Promise<unknown> {
+async function readBoundedJson(response: Response, signal?: AbortSignal): Promise<unknown> {
   const declaredLength = Number(response.headers.get('content-length'));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
     throw new WorkspaceToolHttpError('invalid');
@@ -133,6 +133,16 @@ async function readBoundedJson(response: Response): Promise<unknown> {
     return JSON.parse(body) as unknown;
   } catch (error) {
     if (error instanceof WorkspaceToolHttpError) throw error;
+    if (
+      signal?.aborted === true &&
+      (error === signal.reason ||
+        (isRecord(error) && (error.name === 'AbortError' || error.name === 'TimeoutError')))
+    ) {
+      throw signal.reason ?? error;
+    }
+    if (isRecord(error) && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      throw error;
+    }
     throw new WorkspaceToolHttpError('invalid');
   } finally {
     reader.releaseLock();
@@ -180,16 +190,27 @@ function isValidResult(
   if (request.operation === 'read_file') {
     const startLine = request.startLine ?? 1;
     const maxLines = request.maxLines ?? 200;
+    const content = typeof value.content === 'string' ? value.content : null;
+    const reportedLineCount =
+      Number.isSafeInteger(value.endLine) && Number(value.endLine) >= startLine - 1
+        ? Number(value.endLine) - startLine + 1
+        : -1;
+    const actualLineCount =
+      content == null ? -1 : content.length === 0 ? reportedLineCount : content.split('\n').length;
     return (
       hasOnlyKeys(value, READ_RESULT_KEYS) &&
       value.path === request.path &&
       isSafePath(value.path) &&
-      typeof value.content === 'string' &&
-      new TextEncoder().encode(value.content).byteLength <= MAX_READ_BYTES &&
+      content != null &&
+      new TextEncoder().encode(content).byteLength <= MAX_READ_BYTES &&
       value.startLine === startLine &&
       Number.isSafeInteger(value.endLine) &&
       Number(value.endLine) >= startLine - 1 &&
       Number(value.endLine) < startLine + maxLines &&
+      reportedLineCount >= 0 &&
+      reportedLineCount <= maxLines &&
+      (content.length !== 0 || reportedLineCount <= 1) &&
+      actualLineCount === reportedLineCount &&
       (value.truncated === true
         ? Number.isSafeInteger(value.nextStartLine) &&
           Number(value.nextStartLine) === Number(value.endLine) + 1
@@ -252,7 +273,7 @@ export async function executeWorkspaceTool({
     if (!response.ok) {
       throw new WorkspaceToolHttpError('rejected', response.status);
     }
-    const result = await readBoundedJson(response);
+    const result = await readBoundedJson(response, requestSignal);
     if (!isValidResult(request, result)) {
       throw new WorkspaceToolHttpError('invalid');
     }

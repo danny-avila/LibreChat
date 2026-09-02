@@ -2237,13 +2237,22 @@ async function handleWorkspaceFileRead(
     }
     let payload = result.content;
     let locallyTruncated = false;
+    let localNextStartLine: number | undefined;
     if (payload.length > MAX_READABLE_BYTES) {
       payload = payload.slice(0, MAX_READABLE_BYTES);
       locallyTruncated = true;
+      const lastCompleteLine = payload.lastIndexOf('\n');
+      if (lastCompleteLine >= 0) {
+        payload = payload.slice(0, lastCompleteLine);
+        localNextStartLine = result.startLine + payload.split('\n').length;
+      }
     }
     let numbered = addLineNumbers(payload, result.startLine);
     if (locallyTruncated) {
-      numbered += `\n\n[truncated at ${MAX_READABLE_BYTES} bytes]`;
+      numbered +=
+        localNextStartLine != null
+          ? `\n\n[truncated at ${MAX_READABLE_BYTES} bytes; more content is available; call read_file again with path "workspace/${filePath}" and start_line ${localNextStartLine}]`
+          : `\n\n[the line was truncated at ${MAX_READABLE_BYTES} bytes and cannot be paged by line]`;
     } else if (result.truncated && result.nextStartLine != null) {
       numbered += `\n\n[more content is available; call read_file again with path "workspace/${filePath}" and start_line ${result.nextStartLine}]`;
     }

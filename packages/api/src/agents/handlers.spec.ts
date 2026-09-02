@@ -4711,6 +4711,46 @@ describe('createToolExecuteHandler', () => {
       expect(result.content).toContain('start_line 5');
     });
 
+    it('continues from the first line omitted by local workspace truncation', async () => {
+      const firstLine = 'a'.repeat(140_000);
+      const secondLine = 'b'.repeat(140_000);
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'notes.txt',
+        content: `${firstLine}\n${secondLine}`,
+        startLine: 10,
+        endLine: 11,
+        truncated: true,
+        nextStartLine: 12,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_workspace_local_page',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/notes.txt', start_line: 10, max_lines: 2 },
+        },
+      ]);
+
+      expect(result.content).toContain('10 | ');
+      expect(result.content).not.toContain('11 | ');
+      expect(result.content).toContain('start_line 11');
+      expect(result.content).not.toContain('start_line 12');
+    });
+
     it('rejects workspace paths unless the selected environment is attached', async () => {
       const readWorkspaceFile = jest.fn();
       const handler = makeReadFileHandler({
