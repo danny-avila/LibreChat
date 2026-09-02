@@ -16,6 +16,7 @@ import {
   recordOpenIDUserLookup,
   recordRedisOperation,
   recordRumProxyRequest,
+  recordShareLinkRejection,
   setGenerationJobsInFlight,
 } from './metrics';
 
@@ -411,6 +412,28 @@ describe('createMetrics', () => {
     );
     expect(response.text).toMatch(
       /rum_proxy_requests_total\{endpoint="logs",result="collector_5xx"\} 1/,
+    );
+  });
+
+  it('tracks bounded shared-link rejection outcomes', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+
+    recordShareLinkRejection('create', 'TARGET_MESSAGE_NOT_FOUND');
+    recordShareLinkRejection('update', 'NO_MESSAGES');
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /share_link_rejections_total\{operation="create",code="TARGET_MESSAGE_NOT_FOUND"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /share_link_rejections_total\{operation="update",code="NO_MESSAGES"\} 1/,
     );
   });
 

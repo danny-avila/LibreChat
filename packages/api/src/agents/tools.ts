@@ -1,10 +1,21 @@
 import {
+  Constants,
+  normalizeActionToolName,
+  normalizeServerName,
+  splitMCPToolKey,
+} from 'librechat-data-provider';
+import {
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
   ReadFileToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
+import type { AgentToolOptions, GraphEdge } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
+import type { ReachableAgent } from './traversal';
+import { toolkitExpansion } from '~/tools/toolkits/mapping';
+import { normalizeAgentToolKeys } from '~/mcp/utils';
+import { collectReachableAgents } from './traversal';
 
 export const CREATE_FILE_TOOL_NAME = 'create_file';
 export const EDIT_FILE_TOOL_NAME = 'edit_file';
@@ -34,6 +45,98 @@ interface ToolInstanceLike {
 export interface BuildToolSetConfig {
   toolDefinitions?: ToolDefLike[];
   tools?: (ToolInstanceLike | null | undefined)[];
+  /** Tool names retained on unresolved agent descriptors for history replay. */
+  historicalToolNames?: readonly string[];
+}
+
+export interface BuildHistoricalToolNamesConfig {
+  configuredToolNames?: readonly string[];
+  alwaysApplyToolNames?: readonly string[];
+  toolOptions?: AgentToolOptions;
+  rawMcpServerNames?: readonly string[];
+  codeExecutionAvailable?: boolean;
+  memoryAvailable?: boolean;
+  skillsAvailable?: boolean;
+  skillFileAccessAvailable?: boolean;
+  skillAuthoringAvailable?: boolean;
+  deferredToolsAvailable?: boolean;
+  programmaticToolsAvailable?: boolean;
+  backgroundToolsAvailable?: boolean;
+}
+
+/** Derives the model-facing names an unresolved lazy agent can expose without loading it. */
+export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig): Set<string> {
+  const configuredToolNames = [
+    ...(config.configuredToolNames ?? []),
+    ...(config.alwaysApplyToolNames ?? []),
+  ];
+  const normalized = normalizeAgentToolKeys({
+    tools: configuredToolNames,
+    toolOptions: config.toolOptions,
+    rawServerNames: config.rawMcpServerNames ?? [],
+  });
+  const toolNames = new Set((normalized.tools ?? []).map(normalizeActionToolName));
+
+  const normalizedOptions: AgentToolOptions = {};
+  for (const [name, options] of Object.entries(normalized.toolOptions ?? {})) {
+    const normalizedName = normalizeActionToolName(name);
+    normalizedOptions[normalizedName] =
+      normalizedName !== name
+        ? { ...options, ...normalizedOptions[normalizedName] }
+        : { ...normalizedOptions[name], ...options };
+  }
+
+  for (const name of [...toolNames]) {
+    for (const child of toolkitExpansion[name as keyof typeof toolkitExpansion] ?? []) {
+      toolNames.add(child);
+    }
+  }
+
+  if (config.codeExecutionAvailable === true) {
+    toolNames.add('bash_tool');
+    toolNames.add('read_file');
+    toolNames.add(CREATE_FILE_TOOL_NAME);
+    toolNames.add(EDIT_FILE_TOOL_NAME);
+  }
+  if (config.memoryAvailable === true) {
+    toolNames.add('set_memory');
+    toolNames.add('delete_memory');
+  }
+  if (config.skillsAvailable === true) {
+    toolNames.add('skill');
+  }
+  if ((config.skillFileAccessAvailable ?? config.skillsAvailable) === true) {
+    toolNames.add('read_file');
+  }
+  if (config.skillAuthoringAvailable === true) {
+    toolNames.add('read_file');
+    toolNames.add(CREATE_FILE_TOOL_NAME);
+    toolNames.add(EDIT_FILE_TOOL_NAME);
+  }
+
+  const options = normalizedOptions;
+  const hasDeferredTool = [...toolNames].some((name) => options[name]?.defer_loading === true);
+  if (config.deferredToolsAvailable === true && hasDeferredTool) {
+    toolNames.add('tool_search');
+  }
+  const hasProgrammaticTool = [...toolNames].some((name) =>
+    options[name]?.allowed_callers?.includes('code_execution'),
+  );
+  if (
+    config.programmaticToolsAvailable === true &&
+    config.codeExecutionAvailable === true &&
+    hasProgrammaticTool
+  ) {
+    toolNames.add('run_tools_with_bash');
+  }
+  const hasBackgroundTool =
+    config.codeExecutionAvailable === true ||
+    [...toolNames].some((name) => options[name]?.run_in_background === true);
+  if (config.backgroundToolsAvailable === true && hasBackgroundTool) {
+    toolNames.add(`${Constants.CHECK_BACKGROUND_TASK}`);
+  }
+
+  return toolNames;
 }
 
 /**
@@ -51,14 +154,165 @@ export function buildToolSet(agentConfig: BuildToolSetConfig | null | undefined)
     return new Set();
   }
 
-  const { toolDefinitions, tools } = agentConfig;
+  const { toolDefinitions, tools, historicalToolNames } = agentConfig;
 
   const toolNames =
     toolDefinitions && toolDefinitions.length > 0
       ? toolDefinitions.map((def) => def.name)
       : (tools ?? []).map((tool) => tool?.name);
 
-  return new Set(toolNames.filter((name): name is string => Boolean(name)));
+  return new Set(
+    [...toolNames, ...(historicalToolNames ?? [])].filter((name): name is string => Boolean(name)),
+  );
+}
+
+export interface RunToolSetConfig extends BuildToolSetConfig, ReachableAgent<RunToolSetConfig> {
+  readonly edges?: readonly GraphEdge[];
+  readonly accessibleMcpServerNames?: readonly string[];
+  readonly historicalMcpServerNames?: readonly string[];
+}
+
+interface HistoricalToolCallIdentity {
+  name: string;
+  mcpServerName?: string;
+}
+
+function collectHistoricalToolCalls(
+  messages?: Iterable<unknown> | null,
+): HistoricalToolCallIdentity[] {
+  const calls: HistoricalToolCallIdentity[] = [];
+  const addCall = (value: unknown) => {
+    if (value == null || typeof value !== 'object') {
+      return;
+    }
+    const call = value as {
+      name?: unknown;
+      mcpServerName?: unknown;
+      function?: { name?: unknown };
+      tool_call?: { name?: unknown; mcpServerName?: unknown; subagent_content?: unknown };
+      subagent_content?: unknown;
+    };
+    const name = call.name ?? call.function?.name ?? call.tool_call?.name;
+    if (typeof name === 'string') {
+      const mcpServerName = call.mcpServerName ?? call.tool_call?.mcpServerName;
+      calls.push({
+        name,
+        ...(typeof mcpServerName === 'string' ? { mcpServerName } : {}),
+      });
+    }
+    const nested = call.tool_call?.subagent_content ?? call.subagent_content;
+    if (Array.isArray(nested)) {
+      nested.forEach(addCall);
+    }
+  };
+
+  for (const value of messages ?? []) {
+    if (value == null || typeof value !== 'object') {
+      continue;
+    }
+    const message = value as {
+      content?: unknown;
+      tool_calls?: unknown;
+      additional_kwargs?: { tool_calls?: unknown };
+    };
+    if (Array.isArray(message.tool_calls)) {
+      message.tool_calls.forEach(addCall);
+    }
+    if (Array.isArray(message.additional_kwargs?.tool_calls)) {
+      message.additional_kwargs.tool_calls.forEach(addCall);
+    }
+    if (Array.isArray(message.content)) {
+      message.content.forEach(addCall);
+    }
+  }
+  return calls;
+}
+
+/** Builds the historical tool allowlist for the complete effective run topology. */
+export function buildRunToolSet(
+  primaryConfig: RunToolSetConfig | null | undefined,
+  additionalConfigs?: Iterable<RunToolSetConfig | null | undefined> | null,
+  hostGeneratedToolNames?: Iterable<string> | null,
+  historicalMessages?: Iterable<unknown> | null,
+  allowAmbiguousMcpToolNamesWithoutIdentity = false,
+): Set<string> {
+  const roots = [primaryConfig];
+  if (additionalConfigs) {
+    roots.push(...additionalConfigs);
+  }
+
+  const agents = collectReachableAgents(roots);
+  if (agents.length === 0) {
+    return new Set();
+  }
+
+  const toolSet = new Set<string>([`${Constants.SUBAGENT}`, 'conditional_transfer']);
+  const wildcardServerNames = new Set<string>();
+  const knownServerNames = new Set<string>();
+  for (const name of hostGeneratedToolNames ?? []) {
+    toolSet.add(name);
+  }
+  for (const agent of agents) {
+    for (const rawName of [
+      ...(agent.accessibleMcpServerNames ?? []),
+      ...(agent.historicalMcpServerNames ?? []),
+    ]) {
+      knownServerNames.add(rawName);
+      knownServerNames.add(normalizeServerName(rawName));
+    }
+    for (const name of buildToolSet(agent)) {
+      toolSet.add(name);
+      const wildcardPrefix = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
+      if (name.startsWith(wildcardPrefix)) {
+        const rawServerName = name.slice(wildcardPrefix.length);
+        if (rawServerName) {
+          wildcardServerNames.add(normalizeServerName(rawServerName));
+          knownServerNames.add(rawServerName);
+          knownServerNames.add(normalizeServerName(rawServerName));
+        }
+      }
+    }
+  }
+
+  if (wildcardServerNames.size > 0) {
+    /** A wildcard authorizes every callable under one exact normalized server identity.
+     * Resolve the longest known boundary so delimiter-bearing tool names remain valid
+     * while a distinct longer server identity cannot masquerade as a selected suffix. */
+    const boundaryNames = [...knownServerNames];
+    for (const call of collectHistoricalToolCalls(historicalMessages)) {
+      const { name, mcpServerName } = call;
+      if (mcpServerName != null) {
+        if (wildcardServerNames.has(normalizeServerName(mcpServerName))) {
+          toolSet.add(name);
+        }
+        continue;
+      }
+      const [toolName, serverName] = splitMCPToolKey(name, boundaryNames);
+      if (
+        serverName != null &&
+        toolName.length > 0 &&
+        (allowAmbiguousMcpToolNamesWithoutIdentity ||
+          !toolName.includes(Constants.mcp_delimiter)) &&
+        wildcardServerNames.has(normalizeServerName(serverName))
+      ) {
+        toolSet.add(name);
+      }
+    }
+  }
+
+  for (const edge of primaryConfig?.edges ?? []) {
+    if (edge.edgeType === 'direct') {
+      continue;
+    }
+    const destinations = Array.isArray(edge.to) ? edge.to : [edge.to];
+    for (const destination of destinations) {
+      if (destination) {
+        toolSet.add(`${Constants.LC_TRANSFER_TO_}${destination}`);
+      }
+    }
+  }
+
+  return toolSet;
 }
 
 export interface RegisterCodeExecutionToolsParams {

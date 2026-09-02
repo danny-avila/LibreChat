@@ -12,6 +12,9 @@ jest.mock('~/utils', () => ({
   groupSequentialToolCalls: jest.fn(),
   hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
   getPartKeyIndex: jest.requireActual('~/utils/messages').getPartKeyIndex,
+  /** Real implementations: the media helpers are pure and drive the phase
+   * card's attachment row, so stubbing them would make that path inert here. */
+  ...jest.requireActual<typeof import('~/utils/media')>('~/utils/media'),
 }));
 
 jest.mock('~/Providers', () => {
@@ -29,12 +32,23 @@ jest.mock('~/Providers', () => {
     SearchContext: {
       Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     },
+    /** `WebSearch` reads this; leaving it off the mock threw inside the render and
+     * the component's own catch swallowed it, so the sources path was dead here
+     * while the suite still passed. */
+    useSearchContext: () => ({ searchResults: undefined }),
+    MediaContext: {
+      Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    },
+    useMediaContext: () => ({ attachmentsByName: undefined }),
   };
 });
 
 jest.mock('../Parts', () => ({
   EmptyText: ({ underHeaderIcon }: { underHeaderIcon?: boolean }) => (
     <div data-testid="empty-text" data-under-header-icon={String(underHeaderIcon === true)} />
+  ),
+  AttachmentGroup: ({ attachments }: { attachments?: unknown[] }) => (
+    <div data-testid="attachment-group" data-count={String(attachments?.length ?? 0)} />
   ),
   AgentUpdate: ({ currentAgentId }: { currentAgentId: string }) => (
     <div data-testid="post-steer-agent-update" data-agent-id={currentAgentId} />
@@ -708,7 +722,11 @@ describe('ContentParts — settled content identity across compaction', () => {
     expect(phaseNode).toHaveAttribute('data-animate-entrance', 'false');
   });
 
-  it('remounts and replays the phase entrance without the stamp (regression control)', () => {
+  /** When the stamp cannot pair the two arrays every index-derived key
+   *  shifts and the phase group remounts — but its label text was already on
+   *  screen, so the remounted card must mount settled instead of replaying
+   *  the fold over content the reader already watched fold. */
+  it('remounts without replaying the phase entrance when the settle re-keys the content', () => {
     const { rerender } = renderStreaming();
     const phaseNode = screen.getByTestId('activity-phase-group');
 
@@ -716,6 +734,180 @@ describe('ContentParts — settled content identity across compaction', () => {
 
     const settledPhase = screen.getByTestId('activity-phase-group');
     expect(settledPhase).not.toBe(phaseNode);
-    expect(settledPhase).toHaveAttribute('data-animate-entrance', 'true');
+    expect(settledPhase).toHaveAttribute('data-animate-entrance', 'false');
+  });
+
+  /** Identical summaries are legitimate across phases of one run. A second
+   *  marker with an already-seen text is a grown occurrence count, not a
+   *  re-key of the first — only the newcomer animates. */
+  it('animates a second phase that repeats an earlier label text', () => {
+    const repeatedPhase = (index: number, bounds: { start: number; end: number }) =>
+      ({
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Completed the activity phase',
+        activity_label_type: 'phase',
+        activity_start_index: bounds.start,
+        activity_end_index: bounds.end,
+        activity_count: 1,
+        pending: false,
+        streamedIndex: index,
+      }) as unknown as TMessageContentParts;
+    const { rerender } = render(
+      <ContentParts
+        {...baseProps}
+        content={[toolPart, repeatedPhase(1, { start: 0, end: 1 })]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    rerender(
+      <ContentParts
+        {...baseProps}
+        content={[
+          toolPart,
+          repeatedPhase(1, { start: 0, end: 1 }),
+          toolPart,
+          repeatedPhase(3, { start: 2, end: 3 }),
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    const phases = screen.getAllByTestId('activity-phase-group');
+    expect(phases).toHaveLength(2);
+    expect(phases[0]).toHaveAttribute('data-animate-entrance', 'false');
+    expect(phases[1]).toHaveAttribute('data-animate-entrance', 'true');
+  });
+
+  /** Concurrent fills can resolve out of order: a later-index marker
+   *  renders first, then an earlier reserved marker fills with an identical
+   *  summary. No previously rendered key vanished, so key identity stays
+   *  authoritative and the newly filled earlier marker still animates. */
+  it('animates an earlier marker that fills out of order behind a same-text twin', () => {
+    const twinPhase = (bounds: { start: number; end: number }) =>
+      ({
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Completed the activity phase',
+        activity_label_type: 'phase',
+        activity_start_index: bounds.start,
+        activity_end_index: bounds.end,
+        activity_count: 1,
+        pending: false,
+      }) as unknown as TMessageContentParts;
+    const pendingReservation = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: '',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      pending: true,
+    } as unknown as TMessageContentParts;
+    const { rerender } = render(
+      <ContentParts
+        {...baseProps}
+        content={[toolPart, pendingReservation, toolPart, twinPhase({ start: 2, end: 3 })]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    rerender(
+      <ContentParts
+        {...baseProps}
+        content={[
+          toolPart,
+          twinPhase({ start: 0, end: 1 }),
+          toolPart,
+          twinPhase({ start: 2, end: 3 }),
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    const phases = screen.getAllByTestId('activity-phase-group');
+    expect(phases).toHaveLength(2);
+    expect(phases[0]).toHaveAttribute('data-animate-entrance', 'true');
+    expect(phases[1]).toHaveAttribute('data-animate-entrance', 'false');
+  });
+
+  /** A settle can re-key every existing marker AND land a new same-text
+   *  phase in the same commit. Occurrences pair by position: the re-keyed
+   *  first and second stay settled; only the third — past the previously
+   *  rendered count — animates. */
+  it('animates only the new occurrence when a re-key lands with a repeated label', () => {
+    const repeatedPhase = (bounds: { start: number; end: number }) =>
+      ({
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Completed the activity phase',
+        activity_label_type: 'phase',
+        activity_start_index: bounds.start,
+        activity_end_index: bounds.end,
+        activity_count: 1,
+        pending: false,
+      }) as unknown as TMessageContentParts;
+    const { rerender } = render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          toolPart,
+          repeatedPhase({ start: 0, end: 1 }),
+          toolPart,
+          repeatedPhase({ start: 2, end: 3 }),
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    rerender(
+      <ContentParts
+        {...baseProps}
+        content={[
+          toolPart,
+          toolPart,
+          repeatedPhase({ start: 0, end: 2 }),
+          toolPart,
+          repeatedPhase({ start: 3, end: 4 }),
+          toolPart,
+          repeatedPhase({ start: 5, end: 6 }),
+        ]}
+        isLast
+      />,
+    );
+
+    const phases = screen.getAllByTestId('activity-phase-group');
+    expect(phases).toHaveLength(3);
+    expect(phases[0]).toHaveAttribute('data-animate-entrance', 'false');
+    expect(phases[1]).toHaveAttribute('data-animate-entrance', 'false');
+    expect(phases[2]).toHaveAttribute('data-animate-entrance', 'true');
+  });
+
+  it('still animates a phase whose label first appears at settle', () => {
+    const { rerender } = renderStreaming();
+
+    const lateLabel = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Wrote the final summary',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 1,
+      pending: false,
+    } as unknown as TMessageContentParts;
+    rerender(
+      <ContentParts {...baseProps} content={[toolPart, batchLabel, answer, lateLabel]} isLast />,
+    );
+
+    expect(screen.getByTestId('activity-phase-group')).toHaveAttribute(
+      'data-animate-entrance',
+      'true',
+    );
   });
 });

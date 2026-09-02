@@ -566,27 +566,42 @@ endpoints:
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:
   #     allowedEnvironments: ["user", "agent-user", "conversation"]
-  #   # (optional) Process-wide event-driven agent rollout controls. Deploy support to
-  #   # every API replica before enabling either producer during a subsequent rollout.
+  #     # Route an agent to an operator-managed Code API or to a Code API whose
+  #     # `remote-bridge` backend leases work to an outbound @librechat/code worker.
+  #     environments:
+  #       - id: managed-default
+  #         name: Managed Code API
+  #         type: managed
+  #         baseURL: https://code.example.com/v1
+  #         default: true
+  #       - id: engineering-vm
+  #         name: Engineering VM
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Pins an administrator-managed environment to one worker.
+  #         owner: deployment
+  #         pairing:
+  #           workerId: engineering-vm
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #       - id: personal-workers
+  #         name: Personal Code Workers
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Lets authenticated users create principal-bound environments and
+  #         # receive a one-time code for an outbound @librechat/code worker.
+  #         # The administrator secret stays in the named environment variable.
+  #         owner: deployment
+  #         pairing:
+  #           allowPrincipalWorkers: true
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #   # (optional) Trusted origin for internal event delivery. By default, LibreChat
+  #   # uses its own bound listener; override only for an internal TLS/front-door route.
   #   eventDriven:
-  #     childTurns: false
-  #     completionWakeups: false
-  #     # Serialize each authenticated bound actor's event lane through the
-  #     # authoritative terminal child-turn outcome. Enable only after every
-  #     # API replica supports terminal-handling mailbox blockers.
-  #     actorMailbox: false
-  #     # Reuse bound child state through isolated checkpoint forks. Enable only
-  #     # after every API replica supports this lifecycle. Requires the default
-  #     # Mongo checkpointer; it is incompatible with checkpointer.type: memory.
-  #     # The committed head is an ordinary checkpoint under `checkpointer.ttl`,
-  #     # so an actor idle for longer than that TTL rebuilds from message history
-  #     # on its next event. Lowering the TTL below an actor's event interval
-  #     # leaves it correct but never warm. Agents with skill primes also stay
-  #     # on the legacy path for now, so edited skills always reach the actor.
-  #     checkpointForks: false
-  #     # Optional trusted origin for internal trigger delivery. By default, LibreChat
-  #     # uses its own bound listener; override only for an internal TLS/front-door route.
   #     # selfUrl: 'https://librechat.internal'
+  #   # (optional) Automatic conversational delivery for supported completed background tasks.
+  #   # Enabled by default; set false to keep background tools and subagents poll-only.
+  #   backgroundTasks:
+  #     completionWakeups: true
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
@@ -1033,6 +1048,8 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Keenable (search provider; keyless by default, a key only lifts rate limits)
+#   keenableApiKey: '${KEENABLE_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
@@ -1095,6 +1112,40 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# Keenable as both search provider and scraper example — a fully keyless web
+# search stack: no API key for any of the three categories. The public search and
+# fetch endpoints are rate-limited; a key only lifts the cap.
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: keenable
+#   rerankerType: none          # Rerankers all require a key; 'none' skips reranking
+#   # keenableApiKey: '${KEENABLE_API_KEY}'   # Optional: a key only lifts rate limits (public endpoints used when unset)
+#   # keenableApiUrl: '${KEENABLE_API_URL}'   # Optional: search API URL override (fetch uses KEENABLE_FETCH_URL)
+#   keenableSearchOptions:
+#     maxResults: 5             # 1-20 results per search (default: 8)
+#     # site: example.com       # Restrict search to a single domain
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each request
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
+#   keenableScraperOptions:
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each fetch
+#     timeout: 15000            # HTTP request timeout in milliseconds (max 120000)
+#
+# Keenable search paired with another scraper (Firecrawl here) also works; each
+# category is configured independently:
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: firecrawl
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#
+# The reverse (someone else's search, Keenable as the scraper) also works. Pin
+# the stack for every user as shown below, or leave the providers unpinned so
+# each user can save this same keyless combination in the API-key dialog:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   scraperProvider: keenable
+#   rerankerType: none
 #
 # SearXNG as the search provider example:
 # webSearch:
@@ -1160,6 +1211,11 @@ endpoints:
 # under any source so each input surface can use a different policy. Starter
 # ids are closed to the catalog below. Custom regexes use bounded,
 # linear-time syntax; unsupported constructs are rejected at config load.
+# `action` defaults to `block`. Set it to `audit` for a shadow rollout that
+# records raw-free findings without rejecting or modifying content. Redaction
+# is intentionally not an action yet because safe replacement requires a
+# mutation-aware boundary and match spans; configuring an unsupported action
+# is rejected rather than silently treated as enforcement.
 # Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
 # to disable starters while retaining any configured custom patterns.
 # Enabling or changing this policy does not rewrite or delete stored records.
@@ -1183,6 +1239,7 @@ endpoints:
 #   messages:
 #     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
 #     pii:
+#       action: audit # `block` (default) or `audit`
 #       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
 #       starterPatterns: [sk_prefix, bearer_header, api_key_header]
 #       customPatterns:

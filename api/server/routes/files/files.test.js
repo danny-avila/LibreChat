@@ -45,11 +45,15 @@ jest.mock('sharp', () =>
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   refreshS3FileUrls: jest.fn(),
-  getCodeExecutionBaseUrl: jest.fn((profile) =>
-    profile === 'stateful'
-      ? process.env.LIBRECHAT_CODE_BASEURL_STATEFUL
-      : 'https://code-default.example.com/v1',
-  ),
+  getCodeExecutionBaseUrl: jest.fn((profile, environment) => {
+    if (environment?.baseURL) {
+      return environment.baseURL;
+    }
+    if (profile === 'stateful') {
+      return process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+    }
+    return 'https://code-default.example.com/v1';
+  }),
 }));
 
 jest.mock('~/cache', () => ({
@@ -69,6 +73,7 @@ jest.mock('~/config', () => ({
 
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { createCodeExecutionRouteKey } = require('@librechat/api');
 
 // Import the router after mocks
 const router = require('./files');
@@ -84,6 +89,7 @@ describe('File Routes - Delete with Agent Access', () => {
   let AclEntry;
   let User;
   let methods;
+  let requestConfig;
   let modelsToCleanup = [];
 
   beforeAll(async () => {
@@ -121,6 +127,7 @@ describe('File Routes - Delete with Agent Access', () => {
         id: otherUserId?.toString() || 'default-user',
         role: SystemRoles.USER,
       };
+      req.config = requestConfig;
       req.app.locals = {};
       next();
     });
@@ -148,6 +155,7 @@ describe('File Routes - Delete with Agent Access', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    requestConfig = {};
 
     // Clear database - clean up all test data
     await File.deleteMany({});
@@ -1249,6 +1257,48 @@ describe('File Routes - Delete with Agent Access', () => {
   });
 
   describe('GET /files/code/download/:session_id/:fileId', () => {
+    it('resolves a configured environment route for a persisted fallback', async () => {
+      const environment = {
+        id: 'managed-vm',
+        name: 'Managed VM',
+        type: 'managed',
+        baseURL: 'https://managed-code.example.com/v1',
+        workerId: 'personal-worker-1',
+        default: true,
+        owner: 'deployment',
+      };
+      requestConfig = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { environments: [environment] },
+          },
+        },
+      };
+      const executionRouteKey = createCodeExecutionRouteKey('stateful', environment);
+      const getDownloadStream = jest.fn().mockResolvedValue({
+        data: Readable.from(['configured output']),
+      });
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+      const sessionId = 's'.repeat(21);
+      const codeFileId = 'f'.repeat(21);
+
+      const response = await request(app).get(
+        `/files/code/download/${sessionId}/${codeFileId}?execution_profile=stateful&execution_route_key=${encodeURIComponent(executionRouteKey)}`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(getDownloadStream).toHaveBeenCalledWith(
+        `${sessionId}/${codeFileId}`,
+        { kind: 'user', id: otherUserId.toString() },
+        expect.any(Object),
+        {
+          baseUrl: environment.baseURL,
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
+        },
+      );
+    });
+
     it('routes a persisted stateful fallback through the stateful Code API', async () => {
       const getDownloadStream = jest.fn().mockResolvedValue({
         headers: {
@@ -1283,6 +1333,15 @@ describe('File Routes - Delete with Agent Access', () => {
       } finally {
         delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
       }
+    });
+
+    it('rejects an unmapped configured-environment route before contacting Code API', async () => {
+      const response = await request(app).get(
+        `/files/code/download/${'s'.repeat(21)}/${'f'.repeat(21)}?execution_profile=stateful&execution_route_key=stateful:${'a'.repeat(32)}`,
+      );
+
+      expect(response.status).toBe(404);
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown execution profile', async () => {

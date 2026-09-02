@@ -3,11 +3,19 @@ import type { IAgentEventActorReconciliation } from './convo';
 
 export type AgentTriggerDeliveryStatus =
   | 'staging'
+  | 'capability_staging'
   | 'batched'
   | 'pending'
+  | 'capability_pending'
   | 'leased'
+  | 'capability_leased'
   | 'succeeded'
+  | 'capability_dead'
   | 'dead';
+export const AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 = 'event_actor_detached_action_v1';
+export const AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 =
+  'background_tool_completion_v1';
+export const AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1 = 'agent_queued_turn_v1';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
 export interface AgentTriggerHandlingState {
@@ -34,6 +42,30 @@ export interface AgentEventActorReceipt {
     toolCallId?: string;
   };
   settledAt: Date;
+}
+
+/** Private launch authority for one delivery-owned detached expected action. */
+export interface AgentEventActorDetachedAction {
+  version: 1;
+  invocationId: string;
+  expectedToolName: string;
+  toolName: string;
+  toolCallId: string;
+  /** Stable graph-turn identity, independent of retry allocation. */
+  turnId: string;
+  taskId: string;
+  idempotencyKey: string;
+  launchAttempt: number;
+  status: 'reserved' | 'running' | 'launch_indeterminate' | 'succeeded' | 'failed' | 'cancelled';
+  reservedAt: Date;
+  observedAt: Date;
+  /** A recovery fence, not relaunch authority. Expiry only permits the exact
+   * launch to be marked indeterminate while late terminal proof remains valid. */
+  recoveryAfter: Date;
+  launchedAt?: Date;
+  settledAt?: Date;
+  result?: string;
+  error?: string;
 }
 
 export interface AgentTriggerDeliveryFailure {
@@ -64,6 +96,18 @@ export interface IAgentTriggerDelivery {
   user: Types.ObjectId;
   tenantId?: string;
   status: AgentTriggerDeliveryStatus;
+  /** Keeps a delivery invisible to pre-capability workers during rolling deploys. */
+  requiredWorkerCapability?: string;
+  /** Private lifecycle for capability-owned work. The outer delivery status
+   * remains a legacy-known, nonclaimable compatibility shield. */
+  capabilityStatus?: 'publishing' | 'pending' | 'leased' | 'dead';
+  /** Canonical claim ordering timestamp. Old rows omit it and sort first. */
+  claimAvailableAt?: Date;
+  capabilityLeaseBy?: string;
+  capabilityLeaseUntil?: Date;
+  capabilityClaimToken?: string;
+  /** Durable liveness evidence for process-owned capability work. */
+  producerLeaseUntil?: Date;
   attempts: number;
   availableAt: Date;
   envelopeBytes?: number;
@@ -81,11 +125,17 @@ export interface IAgentTriggerDelivery {
   awaitTerminalHandling?: boolean;
   handling?: AgentTriggerHandlingState;
   actorReceipt?: AgentEventActorReceipt;
+  /** Durable launch identity; excluded from ordinary delivery reads. */
+  actorDetachedAction?: AgentEventActorDetachedAction;
+  /** Bounded audit trail for terminal attempts replaced by an explicit retry. */
+  actorDetachedActionHistory?: AgentEventActorDetachedAction[];
   /** Delivery-owned serialization point acquired exactly once before an event
    * actor may invoke an external action. */
   actorActionAdmittedAt?: Date;
   /** Attempt identity that fences admission takeover and release. */
   actorActionAdmissionId?: string;
+  /** Account-deletion fence that atomically closes action admission on this delivery. */
+  actorActionAdmissionClosedAt?: Date;
   leaseBy?: string;
   leaseUntil?: Date;
   claimToken?: string;
@@ -136,6 +186,8 @@ export interface IAgentTriggerLaneSequence {
   tailDeliveryId?: Types.ObjectId;
   /** Delivery currently owning the serialized sequence/publication step. */
   publisherDeliveryId?: Types.ObjectId;
+  /** Requeue generation captured when this publisher reservation was acquired. */
+  publisherRequeueCount?: number;
   publisherStartedAt?: Date;
   cleanupRequestedAt?: Date;
   createdAt?: Date;
@@ -163,7 +215,7 @@ export interface AgentTriggerDeliveryClaim extends AgentTriggerDeliveryRecord {
   claimToken: string;
   leaseBy: string;
   leaseUntil: Date;
-  status: 'leased';
+  status: 'leased' | 'capability_leased';
 }
 
 export interface AgentTriggerOrderingBlock {

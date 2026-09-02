@@ -1,6 +1,8 @@
 import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model, Types } from 'mongoose';
+import type { SearchParams } from 'meilisearch';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { AppConfig, IConversation, IMessage } from '~/types';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
@@ -13,13 +15,12 @@ const MAX_STORED_USER_SUBMITTED_PATHS = 256;
 const MAX_NORMALIZED_USER_SUBMITTED_PATHS = MAX_STORED_USER_SUBMITTED_PATHS + 1;
 const MAX_STORED_USER_SUBMITTED_FIELD_PATHS = MAX_NORMALIZED_USER_SUBMITTED_PATHS;
 const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
+const MAX_PROVENANCE_CAS_ATTEMPTS = 8;
 const MAX_SUBAGENT_CONTROL_RECEIPTS = 64;
 const MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH = 4 * 1024;
 /** One owner admits at most 64 terminal control invocations. The optimistic
  * writer therefore has enough rounds for every admitted receipt to converge. */
 const MAX_SUBAGENT_CONTROL_RECEIPT_CAS_ATTEMPTS = 64;
-const PROVENANCE_PATHS_UNION_FIELD = '__lcProvenancePathsUnion';
-const PROVENANCE_FIELD_PATHS_UNION_FIELD = '__lcProvenanceFieldPathsUnion';
 const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
 
 function normalizeUserSubmittedPaths(paths: unknown): string[] {
@@ -95,31 +96,6 @@ function capNormalizedProvenance(
     ),
     promoteWholeMessage: userSubmittedPaths.length > MAX_STORED_USER_SUBMITTED_PATHS,
   };
-}
-
-function getStoredArrayExpression(field: string): Record<string, unknown> {
-  return {
-    $cond: [{ $isArray: `$${field}` }, `$${field}`, []],
-  };
-}
-
-function getSetUnionExpression(field: string, values: readonly unknown[]): Record<string, unknown> {
-  return {
-    $setUnion: [getStoredArrayExpression(field), values],
-  };
-}
-
-function getLiteralPipelineSet(update: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(update).map(([field, value]) => [field, { $literal: value }]),
-  );
-}
-
-function getStrictPipelineUpdate(Message: Model<IMessage>, update: Record<string, unknown>) {
-  const candidate = { ...update };
-  delete candidate._id;
-  delete candidate.tenantId;
-  return Message.castObject(candidate) as unknown as Record<string, unknown>;
 }
 
 type StoredSubagentControlReceipt = NonNullable<
@@ -208,62 +184,71 @@ function retainSubagentControlReceipts(
   return { status: 'updated', receipts };
 }
 
-/**
- * Builds one Mongo aggregation update that merges and caps both provenance
- * sets. Generic path overflow promotes the message to whole-message user
- * provenance before excess paths are discarded. Exact HITL field provenance
- * retains one bounded overflow sentinel (257 entries) so field-specific
- * policies still fail closed instead of forgetting a dropped field identity.
- */
-function buildAtomicProvenanceMerge(
-  update: Record<string, unknown>,
+type MessageProvenance = Pick<
+  IMessage,
+  'isUserSubmitted' | 'userSubmittedPaths' | 'userSubmittedMessageFieldPaths'
+>;
+
+function mergeMessageProvenance(
+  current: MessageProvenance | null,
   userSubmittedPaths: readonly string[],
   userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
   stampModelOutputOnInsert = false,
-): Record<string, unknown>[] {
-  const pathsUnion = getSetUnionExpression('userSubmittedPaths', userSubmittedPaths);
-  const fieldPathsUnion = getSetUnionExpression(
-    'userSubmittedMessageFieldPaths',
-    userSubmittedMessageFieldPaths,
+  explicitIsUserSubmitted?: boolean,
+  preserveStoredIsUserSubmitted = true,
+): MessageProvenance {
+  const provenance = capNormalizedProvenance(
+    normalizeUserSubmittedPaths([...(current?.userSubmittedPaths ?? []), ...userSubmittedPaths]),
+    normalizeUserSubmittedMessageFieldPaths([
+      ...(current?.userSubmittedMessageFieldPaths ?? []),
+      ...userSubmittedMessageFieldPaths,
+    ]),
   );
-  let existingOrSubmitted: unknown = '$isUserSubmitted';
-  if (typeof update.isUserSubmitted === 'boolean') {
-    existingOrSubmitted = update.isUserSubmitted;
-  } else if (stampModelOutputOnInsert) {
-    existingOrSubmitted = { $ifNull: ['$isUserSubmitted', false] };
+
+  let isUserSubmitted = preserveStoredIsUserSubmitted ? current?.isUserSubmitted : undefined;
+  if (typeof explicitIsUserSubmitted === 'boolean') {
+    isUserSubmitted = explicitIsUserSubmitted;
+  } else if (stampModelOutputOnInsert && isUserSubmitted == null) {
+    isUserSubmitted = false;
+  }
+  if (provenance.promoteWholeMessage) {
+    isUserSubmitted = true;
   }
 
-  return [
-    {
-      $set: {
-        ...getLiteralPipelineSet(update),
-        [PROVENANCE_PATHS_UNION_FIELD]: pathsUnion,
-        [PROVENANCE_FIELD_PATHS_UNION_FIELD]: fieldPathsUnion,
-      },
-    },
-    {
-      $set: {
-        userSubmittedPaths: {
-          $slice: [`$${PROVENANCE_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_PATHS],
-        },
-        userSubmittedMessageFieldPaths: {
-          $slice: [`$${PROVENANCE_FIELD_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_FIELD_PATHS],
-        },
-        isUserSubmitted: {
-          $cond: [
-            {
-              $gt: [{ $size: `$${PROVENANCE_PATHS_UNION_FIELD}` }, MAX_STORED_USER_SUBMITTED_PATHS],
-            },
-            true,
-            existingOrSubmitted,
-          ],
-        },
-      },
-    },
-    {
-      $unset: [PROVENANCE_PATHS_UNION_FIELD, PROVENANCE_FIELD_PATHS_UNION_FIELD],
-    },
-  ];
+  return {
+    userSubmittedPaths: provenance.userSubmittedPaths,
+    userSubmittedMessageFieldPaths: provenance.userSubmittedMessageFieldPaths,
+    ...(typeof isUserSubmitted === 'boolean' && { isUserSubmitted }),
+  };
+}
+
+function getProvenanceSnapshotFilter(current: MessageProvenance): Record<string, unknown> {
+  return {
+    userSubmittedPaths: !Object.prototype.hasOwnProperty.call(current, 'userSubmittedPaths')
+      ? { $exists: false }
+      : current.userSubmittedPaths,
+    userSubmittedMessageFieldPaths: !Object.prototype.hasOwnProperty.call(
+      current,
+      'userSubmittedMessageFieldPaths',
+    )
+      ? { $exists: false }
+      : current.userSubmittedMessageFieldPaths,
+    isUserSubmitted: !Object.prototype.hasOwnProperty.call(current, 'isUserSubmitted')
+      ? { $exists: false }
+      : current.isUserSubmitted,
+  };
+}
+
+function getMissingProvenanceFilter(): Record<string, unknown> {
+  return {
+    userSubmittedPaths: { $exists: false },
+    userSubmittedMessageFieldPaths: { $exists: false },
+    isUserSubmitted: { $exists: false },
+  };
+}
+
+function isDuplicateKeyError(err: unknown): boolean {
+  return (err as { code?: number }).code === 11000;
 }
 
 function getSteerUserSubmittedPaths(content: unknown): string[] {
@@ -278,6 +263,68 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
     }
   }
   return paths;
+}
+
+async function findOneAndMergeMessageProvenance(
+  Message: Model<IMessage>,
+  identity: FilterQuery<IMessage>,
+  update: Record<string, unknown>,
+  userSubmittedPaths: readonly string[],
+  userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
+  options: { upsert: boolean; stampModelOutputOnInsert?: boolean },
+) {
+  const safeUpdate = { ...update };
+  delete safeUpdate._id;
+  delete safeUpdate.tenantId;
+  const preservesStoredIsUserSubmitted = !Object.prototype.hasOwnProperty.call(
+    safeUpdate,
+    'isUserSubmitted',
+  );
+
+  /** A small optimistic loop keeps the merge atomic while using only classic update operators. */
+  for (let attempt = 0; attempt < MAX_PROVENANCE_CAS_ATTEMPTS; attempt += 1) {
+    const current = await Message.findOne(identity)
+      .select({
+        isUserSubmitted: 1,
+        userSubmittedPaths: 1,
+        userSubmittedMessageFieldPaths: 1,
+        _id: 0,
+      })
+      .lean<MessageProvenance | null>();
+    if (current == null && !options.upsert) {
+      return null;
+    }
+
+    const provenance = mergeMessageProvenance(
+      current,
+      userSubmittedPaths,
+      userSubmittedMessageFieldPaths,
+      options.stampModelOutputOnInsert,
+      typeof safeUpdate.isUserSubmitted === 'boolean' ? safeUpdate.isUserSubmitted : undefined,
+      preservesStoredIsUserSubmitted,
+    );
+    const filter = {
+      ...identity,
+      ...(current == null ? getMissingProvenanceFilter() : getProvenanceSnapshotFilter(current)),
+    };
+
+    try {
+      const message = await Message.findOneAndUpdate(
+        filter,
+        { $set: { ...safeUpdate, ...provenance } },
+        { upsert: options.upsert && current == null, new: true },
+      );
+      if (message != null) {
+        return message;
+      }
+    } catch (err) {
+      if (!isDuplicateKeyError(err) || !options.upsert) {
+        throw err;
+      }
+    }
+  }
+
+  throw new Error('Message provenance write contention exceeded its retry bound.');
 }
 
 /**
@@ -302,13 +349,21 @@ const SUBAGENT_ACTIVITY_SOURCE_CANDIDATE_LIMIT = SUBAGENT_TRANSCRIPT_PAGE_LIMIT 
  * an execution did not write a private subagent transcript. Project only the
  * visible activity vocabulary and bound it before MongoDB returns the row.
  */
-export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 16;
-const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 2048;
-const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 512;
-const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 1024;
+/**
+ * Per-item bounds mirror `SUBAGENT_ACTIVITY_LIMITS` in `packages/api`
+ * (`src/agents/activity.ts`) at worst-case 4-byte UTF-8, so activity projected
+ * from ordinary message content is clipped no harder than activity projected
+ * from a private transcript. The whole view stays bounded downstream by the
+ * 64KB serialized-activity budget and the 256KB response trim.
+ */
+export const SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT: number = 100;
+const SUBAGENT_MESSAGE_ACTIVITY_TEXT_CODE_POINT_LIMIT = 8192;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT = 2048;
+const SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT = 4096;
 const SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT = 128;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT = 512;
 const SUBAGENT_MESSAGE_ACTIVITY_LABEL_IDS_LIMIT = 8;
+const SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT = 64 * 1024;
 const SUBAGENT_VIEW_CONTROL_RECEIPT_LIMIT = 32;
 const SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT = 128;
 
@@ -335,6 +390,8 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-langfuseSampled',
   '-langfuseDestinationIds',
   '-metadata.thoughtSignatures',
+  '-content.tool_call.backgroundTask.resultClaim',
+  '-content.tool_call.backgroundTask.completionWakeup',
   '-attachments.web_search.knowledgeGraph',
   '-attachments.web_search.peopleAlsoAsk',
   '-attachments.web_search.relatedSearches',
@@ -355,6 +412,20 @@ export type SubagentTaskResultClaim =
   | { status: 'not_found' }
   | { status: 'claimed'; message: IMessage }
   | { status: 'acquired'; message: IMessage };
+
+export interface BackgroundToolResultRecord {
+  taskId: string;
+  toolCallId: string;
+  toolName: string;
+  status: 'completed' | 'error';
+  output: string;
+  agentId?: string;
+}
+
+export type BackgroundToolResultClaim =
+  | { status: 'not_found' | 'not_ready' }
+  | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
+  | { status: 'acquired'; results: BackgroundToolResultRecord[] };
 
 export type SubagentThreadViewMessageRecord = Pick<
   IMessage,
@@ -383,6 +454,61 @@ export type SubagentThreadViewMessageRecord = Pick<
     controlReceiptsProjectionTruncated?: boolean;
   };
 };
+
+/** Amazon DocumentDB does not support `$$REMOVE`, so the bounded thread-view
+ * projections emit `null` where they mean "omit this key". This is the shape as
+ * it leaves the aggregation, before those sentinels are pruned back to absent. */
+/** Widens the given keys to admit the projection's `null` sentinel. */
+type WithNullSentinels<T, K extends keyof T> = Omit<T, K> & {
+  [P in K]?: NonNullable<T[P]> | null;
+};
+
+type ThreadViewRecord = SubagentThreadViewMessageRecord;
+export type ProjectedSubagentThreadViewMessage = WithNullSentinels<
+  Omit<ThreadViewRecord, 'subagentTask' | 'subagentTriggerProjection'>,
+  'subagentTranscriptProjectionTruncated'
+> & {
+  subagentTriggerProjection?: WithNullSentinels<
+    NonNullable<ThreadViewRecord['subagentTriggerProjection']>,
+    'expectedActionToolName'
+  > | null;
+  subagentTask?:
+    | (Omit<NonNullable<ThreadViewRecord['subagentTask']>, 'controlReceipts'> & {
+        controlReceipts?: Array<
+          WithNullSentinels<
+            NonNullable<NonNullable<ThreadViewRecord['subagentTask']>['controlReceipts']>[number],
+            'controlId' | 'reason' | 'message'
+          >
+        >;
+      })
+    | null;
+};
+
+/** Restores the absent-vs-present contract by dropping the `null` sentinels the
+ * projection emitted. Bounded by the projection's own row, receipt, and byte
+ * limits, and folded into the pass that already materializes each record. */
+function pruneProjectedThreadViewMessage(
+  message: ProjectedSubagentThreadViewMessage,
+): SubagentThreadViewMessageRecord {
+  if (message.subagentTranscriptProjectionTruncated === null) {
+    delete message.subagentTranscriptProjectionTruncated;
+  }
+  if (message.subagentTriggerProjection === null) {
+    delete message.subagentTriggerProjection;
+  } else if (message.subagentTriggerProjection?.expectedActionToolName === null) {
+    delete message.subagentTriggerProjection.expectedActionToolName;
+  }
+  if (message.subagentTask === null) {
+    delete message.subagentTask;
+  } else {
+    for (const receipt of message.subagentTask?.controlReceipts ?? []) {
+      if (receipt.controlId === null) delete receipt.controlId;
+      if (receipt.reason === null) delete receipt.reason;
+      if (receipt.message === null) delete receipt.message;
+    }
+  }
+  return message as SubagentThreadViewMessageRecord;
+}
 
 export type ParentSubagentTaskRecord = {
   conversationId: string;
@@ -462,11 +588,43 @@ export interface MessageMethods {
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    stepId?: string;
     agentId?: string;
     output?: string;
     attachments?: unknown[];
     markBackgrounded?: boolean;
+    backgroundTask?: {
+      taskId: string;
+      toolName: string;
+      status: 'completed' | 'error';
+      settledAt: Date;
+      completionWakeup?: true;
+      resultClaim?: {
+        kind: 'manual' | 'wakeup';
+        claimId: string;
+        claimedAt: Date;
+      };
+    };
   }): Promise<{ matched: boolean; unfinished: boolean }>;
+  claimBackgroundToolResults(params: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    taskId: string;
+    agentId?: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+    limit?: number;
+  }): Promise<BackgroundToolResultClaim>;
+  releaseBackgroundToolResultClaims(params: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    /** Omit to release every sibling owned by this exact batch claim. */
+    taskIds?: string[];
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean>;
   updateMessage(
     userId: string,
     message: Partial<IMessage> & { newMessageId?: string },
@@ -522,10 +680,25 @@ export interface MessageMethods {
   ): Promise<{ messages: IMessage[]; nextCursor: string | null }>;
   searchMessages(
     query: string,
-    searchOptions: Partial<IMessage>,
+    searchOptions: SearchParams,
     hydrate?: boolean,
-  ): Promise<unknown>;
+  ): Promise<Awaited<ReturnType<SchemaWithMeiliMethods['meiliSearch']>>>;
   deleteMessages(filter: FilterQuery<IMessage>): Promise<DeleteResult>;
+}
+
+/** The agent-ownership rule shared by background-tool settling and claiming:
+ * `agentId` on the part wins, then `tool_call.agentId`, and a part without
+ * agent identity belongs to any caller (single-agent runs). `field: null`
+ * matches both a missing field and a stored null. The settle and claim paths
+ * MUST apply the identical rule, or a settled part becomes unclaimable. */
+function agentOwnershipFilter(prefix: string, agentId: string): Record<string, unknown> {
+  return {
+    $or: [
+      { [`${prefix}agentId`]: agentId },
+      { [`${prefix}agentId`]: null, [`${prefix}tool_call.agentId`]: agentId },
+      { [`${prefix}agentId`]: null, [`${prefix}tool_call.agentId`]: null },
+    ],
+  };
 }
 
 export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
@@ -615,22 +788,28 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       delete update.userSubmittedMessageFieldPaths;
       const stampModelOutputOnInsert =
         params.isCreatedByUser === false && params.isUserSubmitted === undefined;
-      let messageUpdate: Record<string, unknown> | Record<string, unknown>[] = update;
-      if (userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) {
-        messageUpdate = buildAtomicProvenanceMerge(
-          getStrictPipelineUpdate(Message, update),
-          userSubmittedPaths,
-          userSubmittedMessageFieldPaths,
-          stampModelOutputOnInsert,
-        );
-      } else if (stampModelOutputOnInsert) {
-        messageUpdate = { $set: update, $setOnInsert: { isUserSubmitted: false } };
+      const hasProvenance =
+        userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0;
+      const message = hasProvenance
+        ? await findOneAndMergeMessageProvenance(
+            Message,
+            { messageId: params.messageId, user: userId },
+            update,
+            userSubmittedPaths,
+            userSubmittedMessageFieldPaths,
+            { upsert: true, stampModelOutputOnInsert },
+          )
+        : await Message.findOneAndUpdate(
+            { messageId: params.messageId, user: userId },
+            stampModelOutputOnInsert
+              ? { $set: update, $setOnInsert: { isUserSubmitted: false } }
+              : update,
+            { upsert: true, new: true },
+          );
+
+      if (message == null) {
+        return message;
       }
-      const message = await Message.findOneAndUpdate(
-        { messageId: params.messageId, user: userId },
-        messageUpdate,
-        { upsert: true, new: true },
-      );
 
       if (
         interfaceConfig?.retentionMode === RetentionMode.ALL &&
@@ -821,15 +1000,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     messageId,
     conversationId,
     toolCallId,
+    stepId,
     agentId,
     output,
     attachments,
     markBackgrounded,
+    backgroundTask,
   }: {
     userId: string;
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    stepId?: string;
     /** Scopes the part match when provider tool-call ids repeat across
      *  agents in one response message (e.g. `call_0` per response); a part
      *  without agent identity matches any caller (single-agent runs). */
@@ -844,128 +1026,557 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
      * that erases it must persist a durable one alongside.
      */
     markBackgrounded?: boolean;
+    backgroundTask?: {
+      taskId: string;
+      toolName: string;
+      status: 'completed' | 'error';
+      settledAt: Date;
+      completionWakeup?: true;
+      resultClaim?: {
+        kind: 'manual' | 'wakeup';
+        claimId: string;
+        claimedAt: Date;
+      };
+    };
   }): Promise<{ matched: boolean; unfinished: boolean }> {
-    const stages: Record<string, unknown>[] = [];
-    if (output !== undefined) {
-      stages.push({
-        $set: {
-          content: {
-            $map: {
-              input: { $ifNull: ['$content', []] },
-              as: 'part',
-              in: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ['$$part.type', 'tool_call'] },
-                      { $eq: ['$$part.tool_call.id', toolCallId] },
-                      ...(agentId != null
-                        ? [
-                            {
-                              $in: [
-                                { $ifNull: ['$$part.agentId', '$$part.tool_call.agentId'] },
-                                [null, agentId],
-                              ],
-                            },
-                          ]
-                        : []),
-                    ],
-                  },
-                  {
-                    $mergeObjects: [
-                      '$$part',
-                      {
-                        tool_call: {
-                          $mergeObjects: [
-                            '$$part.tool_call',
-                            {
-                              output: { $literal: output },
-                              ...(markBackgrounded === true ? { backgrounded: true } : {}),
-                            },
-                          ],
-                        },
-                      },
-                    ],
-                  },
-                  '$$part',
-                ],
-              },
-            },
-          },
-        },
-      });
+    /** One source of truth for which content part this settle may touch:
+     * `prefix: ''` yields the `$elemMatch` document filter, `prefix: 'part.'`
+     * the arrayFilters element filter — the same predicate in one dialect,
+     * where the old code kept an aggregation `$expr` twin of it. `field: null`
+     * matches both a missing field and a stored null, mirroring the previous
+     * `$ifNull` chains. */
+    const partScope = (prefix: string): Record<string, unknown> => ({
+      [`${prefix}type`]: 'tool_call',
+      [`${prefix}tool_call.id`]: toolCallId,
+      ...(stepId != null ? { [`${prefix}tool_call.stepId`]: stepId } : {}),
+      ...(agentId != null ? agentOwnershipFilter(prefix, agentId) : {}),
+    });
+    const messageFilter = {
+      messageId,
+      user: userId,
+      conversationId,
+      content: { $elemMatch: partScope('') },
+    };
+    const partIdentityFilter = partScope('part.');
+    /** Amazon DocumentDB rejects aggregation-pipeline updates, so the part
+     * patch addresses the matching tool-call parts with the filtered positional
+     * operator and plain `$set`/`$unset`. Setting `backgroundTask` subfields
+     * individually preserves an existing `resultClaim` without the per-part
+     * branching the old pipeline needed, and clearing `completionWakeup` keeps
+     * the old whole-object replacement's disarm semantics. */
+    const partPatch: Record<string, string | number | boolean | Date> = {};
+    let disarmWakeup = false;
+    if (output !== undefined || backgroundTask != null) {
+      if (output !== undefined) {
+        partPatch['content.$[part].tool_call.output'] = output;
+      }
+      if (markBackgrounded === true) {
+        partPatch['content.$[part].tool_call.backgrounded'] = true;
+      }
+      if (backgroundTask != null) {
+        partPatch['content.$[part].tool_call.backgroundTask.version'] = 1;
+        partPatch['content.$[part].tool_call.backgroundTask.taskId'] = backgroundTask.taskId;
+        partPatch['content.$[part].tool_call.backgroundTask.toolName'] = backgroundTask.toolName;
+        partPatch['content.$[part].tool_call.backgroundTask.status'] = backgroundTask.status;
+        partPatch['content.$[part].tool_call.backgroundTask.settledAt'] = backgroundTask.settledAt;
+        if (backgroundTask.completionWakeup === true) {
+          partPatch['content.$[part].tool_call.backgroundTask.completionWakeup'] = true;
+        } else {
+          disarmWakeup = true;
+        }
+      }
     }
-    if (attachments !== undefined && attachments.length > 0) {
-      /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
-       *  download-fallback attachments (no `file_id`, only a filepath) stay
-       *  idempotent across re-applications instead of duplicating per poll. */
-      const attachmentKeys = attachments
-        .map((attachment) => {
-          const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
-          return typeof file_id === 'string' ? file_id : filepath;
-        })
-        .filter((key): key is string => typeof key === 'string');
-      stages.push({
-        $set: {
-          attachments: {
-            $concatArrays: [
-              {
-                $filter: {
-                  input: { $ifNull: ['$attachments', []] },
-                  as: 'existing',
-                  /** Replace only THIS tool call's prior entries: sibling calls
-                   *  can legitimately share a `file_id` (the filename claim is
-                   *  per-conversation), and the client anchors attachments to
-                   *  cards by `toolCallId`. */
-                  cond: {
-                    $not: [
-                      {
-                        $and: [
-                          {
-                            $in: [
-                              { $ifNull: ['$$existing.file_id', '$$existing.filepath'] },
-                              { $literal: attachmentKeys },
-                            ],
-                          },
-                          { $eq: ['$$existing.toolCallId', toolCallId] },
-                          /** Provider tool-call ids repeat across agents in
-                           *  handoff messages; a sibling agent's attachment
-                           *  under the same id/key must survive (missing
-                           *  agent identity = legacy wildcard). */
-                          ...(agentId != null
-                            ? [
-                                {
-                                  $in: [{ $ifNull: ['$$existing.agentId', null] }, [null, agentId]],
-                                },
-                              ]
-                            : []),
-                        ],
-                      },
-                    ],
-                  },
-                },
-              },
-              { $literal: attachments },
-            ],
-          },
-        },
-      });
-    }
-    if (stages.length === 0) {
+    const mergingAttachments = attachments !== undefined && attachments.length > 0;
+    if (Object.keys(partPatch).length === 0 && !mergingAttachments) {
       return { matched: false, unfinished: false };
     }
+    const settleUpdate = {
+      ...(Object.keys(partPatch).length > 0 ? { $set: partPatch } : {}),
+      ...(disarmWakeup
+        ? { $unset: { 'content.$[part].tool_call.backgroundTask.completionWakeup': 1 } }
+        : {}),
+    };
+    const settleOptions = {
+      new: true,
+      projection: { unfinished: 1 },
+      ...(Object.keys(partPatch).length > 0 || disarmWakeup
+        ? { arrayFilters: [partIdentityFilter] }
+        : {}),
+    };
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const result = await Message.findOneAndUpdate(
-        { messageId, user: userId, conversationId },
-        stages,
-        { new: true, projection: { unfinished: 1 } },
-      ).lean<{ unfinished?: boolean } | null>();
-      return { matched: result != null, unfinished: result?.unfinished === true };
+      /** A supplied claim is stamped BEFORE the settle write, on parts that
+       * carry none (`resultClaim: null` also admits a stored null, as the old
+       * `$ifNull` did). Ordering is what keeps the split safe: until the settle
+       * write lands, the part is not terminal, so a concurrent wakeup or manual
+       * poll sees `not_ready` and stands down; the old single pipeline wrote
+       * claim and receipt atomically, and a claim-after-settle order would
+       * instead expose a claimable terminal part that lets a second consumer
+       * deliver the same result. A crash between the writes is healed by the
+       * settle retry, whose claim write no-ops against its own stamp. */
+      if (backgroundTask?.resultClaim != null) {
+        await Message.updateOne(
+          messageFilter,
+          {
+            $set: {
+              'content.$[part].tool_call.backgroundTask.resultClaim': backgroundTask.resultClaim,
+            },
+          },
+          {
+            arrayFilters: [
+              { ...partIdentityFilter, 'part.tool_call.backgroundTask.resultClaim': null },
+            ],
+          },
+        );
+      }
+      if (!mergingAttachments) {
+        const result = await Message.findOneAndUpdate(
+          messageFilter,
+          settleUpdate,
+          settleOptions,
+        ).lean<{ unfinished?: boolean } | null>();
+        return { matched: result != null, unfinished: result?.unfinished === true };
+      }
+      /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
+       * download-fallback attachments (no `file_id`, only a filepath) stay
+       * idempotent across re-applications instead of duplicating per poll.
+       * Replace only THIS tool call's prior entries: sibling calls can
+       * legitimately share a `file_id` (the filename claim is per-conversation),
+       * and the client anchors attachments to cards by `toolCallId`. Provider
+       * tool-call ids repeat across agents in handoff messages, so a sibling
+       * agent's attachment under the same id/key must survive (missing agent
+       * identity = legacy wildcard). */
+      const attachmentKeys = new Set(
+        attachments
+          .map((attachment) => {
+            const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
+            return typeof file_id === 'string' ? file_id : filepath;
+          })
+          .filter((key): key is string => typeof key === 'string'),
+      );
+      const replacesEntry = (existing: unknown): boolean => {
+        if (existing == null || typeof existing !== 'object') return false;
+        const entry = existing as {
+          file_id?: unknown;
+          filepath?: unknown;
+          toolCallId?: unknown;
+          agentId?: unknown;
+          stepId?: unknown;
+        };
+        const key = entry.file_id ?? entry.filepath;
+        if (typeof key !== 'string' || !attachmentKeys.has(key)) return false;
+        if (entry.toolCallId !== toolCallId) return false;
+        const entryAgent = entry.agentId ?? null;
+        if (agentId != null && entryAgent !== null && entryAgent !== agentId) return false;
+        const entryStep = entry.stepId ?? null;
+        if (stepId != null && entryStep !== null && entryStep !== stepId) return false;
+        return true;
+      };
+      /** The old pipeline replaced-and-appended `attachments` in one atomic
+       * write; classic `$pull` and `$push` conflict on one field and splitting
+       * them opens a window where a crash strips attachments and concurrent
+       * re-applications duplicate them. Instead: read the array, merge it here
+       * with the exact semantics the old `$filter`/`$concatArrays` had, and
+       * write everything back in ONE update fenced on the array being unchanged
+       * — the same guarded full-array compare-and-swap this file already uses
+       * for `subagentTask.controlReceipts`. A lost fence means a concurrent
+       * writer advanced the array; re-reading converges to exactly one copy. */
+      for (let attempt = 0; attempt < ATTACHMENT_MERGE_CAS_ATTEMPTS; attempt += 1) {
+        const row = await Message.findOne(messageFilter)
+          .select({ _id: 1, attachments: 1 })
+          .lean<{ _id: Types.ObjectId; attachments?: unknown[] } | null>();
+        if (row == null) {
+          return { matched: false, unfinished: false };
+        }
+        const prior = Array.isArray(row.attachments) ? row.attachments : [];
+        const merged = [...prior.filter((entry) => !replacesEntry(entry)), ...attachments];
+        const result = await Message.findOneAndUpdate(
+          {
+            ...messageFilter,
+            _id: row._id,
+            attachments: row.attachments == null ? null : row.attachments,
+          },
+          {
+            ...settleUpdate,
+            $set: { ...partPatch, attachments: merged },
+          },
+          settleOptions,
+        ).lean<{ unfinished?: boolean } | null>();
+        if (result != null) {
+          return { matched: true, unfinished: result.unfinished === true };
+        }
+      }
+      /** Losing every fence round means concurrent writers kept advancing the
+       * array — the document exists and is healthy, so persistence must stay
+       * retryable ABOVE this bounded loop. The settle retry treats an
+       * unmatched result as retry-then-heal-later; a throw would land on
+       * ambiguous-failure handling that can retire the completion outright,
+       * losing a completed tool result to mere attachment contention. */
+      logger.warn(
+        `[updateToolCallResult] Attachment merge for tool call ${toolCallId} lost ` +
+          `${ATTACHMENT_MERGE_CAS_ATTEMPTS} fence rounds; leaving the retry to the caller`,
+      );
+      return { matched: false, unfinished: false };
     } catch (err) {
       logger.error('Error updating tool call result:', err);
       throw err;
     }
+  }
+
+  const MAX_BACKGROUND_TOOL_RESULT_BATCH = 8;
+  /** Bounds the attachments-merge fence retries. Each lost round means a
+   * concurrent writer changed the array, so re-reading converges. */
+  const ATTACHMENT_MERGE_CAS_ATTEMPTS = 8;
+
+  function readBackgroundToolResultClaim(
+    row: Pick<IMessage, 'content'>,
+    taskId: string,
+  ): { kind: 'manual' | 'wakeup'; claimId: string } | undefined {
+    for (const part of row.content ?? []) {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const backgroundTask = (
+        part as {
+          tool_call?: {
+            backgroundTask?: {
+              taskId?: unknown;
+              resultClaim?: { kind?: unknown; claimId?: unknown };
+            };
+          };
+        }
+      ).tool_call?.backgroundTask;
+      if (backgroundTask?.taskId !== taskId) {
+        continue;
+      }
+      const claim = backgroundTask.resultClaim;
+      if (
+        (claim?.kind === 'manual' || claim?.kind === 'wakeup') &&
+        typeof claim.claimId === 'string' &&
+        claim.claimId.length > 0
+      ) {
+        return { kind: claim.kind, claimId: claim.claimId };
+      }
+      return;
+    }
+  }
+
+  function parseBackgroundToolResults(
+    message: IMessage,
+    claim: { kind: 'manual' | 'wakeup'; claimId: string },
+  ): BackgroundToolResultRecord[] {
+    const results: BackgroundToolResultRecord[] = [];
+    for (const part of message.content ?? []) {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const record = part as {
+        agentId?: unknown;
+        tool_call?: {
+          id?: unknown;
+          agentId?: unknown;
+          output?: unknown;
+          backgroundTask?: {
+            taskId?: unknown;
+            toolName?: unknown;
+            status?: unknown;
+            resultClaim?: { kind?: unknown; claimId?: unknown };
+          };
+        };
+      };
+      const toolCall = record.tool_call;
+      const task = toolCall?.backgroundTask;
+      if (
+        typeof toolCall?.id !== 'string' ||
+        typeof task?.taskId !== 'string' ||
+        typeof task.toolName !== 'string' ||
+        (task.status !== 'completed' && task.status !== 'error') ||
+        task.resultClaim?.kind !== claim.kind ||
+        task.resultClaim.claimId !== claim.claimId
+      ) {
+        continue;
+      }
+      let resultAgentId: string | undefined;
+      if (typeof record.agentId === 'string') {
+        resultAgentId = record.agentId;
+      } else if (typeof toolCall.agentId === 'string') {
+        resultAgentId = toolCall.agentId;
+      }
+      results.push({
+        taskId: task.taskId,
+        toolCallId: toolCall.id,
+        toolName: task.toolName,
+        status: task.status,
+        output: typeof toolCall.output === 'string' ? toolCall.output : '',
+        ...(resultAgentId == null ? {} : { agentId: resultAgentId }),
+      });
+    }
+    return results;
+  }
+
+  /** Atomically elects manual polling or one automatic continuation. Wakeups
+   * also claim a bounded set of already-settled siblings from the same parent
+   * response, avoiding one paid continuation per concurrently completed tool. */
+  async function claimBackgroundToolResults({
+    userId,
+    conversationId,
+    messageId,
+    taskId,
+    agentId,
+    kind,
+    claimId,
+    limit = kind === 'wakeup' ? MAX_BACKGROUND_TOOL_RESULT_BATCH : 1,
+  }: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    taskId: string;
+    agentId?: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+    limit?: number;
+  }): Promise<BackgroundToolResultClaim> {
+    if (
+      messageId.length === 0 ||
+      messageId.length > 256 ||
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      claimId.length === 0 ||
+      claimId.length > 128 ||
+      (kind !== 'manual' && kind !== 'wakeup')
+    ) {
+      throw new TypeError('Invalid background tool result claim');
+    }
+    const boundedLimit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, limit));
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const row = await Message.findOne({ user: userId, conversationId, messageId })
+      .select({ content: 1, unfinished: 1 })
+      .lean<IMessage | null>();
+    if (row == null) {
+      return { status: 'not_found' };
+    }
+    if (row.unfinished === true) {
+      return { status: 'not_ready' };
+    }
+    const requestedClaim = readBackgroundToolResultClaim(row, taskId);
+    const replaying = requestedClaim?.kind === kind && requestedClaim.claimId === claimId;
+    const candidates: string[] = [];
+    let requestedState: 'ready' | 'claimed' | 'missing' = 'missing';
+    for (const part of row.content ?? []) {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const task = (part as { tool_call?: { backgroundTask?: Record<string, unknown> } }).tool_call
+        ?.backgroundTask;
+      const partRecord = part as { agentId?: unknown; tool_call?: { agentId?: unknown } };
+      const partAgentId = partRecord.agentId ?? partRecord.tool_call?.agentId;
+      const candidateId = task?.taskId;
+      if (typeof candidateId !== 'string') {
+        continue;
+      }
+      const terminal = task?.status === 'completed' || task?.status === 'error';
+      const wakeupEligible = kind !== 'wakeup' || task?.completionWakeup === true;
+      const resultClaim = task?.resultClaim as { kind?: unknown; claimId?: unknown } | undefined;
+      const replay = resultClaim?.kind === kind && resultClaim.claimId === claimId;
+      const sameAgent =
+        agentId == null ||
+        partAgentId == null ||
+        (typeof partAgentId === 'string' && partAgentId === agentId);
+      /** A lost-receipt retry replays exactly its original assignment. It must
+       * not absorb siblings that completed after the already-admitted input
+       * was constructed, or those results would be claimed but never shown. */
+      const claimable =
+        terminal && wakeupEligible && sameAgent && (replaying ? replay : resultClaim == null);
+      if (candidateId === taskId) {
+        if (claimable) {
+          requestedState = 'ready';
+        } else if (resultClaim != null) {
+          requestedState = 'claimed';
+        }
+      }
+      if (
+        claimable &&
+        (candidateId === taskId || kind === 'wakeup') &&
+        candidates.length < boundedLimit
+      ) {
+        candidates.push(candidateId);
+      }
+    }
+    if (requestedState === 'missing') {
+      return { status: 'not_ready' };
+    }
+    if (requestedState === 'claimed') {
+      return {
+        status: 'claimed',
+        ...(requestedClaim == null ? {} : { claim: requestedClaim }),
+      };
+    }
+    if (!candidates.includes(taskId)) {
+      candidates.unshift(taskId);
+      candidates.splice(boundedLimit);
+    }
+    const claimedAt = new Date();
+    const claimStamp = { kind, claimId, claimedAt };
+    const updated = await Message.findOneAndUpdate(
+      {
+        user: userId,
+        conversationId,
+        messageId,
+        unfinished: { $ne: true },
+        content: {
+          $elemMatch: {
+            type: 'tool_call',
+            'tool_call.backgroundTask.taskId': taskId,
+            'tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
+            ...(kind === 'wakeup' ? { 'tool_call.backgroundTask.completionWakeup': true } : {}),
+            ...(replaying
+              ? {
+                  'tool_call.backgroundTask.resultClaim.kind': kind,
+                  'tool_call.backgroundTask.resultClaim.claimId': claimId,
+                }
+              : /** Missing OR stored null: the in-memory claimable scan, the
+                 * claim arrayFilters, and the settle stamp all treat a null
+                 * claim as unclaimed, and the subfield-preserving settle write
+                 * keeps a persisted null a whole-object rewrite used to drop.
+                 * `$exists: false` here would strand such a part as terminal
+                 * but permanently unclaimable. */
+                { 'tool_call.backgroundTask.resultClaim': null }),
+          },
+        },
+        ...(agentId != null
+          ? {
+              $expr: {
+                $anyElementTrue: {
+                  $map: {
+                    input: { $ifNull: ['$content', []] },
+                    as: 'candidate',
+                    in: {
+                      $and: [
+                        { $eq: ['$$candidate.tool_call.backgroundTask.taskId', taskId] },
+                        {
+                          $in: [
+                            {
+                              $ifNull: [
+                                {
+                                  $ifNull: ['$$candidate.agentId', '$$candidate.tool_call.agentId'],
+                                },
+                                null,
+                              ],
+                            },
+                            [null, agentId],
+                          ],
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            }
+          : {}),
+      },
+      /** Stamps the claim onto every part this pass admitted. The filtered
+       * positional operator selects those parts by predicate, so the write
+       * touches only them instead of re-emitting the whole content array, and
+       * needs no read-modify-write. Amazon DocumentDB rejects the
+       * aggregation-pipeline form this replaces. */
+      { $set: { 'content.$[part].tool_call.backgroundTask.resultClaim': claimStamp } },
+      {
+        new: true,
+        projection: { content: 1 },
+        arrayFilters: [
+          {
+            'part.type': 'tool_call',
+            'part.tool_call.backgroundTask.taskId': { $in: candidates },
+            'part.tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
+            ...(kind === 'wakeup'
+              ? { 'part.tool_call.backgroundTask.completionWakeup': true }
+              : {}),
+            $and: [
+              {
+                /** Unclaimed, or already held by this exact claimant (replay). */
+                $or: [
+                  { 'part.tool_call.backgroundTask.resultClaim': null },
+                  {
+                    'part.tool_call.backgroundTask.resultClaim.kind': kind,
+                    'part.tool_call.backgroundTask.resultClaim.claimId': claimId,
+                  },
+                ],
+              },
+              ...(agentId == null ? [] : [agentOwnershipFilter('part.', agentId)]),
+            ],
+          },
+        ],
+      },
+    ).lean<IMessage | null>();
+    if (updated == null) {
+      return { status: 'not_ready' };
+    }
+    const results = parseBackgroundToolResults(updated, { kind, claimId });
+    const competingClaim = readBackgroundToolResultClaim(updated, taskId);
+    return results.some((result) => result.taskId === taskId)
+      ? { status: 'acquired', results }
+      : {
+          status: 'claimed',
+          ...(competingClaim == null ? {} : { claim: competingClaim }),
+        };
+  }
+
+  async function releaseBackgroundToolResultClaims({
+    userId,
+    conversationId,
+    messageId,
+    taskIds,
+    kind,
+    claimId,
+  }: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+    taskIds?: string[];
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean> {
+    if (taskIds?.length === 0) {
+      return true;
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    /** Drops the claim stamp from every content part this claimant owns. The
+     * filtered positional operator addresses those parts by predicate in one
+     * atomic write, so no read-modify-write and no rewrite of untouched parts;
+     * Amazon DocumentDB rejects the aggregation-pipeline form this replaces.
+     * The filter requires a `content` array because the filtered positional
+     * operator errors on a row without one, where the old pipeline's
+     * `$ifNull` no-op'd — a legacy row with no array simply has no claims. */
+    const updated = await Message.findOneAndUpdate(
+      { user: userId, conversationId, messageId, content: { $type: 'array' } },
+      { $unset: { 'content.$[part].tool_call.backgroundTask.resultClaim': 1 } },
+      {
+        new: true,
+        projection: { content: 1 },
+        arrayFilters: [
+          {
+            'part.tool_call.backgroundTask.resultClaim.kind': kind,
+            'part.tool_call.backgroundTask.resultClaim.claimId': claimId,
+            ...(taskIds == null
+              ? {}
+              : { 'part.tool_call.backgroundTask.taskId': { $in: taskIds } }),
+          },
+        ],
+      },
+    ).lean<IMessage | null>();
+    if (updated == null) {
+      const arraylessRow = await Message.exists({
+        user: userId,
+        conversationId,
+        messageId,
+        content: { $not: { $type: 'array' } },
+      });
+      return arraylessRow != null;
+    }
+    const remaining = parseBackgroundToolResults(updated, { kind, claimId });
+    return taskIds == null
+      ? remaining.length === 0
+      : !remaining.some((result) => taskIds.includes(result.taskId));
   }
 
   /**
@@ -985,19 +1596,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       );
       delete update.userSubmittedPaths;
       delete update.userSubmittedMessageFieldPaths;
-      const messageUpdate =
+      const updatedMessage =
         submittedPaths.length > 0 || submittedMessageFields.length > 0
-          ? buildAtomicProvenanceMerge(
-              getStrictPipelineUpdate(Message, update),
+          ? await findOneAndMergeMessageProvenance(
+              Message,
+              { messageId, user: userId },
+              update,
               submittedPaths,
               submittedMessageFields,
+              { upsert: false },
             )
-          : update;
-      const updatedMessage = await Message.findOneAndUpdate(
-        { messageId, user: userId },
-        messageUpdate,
-        { new: true },
-      );
+          : await Message.findOneAndUpdate({ messageId, user: userId }, update, { new: true });
 
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');
@@ -1556,7 +2165,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           $cond: [
             { $eq: [{ $type: '$$receipt.controlId' }, 'string'] },
             boundedString('$$receipt.controlId', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
-            '$$REMOVE',
+            null,
           ],
         },
         action: '$$receipt.action',
@@ -1568,14 +2177,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           $cond: [
             { $eq: [{ $type: '$$receipt.reason' }, 'string'] },
             boundedString('$$receipt.reason', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
-            '$$REMOVE',
+            null,
           ],
         },
         message: {
           $cond: [
             { $eq: [{ $type: '$$receipt.message' }, 'string'] },
             boundedString('$$receipt.message', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
-            '$$REMOVE',
+            null,
           ],
         },
         messageTruncated: {
@@ -1688,10 +2297,133 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               ],
             },
           },
-          '$$REMOVE',
+          null,
         ],
       };
-      const boundedActivityContent = {
+      /** Mixed-typed content metadata must be type-gated before projection, or a
+       *  malformed part could tunnel arbitrarily large values past the byte cap
+       *  through a passthrough field. `$type`-based checks stay DocumentDB-safe. */
+      const boundedNumber = (path: string) => ({
+        $cond: [{ $in: [{ $type: path }, ['int', 'long', 'double', 'decimal']] }, path, null],
+      });
+      const boundedBoolean = (path: string) => ({
+        $cond: [{ $eq: [{ $type: path }, 'bool'] }, path, null],
+      });
+      const boundedEnum = (path: string, allowed: string[]) => ({
+        $cond: [{ $in: [path, allowed] }, path, null],
+      });
+      /** Estimated serialized bytes for one already-clipped activity item; the
+       *  constants cover the non-string JSON envelope per item type. This is a
+       *  BSON-transfer budget: `$strLenBytes` measures exactly what MongoDB
+       *  ships to the API. JSON escaping can expand strings after transfer,
+       *  which the API bounds precisely — `boundActivity` in
+       *  `packages/api/src/agents/activity.ts` re-fits the same array to 64KB
+       *  of `JSON.stringify` output before anything reaches a response. */
+      const activityItemBytes = (item: string) => ({
+        $switch: {
+          branches: [
+            {
+              case: { $eq: [`${item}.type`, 'writing'] },
+              then: { $add: [{ $strLenBytes: `${item}.text` }, 64] },
+            },
+            {
+              case: { $eq: [`${item}.type`, 'activity_label'] },
+              then: {
+                $add: [
+                  { $strLenBytes: `${item}.label` },
+                  {
+                    $reduce: {
+                      input: {
+                        $concatArrays: [
+                          {
+                            $cond: [{ $isArray: `${item}.toolCallIds` }, `${item}.toolCallIds`, []],
+                          },
+                          { $cond: [{ $isArray: `${item}.agentIds` }, `${item}.agentIds`, []] },
+                        ],
+                      },
+                      initialValue: 0,
+                      in: { $add: ['$$value', { $strLenBytes: '$$this' }, 8] },
+                    },
+                  },
+                  512,
+                ],
+              },
+            },
+            {
+              case: { $eq: [`${item}.type`, 'tool'] },
+              then: {
+                $add: [
+                  { $strLenBytes: `${item}.input` },
+                  { $strLenBytes: `${item}.output` },
+                  { $strLenBytes: `${item}.name` },
+                  { $strLenBytes: `${item}.toolCallId` },
+                  192,
+                ],
+              },
+            },
+          ],
+          default: 32,
+        },
+      });
+      /** Newest-first fit into the aggregate budget, so raising per-item limits
+       *  cannot multiply into megabytes per row before the API's own trims run. */
+      const budgetedActivity = (clipped: Record<string, unknown>) => ({
+        $reverseArray: {
+          $let: {
+            vars: {
+              fitted: {
+                $reduce: {
+                  input: { $reverseArray: clipped },
+                  initialValue: { items: [] as never[], bytes: 0, done: false },
+                  in: {
+                    $let: {
+                      vars: { size: activityItemBytes('$$this') },
+                      in: {
+                        $cond: [
+                          {
+                            $or: [
+                              '$$value.done',
+                              {
+                                $gt: [
+                                  { $add: ['$$value.bytes', '$$size'] },
+                                  SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT,
+                                ],
+                              },
+                            ],
+                          },
+                          /* The retained timeline must be a contiguous newest
+                             suffix: once one entry does not fit, older entries
+                             are not allowed to fill the gap around it. */
+                          { items: '$$value.items', bytes: '$$value.bytes', done: true },
+                          {
+                            items: { $concatArrays: ['$$value.items', ['$$this']] },
+                            bytes: { $add: ['$$value.bytes', '$$size'] },
+                            done: false,
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            in: '$$fitted.items',
+          },
+        },
+      });
+      const activityBytesOverBudget = (clipped: Record<string, unknown>) => ({
+        $gt: [
+          {
+            $reduce: {
+              input: clipped,
+              initialValue: 0,
+              in: { $add: ['$$value', activityItemBytes('$$this')] },
+            },
+          },
+          SUBAGENT_MESSAGE_ACTIVITY_TOTAL_BYTE_LIMIT,
+        ],
+      });
+      const clippedActivityContent = {
         $filter: {
           input: {
             $map: {
@@ -1731,14 +2463,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                           '$$part.activity_label',
                           SUBAGENT_MESSAGE_ACTIVITY_LABEL_CODE_POINT_LIMIT,
                         ),
-                        labelType: '$$part.activity_label_type',
+                        labelType: boundedEnum('$$part.activity_label_type', ['phase']),
                         toolCallIds: boundedStringArray('$$part.tool_call_ids'),
-                        activityStartIndex: '$$part.activity_start_index',
-                        activityEndIndex: '$$part.activity_end_index',
-                        activityCount: '$$part.activity_count',
+                        activityStartIndex: boundedNumber('$$part.activity_start_index'),
+                        activityEndIndex: boundedNumber('$$part.activity_end_index'),
+                        activityCount: boundedNumber('$$part.activity_count'),
                         agentIds: boundedStringArray('$$part.agent_ids'),
-                        status: '$$part.status',
-                        pending: '$$part.pending',
+                        status: boundedEnum('$$part.status', ['ok', 'partial', 'failed']),
+                        pending: boundedBoolean('$$part.pending'),
                         labelTruncated: {
                           $or: [
                             stringProjectionTruncated(
@@ -1797,9 +2529,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                           '$$part.tool_call.output',
                           SUBAGENT_MESSAGE_ACTIVITY_TOOL_OUTPUT_CODE_POINT_LIMIT,
                         ),
-                        progress: '$$part.tool_call.progress',
-                        runStepStatus: '$$part.tool_call.runStepStatus',
-                        inputValidationError: '$$part.tool_call.inputValidationError',
+                        progress: boundedNumber('$$part.tool_call.progress'),
+                        runStepStatus: boundedEnum('$$part.tool_call.runStepStatus', [
+                          'running',
+                          'completed',
+                          'failed',
+                          'cancelled',
+                        ]),
+                        inputValidationError: boundedBoolean(
+                          '$$part.tool_call.inputValidationError',
+                        ),
                         inputTruncated: stringProjectionTruncated(
                           '$$part.tool_call.args',
                           SUBAGENT_MESSAGE_ACTIVITY_TOOL_INPUT_CODE_POINT_LIMIT,
@@ -1820,9 +2559,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           cond: { $ne: ['$$activity', null] },
         },
       };
-      type ActivitySourceProjection = Pick<
-        SubagentThreadViewMessageRecord,
-        | 'messageId'
+      const boundedActivityContent = budgetedActivity(clippedActivityContent);
+      type ActivitySourceProjection = WithNullSentinels<
+        Pick<
+          SubagentThreadViewMessageRecord,
+          | 'messageId'
+          | 'subagentTranscript'
+          | 'subagentActivityProjectionJson'
+          | 'subagentActivityProjectionTruncated'
+        >,
         | 'subagentTranscript'
         | 'subagentActivityProjectionJson'
         | 'subagentActivityProjectionTruncated'
@@ -1842,19 +2587,20 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         error: 1,
         unfinished: 1,
         subagentTranscriptProjectionTruncated: {
-          $cond: [
-            { $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] },
-            true,
-            '$$REMOVE',
-          ],
+          $cond: [{ $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] }, true, null],
         },
         subagentActivity: boundedActivityContent,
         subagentActivityProjectionTruncated: {
-          $gt: [
+          $or: [
             {
-              $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+              $gt: [
+                {
+                  $size: { $cond: [{ $isArray: '$content' }, '$content', []] },
+                },
+                SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+              ],
             },
-            SUBAGENT_MESSAGE_ACTIVITY_ITEM_LIMIT,
+            activityBytesOverBudget(clippedActivityContent),
           ],
         },
         subagentTask: boundedSubagentTask,
@@ -1881,11 +2627,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                     '$subagentTriggerProjection.expectedActionToolName',
                     SUBAGENT_MESSAGE_ACTIVITY_ID_CODE_POINT_LIMIT,
                   ),
-                  '$$REMOVE',
+                  null,
                 ],
               },
             },
-            '$$REMOVE',
+            null,
           ],
         },
       };
@@ -1895,23 +2641,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         _subagentActivityProjectionSourceBytes: activityProjectionJsonBytes,
         _subagentActivityProjectionSourceIsString: activityProjectionIsString,
       };
-      const activitySourceProjection = {
-        _id: 0,
-        messageId: 1,
+      const activitySourcePayload = {
         subagentActivityProjectionJson: {
-          $cond: [
-            activityProjectionAvailable,
-            '$subagentActivityProjection.activityJson',
-            '$$REMOVE',
-          ],
+          $cond: [activityProjectionAvailable, '$subagentActivityProjection.activityJson', null],
         },
         subagentActivityProjectionTruncated: {
-          $cond: [activityProjectionAvailable, '$subagentActivityProjection.truncated', '$$REMOVE'],
+          $cond: [activityProjectionAvailable, '$subagentActivityProjection.truncated', null],
         },
         subagentTranscript: {
           $cond: [
             activityProjectionAvailable,
-            '$$REMOVE',
+            null,
             {
               taskId: '$subagentTranscript.taskId',
               mode: '$subagentTranscript.mode',
@@ -1919,6 +2659,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             },
           ],
         },
+      };
+      const activitySourceProjection = {
+        _id: 0,
+        messageId: 1,
+        ...activitySourcePayload,
       };
       const baseMatch = {
         user: input.user,
@@ -1947,7 +2692,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       /** Keep rows as independent MongoDB results. A `$facet` would combine the
        * complete page into one BSON document and could exceed MongoDB's 16 MiB
        * document limit before the API applies its smaller public byte budget. */
-      const messagesPromise = Message.aggregate<SubagentThreadViewMessageRecord>([
+      const messagesPromise = Message.aggregate<ProjectedSubagentThreadViewMessage>([
         { $match: pageMatch },
         { $sort: { createdAt: -1, _id: -1 } },
         { $limit: input.limit },
@@ -2002,18 +2747,24 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         { $limit: SUBAGENT_TRANSCRIPT_PAGE_LIMIT - (input.selectedTaskId == null ? 0 : 1) },
         { $project: activitySourceProjection },
       ]);
+      /** One read replaces the unsupported `$facet` while keeping its guarantee:
+       * the bounded message fields and the source payload for each selected row
+       * come from the same document version, so a transcript persisted between
+       * two separate reads can never yield a message without its source. Rows
+       * stay independent results, so no combined document approaches the 16 MiB
+       * limit the surrounding reads already avoid. Only operators Amazon
+       * DocumentDB accepts are used. */
       const selectedProjectionPromise =
         input.selectedTaskId == null
-          ? Promise.resolve([
-              {
-                selectedMessages: [] as SubagentThreadViewMessageRecord[],
-                selectedSources: [] as ActivitySourceProjection[],
-              },
-            ])
-          : Message.aggregate<{
-              selectedMessages: SubagentThreadViewMessageRecord[];
-              selectedSources: ActivitySourceProjection[];
-            }>([
+          ? Promise.resolve({
+              selectedMessages: [] as ProjectedSubagentThreadViewMessage[],
+              selectedSources: [] as ActivitySourceProjection[],
+            })
+          : Message.aggregate<
+              ProjectedSubagentThreadViewMessage & {
+                _selectedSource: ActivitySourceProjection | null;
+              }
+            >([
               {
                 $match: {
                   ...baseMatch,
@@ -2023,58 +2774,85 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                 },
               },
               { $limit: 2 },
+              { $addFields: sourceMetadataProjection },
               {
-                $facet: {
-                  selectedMessages: [{ $project: boundedMessageProjection }],
-                  selectedSources: [
-                    { $match: { messageId: `${input.selectedTaskId}:assistant` } },
-                    { $limit: 1 },
-                    { $addFields: sourceMetadataProjection },
-                    {
-                      $match: {
-                        $or: [
+                $project: {
+                  ...boundedMessageProjection,
+                  _selectedSource: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ['$messageId', `${input.selectedTaskId}:assistant`] },
                           {
-                            'subagentActivityProjection.taskId': input.selectedTaskId,
-                            'subagentActivityProjection.version': 1,
-                            _subagentActivityProjectionSourceIsString: true,
-                            _subagentActivityProjectionSourceBytes: {
-                              $lte: SUBAGENT_ACTIVITY_PROJECTION_SOURCE_BYTE_LIMIT,
-                            },
-                          },
-                          {
-                            'subagentTranscript.taskId': input.selectedTaskId,
-                            _subagentTranscriptSourceIsString: true,
-                            _subagentTranscriptSourceBytes: {
-                              $lte: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                            },
+                            $or: [
+                              {
+                                $and: [
+                                  {
+                                    $eq: [
+                                      '$subagentActivityProjection.taskId',
+                                      input.selectedTaskId,
+                                    ],
+                                  },
+                                  activityProjectionAvailable,
+                                ],
+                              },
+                              {
+                                $and: [
+                                  { $eq: ['$subagentTranscript.taskId', input.selectedTaskId] },
+                                  transcriptAvailable,
+                                ],
+                              },
+                            ],
                           },
                         ],
                       },
-                    },
-                    { $project: activitySourceProjection },
-                  ],
+                      { messageId: '$messageId', ...activitySourcePayload },
+                      null,
+                    ],
+                  },
                 },
               },
-            ]);
-      const [messages, recentSources, [selectedProjection]] = await Promise.all([
+            ]).then((rows) => {
+              const selectedSources: ActivitySourceProjection[] = [];
+              const selectedMessages = rows.map(({ _selectedSource, ...message }) => {
+                if (_selectedSource != null) {
+                  selectedSources.push(_selectedSource);
+                }
+                return message;
+              });
+              return { selectedMessages, selectedSources };
+            });
+      const [messages, recentSources, selectedProjection] = await Promise.all([
         messagesPromise,
         recentSourcesPromise,
         selectedProjectionPromise,
       ]);
-      if (selectedProjection == null) return [];
       const sourcesByMessageId = new Map(
         [...selectedProjection.selectedSources, ...recentSources].map((record) => [
           record.messageId,
           record,
         ]),
       );
-      const retainedMessageIds = new Set(messages.map((message) => message.messageId));
-      for (const message of selectedProjection.selectedMessages) {
-        if (retainedMessageIds.has(message.messageId)) continue;
-        messages.push(message);
-        retainedMessageIds.add(message.messageId);
+      /** The page rows come from an independent concurrent read; for the
+       * selected task, the single-snapshot pair is authoritative — a page
+       * duplicate can predate the source read and claim a transcript that
+       * `selectedSources` does not carry. Replace duplicates in place (keeping
+       * page order) instead of discarding the snapshot version. */
+      const selectedByMessageId = new Map(
+        selectedProjection.selectedMessages.map((message) => [message.messageId, message]),
+      );
+      for (let index = 0; index < messages.length; index += 1) {
+        const snapshot = selectedByMessageId.get(messages[index].messageId);
+        if (snapshot != null) {
+          messages[index] = snapshot;
+          selectedByMessageId.delete(snapshot.messageId);
+        }
       }
-      return messages.map((message) => {
+      for (const message of selectedByMessageId.values()) {
+        messages.push(message);
+      }
+      return messages.map((row) => {
+        const message = pruneProjectedThreadViewMessage(row);
         const source = sourcesByMessageId.get(message.messageId);
         if (source == null) return message;
         const projected = { ...message };
@@ -2369,12 +3147,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
    */
   async function searchMessages(
     query: string,
-    searchOptions: Record<string, unknown>,
+    searchOptions: SearchParams,
     hydrate?: boolean,
-  ) {
-    const Message = mongoose.models.Message as Model<IMessage> & {
-      meiliSearch?: (q: string, opts: Record<string, unknown>, h?: boolean) => Promise<unknown>;
-    };
+  ): Promise<Awaited<ReturnType<SchemaWithMeiliMethods['meiliSearch']>>> {
+    const Message = mongoose.models.Message as SchemaWithMeiliMethods;
     if (typeof Message.meiliSearch !== 'function') {
       throw new Error('MeiliSearch plugin not registered on Message model');
     }
@@ -2387,6 +3163,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     recordMessage,
     updateMessageText,
     updateToolCallResult,
+    claimBackgroundToolResults,
+    releaseBackgroundToolResultClaims,
     updateMessage,
     recordSubagentTaskControlReceipt,
     getSubagentTaskControlReceipt,

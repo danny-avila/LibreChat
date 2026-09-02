@@ -41,6 +41,7 @@ const {
 const {
   Time,
   Tools,
+  SkillsScope,
   CacheKeys,
   Constants,
   FileSources,
@@ -241,18 +242,38 @@ const blockFilteredAgentContent = async (req, res, agentData) => {
 
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
   const skillScopeEnabled = agent.skills_enabled === true;
+  const configuredScope = agent.skills_scope;
   delete agent.skills_enabled;
+  delete agent.skills_scope;
 
   if (!skillScopeEnabled) {
     delete agent.skills;
     return agent;
   }
 
-  const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
-  if (configuredSkills.length === 0) {
-    // Empty allowlist means the viewer's full accessible catalog.
+  if (configuredScope === SkillsScope.none) {
     delete agent.skills;
     agent.skills_enabled = true;
+    agent.skills_scope = SkillsScope.none;
+    return agent;
+  }
+
+  if (configuredScope === SkillsScope.all) {
+    delete agent.skills;
+    agent.skills_enabled = true;
+    agent.skills_scope = SkillsScope.all;
+    return agent;
+  }
+
+  const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
+  if (configuredSkills.length === 0) {
+    // Legacy empty allowlists mean the viewer's full accessible catalog;
+    // explicit selected scope remains an intentionally empty catalog.
+    delete agent.skills;
+    agent.skills_enabled = true;
+    if (configuredScope === SkillsScope.selected) {
+      agent.skills_scope = SkillsScope.selected;
+    }
     return agent;
   }
 
@@ -262,11 +283,18 @@ const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
 
   if (visibleSkills.length === 0) {
     delete agent.skills;
+    if (configuredScope === SkillsScope.selected) {
+      agent.skills_enabled = true;
+      agent.skills_scope = SkillsScope.selected;
+    }
     return agent;
   }
 
   agent.skills = visibleSkills;
   agent.skills_enabled = true;
+  if (configuredScope === SkillsScope.selected) {
+    agent.skills_scope = SkillsScope.selected;
+  }
   return agent;
 };
 
@@ -443,7 +471,34 @@ const isCodeInterpreterCapabilityEnabled = (req) => {
 /** Reject a newly selected stateful workspace scope that the deployment owner
  * has excluded. Disabled sessions and unrelated edits remain saveable so an
  * allowlist tightening never silently rewrites or strands an existing agent. */
-const validateStatefulCodeEnvironment = (req, res, enabled, environment) => {
+const validateStatefulCodeEnvironment = (
+  req,
+  res,
+  enabled,
+  environment,
+  environmentId,
+  environmentIdSelected = false,
+) => {
+  if (enabled !== true && !environmentIdSelected) {
+    return true;
+  }
+  if (environmentId != null) {
+    const configuredEnvironments =
+      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
+    const configuredEnvironment = configuredEnvironments.find(
+      (configured) => configured.id === environmentId,
+    );
+    const pairingOnly =
+      configuredEnvironment?.pairing?.allowPrincipalWorkers === true &&
+      configuredEnvironment.pairing.workerId == null &&
+      configuredEnvironment.workerId == null;
+    if (configuredEnvironment == null || pairingOnly) {
+      res.status(400).json({
+        error: `Stateful code environment is not configured: ${environmentId}`,
+      });
+      return false;
+    }
+  }
   if (enabled !== true) {
     return true;
   }
@@ -721,6 +776,8 @@ const createAgentHandler = async (req, res) => {
         res,
         agentData.stateful_code_sessions,
         agentData.stateful_code_environment,
+        agentData.code_environment_id,
+        agentData.code_environment_id != null,
       )
     ) {
       return;
@@ -861,6 +918,9 @@ const createAgentHandler = async (req, res) => {
       return res.status(400).json({ error: 'Invalid request data', details: error.errors });
     }
     logger.error('[/Agents] Error creating agent', error);
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -997,13 +1057,22 @@ const updateAgentHandler = async (req, res) => {
     normalizeToolResourceFiles(req.body?.tool_resources);
     const validatedData = agentUpdateSchema.parse(req.body);
     // Preserve explicit null for avatar to allow resetting the avatar
-    const { avatar: avatarField, _id, ...rest } = validatedData;
+    const {
+      avatar: avatarField,
+      code_environment_id: codeEnvironmentIdField,
+      _id,
+      ...rest
+    } = validatedData;
     const updateData = removeNullishValues(rest);
+    if (codeEnvironmentIdField !== undefined) {
+      updateData.code_environment_id = codeEnvironmentIdField;
+    }
     let existingAgent;
 
     const includesStatefulConfiguration =
       updateData.stateful_code_sessions !== undefined ||
-      updateData.stateful_code_environment !== undefined;
+      updateData.stateful_code_environment !== undefined ||
+      updateData.code_environment_id !== undefined;
     const includesToolsConfiguration = Array.isArray(updateData.tools);
     const includesToolOptionsConfiguration = updateData.tool_options !== undefined;
     if (
@@ -1016,13 +1085,17 @@ const updateAgentHandler = async (req, res) => {
         return res.status(404).json({ error: 'Agent not found' });
       }
 
+      const codeEnvironmentSelectionChanged =
+        updateData.code_environment_id !== undefined &&
+        updateData.code_environment_id !== existingAgent.code_environment_id;
       const statefulConfigurationChanged =
         (updateData.stateful_code_sessions !== undefined &&
           (updateData.stateful_code_sessions === true) !==
             (existingAgent.stateful_code_sessions === true)) ||
         (updateData.stateful_code_environment !== undefined &&
           (updateData.stateful_code_environment ?? 'user') !==
-            (existingAgent.stateful_code_environment ?? 'user'));
+            (existingAgent.stateful_code_environment ?? 'user')) ||
+        codeEnvironmentSelectionChanged;
       const activatesCodeExecution =
         includesToolsConfiguration &&
         updateData.tools.includes(Tools.execute_code) &&
@@ -1032,12 +1105,18 @@ const updateAgentHandler = async (req, res) => {
           updateData.stateful_code_sessions ?? existingAgent.stateful_code_sessions;
         const effectiveStatefulEnvironment =
           updateData.stateful_code_environment ?? existingAgent.stateful_code_environment;
+        const effectiveCodeEnvironmentId =
+          updateData.code_environment_id === null
+            ? undefined
+            : (updateData.code_environment_id ?? existingAgent.code_environment_id);
         if (
           !validateStatefulCodeEnvironment(
             req,
             res,
             effectiveStatefulSessions,
             effectiveStatefulEnvironment,
+            effectiveCodeEnvironmentId,
+            codeEnvironmentSelectionChanged,
           )
         ) {
           return;
@@ -1227,6 +1306,11 @@ const updateAgentHandler = async (req, res) => {
       }
     }
 
+    if (updateData.code_environment_id === null) {
+      delete updateData.code_environment_id;
+      updateData.$unset = { code_environment_id: 1 };
+    }
+
     let updatedAgent =
       Object.keys(updateData).length > 0
         ? await db.updateAgent({ id }, updateData, {
@@ -1333,6 +1417,7 @@ const duplicateAgentHandler = async (req, res) => {
         res,
         newAgentData.stateful_code_sessions,
         newAgentData.stateful_code_environment,
+        newAgentData.code_environment_id,
       )
     ) {
       return;
@@ -1486,7 +1571,18 @@ const duplicateAgentHandler = async (req, res) => {
     );
     newAgentData.actions = agentActions;
 
-    const newAgent = await db.createAgent(newAgentData);
+    let newAgent;
+    try {
+      newAgent = await db.createAgent(newAgentData);
+    } catch (error) {
+      await db.deleteActions({ agent_id: newAgentId, user: userId }).catch((cleanupError) => {
+        logger.error(
+          '[/agents/:id/duplicate] Failed to clean up cloned Actions after Agent creation failed:',
+          cleanupError,
+        );
+      });
+      throw error;
+    }
 
     try {
       await Promise.all([
@@ -1523,7 +1619,9 @@ const duplicateAgentHandler = async (req, res) => {
     });
   } catch (error) {
     logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', error);
-
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -1925,6 +2023,7 @@ const revertAgentVersionHandler = async (req, res) => {
         res,
         revertVersion.stateful_code_sessions,
         revertVersion.stateful_code_environment,
+        revertVersion.code_environment_id,
       )
     ) {
       return;
@@ -2051,6 +2150,9 @@ const revertAgentVersionHandler = async (req, res) => {
     return res.json(updatedAgent);
   } catch (error) {
     logger.error('[/agents/:id/revert] Error reverting Agent version', error);
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };

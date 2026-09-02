@@ -153,6 +153,23 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('should lazy-init YAML server when admin overrides only the OBO field', async () => {
+    await registry.addServer('yaml_remote', sseConfig, 'CACHE');
+    inspectSpy.mockClear();
+
+    const overrideConfig: t.MCPOptions = {
+      ...sseConfig,
+      obo: { scopes: 'api://mcp-server/Mcp.Tools.ReadWrite' },
+    };
+    const result = await registry.ensureConfigServers({
+      yaml_remote: overrideConfig,
+    });
+
+    expect(result).toHaveProperty('yaml_remote');
+    expect(result.yaml_remote.obo).toEqual({ scopes: 'api://mcp-server/Mcp.Tools.ReadWrite' });
+    expect(inspectSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('should not re-init YAML server when only the difference is an inspector-derived field absent from rawConfig', async () => {
     const yamlWithInferred: t.MCPOptions = {
       ...sseConfig,

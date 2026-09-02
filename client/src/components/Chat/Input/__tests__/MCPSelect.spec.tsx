@@ -126,6 +126,28 @@ describe('MCPSelect', () => {
     expect(items[0]).toHaveFocus();
   });
 
+  it('labels the badge from the servers the menu offers, not the raw selection', () => {
+    mockMcpServerManager = {
+      ...defaultMcpServerManager,
+      mcpValues: ['server-a', 'hidden-server'],
+    };
+    render(<MCPSelect />);
+
+    expect(screen.getByRole('button', { name: /Server A/i })).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_x_selected')).not.toBeInTheDocument();
+  });
+
+  it('shows no label when every selected server is hidden from the menu', () => {
+    mockMcpServerManager = {
+      ...defaultMcpServerManager,
+      mcpValues: ['hidden-server'],
+    };
+    render(<MCPSelect />);
+
+    expect(screen.getByRole('button', { name: /MCP Servers/i })).toBeInTheDocument();
+    expect(screen.queryByText('hidden-server')).not.toBeInTheDocument();
+  });
+
   it('renders nothing when user lacks MCP access', () => {
     mockCanUseMcp = false;
     const { container } = render(<MCPSelect />);

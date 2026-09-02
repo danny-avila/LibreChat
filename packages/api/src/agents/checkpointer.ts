@@ -9,6 +9,7 @@ import type {
   CheckpointTuple,
   PendingWrite,
 } from '@langchain/langgraph-checkpoint';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { RunnableConfig } from '@langchain/core/runnables';
 
@@ -696,6 +697,47 @@ export interface AgentEventCheckpointReference {
   checkpointNs: string;
 }
 
+export interface AgentEventCheckpointMessageOverlay {
+  source: string;
+  messages: readonly BaseMessage[];
+}
+
+function applyAgentEventCheckpointMessageOverlay(
+  checkpoint: Checkpoint,
+  overlay: AgentEventCheckpointMessageOverlay | undefined,
+): Checkpoint {
+  if (overlay == null) {
+    return checkpoint;
+  }
+  const channelValues = checkpoint.channel_values;
+  const messages = Array.isArray(channelValues.messages) ? channelValues.messages : [];
+  const retainedMessages = messages.filter((message) => {
+    if (message == null || typeof message !== 'object') {
+      return true;
+    }
+    const kwargs = (message as { additional_kwargs?: { source?: unknown } }).additional_kwargs;
+    return kwargs?.source !== overlay.source;
+  });
+  const agentMessages = channelValues.agentMessages;
+  const retainedAgentMessages = Array.isArray(agentMessages)
+    ? agentMessages.filter((message) => {
+        if (message == null || typeof message !== 'object') {
+          return true;
+        }
+        const kwargs = (message as { additional_kwargs?: { source?: unknown } }).additional_kwargs;
+        return kwargs?.source !== overlay.source;
+      })
+    : agentMessages;
+  return {
+    ...checkpoint,
+    channel_values: {
+      ...channelValues,
+      messages: [...retainedMessages, ...overlay.messages],
+      ...(retainedAgentMessages === undefined ? {} : { agentMessages: retainedAgentMessages }),
+    },
+  };
+}
+
 function eventActorRunnableConfig(
   reference: Pick<AgentEventCheckpointReference, 'threadId' | 'checkpointNs'>,
   invocationId: string,
@@ -718,6 +760,7 @@ export async function forkAgentEventCheckpoint(
   checkpointNs: string,
   invocationId: string,
   cfg?: TCheckpointerConfig,
+  messageOverlay?: AgentEventCheckpointMessageOverlay,
 ): Promise<AgentEventCheckpointReference | null> {
   const saver = await getAgentCheckpointer(cfg);
   if (!saver || checkpointNs.length === 0 || invocationId.length === 0) {
@@ -732,7 +775,7 @@ export async function forkAgentEventCheckpoint(
   const target = { threadId: source.threadId, checkpointNs };
   const persisted = await saver.put(
     eventActorRunnableConfig(target, invocationId),
-    tuple.checkpoint,
+    applyAgentEventCheckpointMessageOverlay(tuple.checkpoint, messageOverlay),
     tuple.metadata,
   );
   const checkpointId = persisted.configurable?.checkpoint_id;

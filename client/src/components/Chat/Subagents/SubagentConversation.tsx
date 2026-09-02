@@ -1,22 +1,22 @@
 import { useMemo, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
-import { Bot, ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
-import {
-  hasTruncatedActivityDetails,
-  SubagentActivityContent,
-  SubagentStatus,
-} from './SubagentActivity';
+import { SubagentActivityContent, SubagentStatus } from './SubagentActivity';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
+import { isAbnormalTerminalStatus, isLiveSubagentStatus } from './status';
+import { messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
+import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
+import { cn } from '~/utils';
 
 const TRIGGER_LABELS = {
   parent_dispatch: 'com_ui_subagent_trigger_parent_dispatch',
@@ -33,59 +33,82 @@ function TriggerIcon({ kind }: { kind: ChildConversationTurn['trigger']['kind'] 
   );
 }
 
-function ExternalEventTrigger({ turn }: { turn: ChildConversationTurn }) {
+function ExternalEventTrigger({
+  turn,
+  fullWidth,
+}: {
+  turn: ChildConversationTurn;
+  fullWidth: boolean;
+}) {
   const localize = useLocalize();
   const [expanded, setExpanded] = useState(false);
   const details = turn.trigger.externalEvent;
   const label = localize('com_ui_subagent_trigger_external_event');
+  let body: ReactNode;
   if (details == null) {
-    return (
-      <div className="flex min-h-9 items-center gap-2 text-sm text-text-secondary">
+    body = (
+      <div className="flex items-center gap-1.5 text-xs font-medium text-text-secondary">
         <TriggerIcon kind="external_event" />
-        <span className="font-medium">{label}</span>
+        <span>{label}</span>
       </div>
+    );
+  } else {
+    body = (
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-auto min-h-6 w-full justify-start gap-1.5 px-0 text-left text-xs font-medium text-text-secondary hover:bg-transparent hover:text-text-primary"
+          >
+            <TriggerIcon kind="external_event" />
+            <span>{label}</span>
+            <span className="min-w-0 truncate font-normal">
+              {details.eventType} · {details.sourceType}
+            </span>
+            <span className="sr-only">{details.occurredAt}</span>
+            <ChevronDown
+              size={14}
+              aria-hidden
+              className={`ml-auto shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="ml-8 border-l border-border-light py-1 pl-3 text-xs text-text-secondary">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+            <dt>{localize('com_ui_subagent_event_type')}</dt>
+            <dd className="break-words text-text-primary">{details.eventType}</dd>
+            <dt>{localize('com_ui_subagent_event_source')}</dt>
+            <dd className="break-words text-text-primary">{details.sourceType}</dd>
+            <dt>{localize('com_ui_subagent_event_received')}</dt>
+            <dd className="break-words text-text-primary">
+              {new Date(details.occurredAt).toLocaleString()}
+            </dd>
+            {details.expectedActionToolName != null && (
+              <>
+                <dt>{localize('com_ui_subagent_event_expected_action')}</dt>
+                <dd className="break-words text-text-primary">{details.expectedActionToolName}</dd>
+              </>
+            )}
+          </dl>
+        </CollapsibleContent>
+      </Collapsible>
     );
   }
   return (
-    <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <CollapsibleTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-auto min-h-9 w-full justify-start gap-2 px-0 text-left text-sm text-text-secondary hover:bg-transparent hover:text-text-primary"
-        >
-          <TriggerIcon kind="external_event" />
-          <span className="font-medium">{label}</span>
-          <span className="min-w-0 truncate text-xs">
-            {details.eventType} · {details.sourceType}
-          </span>
-          <span className="sr-only">{details.occurredAt}</span>
-          <ChevronDown
-            size={15}
-            aria-hidden
-            className={`ml-auto shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-          />
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="ml-8 border-l border-border-light py-1 pl-3 text-xs text-text-secondary">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-          <dt>{localize('com_ui_subagent_event_type')}</dt>
-          <dd className="break-words text-text-primary">{details.eventType}</dd>
-          <dt>{localize('com_ui_subagent_event_source')}</dt>
-          <dd className="break-words text-text-primary">{details.sourceType}</dd>
-          <dt>{localize('com_ui_subagent_event_received')}</dt>
-          <dd className="break-words text-text-primary">
-            {new Date(details.occurredAt).toLocaleString()}
-          </dd>
-          {details.expectedActionToolName != null && (
-            <>
-              <dt>{localize('com_ui_subagent_event_expected_action')}</dt>
-              <dd className="break-words text-text-primary">{details.expectedActionToolName}</dd>
-            </>
-          )}
-        </dl>
-      </CollapsibleContent>
-    </Collapsible>
+    <MessageRow
+      id={`${turn.taskId}:trigger`}
+      icon={<TriggerIcon kind="external_event" />}
+      label={label}
+      footer={null}
+      timestamp={turn.trigger.createdAt ?? details?.occurredAt}
+      ariaLabel={label}
+      headerPrefix=""
+      isCreatedByUser={true}
+      fullWidth={fullWidth}
+    >
+      {body}
+    </MessageRow>
   );
 }
 
@@ -105,7 +128,7 @@ function TriggerMessage({ turn, fullWidth }: { turn: ChildConversationTurn; full
     [turn.trigger.summary],
   );
   if (turn.trigger.kind === 'external_event') {
-    return <ExternalEventTrigger turn={turn} />;
+    return <ExternalEventTrigger turn={turn} fullWidth={fullWidth} />;
   }
   return (
     <MessageRow
@@ -166,8 +189,34 @@ function ChildMessage({
   const agentsMap = useAgentsMapContext();
   const agent = agentId == null ? undefined : agentsMap?.[agentId];
   const label = agent?.name ?? turn.activity.title;
-  const detailsLimited =
-    turn.activity.activityTruncated === true || hasTruncatedActivityDetails(turn.activity);
+  const detailsLimited = turn.activity.activityTruncated === true;
+  let limitedNotice: ReactNode;
+  if (detailsLimited && onLoadDetails != null && detailState !== 'unavailable') {
+    limitedNotice = (
+      <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
+        {detailState === 'error'
+          ? localize('com_ui_retry')
+          : localize('com_ui_subagent_show_full_activity')}
+      </Button>
+    );
+  } else {
+    limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
+  }
+  let footerContent: ReactNode = null;
+  if (isAbnormalTerminalStatus(turn.activity.status)) {
+    footerContent = <SubagentStatus activity={turn.activity} />;
+  } else if (isLiveSubagentStatus(turn.activity.status)) {
+    const triggeredAt = turn.trigger.createdAt ?? turn.trigger.externalEvent?.occurredAt;
+    const startedAt = triggeredAt == null ? NaN : Date.parse(triggeredAt);
+    footerContent = <ElapsedTimer start={Number.isFinite(startedAt) ? startedAt : undefined} />;
+  }
+  /** The main chat footer's own metrics, held whether or not anything occupies
+   *  the slot: the timer leaving at completion must not step the turns below it
+   *  upward, and the reading has to be sized by the same `text-xs` its main
+   *  chat counterpart inherits rather than by the panel's body size. */
+  const footer = (
+    <div className={cn('mt-1 flex justify-start gap-3', messageFooterClasses)}>{footerContent}</div>
+  );
   const iconData = {
     endpoint: EModelEndpoint.agents,
     modelLabel: label,
@@ -176,19 +225,12 @@ function ChildMessage({
   return (
     <MessageRow
       id={`${turn.taskId}:assistant`}
-      icon={
-        agent == null ? (
-          <span className="flex size-6 items-center justify-center rounded-full bg-surface-tertiary text-text-secondary">
-            <Bot size={14} aria-hidden />
-          </span>
-        ) : (
-          <MessageIcon iconData={iconData} agent={agent} />
-        )
-      }
+      /** The main chat author glyph, unconditionally: with no resolved agent it
+       *  falls back to the endpoint icon there too, so an unresolved child does
+       *  not get a differently-inset placeholder of its own. */
+      icon={<MessageIcon iconData={iconData} agent={agent} />}
       label={label}
-      footer={
-        turn.activity.status === 'completed' ? null : <SubagentStatus activity={turn.activity} />
-      }
+      footer={footer}
       ariaLabel={label}
       headerPrefix=""
       isCreatedByUser={false}
@@ -199,24 +241,12 @@ function ChildMessage({
         activityId={`${turn.taskId}:assistant`}
         state={state}
         showPrompt={false}
-        showDetailTruncationNotice={false}
         conversationId={conversationId}
+        underHeaderIcon
         onCancelControl={onCancelControl}
       />
       {detailsLimited && detailState !== 'loading' && (
-        <div className="mt-2 text-xs text-text-secondary">
-          {turn.activity.activityTruncated === true &&
-          onLoadDetails != null &&
-          detailState !== 'unavailable' ? (
-            <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
-              {detailState === 'error'
-                ? localize('com_ui_retry')
-                : localize('com_ui_subagent_show_full_activity')}
-            </Button>
-          ) : (
-            localize('com_ui_subagent_activity_details_unavailable')
-          )}
-        </div>
+        <div className="mt-2 text-xs text-text-secondary">{limitedNotice}</div>
       )}
       {detailState === 'loading' && (
         <div className="mt-2 text-xs text-text-secondary" aria-live="polite">
@@ -246,7 +276,7 @@ export default function SubagentConversation({
   detailStateByTask?: ReadonlyMap<string, 'idle' | 'loading' | 'unavailable' | 'error'>;
   onLoadTurnDetails?: (taskId: string) => void;
 }) {
-  const fullWidth = useRecoilValue(store.maximizeChatSpace);
+  const { maximizeChatSpace: fullWidth } = useChatSurface();
   return (
     <div className="flex flex-col gap-6 py-4" data-subagent-conversation>
       {turns.map((turn) => (

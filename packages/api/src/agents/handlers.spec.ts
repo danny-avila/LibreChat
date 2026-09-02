@@ -56,10 +56,12 @@ function invokeHandler(
     directOnlyToolNames: string[];
     codeExecutionOnlyToolNames: string[];
   },
+  agentId?: string,
 ): Promise<ToolExecuteResult[]> {
   return new Promise((resolve, reject) => {
     const request = {
       toolCalls,
+      agentId,
       callerCapabilityProjection,
       resolve,
       reject,
@@ -884,6 +886,60 @@ describe('createToolExecuteHandler', () => {
         expect.any(Object),
       );
     });
+
+    it('allows audit-only tool output that cannot be completely traversed', async () => {
+      const opaqueArtifact = new Proxy(
+        { value: 'hidden' },
+        {
+          ownKeys: () => {
+            throw new Error('opaque');
+          },
+        },
+      );
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'opaque_output_tool',
+        invoke: jest.fn(async () => ({ content: 'safe result', artifact: opaqueArtifact })),
+      };
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({
+          loadedTools: [tool] as never[],
+          configurable: {
+            req: {
+              config: {
+                filters: {
+                  toolArguments: {
+                    pii: {
+                      action: 'audit',
+                      fields: ['output'],
+                      starterPatterns: [],
+                      customPatterns: [
+                        {
+                          id: 'protected-value',
+                          label: 'protected value',
+                          regex: 'PROTECTED-[A-Z-]+',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        toolEndCallback,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_opaque_audit_output', name: 'opaque_output_tool', args: {} },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.artifact).toBe(opaqueArtifact);
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback.mock.calls[0][0].outputFiltered).toBeUndefined();
+      expect(toolEndCallback.mock.calls[0][0].output.artifact).toBe(opaqueArtifact);
+    });
   });
 
   describe('programmatic tool config', () => {
@@ -1427,6 +1483,7 @@ describe('createToolExecuteHandler', () => {
     function createSkillHandler(
       getSkillByName: ToolExecuteOptions['getSkillByName'],
       filters?: Record<string, unknown>,
+      onSkillResolved?: ToolExecuteOptions['onSkillResolved'],
     ) {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
@@ -1435,7 +1492,7 @@ describe('createToolExecuteHandler', () => {
           ...(filters != null ? { req: { config: { filters } } } : {}),
         },
       }));
-      return createToolExecuteHandler({ loadTools, getSkillByName });
+      return createToolExecuteHandler({ loadTools, getSkillByName, onSkillResolved });
     }
 
     /** Skill with one bundled file plus every dep the priming gate requires,
@@ -1502,6 +1559,42 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('cannot be invoked by the model');
       expect(result.errorMessage).toContain('pii-redactor');
+    });
+
+    it('captures the exact identity of a successfully model-invoked Skill', async () => {
+      const onSkillResolved = jest.fn();
+      const getSkillByName = jest.fn(async () => ({
+        _id: { toString: () => 'skill-id' } as never,
+        name: 'analysis',
+        body: 'Analyze the position.',
+        fileCount: 0,
+        version: 4,
+      }));
+      const handler = createSkillHandler(getSkillByName, undefined, onSkillResolved);
+
+      const [result] = await invokeHandler(
+        handler,
+        [
+          {
+            id: 'call_skill_identity',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'analysis' },
+          },
+        ],
+        undefined,
+        'agent-child',
+      );
+
+      expect(result.status).toBe('success');
+      expect(onSkillResolved).toHaveBeenCalledWith(
+        {
+          id: 'skill-id',
+          name: 'analysis',
+          version: 4,
+          contentDigest: expect.any(String),
+        },
+        { agentId: 'agent-child' },
+      );
     });
 
     it('blocks stored skill instructions before injecting them into model context', async () => {
@@ -4391,6 +4484,8 @@ describe('createToolExecuteHandler', () => {
           baseUrl: 'https://stateful-code.example.com',
           codeSessionKey: 'execute_code:stateful:v1:user',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
+          executionRouteKey: 'stateful:deployment-a',
           runtimeSessionHint: 'v1:user',
           statefulSessions: true,
         },
@@ -4410,6 +4505,8 @@ describe('createToolExecuteHandler', () => {
         expect.objectContaining({
           codeApiBaseUrl: 'https://stateful-code.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
+          executionRouteKey: 'stateful:deployment-a',
           runtime_session_hint: 'v1:user',
         }),
       );
@@ -4450,7 +4547,7 @@ describe('createToolExecuteHandler', () => {
       });
 
       expect(result.status).toBe('success');
-      expect(markSandboxReady).toHaveBeenCalledWith('v2:user:abc');
+      expect(markSandboxReady).toHaveBeenCalledWith('v2:user:abc', 'stateful');
       expect(markSandboxReady).toHaveBeenCalledWith('conversation-1');
 
       jest.mocked(markSandboxReady).mockClear();
@@ -5562,10 +5659,43 @@ describe('createToolExecuteHandler', () => {
         expect(result.content).toContain('bash_tool');
       });
 
-      it('degrades to the image hint when decoded bytes are truncated (integrity guard)', async () => {
+      it('reports a round-trip-bound image as unreadable inline, not oversize', async () => {
+        /* Within the byte cap but needing more windowed `/exec` reads than
+         * one call may spend on the Code API's execution limiter. Saying
+         * "over the inline limit" here would misstate a fixable cause. */
+        const readSandboxImage = jest.fn(async () => ({
+          tooLarge: true as const,
+          reason: 'round_trips' as const,
+          bytes: 900_000,
+          inlineCeiling: 489_600,
+        }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_trips',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/wide.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('success');
+        /* Names the size that would actually work, so the model has a
+         * downscale target instead of a guess. */
+        expect(result.content).toContain('489600');
+        expect(result.content).not.toContain('inline limit');
+        expect(result.content).toContain('Downscale');
+      });
+
+      it('reports a truncated transfer as a failed read, not an unreadable format', async () => {
         /* Simulate codeapi clipping a large `/exec` stdout: the reported
-         * size does not match the decoded base64 length, so the bytes are
-         * unsafe to forward and we fall back to the bash hint. */
+         * size does not match the decoded base64 length. The bytes are
+         * unsafe to forward, but the read is retryable — saying the file
+         * "cannot be read as text" would report a permanent limit. */
         const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes + 100 }));
         const handler = makeReadFileHandler({
           codeEnvAvailable: true,
@@ -5583,11 +5713,39 @@ describe('createToolExecuteHandler', () => {
 
         expect(result.status).toBe('error');
         expect(result.artifact).toBeUndefined();
-        expect(result.errorMessage).toContain('image file');
-        expect(result.errorMessage).toContain('bash_tool');
+        expect(result.errorMessage).toContain('truncated transfer');
+        expect(result.errorMessage).toContain('Retry the read');
+        expect(result.errorMessage).not.toContain('cannot be read as text');
       });
 
-      it('degrades to the image hint when the image reader throws', async () => {
+      it('reports a missing interpreter as itself, not as a missing image path', async () => {
+        /* The sandbox reader surfaces `python3: not found` on stderr. A
+         * generic "not found" match would send the model to `ls /mnt/data`
+         * and hide the runner dependency the operator has to fix. */
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error('python3: not found');
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_nopython',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/chart.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('python3: not found');
+        expect(result.errorMessage).not.toContain('was not found in the code-execution sandbox');
+        expect(result.errorMessage).not.toContain('ls /mnt/data');
+      });
+
+      it('surfaces the transport failure when the image reader throws', async () => {
         const readSandboxImage = jest.fn(async () => {
           throw new Error('codeapi unreachable');
         });
@@ -5606,8 +5764,62 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('image file');
-        expect(result.errorMessage).toContain('bash_tool');
+        expect(result.errorMessage).toContain('codeapi unreachable');
+        expect(result.errorMessage).toContain('Retry the read');
+        expect(result.errorMessage).not.toContain('cannot be read as text');
+      });
+
+      it('tells the model to wait when the sandbox rate-limited the read', async () => {
+        /* Each window is one `/exec` call against a per-user limiter, so a
+         * chart-heavy turn can exhaust it. The old catch-all told the model
+         * images are unreadable, which stopped it from ever retrying. */
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error(
+            'Code API rate limit reached while reading "/mnt/data/7_interest_gap.png" from the sandbox (retry in 17s).',
+          );
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_429',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/7_interest_gap.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('rate limit reached');
+        expect(result.errorMessage).toContain('read it once more');
+        expect(result.errorMessage).not.toContain('cannot be read as text');
+      });
+
+      it('points a missing image at the directory listing instead of the bytes', async () => {
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error("[Errno 2] No such file or directory: '/mnt/data/gone.png'");
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_missing',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/gone.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('was not found');
+        expect(result.errorMessage).toContain('ls /mnt/data');
+        expect(result.errorMessage).not.toContain('cannot be read as text');
       });
 
       it('rejects non-image binary types with a bash-pointing message (not the image path)', async () => {

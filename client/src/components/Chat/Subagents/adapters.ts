@@ -9,7 +9,8 @@ import type {
   SubagentThreadView,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import type { SubagentProgress } from '~/store/subagents';
+import type { SubagentProgress } from './state';
+import { REDACTED_REASONING_MARKER } from './state';
 
 export type ChildActivityItem =
   | {
@@ -22,6 +23,7 @@ export type ChildActivityItem =
       type: 'reasoning';
       text?: string;
       label?: string;
+      textTruncated?: boolean;
     }
   | {
       type: 'tool';
@@ -82,7 +84,6 @@ type ContentToolCall = {
 
 const contentPartsToActivity = (
   parts: TMessageContentParts[],
-  reasoningVisibility: 'visible' | 'marker',
   approvalVisibility: 'visible' | 'hidden',
 ): ChildActivityItem[] =>
   parts.flatMap((part, index): ChildActivityItem[] => {
@@ -100,12 +101,16 @@ const contentPartsToActivity = (
       ];
     }
     if (part.type === ContentTypes.THINK) {
+      const think = (part as { think?: string }).think ?? '';
+      /** Streams from a pre-retention server substitute this marker for the
+       *  withheld reasoning text; normalize it back to a textless item so the
+       *  shared marker row renders instead of a disclosure containing "…". */
+      const text = think === REDACTED_REASONING_MARKER ? '' : think;
       return [
         {
           type: 'reasoning',
-          ...(reasoningVisibility === 'visible' ? { text: (part as { think: string }).think } : {}),
-          ...(reasoningVisibility === 'visible' &&
-          typeof (part as { reasoning_label?: string }).reasoning_label === 'string'
+          ...(text === '' ? {} : { text }),
+          ...(typeof (part as { reasoning_label?: string }).reasoning_label === 'string'
             ? { label: (part as { reasoning_label: string }).reasoning_label }
             : {}),
         },
@@ -276,15 +281,13 @@ export function adaptLivePersistedActivity(input: {
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
   isDetached?: boolean;
-  reasoningVisibility?: 'visible' | 'marker';
   approvalVisibility?: 'visible' | 'hidden';
 }): ChildActivity {
   const persisted = input.persistedContent ?? [];
   const live = (input.progress?.contentParts ?? []) as TMessageContentParts[];
-  const reasoningVisibility = input.reasoningVisibility ?? 'visible';
   const approvalVisibility = input.approvalVisibility ?? 'visible';
-  const persistedItems = contentPartsToActivity(persisted, reasoningVisibility, approvalVisibility);
-  const liveItems = contentPartsToActivity(live, reasoningVisibility, approvalVisibility);
+  const persistedItems = contentPartsToActivity(persisted, approvalVisibility);
+  const liveItems = contentPartsToActivity(live, approvalVisibility);
   let items = persistedItems.length > 0 ? persistedItems : liveItems;
   if (input.isDetached === true && input.progress?.coverage === 'suffix') {
     items = mergePersistedAndLiveActivity(persistedItems, liveItems);

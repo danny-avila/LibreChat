@@ -532,8 +532,13 @@ jobs:
 
   e2e:
     name: e2e
+    # `!cancelled()`, not `always()`: the gate has to survive a failed shard to report it, but a
+    # run superseded by `cancel-in-progress` has nothing to adjudicate. Under `always()` it was
+    # still dispatched onto a fresh runner while every other job went `cancelled`, then read
+    # `needs.e2e_shards.result == 'cancelled'` and exited 1 — so each superseded push left this
+    # required check red instead of cancelled. Matches the two lanes it gates.
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
