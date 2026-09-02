@@ -1,10 +1,8 @@
 import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import mongoMeili, {
-  MEILI_INDEX_SCHEMA_VERSION,
-  type SchemaWithMeiliMethods,
-} from '~/models/plugins/mongoMeili';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import mongoMeili, { MEILI_INDEX_SCHEMA_VERSION } from '~/models/plugins/mongoMeili';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
 import meiliLogger from '~/config/meiliLogger';
@@ -133,6 +131,10 @@ describe('Meilisearch Mongoose plugin', () => {
     mockGetDocument.mockClear();
     mockGetDocuments.mockReset().mockResolvedValue({ results: [] });
     mockWaitForTask.mockReset().mockResolvedValue({ status: 'succeeded' });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(async () => {
