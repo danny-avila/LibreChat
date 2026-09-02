@@ -428,6 +428,7 @@ describe('MultiMessage row mount window', () => {
     expect(container.querySelector('#m0 [data-message-search-text="true"]')).toHaveTextContent(
       'm0',
     );
+    expect(container.querySelector('#m0')).not.toHaveAttribute('aria-hidden');
   });
 
   it('mounts a changed branch row until its new height is measured', () => {

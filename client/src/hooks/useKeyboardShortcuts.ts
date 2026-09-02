@@ -14,8 +14,8 @@ import {
   isMacPlatform,
   parseBinding,
 } from '~/utils/shortcuts';
-import { mainTextareaId, NotificationSeverity } from '~/common';
 import { withAllRowsMountedImmediately } from '~/hooks/Messages';
+import { mainTextareaId, NotificationSeverity } from '~/common';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { useArchiveConvoMutation } from '~/data-provider';
 import { useHasAccess, useLocalize } from '~/hooks';

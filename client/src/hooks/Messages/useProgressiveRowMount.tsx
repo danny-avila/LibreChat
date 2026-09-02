@@ -8,8 +8,8 @@ import {
   useLayoutEffect,
   startTransition,
 } from 'react';
-import type { ReactNode, RefObject } from 'react';
 import { flushSync } from 'react-dom';
+import type { ReactNode, RefObject } from 'react';
 
 type MeasuredRow = { messageId: string; height: number };
 

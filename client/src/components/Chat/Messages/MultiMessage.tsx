@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import { memo, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilState } from 'recoil';
 import { ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
@@ -6,10 +6,10 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
 import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
+import { serializeMessageForClipboard } from '~/hooks/Messages/useCopyToClipboard';
 import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 import MessageContent from '~/components/Messages/MessageContent';
 import { useRowMountWindow } from '~/hooks/Messages';
-import { serializeMessageForClipboard } from '~/hooks/Messages/useCopyToClipboard';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
@@ -24,6 +24,7 @@ function MessageRowSlot({
   measureRow,
   mounted,
   placeholderHeight,
+  searchContent,
   searchText,
   steerAnchors,
   pinRow,
@@ -34,7 +35,8 @@ function MessageRowSlot({
   measureRow?: (depth: number, messageId: string, height: number) => void;
   mounted: boolean;
   placeholderHeight?: number;
-  searchText?: string;
+  searchContent: TMessage['content'];
+  searchText: TMessage['text'];
   steerAnchors?: Array<{ id: string; text: string }>;
   pinRow?: (depth: number, messageId: string) => void;
   children: ReactNode;
@@ -42,6 +44,10 @@ function MessageRowSlot({
   const ref = useRef<HTMLDivElement>(null);
   const focusedSteerIdRef = useRef<string>();
   const transferMessageFocusRef = useRef(false);
+  const searchableText = useMemo(
+    () => serializeMessageForClipboard({ content: searchContent, text: searchText }),
+    [searchContent, searchText],
+  );
 
   useLayoutEffect(() => {
     if (!mounted) return;
@@ -80,7 +86,6 @@ function MessageRowSlot({
     <div
       ref={ref}
       id={mounted ? undefined : messageId}
-      aria-hidden={mounted ? undefined : true}
       className={mounted ? undefined : 'message-render w-full'}
       data-message-row-slot="true"
       data-row-mounted={String(mounted)}
@@ -116,9 +121,9 @@ function MessageRowSlot({
       {children}
       {!mounted
         ? [
-            searchText ? (
+            searchableText ? (
               <span key="search-text" className="sr-only" data-message-search-text="true">
-                {searchText}
+                {searchableText}
               </span>
             ) : null,
             ...(steerAnchors?.map((steer) => (
@@ -336,7 +341,6 @@ function MultiMessage({
     if (part?.type !== ContentTypes.STEER || !part.steerId) return [];
     return [{ id: `steer-${part.steerId}`, text: part[ContentTypes.STEER] }];
   });
-  const searchText = serializeMessageForClipboard({ text: message.text, content: message.content });
   let rowSlot: ReactElement | null = null;
   if (rowMounted || (mountWindow?.mode === 'bounded' && measuredRow)) {
     rowSlot = (
@@ -345,7 +349,8 @@ function MultiMessage({
         messageId={message.messageId}
         mounted={rowMounted}
         placeholderHeight={measuredRow?.height}
-        searchText={searchText}
+        searchContent={message.content}
+        searchText={message.text}
         steerAnchors={steerAnchors}
         measureRow={mountWindow?.mode === 'bounded' ? mountWindow.measureRow : undefined}
         pinRow={mountWindow?.mode === 'bounded' ? mountWindow.pinRow : undefined}
