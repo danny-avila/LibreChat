@@ -529,38 +529,33 @@ const createMeiliMongooseModel = ({
         `[syncWithMeili] Approximate total number of all ${collectionName}: ${approxTotalCount}`,
       );
 
-      try {
-        // First, handle documents that need to be removed from Meili
-        logger.info(`[syncWithMeili] Starting cleanup of Meili index ${index.uid} before sync`);
-        await this.cleanupMeiliIndex(index, primaryKey, batchSize, delayMs);
-        logger.info(`[syncWithMeili] Completed cleanup of Meili index: ${index.uid}`);
-      } catch (error) {
-        logger.error('[syncWithMeili] Error during cleanup Meili before sync:', error);
-        throw error;
-      }
-
       let processedCount = 0;
-      let hasMore = true;
 
-      while (hasMore) {
-        const indexableQuery = getIndexableQuery();
-        const query: FilterQuery<unknown> = {
-          $and: [
-            indexableQuery,
-            {
-              $or: [
-                { _meiliIndex: { $ne: true } },
-                {
-                  _meiliIndex: true,
-                  /** Monotonic: reindex only strictly older projections; never downgrade newer ones. */
-                  _meiliIndexSchemaVersion: { $not: { $gte: indexSchemaVersion } },
-                },
-              ],
-            },
-          ],
-        };
+      try {
+        // Reindex stale-schema documents first: orphan cleanup resolves legacy
+        // documents through originalConversationId, so deleting orphans before
+        // this migration pass would drop live legacy pipe-ID conversations
+        // from search until their reindex batch restored them.
+        let hasMore = true;
 
-        try {
+        while (hasMore) {
+          const indexableQuery = getIndexableQuery();
+          const query: FilterQuery<unknown> = {
+            $and: [
+              indexableQuery,
+              {
+                $or: [
+                  { _meiliIndex: { $ne: true } },
+                  {
+                    _meiliIndex: true,
+                    /** Monotonic: reindex only strictly older projections; never downgrade newer ones. */
+                    _meiliIndexSchemaVersion: { $not: { $gte: indexSchemaVersion } },
+                  },
+                ],
+              },
+            ],
+          };
+
           const documents = await this.find(query)
             .select(attributesToIndex.join(' ') + ' _meiliIndex')
             .limit(batchSize)
@@ -585,10 +580,21 @@ const createMeiliMongooseModel = ({
           if (hasMore && delayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
-        } catch (error) {
-          logger.error('[syncWithMeili] Error processing documents batch:', error);
-          throw error;
         }
+      } catch (error) {
+        logger.error('[syncWithMeili] Error processing documents batch:', error);
+        throw error;
+      }
+
+      try {
+        // Cleanup runs after reindexing so legacy documents carry
+        // originalConversationId before orphan detection runs.
+        logger.info(`[syncWithMeili] Starting cleanup of Meili index ${index.uid} after sync`);
+        await this.cleanupMeiliIndex(index, primaryKey, batchSize, delayMs);
+        logger.info(`[syncWithMeili] Completed cleanup of Meili index: ${index.uid}`);
+      } catch (error) {
+        logger.error('[syncWithMeili] Error during cleanup Meili after sync:', error);
+        throw error;
       }
 
       const duration = Date.now() - startTime;
