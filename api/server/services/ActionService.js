@@ -5,6 +5,7 @@ const { tool } = require('@librechat/agents/langchain/tools');
 const { logger, decryptV2 } = require('@librechat/data-schemas');
 const {
   sendEvent,
+  isAbortError,
   logAxiosError,
   detachOnAbort,
   getTokenExpiresAt,
@@ -308,6 +309,12 @@ async function createActionTool({
                 const expiresAt = getTokenExpiresAt(result.expires_in);
                 metadata.oauth_token_expires_at = expiresAt?.toISOString();
               } catch (error) {
+                /** A stopped run is not an authentication failure. Relabelling it
+                 *  loses the abort identity every downstream boundary keys on and
+                 *  reports a fault the user caused deliberately. */
+                if (isAbortError(error)) {
+                  throw error;
+                }
                 const errorMessage = 'Failed to authenticate OAuth tool';
                 logger.error(errorMessage, error);
                 throw new Error(errorMessage);
@@ -377,6 +384,12 @@ async function createActionTool({
                 const expiresAt = getTokenExpiresAt(refreshData.expires_in);
                 metadata.oauth_token_expires_at = expiresAt?.toISOString();
               } catch (error) {
+                /** The refresh did not fail — this run stopped waiting on it.
+                 *  Falling through to `requestLogin` would emit an OAuth prompt
+                 *  and open pending authorization state for a turn that is over. */
+                if (isAbortError(error)) {
+                  throw error;
+                }
                 logger.error('Failed to refresh token, requesting new login:', error);
                 await requestLogin();
               }
@@ -388,6 +401,7 @@ async function createActionTool({
           await preparedExecutor.setAuth(metadata);
         } catch (error) {
           if (
+            isAbortError(error) ||
             error.message.includes('No access token found') ||
             error.message.includes('Access token is expired')
           ) {
@@ -404,6 +418,13 @@ async function createActionTool({
       }
       return response.data;
     } catch (error) {
+      /** Surface the cancellation as a cancellation: `logAxiosError` would log it
+       *  at error level and return its text as the tool's result, presenting a
+       *  stopped turn as a failed API call. */
+      if (isAbortError(error)) {
+        logger.debug(`Action call to ${action.metadata.domain} cancelled by user abort`);
+        throw error;
+      }
       const message = `API call to ${action.metadata.domain} failed:`;
       return logAxiosError({ message, error });
     }
