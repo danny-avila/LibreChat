@@ -1946,7 +1946,10 @@ class AgentClient extends BaseClient {
    *
    * Equal values share one durable write: a repeat while the first write is still
    * in flight awaits that same promise rather than treating an uncommitted value
-   * as published. A live snapshot with nothing to persist after an earlier publish
+   * as published. Distinct values are issued in call order, each after the
+   * previous write settles, so the store's last-writer-wins semantics keep the
+   * newest snapshot rather than whichever write happened to finish last. A live
+   * snapshot with nothing to persist after an earlier publish
    * writes a neutral record (ratio 1, no tier), since a running job's fields cannot
    * be deleted through the metadata writer; it seeds the next turn exactly as no
    * record would. Failures only log.
@@ -1970,19 +1973,18 @@ class AgentClient extends BaseClient {
     if (this.contextMetaPublication?.serialized === serialized) {
       return this.contextMetaPublication.promise;
     }
-    const promise = GenerationJobManager.updateMetadata(
-      streamId,
-      { contextMeta },
-      this.jobCreatedAt,
-    ).catch((err) => {
-      if (this.contextMetaPublication?.promise === promise) {
-        this.contextMetaPublication = undefined;
-      }
-      logger.warn(
-        `[AgentClient] Failed to publish context meta for ${streamId}`,
-        getSafeErrorMetadata(err),
-      );
-    });
+    const previous = this.contextMetaPublication?.promise ?? Promise.resolve();
+    const promise = previous
+      .then(() => GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt))
+      .catch((err) => {
+        if (this.contextMetaPublication?.promise === promise) {
+          this.contextMetaPublication = undefined;
+        }
+        logger.warn(
+          `[AgentClient] Failed to publish context meta for ${streamId}`,
+          getSafeErrorMetadata(err),
+        );
+      });
     this.contextMetaPublication = { serialized, promise };
     return promise;
   }
