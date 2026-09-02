@@ -3338,6 +3338,12 @@ export function createConversationMethods(
    * (assistants threads, resumed runs, terminal abort re-saves) rather than through
    * BaseClient's saveConvo payload.
    *
+   * The same conditional write `saveConvo` uses: the stamp and the clear of the catch-up it
+   * outranks are one update, so a `/seen` that matched the previous reply while this one was
+   * being persisted cannot leave the new reply reading as already seen, and only a write that
+   * actually moves the stamp forward clears anything. A concurrent direct save that arrives
+   * with an older stamp matches nothing and leaves the newer state alone.
+   *
    * `updatedAt` moves with it, exactly as BaseClient's reply path already does: a new reply is
    * real activity and belongs at the top of the sidebar. It is also what the away poll pages
    * by, so a stamp that left the order alone would hide replies to any conversation that had
@@ -3346,11 +3352,18 @@ export function createConversationMethods(
   async function stampConvoLastResponse(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const replyStamp = new Date();
       const stamped = await Conversation.findOneAndUpdate(
-        { conversationId, user },
-        /* `$max` for the same reason as `saveConvo`: concurrent direct-save paths must not
-         * walk the stamp backwards. */
-        { $max: { lastResponseAt: new Date() } },
+        {
+          conversationId,
+          user,
+          $or: [
+            { lastResponseAt: null },
+            { lastResponseAt: { $exists: false } },
+            { lastResponseAt: { $lt: replyStamp } },
+          ],
+        },
+        { $set: { lastResponseAt: replyStamp }, $unset: { lastSeenAt: '' } },
         {
           new: true,
           projection: { conversationId: 1, chatProjectId: 1, createdAt: 1, updatedAt: 1 },

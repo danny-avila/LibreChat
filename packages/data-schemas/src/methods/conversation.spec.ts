@@ -2014,6 +2014,46 @@ describe('Conversation Operations', () => {
       expect(convo?.updatedAt?.getTime()).toBeGreaterThan(createdAt.getTime());
     });
 
+    it('clears a catch-up the new reply outranks', async () => {
+      /* `/seen` can accept the previous reply while this one is being persisted, and a
+         replica's clock can date that catch-up ahead: the stamp and the clear are one write. */
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T09:00:00.000Z'),
+        lastSeenAt: new Date(Date.now() + 5_000),
+      });
+
+      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastSeenAt == null).toBe(true);
+    });
+
+    it('leaves a read conversation alone when its stored reply is already newer', async () => {
+      const newer = new Date(Date.now() + 60_000);
+      const seenAt = new Date(Date.now() + 90_000);
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: newer,
+        lastSeenAt: seenAt,
+      });
+
+      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
+      expect(convo?.lastSeenAt?.getTime()).toBe(seenAt.getTime());
+    });
+
     it('does not stamp another user’s conversation', async () => {
       await Conversation.create({
         conversationId: mockConversationData.conversationId,
