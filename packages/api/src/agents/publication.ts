@@ -22,7 +22,7 @@ export interface ContextMetaPublisher {
    * last-writer-wins keeps the newest snapshot. Never rejects.
    */
   publish(contextMeta: IAgentEventActorContextMeta): Promise<void>;
-  /** Whether a publication is recorded (settled or in flight). */
+  /** Whether the job may carry a record: a write has committed, or one is in flight. */
   readonly hasPublished: boolean;
 }
 
@@ -63,7 +63,9 @@ async function writeWithRetry(
  * ordered so the newest record wins, retried on transient failure. A caller
  * that awaits `publish` before its model call therefore knows the job carries
  * the record that describes that call. An exhausted publication is reported
- * through `onFailure` and forgotten, so the next snapshot writes again.
+ * through `onFailure` and forgotten, so the next snapshot writes again, while
+ * a record committed earlier still counts as published so that a later neutral
+ * snapshot overwrites it instead of leaving it on the job.
  */
 export function createContextMetaPublisher(
   options: ContextMetaPublisherOptions,
@@ -76,9 +78,10 @@ export function createContextMetaPublisher(
     delay = sleep,
   } = options;
   let latest: Publication | undefined;
+  let committed = false;
   return {
     get hasPublished() {
-      return latest != null;
+      return committed || latest != null;
     },
     publish(contextMeta) {
       const serialized = JSON.stringify(contextMeta);
@@ -89,6 +92,9 @@ export function createContextMetaPublisher(
       const publication: Publication = { serialized, promise: Promise.resolve() };
       publication.promise = previous
         .then(() => writeWithRetry(contextMeta, { write, attempts, retryDelayMs, delay }))
+        .then(() => {
+          committed = true;
+        })
         .catch((error: unknown) => {
           if (latest === publication) {
             latest = undefined;

@@ -103,6 +103,39 @@ describe('createContextMetaPublisher', () => {
     expect(publisher.hasPublished).toBe(true);
   });
 
+  it('still counts an earlier committed record after a later publication is exhausted', async () => {
+    const write = jest
+      .fn<Promise<void>, [IAgentEventActorContextMeta]>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValue(new Error('down'));
+    const onFailure = jest.fn();
+    const publisher = createContextMetaPublisher({
+      write,
+      onFailure,
+      attempts: 2,
+      delay: noDelay,
+    });
+    const neutral = { calibrationRatio: 1, encoding: 'claude' };
+
+    await publisher.publish(tier(50_000));
+    await publisher.publish(tier(25_000));
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    expect(publisher.hasPublished).toBe(true);
+    expect(
+      selectRunContextMetaToPublish({
+        live: true,
+        captured: undefined,
+        inherited: undefined,
+        hasPublished: publisher.hasPublished,
+        getEncoding: () => 'claude',
+      }),
+    ).toEqual(neutral);
+
+    write.mockResolvedValue(undefined);
+    await publisher.publish(neutral);
+    expect(write).toHaveBeenLastCalledWith(neutral);
+  });
+
   it('keeps a newer publication when an older one fails after it was superseded', async () => {
     const olderGate = deferred();
     const write = jest.fn(async (contextMeta: IAgentEventActorContextMeta) => {
