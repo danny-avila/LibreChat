@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
@@ -48,7 +48,10 @@ export default function useCompactConversation() {
   const { conversation, latestMessageId, isSubmitting, index } = useChatContext();
   const setIsCompacting = useSetRecoilState(store.isCompactingFamily(index));
   const { mutate, isLoading } = useCompactConversationMutation();
-
+  /** TanStack Query v4 discards per-call `mutate` callbacks when the caller
+   *  unmounts, so leaving the route mid-compaction would wedge the pane's
+   *  submission gate shut until reload. The unmount path clears the lock. */
+  useEffect(() => () => setIsCompacting(false), [setIsCompacting]);
   const conversationId = conversation?.conversationId;
   const hasConversation =
     conversationId != null &&
