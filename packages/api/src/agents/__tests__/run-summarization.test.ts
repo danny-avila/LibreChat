@@ -8,8 +8,8 @@ import {
 } from 'librechat-data-provider';
 import type { CompactionSemanticIndex, SubagentTaskConfig } from '@librechat/agents';
 import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
+import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { BaseMessage } from '@langchain/core/messages';
-import type { AppConfig } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import { createRun, isAskUserQuestionAdminDisabled } from '~/agents/run';
 
@@ -187,6 +187,8 @@ async function callAndCapture(
     compactionSemanticIndex?: CompactionSemanticIndex;
     subagentTasks?: SubagentTaskConfig;
     modelCallbacks?: readonly ModelBoundChatModelCallback[];
+    user?: IUser;
+    tenantId?: string;
   } = {},
 ) {
   const agents = opts.agents ?? [makeAgent()];
@@ -203,6 +205,8 @@ async function callAndCapture(
     compactionSemanticIndex: opts.compactionSemanticIndex,
     subagentTasks: opts.subagentTasks,
     modelCallbacks: opts.modelCallbacks,
+    user: opts.user,
+    tenantId: opts.tenantId,
     streaming: true,
     streamUsage: true,
   });
@@ -1242,6 +1246,29 @@ describe('custom-endpoint provider resolution', () => {
         'Bearer ${TEST_PORTKEY_KEY}',
     );
     expect(call).toBeDefined();
+  });
+
+  it('uses the authoritative run tenant in custom-endpoint summarization headers', async () => {
+    const appConfig = makeAppConfig([
+      {
+        name: 'Tenant Gateway',
+        baseURL: 'https://gateway.example.com/v1',
+        apiKey: 'gateway-key',
+        headers: { 'X-Tenant-ID': '{{LIBRECHAT_USER_TENANT_ID}}' },
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Tenant Gateway', model: 'summary-model' },
+      appConfig,
+      user: { id: 'user-1', tenantId: 'stale-user-tenant' } as IUser,
+      tenantId: 'request-tenant',
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    const configuration = parameters.configuration as Record<string, unknown>;
+
+    expect(configuration.defaultHeaders).toEqual({ 'X-Tenant-ID': 'request-tenant' });
   });
 
   it('forwards PROXY env var into summarization client configuration', async () => {

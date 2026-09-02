@@ -3,6 +3,11 @@ import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody, RunLLMConfig } from '~/types';
 import { resolveHeaders } from './env';
 
+const TENANT_ID_HEADER_PLACEHOLDERS = [
+  '{{LIBRECHAT_USER_TENANTID}}',
+  '{{LIBRECHAT_USER_TENANT_ID}}',
+] as const;
+
 /**
  * The media type of a `Content-Type` header — the lowercased `type/subtype` pair with any
  * parameters stripped, or `''` when the header is absent or empty.
@@ -81,6 +86,42 @@ export function mergeHeaders(
 type DefaultHeadersContainer = { defaultHeaders?: Record<string, string> };
 
 /**
+ * Resolves model-header templates with the request-scoped tenant supplied by
+ * the run host. Tenant substitution is intentionally scoped to model headers;
+ * it does not widen the user fields exposed to other template consumers.
+ */
+export function resolveModelHeaders({
+  headers,
+  user,
+  tenantId,
+  body,
+  customUserVars,
+}: {
+  headers: Record<string, string> | undefined;
+  user?: Partial<IUser> | { id: string };
+  tenantId?: string;
+  body?: RequestBody;
+  customUserVars?: Record<string, string>;
+}): Record<string, string> {
+  const resolved = resolveHeaders({
+    headers,
+    user,
+    body,
+    customUserVars,
+    stripUnresolved: true,
+  });
+
+  for (const [name, value] of Object.entries(resolved)) {
+    resolved[name] = TENANT_ID_HEADER_PLACEHOLDERS.reduce(
+      (current, placeholder) => current.replaceAll(placeholder, tenantId ?? ''),
+      value,
+    );
+  }
+
+  return resolved;
+}
+
+/**
  * Header maps already resolved by `resolveConfigHeaders`. `resolveConfigHeaders`
  * mutates config objects in place, and the same initialized agent (hence the same
  * nested header objects) can flow through `buildAgentInput` more than once (root +
@@ -114,6 +155,7 @@ const resolvedHeaderMaps = new WeakSet<object>();
 export function resolveConfigHeaders({
   llmConfig,
   user,
+  tenantId,
   body,
   customUserVars,
 }: {
@@ -123,6 +165,8 @@ export function resolveConfigHeaders({
    *  full run config. */
   llmConfig?: Partial<RunLLMConfig> | null;
   user?: Partial<IUser> | { id: string };
+  /** Authoritative request tenant used only for model-header templates. */
+  tenantId?: string;
   body?: RequestBody;
   customUserVars?: Record<string, string>;
 }): void {
@@ -134,7 +178,7 @@ export function resolveConfigHeaders({
     if (resolvedHeaderMaps.has(headers)) {
       return headers;
     }
-    const resolved = resolveHeaders({ headers, user, body, customUserVars, stripUnresolved: true });
+    const resolved = resolveModelHeaders({ headers, user, tenantId, body, customUserVars });
     resolvedHeaderMaps.add(resolved);
     return resolved;
   };

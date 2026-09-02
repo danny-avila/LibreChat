@@ -179,6 +179,36 @@ describe('resolveConfigHeaders', () => {
     delete process.env.HEADERS_SPEC_GATEWAY_KEY;
   });
 
+  it('resolves model tenant aliases without exposing tenantId through the safe user', () => {
+    const llmConfig = {
+      configuration: {
+        defaultHeaders: {
+          'X-Tenant-ID': '{{LIBRECHAT_USER_TENANT_ID}}',
+          'X-Canonical-Tenant-ID': '{{LIBRECHAT_USER_TENANTID}}',
+        },
+      },
+    } as unknown as RunLLMConfig;
+
+    resolveConfigHeaders({ llmConfig, user, tenantId: 'request-tenant', body });
+
+    expect(llmConfig.configuration?.defaultHeaders).toEqual({
+      'X-Tenant-ID': 'request-tenant',
+      'X-Canonical-Tenant-ID': 'request-tenant',
+    });
+  });
+
+  it('blanks model tenant placeholders when the run has no tenant', () => {
+    const llmConfig = {
+      configuration: {
+        defaultHeaders: { 'X-Tenant-ID': '{{LIBRECHAT_USER_TENANT_ID}}' },
+      },
+    } as unknown as RunLLMConfig;
+
+    resolveConfigHeaders({ llmConfig, user, body });
+
+    expect(llmConfig.configuration?.defaultHeaders).toEqual({ 'X-Tenant-ID': '' });
+  });
+
   it('leaves configs without header maps untouched', () => {
     const llmConfig = { model: 'gpt-4o', configuration: {} } as unknown as RunLLMConfig;
     expect(() => resolveConfigHeaders({ llmConfig, user, body })).not.toThrow();
