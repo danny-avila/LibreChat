@@ -407,7 +407,7 @@ class AgentClient extends BaseClient {
      *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null } | undefined} */
     this.contextUsageSink = contextUsageSink;
     if (this.contextUsageSink != null) {
-      this.contextUsageSink.onSnapshot = () => this.publishRunContextMeta();
+      this.contextUsageSink.onSnapshot = () => this.publishRunContextMeta({ live: true });
     }
     /** Every emitted `on_token_usage` payload for this response (primary,
      *  summarization, sequential, and subagent); aggregated into the rollup
@@ -1932,32 +1932,48 @@ class AgentClient extends BaseClient {
    * call it describes; a Stop that reads the job afterwards sees the tier that
    * produced the bytes in flight, and one that reads earlier sees the previous
    * snapshot's, which is consistent with what has been persisted so far.
-   * Deduplicated on the serialized value; failures only log.
+   *
+   * Equal values share one durable write: a repeat while the first write is still
+   * in flight awaits that same promise rather than treating an uncommitted value
+   * as published. A live snapshot with nothing to persist after an earlier publish
+   * writes a neutral record (ratio 1, no tier), since a running job's fields cannot
+   * be deleted through the metadata writer; it seeds the next turn exactly as no
+   * record would. Failures only log.
+   * @param {{ live?: boolean }} [options] `live` marks a snapshot from the running
+   *   graph; the pre-run call publishes the inherited seed instead.
    * @returns {Promise<void>}
    */
-  async publishRunContextMeta() {
+  publishRunContextMeta({ live = false } = {}) {
     const streamId = this.options.req?._resumableStreamId;
     if (!streamId) {
-      return;
+      return Promise.resolve();
     }
-    const contextMeta = captureRunContextMeta(this) ?? this.contextMeta;
+    let contextMeta = captureRunContextMeta(this) ?? (live ? undefined : this.contextMeta);
     if (contextMeta == null) {
-      return;
+      if (!live || this.contextMetaPublication == null) {
+        return Promise.resolve();
+      }
+      contextMeta = { calibrationRatio: 1, encoding: this.getEncoding() };
     }
     const serialized = JSON.stringify(contextMeta);
-    if (serialized === this.publishedContextMeta) {
-      return;
+    if (this.contextMetaPublication?.serialized === serialized) {
+      return this.contextMetaPublication.promise;
     }
-    this.publishedContextMeta = serialized;
-    try {
-      await GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt);
-    } catch (err) {
-      this.publishedContextMeta = undefined;
+    const promise = GenerationJobManager.updateMetadata(
+      streamId,
+      { contextMeta },
+      this.jobCreatedAt,
+    ).catch((err) => {
+      if (this.contextMetaPublication?.promise === promise) {
+        this.contextMetaPublication = undefined;
+      }
       logger.warn(
         `[AgentClient] Failed to publish context meta for ${streamId}`,
         getSafeErrorMetadata(err),
       );
-    }
+    });
+    this.contextMetaPublication = { serialized, promise };
+    return promise;
   }
 
   seedContextMeta(contextMeta) {

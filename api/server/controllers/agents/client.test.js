@@ -1099,6 +1099,122 @@ describe('AgentClient - interrupt discovery persistence', () => {
     updateMetadata.mockRestore();
   });
 
+  it('publishes a neutral record when live state stops carrying anything', async () => {
+    const streamId = 'conversation-context-meta-neutral';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const contextUsageSink = { latest: null, count: 0 };
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+      contextUsageSink,
+    });
+    let ratio = 1;
+    let tier;
+    client.run = {
+      Graph: {
+        getCalibrationRatio: () => ratio,
+        getFadingTier: () => tier,
+      },
+    };
+    const updateMetadata = jest.spyOn(GenerationJobManager, 'updateMetadata');
+
+    /** A fresh conversation's first neutral snapshot has nothing to clear. */
+    await contextUsageSink.onSnapshot();
+    expect(updateMetadata).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: expect.not.objectContaining({ contextMeta: expect.anything() }),
+    });
+
+    ratio = 1.25;
+    await contextUsageSink.onSnapshot();
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: { contextMeta: { calibrationRatio: 1.25, encoding: client.getEncoding() } },
+    });
+
+    ratio = 1;
+    await contextUsageSink.onSnapshot();
+    await contextUsageSink.onSnapshot();
+    expect(updateMetadata).toHaveBeenCalledTimes(2);
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: { contextMeta: { calibrationRatio: 1, encoding: client.getEncoding() } },
+    });
+    updateMetadata.mockRestore();
+  });
+
+  it('shares one in-flight write between equal concurrent snapshots', async () => {
+    const streamId = 'conversation-context-meta-inflight';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const contextUsageSink = { latest: null, count: 0 };
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+      contextUsageSink,
+    });
+    const tier = { v: 1, budgetTokens: 25_000, masked: true };
+    client.run = {
+      Graph: {
+        getCalibrationRatio: () => 1.2,
+        getFadingTier: () => tier,
+      },
+    };
+    let settled = false;
+    let releaseWrite;
+    const updateMetadata = jest
+      .spyOn(GenerationJobManager, 'updateMetadata')
+      .mockImplementationOnce(async (...args) => {
+        await new Promise((resolve) => {
+          releaseWrite = resolve;
+        });
+        settled = true;
+      });
+
+    const first = contextUsageSink.onSnapshot();
+    const second = contextUsageSink.onSnapshot();
+    let secondSettled = false;
+    void second.then(() => {
+      secondSettled = true;
+    });
+    await Promise.resolve();
+    expect(secondSettled).toBe(false);
+    expect(updateMetadata).toHaveBeenCalledTimes(1);
+
+    releaseWrite();
+    await Promise.all([first, second]);
+    expect(settled).toBe(true);
+    expect(secondSettled).toBe(true);
+    updateMetadata.mockRestore();
+  });
+
   it('publishes the inherited context meta before the resumed run continues', async () => {
     const streamId = 'conversation-context-meta-resume-seed';
     const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
