@@ -918,6 +918,9 @@ const createAgentHandler = async (req, res) => {
       return res.status(400).json({ error: 'Invalid request data', details: error.errors });
     }
     logger.error('[/Agents] Error creating agent', error);
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -1568,7 +1571,18 @@ const duplicateAgentHandler = async (req, res) => {
     );
     newAgentData.actions = agentActions;
 
-    const newAgent = await db.createAgent(newAgentData);
+    let newAgent;
+    try {
+      newAgent = await db.createAgent(newAgentData);
+    } catch (error) {
+      await db.deleteActions({ agent_id: newAgentId, user: userId }).catch((cleanupError) => {
+        logger.error(
+          '[/agents/:id/duplicate] Failed to clean up cloned Actions after Agent creation failed:',
+          cleanupError,
+        );
+      });
+      throw error;
+    }
 
     try {
       await Promise.all([
@@ -1605,7 +1619,9 @@ const duplicateAgentHandler = async (req, res) => {
     });
   } catch (error) {
     logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', error);
-
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -2134,6 +2150,9 @@ const revertAgentVersionHandler = async (req, res) => {
     return res.json(updatedAgent);
   } catch (error) {
     logger.error('[/agents/:id/revert] Error reverting Agent version', error);
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };

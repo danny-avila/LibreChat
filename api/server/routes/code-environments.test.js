@@ -21,6 +21,7 @@ const mockHandlers = {
   list: jest.fn((_req, res) => res.status(200).json({ environments: [] })),
   register: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
   pair: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
+  remove: jest.fn((_req, res) => res.status(200).json({ environment: { id: 'code-1' } })),
 };
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -30,6 +31,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   createCodeEnvironmentRegistry: jest.fn(() => mockRegistry),
   createCodeEnvironmentHttpHandlers: jest.fn(() => mockHandlers),
+  startCodeEnvironmentLifecycleReconciler: jest.fn(),
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
@@ -44,6 +46,7 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
   getCodeEnvironmentRegistry: mockGetCodeEnvironmentRegistry,
 }));
+jest.mock('~/models', () => ({ isAgentTriggerPrincipalActive: jest.fn() }));
 
 function createApp() {
   delete require.cache[require.resolve('./code-environments')];
@@ -91,5 +94,12 @@ describe('code environment routes', () => {
 
     expect(middlewareCalls).toEqual(['jwt', 'pairing-limit']);
     expect(mockHandlers.pair).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an authenticated owner to remove an environment', async () => {
+    await request(createApp()).delete('/api/code-environments/code-1').expect(200);
+
+    expect(middlewareCalls).toEqual(['jwt']);
+    expect(mockHandlers.remove).toHaveBeenCalledTimes(1);
   });
 });

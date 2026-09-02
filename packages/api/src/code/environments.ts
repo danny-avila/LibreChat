@@ -23,6 +23,7 @@ export type CodeEnvironmentSummary = {
   id: string;
   name: string;
   type: 'managed' | 'attached';
+  canDelete: boolean;
 };
 
 export type CodeEnvironmentRegistration = {
@@ -32,6 +33,7 @@ export type CodeEnvironmentRegistration = {
   baseURL: string;
   controlPlaneId: string;
   workerId?: string;
+  revocationTokenEnv?: string;
   workerPrincipal?: {
     type: 'deployment' | 'tenant' | 'user' | 'role' | 'group';
     id: string;
@@ -51,6 +53,21 @@ export type AccessibleCodeEnvironmentConfiguration = {
 type CachedAccessibleCodeEnvironmentConfiguration = AccessibleCodeEnvironmentConfiguration & {
   resourceId: string;
 };
+
+export type CodeEnvironmentLifecycleTarget = CodeEnvironmentSummary & {
+  baseURL: string;
+  workerId?: string;
+  controlPlaneId?: string;
+  revocationTokenEnv?: string;
+  workerPrincipal?: CodeEnvironmentRegistration['workerPrincipal'];
+};
+
+function agentReferenceFilter(environmentId: string, tenantId?: string) {
+  return {
+    code_environment_id: environmentId,
+    ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+  };
+}
 
 const ENVIRONMENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -82,6 +99,13 @@ export class CodeEnvironmentValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'CodeEnvironmentValidationError';
+  }
+}
+
+export class CodeEnvironmentLimitError extends Error {
+  constructor() {
+    super('Personal code environment limit reached');
+    this.name = 'CodeEnvironmentLimitError';
   }
 }
 
@@ -117,17 +141,21 @@ function normalizeRegistration(input: CodeEnvironmentRegistration): CodeEnvironm
   return { ...input, id, name, baseURL, controlPlaneId, workerId };
 }
 
-function toSummary(environment: {
-  _id: Types.ObjectId;
-  environmentId: string;
-  name: string;
-  type: 'managed' | 'attached';
-}): CodeEnvironmentSummary {
+function toSummary(
+  environment: {
+    _id: Types.ObjectId;
+    environmentId: string;
+    name: string;
+    type: 'managed' | 'attached';
+  },
+  canDelete = false,
+): CodeEnvironmentSummary {
   return {
     resourceId: environment._id.toString(),
     id: environment.environmentId,
     name: environment.name,
     type: environment.type,
+    canDelete,
   };
 }
 
@@ -138,6 +166,7 @@ export function createCodeEnvironmentRegistry(
   register: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environment: CodeEnvironmentRegistration;
+    maxOwned?: number;
   }) => Promise<CodeEnvironmentSummary>;
   listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
   listAccessibleConfigurations: (
@@ -145,6 +174,12 @@ export function createCodeEnvironmentRegistry(
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
   listRegisteredIds: () => Promise<string[]>;
   invalidateAccessibleConfigurations: (tenantId?: string) => Promise<void>;
+  markRevocationPending: (environmentId: string) => Promise<void>;
+  remove: (params: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    beforeDelete?: (target: CodeEnvironmentLifecycleTarget) => Promise<void>;
+  }) => Promise<CodeEnvironmentSummary | null>;
 } {
   const methods = createMethods(mongoose);
   const access = new AccessControlService(mongoose);
@@ -189,21 +224,31 @@ export function createCodeEnvironmentRegistry(
   async function register({
     actor,
     environment: input,
+    maxOwned,
   }: {
     actor: CodeEnvironmentPrincipalContext;
     environment: CodeEnvironmentRegistration;
+    maxOwned?: number;
   }): Promise<CodeEnvironmentSummary> {
     const environment = normalizeRegistration(input);
-    const created = await methods.createCodeEnvironment({
+    const createInput = {
       environmentId: environment.id,
       name: environment.name,
       type: environment.type,
       baseURL: environment.baseURL,
       controlPlaneId: environment.controlPlaneId,
       workerId: environment.workerId,
+      revocationTokenEnv: environment.revocationTokenEnv,
       workerPrincipal: environment.workerPrincipal,
       createdBy: new Types.ObjectId(actor.userId),
-    });
+    };
+    const created =
+      maxOwned == null
+        ? await methods.createCodeEnvironment(createInput)
+        : await methods.createCodeEnvironmentWithinOwnerLimit(createInput, maxOwned);
+    if (created == null) {
+      throw new CodeEnvironmentLimitError();
+    }
     try {
       const permission = await access.grantPermission({
         principalType: PrincipalType.USER,
@@ -216,20 +261,26 @@ export function createCodeEnvironmentRegistry(
       if (permission == null) {
         throw new Error('Unable to grant code environment ownership');
       }
-      const summary = toSummary(created);
+      const summary = toSummary(created, true);
       await invalidateAccessibleConfigurations();
+      await methods.completeCodeEnvironmentRegistration(created._id);
       return summary;
     } catch (error) {
-      const cleanup = await Promise.allSettled([
-        access.removeAllPermissions({
+      let permissionsRemoved = false;
+      try {
+        await access.removeAllPermissions({
           resourceType: ResourceType.CODE_ENVIRONMENT,
           resourceId: created._id,
-        }),
-        methods.deleteCodeEnvironmentById(created._id),
-      ]);
-      for (const result of cleanup) {
-        if (result.status === 'rejected') {
-          logger.error('[codeEnvironments] registration rollback failed:', result.reason);
+        });
+        permissionsRemoved = true;
+      } catch (cleanupError) {
+        logger.error('[codeEnvironments] registration ACL rollback failed:', cleanupError);
+      }
+      if (permissionsRemoved) {
+        try {
+          await methods.discardCodeEnvironmentById(created._id);
+        } catch (cleanupError) {
+          logger.error('[codeEnvironments] registration record rollback failed:', cleanupError);
         }
       }
       throw error;
@@ -251,7 +302,10 @@ export function createCodeEnvironmentRegistry(
     const userId = actor.userId.toString();
     return environments.filter(
       (environment) =>
-        environment.workerPrincipal?.type !== 'user' || environment.workerPrincipal.id === userId,
+        environment.registrationPendingAt == null &&
+        environment.deletionStartedAt == null &&
+        environment.deletionCommittedAt == null &&
+        (environment.workerPrincipal?.type !== 'user' || environment.workerPrincipal.id === userId),
     );
   }
 
@@ -259,7 +313,32 @@ export function createCodeEnvironmentRegistry(
     actor: CodeEnvironmentPrincipalContext,
   ): Promise<CodeEnvironmentSummary[]> {
     const environments = await findAccessible(actor);
-    return environments.map(toSummary);
+    const permissions = await access.getResourcePermissionsMap({
+      userId: actor.userId,
+      role: actor.role ?? '',
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceIds: environments.map((environment) => environment._id),
+    });
+    return environments.map((environment) => {
+      const permission = permissions.get(environment._id.toString()) ?? 0;
+      return toSummary(environment, (permission & PermissionBits.DELETE) === PermissionBits.DELETE);
+    });
+  }
+
+  async function markRevocationPending(environmentId: string): Promise<void> {
+    const CodeEnvironment = mongoose.models.CodeEnvironment;
+    const result = await CodeEnvironment.updateOne(
+      { environmentId, deletionCommittedAt: { $exists: false } },
+      {
+        $set: { revocationPendingAt: new Date() },
+        $inc: { revocationAttempts: 1 },
+        $unset: { revocationLastError: 1, revocationReconcileAfter: 1 },
+      },
+    );
+    if (result.matchedCount !== 1) {
+      throw new Error('Code environment cleanup target is unavailable');
+    }
+    await invalidateAccessibleConfigurations();
   }
 
   async function listAccessibleConfigurations(
@@ -281,28 +360,41 @@ export function createCodeEnvironmentRegistry(
       ...configuration
     }: CachedAccessibleCodeEnvironmentConfiguration): AccessibleCodeEnvironmentConfiguration =>
       configuration;
-    const load = async (): Promise<CachedAccessibleCodeEnvironmentConfiguration[]> => {
+    const load = async (): Promise<{
+      configurations: CachedAccessibleCodeEnvironmentConfiguration[];
+      hasPendingRegistration: boolean;
+    }> => {
       const ids = await findAccessibleResourceIds(principals);
       const environments = await methods.findCodeEnvironmentsByIds(ids);
       const userId = actor.userId.toString();
-      return environments
-        .filter(
-          (environment) =>
-            environment.workerPrincipal?.type !== 'user' ||
-            environment.workerPrincipal.id === userId,
-        )
-        .map((environment) => ({
-          resourceId: environment._id.toString(),
-          id: environment.environmentId,
-          name: environment.name,
-          type: environment.type,
-          baseURL: environment.baseURL,
-          controlPlaneId: environment.controlPlaneId,
-          owner: 'principal',
-          workerId: environment.workerId,
-        }));
+      return {
+        hasPendingRegistration: environments.some(
+          (environment) => environment.registrationPendingAt != null,
+        ),
+        configurations: environments
+          .filter(
+            (environment) =>
+              environment.registrationPendingAt == null &&
+              environment.deletionStartedAt == null &&
+              environment.deletionCommittedAt == null &&
+              (environment.workerPrincipal?.type !== 'user' ||
+                environment.workerPrincipal.id === userId),
+          )
+          .map((environment) => ({
+            resourceId: environment._id.toString(),
+            id: environment.environmentId,
+            name: environment.name,
+            type: environment.type,
+            baseURL: environment.baseURL,
+            controlPlaneId: environment.controlPlaneId,
+            owner: 'principal',
+            workerId: environment.workerId,
+          })),
+      };
     };
-    if (configurationCache == null) return (await load()).map(toPublicConfiguration);
+    if (configurationCache == null) {
+      return (await load()).configurations.map(toPublicConfiguration);
+    }
 
     const tenant = tenantCacheKey();
     const revision = String((await configurationCache.get(revisionKey())) ?? '0');
@@ -326,25 +418,130 @@ export function createCodeEnvironmentRegistry(
       const accessibleIds = new Set(
         (await findAccessibleResourceIds(principals)).map((id) => id.toString()),
       );
-      return (cached as CachedAccessibleCodeEnvironmentConfiguration[])
-        .filter(({ resourceId }) => accessibleIds.has(resourceId))
+      const cachedConfigurations = cached as CachedAccessibleCodeEnvironmentConfiguration[];
+      const liveEnvironments = await methods.findCodeEnvironmentsByIds(
+        cachedConfigurations.map(({ resourceId }) => resourceId),
+      );
+      const userId = actor.userId.toString();
+      const liveIds = new Set(
+        liveEnvironments
+          .filter(
+            (environment) =>
+              environment.registrationPendingAt == null &&
+              environment.deletionStartedAt == null &&
+              environment.deletionCommittedAt == null &&
+              (environment.workerPrincipal?.type !== 'user' ||
+                environment.workerPrincipal.id === userId),
+          )
+          .map((environment) => environment._id.toString()),
+      );
+      return cachedConfigurations
+        .filter(({ resourceId }) => accessibleIds.has(resourceId) && liveIds.has(resourceId))
         .map(toPublicConfiguration);
     }
 
-    const configurations = await load();
+    const { configurations, hasPendingRegistration } = await load();
     const currentRevision = String((await configurationCache.get(revisionKey())) ?? '0');
     if (currentRevision !== revision) {
       return await listAccessibleConfigurations(actor);
+    }
+    // Registration commits after its first revision write so a failed rollback remains hidden and
+    // recoverable. Do not cache that transient empty view under the new revision.
+    if (hasPendingRegistration) {
+      return configurations.map(toPublicConfiguration);
     }
     await configurationCache.set(key, configurations, CONFIGURATION_CACHE_TTL_MS);
     return configurations.map(toPublicConfiguration);
   }
 
+  async function remove({
+    actor,
+    environmentId,
+    beforeDelete,
+  }: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    beforeDelete?: (target: CodeEnvironmentLifecycleTarget) => Promise<void>;
+  }): Promise<CodeEnvironmentSummary | null> {
+    const environment = await methods.findCodeEnvironmentByEnvironmentId(environmentId);
+    if (environment == null) return null;
+    if (
+      environment.workerPrincipal?.type === 'user' &&
+      environment.workerPrincipal.id !== actor.userId.toString()
+    ) {
+      return null;
+    }
+    const allowed = await access.checkPermission({
+      userId: actor.userId.toString(),
+      role: actor.role,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment._id,
+      requiredPermission: PermissionBits.DELETE,
+    });
+    if (!allowed) return null;
+    const removal = await methods.beginCodeEnvironmentRemoval(environment._id);
+    if (removal == null) {
+      throw new CodeEnvironmentInUseError(environmentId);
+    }
+    const removalLeaseId = removal.deletionLeaseId;
+    if (removalLeaseId == null) {
+      throw new Error('Code environment removal lease is unavailable');
+    }
+    let deletionCommitted = false;
+    let externalLifecycleStarted = false;
+    try {
+      const Agent = mongoose.models.Agent;
+      if (
+        Agent != null &&
+        (await Agent.exists(agentReferenceFilter(environmentId, environment.tenantId))) != null
+      ) {
+        throw new CodeEnvironmentInUseError(environmentId);
+      }
+      if (beforeDelete != null) {
+        // From this point onward the remote outcome may be committed even if the request fails.
+        // Keep the local fence for idempotent reconciliation instead of reopening a dead worker.
+        externalLifecycleStarted = true;
+        await beforeDelete({
+          ...toSummary(environment),
+          baseURL: environment.baseURL,
+          workerId: environment.workerId,
+          controlPlaneId: environment.controlPlaneId,
+          revocationTokenEnv: environment.revocationTokenEnv,
+          workerPrincipal: environment.workerPrincipal,
+        });
+      }
+      await methods.commitCodeEnvironmentRemoval(environment._id, removalLeaseId);
+      deletionCommitted = true;
+      await access.removeAllPermissions({
+        resourceType: ResourceType.CODE_ENVIRONMENT,
+        resourceId: environment._id,
+      });
+      const deleted = await methods.deleteCodeEnvironmentById(environment._id);
+      if (deleted == null) return null;
+      await invalidateAccessibleConfigurations();
+      return toSummary(deleted, true);
+    } catch (error) {
+      if (!deletionCommitted && !externalLifecycleStarted) {
+        await methods.cancelCodeEnvironmentRemoval(environment._id, removalLeaseId);
+      }
+      throw error;
+    }
+  }
+
   return {
     register,
+    markRevocationPending,
     listAccessible,
     listAccessibleConfigurations,
     listRegisteredIds,
     invalidateAccessibleConfigurations,
+    remove,
   };
+}
+
+export class CodeEnvironmentInUseError extends Error {
+  constructor(public readonly environmentId: string) {
+    super(`Code environment is still referenced by an agent: ${environmentId}`);
+    this.name = 'CodeEnvironmentInUseError';
+  }
 }
