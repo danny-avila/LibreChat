@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Query, QueryClient, InfiniteData } from '@tanstack/react-query';
@@ -17,16 +17,15 @@ export type UnseenConversation = {
   flagged: boolean;
 };
 
-const MANUAL_FLAG_SLACK_MS = 60_000;
-
 /**
  * Whether a stamp is the manual-unread marker rather than a real reply.
  *
- * A reply moves `updatedAt` with it, while "mark as unread" deliberately leaves it alone
- * (`timestamps: false` server-side), so a stamp running well ahead of `updatedAt` can only be
- * the flag stamped onto a conversation that had never been replied to. Both stamps are written
- * by the server, so the comparison is skew-free; the slack absorbs the jitter between a reply's
- * precomputed stamp and its write time, erring toward announcing.
+ * "Mark as unread" copies the conversation's own `updatedAt` into the stamp and leaves the
+ * activity date alone (`timestamps: false` server-side), so the two being exactly equal is the
+ * marker's signature: a reply writes its stamp separately from the activity date it bumps, and
+ * the two never land on the same millisecond. Both values come from the server, so the
+ * comparison is skew-free, and unlike a time window it holds however recently the conversation
+ * was last active.
  */
 const isManualFlagStamp = (lastResponseAt: string, updatedAt: string | undefined): boolean => {
   if (updatedAt == null) {
@@ -37,7 +36,7 @@ const isManualFlagStamp = (lastResponseAt: string, updatedAt: string | undefined
   if (Number.isNaN(stamp) || Number.isNaN(activity)) {
     return false;
   }
-  return stamp > activity + MANUAL_FLAG_SLACK_MS;
+  return stamp === activity;
 };
 
 export type ReplyReadState = {
@@ -57,15 +56,27 @@ export type ReplyReadState = {
  * phantom dot in the badge and the alerts for the rest of the cache's lifetime. A recently
  * refreshed variant still counts, which is what keeps a conversation visible across a filter
  * switch; past this age an unmounted snapshot is no longer treated as authoritative.
+ *
+ * Measured from the variant's last answer from the server, not from its `dataUpdatedAt`: every
+ * local cache write touches all of them, so an unrelated rename or reply stamp would otherwise
+ * keep renewing a leftover indefinitely.
  */
 const LEFTOVER_CACHE_AGE_MS = 5 * 60_000;
 
-const isLeftover = (query: Query, heardAt: number): boolean =>
-  query.getObserversCount() === 0 && Date.now() - heardAt > LEFTOVER_CACHE_AGE_MS;
+const isLeftover = (query: Query, serverFetchedAt: Map<string, number>): boolean => {
+  if (query.getObserversCount() > 0) {
+    return false;
+  }
+  const lastAnswer = serverFetchedAt.get(query.queryHash) ?? query.state.dataUpdatedAt;
+  return Date.now() - lastAnswer > LEFTOVER_CACHE_AGE_MS;
+};
 
 /** Null until a conversation list has actually resolved, which is not the same as an empty
  *  one: treating "not loaded yet" as "nothing unseen" makes the backlog look like arrivals. */
-const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
+const readReplyState = (
+  queryClient: QueryClient,
+  serverFetchedAt: Map<string, number>,
+): ReplyReadState | null => {
   /* Keyed rather than first-wins: the same row is cached once per list variant and only the
      mounted ones refetch, so an older copy would otherwise shadow a newer reply and drop it
      from the count. `freshestCandidate` settles which copy is actually current. */
@@ -90,7 +101,7 @@ const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
   for (const query of listQueries) {
     const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(query.queryKey);
     const heardAt = queryClient.getQueryState(query.queryKey)?.dataUpdatedAt ?? 0;
-    if (!data || isLeftover(query, heardAt)) {
+    if (!data || isLeftover(query, serverFetchedAt)) {
       continue;
     }
     hasList = true;
@@ -112,7 +123,7 @@ const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
   for (const query of pinnedQueries) {
     const data = queryClient.getQueryData<PinnedConversationsData>(query.queryKey);
     const heardAt = queryClient.getQueryState(query.queryKey)?.dataUpdatedAt ?? 0;
-    if (!data || isLeftover(query, heardAt)) {
+    if (!data || isLeftover(query, serverFetchedAt)) {
       continue;
     }
     for (const convo of data.conversations) {
@@ -190,19 +201,53 @@ const identityOf = (state: ReplyReadState | null): string =>
  */
 export default function useUnseenConversations(): ReplyReadState | null {
   const queryClient = useQueryClient();
-  const [state, setState] = useState<ReplyReadState | null>(() => readReplyState(queryClient));
+  /** When each cached list variant last heard from the server, keyed by query hash. Seeded
+   *  from `dataUpdatedAt` the first time a variant is seen and advanced only by a fetch:
+   *  `setQueryData` refreshes `dataUpdatedAt` on every variant, including the ones nothing is
+   *  looking at, and that must not renew a leftover. */
+  const serverFetchedAt = useRef<Map<string, number>>(new Map());
+  const [state, setState] = useState<ReplyReadState | null>(() =>
+    readReplyState(queryClient, serverFetchedAt.current),
+  );
 
   const refresh = useCallback(() => {
-    const next = readReplyState(queryClient);
+    const next = readReplyState(queryClient, serverFetchedAt.current);
     setState((current) => (identityOf(current) === identityOf(next) ? current : next));
   }, [queryClient]);
 
   useEffect(() => {
-    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      const root = event?.query?.queryKey?.[0];
+    const cache = queryClient.getQueryCache();
+    const record = (query: Query, fromServer: boolean) => {
+      if (fromServer) {
+        serverFetchedAt.current.set(query.queryHash, Date.now());
+        return;
+      }
+      if (!serverFetchedAt.current.has(query.queryHash)) {
+        /* First sight of a variant this hook did not watch arrive. Its `dataUpdatedAt` is the
+           closest thing to an answer time; a variant that has none yet counts as current until
+           its first fetch says otherwise, rather than being written off unseen. */
+        serverFetchedAt.current.set(query.queryHash, query.state.dataUpdatedAt || Date.now());
+      }
+    };
+
+    for (const query of cache.getAll()) {
+      const root = query.queryKey?.[0];
+      if (root === QueryKeys.allConversations || root === QueryKeys.pinnedConversations) {
+        record(query, false);
+      }
+    }
+
+    const unsubscribe = cache.subscribe((event) => {
+      const { query } = event;
+      const root = query.queryKey?.[0];
       if (root !== QueryKeys.allConversations && root !== QueryKeys.pinnedConversations) {
         return;
       }
+      /* `manual` is what `setQueryData` sets; only a fetch that actually answered counts as
+         the variant hearing from the server. */
+      const fromServer =
+        event.type === 'updated' && event.action.type === 'success' && event.action.manual !== true;
+      record(query, fromServer);
       refresh();
     });
     refresh();
