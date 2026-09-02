@@ -1679,7 +1679,6 @@ async function readSandboxFile({
  * @param {string} [params.bridgeWorkerId]
  * @param {ServerRequest} [params.req]
  * @param {AbortSignal} [params.signal]
- * @param {AbortSignal} [params.signal]
  */
 async function readWorkspaceFile({
   file_path,
@@ -1723,6 +1722,7 @@ async function readWorkspaceFile({
  * @param {'default' | 'stateful'} params.executionProfile
  * @param {string} [params.bridgeWorkerId]
  * @param {ServerRequest} [params.req]
+ * @param {AbortSignal} [params.signal]
  */
 async function searchWorkspace({
   query,
