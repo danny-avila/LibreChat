@@ -1204,9 +1204,11 @@ const initializeClient = async ({
             depth + 1,
             nextAncestors,
           );
-          existing.lazySubagentConfigs = existingChildren.filter((child) => child.configId);
-          existing.subagentAgentConfigs = existingChildren.filter((child) => !child.configId);
-          return existing;
+          return {
+            ...existing,
+            lazySubagentConfigs: existingChildren.filter((child) => child.configId),
+            subagentAgentConfigs: existingChildren.filter((child) => !child.configId),
+          };
         }
         const metadata = await loadSubagentMetadata(subagentId);
         if (!metadata) return null;
