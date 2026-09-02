@@ -704,6 +704,11 @@ function findPinnedCandidate(
  * The reply also moved `updatedAt` server-side, and another conversation can have taken the top
  * of the list while this one streamed, so the row is carried to its new position rather than
  * left at the date and place its run started with.
+ *
+ * A stamp that genuinely advances also clears the catch-up it outranks, mirroring the write the
+ * server made: a cached acknowledgement dated ahead of the new reply, which replica clock skew
+ * can produce, would otherwise classify a reply nobody has read as seen, and the completion
+ * watcher skips its own fetch precisely because this handler already moved the stamp.
  */
 export function applyServerReplyStamp(
   queryClient: QueryClient,
@@ -714,12 +719,14 @@ export function applyServerReplyStamp(
   if (cached?.lastResponseAt != null && lastResponseAt < cached.lastResponseAt) {
     return;
   }
+  const advances = cached?.lastResponseAt == null || lastResponseAt > cached.lastResponseAt;
   updateConvoInAllQueries(
     queryClient,
     conversationId,
     (convo) => ({
       ...convo,
       lastResponseAt,
+      lastSeenAt: advances ? undefined : convo.lastSeenAt,
       updatedAt: updatedAt ?? convo.updatedAt,
     }),
     updatedAt != null && updatedAt > (cached?.updatedAt ?? ''),

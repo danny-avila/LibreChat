@@ -453,8 +453,12 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
         const previous = findConvoInAllQueries(queryClient, vars.conversationId);
         /* The marker the optimistic pass writes, remembered so a rollback can tell its own
-           state apart from a newer reply that arrived while the request was open. */
-        const optimisticResponseAt = previous?.lastResponseAt ?? new Date().toISOString();
+           state apart from a newer reply that arrived while the request was open. A never-
+           replied conversation borrows its own activity date, exactly as the server's marker
+           does, so the row does not read as a real reply for the moment before the answer
+           lands. */
+        const optimisticResponseAt =
+          previous?.lastResponseAt ?? previous?.updatedAt ?? new Date().toISOString();
         const context = {
           lastResponseAt: previous?.lastResponseAt,
           lastSeenAt: previous?.lastSeenAt,

@@ -3292,25 +3292,36 @@ export function createConversationMethods(
   /**
    * Flags a conversation as unread again: the user explicitly wants the indicator back.
    *
+   * A conversation that has never been replied to has no stamp for the dot to compare against,
+   * so the flag stamps one. It is the conversation's own `updatedAt`, copied verbatim: an
+   * invented "now" would be indistinguishable from a reply, and the client would announce a
+   * chime and a desktop notification for a reply that does not exist. Equal timestamps are the
+   * signal instead of a time window, so it holds however recent the conversation is, and a
+   * marker in the past can never outrank a real reply landing at the same moment.
+   *
    * Classic operators only. Pipeline-form updates (and `$$REMOVE`) are unsupported on every
    * DocumentDB engine this project targets, which `misc/documentdb/documentdb-compat.md`
    * records after three of them had to be rewritten. The conditional stamp is therefore a
    * filtered write: the first attempt only matches a conversation that has never been replied
-   * to, so the flag itself lights its dot; anything already carrying a reply falls through to
-   * clearing the catch-up alone. `timestamps: false` keeps flagging from reordering the
-   * sidebar, and the resulting stamp is returned so the caller never has to invent one.
+   * to; anything already carrying a reply falls through to clearing the catch-up alone.
+   * `timestamps: false` keeps flagging from reordering the sidebar, and the resulting stamp is
+   * returned so the caller never has to invent one.
    */
   async function markConvoUnread(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const projection = { lastResponseAt: 1 };
+      const existing = await Conversation.findOne({ conversationId, user })
+        .select({ updatedAt: 1 })
+        .lean<Pick<IConversation, 'updatedAt'>>();
+      const marker = existing?.updatedAt ?? new Date();
       const stamped = await Conversation.findOneAndUpdate(
         {
           conversationId,
           user,
           $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
         },
-        { $set: { lastResponseAt: new Date() }, $unset: { lastSeenAt: '' } },
+        { $set: { lastResponseAt: marker }, $unset: { lastSeenAt: '' } },
         { timestamps: false, new: true, projection },
       ).lean<Pick<IConversation, 'lastResponseAt'>>();
 

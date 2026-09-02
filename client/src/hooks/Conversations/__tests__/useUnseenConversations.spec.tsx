@@ -126,9 +126,9 @@ describe('useUnseenConversations', () => {
   });
 
   it('tags the manual-unread marker of a never-replied conversation', () => {
-    /* "Mark as unread" leaves `updatedAt` alone while stamping `lastResponseAt`, so a stamp
-       running well ahead of the activity date is the flag itself, not a reply the alerts
-       should announce. */
+    /* "Mark as unread" copies the conversation's own activity date into the stamp and leaves
+       `updatedAt` alone, so the two being equal is the marker; a reply writes its stamp
+       separately from the activity date it bumps. */
     const { result, queryClient } = setup();
 
     act(() => {
@@ -139,13 +139,13 @@ describe('useUnseenConversations', () => {
             conversationId: 'flagged-a',
             title: 'F',
             updatedAt: RESPONDED_AT,
-            lastResponseAt: RESPONDED_AGAIN_AT,
+            lastResponseAt: RESPONDED_AT,
           },
           {
             conversationId: 'replied-a',
             title: 'R',
             updatedAt: RESPONDED_AT,
-            lastResponseAt: RESPONDED_AT,
+            lastResponseAt: RESPONDED_AGAIN_AT,
           },
         ]),
       );
@@ -155,18 +155,21 @@ describe('useUnseenConversations', () => {
       {
         conversationId: 'flagged-a',
         title: 'F',
-        lastResponseAt: RESPONDED_AGAIN_AT,
+        lastResponseAt: RESPONDED_AT,
         flagged: true,
       },
-      { conversationId: 'replied-a', title: 'R', lastResponseAt: RESPONDED_AT, flagged: false },
+      {
+        conversationId: 'replied-a',
+        title: 'R',
+        lastResponseAt: RESPONDED_AGAIN_AT,
+        flagged: false,
+      },
     ]);
   });
 
   it('keeps a manual marker out of the alerts baseline', () => {
-    /* The reply that later lands on a conversation flagged before it had one is stamped with
-       `$max`, so a marker written in the same moment survives as the value. Baselining the
-       marker would make that reply look like a stamp the tab had already accounted for, and it
-       would arrive without a chime or a notification. */
+    /* A flagged row is not an arrival, and baselining its marker would make the reply that
+       later lands look like a stamp the tab had already accounted for. */
     const { result, queryClient } = setup();
 
     act(() => {
@@ -177,7 +180,7 @@ describe('useUnseenConversations', () => {
             conversationId: 'flagged-a',
             title: 'F',
             updatedAt: RESPONDED_AT,
-            lastResponseAt: RESPONDED_AGAIN_AT,
+            lastResponseAt: RESPONDED_AT,
           },
         ]),
       );
@@ -186,7 +189,7 @@ describe('useUnseenConversations', () => {
     expect(result.current?.unseen).toHaveLength(1);
     expect(result.current?.stamps).toEqual([]);
 
-    /* The reply arrives and moves `updatedAt` with it, retaining the marker as its stamp. */
+    /* The reply arrives, stamped apart from the activity date it moved. */
     act(() => {
       queryClient.setQueryData(
         listKeyActive,
@@ -194,7 +197,7 @@ describe('useUnseenConversations', () => {
           {
             conversationId: 'flagged-a',
             title: 'F',
-            updatedAt: RESPONDED_AGAIN_AT,
+            updatedAt: RESPONDED_AT,
             lastResponseAt: RESPONDED_AGAIN_AT,
           },
         ]),
@@ -212,26 +215,17 @@ describe('useUnseenConversations', () => {
     expect(result.current?.stamps).toEqual([['flagged-a', RESPONDED_AGAIN_AT]]);
   });
 
-  it('ignores a stale unmounted list variant that still lists a removed conversation', () => {
+  it('stops counting an unmounted variant once it has gone unanswered too long', () => {
     /* Deleted or archived on another device: refetching the mounted list drops the row there,
        while the leftover variant keeps it. Absence never supersedes presence in the scan, so
-       counting the leftover would keep a phantom dot in the badge. */
+       counting the leftover would keep a phantom dot in the badge. Local cache writes must not
+       renew it either, which is why the age is measured from the variant's last answer. */
     const { result, queryClient } = setup();
 
     act(() => {
-      queryClient.setQueryData(listKeyArchived, page([{ conversationId: 'gone', title: 'G' }]));
       queryClient.setQueryData(
-        listKeyActive,
-        page([{ conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AT }]),
-      );
-    });
-
-    /* The variant nobody is looking at ages past the window where it still counts. */
-    act(() => {
-      const leftover = queryClient.getQueryCache().find(listKeyArchived);
-      leftover?.setData(
+        listKeyArchived,
         page([{ conversationId: 'gone', title: 'G', lastResponseAt: RESPONDED_AT }]),
-        { updatedAt: Date.now() - 60 * 60 * 1000, manual: true },
       );
       queryClient.setQueryData(
         listKeyActive,
@@ -239,7 +233,34 @@ describe('useUnseenConversations', () => {
       );
     });
 
-    expect(result.current?.unseen.map((c) => c.conversationId)).toEqual(['unseen-a']);
+    expect(result.current?.unseen.map((c) => c.conversationId).sort()).toEqual([
+      'gone',
+      'unseen-a',
+    ]);
+
+    /* The sidebar is looking at the active variant; only the other one is a leftover. */
+    const mounted = queryClient.getQueryCache().find(listKeyActive);
+    jest.spyOn(mounted!, 'getObserversCount').mockReturnValue(1);
+
+    const now = jest.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(Date.now() + 6 * 60_000);
+      act(() => {
+        /* An unrelated local write touches every variant, including the leftover. */
+        queryClient.setQueryData(
+          listKeyActive,
+          page([{ conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AGAIN_AT }]),
+        );
+        queryClient.setQueryData(
+          listKeyArchived,
+          page([{ conversationId: 'gone', title: 'G', lastResponseAt: RESPONDED_AT }]),
+        );
+      });
+
+      expect(result.current?.unseen.map((c) => c.conversationId)).toEqual(['unseen-a']);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('counts a conversation held in both caches once', () => {

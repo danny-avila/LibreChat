@@ -2137,21 +2137,21 @@ describe('Conversation Operations', () => {
       expect(result.lastResponseAt?.toISOString()).toBe(responded.toISOString());
     });
 
-    it('stamps lastResponseAt on a never-replied conversation so the flag itself lights the dot', async () => {
-      await Conversation.create({
+    it('marks a never-replied conversation with its own activity date so the dot lights', async () => {
+      /* Copied verbatim rather than invented: an inventible "now" is indistinguishable from a
+         reply, and the client would announce a chime for a reply that does not exist. */
+      const created = await Conversation.create({
         conversationId: mockConversationData.conversationId,
         user: 'user123',
         endpoint: EModelEndpoint.openAI,
       });
 
-      const before = new Date();
       await markConvoUnread('user123', mockConversationData.conversationId);
 
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
-      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
-      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(convo?.lastResponseAt?.getTime()).toBe(created.updatedAt?.getTime());
       expect(convo?.lastSeenAt).toBeUndefined();
     });
 
