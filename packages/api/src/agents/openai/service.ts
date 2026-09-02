@@ -25,6 +25,7 @@ import type {
   MessageFilterConfig,
   MessageFilterPiiConfig,
   StatefulCodeEnvironment,
+  TAgentsEndpoint,
 } from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
@@ -72,6 +73,7 @@ import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/c
 import { contentFilterUninspectableResponse } from '~/protection/files';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { getUserFacingProviderError } from '../errors';
+import { resolveRecursionLimit } from '../config';
 import { collectReachableAgents } from '../traversal';
 import { getDynamicToolContexts } from '../hitl';
 import { createSafeUser } from '~/utils';
@@ -819,6 +821,10 @@ export async function createAgentChatCompletion(
                 ? { intentToolNames: initializedAgent.intentToolNames }
                 : {}),
             },
+            recursionLimit: resolveRecursionLimit(
+              agentsConfig as Partial<TAgentsEndpoint> | undefined,
+              initializedAgent,
+            ),
             signal: abortController.signal,
             streamMode: 'values',
             version: 'v2',

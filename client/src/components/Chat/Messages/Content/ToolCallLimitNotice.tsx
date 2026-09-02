@@ -26,6 +26,16 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
   const localize = useLocalize();
   const titleId = useId();
   const [dismissed, setDismissed] = useState(false);
+  const [noticeMessageId, setNoticeMessageId] = useState(message.messageId);
+  /**
+   * MultiMessage reuses this row when switching siblings, so dismiss state
+   * would otherwise hide the notice on a different message. Reset during
+   * render when the displayed id changes; no effect needed.
+   */
+  if (noticeMessageId !== message.messageId) {
+    setNoticeMessageId(message.messageId);
+    setDismissed(false);
+  }
   /**
    * Nullable on purpose: this renders inside shared links, search results and
    * exports, which mount message content with no live chat behind it. There the
@@ -33,7 +43,7 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
    */
   const chat = useContext(ChatContext);
 
-  if (dismissed) {
+  if (dismissed && noticeMessageId === message.messageId) {
     return null;
   }
 

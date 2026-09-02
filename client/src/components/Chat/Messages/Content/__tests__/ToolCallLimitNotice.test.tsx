@@ -121,4 +121,26 @@ describe('ToolCallLimitNotice', () => {
 
     expect(screen.queryByText(TRANSLATIONS.com_ui_tool_call_limit_title)).not.toBeInTheDocument();
   });
+
+  it('shows the notice again when switching to another sibling message', () => {
+    const ask = jest.fn();
+    const { rerender } = renderNotice({
+      ask,
+      isSubmitting: false,
+      latestMessageId: 'response-1',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByText(TRANSLATIONS.com_ui_tool_call_limit_title)).not.toBeInTheDocument();
+
+    rerender(
+      <ChatContext.Provider
+        value={{ ask, isSubmitting: false, latestMessageId: 'response-2' } as NoticeChatContext}
+      >
+        <ToolCallLimitNotice message={{ messageId: 'response-2' } as TMessage} />
+      </ChatContext.Provider>,
+    );
+
+    expect(screen.getByText(TRANSLATIONS.com_ui_tool_call_limit_title)).toBeInTheDocument();
+  });
 });
