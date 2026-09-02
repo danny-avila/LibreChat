@@ -354,10 +354,16 @@ describe('useReplyAlerts', () => {
     expect(createdNotifications[0].options?.tag).toBe('convo-b');
   });
 
+  const otherTabLease = (at = Date.now()) =>
+    window.localStorage.setItem(
+      'replyAlerts:focusedAt',
+      JSON.stringify({ owner: 'other-tab', at }),
+    );
+
   it('stays quiet while another tab of the app holds focus', () => {
     /* `document.hasFocus()` answers only for this tab, so without the shared lease a
        background tab would chime over the one the user is reading. */
-    window.localStorage.setItem('replyAlerts:focusedAt', String(Date.now()));
+    otherTabLease();
     const { rerender } = setup({ notifications: true, sound: true });
 
     act(() => {
@@ -371,7 +377,7 @@ describe('useReplyAlerts', () => {
   });
 
   it('announces again once a stale focus lease has expired', async () => {
-    window.localStorage.setItem('replyAlerts:focusedAt', String(Date.now() - 120_000));
+    otherTabLease(Date.now() - 120_000);
     const { rerender } = setup({ notifications: true });
 
     act(() => {
@@ -379,6 +385,17 @@ describe('useReplyAlerts', () => {
     });
 
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
+  });
+
+  it('leaves a lease this tab does not own in place when it unmounts', () => {
+    /* Focus reaches the winning tab before the losing tab's blur handler runs, so a release
+       that did not check ownership would delete the lease that tab had just written. */
+    otherTabLease();
+    const { unmount } = setup({ notifications: true });
+
+    unmount();
+
+    expect(window.localStorage.getItem('replyAlerts:focusedAt')).not.toBeNull();
   });
 
   it('falls back to the untitled label when the conversation has no title', async () => {
