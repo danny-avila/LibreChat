@@ -773,6 +773,8 @@ export type InitializedAgent = Agent & {
   provisionWarnings?: string[];
   /** State for deferred file provisioning — actual uploads happen at tool invocation time */
   provisionState?: ProvisionState;
+  /** Initialized configs for explicit subagent spawn targets (`subagents.agent_ids`). */
+  subagentAgentConfigs?: InitializedAgent[];
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
