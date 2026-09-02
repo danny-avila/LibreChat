@@ -1191,7 +1191,7 @@ describe('AgentClient - interrupt discovery persistence', () => {
     let releaseWrite;
     const updateMetadata = jest
       .spyOn(GenerationJobManager, 'updateMetadata')
-      .mockImplementationOnce(async (...args) => {
+      .mockImplementationOnce(async () => {
         await new Promise((resolve) => {
           releaseWrite = resolve;
         });
