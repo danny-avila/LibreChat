@@ -469,13 +469,12 @@ export function createCodeEnvironmentRegistry(
       // ACL on every use so a failed revision write can delay grants but can never preserve a
       // revocation. Entries written before resourceId was cached are deliberately treated as
       // misses during rolling upgrades.
-      const accessibleIds = new Set(
-        (await findAccessibleResourceIds(principals)).map((id) => id.toString()),
-      );
       const cachedConfigurations = cached as CachedAccessibleCodeEnvironmentConfiguration[];
-      const liveEnvironments = await methods.findCodeEnvironmentsByIds(
-        cachedConfigurations.map(({ resourceId }) => resourceId),
-      );
+      const [accessibleResourceIds, liveEnvironments] = await Promise.all([
+        findAccessibleResourceIds(principals),
+        methods.findCodeEnvironmentsByIds(cachedConfigurations.map(({ resourceId }) => resourceId)),
+      ]);
+      const accessibleIds = new Set(accessibleResourceIds.map((id) => id.toString()));
       const userId = actor.userId.toString();
       const liveByResourceId = new Map(
         liveEnvironments
