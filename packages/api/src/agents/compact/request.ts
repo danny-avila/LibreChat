@@ -629,9 +629,16 @@ export async function handleCompactRequest(
     }
 
     const instructionTokens = priorInstructionTokens(priorResponse);
+    /** Retention follows the conversation the branch belongs to: an omitted
+     *  flag must not promote an expiring chat to permanent, and a temporary
+     *  chat keeps its expiry on the new summary. The branch's own rows are
+     *  the server-side truth, so the client cannot flip it either way. */
     const persistenceContext: CompactPersistenceContext = {
       userId,
-      isTemporary: body.isTemporary === true,
+      isTemporary:
+        body.isTemporary === true ||
+        (allMessages ?? []).some((message) => message.expiredAt != null) ||
+        undefined,
       interfaceConfig: appConfig?.interfaceConfig,
     };
     const savedMessage = await deps.saveMessage(

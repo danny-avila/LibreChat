@@ -1,5 +1,11 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, ContentTypes, EModelEndpoint, FileSources } from 'librechat-data-provider';
+import {
+  Constants,
+  ContentTypes,
+  EModelEndpoint,
+  FileSources,
+  mergeFileConfig,
+} from 'librechat-data-provider';
 import {
   Providers,
   HumanMessage,
@@ -539,19 +545,27 @@ async function hydrateAttachments(
    * (name, type) stays inspectable through the message content it rides on.
    */
   const replayedByFileId: Record<string, IMongoFile> = {};
+  /** The limit extraction ACTUALLY applies: the agent/spec limit when set,
+   *  else the request's own, else the global fileConfig default. The
+   *  projection has to truncate on the same figure, or the policy filter and
+   *  the provider would see different texts. */
+  const effectiveFileTokenLimit =
+    fileTokenLimit ??
+    ((req.body as Record<string, unknown> | undefined)?.fileTokenLimit as number | undefined) ??
+    mergeFileConfig(req.config?.fileConfig).fileTokenLimit;
   const asReplayed = async (file: IMongoFile): Promise<IMongoFile> => {
     const existing = replayedByFileId[file.file_id];
     if (existing != null) {
       return existing;
     }
     const replayed: IMongoFile =
-      fileTokenLimit != null && isInlinedTextSource(file)
+      effectiveFileTokenLimit && isInlinedTextSource(file)
         ? {
             ...file,
             text: (
               await processTextWithTokenLimit({
                 text: file.text as string,
-                tokenLimit: fileTokenLimit,
+                tokenLimit: effectiveFileTokenLimit,
                 tokenCountFn: countTokens,
               })
             ).text,
