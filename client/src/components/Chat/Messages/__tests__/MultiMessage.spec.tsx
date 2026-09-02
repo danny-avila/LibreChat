@@ -428,6 +428,9 @@ describe('MultiMessage row mount window', () => {
     expect(container.querySelector('#m0 [data-message-search-text="true"]')).toHaveTextContent(
       'm0',
     );
+    expect(container.querySelector('#m0')).toHaveAttribute('role', 'group');
+    expect(container.querySelector('#m0')).toHaveAttribute('aria-label', 'Message 1');
+    expect(container.querySelector('#m0 h2')).toHaveTextContent('Response 1: Assistant');
     expect(container.querySelector('#m0')).not.toHaveAttribute('aria-hidden');
   });
 

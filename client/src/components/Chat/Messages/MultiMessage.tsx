@@ -7,9 +7,10 @@ import type { ReactNode, ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
 import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
 import { serializeMessageForClipboard } from '~/hooks/Messages/useCopyToClipboard';
+import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 import MessageContent from '~/components/Messages/MessageContent';
-import { useRowMountWindow } from '~/hooks/Messages';
+import { useLocalize, useRowMountWindow } from '~/hooks';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
@@ -24,6 +25,8 @@ function MessageRowSlot({
   measureRow,
   mounted,
   placeholderHeight,
+  placeholderAriaLabel,
+  placeholderAuthorHeading,
   searchContent,
   searchText,
   steerAnchors,
@@ -35,6 +38,8 @@ function MessageRowSlot({
   measureRow?: (depth: number, messageId: string, height: number) => void;
   mounted: boolean;
   placeholderHeight?: number;
+  placeholderAriaLabel: string;
+  placeholderAuthorHeading: string;
   searchContent: TMessage['content'];
   searchText: TMessage['text'];
   steerAnchors?: Array<{ id: string; text: string }>;
@@ -86,6 +91,8 @@ function MessageRowSlot({
     <div
       ref={ref}
       id={mounted ? undefined : messageId}
+      role={mounted ? undefined : 'group'}
+      aria-label={mounted ? undefined : placeholderAriaLabel}
       className={mounted ? undefined : 'message-render w-full'}
       data-message-row-slot="true"
       data-row-mounted={String(mounted)}
@@ -121,6 +128,9 @@ function MessageRowSlot({
       {children}
       {!mounted
         ? [
+            <h2 key="author-heading" className="sr-only">
+              {placeholderAuthorHeading}
+            </h2>,
             searchableText ? (
               <span key="search-text" className="sr-only" data-message-search-text="true">
                 {searchableText}
@@ -145,6 +155,7 @@ function MultiMessage({
   setCurrentEditId,
 }: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
+  const localize = useLocalize();
   const activeSpeechMessageId = useAtomValue(activeSpeechMessageIdAtom);
   const selectedMessage = messagesTree?.[(messagesTree?.length ?? 0) - siblingIdx - 1];
   const rowMountState = useRowMountWindow(selectedMessage?.depth, selectedMessage?.messageId);
@@ -293,6 +304,10 @@ function MultiMessage({
   };
 
   const depth = message.depth ?? 0;
+  const placeholderAriaLabel = getMessageAriaLabel(message, localize);
+  const placeholderAuthorHeading = `${getHeaderPrefixForScreenReader(message, localize)}${localize(
+    message.isCreatedByUser ? 'com_user_message' : 'com_ui_assistant',
+  )}`;
   const measuredRow = rowMountState.measuredRow;
   /** A bounded row with no measurement must render once before it can become
    *  an exact-height slot. Editing also pins the row so local form state is
@@ -341,6 +356,8 @@ function MultiMessage({
         messageId={message.messageId}
         mounted={rowMounted}
         placeholderHeight={measuredRow?.height}
+        placeholderAriaLabel={placeholderAriaLabel}
+        placeholderAuthorHeading={placeholderAuthorHeading}
         searchContent={message.content}
         searchText={message.text}
         steerAnchors={steerAnchors}

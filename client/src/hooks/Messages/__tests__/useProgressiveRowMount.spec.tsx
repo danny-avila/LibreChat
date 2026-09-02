@@ -22,6 +22,7 @@ describe('useProgressiveRowMount', () => {
   let scrollableRef: React.MutableRefObject<HTMLDivElement | null>;
   let resizeCallback: ResizeObserverCallback;
   let mutationCallback: MutationCallback;
+  let originalFonts: FontFaceSet | undefined;
 
   /** Runs only the frames scheduled BEFORE this flush, so one call advances
    *  the expansion by exactly one step even though each step schedules the
@@ -37,6 +38,7 @@ describe('useProgressiveRowMount', () => {
     });
 
   beforeEach(() => {
+    originalFonts = document.fonts;
     frames = [];
     scrollableRef = { current: null };
     window.ResizeObserver = jest.fn((callback: ResizeObserverCallback) => {
@@ -54,6 +56,10 @@ describe('useProgressiveRowMount', () => {
     window.cancelAnimationFrame = jest.fn((handle: number) => {
       frames[handle - 1] = undefined;
     }) as unknown as typeof window.cancelAnimationFrame;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(document, 'fonts', { configurable: true, value: originalFonts });
   });
 
   const setup = (initial: Partial<HookProps> = {}) => {
@@ -335,7 +341,15 @@ describe('useProgressiveRowMount', () => {
     expect(result.current?.tailStart).toBe(266);
   });
 
-  it('starts bounding a mounted conversation when it crosses the row threshold', () => {
+  it('starts bounding a mounted conversation when it crosses the row threshold', async () => {
+    let resolveFonts = () => {};
+    const fontSet = {
+      status: 'loading',
+      ready: new Promise<void>((resolve) => {
+        resolveFonts = resolve;
+      }),
+    };
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fontSet });
     const container = document.createElement('div');
     Object.defineProperty(container, 'clientHeight', { value: 600 });
     Object.defineProperty(container, 'getBoundingClientRect', {
@@ -394,6 +408,15 @@ describe('useProgressiveRowMount', () => {
     flushFrames();
     flushFrames();
 
+    expect(result.current?.mode).toBe('progressive');
+    await act(async () => {
+      fontSet.status = 'loaded';
+      resolveFonts();
+      await Promise.resolve();
+    });
+    flushFrames();
+    flushFrames();
+
     expect(result.current?.mode).toBe('bounded');
     expect(result.current?.heights?.size).toBe(41);
   });
@@ -421,8 +444,10 @@ describe('useProgressiveRowMount', () => {
       end: 0,
       heights,
     };
+    const heightLookup = jest.spyOn(heights, 'get');
     const view = render(<RowMountProvider mountWindow={firstWindow}>{probes}</RowMountProvider>);
     expect(renderCounts).toEqual([1, 1, 1]);
+    heightLookup.mockClear();
 
     view.rerender(
       <RowMountProvider mountWindow={{ ...firstWindow, start: 1, end: 1 }}>
@@ -431,6 +456,7 @@ describe('useProgressiveRowMount', () => {
     );
 
     expect(renderCounts).toEqual([2, 2, 1]);
+    expect(heightLookup).toHaveBeenCalledTimes(2);
   });
 
   it('rebuilds the scroll index when the active message path shrinks', () => {

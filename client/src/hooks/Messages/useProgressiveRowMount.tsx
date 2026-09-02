@@ -69,6 +69,7 @@ function equalRowState(left: RowMountRowState, right: RowMountRowState): boolean
 class RowMountStore {
   private mountWindow: RowMountWindow = null;
   private readonly listeners = new Map<string, Set<() => void>>();
+  private readonly keysByDepth = new Map<number | undefined, Set<string>>();
   private readonly snapshots = new Map<string, RowMountRowState>();
   private readonly pendingKeys = new Set<string>();
 
@@ -76,14 +77,85 @@ class RowMountStore {
     return `${depth ?? ''}\u0000${messageId ?? ''}`;
   }
 
+  private addDepth(keys: Set<string>, depth: number | undefined): void {
+    for (const key of this.keysByDepth.get(depth) ?? []) keys.add(key);
+  }
+
+  private addRange(keys: Set<string>, start: number, end: number): void {
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      for (const [depth, depthKeys] of this.keysByDepth) {
+        if (depth != null && depth >= start && depth <= end) {
+          for (const key of depthKeys) keys.add(key);
+        }
+      }
+      return;
+    }
+    for (let depth = start; depth <= end; depth += 1) this.addDepth(keys, depth);
+  }
+
+  private addWindowDifference(
+    keys: Set<string>,
+    previousStart: number,
+    previousEnd: number,
+    nextStart: number,
+    nextEnd: number,
+  ): void {
+    if (previousStart !== nextStart) {
+      this.addRange(
+        keys,
+        Math.min(previousStart, nextStart),
+        Math.max(previousStart, nextStart) - 1,
+      );
+    }
+    if (previousEnd !== nextEnd) {
+      this.addRange(keys, Math.min(previousEnd, nextEnd) + 1, Math.max(previousEnd, nextEnd));
+    }
+  }
+
+  private addMapDifferences<T>(
+    keys: Set<string>,
+    previous: ReadonlyMap<number, T> | undefined,
+    next: ReadonlyMap<number, T> | undefined,
+  ): void {
+    if (previous === next) return;
+    for (const depth of new Set([...(previous?.keys() ?? []), ...(next?.keys() ?? [])])) {
+      if (previous?.get(depth) !== next?.get(depth)) this.addDepth(keys, depth);
+    }
+  }
+
   prepare(mountWindow: RowMountWindow): void {
     if (this.mountWindow === mountWindow) return;
+    const previousWindow = this.mountWindow;
     this.mountWindow = mountWindow;
-    for (const key of this.listeners.keys()) {
-      const separator = key.indexOf('\u0000');
-      const depthText = key.slice(0, separator);
-      const messageId = key.slice(separator + 1) || undefined;
+    const candidateKeys = new Set<string>();
+    this.addDepth(candidateKeys, undefined);
+    if (
+      previousWindow == null ||
+      mountWindow == null ||
+      previousWindow.mode !== mountWindow.mode ||
+      previousWindow.measureRow !== mountWindow.measureRow ||
+      previousWindow.pinRow !== mountWindow.pinRow
+    ) {
+      for (const key of this.listeners.keys()) candidateKeys.add(key);
+    } else {
+      this.addWindowDifference(
+        candidateKeys,
+        previousWindow.start,
+        previousWindow.end,
+        mountWindow.start,
+        mountWindow.end,
+      );
+      if (previousWindow.tailStart !== mountWindow.tailStart) {
+        const tailStart = previousWindow.tailStart ?? mountWindow.tailStart;
+        if (tailStart != null) this.addRange(candidateKeys, tailStart, Number.POSITIVE_INFINITY);
+      }
+      this.addMapDifferences(candidateKeys, previousWindow.heights, mountWindow.heights);
+      this.addMapDifferences(candidateKeys, previousWindow.pinnedRows, mountWindow.pinnedRows);
+    }
+    for (const key of candidateKeys) {
+      const [depthText, messageIdText = ''] = key.split('\u0000');
       const depth = depthText === '' ? undefined : Number(depthText);
+      const messageId = messageIdText || undefined;
       const next = deriveRowState(mountWindow, depth, messageId);
       const previous = this.snapshots.get(key);
       if (!previous || !equalRowState(previous, next)) {
@@ -109,10 +181,15 @@ class RowMountStore {
     const listeners = this.listeners.get(key) ?? new Set();
     listeners.add(listener);
     this.listeners.set(key, listeners);
+    const depthKeys = this.keysByDepth.get(depth) ?? new Set();
+    depthKeys.add(key);
+    this.keysByDepth.set(depth, depthKeys);
     return () => {
       listeners.delete(listener);
       if (listeners.size === 0) {
         this.listeners.delete(key);
+        depthKeys.delete(key);
+        if (depthKeys.size === 0) this.keysByDepth.delete(depth);
         this.snapshots.delete(key);
         this.pendingKeys.delete(key);
       }
@@ -221,7 +298,8 @@ function waitForFullDomLayout(container: HTMLElement, isCurrent: () => boolean):
       }
       const hasPendingLayout =
         container.querySelector('[data-row-layout-pending="true"]') != null ||
-        [...container.querySelectorAll<HTMLImageElement>('img')].some((image) => !image.complete);
+        [...container.querySelectorAll<HTMLImageElement>('img')].some((image) => !image.complete) ||
+        document.fonts?.status === 'loading';
       quietFrames = hasPendingLayout ? 0 : quietFrames + 1;
       if (quietFrames >= 2) {
         finish();
@@ -530,8 +608,11 @@ export function useProgressiveRowMount({
           ...container.querySelectorAll<HTMLImageElement>(`${MOUNTED_ROW_SLOT_SELECTOR} img`),
         ].filter((image) => !image.complete),
       );
+      const fontSet = document.fonts;
+      let fontsPending = fontSet?.status === 'loading';
       const hasPendingLayout = () =>
         pendingImages.size > 0 ||
+        fontsPending ||
         container.querySelector('[data-row-layout-pending="true"]') != null;
       const finish = () => {
         if (settled) return;
@@ -550,9 +631,17 @@ export function useProgressiveRowMount({
         });
       };
       const handleLayoutChange = () => {
+        if (settled) return;
         measureMountedRows();
         scheduleAfterQuietLayout();
       };
+      if (fontsPending) {
+        const handleFontsSettled = () => {
+          fontsPending = false;
+          handleLayoutChange();
+        };
+        void fontSet.ready.then(handleFontsSettled, handleFontsSettled);
+      }
       const observer =
         typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(handleLayoutChange);
       const containsPendingLayout = (node: Node) =>

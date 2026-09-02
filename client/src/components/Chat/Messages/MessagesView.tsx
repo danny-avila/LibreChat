@@ -123,11 +123,29 @@ function MessagesViewContent({
 
   const { index, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const collapseLongUserMessages = useRecoilValue(store.collapseLongUserMessages);
+  const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const autoScroll = useAtomValue(autoScrollAtom);
   const maximizeChatSpace = useOptionalChatSurface()?.maximizeChatSpace ?? false;
   const rowLayoutKey = useMemo(
-    () => ({ maximizeChatSpace, fontSize, theme, themeDefinition, parentSubagentsByMessageId }),
-    [maximizeChatSpace, fontSize, theme, themeDefinition, parentSubagentsByMessageId],
+    () => ({
+      maximizeChatSpace,
+      fontSize,
+      theme,
+      themeDefinition,
+      parentSubagentsByMessageId,
+      collapseLongUserMessages,
+      enableUserMsgMarkdown,
+    }),
+    [
+      maximizeChatSpace,
+      fontSize,
+      theme,
+      themeDefinition,
+      parentSubagentsByMessageId,
+      collapseLongUserMessages,
+      enableUserMsgMarkdown,
+    ],
   );
   /** Re-arm from the conversation that owns the RENDERED tree: the Recoil
    *  conversation id lags the route during warm-cache navigation, and keying
