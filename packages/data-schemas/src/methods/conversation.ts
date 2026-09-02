@@ -3311,22 +3311,37 @@ export function createConversationMethods(
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const projection = { lastResponseAt: 1 };
-      const existing = await Conversation.findOne({ conversationId, user })
-        .select({ updatedAt: 1 })
-        .lean<Pick<IConversation, 'updatedAt'>>();
-      const marker = existing?.updatedAt ?? new Date();
-      const stamped = await Conversation.findOneAndUpdate(
-        {
+      /* The marker has to equal the activity date the row actually carries when it lands, so
+         the write matches on the value that was read: another tab saving a user turn between
+         the two would otherwise leave a marker one activity behind, which every client reads
+         as a real reply. A miss is re-read and retried; a conversation that has since been
+         replied to falls through to the clear-only path below. */
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const existing = await Conversation.findOne({
           conversationId,
           user,
           $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
-        },
-        { $set: { lastResponseAt: marker }, $unset: { lastSeenAt: '' } },
-        { timestamps: false, new: true, projection },
-      ).lean<Pick<IConversation, 'lastResponseAt'>>();
+        })
+          .select({ updatedAt: 1 })
+          .lean<Pick<IConversation, 'updatedAt'>>();
+        if (!existing) {
+          break;
+        }
+        const marker = existing.updatedAt ?? new Date();
+        const stamped = await Conversation.findOneAndUpdate(
+          {
+            conversationId,
+            user,
+            $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
+            ...(existing.updatedAt != null ? { updatedAt: existing.updatedAt } : {}),
+          },
+          { $set: { lastResponseAt: marker }, $unset: { lastSeenAt: '' } },
+          { timestamps: false, new: true, projection },
+        ).lean<Pick<IConversation, 'lastResponseAt'>>();
 
-      if (stamped) {
-        return { modified: true, lastResponseAt: stamped.lastResponseAt };
+        if (stamped) {
+          return { modified: true, lastResponseAt: stamped.lastResponseAt };
+        }
       }
 
       const cleared = await Conversation.findOneAndUpdate(

@@ -429,6 +429,47 @@ describe('useReplyAlerts', () => {
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
   });
 
+  it('stays quiet for older unseen rows a later page brought into the cache', async () => {
+    /* Paginating while backgrounded surfaces backlog the tab had never cached: it is a
+       discovery, not an arrival, and announcing it would chime for replies from last week. */
+    const { rerender } = setup(
+      { notifications: true },
+      stateOf([row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z')]),
+    );
+
+    act(() => {
+      rerender(
+        stateOf([
+          row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z'),
+          row('convo-old', 'Backlog', '2026-08-01T09:00:00.000Z'),
+        ]),
+      );
+    });
+
+    expect(createdNotifications).toHaveLength(0);
+  });
+
+  it('announces a conversation it has never cached when its reply is newer than anything known', () => {
+    /* Started on another device: no prior stamp either, but its reply is newer than everything
+       this tab had heard about, which backlog never is. */
+    const { rerender } = setup(
+      { notifications: true },
+      stateOf([row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z')]),
+    );
+
+    act(() => {
+      rerender(
+        stateOf([
+          row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z'),
+          row('convo-new', 'Remote', '2026-08-16T11:00:00.000Z'),
+        ]),
+      );
+    });
+
+    expect(createdNotifications).toHaveLength(1);
+    expect(createdNotifications[0].options?.tag).toBe('convo-new');
+  });
+
   it('falls back to the untitled label when the conversation has no title', async () => {
     const { rerender } = setup({ notifications: true });
 

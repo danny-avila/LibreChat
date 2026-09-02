@@ -171,11 +171,11 @@ async function saveAssistantMessage(req, params) {
     },
     {
       context: 'api/server/services/Threads/manage.js #saveAssistantMessage',
-      /** Only reached once the assistant message above has been persisted; drives the
-       *  unseen-reply indicator the same way BaseClient's reply path does. `saveConvo` assigns
-       *  the timestamp past its own awaited reads, so a catch-up recorded while one of them is
-       *  in flight cannot outrank this reply. */
-      stampReply: req?.body?.isTemporary !== true,
+      /** Only reached once the assistant message above is actually in the history: a write
+       *  that resolved empty would announce a reply nobody can open. `saveConvo` assigns the
+       *  timestamp past its own awaited reads, so a catch-up recorded while one of them is in
+       *  flight cannot outrank this reply. */
+      stampReply: message != null && req?.body?.isTemporary !== true,
     },
   );
 
@@ -239,8 +239,9 @@ async function syncMessages({
 
   const modifyPromises = [];
   const recordPromises = [];
-  /** Whether this synchronization is what made an assistant reply durable. */
-  let recordedAssistantReply = false;
+  /** The assistant writes this synchronization performed. Their results decide whether a reply
+   *  is actually in the history: a write that resolved empty must not raise an indicator. */
+  const assistantRecordPromises = [];
 
   /**
    *
@@ -251,10 +252,11 @@ async function syncMessages({
    * @param {dbMessage} params.apiMessage
    */
   const processNewMessage = async ({ dbMessage, apiMessage }) => {
+    const recorded = recordMessage({ ...dbMessage, user: openai.req.user.id });
+    recordPromises.push(recorded);
     if (dbMessage.role === 'assistant') {
-      recordedAssistantReply = true;
+      assistantRecordPromises.push(recorded);
     }
-    recordPromises.push(recordMessage({ ...dbMessage, user: openai.req.user.id }));
 
     if (!apiMessage.id.includes('msg_')) {
       return;
@@ -359,6 +361,7 @@ async function syncMessages({
   }, []);
 
   await Promise.all(modifyPromises);
+  const recordedAssistantReplies = await Promise.all(assistantRecordPromises);
   await Promise.all(recordPromises);
 
   await saveConvo(
@@ -377,8 +380,10 @@ async function syncMessages({
   /* Every caller that reaches here recovers assistant output the normal save path never wrote:
      a cancelled run, or one that errored after the model had already produced content. The
      `saveConvo` above carries no reply stamp, so without this the recovered reply would never
-     raise its unseen indicator. Best-effort, since the messages are already durable. */
-  if (recordedAssistantReply && openai.req?.body?.isTemporary !== true) {
+     raise its unseen indicator. Only a write that actually persisted counts, and it is
+     best-effort, since those messages are already durable. */
+  const persistedAssistantReply = recordedAssistantReplies.some((message) => message != null);
+  if (persistedAssistantReply && openai.req?.body?.isTemporary !== true) {
     try {
       await stampConvoLastResponse(openai.req.user.id, conversationId);
     } catch (error) {
