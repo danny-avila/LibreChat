@@ -60,6 +60,10 @@ const CompactController = async (req, res) => {
   if (result.status === 201) {
     return res.status(201).json(result.message);
   }
+  /** A structured body (content-policy denial) is already safe to render. */
+  if (result.body != null) {
+    return res.status(result.status).json({ code: result.code, ...result.body });
+  }
   return res.status(result.status).json({ error: result.error, code: result.code });
 };
 

@@ -47,6 +47,7 @@ import { aggregateEmittedUsage, computeUsageCostUSD, recordCollectedUsage } from
 import { getBalanceConfig, getTransactionsConfig } from '~/app/config';
 import { validateAgentModel } from '~/agents/validation';
 import { checkBalance } from '~/middleware/checkBalance';
+import { getContentFilterError } from '~/middleware/contentFilter';
 import { resolveSender } from '~/agents/sender';
 import { acquireCompactionLock } from './lock';
 
@@ -67,6 +68,7 @@ export const CompactErrorCodes = {
   AGENT_NOT_FOUND: 'AGENT_NOT_FOUND',
   ILLEGAL_MODEL: 'ILLEGAL_MODEL',
   SAVE_FAILED: 'SAVE_FAILED',
+  CONTENT_FILTER_BLOCK: 'CONTENT_FILTER_BLOCK',
   FAILED: 'FAILED',
 } as const;
 
@@ -76,7 +78,14 @@ export type CompactErrorCode = (typeof CompactErrorCodes)[keyof typeof CompactEr
  *  whole flow stays testable without standing up a server. */
 export type CompactRequestResult =
   | { status: 201; message: TMessage }
-  | { status: number; error: string; code: CompactErrorCode };
+  | {
+      status: number;
+      error: string;
+      code: CompactErrorCode;
+      /** Safe structured body (e.g. a content-policy denial) the adapter
+       *  renders verbatim instead of the generic `{ error, code }` shape. */
+      body?: Record<string, unknown>;
+    };
 
 type MessageFilter = { conversationId: string; user: string; parentMessageId?: string };
 
@@ -761,6 +770,21 @@ export async function handleCompactRequest(
         status: 413,
         error: 'This conversation is too long to compact in one pass',
         code: CompactErrorCodes.TRANSCRIPT_TOO_LARGE,
+      };
+    }
+    /** Model-bound content policy rejected the reconstructed transcript (or a
+     *  later pass of it). The denial is expected, its status and body are
+     *  already safe to render, and a 500 would report a policy denial as a
+     *  server outage while hiding what the user has to fix. `cause` is
+     *  unwrapped because a blocked later pass arrives as a billing error's
+     *  cause after its completed passes were billed. */
+    const policyError = getContentFilterError(error);
+    if (policyError != null) {
+      return {
+        status: policyError.statusCode,
+        error: 'Compaction was blocked by the content policy',
+        code: CompactErrorCodes.CONTENT_FILTER_BLOCK,
+        ...(policyError.body != null && { body: { ...policyError.body } }),
       };
     }
     logger.error('[compact] Error compacting conversation', error);

@@ -31,7 +31,9 @@ jest.mock('~/middleware/concurrency', () => {
 });
 
 import { handleCompactRequest, CompactErrorCodes } from '../request';
-import { NothingToCompactError } from '../summary';
+import { NothingToCompactError, PartialCompactionError } from '../summary';
+import { ContentFilterError } from '~/middleware/contentFilter';
+import type { ProtectionFinding } from '~/protection/types';
 
 const SUMMARY = {
   type: ContentTypes.SUMMARY,
@@ -322,6 +324,68 @@ describe('handleCompactRequest', () => {
     expect(deps.deleteMessages).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'convo_1', user: 'user_1' }),
     );
+  });
+
+  it('renders a content-policy denial with its status and safe body', async () => {
+    const finding = {
+      detectorId: 'test',
+      ruleId: 'test-rule',
+      label: 'private value',
+      source: 'message',
+      field: 'text',
+    } as unknown as ProtectionFinding;
+    mockCompactConversation.mockRejectedValue(new ContentFilterError(finding));
+    const deps = makeDeps();
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({
+      status: 400,
+      code: CompactErrorCodes.CONTENT_FILTER_BLOCK,
+      body: { error: 'content_filter_block', source: 'message', field: 'text' },
+    });
+    expect(deps.deleteMessages).not.toHaveBeenCalled();
+  });
+
+  it('bills a completed pass and surfaces a policy denial from the billing error cause', async () => {
+    const finding = {
+      detectorId: 'test',
+      ruleId: 'test-rule',
+      label: 'private value',
+      source: 'file',
+      field: 'content',
+    } as unknown as ProtectionFinding;
+    mockCompactConversation.mockRejectedValue(
+      new PartialCompactionError({
+        passes: [
+          {
+            usage: {
+              model: 'gpt-4o-mini',
+              provider: 'openAI',
+              input_tokens: 900,
+              output_tokens: 80,
+            },
+            counted: { input_tokens: 700, output_tokens: 60 },
+          },
+        ],
+        model: 'gpt-4o-mini',
+        provider: 'openAI',
+        cause: new ContentFilterError(finding),
+        message: 'blocked by content policy',
+      }),
+    );
+    const deps = makeDeps();
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({
+      status: 400,
+      code: CompactErrorCodes.CONTENT_FILTER_BLOCK,
+      body: { error: 'content_filter_block', source: 'file', field: 'content' },
+    });
+    /** The completed pass is real spend even though no boundary lands. With
+     *  pricing and bulk deps present, `recordCollectedUsage` writes through
+     *  the batched transaction path rather than `spendTokens`. */
+    expect(deps.insertMany).toHaveBeenCalled();
+    expect(deps.saveMessage).not.toHaveBeenCalled();
   });
 
   it('reads the job before the siblings so a settling turn cannot slip between', async () => {
