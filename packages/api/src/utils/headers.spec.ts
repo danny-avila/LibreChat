@@ -128,22 +128,24 @@ describe('resolveConfigHeaders', () => {
     });
   });
 
-  it('leaves Google customHeaders untouched (resolved at init, not request time)', () => {
+  it('resolves only tenant placeholders in Google customHeaders', () => {
     const llmConfig = {
       customHeaders: {
         'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Tenant-Id': '{{LIBRECHAT_USER_TENANT_ID}}',
         Authorization: 'Bearer ${SOME_KEY}',
       },
     } as unknown as RunLLMConfig;
 
-    resolveConfigHeaders({ llmConfig, user, body });
+    resolveConfigHeaders({ llmConfig, user, tenantId: 'request-tenant', body });
 
-    // Native Google headers are resolved in initializeGoogle; resolveConfigHeaders
-    // must not re-process them (keeps the key-derived auth out of env expansion).
+    // Native Google headers are otherwise resolved in initializeGoogle. In
+    // particular, provider auth must never pass through environment expansion.
     expect(
       (llmConfig as unknown as { customHeaders: Record<string, string> }).customHeaders,
     ).toEqual({
       'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      'X-Tenant-Id': 'request-tenant',
       Authorization: 'Bearer ${SOME_KEY}',
     });
   });

@@ -1677,7 +1677,8 @@ describe('AgentClient - startup telemetry', () => {
 
     const client = new AgentClient({
       req: {
-        user: { id: 'user-123' },
+        tenantId: 'request-tenant',
+        user: { id: 'user-123', tenantId: 'stale-user-tenant' },
         body: {},
         config: {
           endpoints: { [EModelEndpoint.agents]: { toolApproval: { enabled: true } } },
@@ -1712,6 +1713,7 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
     expect(mockCreateRun.mock.calls[0][0]).toEqual(
       expect.objectContaining({
+        tenantId: 'request-tenant',
         modelCallbacks: [
           expect.objectContaining({
             name: 'librechat-model-bound-content-filter',
@@ -6961,6 +6963,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
   const makeContext = (filters) => ({
     options: {
       req: {
+        tenantId: 'request-tenant',
         user: { id: 'user-123' },
         body: { files: [] },
         config: {
@@ -7230,6 +7233,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
     expect(mockCreateRun.mock.calls[0][0]).toEqual(
       expect.objectContaining({
+        tenantId: 'request-tenant',
         modelCallbacks: [expect.objectContaining({ name: 'librechat-model-bound-content-filter' })],
         compactionSemanticIndex: compactionSemanticIndex.entries,
       }),

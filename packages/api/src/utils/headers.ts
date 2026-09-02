@@ -84,6 +84,22 @@ export function mergeHeaders(
 }
 
 type DefaultHeadersContainer = { defaultHeaders?: Record<string, string> };
+type CustomHeadersContainer = { customHeaders?: Record<string, string> };
+
+function resolveTenantPlaceholders(
+  headers: Record<string, string>,
+  tenantId?: string,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      TENANT_ID_HEADER_PLACEHOLDERS.reduce(
+        (current, placeholder) => current.replaceAll(placeholder, tenantId ?? ''),
+        value,
+      ),
+    ]),
+  );
+}
 
 /**
  * Resolves model-header templates with the request-scoped tenant supplied by
@@ -111,14 +127,7 @@ export function resolveModelHeaders({
     stripUnresolved: true,
   });
 
-  for (const [name, value] of Object.entries(resolved)) {
-    resolved[name] = TENANT_ID_HEADER_PLACEHOLDERS.reduce(
-      (current, placeholder) => current.replaceAll(placeholder, tenantId ?? ''),
-      value,
-    );
-  }
-
-  return resolved;
+  return resolveTenantPlaceholders(resolved, tenantId);
 }
 
 /**
@@ -137,11 +146,10 @@ const resolvedHeaderMaps = new WeakSet<object>();
  * Resolves placeholder templates in the outbound request headers of a built LLM
  * config, mutating it in place. Handles the OpenAI-compatible
  * `configuration.defaultHeaders` (OpenAI / Azure / custom) and the native
- * Anthropic `clientOptions.defaultHeaders` (including Vertex) carriers. Native
- * Google `customHeaders` are intentionally NOT handled here — they are resolved
- * once at init in `initializeGoogle`, so the provider-managed `Authorization`
- * header (built from a possibly user-provided key) never passes through env
- * expansion.
+ * Anthropic `clientOptions.defaultHeaders` (including Vertex) carriers, plus
+ * tenant-only substitution in native Google `customHeaders`. Google's map is
+ * otherwise resolved at initialization so provider-managed authorization never
+ * passes through environment or user-template expansion.
  *
  * Resolution runs at request time so request-body placeholders (e.g.
  * `{{LIBRECHAT_BODY_CONVERSATIONID}}`) resolve against the live request. It is a
@@ -193,5 +201,14 @@ export function resolveConfigHeaders({
     | undefined;
   if (clientOptions?.defaultHeaders != null) {
     clientOptions.defaultHeaders = resolveOnce(clientOptions.defaultHeaders);
+  }
+
+  const customHeadersContainer = llmConfig as CustomHeadersContainer;
+  if (customHeadersContainer.customHeaders != null) {
+    const headers = customHeadersContainer.customHeaders;
+    if (!resolvedHeaderMaps.has(headers)) {
+      customHeadersContainer.customHeaders = resolveTenantPlaceholders(headers, tenantId);
+      resolvedHeaderMaps.add(customHeadersContainer.customHeaders);
+    }
   }
 }
