@@ -1895,6 +1895,7 @@ describe('Code Process', () => {
 
   describe('searchWorkspace', () => {
     it('forwards authenticated literal search to the selected attached worker', async () => {
+      const controller = new AbortController();
       const result = {
         protocolVersion: 1,
         operation: 'search_text',
@@ -1915,6 +1916,7 @@ describe('Code Process', () => {
           executionProfile: 'stateful',
           bridgeWorkerId: 'worker-user-1',
           req: mockReq,
+          signal: controller.signal,
         }),
       ).resolves.toBe(result);
 
@@ -1933,6 +1935,7 @@ describe('Code Process', () => {
           path: 'src',
           maxResults: 20,
         },
+        signal: controller.signal,
       });
     });
   });

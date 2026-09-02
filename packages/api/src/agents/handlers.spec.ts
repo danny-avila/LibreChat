@@ -5028,6 +5028,7 @@ describe('createToolExecuteHandler', () => {
     });
 
     it('searches literal text through the selected attached worker', async () => {
+      const controller = new AbortController();
       const searchWorkspace = jest.fn(async () => ({
         protocolVersion: 1 as const,
         operation: 'search_text' as const,
@@ -5048,13 +5049,20 @@ describe('createToolExecuteHandler', () => {
         searchWorkspace,
       });
 
-      const [result] = await invokeHandler(handler, [
-        {
-          id: 'call_workspace_search',
-          name: 'search_workspace',
-          args: { query: 'needle', path: 'src', max_results: 20 },
-        },
-      ]);
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_workspace_search',
+              name: 'search_workspace',
+              args: { query: 'needle', path: 'src', max_results: 20 },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
 
       expect(searchWorkspace).toHaveBeenCalledWith({
         query: 'needle',
@@ -5064,6 +5072,7 @@ describe('createToolExecuteHandler', () => {
         codeApiBaseUrl: 'https://code.example.com/v1',
         executionProfile: 'stateful',
         bridgeWorkerId: 'personal-worker-1',
+        signal: controller.signal,
       });
       expect(result).toMatchObject({
         status: 'success',

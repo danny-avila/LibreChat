@@ -466,6 +466,7 @@ export interface ToolExecuteOptions {
     executionProfile: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
     req?: ServerRequest;
+    signal?: AbortSignal;
   }) => Promise<WorkspaceSearchResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
@@ -2302,6 +2303,7 @@ async function handleWorkspaceSearchCall(
   mergedConfigurable: Record<string, unknown> | undefined,
   options: ToolExecuteOptions,
   req: ServerRequest | undefined,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const codeExecutionContext = getCodeExecutionContext(mergedConfigurable ?? {});
   if (
@@ -2340,6 +2342,7 @@ async function handleWorkspaceSearchCall(
         ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
         : {}),
       ...(req ? { req } : {}),
+      ...(signal ? { signal } : {}),
     });
 
     for (const match of result.matches) {
@@ -2358,6 +2361,7 @@ async function handleWorkspaceSearchCall(
       content: result.truncated ? `${content}\n\n[results truncated]` : content,
     };
   } catch (error) {
+    if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn(
       '[handleWorkspaceSearchCall] Attached workspace search failed',
       getSafeErrorMetadata(error),
@@ -5885,6 +5889,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           mergedConfigurable,
                           options,
                           req,
+                          runSignal,
                         );
                       } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleCreateFileCall(
