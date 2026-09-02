@@ -296,6 +296,25 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(paused?.metadata.contextMeta).toEqual(contextMeta);
     });
 
+    test('clears the previous pause context meta when a re-pause has none', async () => {
+      const streamId = 'stream-pause-context-meta-cleared';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      const contextMeta = {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1 as const, budgetTokens: 50_000, masked: true },
+      };
+
+      expect(await manager.approvals.pause(streamId, firstAction, { contextMeta })).toBe(true);
+      expect(await manager.approvals.resolve(streamId, firstAction.actionId)).toBe(true);
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      const repaused = await manager.getJob(streamId);
+      expect(repaused?.status).toBe('requires_action');
+      expect(repaused?.metadata.contextMeta).toBeUndefined();
+    });
+
     test('does not write a stale pause or discoveries onto a replacement job', async () => {
       const streamId = 'stream-pause-replaced';
       const original = await manager.createJob(streamId, 'user-1');

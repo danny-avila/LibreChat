@@ -160,6 +160,9 @@ export class ApprovalLifecycle {
             ? { agentEventSuspension: options.agentEventSuspension }
             : {}),
         },
+        /** A re-pause with nothing persistable must not leave the previous
+         * segment's calibration and tier on the job for the next resume. */
+        ...(contextMeta == null ? { clear: ['contextMeta' as const] } : {}),
         expectCreatedAt: expectedCreatedAt,
         notAfterMs: pendingAction.expiresAt,
         steerReceiptTtlSeconds: pauseReceiptTtl,

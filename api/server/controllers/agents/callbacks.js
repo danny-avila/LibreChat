@@ -825,6 +825,7 @@ function getDefaultHandlers({
             contextUsageSink.latest = data;
             contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
             contextUsageSink.latestUsageIndex = usageEmitSink?.length ?? 0;
+            contextUsageSink.onSnapshot?.();
           }
           await emitForJob({ event, data });
         }

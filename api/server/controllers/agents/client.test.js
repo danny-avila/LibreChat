@@ -973,6 +973,124 @@ describe('AgentClient - interrupt discovery persistence', () => {
     });
   });
 
+  it('captures the live graph state at a pause instead of the run seeds', async () => {
+    const streamId = 'conversation-context-meta-live-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-live-pause';
+    client.jobCreatedAt = job.createdAt;
+    const seeded = { v: 1, budgetTokens: 50_000, masked: false };
+    const live = { v: 1, budgetTokens: 25_000, masked: true };
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'ask-interrupt',
+          threadId: streamId,
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Proceed?' },
+          },
+        }),
+        getDiscoveredTools: () => [],
+        getRunMessages: () => [],
+        getCalibrationRatio: () => 1,
+        getFadingTier: () => seeded,
+        Graph: {
+          getCalibrationRatio: () => 1.4,
+          getFadingTier: () => live,
+        },
+      },
+      streamId,
+    );
+
+    const paused = await GenerationJobManager.getJob(streamId);
+    expect(paused?.metadata.contextMeta).toEqual({
+      calibrationRatio: 1.4,
+      encoding: client.getEncoding(),
+      fading: live,
+    });
+  });
+
+  it('publishes the live context meta onto the job after each context snapshot', async () => {
+    const streamId = 'conversation-context-meta-publish';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const contextUsageSink = { latest: null, count: 0 };
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+      contextUsageSink,
+    });
+    const tier = { v: 1, budgetTokens: 25_000, masked: true };
+    let ratio = 1.1;
+    client.run = {
+      Graph: {
+        getCalibrationRatio: () => ratio,
+        getFadingTier: () => tier,
+      },
+    };
+    const updateMetadata = jest.spyOn(GenerationJobManager, 'updateMetadata');
+
+    expect(typeof contextUsageSink.onSnapshot).toBe('function');
+    contextUsageSink.onSnapshot();
+    contextUsageSink.onSnapshot();
+    ratio = 1.3;
+    contextUsageSink.onSnapshot();
+    await Promise.all(updateMetadata.mock.results.map((result) => result.value));
+
+    expect(updateMetadata).toHaveBeenCalledTimes(2);
+    expect(updateMetadata).toHaveBeenLastCalledWith(
+      streamId,
+      {
+        contextMeta: {
+          calibrationRatio: 1.3,
+          encoding: client.getEncoding(),
+          fading: tier,
+        },
+      },
+      job.createdAt,
+    );
+    const running = await GenerationJobManager.getJob(streamId);
+    expect(running?.metadata.contextMeta).toEqual({
+      calibrationRatio: 1.3,
+      encoding: client.getEncoding(),
+      fading: tier,
+    });
+    updateMetadata.mockRestore();
+  });
+
   it('caps an event-bound pause at the inherited binding deadline', async () => {
     const now = Date.now();
     const streamId = 'conversation-event-bound-pause';

@@ -124,6 +124,38 @@ describe('resumable event generation fencing', () => {
     );
   });
 
+  it('records a context snapshot and notifies the sink before forwarding it', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const onSnapshot = jest.fn();
+    const contextUsageSink = { latest: null, count: 0, onSnapshot };
+    const usageEmitSink = [{ input_tokens: 10 }];
+    const data = { contextBudget: 1000, remainingContextTokens: 400 };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+      contextUsageSink,
+      usageEmitSink,
+    });
+
+    await handlers[GraphEvents.ON_CONTEXT_USAGE].handle(GraphEvents.ON_CONTEXT_USAGE, data, {
+      hide_sequential_outputs: false,
+    });
+
+    expect(contextUsageSink).toMatchObject({ latest: data, count: 1, latestUsageIndex: 1 });
+    expect(onSnapshot).toHaveBeenCalledTimes(1);
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'conversation-1',
+      { event: GraphEvents.ON_CONTEXT_USAGE, data },
+      { expectedCreatedAt: 1234 },
+    );
+  });
+
   it('resolves MCP identity from a function-shaped root tool call', async () => {
     const { GraphEvents } = jest.requireActual('@librechat/agents');
     const { getDefaultHandlers } = require('../callbacks');

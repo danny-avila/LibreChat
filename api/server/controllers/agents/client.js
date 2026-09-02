@@ -263,9 +263,14 @@ function resolveRunSeeds(client) {
  * encoding is only resolved when there is something to persist.
  */
 function captureRunContextMeta(client) {
+  const run = client.run;
+  /** `Run` refreshes its own getters only after `processStream` settles, so a
+   * capture taken mid-run (a HITL pause, a Stop) reads the live graph state. */
+  const graph = run?.Graph;
   return resolveRunContextMeta({
-    calibrationRatio: client.run?.getCalibrationRatio?.() ?? 0,
-    fadingTier: client.run?.getFadingTier?.(),
+    calibrationRatio:
+      (graph != null ? graph.getCalibrationRatio?.() : run?.getCalibrationRatio?.()) ?? 0,
+    fadingTier: graph != null ? graph.getFadingTier?.() : run?.getFadingTier?.(),
     getEncoding: () => client.getEncoding(),
   });
 }
@@ -401,6 +406,9 @@ class AgentClient extends BaseClient {
      *  ON_CONTEXT_USAGE handler; persisted on `metadata.contextUsage`.
      *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null } | undefined} */
     this.contextUsageSink = contextUsageSink;
+    if (this.contextUsageSink != null) {
+      this.contextUsageSink.onSnapshot = () => this.publishRunContextMeta();
+    }
     /** Every emitted `on_token_usage` payload for this response (primary,
      *  summarization, sequential, and subagent); aggregated into the rollup
      *  persisted on `metadata.usage`.
@@ -1916,6 +1924,38 @@ class AgentClient extends BaseClient {
    * rebuilt client. Malformed values are dropped rather than trusted.
    * @param {unknown} contextMeta
    */
+  /**
+   * Publishes the run's live calibration and fading tier onto the job after each
+   * pre-invoke context snapshot. A Stop persists the response from job data alone,
+   * so without this the stopped response would drop the tier and the next turn
+   * would re-derive truncation and rewrite the historical prompt prefix.
+   * Deduplicated on the serialized value; failures only log.
+   */
+  publishRunContextMeta() {
+    const streamId = this.options.req?._resumableStreamId;
+    if (!streamId) {
+      return;
+    }
+    const contextMeta = captureRunContextMeta(this);
+    if (contextMeta == null) {
+      return;
+    }
+    const serialized = JSON.stringify(contextMeta);
+    if (serialized === this.publishedContextMeta) {
+      return;
+    }
+    this.publishedContextMeta = serialized;
+    GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt).catch(
+      (err) => {
+        this.publishedContextMeta = undefined;
+        logger.warn(
+          `[AgentClient] Failed to publish context meta for ${streamId}`,
+          getSafeErrorMetadata(err),
+        );
+      },
+    );
+  }
+
   seedContextMeta(contextMeta) {
     try {
       this.contextMeta = normalizeEventActorContextMeta(contextMeta);

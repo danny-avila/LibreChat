@@ -114,6 +114,10 @@ async function abortMessage(req, res) {
     error: false,
     isCreatedByUser: false,
     tokenCount: completionTokens,
+    /** The run publishes its calibration and fading tier onto the job as it
+     * goes; a stopped response must carry them or the next turn re-derives
+     * truncation and rewrites the historical prompt prefix. */
+    ...(jobData?.contextMeta != null && { contextMeta: jobData.contextMeta }),
   };
 
   /** Persist the usage/cost rollup + context breakdown for the stopped response
