@@ -11,6 +11,7 @@ import {
   Archive,
   FolderInput,
   FolderX,
+  Mail,
   Pen,
   Pin,
   Trash,
@@ -24,6 +25,7 @@ import {
   useGetStartupConfig,
   useArchiveConvoMutation,
   usePinConversationMutation,
+  useMarkConversationUnreadMutation,
 } from '~/data-provider';
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
@@ -38,6 +40,7 @@ function ConvoOptions({
   chatProjectId,
   title,
   isPinned = false,
+  isUnseen = false,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -49,6 +52,7 @@ function ConvoOptions({
   chatProjectId?: string | null;
   title: string | null;
   isPinned?: boolean;
+  isUnseen?: boolean;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
@@ -86,6 +90,7 @@ function ConvoOptions({
   const archiveConvoMutation = useArchiveConvoMutation();
   const assignConversationToProject = useAssignConversationToProjectMutation();
   const pinConvoMutation = usePinConversationMutation();
+  const markUnreadMutation = useMarkConversationUnreadMutation();
 
   const deleteMutation = useDeleteConversationMutation({
     onSuccess: () => {
@@ -257,6 +262,26 @@ function ConvoOptions({
     );
   }, [conversationId, isPinned, pinConvoMutation, setIsPopoverActive, showToast, localize]);
 
+  const handleMarkUnreadClick = useCallback(() => {
+    const convoId = conversationId ?? '';
+    if (!convoId) {
+      return;
+    }
+    markUnreadMutation.mutate(
+      { conversationId: convoId },
+      {
+        onSuccess: () => setIsPopoverActive(false),
+        onError: () => {
+          showToast({
+            message: localize('com_ui_mark_unread_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+  }, [conversationId, markUnreadMutation, setIsPopoverActive, showToast, localize]);
+
   const handleDuplicateClick = useCallback(() => {
     duplicateConversation.mutate({
       conversationId: conversationId ?? '',
@@ -286,6 +311,14 @@ function ConvoOptions({
         ) : (
           <Pin className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
         ),
+      },
+      {
+        label: localize('com_ui_mark_unread'),
+        onClick: handleMarkUnreadClick,
+        /* The conversation on screen is definitionally read: its own seen triggers would
+           clear the flag the moment it is set. */
+        show: !isActiveConvo && !isUnseen,
+        icon: <Mail className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
       },
       {
         label: localize('com_ui_rename'),
@@ -348,6 +381,8 @@ function ConvoOptions({
     [
       localize,
       isPinned,
+      isUnseen,
+      isActiveConvo,
       isPinLoading,
       shareHandler,
       startupConfig,
@@ -356,6 +391,7 @@ function ConvoOptions({
       isArchiveLoading,
       isDuplicateLoading,
       handlePinClick,
+      handleMarkUnreadClick,
       handleArchiveClick,
       canCreateSharedLinks,
       handleDuplicateClick,
@@ -487,6 +523,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
     prevProps.title === nextProps.title &&
     prevProps.chatProjectId === nextProps.chatProjectId &&
     prevProps.isPinned === nextProps.isPinned &&
+    prevProps.isUnseen === nextProps.isUnseen &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
     prevProps.isActiveConvo === nextProps.isActiveConvo &&
     prevProps.isShiftHeld === nextProps.isShiftHeld

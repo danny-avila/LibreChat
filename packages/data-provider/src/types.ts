@@ -442,6 +442,26 @@ export type TPinConversationRequest = {
 
 export type TPinConversationResponse = TConversation;
 
+export type TMarkConversationSeenRequest = {
+  conversationId: string;
+  /** The reply the client had on screen; the server acknowledges no newer one. */
+  lastResponseAt?: string;
+};
+
+export type TMarkConversationSeenResponse = {
+  modified: boolean;
+};
+
+export type TMarkConversationUnreadRequest = {
+  conversationId: string;
+};
+
+export type TMarkConversationUnreadResponse = {
+  modified: boolean;
+  /** The stamp the server settled on, so the client never has to invent its own marker. */
+  lastResponseAt?: string;
+};
+
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
   langfuseSessionUrl?: string;

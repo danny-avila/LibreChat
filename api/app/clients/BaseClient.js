@@ -1255,7 +1255,27 @@ class BaseClient {
       { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
     );
 
+    /** Only a reply that is actually in the message history may light an indicator: a write
+     *  that resolved empty (duplicate-key recovery that could not re-read the row) would
+     *  otherwise announce a reply nobody can open. */
+    const persistedReply = savedMessage != null && message.isCreatedByUser === false;
+
     if (this.skipSaveConvo) {
+      /* The secondary response of an override pair persists its message but deliberately skips
+         the conversation-field save, so the stamp below is never reached. The reply still has
+         to light the indicator: the primary response's stamp is older whenever this one
+         finishes later, and absent altogether when the primary failed. Best effort, because a
+         missed indicator must not fail a reply that is already persisted. */
+      /* `user` is the same id the message was just saved under; `reqCtx` only carries it when
+         the request object is present, which the direct-save paths do not guarantee. */
+      const stampUserId = reqCtx.userId ?? user ?? this.user;
+      if (persistedReply && reqCtx.isTemporary !== true && stampUserId) {
+        try {
+          await db.stampConvoLastResponse(stampUserId, message.conversationId);
+        } catch (error) {
+          logger.error('[BaseClient] Failed to stamp reply on skipped conversation save', error);
+        }
+      }
       return { message: savedMessage };
     }
 
@@ -1265,6 +1285,7 @@ class BaseClient {
       endpointType: options.endpointType,
       ...endpointOptions,
     };
+
     const conversationCreatedAt = options?.req?.conversationCreatedAt;
     const createdAtOnInsert =
       conversationCreatedAt != null ? new Date(conversationCreatedAt) : undefined;
@@ -1313,11 +1334,18 @@ class BaseClient {
       }
     }
 
+    /** Drives the unseen-reply indicator; only assistant replies count, never the user's own
+     *  turn. `saveConvo` assigns the timestamp itself, past its own awaited reads and against
+     *  the write: a catch-up recorded by `/seen` while one of those reads is in flight would
+     *  otherwise outrank a stamp captured here and leave this reply reading as already seen. */
+    const stampReply = persistedReply && reqCtx.isTemporary !== true;
+
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
       noUpsert: req?._agentEventBindingParentConversationId != null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
+      ...(stampReply ? { stampReply } : {}),
       ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
 

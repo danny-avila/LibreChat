@@ -6,10 +6,10 @@ import { Constants } from 'librechat-data-provider';
 import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useGetStartupConfig, useUpdateConversationMutation } from '~/data-provider';
+import { cn, logger, setDocumentTitle, isConversationUnseen } from '~/utils';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { areConversationRenderPropsEqual } from './utils';
-import { cn, logger, setDocumentTitle } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import ConvoActions from './ConvoActions';
 import RenameForm from './RenameForm';
@@ -42,6 +42,7 @@ function Conversation({
   const { data: startupConfig } = useGetStartupConfig();
   const sharedLinksEnabled = startupConfig?.sharedLinksEnabled === true;
   const isSharedBadgeVisible = conversation.isShared === true && sharedLinksEnabled;
+  const isUnseen = isConversationUnseen(conversation);
   const isShiftHeld = useShiftKey();
   const { conversationId, title = '' } = conversation;
 
@@ -177,6 +178,7 @@ function Conversation({
     retainView,
     renameHandler: handleRename,
     isActiveConvo,
+    isUnseen,
     conversationId,
     chatProjectId: conversation.chatProjectId,
     isPopoverActive,
@@ -250,6 +252,7 @@ function Conversation({
           isActiveConvo={isActiveConvo}
           isPopoverActive={isPopoverActive}
           isSharedBadgeVisible={isSharedBadgeVisible}
+          isUnseen={isUnseen}
           title={title}
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
@@ -257,6 +260,11 @@ function Conversation({
         >
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
+      )}
+      {isUnseen && (
+        /* `ConvoLink`'s aria-label carries the text equivalent, so the dot itself stays
+           decorative rather than announcing a second time outside the row's button. */
+        <span className="mr-1 size-2 shrink-0 rounded-full bg-status-info" aria-hidden="true" />
       )}
       {isSharedBadgeVisible && (
         <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />

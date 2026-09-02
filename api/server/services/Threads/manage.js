@@ -1,14 +1,20 @@
 const path = require('path');
 const { v4 } = require('uuid');
 const { countTokens } = require('@librechat/api');
-const { escapeRegExp } = require('@librechat/data-schemas');
+const { logger, escapeRegExp } = require('@librechat/data-schemas');
 const {
   Constants,
   ContentTypes,
   AnnotationTypes,
   defaultOrderQuery,
 } = require('librechat-data-provider');
-const { recordMessage, getMessages, spendTokens, saveConvo } = require('~/models');
+const {
+  saveConvo,
+  getMessages,
+  spendTokens,
+  recordMessage,
+  stampConvoLastResponse,
+} = require('~/models');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 
 /**
@@ -163,7 +169,14 @@ async function saveAssistantMessage(req, params) {
       iconURL: params.iconURL,
       spec: params.spec,
     },
-    { context: 'api/server/services/Threads/manage.js #saveAssistantMessage' },
+    {
+      context: 'api/server/services/Threads/manage.js #saveAssistantMessage',
+      /** Only reached once the assistant message above has been persisted; drives the
+       *  unseen-reply indicator the same way BaseClient's reply path does. `saveConvo` assigns
+       *  the timestamp past its own awaited reads, so a catch-up recorded while one of them is
+       *  in flight cannot outrank this reply. */
+      stampReply: req?.body?.isTemporary !== true,
+    },
   );
 
   return message;
@@ -226,6 +239,8 @@ async function syncMessages({
 
   const modifyPromises = [];
   const recordPromises = [];
+  /** Whether this synchronization is what made an assistant reply durable. */
+  let recordedAssistantReply = false;
 
   /**
    *
@@ -236,6 +251,9 @@ async function syncMessages({
    * @param {dbMessage} params.apiMessage
    */
   const processNewMessage = async ({ dbMessage, apiMessage }) => {
+    if (dbMessage.role === 'assistant') {
+      recordedAssistantReply = true;
+    }
     recordPromises.push(recordMessage({ ...dbMessage, user: openai.req.user.id }));
 
     if (!apiMessage.id.includes('msg_')) {
@@ -355,6 +373,18 @@ async function syncMessages({
     },
     { context: 'api/server/services/Threads/manage.js #syncMessages' },
   );
+
+  /* Every caller that reaches here recovers assistant output the normal save path never wrote:
+     a cancelled run, or one that errored after the model had already produced content. The
+     `saveConvo` above carries no reply stamp, so without this the recovered reply would never
+     raise its unseen indicator. Best-effort, since the messages are already durable. */
+  if (recordedAssistantReply && openai.req?.body?.isTemporary !== true) {
+    try {
+      await stampConvoLastResponse(openai.req.user.id, conversationId);
+    } catch (error) {
+      logger.warn('[syncMessages] Failed to stamp lastResponseAt', error);
+    }
+  }
 
   return result;
 }

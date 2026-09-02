@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { logger } = require('@librechat/data-schemas');
 const { parseConvo } = require('librechat-data-provider');
 const { sendEvent, handleError, sanitizeMessageForTransmit } = require('@librechat/api');
-const { saveMessage, getMessages, getConvo } = require('~/models');
+const { saveMessage, getMessages, getConvo, stampConvoLastResponse } = require('~/models');
 
 /**
  * Processes an error with provided options, saves the error message and sends a corresponding SSE response
@@ -47,7 +47,8 @@ const sendError = async (req, res, options, callback) => {
   }
 
   if (shouldSaveMessage) {
-    await saveMessage(
+    const isTemporary = req?.body?.isTemporary === true;
+    const savedError = await saveMessage(
       {
         userId: req?.user?.id,
         isTemporary: req?.body?.isTemporary,
@@ -58,6 +59,19 @@ const sendError = async (req, res, options, callback) => {
         context: 'api/server/utils/streamResponse.js - sendError',
       },
     );
+
+    /* The terminal error is a persisted assistant turn, and on the fallback paths that reach
+       here it is the only one: without a stamp another device never learns the run ended.
+       Best-effort, and only once the row is durable, so a failed stamp cannot turn a handled
+       error into an unhandled one. */
+    const stampUserId = req?.user?.id ?? user;
+    if (savedError != null && !isTemporary && stampUserId && conversationId) {
+      try {
+        await stampConvoLastResponse(stampUserId, conversationId);
+      } catch (err) {
+        logger.error('[sendError] Failed to stamp the persisted error reply', err);
+      }
+    }
   }
 
   if (!errorMessage.error) {

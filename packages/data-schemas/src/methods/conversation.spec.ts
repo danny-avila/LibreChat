@@ -185,6 +185,87 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('keeps lastResponseAt monotonic when an older save lands last', async () => {
+      /* Two responses persisting concurrently each capture their stamp before saveConvo's own
+         reads; the older save resuming last must not walk the stamp backwards, or the newer
+         reply reads as already seen. */
+      const newer = new Date('2026-08-16T10:05:00.000Z');
+      const older = new Date('2026-08-16T10:00:00.000Z');
+
+      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: newer });
+      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: older });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
+    });
+
+    it('stamps a first reply through the monotonic path', async () => {
+      const stamp = new Date('2026-08-16T10:00:00.000Z');
+
+      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: stamp });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt?.getTime()).toBe(stamp.getTime());
+    });
+
+    it('stamps the reply at write time and clears the catch-up it outranks', async () => {
+      /* `/seen` can match the previous reply while this save is in flight and record a
+         catch-up later than any timestamp the caller could hold. The stamp and the clear are
+         one conditional write, so the reply this save persists is never born seen. */
+      const before = new Date();
+      await saveConvo(mockCtx, { ...mockConversationData });
+      await Conversation.updateOne(
+        { conversationId: mockConversationData.conversationId },
+        { $set: { lastSeenAt: new Date(Date.now() + 5_000) } },
+      );
+
+      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(convo?.lastSeenAt == null).toBe(true);
+    });
+
+    it('leaves a read conversation alone when an older response persists last', async () => {
+      /* Two responses in flight: the older one reaching the write last must neither walk the
+         stamp backwards nor relight a conversation whose newest reply was already read. */
+      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+      const stamped = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      const newer = new Date(Date.now() + 60_000);
+      const seenAt = new Date(Date.now() + 90_000);
+      await Conversation.updateOne(
+        { conversationId: mockConversationData.conversationId },
+        { $set: { lastResponseAt: newer, lastSeenAt: seenAt } },
+      );
+
+      await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(stamped?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
+      expect(convo?.lastSeenAt?.getTime()).toBe(seenAt.getTime());
+    });
+
+    it('leaves the reply stamp alone for a save that does not carry one', async () => {
+      await saveConvo(mockCtx, { ...mockConversationData });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt).toBeUndefined();
+    });
+
     it('should handle newConversationId when provided', async () => {
       const newConversationId = uuidv4();
       const result = await saveConvo(mockCtx, {
@@ -1732,6 +1813,424 @@ describe('Conversation Operations', () => {
     it('should return "New Chat" if conversation not found', async () => {
       const result = await getConvoTitle('user123', 'non-existent-id');
       expect(result).toBe('New Chat');
+    });
+  });
+
+  describe('markConvoSeen', () => {
+    const markConvoSeen = (...args: Parameters<ConversationMethods['markConvoSeen']>) =>
+      methods.markConvoSeen(...args);
+
+    it('records lastSeenAt for the owning user', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date(),
+      });
+
+      const result = await markConvoSeen('user123', mockConversationData.conversationId);
+      expect(result.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeInstanceOf(Date);
+    });
+
+    it('acknowledges only the reply the client observed', async () => {
+      /* Another device persists a newer reply while the seen write is in flight; stamping
+         "now" would clear an indicator for a message nobody has read. */
+      const observed = new Date('2026-08-16T10:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:05:00.000Z'),
+      });
+
+      const result = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(result.modified).toBe(false);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeUndefined();
+    });
+
+    it('never writes a catch-up older than the reply it acknowledges', async () => {
+      /* Across replicas the node handling this can be behind the one that stamped the reply;
+         a catch-up earlier than that reply would read as unseen again on the next refetch. */
+      const observed = new Date(Date.now() + 60_000);
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: observed,
+      });
+
+      const result = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(result.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt?.getTime()).toBeGreaterThanOrEqual(observed.getTime());
+    });
+
+    it('records the catch-up when the observed reply is still the newest', async () => {
+      const observed = new Date('2026-08-16T10:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: observed,
+      });
+
+      const result = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(result.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeInstanceOf(Date);
+    });
+
+    it('reports success when a retried acknowledgement changes nothing', async () => {
+      /* A future-dated observed reply is stored verbatim, so a retry after a lost response
+         writes the identical value: zero documents modified, but the database is already
+         caught up. Reporting failure would make the client roll back to unseen. */
+      const observed = new Date(Date.now() + 60_000);
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: observed,
+      });
+
+      const first = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(first.modified).toBe(true);
+
+      const retry = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(retry.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt?.getTime()).toBe(observed.getTime());
+    });
+
+    it('leaves updatedAt alone so reading a conversation does not reorder the sidebar', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date(),
+      });
+
+      const before = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+
+      await markConvoSeen('user123', mockConversationData.conversationId);
+
+      const after = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+
+      expect(after?.updatedAt?.toISOString()).toBe(before?.updatedAt?.toISOString());
+    });
+
+    it('does not touch another user’s conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const result = await markConvoSeen('someone-else', mockConversationData.conversationId);
+      expect(result.modified).toBe(false);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeUndefined();
+    });
+  });
+
+  describe('stampConvoLastResponse', () => {
+    const stampConvoLastResponse = (
+      ...args: Parameters<ConversationMethods['stampConvoLastResponse']>
+    ) => methods.stampConvoLastResponse(...args);
+
+    it('carries the project activity forward with the conversation', async () => {
+      /* The workspace sorts on `ChatProject.lastConversationAt`, so lifting the conversation
+         without it would leave the project sitting at its old position. */
+      const ChatProject = mongoose.models.ChatProject;
+      const project = await ChatProject.create({
+        name: 'Stamped',
+        user: 'user123',
+        lastConversationAt: new Date('2026-08-16T09:00:00.000Z'),
+      });
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: project._id.toString(),
+        createdAt: new Date('2026-08-16T09:00:00.000Z'),
+        updatedAt: new Date('2026-08-16T09:00:00.000Z'),
+      });
+
+      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+
+      const refreshed = await ChatProject.findById(project._id).lean<{
+        lastConversationAt?: Date;
+      }>();
+      expect(refreshed?.lastConversationAt).toBeDefined();
+      expect(new Date(refreshed?.lastConversationAt as Date).getTime()).toBeGreaterThan(
+        new Date('2026-08-16T09:00:00.000Z').getTime(),
+      );
+    });
+
+    it('stamps lastResponseAt and lifts the conversation like any other reply', async () => {
+      /* The away poll pages by `updatedAt`, so a reply that left the order alone would be
+         invisible on any conversation that had fallen past the first page. BaseClient's own
+         reply path moves it too. */
+      const createdAt = new Date('2026-08-16T09:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(createdAt.getTime());
+      expect(convo?.updatedAt?.getTime()).toBeGreaterThan(createdAt.getTime());
+    });
+
+    it('clears a catch-up the new reply outranks', async () => {
+      /* `/seen` can accept the previous reply while this one is being persisted, and a
+         replica's clock can date that catch-up ahead: the stamp and the clear are one write. */
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T09:00:00.000Z'),
+        lastSeenAt: new Date(Date.now() + 5_000),
+      });
+
+      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastSeenAt == null).toBe(true);
+    });
+
+    it('leaves a read conversation alone when its stored reply is already newer', async () => {
+      const newer = new Date(Date.now() + 60_000);
+      const seenAt = new Date(Date.now() + 90_000);
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: newer,
+        lastSeenAt: seenAt,
+      });
+
+      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
+      expect(convo?.lastSeenAt?.getTime()).toBe(seenAt.getTime());
+    });
+
+    it('does not stamp another user’s conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      await stampConvoLastResponse('someone-else', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt).toBeUndefined();
+    });
+  });
+
+  describe('markConvoUnread', () => {
+    const markConvoUnread = (...args: Parameters<ConversationMethods['markConvoUnread']>) =>
+      methods.markConvoUnread(...args);
+
+    it('clears the catch-up on a read conversation, restoring the unread state', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+        lastSeenAt: new Date('2026-08-16T11:00:00.000Z'),
+      });
+
+      const result = await markConvoUnread('user123', mockConversationData.conversationId);
+      expect(result.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeUndefined();
+      expect(convo?.lastResponseAt?.toISOString()).toBe('2026-08-16T10:00:00.000Z');
+    });
+
+    it('returns the stamp it settled on so the client never invents one', async () => {
+      /* The optimistic marker the client guesses is necessarily earlier than the server's;
+         sending that guess to /seen would miss the observed-reply filter. */
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const result = await markConvoUnread('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(result.lastResponseAt?.toISOString()).toBe(convo?.lastResponseAt?.toISOString());
+    });
+
+    it('reports nothing modified for a conversation the user does not own', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'someone-else',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+      });
+
+      const result = await markConvoUnread('user123', mockConversationData.conversationId);
+      expect(result.modified).toBe(false);
+    });
+
+    it('keeps the existing reply stamp rather than restamping it', async () => {
+      const responded = new Date('2026-08-16T10:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: responded,
+        lastSeenAt: new Date('2026-08-16T11:00:00.000Z'),
+      });
+
+      const result = await markConvoUnread('user123', mockConversationData.conversationId);
+
+      expect(result.lastResponseAt?.toISOString()).toBe(responded.toISOString());
+    });
+
+    it('marks a never-replied conversation with its own activity date so the dot lights', async () => {
+      /* Copied verbatim rather than invented: an inventible "now" is indistinguishable from a
+         reply, and the client would announce a chime for a reply that does not exist. */
+      const created = await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      await markConvoUnread('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt?.getTime()).toBe(created.updatedAt?.getTime());
+      expect(convo?.lastSeenAt).toBeUndefined();
+    });
+
+    it('leaves updatedAt alone so flagging does not reorder the sidebar', async () => {
+      const createdAt = new Date('2026-08-16T09:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+        lastSeenAt: new Date('2026-08-16T11:00:00.000Z'),
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      await markConvoUnread('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.updatedAt?.toISOString()).toBe(createdAt.toISOString());
+    });
+
+    it('does not touch another user’s conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+        lastSeenAt: new Date('2026-08-16T11:00:00.000Z'),
+      });
+
+      const result = await markConvoUnread('someone-else', mockConversationData.conversationId);
+      expect(result.modified).toBe(false);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('unseen-reply fields', () => {
+    it('returns lastResponseAt and lastSeenAt from the cursor listing', async () => {
+      const lastResponseAt = new Date('2026-08-16T10:00:00.000Z');
+      const lastSeenAt = new Date('2026-08-16T09:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt,
+        lastSeenAt,
+      });
+
+      const { conversations } = await getConvosByCursor('user123');
+      expect(conversations).toHaveLength(1);
+      expect(conversations[0].lastResponseAt?.toISOString()).toBe(lastResponseAt.toISOString());
+      expect(conversations[0].lastSeenAt?.toISOString()).toBe(lastSeenAt.toISOString());
+    });
+
+    it('keeps them through a title-only saveConvo, whose partial $set leaves absent fields alone', async () => {
+      /* saveConvo never $unsets fields it is not given; the wipe threat lives in BaseClient's
+         unsetFields loop, which excludedKeys guards (covered in the api BaseClient spec). */
+      const lastResponseAt = new Date('2026-08-16T10:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt,
+      });
+
+      await saveConvo(mockCtx, {
+        conversationId: mockConversationData.conversationId,
+        title: 'Generated title',
+      });
+
+      const convo = await getConvo('user123', mockConversationData.conversationId);
+      expect(convo?.title).toBe('Generated title');
+      expect(convo?.lastResponseAt?.toISOString()).toBe(lastResponseAt.toISOString());
     });
   });
 

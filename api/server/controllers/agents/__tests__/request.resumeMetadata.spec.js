@@ -66,6 +66,7 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 );
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
+const mockStampConvoLastResponse = jest.fn().mockResolvedValue(undefined);
 const mockSaveMessage = jest.fn();
 const mockSaveConvo = jest.fn();
 const mockIsAgentTriggerPrincipalActive = jest.fn();
@@ -368,6 +369,7 @@ jest.mock('~/models', () => ({
   getAgentEventActorDetachedAction: (...args) => mockGetAgentEventActorDetachedAction(...args),
   claimAgentEventActorSuspension: (...args) => mockClaimAgentEventActorSuspension(...args),
   settleAgentEventActorSuspension: (...args) => mockSettleAgentEventActorSuspension(...args),
+  stampConvoLastResponse: (...args) => mockStampConvoLastResponse(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
 }));

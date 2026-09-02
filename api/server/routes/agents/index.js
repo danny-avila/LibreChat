@@ -47,7 +47,7 @@ const {
   getServerGenerationProtocol,
   negotiateExistingGenerationProtocol,
 } = require('~/server/controllers/agents/protocol');
-const { getFiles, saveMessage } = require('~/models');
+const { getFiles, saveConvo, saveMessage } = require('~/models');
 const {
   recordScheduleOutcome,
   beginScheduledStop,
@@ -827,6 +827,31 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                 throw new Error('Abort response was not persisted');
               }
               logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
+              /* When Stop wins the terminal claim the request controller returns before its
+                 own stamp, so this is the only place a stopped turn's reply reaches the
+                 unseen-reply indicator. Written through `saveConvo` rather than a bare stamp
+                 because a very early interrupt can arrive before the conversation row exists:
+                 the same upsert that creates it carries the reply stamp, assigned at write
+                 time. Best-effort: the messages are already durable, and a missed stamp must
+                 not suppress the normal FINAL. */
+              if (messageContext.isTemporary !== true) {
+                try {
+                  await saveConvo(
+                    messageContext,
+                    {
+                      conversationId: jobData.conversationId,
+                      ...(jobData.endpoint != null && { endpoint: jobData.endpoint }),
+                      ...(jobData.model != null && { model: jobData.model }),
+                    },
+                    {
+                      context: 'api/server/routes/agents/index.js - abort reply stamp',
+                      stampReply: true,
+                    },
+                  );
+                } catch (error) {
+                  logger.warn('[AgentStream] Failed to stamp lastResponseAt', error);
+                }
+              }
             } catch (error) {
               persistenceErrors.push(error);
             }

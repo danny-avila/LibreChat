@@ -71,6 +71,7 @@ const {
   settleAgentEventActorDetachedAction,
   claimAgentEventActorSuspension,
   settleAgentEventActorSuspension,
+  stampConvoLastResponse,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -415,6 +416,16 @@ async function saveErrorTurn(
       { conversationId, ...convoFields },
       seedConvo ? { context } : { context, noUpsert: true },
     );
+    /* A failed run still persisted an assistant message, and a user on another device has no
+       other way to learn the turn ended. Best effort: the error turn is already durable, and
+       a missed indicator must not turn a handled failure into a thrown one. */
+    if (reqCtx.isTemporary !== true) {
+      try {
+        await stampConvoLastResponse(userId, conversationId);
+      } catch (stampError) {
+        logger.error('[AgentController] Failed to stamp the persisted error turn', stampError);
+      }
+    }
   } catch (err) {
     logger.error('[AgentController] Failed to persist error turn', err);
     throw err;
@@ -2753,6 +2764,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
         await eventActorTurn?.historyPersisted();
         eventActorPersistenceComplete = true;
+
+        /* Only the turns BaseClient did not write a completed response for. An ordinary
+           completion was already stamped inside `saveMessageToDatabase`, and that stamp is
+           what the conversation snapshot in the final event carries; stamping again here
+           would leave the client acknowledging a value the server had already moved past,
+           so a reply read at the bottom would keep its dot. Best-effort either way: a missed
+           stamp must not fail the final publication. */
+        if (responseIsUnfinished && reqCtx.isTemporary !== true) {
+          try {
+            await stampConvoLastResponse(reqCtx.userId, response.conversationId);
+          } catch (error) {
+            logger.warn('[AgentController] Failed to stamp lastResponseAt', error);
+          }
+        }
 
         // If the user stopped this turn — or an empty preempt boundary truncated
         // it, which persists under the same honest `unfinished` contract — cancel

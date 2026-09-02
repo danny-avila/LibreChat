@@ -13,6 +13,9 @@ import {
   collectPinnedConversations,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
+  findConvoInAllQueries,
+  isConversationUnseen,
+  applyServerReplyStamp,
   removeConvoFromAllQueries,
   addConversationToAllConversationsQueries,
 } from './convos';
@@ -618,6 +621,48 @@ describe('Conversation Utilities', () => {
       });
     });
 
+    describe('isConversationUnseen', () => {
+      it('treats a conversation with no reply as seen', () => {
+        expect(isConversationUnseen({})).toBe(false);
+      });
+
+      it('treats a reply with no catch-up as unseen', () => {
+        expect(isConversationUnseen({ lastResponseAt: '2026-08-16T10:00:00.000Z' })).toBe(true);
+      });
+
+      it('treats a catch-up older than the reply as unseen', () => {
+        expect(
+          isConversationUnseen({
+            lastResponseAt: '2026-08-16T10:00:00.000Z',
+            lastSeenAt: '2026-08-16T09:00:00.000Z',
+          }),
+        ).toBe(true);
+      });
+
+      it('treats equal timestamps as seen, the fail-safe direction', () => {
+        expect(
+          isConversationUnseen({
+            lastResponseAt: '2026-08-16T10:00:00.000Z',
+            lastSeenAt: '2026-08-16T10:00:00.000Z',
+          }),
+        ).toBe(false);
+      });
+
+      it('treats a catch-up newer than the reply as seen', () => {
+        expect(
+          isConversationUnseen({
+            lastResponseAt: '2026-08-16T10:00:00.000Z',
+            lastSeenAt: '2026-08-16T11:00:00.000Z',
+          }),
+        ).toBe(false);
+      });
+
+      it('handles null and undefined conversations', () => {
+        expect(isConversationUnseen(undefined)).toBe(false);
+        expect(isConversationUnseen(null)).toBe(false);
+      });
+    });
+
     describe('QueryClient helpers', () => {
       let queryClient: QueryClient;
       let convoA: TConversation;
@@ -642,6 +687,67 @@ describe('Conversation Utilities', () => {
         queryClient.setQueryData(['allConversations'], {
           pages: [{ conversations: [convoA], nextCursor: null }],
           pageParams: [],
+        });
+      });
+
+      describe('applyServerReplyStamp', () => {
+        const REPLY_AT = '2024-01-03T12:00:00Z';
+        const NEWER_REPLY_AT = '2024-01-04T12:00:00Z';
+
+        beforeEach(() => {
+          queryClient.setQueryData(['allConversations'], {
+            pages: [{ conversations: [convoB, convoA], nextCursor: null }],
+            pageParams: [],
+          });
+        });
+
+        const rows = () =>
+          queryClient.getQueryData<InfiniteData<any>>(['allConversations'])!.pages[0].conversations;
+
+        it('carries the row to the top when the reply advanced its activity date', () => {
+          /* Another conversation took the top while this one streamed; leaving the completed
+             one behind would show it at its run-start date and position. */
+          applyServerReplyStamp(queryClient, 'a', {
+            lastResponseAt: REPLY_AT,
+            updatedAt: REPLY_AT,
+          });
+
+          expect(rows()[0]).toMatchObject({
+            conversationId: 'a',
+            lastResponseAt: REPLY_AT,
+            updatedAt: REPLY_AT,
+          });
+        });
+
+        it('leaves the order alone when the payload carries no activity date', () => {
+          applyServerReplyStamp(queryClient, 'a', { lastResponseAt: REPLY_AT });
+
+          expect(rows()[0].conversationId).toBe('b');
+          expect(rows()[1]).toMatchObject({
+            conversationId: 'a',
+            lastResponseAt: REPLY_AT,
+            updatedAt: convoA.updatedAt,
+          });
+        });
+
+        it('drops a stamp older than the one already cached', () => {
+          /* Two responses finishing out of order: the newer stamp is already in the cache from
+             an away poll or a completion merge, and writing the older one back would let that
+             newer reply arrive a second time. */
+          applyServerReplyStamp(queryClient, 'a', {
+            lastResponseAt: NEWER_REPLY_AT,
+            updatedAt: NEWER_REPLY_AT,
+          });
+          applyServerReplyStamp(queryClient, 'a', {
+            lastResponseAt: REPLY_AT,
+            updatedAt: REPLY_AT,
+          });
+
+          expect(rows()[0]).toMatchObject({
+            conversationId: 'a',
+            lastResponseAt: NEWER_REPLY_AT,
+            updatedAt: NEWER_REPLY_AT,
+          });
         });
       });
 
@@ -797,6 +903,282 @@ describe('Conversation Utilities', () => {
 
         const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
         expect(data!.pages[0].conversations[0].isShared).toBe(false);
+      });
+
+      it('updateConvoInAllQueries keeps the unseen timestamps when a caller replaces the convo', () => {
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+          lastSeenAt: '2026-08-16T09:00:00.000Z',
+        }));
+        // SSE/rename style update that swaps in a payload without the unseen fields.
+        updateConvoInAllQueries(
+          queryClient,
+          'a',
+          () =>
+            ({
+              conversationId: 'a',
+              title: 'Renamed',
+            }) as TConversation,
+        );
+
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].lastResponseAt).toBe('2026-08-16T10:00:00.000Z');
+        expect(data!.pages[0].conversations[0].lastSeenAt).toBe('2026-08-16T09:00:00.000Z');
+      });
+
+      it('updateConvoInAllQueries lets an explicit lastSeenAt win over the cached one', () => {
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+          lastSeenAt: '2026-08-16T09:00:00.000Z',
+        }));
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastSeenAt: '2026-08-16T11:00:00.000Z',
+        }));
+
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].lastSeenAt).toBe('2026-08-16T11:00:00.000Z');
+      });
+
+      it('updateConvoInAllQueries clears lastSeenAt when the updater says so explicitly', () => {
+        /* Mark-unread needs to express "not caught up", which an undefined value
+           carries forward only when the key itself is absent. */
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+          lastSeenAt: '2026-08-16T11:00:00.000Z',
+        }));
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastSeenAt: undefined,
+        }));
+
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].lastSeenAt).toBeUndefined();
+        expect(data!.pages[0].conversations[0].lastResponseAt).toBe('2026-08-16T10:00:00.000Z');
+      });
+
+      it('findConvoInAllQueries reads from whichever cached list query holds the conversation', () => {
+        queryClient.setQueryData(['allConversations', { isArchived: true }], {
+          pages: [{ conversations: [convoB], nextCursor: null }],
+          pageParams: [],
+        });
+
+        expect(findConvoInAllQueries(queryClient, 'a')?.conversationId).toBe('a');
+        expect(findConvoInAllQueries(queryClient, 'b')?.conversationId).toBe('b');
+        expect(findConvoInAllQueries(queryClient, 'missing')).toBeUndefined();
+      });
+
+      it('findConvoInAllQueries prefers the copy carrying the newest reply', () => {
+        /* The same row is cached once per list variant and only the mounted ones refetch, so an
+           older copy must not shadow a newer reply and read as caught up. */
+        queryClient.setQueryData(['allConversations'], {
+          pages: [
+            {
+              conversations: [
+                {
+                  ...convoA,
+                  lastResponseAt: '2026-08-16T10:00:00.000Z',
+                  lastSeenAt: '2026-08-16T10:00:00.000Z',
+                },
+              ],
+              nextCursor: null,
+            },
+          ],
+          pageParams: [],
+        });
+        queryClient.setQueryData(['allConversations', { tag: 'work' }], {
+          pages: [
+            {
+              conversations: [
+                {
+                  ...convoA,
+                  lastResponseAt: '2026-08-16T10:05:00.000Z',
+                  lastSeenAt: '2026-08-16T10:00:00.000Z',
+                },
+              ],
+              nextCursor: null,
+            },
+          ],
+          pageParams: [],
+        });
+
+        const found = findConvoInAllQueries(queryClient, 'a');
+        expect(found?.lastResponseAt).toBe('2026-08-16T10:05:00.000Z');
+        expect(isConversationUnseen(found)).toBe(true);
+      });
+
+      it('updateConvoInAllQueries reaches a conversation held only in the point query', () => {
+        /* Reads resolve the point query, so a write that skipped it would discard the update
+           for a conversation opened by URL and absent from every loaded page. */
+        queryClient.removeQueries(['allConversations']);
+        queryClient.setQueryData(['conversation', 'a'], {
+          ...convoA,
+          messages: ['m1'],
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+        });
+
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastSeenAt: '2026-08-16T10:00:00.000Z',
+        }));
+
+        const point = queryClient.getQueryData<TConversation & { messages: string[] }>([
+          'conversation',
+          'a',
+        ]);
+        expect(point?.lastSeenAt).toBe('2026-08-16T10:00:00.000Z');
+        /* The point copy carries fields the list rows do not; the updater is applied to it
+           rather than a list row being written over it. */
+        expect(point?.messages).toEqual(['m1']);
+        expect(isConversationUnseen(point)).toBe(false);
+      });
+
+      it('findConvoInAllQueries falls back to the open conversation point query', () => {
+        /* An old conversation opened by URL need not be in any loaded list page; reading it as
+           absent would read as caught up and never acknowledge the reply on screen. */
+        queryClient.removeQueries(['allConversations']);
+        queryClient.setQueryData(['conversation', 'a'], {
+          ...convoA,
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+        });
+
+        const found = findConvoInAllQueries(queryClient, 'a');
+        expect(found?.lastResponseAt).toBe('2026-08-16T10:00:00.000Z');
+        expect(isConversationUnseen(found)).toBe(true);
+      });
+
+      it('findConvoInAllQueries keeps the list copy when it carries the newer reply', () => {
+        queryClient.setQueryData(['allConversations'], {
+          pages: [
+            {
+              conversations: [{ ...convoA, lastResponseAt: '2026-08-16T10:05:00.000Z' }],
+              nextCursor: null,
+            },
+          ],
+          pageParams: [],
+        });
+        queryClient.setQueryData(['conversation', 'a'], {
+          ...convoA,
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+        });
+
+        expect(findConvoInAllQueries(queryClient, 'a')?.lastResponseAt).toBe(
+          '2026-08-16T10:05:00.000Z',
+        );
+      });
+
+      it('findConvoInAllQueries prefers the freshest pinned variant', () => {
+        /* A pin is cached once per bookmark filter and only the mounted variants refetch, so
+           first-wins there would shadow a newer reply exactly as it would in the chats list. */
+        queryClient.setQueryData(['pinnedConversations', { tag: 'a' }], {
+          conversations: [
+            {
+              ...convoA,
+              pinned: true,
+              lastResponseAt: '2026-08-16T10:00:00.000Z',
+              lastSeenAt: '2026-08-16T10:00:00.000Z',
+            },
+          ],
+          nextCursor: null,
+        });
+        queryClient.setQueryData(['pinnedConversations', { tag: 'b' }], {
+          conversations: [
+            {
+              ...convoA,
+              pinned: true,
+              lastResponseAt: '2026-08-16T10:05:00.000Z',
+              lastSeenAt: '2026-08-16T10:00:00.000Z',
+            },
+          ],
+          nextCursor: null,
+        });
+        queryClient.removeQueries(['allConversations']);
+
+        const found = findConvoInAllQueries(queryClient, 'a');
+        expect(found?.lastResponseAt).toBe('2026-08-16T10:05:00.000Z');
+        expect(isConversationUnseen(found)).toBe(true);
+      });
+
+      it('findConvoInAllQueries prefers the variant that last heard from the server', () => {
+        /* The catch-up cannot break the tie: "mark as unread" clears it, so a fresh undefined
+           is newer than a stale stamp. Query recency is what separates them. */
+        queryClient.setQueryData(
+          ['allConversations'],
+          {
+            pages: [
+              {
+                conversations: [
+                  {
+                    ...convoA,
+                    lastResponseAt: '2026-08-16T10:00:00.000Z',
+                    lastSeenAt: '2026-08-16T10:01:00.000Z',
+                  },
+                ],
+                nextCursor: null,
+              },
+            ],
+            pageParams: [],
+          },
+          { updatedAt: 1000 },
+        );
+        queryClient.setQueryData(
+          ['allConversations', { tag: 'work' }],
+          {
+            pages: [
+              {
+                conversations: [{ ...convoA, lastResponseAt: '2026-08-16T10:00:00.000Z' }],
+                nextCursor: null,
+              },
+            ],
+            pageParams: [],
+          },
+          { updatedAt: 2000 },
+        );
+
+        /* The newer variant learned the conversation was marked unread elsewhere. */
+        const found = findConvoInAllQueries(queryClient, 'a');
+        expect(found?.lastSeenAt).toBeUndefined();
+        expect(isConversationUnseen(found)).toBe(true);
+      });
+
+      it('findConvoInAllQueries keeps a catch-up the freshest variant still carries', () => {
+        queryClient.setQueryData(
+          ['allConversations'],
+          {
+            pages: [
+              {
+                conversations: [{ ...convoA, lastResponseAt: '2026-08-16T10:00:00.000Z' }],
+                nextCursor: null,
+              },
+            ],
+            pageParams: [],
+          },
+          { updatedAt: 1000 },
+        );
+        queryClient.setQueryData(
+          ['allConversations', { tag: 'work' }],
+          {
+            pages: [
+              {
+                conversations: [
+                  {
+                    ...convoA,
+                    lastResponseAt: '2026-08-16T10:00:00.000Z',
+                    lastSeenAt: '2026-08-16T10:01:00.000Z',
+                  },
+                ],
+                nextCursor: null,
+              },
+            ],
+            pageParams: [],
+          },
+          { updatedAt: 2000 },
+        );
+
+        expect(isConversationUnseen(findConvoInAllQueries(queryClient, 'a'))).toBe(false);
       });
 
       it('updateConvoInAllQueries with moveToTop moves convo to front and updates updatedAt', () => {

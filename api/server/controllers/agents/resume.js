@@ -74,6 +74,7 @@ const {
   reserveAgentEventActorDetachedAction,
   markAgentEventActorDetachedActionRunning,
   settleAgentEventActorDetachedAction,
+  stampConvoLastResponse,
 } = require('~/models');
 const {
   acquireEventChildGenerationLease,
@@ -565,6 +566,16 @@ async function finalizeResumedTurn({
       conversationId,
       metadata: meta,
     });
+
+    /* This path saves the message directly, so nothing else stamps the unseen-reply
+       indicator. Best-effort: a missed stamp must not fail the resumed turn. */
+    if (isTemporary !== true) {
+      try {
+        await stampConvoLastResponse(userId, conversationId);
+      } catch (error) {
+        logger.warn('[ResumeAgentController] Failed to stamp lastResponseAt', error);
+      }
+    }
 
     const convo = await getConvo(userId, conversationId);
     const conversation = { ...(convo ?? {}), conversationId };

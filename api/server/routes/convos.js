@@ -11,6 +11,8 @@ const {
   exemptAgentTriggerFromIpLimiter,
   createParentSubagentIndexHandler,
   createSubagentThreadViewHandler,
+  createMarkConvoSeenHandler,
+  createMarkConvoUnreadHandler,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
   deleteAllSharedLinksWithCleanup,
@@ -134,6 +136,10 @@ const subagentControlHandler = createSubagentControlHandler({
   getMessages: db.getMessages,
   getSubagentTaskControlReceipt: db.getSubagentTaskControlReceipt,
   store: subagentThreadTaskStore,
+});
+const markConvoSeenHandler = createMarkConvoSeenHandler({ markConvoSeen: db.markConvoSeen });
+const markConvoUnreadHandler = createMarkConvoUnreadHandler({
+  markConvoUnread: db.markConvoUnread,
 });
 router.use(requireJwtAuth);
 
@@ -633,6 +639,10 @@ router.post('/pin', validateConvoAccess, async (req, res) => {
     res.status(500).send('Error pinning conversation');
   }
 });
+
+router.post('/seen', validateConvoAccess, markConvoSeenHandler);
+
+router.post('/unread', validateConvoAccess, markConvoUnreadHandler);
 
 /** Maximum allowed length for conversation titles */
 const MAX_CONVO_TITLE_LENGTH = 1024;

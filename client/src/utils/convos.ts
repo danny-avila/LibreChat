@@ -11,8 +11,29 @@ import {
   isWithinInterval,
 } from 'date-fns';
 import type { TConversation, GroupedConversations } from 'librechat-data-provider';
-import type { InfiniteData } from '@tanstack/react-query';
+import type { InfiniteData, QueryKey } from '@tanstack/react-query';
 import { isTemporaryConversation } from './conversation';
+
+/**
+ * A conversation is unseen when a reply landed after the user last caught up with it.
+ *
+ * Both timestamps ride in the conversation list payload, so this stays a pure comparison and
+ * costs no extra request. Conversations predating the feature have no `lastResponseAt` and are
+ * therefore treated as seen, which is what keeps the sidebar quiet after deploy.
+ */
+export const isConversationUnseen = (
+  conversation: Pick<TConversation, 'lastResponseAt' | 'lastSeenAt'> | undefined | null,
+): boolean => {
+  const lastResponseAt = conversation?.lastResponseAt;
+  if (!lastResponseAt) {
+    return false;
+  }
+  const lastSeenAt = conversation?.lastSeenAt;
+  if (!lastSeenAt) {
+    return true;
+  }
+  return new Date(lastSeenAt).getTime() < new Date(lastResponseAt).getTime();
+};
 
 // Date group helpers
 export const dateKeys = {
@@ -600,6 +621,46 @@ export type PinnedConversationsData = {
   nextCursor?: string | null;
 };
 
+/** A cached copy of a conversation together with when its query last heard from the server. */
+export type ConvoCandidate = { convo: TConversation; heardAt: number };
+
+/**
+ * Picks whichever cached copy of a conversation carries the newest read state.
+ *
+ * The same row is cached once per list variant (unfiltered, per project, per tag, pinned, plus
+ * the point query for the open conversation), and only the mounted ones refetch. Taking the
+ * first copy found would let an older variant shadow a newer reply, and the caller would read a
+ * conversation as caught up while the visible row still shows its dot.
+ *
+ * The reply stamp decides, since that one only moves forward. The catch-up cannot break the tie:
+ * "mark as unread" clears it outright, so a fresh `undefined` is newer than a stale stamp and
+ * comparing the values would pick the stale copy. What separates them is which query last heard
+ * from the server, which React Query already tracks.
+ */
+export const freshestCandidate = (
+  a: ConvoCandidate | undefined,
+  b: ConvoCandidate | undefined,
+): ConvoCandidate | undefined => {
+  if (!a) {
+    return b;
+  }
+  if (!b) {
+    return a;
+  }
+  const responseDelta = (b.convo.lastResponseAt ?? '').localeCompare(a.convo.lastResponseAt ?? '');
+  if (responseDelta !== 0) {
+    return responseDelta > 0 ? b : a;
+  }
+  return b.heardAt > a.heardAt ? b : a;
+};
+
+const candidateFrom = (
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+  convo: TConversation | undefined,
+): ConvoCandidate | undefined =>
+  convo ? { convo, heardAt: queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0 } : undefined;
+
 /** Reads a pin out of whichever cached bookmark variant holds it. Single-conversation
  * responses omit server-derived fields like `isShared`, so callers that insert one
  * elsewhere need the cached row to carry them over. */
@@ -607,18 +668,69 @@ export function findPinnedConversation(
   queryClient: QueryClient,
   conversationId: string,
 ): TConversation | undefined {
+  return findPinnedCandidate(queryClient, conversationId)?.convo;
+}
+
+/** Keyed by the active bookmark filter, so a pin is cached once per variant and only the
+ *  mounted ones refetch; reduced for the same reason the chats list is. */
+function findPinnedCandidate(
+  queryClient: QueryClient,
+  conversationId: string,
+): ConvoCandidate | undefined {
   const queries = queryClient
     .getQueryCache()
     .findAll([QueryKeys.pinnedConversations], { exact: false });
 
+  let freshest: ConvoCandidate | undefined;
   for (const query of queries) {
     const data = queryClient.getQueryData<PinnedConversationsData>(query.queryKey);
     const found = data?.conversations.find((c) => c.conversationId === conversationId);
-    if (found) {
-      return found;
-    }
+    freshest = freshestCandidate(freshest, candidateFrom(queryClient, query.queryKey, found));
   }
-  return undefined;
+  return freshest;
+}
+
+/**
+ * Applies the stamps a completed run reported to the sidebar caches.
+ *
+ * The list is a separate cache from the conversation the chat itself holds, and nothing else
+ * writes to it once a run completes. Only the server's own values are written: the seen
+ * acknowledgement is bound to whatever stamp the client observed, so inventing one from the
+ * browser clock would offer the server a value it cannot match.
+ *
+ * Two responses to one conversation can finish out of order, and an away poll or a completion
+ * merge can have delivered the newer stamp already, so an older one is dropped rather than
+ * written: walking the read state backwards would let the newer reply arrive a second time.
+ * The reply also moved `updatedAt` server-side, and another conversation can have taken the top
+ * of the list while this one streamed, so the row is carried to its new position rather than
+ * left at the date and place its run started with.
+ *
+ * A stamp that genuinely advances also clears the catch-up it outranks, mirroring the write the
+ * server made: a cached acknowledgement dated ahead of the new reply, which replica clock skew
+ * can produce, would otherwise classify a reply nobody has read as seen, and the completion
+ * watcher skips its own fetch precisely because this handler already moved the stamp.
+ */
+export function applyServerReplyStamp(
+  queryClient: QueryClient,
+  conversationId: string,
+  { lastResponseAt, updatedAt }: { lastResponseAt: string; updatedAt?: string },
+): void {
+  const cached = findConvoInAllQueries(queryClient, conversationId);
+  if (cached?.lastResponseAt != null && lastResponseAt < cached.lastResponseAt) {
+    return;
+  }
+  const advances = cached?.lastResponseAt == null || lastResponseAt > cached.lastResponseAt;
+  updateConvoInAllQueries(
+    queryClient,
+    conversationId,
+    (convo) => ({
+      ...convo,
+      lastResponseAt,
+      lastSeenAt: advances ? undefined : convo.lastSeenAt,
+      updatedAt: updatedAt ?? convo.updatedAt,
+    }),
+    updatedAt != null && updatedAt > (cached?.updatedAt ?? ''),
+  );
 }
 
 /**
@@ -642,18 +754,27 @@ function preserveListFlags(next: TConversation, found: TConversation): TConversa
 }
 
 /**
- * A chat's conversation state snapshots the sidebar flags when the chat is opened and never
- * hears about a later change, so pinning an open chat leaves a stale `pinned: false` on it.
- * Strip them before that state reaches the list caches, or the next message would write the
- * stale value back over the sidebar and drop the chat out of Pinned.
+ * Read state the sidebar owns for the same reason: `lastResponseAt` is stamped by the server as
+ * a reply persists and `lastSeenAt` by the seen mutation, neither of which reaches the chat's
+ * own conversation state. Stripped rather than carried, so `updateConvoInAllQueries` falls back
+ * to whatever the list caches already hold.
+ */
+const chatOwnedStaleFields = [...listFlags, 'lastResponseAt', 'lastSeenAt'] as const;
+
+/**
+ * A chat's conversation state snapshots the sidebar's fields when the chat is opened and never
+ * hears about a later change: pinning an open chat leaves a stale `pinned: false` on it, and
+ * reading a reply leaves the catch-up it was opened with. Strip them before that state reaches
+ * the list caches, or the next message would write the stale values back over the sidebar,
+ * dropping the chat out of Pinned or lighting an unread dot the user has already cleared.
  */
 export function withoutListFlags(conversation: TConversation): TConversation {
-  if (listFlags.every((flag) => conversation[flag] === undefined)) {
+  if (chatOwnedStaleFields.every((field) => conversation[field] === undefined)) {
     return conversation;
   }
   const stripped = { ...conversation };
-  for (const flag of listFlags) {
-    delete stripped[flag];
+  for (const field of chatOwnedStaleFields) {
+    delete stripped[field];
   }
   return stripped;
 }
@@ -701,9 +822,11 @@ function updatePinnedConvosQuery(
          stale value and undo the move. */
       if (moveToTop) {
         const rest = oldData.conversations.filter((_, i) => i !== index);
+        const updatedAt =
+          merged.updatedAt !== found.updatedAt ? merged.updatedAt : new Date().toISOString();
         return {
           ...oldData,
-          conversations: [{ ...merged, updatedAt: new Date().toISOString() }, ...rest],
+          conversations: [{ ...merged, updatedAt }, ...rest],
         };
       }
 
@@ -716,12 +839,81 @@ function updatePinnedConvosQuery(
 }
 
 // Update
+/**
+ * Whether any cache the unseen aggregate reads holds this conversation.
+ *
+ * The point query is deliberately excluded: it holds the conversation the user opened by URL,
+ * which `useUnseenConversations` neither scans nor subscribes to, so a row present only there
+ * still needs the chats list refetched before it can reach the badge or the alerts.
+ */
+export function isConvoInAggregateCaches(
+  queryClient: QueryClient,
+  conversationId: string,
+): boolean {
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.allConversations], { exact: false });
+
+  for (const query of queries) {
+    const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(query.queryKey);
+    if (findConversationInInfinite(data, conversationId)) {
+      return true;
+    }
+  }
+  return findPinnedConversation(queryClient, conversationId) !== undefined;
+}
+
+/**
+ * Reads a conversation out of the cached queries that hold it.
+ *
+ * Callers that only need a point-in-time answer use this instead of subscribing to the list,
+ * which keeps event-driven checks off the render path.
+ *
+ * The pinned section is fed by its own request, so a pin older than the loaded chat pages lives
+ * only there. Missing it would leave such a row's unseen dot stuck: the caller would read the
+ * conversation as absent, and absent reads as caught up.
+ */
+export function findConvoInAllQueries(
+  queryClient: QueryClient,
+  conversationId: string,
+): TConversation | undefined {
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.allConversations], { exact: false });
+
+  let freshest: ConvoCandidate | undefined;
+  for (const query of queries) {
+    const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(query.queryKey);
+    freshest = freshestCandidate(
+      freshest,
+      candidateFrom(queryClient, query.queryKey, findConversationInInfinite(data, conversationId)),
+    );
+  }
+  freshest = freshestCandidate(freshest, findPinnedCandidate(queryClient, conversationId));
+
+  /* The conversation opened by URL is loaded into its own point query, and an old one need not
+     appear in any loaded list page at all. Without this it would read as absent, absent reads
+     as caught up, and the reply the user is looking at would never be acknowledged. */
+  const pointKey = [QueryKeys.conversation, conversationId];
+  return freshestCandidate(
+    freshest,
+    candidateFrom(queryClient, pointKey, queryClient.getQueryData<TConversation>(pointKey)),
+  )?.convo;
+}
+
 export function updateConvoInAllQueries(
   queryClient: QueryClient,
   conversationId: string,
   updater: (c: TConversation) => TConversation,
   moveToTop = false,
 ) {
+  /* Reads resolve the point query, so writes have to reach it too, or a conversation that lives
+     only there would keep whatever it was loaded with. The updater is applied to that copy
+     rather than a list row being written over it: the point cache carries fields the list rows
+     do not, `messages` among them. */
+  queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (current) =>
+    current ? updater(current) : current,
+  );
   updatePinnedConvosQuery(queryClient, conversationId, updater, moveToTop);
 
   const queries = queryClient
@@ -755,9 +947,28 @@ export function updateConvoInAllQueries(
       const found = oldData.pages[pageIdx].conversations[convoIdx];
       /** Callers that swap in a server response or the chat's own state wholesale (rename,
        * pin, SSE updates) omit the sidebar-only flags, which would otherwise drop the
-       * shared badge and push a pinned chat back into the date groups. */
-      const merged = preserveListFlags(updater(found), found);
-      const updated = moveToTop ? { ...merged, updatedAt: new Date().toISOString() } : merged;
+       * shared badge and push a pinned chat back into the date groups. The unseen-reply
+       * timestamps are absent from those payloads too, but they are carried on key presence
+       * rather than on value: a present-but-undefined stamp is an explicit clear
+       * (mark-unread, optimistic rollback). */
+      const next = updater(found);
+      const merged: TConversation = { ...preserveListFlags(next, found) };
+      if (!('lastResponseAt' in next)) {
+        merged.lastResponseAt = found.lastResponseAt;
+      }
+      if (!('lastSeenAt' in next)) {
+        merged.lastSeenAt = found.lastSeenAt;
+      }
+      /* `moveToTop` normally refreshes the date itself, because callers that swap in an SSE
+         payload can carry the previous turn's `updatedAt`. A caller that deliberately changed
+         it is naming the server's own value, which is the more accurate one to keep. */
+      const updated = moveToTop
+        ? {
+            ...merged,
+            updatedAt:
+              merged.updatedAt !== found.updatedAt ? merged.updatedAt : new Date().toISOString(),
+          }
+        : merged;
 
       if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
         return removeConvoFromInfinitePages(oldData, conversationId);

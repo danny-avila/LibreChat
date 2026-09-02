@@ -5,13 +5,14 @@ import {
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
-import type { InfiniteData, QueryClient, UseMutationResult } from '@tanstack/react-query';
+import type { InfiniteData, QueryClient, QueryKey, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
   logger,
   /* Conversations */
   addConvoToAllQueries,
   findPinnedConversation,
+  findConvoInAllQueries,
   findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
@@ -236,6 +237,339 @@ export const usePinConversationMutation = (
       },
       onError,
       ..._options,
+    },
+  );
+};
+
+/**
+ * Stops fetches that are already reading the old read state.
+ *
+ * One of them can have read the row before the write lands and deliver afterwards, putting the
+ * stale catch-up back over a settled acknowledgement. Cancelling is the cheap half of React
+ * Query's optimistic recipe: no request is issued, and whatever triggered the fetch (a focus,
+ * a mount) triggers it again once the mutation has settled.
+ *
+ * The point query is covered too, because the read and write helpers both resolve it: left
+ * running, its stale payload would land after settlement as the freshest copy and read as
+ * unseen again, with the caller's attempt guard suppressing the re-acknowledgement. Only once
+ * it holds data, though: cancelling ChatRoute's initial load would revert it to empty, and
+ * with its refetches disabled nothing would ever restart that fetch.
+ */
+const cancelConvoReadFetches = async (
+  queryClient: QueryClient,
+  conversationId: string,
+): Promise<QueryKey[]> => {
+  const pointKey = [QueryKeys.conversation, conversationId];
+  const roots = [[QueryKeys.allConversations], [QueryKeys.pinnedConversations]];
+  const cache = queryClient.getQueryCache();
+  /* Recorded before the cancellation, because a cancelled fetch was carrying rows this
+     mutation never asked about: other conversations' replies, renames, a page that had not
+     landed yet. Its own trigger is gone once it is cancelled, so settlement has to restart
+     exactly these. */
+  const interrupted = roots
+    .flatMap((root) => cache.findAll(root, { exact: false }))
+    .filter((query) => query.state.fetchStatus === 'fetching')
+    .map((query) => query.queryKey);
+
+  const cancellations = roots.map((root) => queryClient.cancelQueries(root));
+  if (queryClient.getQueryData(pointKey) !== undefined) {
+    if (cache.find(pointKey)?.state.fetchStatus === 'fetching') {
+      interrupted.push(pointKey);
+    }
+    cancellations.push(queryClient.cancelQueries(pointKey));
+  }
+  await Promise.all(cancellations);
+  return interrupted;
+};
+
+/**
+ * Restarts exactly the reads this mutation interrupted.
+ *
+ * "Whatever triggered the fetch triggers it again" only holds while something still asks, and
+ * nothing does: the optimistic write refreshed `dataUpdatedAt` on its way through, so the list
+ * reads as fresh for the rest of its stale window. Whatever the cancelled response carried,
+ * this conversation's newer reply or another one's, would stay missing until an unrelated
+ * refetch happened to run.
+ */
+const restartInterruptedReads = (queryClient: QueryClient, keys: QueryKey[] | undefined): void => {
+  for (const key of keys ?? []) {
+    queryClient.invalidateQueries(key, { exact: true });
+  }
+};
+
+/**
+ * Refreshes the read caches wholesale, for a settlement that knows they are behind rather than
+ * merely interrupted: a rejected acknowledgement means the server has since stamped a reply
+ * this tab has not seen.
+ */
+const refreshConvoReadCaches = (queryClient: QueryClient, conversationId: string): void => {
+  queryClient.invalidateQueries([QueryKeys.allConversations]);
+  queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+  const pointKey = [QueryKeys.conversation, conversationId];
+  if (queryClient.getQueryData(pointKey) !== undefined) {
+    queryClient.invalidateQueries(pointKey);
+  }
+};
+
+/**
+ * Writes a settled catch-up back, but only when it is safe to.
+ *
+ * Requests for two replies can be in flight at once, and the first to return is not always the
+ * first sent. Settling is safe while the cache still holds this mutation's own acknowledgement,
+ * or while it moves the catch-up forward; anything else would undo a newer acknowledgement that
+ * has already landed, and the caller's attempt guard would not send it again.
+ */
+const settleCatchUp = (
+  queryClient: QueryClient,
+  conversationId: string,
+  settled: string | undefined,
+  acknowledged: string | undefined,
+): void => {
+  const cached = findConvoInAllQueries(queryClient, conversationId);
+  if (!cached || cached.lastSeenAt === settled) {
+    return;
+  }
+  const current = cached.lastSeenAt;
+  const isOwnWrite = current === acknowledged;
+  const movesForward = settled != null && (current == null || settled > current);
+  if (!isOwnWrite && !movesForward) {
+    return;
+  }
+  updateConvoInAllQueries(queryClient, conversationId, (convo) => ({
+    ...convo,
+    lastSeenAt: settled,
+  }));
+};
+
+/**
+ * Records that the user has caught up with a conversation's newest message.
+ *
+ * The cache is updated optimistically so the unseen dot clears on the spot rather than after
+ * the round trip. The server stamps its own timestamp; only the ordering against
+ * `lastResponseAt` matters, so the brief client/server drift is immaterial.
+ */
+export const useMarkConversationSeenMutation = (): UseMutationResult<
+  t.TMarkConversationSeenResponse,
+  unknown,
+  t.TMarkConversationSeenRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    [MutationKeys.convoSeen],
+    (payload: t.TMarkConversationSeenRequest) => dataService.markConversationSeen(payload),
+    {
+      onMutate: async (vars) => {
+        const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
+        const cached = findConvoInAllQueries(queryClient, vars.conversationId);
+        /* Acknowledging exactly the observed reply, rather than the browser's idea of "now":
+           a clock running behind the server would leave the row still unseen, and the cache
+           write feeding the seen triggers would restart this mutation on every pass. Equality
+           reads as caught up. */
+        const acknowledged =
+          vars.lastResponseAt ?? cached?.lastResponseAt ?? new Date().toISOString();
+        updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+          ...convo,
+          lastSeenAt: acknowledged,
+        }));
+        return { previous: cached?.lastSeenAt, acknowledged, interrupted };
+      },
+      onSuccess: (data, vars, context) => {
+        /* A list refetch already in flight can have read the old catch-up before this write
+           and commit afterwards, putting it back. Settle against the server's answer once it
+           is known: re-apply what it accepted, or restore the real state when the observed
+           reply was no longer the newest. The caller's attempt guard keeps either from
+           re-arming the same request. */
+        const settled = data.modified ? context?.acknowledged : context?.previous;
+        settleCatchUp(queryClient, vars.conversationId, settled, context?.acknowledged);
+        if (!data.modified) {
+          /* Rejected means the server has since stamped a reply this tab has not read, so the
+             cache it just restored is known to be behind. */
+          refreshConvoReadCaches(queryClient, vars.conversationId);
+        }
+      },
+      onError: (_error, vars, context) => {
+        /* The seen triggers gate on the cache, so a failed request has to put the old
+           state back, "never caught up" included, or the dot stays cleared until an
+           unrelated refetch. Same ownership guard as the success path: a request for an
+           older reply can fail after a newer one was acknowledged, and rolling back
+           unconditionally would take that newer acknowledgement with it. */
+        settleCatchUp(queryClient, vars.conversationId, context?.previous, context?.acknowledged);
+      },
+      onSettled: (_data, _error, _vars, context) => {
+        restartInterruptedReads(queryClient, context?.interrupted);
+      },
+    },
+  );
+};
+
+/**
+ * The newest mark-unread write per conversation.
+ *
+ * Two clicks before the first request settles both write the same optimistic state, so value
+ * comparison alone cannot tell whose write the cache holds: the first request failing would
+ * restore the catch-up it captured, and the second's settlement would then read that restored
+ * value as a newer acknowledgement and leave the row seen although the server marked it unread.
+ * Only the latest write owns the cache; earlier ones settle silently.
+ */
+const unreadWriteOwners = new Map<string, number>();
+let unreadWriteSequence = 0;
+
+const claimUnreadWrite = (conversationId: string): number => {
+  unreadWriteSequence += 1;
+  unreadWriteOwners.set(conversationId, unreadWriteSequence);
+  return unreadWriteSequence;
+};
+
+const ownsUnreadWrite = (conversationId: string, token: number | undefined): boolean =>
+  token !== undefined && unreadWriteOwners.get(conversationId) === token;
+
+const releaseUnreadWrite = (conversationId: string, token: number | undefined): void => {
+  if (ownsUnreadWrite(conversationId, token)) {
+    unreadWriteOwners.delete(conversationId);
+  }
+};
+
+/**
+ * Flags a conversation as unread again.
+ *
+ * Optimistically mirrors what the server does: the catch-up is cleared, and a conversation
+ * with no reply yet gets `lastResponseAt` stamped so the flag itself lights the dot.
+ */
+export const useMarkConversationUnreadMutation = (): UseMutationResult<
+  t.TMarkConversationUnreadResponse,
+  unknown,
+  t.TMarkConversationUnreadRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    [MutationKeys.convoUnread],
+    (payload: t.TMarkConversationUnreadRequest) => dataService.markConversationUnread(payload),
+    {
+      onMutate: async (vars) => {
+        const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
+        const previous = findConvoInAllQueries(queryClient, vars.conversationId);
+        /* The marker the optimistic pass writes, remembered so a rollback can tell its own
+           state apart from a newer reply that arrived while the request was open. A never-
+           replied conversation borrows its own activity date, exactly as the server's marker
+           does, so the row does not read as a real reply for the moment before the answer
+           lands. */
+        const optimisticResponseAt =
+          previous?.lastResponseAt ?? previous?.updatedAt ?? new Date().toISOString();
+        const context = {
+          lastResponseAt: previous?.lastResponseAt,
+          lastSeenAt: previous?.lastSeenAt,
+          optimisticResponseAt,
+          token: claimUnreadWrite(vars.conversationId),
+          interrupted,
+        };
+        updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+          ...convo,
+          lastResponseAt: convo.lastResponseAt ?? optimisticResponseAt,
+          lastSeenAt: undefined,
+        }));
+        return context;
+      },
+      onSuccess: (data, vars, context) => {
+        /* A second click captured this pass's optimistic state as its own baseline, so its
+           request now owns the row: settling an earlier one against a cache it no longer wrote
+           would undo the newer request's work. */
+        if (!ownsUnreadWrite(vars.conversationId, context?.token)) {
+          return;
+        }
+        const cached = findConvoInAllQueries(queryClient, vars.conversationId);
+        /* Nothing matched: the conversation is gone, deleted on another device or between the
+           access check and the write. Keeping the optimistic dot would leave a row that no
+           longer exists counted in the badge, but only this mutation's own state is safe to
+           undo, for the same reason the failure path checks. */
+        if (!data.modified) {
+          const isOwnWrite =
+            cached?.lastSeenAt === undefined &&
+            cached?.lastResponseAt === context?.optimisticResponseAt;
+          if (!isOwnWrite) {
+            return;
+          }
+          updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+            ...convo,
+            lastResponseAt: context?.lastResponseAt,
+            lastSeenAt: context?.lastSeenAt,
+          }));
+          return;
+        }
+        /* Two things settle here. A conversation with no reply yet gets its marker stamped
+           server-side and the optimistic guess above is necessarily earlier, so leaving the
+           guess cached would send it to `/seen`, where the observed-reply filter cannot match
+           the real stamp. And the catch-up has to be reasserted, not just left alone: a list
+           refetch already in flight can have read the old `lastSeenAt` and commit after the
+           optimistic clear, which would quietly take the dot back off a conversation the
+           server did mark unread.
+           While the cache still holds what this pass wrote, the server's answer wins: for a
+           conversation with no reply the optimistic marker is a client guess, and replacing it
+           is the whole point of returning one. Anything else in the cache came from a reply
+           that landed while the request was open, which is newer than the server read on the
+           way in and has to survive. */
+        /* A catch-up in the cache that is not the one this mutation cleared is an
+           acknowledgement this pass did not make, and the cache alone cannot say which write
+           the server settled on: the read may have been accepted after the unread write, or
+           before it, in which case the server holds the conversation unread while this tab
+           shows it read. Neither guess is safe, so the row is refetched and the server
+           decides. */
+        if (cached?.lastSeenAt !== undefined && cached.lastSeenAt !== context?.lastSeenAt) {
+          refreshConvoReadCaches(queryClient, vars.conversationId);
+          return;
+        }
+        const cachedResponseAt = cached?.lastResponseAt;
+        const serverResponseAt = data.lastResponseAt;
+        const holdsOwnWrite =
+          cached?.lastSeenAt === undefined && cachedResponseAt === context?.optimisticResponseAt;
+        const keepsCached =
+          !holdsOwnWrite &&
+          cachedResponseAt != null &&
+          (serverResponseAt == null || cachedResponseAt > serverResponseAt);
+        const lastResponseAt = keepsCached
+          ? cachedResponseAt
+          : (serverResponseAt ?? cachedResponseAt);
+        if (cached?.lastSeenAt === undefined && cachedResponseAt === lastResponseAt) {
+          return;
+        }
+        updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+          ...convo,
+          lastResponseAt,
+          lastSeenAt: undefined,
+        }));
+      },
+      onError: (_error, vars, context) => {
+        /* A later click owns the row once it has captured this pass's optimistic state as its
+           own baseline: rolling back here would restore a catch-up the newer request is about
+           to be judged against, and its settlement would then read the restored value as a
+           newer acknowledgement and leave the row seen although the server marked it unread. */
+        if (!ownsUnreadWrite(vars.conversationId, context?.token)) {
+          return;
+        }
+        /* Only while the cache still holds what this mutation wrote. A newer reply can be
+           merged by the watcher or the SSE path while the request is open, and restoring the
+           pre-mutation stamps over it would make that genuinely new reply read as seen with
+           its completion signal already spent. */
+        const cached = findConvoInAllQueries(queryClient, vars.conversationId);
+        const isOwnWrite =
+          cached?.lastSeenAt === undefined &&
+          cached?.lastResponseAt === context?.optimisticResponseAt;
+        if (!isOwnWrite) {
+          return;
+        }
+        updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+          ...convo,
+          lastResponseAt: context?.lastResponseAt,
+          lastSeenAt: context?.lastSeenAt,
+        }));
+      },
+      onSettled: (_data, _error, vars, context) => {
+        releaseUnreadWrite(vars.conversationId, context?.token);
+        restartInterruptedReads(queryClient, context?.interrupted);
+      },
     },
   );
 };

@@ -35,6 +35,7 @@ import {
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
+  applyServerReplyStamp,
   removeConvoFromAllQueries,
   findConversationInInfinite,
   preserveStreamedContentIdentity,
@@ -962,6 +963,15 @@ export default function useEventHandlers({
               ephemeralAgent: submission.ephemeralAgent,
               specName: submission.conversation?.spec,
               startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
+            });
+          }
+
+          /* Where the payload carries no stamp, `useReplyWatcher` fetches the real one. */
+          const serverLastResponseAt = serverConversation.lastResponseAt;
+          if (conversation.conversationId && !_isTemporary && serverLastResponseAt) {
+            applyServerReplyStamp(queryClient, conversation.conversationId, {
+              lastResponseAt: serverLastResponseAt,
+              updatedAt: serverConversation.updatedAt,
             });
           }
 
