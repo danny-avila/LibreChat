@@ -2727,6 +2727,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           reqCtx,
           {
             ...response,
+            /** A neutral finish unsets what a disconnect snapshot may have stored. */
+            contextMeta: response.contextMeta ?? null,
             user: userId,
             unfinished: responseIsUnfinished,
             /** Distinguishes "ran out of steps" from a user stop, so the client can

@@ -717,7 +717,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       expiredAt?: Date;
       interfaceConfig?: AppConfig['interfaceConfig'];
     },
-    params: Partial<IMessage> & { newMessageId?: string },
+    params: Omit<Partial<IMessage>, 'contextMeta'> & {
+      newMessageId?: string;
+      /** `null` unsets a previously stored value; omission leaves it in place. */
+      contextMeta?: IMessage['contextMeta'] | null;
+    },
     metadata?: { context?: string },
   ) {
     if (!userId) {
@@ -770,6 +774,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         update.expiredAt = null;
       }
 
+      /** A response that ends with nothing to carry must drop what an earlier
+       * partial save (a disconnect snapshot) stored, or the next turn would seed
+       * from stale state; the metadata writer never unsets on omission. */
+      const unsetContextMeta = update.contextMeta === null;
+      if (unsetContextMeta) {
+        delete update.contextMeta;
+      }
       if (update.tokenCount != null && isNaN(update.tokenCount as number)) {
         logger.warn(
           `Resetting invalid \`tokenCount\` for message \`${params.messageId}\`: ${update.tokenCount}`,
@@ -809,6 +820,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
       if (message == null) {
         return message;
+      }
+
+      if (unsetContextMeta && message.contextMeta != null) {
+        await Message.updateOne(
+          { messageId: params.messageId, user: userId },
+          { $unset: { contextMeta: 1 } },
+        );
+        message.contextMeta = undefined;
       }
 
       if (

@@ -53,6 +53,7 @@ export * from './skillFiles';
 export * from './codeFilesSession';
 export * from './run';
 export * from './fading';
+export * from './publication';
 export * from './runtime';
 export * from './testHook';
 export * from './tools';

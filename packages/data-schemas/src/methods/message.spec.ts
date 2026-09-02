@@ -158,6 +158,25 @@ describe('Message Operations', () => {
       expect(savedMessage?.isUserSubmitted).toBeUndefined();
     });
 
+    it('unsets a previously stored context meta when the terminal save supplies null', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        contextMeta: {
+          calibrationRatio: 1.2,
+          encoding: 'claude',
+          fading: { v: 1, budgetTokens: 50_000, masked: true },
+        },
+      });
+      const partial = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(partial?.contextMeta?.fading?.budgetTokens).toBe(50_000);
+
+      const result = await saveMessage(mockCtx, { ...mockMessageData, contextMeta: null });
+
+      expect(result?.contextMeta).toBeUndefined();
+      const completed = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(completed).not.toHaveProperty('contextMeta');
+    });
+
     it('should persist optional user-submitted provenance independently of message role', async () => {
       const result = await saveMessage(mockCtx, {
         ...mockMessageData,

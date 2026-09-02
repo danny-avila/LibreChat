@@ -146,6 +146,8 @@ const {
   isAgentFadingTierEntries,
   resolveRunContextMeta,
   resolveRunFadingTiers,
+  createContextMetaPublisher,
+  selectRunContextMetaToPublish,
 } = require('@librechat/api');
 const {
   Run,
@@ -1936,23 +1938,12 @@ class AgentClient extends BaseClient {
    * @param {unknown} contextMeta
    */
   /**
-   * Publishes the run's calibration and fading tier onto the job: the inherited
-   * seed before the run starts, then the live state after each pre-invoke context
-   * snapshot. A Stop persists the response from job data alone, on whichever
-   * replica handles it, so the write is awaited by its caller ahead of the model
-   * call it describes; a Stop that reads the job afterwards sees the tier that
-   * produced the bytes in flight, and one that reads earlier sees the previous
-   * snapshot's, which is consistent with what has been persisted so far.
-   *
-   * Equal values share one durable write: a repeat while the first write is still
-   * in flight awaits that same promise rather than treating an uncommitted value
-   * as published. Distinct values are issued in call order, each after the
-   * previous write settles, so the store's last-writer-wins semantics keep the
-   * newest snapshot rather than whichever write happened to finish last. A live
-   * snapshot with nothing to persist after an earlier publish
-   * writes a neutral record (ratio 1, no tier), since a running job's fields cannot
-   * be deleted through the metadata writer; it seeds the next turn exactly as no
-   * record would. Failures only log.
+   * Publishes the run's compact context state onto the job: the inherited seed
+   * before the run starts, then the live state after each pre-invoke context
+   * snapshot. A Stop or disconnect persists the response from job data alone, on
+   * whichever replica handles it, so callers await the publish ahead of the
+   * model call it describes. Ordering, deduplication, retries and failure
+   * handling live in the `packages/api` publisher; this is only the wiring.
    * @param {{ live?: boolean }} [options] `live` marks a snapshot from the running
    *   graph; the pre-run call publishes the inherited seed instead.
    * @returns {Promise<void>}
@@ -1962,31 +1953,23 @@ class AgentClient extends BaseClient {
     if (!streamId) {
       return Promise.resolve();
     }
-    let contextMeta = captureRunContextMeta(this) ?? (live ? undefined : this.contextMeta);
-    if (contextMeta == null) {
-      if (!live || this.contextMetaPublication == null) {
-        return Promise.resolve();
-      }
-      contextMeta = { calibrationRatio: 1, encoding: this.getEncoding() };
-    }
-    const serialized = JSON.stringify(contextMeta);
-    if (this.contextMetaPublication?.serialized === serialized) {
-      return this.contextMetaPublication.promise;
-    }
-    const previous = this.contextMetaPublication?.promise ?? Promise.resolve();
-    const promise = previous
-      .then(() => GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt))
-      .catch((err) => {
-        if (this.contextMetaPublication?.promise === promise) {
-          this.contextMetaPublication = undefined;
-        }
+    this.contextMetaPublisher ??= createContextMetaPublisher({
+      write: (contextMeta) =>
+        GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt),
+      onFailure: (err) =>
         logger.warn(
           `[AgentClient] Failed to publish context meta for ${streamId}`,
           getSafeErrorMetadata(err),
-        );
-      });
-    this.contextMetaPublication = { serialized, promise };
-    return promise;
+        ),
+    });
+    const contextMeta = selectRunContextMetaToPublish({
+      live,
+      captured: captureRunContextMeta(this),
+      inherited: this.contextMeta,
+      hasPublished: this.contextMetaPublisher.hasPublished,
+      getEncoding: () => this.getEncoding(),
+    });
+    return contextMeta == null ? Promise.resolve() : this.contextMetaPublisher.publish(contextMeta);
   }
 
   seedContextMeta(contextMeta) {
