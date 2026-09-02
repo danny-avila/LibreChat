@@ -16,6 +16,7 @@ const {
   createSafeUser,
   initializeAgent,
   resolveConfigHeaders,
+  resolveRequestTenantId,
   countTokens,
   getBalanceConfig,
   omitTitleOptions,
@@ -2797,6 +2798,7 @@ class AgentClient extends BaseClient {
       },
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
+      tenantId: resolveRequestTenantId(this.options.req),
     });
 
     this.processMemory = processMemory;
@@ -3803,7 +3805,7 @@ class AgentClient extends BaseClient {
         ? buildToolApprovalHooks({
             userId: this.options.req?.user?.id,
             conversationId: this.conversationId,
-            tenantId: this.options.req?.user?.tenantId,
+            tenantId: resolveRequestTenantId(this.options.req ?? {}),
             appConfig,
           })
         : undefined;
@@ -4265,7 +4267,7 @@ class AgentClient extends BaseClient {
           customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
-          tenantId: this.options.req?.user?.tenantId,
+          tenantId: resolveRequestTenantId(this.options.req ?? {}),
           summarizationConfig: appConfig?.summarization,
           appConfig,
           tokenCounter,
@@ -4607,7 +4609,7 @@ class AgentClient extends BaseClient {
         ? buildToolApprovalHooks({
             userId: this.options.req?.user?.id,
             conversationId: this.conversationId,
-            tenantId: this.options.req?.user?.tenantId,
+            tenantId: resolveRequestTenantId(this.options.req ?? {}),
             appConfig,
           })
         : undefined;
@@ -4800,7 +4802,7 @@ class AgentClient extends BaseClient {
         customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
-        tenantId: this.options.req?.user?.tenantId,
+        tenantId: resolveRequestTenantId(this.options.req ?? {}),
         summarizationConfig: appConfig?.summarization,
         appConfig,
         tokenCounter,
@@ -5161,6 +5163,7 @@ class AgentClient extends BaseClient {
     resolveConfigHeaders({
       llmConfig: clientOptions,
       user: createSafeUser(req?.user),
+      tenantId: resolveRequestTenantId(req ?? {}),
       body: {
         messageId: this.responseMessageId,
         conversationId: this.conversationId,
