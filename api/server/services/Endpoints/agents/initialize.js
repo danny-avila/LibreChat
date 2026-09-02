@@ -802,6 +802,25 @@ const initializeClient = async ({
   const resolveLazyMetadata = createConcurrencyLimiter(SUBAGENT_GRAPH_LOAD_CONCURRENCY);
   const subagentGraphIds = new Set();
   const expandedSubagentDescriptorState = { configCount: 0, rootAgentIds: [] };
+  /** Parallel paths may reach the same eager config with different cycle-pruned children.
+   *  The lexicographically earliest traversal owns its child assignment so shared object
+   *  identity is preserved without allowing promise settlement order to choose the result. */
+  const descriptorOwnerPaths = new Map();
+
+  const isEarlierDescriptorPath = (candidatePath, currentPath) => {
+    const sharedLength = Math.min(candidatePath.length, currentPath.length);
+    for (let index = 0; index < sharedLength; index++) {
+      if (candidatePath[index] === currentPath[index]) continue;
+      return candidatePath[index] < currentPath[index];
+    }
+    return candidatePath.length < currentPath.length;
+  };
+
+  const claimDescriptorPath = (agentId, candidatePath) => {
+    const currentPath = descriptorOwnerPaths.get(agentId);
+    if (currentPath && !isEarlierDescriptorPath(candidatePath, currentPath)) return;
+    descriptorOwnerPaths.set(agentId, candidatePath);
+  };
 
   const assertSubagentGraphRoom = (agentId) => {
     if (subagentGraphIds.has(agentId)) {
@@ -1167,7 +1186,12 @@ const initializeClient = async ({
     return initializeLoadedSubagent({ agent, agentId, configId, context, lazyChildren });
   };
 
-  const buildLazySubagentDescriptors = async (agent, depth = 0, ancestors = new Set()) => {
+  const buildLazySubagentDescriptors = async (
+    agent,
+    depth = 0,
+    ancestors = new Set(),
+    traversalPath = [],
+  ) => {
     if (!subagentsAvailableForRun || !agent.subagents?.enabled) {
       return [];
     }
@@ -1189,8 +1213,9 @@ const initializeClient = async ({
     const nextAncestors = new Set(ancestors);
     nextAncestors.add(agent.id);
     const descriptors = await Promise.all(
-      subagentIds.map(async (subagentId) => {
+      subagentIds.map(async (subagentId, childIndex) => {
         if (skippedAgentIds.has(subagentId) || nextAncestors.has(subagentId)) return null;
+        const childPath = [...traversalPath, childIndex];
         const existing =
           subagentId === primaryConfig.id ? primaryConfig : agentConfigs.get(subagentId);
         if (existing) {
@@ -1199,16 +1224,18 @@ const initializeClient = async ({
             subagentGraphIds.add(subagentId);
           }
           countExpandedSubagentDescriptor(subagentId);
+          claimDescriptorPath(subagentId, childPath);
           const existingChildren = await buildLazySubagentDescriptors(
             existing,
             depth + 1,
             nextAncestors,
+            childPath,
           );
-          return {
-            ...existing,
-            lazySubagentConfigs: existingChildren.filter((child) => child.configId),
-            subagentAgentConfigs: existingChildren.filter((child) => !child.configId),
-          };
+          if (descriptorOwnerPaths.get(subagentId) === childPath) {
+            existing.lazySubagentConfigs = existingChildren.filter((child) => child.configId);
+            existing.subagentAgentConfigs = existingChildren.filter((child) => !child.configId);
+          }
+          return existing;
         }
         const metadata = await loadSubagentMetadata(subagentId);
         if (!metadata) return null;
@@ -1221,6 +1248,7 @@ const initializeClient = async ({
           metadata,
           depth + 1,
           nextAncestors,
+          childPath,
         );
         const lazyChildren = childDescriptors.filter((child) => child.configId);
         const eagerChildren = childDescriptors.filter((child) => !child.configId);
@@ -1272,11 +1300,15 @@ const initializeClient = async ({
       .filter((config) => config?.id)
       .map((config) => config.id);
     await Promise.all(
-      rootConfigs.map(async (config) => {
+      rootConfigs.map(async (config, rootIndex) => {
         if (!config?.id) return;
-        const descriptors = await buildLazySubagentDescriptors(config);
-        config.lazySubagentConfigs = descriptors.filter((child) => child.configId);
-        config.subagentAgentConfigs = descriptors.filter((child) => !child.configId);
+        const rootPath = [rootIndex];
+        claimDescriptorPath(config.id, rootPath);
+        const descriptors = await buildLazySubagentDescriptors(config, 0, new Set(), rootPath);
+        if (descriptorOwnerPaths.get(config.id) === rootPath) {
+          config.lazySubagentConfigs = descriptors.filter((child) => child.configId);
+          config.subagentAgentConfigs = descriptors.filter((child) => !child.configId);
+        }
       }),
     );
   };
