@@ -76,11 +76,18 @@ test.describe('attached stateful code environment', () => {
         path: `/api/code-environments/${environmentId}/settings`,
         token,
         method: 'PATCH',
-        body: {
-          settings: { permissions: { fileWrite: 'allow', commandExecution: 'deny' } },
-        },
+        body: { settings: { permissions: { fileWrite: 'allow' } } },
       });
       expect(update.environment.settings).toEqual({
+        permissions: { fileWrite: 'allow' },
+      });
+      const secondUpdate = await requestJson<{ environment: RegisteredEnvironment }>(page, {
+        path: `/api/code-environments/${environmentId}/settings`,
+        token,
+        method: 'PATCH',
+        body: { settings: { permissions: { commandExecution: 'deny' } } },
+      });
+      expect(secondUpdate.environment.settings).toEqual({
         permissions: { fileWrite: 'allow', commandExecution: 'deny' },
       });
 

@@ -61,6 +61,7 @@ describe('code environment registry', () => {
       id: 'danny-vm',
       name: "Danny's VM",
       type: 'attached',
+      canEdit: true,
       canDelete: true,
     });
     await expect(registry.listRegisteredIds()).resolves.toEqual(['danny-vm']);
@@ -111,6 +112,18 @@ describe('code environment registry', () => {
       }),
     ).resolves.toMatchObject({
       id: 'settings-vm',
+      canEdit: true,
+      canDelete: true,
+    });
+
+    await expect(
+      registry.updateSettings({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environmentId: 'settings-vm',
+        settings: { permissions: { fileWrite: 'ask' } },
+      }),
+    ).resolves.toMatchObject({
+      settings: { permissions: { fileWrite: 'ask', commandExecution: 'deny' } },
     });
 
     await expect(
@@ -122,7 +135,7 @@ describe('code environment registry', () => {
     ).resolves.toEqual([
       expect.objectContaining({
         id: 'settings-vm',
-        settings: { permissions: { fileWrite: 'allow', commandExecution: 'deny' } },
+        settings: { permissions: { fileWrite: 'ask', commandExecution: 'deny' } },
       }),
     ]);
   });
@@ -183,9 +196,48 @@ describe('code environment registry', () => {
         idOnTheSource: null,
       }),
     ).resolves.toEqual([
-      { ...roleEnvironment, canDelete: false },
-      { ...groupEnvironment, canDelete: false },
+      { ...roleEnvironment, canEdit: false, canDelete: false },
+      { ...groupEnvironment, canEdit: false, canDelete: false },
     ]);
+  });
+
+  test('reports edit and delete capabilities independently for shared editors', async () => {
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const access = new AccessControlService(mongoose);
+    const ownerId = new Types.ObjectId();
+    const editorId = new Types.ObjectId();
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'editor-vm',
+        name: 'Editor VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    await access.grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: editorId,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment.resourceId,
+      accessRoleId: AccessRoleIds.CODE_ENVIRONMENT_EDITOR,
+      grantedBy: ownerId,
+    });
+    const actor = { userId: editorId, role: 'USER', idOnTheSource: null };
+
+    await expect(registry.listAccessible(actor)).resolves.toEqual([
+      expect.objectContaining({ id: 'editor-vm', canEdit: true, canDelete: false }),
+    ]);
+    await expect(
+      registry.updateSettings({
+        actor,
+        environmentId: 'editor-vm',
+        settings: { permissions: { fileWrite: 'deny' } },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: 'editor-vm', canEdit: true, canDelete: false }),
+    );
   });
 
   test('computes delete permissions for an environment list in one batch', async () => {
@@ -722,6 +774,44 @@ describe('code environment registry', () => {
     );
 
     await expect(registry.listAccessibleConfigurations(actor)).resolves.toEqual([]);
+  });
+
+  test('refreshes mutable settings when a cached configuration revision is stale', async () => {
+    const cache = createSharedCache();
+    const registry = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const ownerId = new Types.ObjectId();
+    const actor = { userId: ownerId, role: 'USER', idOnTheSource: null };
+    await registry.register({
+      actor,
+      environment: {
+        id: 'cached-settings-vm',
+        name: 'Cached settings VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    await registry.updateSettings({
+      actor,
+      environmentId: 'cached-settings-vm',
+      settings: { permissions: { commandExecution: 'allow' } },
+    });
+    await expect(registry.listAccessibleConfigurations(actor)).resolves.toEqual([
+      expect.objectContaining({
+        settings: { permissions: { commandExecution: 'allow' } },
+      }),
+    ]);
+
+    await mongoose.models.CodeEnvironment.updateOne(
+      { environmentId: 'cached-settings-vm' },
+      { $set: { 'settings.permissions.commandExecution': 'deny' } },
+    );
+
+    await expect(registry.listAccessibleConfigurations(actor)).resolves.toEqual([
+      expect.objectContaining({
+        settings: { permissions: { commandExecution: 'deny' } },
+      }),
+    ]);
   });
 
   test('caches registered environment ids behind the shared tenant revision', async () => {

@@ -309,17 +309,24 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     environmentId: string,
     settings: CodeEnvironmentUserSettings,
   ): Promise<CodeEnvironmentDocument | null> {
+    const updates: Record<string, string> = {};
+    if (settings.permissions?.fileWrite != null) {
+      updates['settings.permissions.fileWrite'] = settings.permissions.fileWrite;
+    }
+    if (settings.permissions?.commandExecution != null) {
+      updates['settings.permissions.commandExecution'] = settings.permissions.commandExecution;
+    }
+    const lifecycleFilter = {
+      environmentId,
+      registrationPendingAt: { $exists: false },
+      deletionStartedAt: { $exists: false },
+      deletionCommittedAt: { $exists: false },
+    };
+    if (Object.keys(updates).length === 0) {
+      return await model().findOne(lifecycleFilter).lean<CodeEnvironmentDocument>();
+    }
     return await model()
-      .findOneAndUpdate(
-        {
-          environmentId,
-          registrationPendingAt: { $exists: false },
-          deletionStartedAt: { $exists: false },
-          deletionCommittedAt: { $exists: false },
-        },
-        { $set: { settings } },
-        { new: true },
-      )
+      .findOneAndUpdate(lifecycleFilter, { $set: updates }, { new: true })
       .lean<CodeEnvironmentDocument>();
   }
 

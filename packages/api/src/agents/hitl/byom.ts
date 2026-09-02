@@ -138,6 +138,17 @@ export function createAttachedCodeEnvironmentPolicyHook(
     ) {
       return {};
     }
+    if (
+      category === 'fileWrite' &&
+      (input.toolName === CREATE_FILE_TOOL_NAME || input.toolName === EDIT_FILE_TOOL_NAME) &&
+      typeof input.toolInput?.path === 'string' &&
+      input.toolInput.path.startsWith('skills/')
+    ) {
+      return {
+        decision: 'ask',
+        reason: `${input.toolName} can modify a persistent LibreChat skill`,
+      };
+    }
     const policy =
       input.executingAgentId == null ? undefined : settingsByAgentId.get(input.executingAgentId);
     const field = policy?.configSchema?.permissions?.[category];

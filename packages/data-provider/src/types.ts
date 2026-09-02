@@ -542,6 +542,7 @@ export type TCodeEnvironmentSummary = {
   id: string;
   name: string;
   type: 'managed' | 'attached';
+  canEdit?: boolean;
   canDelete: boolean;
   configSchema?: CodeEnvironmentUserConfigSchema;
   settings?: CodeEnvironmentUserSettings;

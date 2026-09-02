@@ -81,6 +81,52 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
       hook({ toolName: 'bash_tool', executingAgentId: 'attached-agent' } as never, signal),
     ).resolves.toMatchObject({ decision: 'deny' });
   });
+
+  test.each(['create_file', 'edit_file'])(
+    'keeps persistent skill writes approval-gated when BYOM file writes are allowed',
+    async (toolName) => {
+      const hook = createAttachedCodeEnvironmentPolicyHook(
+        new Set(['attached-agent']),
+        new Map([
+          [
+            'attached-agent',
+            {
+              configSchema: {
+                permissions: {
+                  fileWrite: { allowed: ['allow', 'ask'], default: 'ask' },
+                },
+              },
+              settings: { permissions: { fileWrite: 'allow' as const } },
+            },
+          ],
+        ]),
+      );
+
+      await expect(
+        hook(
+          {
+            toolName,
+            toolInput: { path: 'skills/reviewer/SKILL.md' },
+            executingAgentId: 'attached-agent',
+          } as never,
+          signal,
+        ),
+      ).resolves.toEqual({
+        decision: 'ask',
+        reason: `${toolName} can modify a persistent LibreChat skill`,
+      });
+      await expect(
+        hook(
+          {
+            toolName,
+            toolInput: { path: '/mnt/data/output.txt' },
+            executingAgentId: 'attached-agent',
+          } as never,
+          signal,
+        ),
+      ).resolves.toEqual({ decision: 'allow' });
+    },
+  );
 });
 
 describe('collectAttachedCodeEnvironmentAgentIds', () => {

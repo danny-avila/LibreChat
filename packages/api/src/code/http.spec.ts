@@ -21,6 +21,12 @@ function response() {
 
 describe('code environment HTTP handlers', () => {
   test('does not advertise principal pairing when Code API principal auth is disabled', async () => {
+    const listAccessible = jest.fn();
+    const listAccessibleConfigurations = jest.fn();
+    const listAccessibleDetails = jest.fn().mockResolvedValue({
+      summaries: [],
+      configurations: [],
+    });
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {
@@ -42,7 +48,9 @@ describe('code environment HTTP handlers', () => {
       } as AppConfig),
       registry: {
         register: jest.fn(),
-        listAccessible: jest.fn().mockResolvedValue([]),
+        listAccessible,
+        listAccessibleConfigurations,
+        listAccessibleDetails,
         remove: jest.fn(),
       },
       principalAuthEnabled: () => false,
@@ -56,6 +64,9 @@ describe('code environment HTTP handlers', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ environments: [], controlPlanes: [] });
+    expect(listAccessibleDetails).toHaveBeenCalledTimes(1);
+    expect(listAccessible).not.toHaveBeenCalled();
+    expect(listAccessibleConfigurations).not.toHaveBeenCalled();
   });
 
   test('lists only principal control planes present in the caller effective policy', async () => {

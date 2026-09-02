@@ -7,6 +7,7 @@ import type {
   CodeEnvironmentPrincipalContext,
   CodeEnvironmentRegistration,
   CodeEnvironmentSummary,
+  AccessibleCodeEnvironmentDetails,
   AccessibleCodeEnvironmentConfiguration,
 } from './environments';
 import type { GetAppConfigOptions } from '~/app/service';
@@ -43,6 +44,9 @@ type Registry = {
     maxOwned?: number;
   }) => Promise<CodeEnvironmentSummary>;
   listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
+  listAccessibleDetails?: (
+    actor: CodeEnvironmentPrincipalContext,
+  ) => Promise<AccessibleCodeEnvironmentDetails>;
   listAccessibleConfigurations?: (
     actor: CodeEnvironmentPrincipalContext,
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
@@ -193,13 +197,15 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (principal == null) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    let environments: CodeEnvironmentSummary[];
-    let configurations: AccessibleCodeEnvironmentConfiguration[];
+    let details: AccessibleCodeEnvironmentDetails;
     let appConfig: AppConfig;
     try {
-      [environments, configurations, appConfig] = await Promise.all([
-        deps.registry.listAccessible(principal),
-        deps.registry.listAccessibleConfigurations?.(principal) ?? Promise.resolve([]),
+      [details, appConfig] = await Promise.all([
+        deps.registry.listAccessibleDetails?.(principal) ??
+          Promise.all([
+            deps.registry.listAccessible(principal),
+            deps.registry.listAccessibleConfigurations?.(principal) ?? Promise.resolve([]),
+          ]).then(([summaries, configurations]) => ({ summaries, configurations })),
         deps.getAppConfig({ ...getAppConfigOptionsFromUser(req.user), failClosed: true }),
       ]);
     } catch (error) {
@@ -207,10 +213,10 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       return res.status(503).json({ error: 'Code environment policy is unavailable' });
     }
     const configurationById = new Map(
-      configurations.map((configuration) => [configuration.id, configuration]),
+      details.configurations.map((configuration) => [configuration.id, configuration]),
     );
     return res.status(200).json({
-      environments: environments.map((environment) => {
+      environments: details.summaries.map((environment) => {
         const configuration = configurationById.get(environment.id);
         const controlPlane =
           configuration == null
@@ -587,7 +593,11 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       return res.status(404).json({ error: 'Code environment was not found' });
     }
     return res.status(200).json({
-      environment: { ...environment, configSchema: controlPlane.configSchema, settings },
+      environment: {
+        ...environment,
+        configSchema: controlPlane.configSchema,
+        settings: environment.settings ?? settings,
+      },
     });
   }
 

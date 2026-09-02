@@ -83,32 +83,14 @@ function EnvironmentPermissions({ environment }: { environment: TCodeEnvironment
   const { showToast } = useToastContext();
   const updateMutation = useUpdateCodeEnvironmentSettingsMutation();
   const fields = environment.configSchema?.permissions;
-  if (fields == null) return null;
+  if (fields == null || !environment.canEdit) return null;
 
   const updatePermission = (
     category: 'fileWrite' | 'commandExecution',
     value: CodeEnvironmentPermissionDecision,
   ) => {
-    const permissions: NonNullable<
-      NonNullable<TCodeEnvironmentSummary['settings']>['permissions']
-    > = {};
-    if (fields.fileWrite != null) {
-      permissions.fileWrite =
-        category === 'fileWrite'
-          ? value
-          : effectivePermission(fields.fileWrite, environment.settings?.permissions?.fileWrite);
-    }
-    if (fields.commandExecution != null) {
-      permissions.commandExecution =
-        category === 'commandExecution'
-          ? value
-          : effectivePermission(
-              fields.commandExecution,
-              environment.settings?.permissions?.commandExecution,
-            );
-    }
     updateMutation.mutate(
-      { id: environment.id, settings: { permissions } },
+      { id: environment.id, settings: { permissions: { [category]: value } } },
       {
         onSuccess: () =>
           showToast({
