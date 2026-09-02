@@ -55,6 +55,11 @@ import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
+  assertAttachedCodeEnvironmentApprovalSupported,
+  collectAttachedCodeEnvironmentAgentIds,
+  createAttachedCodeEnvironmentPolicyHook,
+} from '~/agents/hitl/byom';
+import {
   CHECK_BACKGROUND_TASK_NAME,
   registerBackgroundTaskTool,
   stripBackgroundFromToolRegistry,
@@ -91,6 +96,7 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { buildToolApprovalHooks } from '~/agents/hitl/hooks';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getPluginHookSource } from '~/agents/hooks/source';
@@ -1776,6 +1782,12 @@ export async function createRun({
   };
 
   const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+  const attachedCodeEnvironmentAgentIds = collectAttachedCodeEnvironmentAgentIds(agents);
+  assertAttachedCodeEnvironmentApprovalSupported({
+    hasAttachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
+    hitlCapable,
+    approvalExplicitlyDisabled: agentsEndpointConfig?.toolApproval?.enabled === false,
+  });
 
   // Assigned after the run-wide HITL registry is built. Lazy descriptors
   // capture this indirection now and report their aliases when they resolve.
@@ -1874,12 +1886,11 @@ export async function createRun({
    * and the resume route). When disabled, nothing attaches and the run is identical
    * to before this feature shipped.
    */
-  // Resolve the effective policy through the single seam so per-agent / per-skill
-  // sources can layer in later without touching this call site (see
-  // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this
-  // is identical to reading `toolApproval` directly.
+  // Resolve the effective policy through the single seam so BYOM defaults and
+  // future persisted per-agent / per-skill sources do not leak into this call site.
   const toolApprovalPolicy = resolveToolApprovalPolicy({
     endpoint: agentsEndpointConfig?.toolApproval,
+    attachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
   });
   // Gate HITL to callers that actually implement the pause/resume lifecycle. The
   // OpenAI-compatible + Responses controllers also call createRun/processStream but never
@@ -1916,10 +1927,28 @@ export async function createRun({
           appConfig,
         },
         mcpToolAliases,
-        resolvedToolApprovalHooks,
+        [
+          ...(resolvedToolApprovalHooks ??
+            buildToolApprovalHooks({
+              userId: user?.id,
+              conversationId: requestBody?.conversationId,
+              tenantId: tenantId ?? user?.tenantId,
+              appConfig,
+            })),
+          ...(attachedCodeEnvironmentAgentIds.size > 0
+            ? [
+                {
+                  hook: createAttachedCodeEnvironmentPolicyHook(attachedCodeEnvironmentAgentIds),
+                },
+              ]
+            : []),
+        ],
       )
     : undefined;
   registerResolvedMCPToolAliases = (resolvedAgent) => {
+    if (resolvedAgent.codeExecutionContext?.environmentType === 'attached') {
+      attachedCodeEnvironmentAgentIds.add(resolvedAgent.id);
+    }
     const discoveredAliases = collectRunMCPToolAliases([resolvedAgent]).filter(
       ({ name, aliasName }) => {
         const key = `${name}\u0000${aliasName}`;
