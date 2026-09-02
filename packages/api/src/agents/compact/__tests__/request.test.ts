@@ -93,7 +93,10 @@ function makeDeps(overrides: Partial<CompactRequestDeps> = {}): CompactRequestDe
     getMessages: jest.fn(async (filter) =>
       filter.parentMessageId != null ? [] : (BRANCH as TMessage[]),
     ),
-    saveMessage: jest.fn(async (_ctx, message) => message as TMessage),
+    saveMessage: jest.fn(
+      async (_ctx, message) => ({ ...message, _id: 'summary_record_1' }) as TMessage,
+    ),
+    saveConvo: jest.fn().mockResolvedValue(undefined),
     deleteMessages: jest.fn().mockResolvedValue(undefined),
     getModelsConfig: jest.fn().mockResolvedValue({ openAI: ['gpt-4o-mini'] }),
     getJob: jest.fn().mockResolvedValue(null),
@@ -148,6 +151,15 @@ describe('handleCompactRequest', () => {
     expect(saved.metadata.usage).toMatchObject({ input: 900, output: 80 });
     /** Inherits the branch's assistant identity. */
     expect(saved.sender).toBe('Claude');
+    expect(deps.saveConvo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user_1',
+        isTemporary: false,
+        interfaceConfig: {},
+      }),
+      expect.objectContaining({ conversationId: 'convo_1' }),
+      expect.objectContaining({ appendMessageIds: ['summary_record_1'] }),
+    );
   });
 
   it('refuses an Assistants conversation instead of failing inside model resolution', async () => {

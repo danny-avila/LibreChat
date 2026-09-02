@@ -35,6 +35,7 @@ const CompactController = async (req, res) => {
       },
       getMessages: db.getMessages,
       saveMessage: db.saveMessage,
+      saveConvo: db.saveConvo,
       deleteMessages: db.deleteMessages,
       getUserKey: db.getUserKey,
       getUserKeyValues: db.getUserKeyValues,
