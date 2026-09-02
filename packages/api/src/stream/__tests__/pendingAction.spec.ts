@@ -286,6 +286,7 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
         calibrationRatio: 1.25,
         encoding: 'claude',
         fading: { v: 1 as const, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1 as const, budgetTokens: 50_000, masked: true }],
       };
 
       expect(await manager.approvals.pause(streamId, buildAction(streamId), { contextMeta })).toBe(
@@ -304,6 +305,7 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
         calibrationRatio: 1.25,
         encoding: 'claude',
         fading: { v: 1 as const, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1 as const, budgetTokens: 50_000, masked: true }],
       };
 
       expect(await manager.approvals.pause(streamId, firstAction, { contextMeta })).toBe(true);

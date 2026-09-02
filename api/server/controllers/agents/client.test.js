@@ -959,17 +959,26 @@ describe('AgentClient - interrupt discovery persistence', () => {
         getDiscoveredTools: () => [],
         getRunMessages: () => [],
         getCalibrationRatio: () => 1.2,
-        getFadingTier: () => fading,
+        getFadingTier: () => ({ ...fading, latched: true }),
+        getFadingTiers: () => ({
+          'agent-123': { ...fading, latched: true },
+          'agent-worker': { v: 1, budgetTokens: 8_000, masked: false, latched: true },
+        }),
       },
       streamId,
     );
 
     const paused = await GenerationJobManager.getJob(streamId);
     expect(paused?.status).toBe('requires_action');
+    /** Only the compact tiers travel: the SDK's provenance flag is stripped. */
     expect(paused?.metadata.contextMeta).toEqual({
       calibrationRatio: 1.2,
       encoding: client.getEncoding(),
       fading,
+      fadingTiers: [
+        { agentId: 'agent-123', v: 1, budgetTokens: 50_000, masked: true },
+        { agentId: 'agent-worker', v: 1, budgetTokens: 8_000, masked: false },
+      ],
     });
   });
 
@@ -2636,6 +2645,10 @@ describe('AgentClient - startup telemetry', () => {
       calibrationRatio: 1.25,
       encoding: client.getEncoding(),
       fading: { v: 1, budgetTokens: 20_000, masked: true },
+      fadingTiers: [
+        { agentId: 'agent-123', v: 1, budgetTokens: 20_000, masked: true },
+        { agentId: 'agent-worker', v: 1, budgetTokens: 8_000, masked: false },
+      ],
     };
     client.compactionSemanticIndexSnapshot = baseCompactionSemanticIndexSnapshot;
     client.recordCollectedUsage = jest.fn().mockResolvedValue();
@@ -2656,9 +2669,16 @@ describe('AgentClient - startup telemetry', () => {
         initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
         calibrationRatio: 1.25,
         fadingTier: { v: 1, budgetTokens: 20_000, masked: true },
+        fadingTiers: {
+          'agent-123': { v: 1, budgetTokens: 20_000, masked: true },
+          'agent-worker': { v: 1, budgetTokens: 8_000, masked: false },
+        },
         compactionSemanticIndex: evolvedCompactionSemanticIndexSnapshot.entries,
       }),
     );
+    /** The seeded map must be prototype-safe: a null-prototype record built from own keys. */
+    const seededTiers = mockCreateRun.mock.calls.at(-1)[0].fadingTiers;
+    expect(Object.getPrototypeOf(seededTiers)).toBeNull();
     expect(mockFormatAgentMessages.mock.calls[0][4]).toEqual(
       expect.objectContaining({
         compactionSemanticIndex: expect.objectContaining({
@@ -8060,11 +8080,15 @@ describe('AgentClient - resumeCompletion content protection', () => {
 
 describe('fading tier context meta', () => {
   const fading = { v: 1, budgetTokens: 20_000, masked: true };
+  const fadingTiers = [
+    { agentId: 'agent-123', v: 1, budgetTokens: 20_000, masked: true },
+    { agentId: 'agent-worker', v: 1, budgetTokens: 8_000, masked: false },
+  ];
 
-  it('carries a valid fading tier through event actor context', async () => {
+  it('carries valid fading tiers through event actor context', async () => {
     const client = Object.create(AgentClient.prototype);
     client.options = { req: { config: {} } };
-    const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base', fading };
+    const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base', fading, fadingTiers };
     client.getEventActorContext = jest.fn().mockResolvedValue({
       fingerprint: 'fingerprint-1',
       skillManifest: [],
@@ -8094,6 +8118,25 @@ describe('fading tier context meta', () => {
         skillManifest: [],
         discoveredToolNames: [],
         contextMeta: { calibrationRatio: 1.25, fading: { v: 1, budgetTokens: -5, masked: true } },
+      }),
+    ).resolves.toBeUndefined();
+    expect(client.getEventActorContext).not.toHaveBeenCalled();
+  });
+
+  it('rejects event actor context carrying malformed per-agent tiers', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    client.getEventActorContext = jest.fn();
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: 'fingerprint-1',
+        skillManifest: [],
+        discoveredToolNames: [],
+        contextMeta: {
+          calibrationRatio: 1.25,
+          fadingTiers: [{ agentId: '', v: 1, budgetTokens: 20_000, masked: true }],
+        },
       }),
     ).resolves.toBeUndefined();
     expect(client.getEventActorContext).not.toHaveBeenCalled();

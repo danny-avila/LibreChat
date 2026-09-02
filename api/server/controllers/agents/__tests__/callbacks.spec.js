@@ -124,6 +124,47 @@ describe('resumable event generation fencing', () => {
     );
   });
 
+  it('keeps a tool result and its input at full size in the content parts LibreChat persists', async () => {
+    const { GraphEvents, createContentAggregator } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    /** Far beyond any cap the SDK's provider-only projection would apply. */
+    const output = 'r'.repeat(600_000);
+    const args = { query: 'q'.repeat(120_000) };
+    const { contentParts, stepMap, aggregateContent } = createContentAggregator();
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent,
+      contentParts,
+      stepMap,
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+    const step = {
+      id: 'step-full-size',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-full-size', name: 'fetch', args: JSON.stringify(args) }],
+      },
+    };
+
+    await handlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, step);
+    await handlers[GraphEvents.ON_RUN_STEP_COMPLETED].handle(GraphEvents.ON_RUN_STEP_COMPLETED, {
+      result: {
+        id: step.id,
+        index: 0,
+        tool_call: { id: 'call-full-size', name: 'fetch', args, output },
+      },
+    });
+
+    expect(contentParts).toHaveLength(1);
+    expect(contentParts[0].tool_call.output).toBe(output);
+    expect(contentParts[0].tool_call.args).toEqual(args);
+    expect(JSON.stringify(contentParts[0])).not.toContain('[truncated:');
+  });
+
   it('records a context snapshot and notifies the sink before forwarding it', async () => {
     const { GenerationJobManager } = require('@librechat/api');
     const { GraphEvents } = jest.requireActual('@librechat/agents');

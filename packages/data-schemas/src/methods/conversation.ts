@@ -42,12 +42,12 @@ import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
+import { isAgentFadingTier, isAgentFadingTierEntries } from '~/utils/fading';
 import { isCompactionSemanticIndexProjection } from '~/types/compaction';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
-import { isAgentFadingTier } from '~/utils/fading';
 import logger from '~/config/winston';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
@@ -1010,6 +1010,12 @@ export function createConversationMethods(
             input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)))
     ) {
       throw new RangeError('Event actor context calibration is invalid');
+    }
+    if (
+      input.contextMeta?.fadingTiers != null &&
+      !isAgentFadingTierEntries(input.contextMeta.fadingTiers)
+    ) {
+      throw new RangeError('Event actor context fading tiers are invalid');
     }
     if (input.contextMeta?.fading != null && !isAgentFadingTier(input.contextMeta.fading)) {
       throw new RangeError('Event actor context fading tier is invalid');

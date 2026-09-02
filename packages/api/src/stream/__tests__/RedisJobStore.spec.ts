@@ -356,6 +356,7 @@ describe('RedisJobStore', () => {
         calibrationRatio: 1.25,
         encoding: 'claude',
         fading: { v: 1, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1, budgetTokens: 50_000, masked: true }],
       },
       compactionSemanticIndex: {
         version: 1,
@@ -447,6 +448,7 @@ describe('RedisJobStore', () => {
         calibrationRatio: 1.25,
         encoding: 'claude',
         fading: { v: 1, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1, budgetTokens: 50_000, masked: true }],
       },
       compactionSemanticIndex: {
         version: 1,

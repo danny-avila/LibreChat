@@ -1,13 +1,26 @@
-import { isAgentFadingTier, AGENT_FADING_TIER_VERSION } from '@librechat/data-schemas';
-import type { IAgentEventActorContextMeta, IAgentFadingTier } from '@librechat/data-schemas';
+import {
+  isAgentFadingTier,
+  isAgentFadingTierEntry,
+  isAgentFadingTierEntries,
+  AGENT_FADING_TIER_VERSION,
+} from '@librechat/data-schemas';
+import type {
+  IAgentEventActorContextMeta,
+  IAgentFadingTierEntry,
+  IAgentFadingTier,
+} from '@librechat/data-schemas';
 
-export { isAgentFadingTier };
+export { isAgentFadingTier, isAgentFadingTierEntries };
+
+/** Latched tiers keyed by agent ID, the shape `RunConfig.fadingTiers` takes. */
+export type RunFadingTiers = Record<string, IAgentFadingTier>;
 
 /**
  * Normalizes the tier a run exposes for persistence, or undefined when there
  * is none. `Run.getFadingTier()` already returns only tiers that carry
- * information (masking active or a budget below the pruner's window), so the
- * host only validates the shape and strips anything else the SDK may attach.
+ * information (masking active, a budget below the pruner's window, or a tier
+ * restored from host state), so the host validates the shape and strips
+ * anything else the SDK may attach, such as its `latched` provenance flag.
  */
 export function resolvePersistableFadingTier(tier: unknown): IAgentFadingTier | undefined {
   if (!isAgentFadingTier(tier)) {
@@ -16,31 +29,72 @@ export function resolvePersistableFadingTier(tier: unknown): IAgentFadingTier | 
   return { v: AGENT_FADING_TIER_VERSION, budgetTokens: tier.budgetTokens, masked: tier.masked };
 }
 
+/**
+ * Normalizes the per-agent tiers a run exposes (`Run.getFadingTiers()`) into
+ * persisted entries. Only own enumerable keys are read and every tier is
+ * validated and stripped, so an agent ID never reaches storage as a field name
+ * and nothing beyond the compact tier is persisted.
+ */
+export function resolvePersistableFadingTiers(tiers: unknown): IAgentFadingTierEntry[] | undefined {
+  if (typeof tiers !== 'object' || tiers === null) {
+    return undefined;
+  }
+  const candidates: Array<[string, unknown]> = Object.entries(tiers);
+  const entries = candidates.flatMap(([agentId, candidate]) => {
+    const tier = resolvePersistableFadingTier(candidate);
+    const entry = tier == null ? undefined : { agentId, ...tier };
+    return isAgentFadingTierEntry(entry) ? [entry] : [];
+  });
+  return entries.length > 0 ? entries : undefined;
+}
+
+/**
+ * Rebuilds `RunConfig.fadingTiers` from persisted entries on a null-prototype
+ * record, so an agent ID such as `__proto__` stays an own key and can never
+ * touch the prototype chain.
+ */
+export function resolveRunFadingTiers(entries: unknown): RunFadingTiers | undefined {
+  if (!isAgentFadingTierEntries(entries) || entries.length === 0) {
+    return undefined;
+  }
+  const tiers: RunFadingTiers = Object.create(null);
+  for (const { agentId, v, budgetTokens, masked } of entries) {
+    tiers[agentId] = { v, budgetTokens, masked };
+  }
+  return tiers;
+}
+
 export type RunContextMetaParams = {
   calibrationRatio: number;
   fadingTier: unknown;
+  /** Per-agent tiers from `Run.getFadingTiers()` or the live graph. */
+  fadingTiers?: unknown;
   /** Resolved lazily: only consulted when there is something to persist. */
   getEncoding: () => string;
 };
 
 /**
- * Builds the `contextMeta` a response message persists from a finished run,
- * or undefined when neither calibration nor fading carries information.
- * A latched fading tier is persisted even at a neutral calibration ratio,
- * with the ratio recorded as 1 so the stored shape stays valid.
+ * Builds the compact `contextMeta` a response message persists from a run, or
+ * undefined when neither calibration nor fading carries information. Only the
+ * calibration ratio, its encoding and the latched tiers are kept; message
+ * content, canonical tool results and projection state never are. A latched
+ * tier is persisted even at a neutral calibration ratio, with the ratio
+ * recorded as 1 so the stored shape stays valid.
  */
 export function resolveRunContextMeta(
   params: RunContextMetaParams,
 ): IAgentEventActorContextMeta | undefined {
   const { calibrationRatio } = params;
   const fading = resolvePersistableFadingTier(params.fadingTier);
+  const fadingTiers = resolvePersistableFadingTiers(params.fadingTiers);
   const calibrated = calibrationRatio > 0 && calibrationRatio !== 1;
-  if (!calibrated && fading == null) {
+  if (!calibrated && fading == null && fadingTiers == null) {
     return undefined;
   }
   return {
     calibrationRatio: calibrationRatio > 0 ? Math.round(calibrationRatio * 1000) / 1000 : 1,
     encoding: params.getEncoding(),
     ...(fading == null ? {} : { fading }),
+    ...(fadingTiers == null ? {} : { fadingTiers }),
   };
 }

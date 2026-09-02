@@ -4893,6 +4893,24 @@ describe('Conversation Operations', () => {
         methods.commitAgentEventActorState({
           user: 'actor-context-user',
           conversationId,
+          invocationId: 'invalid-fading-tiers',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          contextMeta: {
+            calibrationRatio: 1.25,
+            fadingTiers: [
+              { agentId: 'agent-a', v: 1, budgetTokens: 20_000, masked: true },
+              { agentId: 'agent-a', v: 1, budgetTokens: 10_000, masked: true },
+            ],
+          },
+        }),
+      ).rejects.toThrow('Event actor context fading tiers are invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
           invocationId: 'invalid-compaction-index',
           expectedEpoch: 0,
           action: { toolName: 'submit_move' },

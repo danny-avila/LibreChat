@@ -143,7 +143,9 @@ const {
   restoreCompactionSemanticIndexSnapshot,
   MAX_AGENT_CONTEXT_SKILLS,
   isAgentFadingTier,
+  isAgentFadingTierEntries,
   resolveRunContextMeta,
+  resolveRunFadingTiers,
 } = require('@librechat/api');
 const {
   Run,
@@ -212,7 +214,7 @@ function normalizeEventActorContextMeta(contextMeta) {
   if (contextMeta == null) {
     return undefined;
   }
-  const { calibrationRatio, encoding, fading } = contextMeta;
+  const { calibrationRatio, encoding, fading, fadingTiers } = contextMeta;
   if (
     !Number.isFinite(calibrationRatio) ||
     calibrationRatio < 0.5 ||
@@ -227,17 +229,23 @@ function normalizeEventActorContextMeta(contextMeta) {
   if (fading != null && !isAgentFadingTier(fading)) {
     throw new RangeError('Event actor context fading tier is invalid');
   }
+  if (fadingTiers != null && !isAgentFadingTierEntries(fadingTiers)) {
+    throw new RangeError('Event actor context fading tiers are invalid');
+  }
   return {
     calibrationRatio,
     ...(encoding == null ? {} : { encoding }),
     ...(fading == null ? {} : { fading }),
+    ...(fadingTiers == null ? {} : { fadingTiers }),
   };
 }
 
 /**
  * Seeds for a new run from the previous run's contextMeta: the calibration
- * ratio when the tokenizer encoding still matches, and the fading tier, which
- * is character-based and so seeds regardless of encoding.
+ * ratio when the tokenizer encoding still matches, and the fading tiers, which
+ * are character-based and so seed regardless of encoding. The default agent's
+ * tier and the per-agent map are both passed; the SDK restores each agent from
+ * its own entry and falls back to the default tier for the first agent.
  */
 function resolveRunSeeds(client) {
   const prevMeta = client.contextMeta;
@@ -249,28 +257,31 @@ function resolveRunSeeds(client) {
   const calibrationRatio =
     encodingMatch && prevMeta.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
   const fadingTier = isAgentFadingTier(prevMeta.fading) ? prevMeta.fading : undefined;
+  const fadingTiers = resolveRunFadingTiers(prevMeta.fadingTiers);
   logger.debug(
-    `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}, fading=${fadingTier ? `${fadingTier.budgetTokens}/${fadingTier.masked}` : 'none'}`,
+    `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}, fading=${fadingTier ? `${fadingTier.budgetTokens}/${fadingTier.masked}` : 'none'}, agents=${fadingTiers ? Object.keys(fadingTiers).length : 0}`,
   );
-  return { calibrationRatio, fadingTier };
+  return { calibrationRatio, fadingTier, fadingTiers };
 }
 
 /**
- * Captures calibration and fading state from a finished run for persistence
- * on the response message. Called from `finally`, so values survive an abort.
- * `getFadingTier` is optional so SDK versions without it persist calibration
- * alone, and it already returns only tiers that carry information; the
- * encoding is only resolved when there is something to persist.
+ * Captures the compact context state of a run for persistence on the response
+ * message: calibration plus the latched fading tiers, never message content.
+ * Called from `finally`, so values survive an abort. The tier getters are
+ * optional so SDK versions without them persist calibration alone, and they
+ * already return only tiers that carry information; the encoding is only
+ * resolved when there is something to persist.
  */
 function captureRunContextMeta(client) {
   const run = client.run;
   /** `Run` refreshes its own getters only after `processStream` settles, so a
    * capture taken mid-run (a HITL pause, a Stop) reads the live graph state. */
   const graph = run?.Graph;
+  const source = graph ?? run;
   return resolveRunContextMeta({
-    calibrationRatio:
-      (graph != null ? graph.getCalibrationRatio?.() : run?.getCalibrationRatio?.()) ?? 0,
-    fadingTier: graph != null ? graph.getFadingTier?.() : run?.getFadingTier?.(),
+    calibrationRatio: source?.getCalibrationRatio?.() ?? 0,
+    fadingTier: source?.getFadingTier?.(),
+    fadingTiers: source?.getFadingTiers?.(),
     getEncoding: () => client.getEncoding(),
   });
 }
@@ -3881,7 +3892,8 @@ class AgentClient extends BaseClient {
         this.compactionSemanticIndexSnapshot,
       ),
       // Calibration and fading state at the pause, so the resumed segment seeds
-      // its rebuilt pruner from the same tier and keeps historical bytes stable.
+      // its rebuilt pruner from the same tiers and its provider projection of
+      // history keeps the same bytes.
       contextMeta: captureRunContextMeta({ run, getEncoding: () => this.getEncoding() }),
     };
     if (this.eventActorInvocationId != null) {
@@ -4266,7 +4278,7 @@ class AgentClient extends BaseClient {
           memoryPromise = this.runMemory(memoryMessages);
         }
 
-        const { calibrationRatio, fadingTier } = resolveRunSeeds(this);
+        const { calibrationRatio, fadingTier, fadingTiers } = resolveRunSeeds(this);
 
         const streamId = this.options.req?._resumableStreamId;
         // HITL: establish an empty checkpoint barrier for THIS immutable generation
@@ -4373,6 +4385,7 @@ class AgentClient extends BaseClient {
           initialSessions,
           calibrationRatio,
           fadingTier,
+          fadingTiers,
           runId: this.responseMessageId,
           signal: abortController.signal,
           /** The phase wrapper stays outermost: it claims and offsets the
