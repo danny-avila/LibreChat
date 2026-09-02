@@ -196,6 +196,12 @@ describe('useProgressiveRowMount', () => {
     });
     expect(result.current?.pinnedRows?.size).toBe(8);
     expect(result.current?.pinnedRows?.has(0)).toBe(false);
+    act(() => {
+      result.current?.pinRow?.(1, 'replacement-at-depth-1');
+      result.current?.pinRow?.(9, 'message-9');
+    });
+    expect(result.current?.pinnedRows?.get(1)).toBe('replacement-at-depth-1');
+    expect(result.current?.pinnedRows?.has(2)).toBe(false);
     const queriesAfterMeasurement = querySpy.mock.calls.length;
 
     act(() => {
@@ -456,5 +462,56 @@ describe('useProgressiveRowMount', () => {
       conversationId: 'convo-b',
     });
     expect(result.current).toEqual({ mode: 'progressive', start: 0, end: 15 });
+  });
+
+  it('ignores stale resize measurement frames after changing conversations', () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientHeight', { value: 600 });
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ top: 0, bottom: 600, left: 0, right: 390, width: 390, height: 600 }),
+    });
+    for (let depth = 0; depth <= 40; depth += 1) {
+      const slot = document.createElement('div');
+      slot.dataset.messageRowSlot = 'true';
+      slot.dataset.rowMounted = 'true';
+      slot.dataset.rowDepth = String(depth);
+      slot.dataset.rowMessageId = `message-${depth}`;
+      Object.defineProperty(slot, 'getBoundingClientRect', {
+        value: () => ({
+          top: depth * 100,
+          bottom: depth * 100 + 100,
+          left: 0,
+          right: 390,
+          width: 390,
+          height: 100,
+        }),
+      });
+      container.appendChild(slot);
+    }
+    scrollableRef.current = container;
+    const { result, rerender } = setup({ tailDepth: 40 });
+    while (result.current?.mode === 'progressive') flushFrames();
+    act(() => {
+      resizeCallback(
+        [{ contentRect: { width: 390 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      );
+      resizeCallback(
+        [{ contentRect: { width: 500 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      );
+    });
+    expect(result.current).toBeNull();
+
+    rerender({
+      tailDepth: 40,
+      anchorBottom: false,
+      isSubmitting: false,
+      conversationId: 'convo-b',
+    });
+    flushFrames();
+    flushFrames();
+
+    expect(result.current?.mode).toBe('progressive');
   });
 });

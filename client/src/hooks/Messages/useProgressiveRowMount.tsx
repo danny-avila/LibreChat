@@ -226,9 +226,7 @@ export function useProgressiveRowMount({
   );
 
   const pinRow = useCallback((depth: number, messageId: string) => {
-    if (pinnedRowsRef.current.get(depth) === messageId) {
-      pinnedRowsRef.current.delete(depth);
-    }
+    pinnedRowsRef.current.delete(depth);
     pinnedRowsRef.current.set(depth, messageId);
     while (pinnedRowsRef.current.size > MAX_PINNED_ROWS) {
       const oldestDepth = pinnedRowsRef.current.keys().next().value;
@@ -325,8 +323,10 @@ export function useProgressiveRowMount({
     heightsRef.current = new Map();
     rowOffsetsRef.current = [];
     setMountWindow(null);
+    const remeasureEpoch = leaseEpochRef.current;
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
+        if (remeasureEpoch !== leaseEpochRef.current) return;
         measureMountedRows();
         remeasuringRef.current = false;
         if (leaseCountRef.current === 0) setMountWindow(publishBoundedWindow());

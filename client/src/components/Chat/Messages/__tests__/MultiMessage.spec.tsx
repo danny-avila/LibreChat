@@ -480,6 +480,21 @@ describe('MultiMessage row mount window', () => {
     expect(document.activeElement).not.toHaveClass('sr-only');
   });
 
+  it('does not reclaim placeholder focus after the user moves elsewhere', () => {
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    const view = render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }));
+    const placeholder = view.container.querySelector<HTMLElement>('#m0');
+    if (placeholder) placeholder.tabIndex = -1;
+    placeholder?.focus();
+    const destination = document.createElement('button');
+    document.body.appendChild(destination);
+    destination.focus();
+
+    view.rerender(windowedTree({ mode: 'bounded', start: 0, end: 2, heights }));
+
+    expect(document.activeElement).toBe(destination);
+  });
+
   it('keeps the row owning active speech playback mounted', () => {
     const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
     getDefaultStore().set(activeSpeechMessageIdAtom, 'm0');

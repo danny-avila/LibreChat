@@ -93,6 +93,11 @@ function MessageRowSlot({
         }
         if (mounted) pinRow?.(depth, messageId);
       }}
+      onBlurCapture={() => {
+        if (mounted) return;
+        transferMessageFocusRef.current = false;
+        focusedSteerIdRef.current = undefined;
+      }}
       onPointerDownCapture={(event) => {
         const target = event.target as HTMLElement;
         if (
