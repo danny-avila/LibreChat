@@ -27,7 +27,8 @@ jest.mock('~/server/services/Files/process', () => ({
   retrieveAndProcessFile: jest.fn(),
 }));
 
-const { recordUsage } = require('./manage');
+const { recordUsage, saveAssistantMessage } = require('./manage');
+const { saveConvo, recordMessage } = require('~/models');
 
 describe('recordUsage', () => {
   beforeEach(() => {
@@ -86,6 +87,45 @@ describe('recordUsage', () => {
     expect(mockSpendTokens).toHaveBeenCalledWith(
       expect.objectContaining({ transactions: undefined }),
       expect.any(Object),
+    );
+  });
+});
+
+describe('saveAssistantMessage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    recordMessage.mockResolvedValue({ messageId: 'assistant-msg' });
+    saveConvo.mockResolvedValue({});
+  });
+
+  const params = {
+    endpoint: 'assistants',
+    conversationId: 'convo-123',
+    messageId: 'assistant-msg',
+    parentMessageId: 'user-msg',
+    text: 'done',
+    model: 'gpt-4',
+  };
+
+  it('asks saveConvo to stamp the reply at write time', async () => {
+    /* A precomputed stamp can be outranked by a catch-up recorded while saveConvo's own reads
+       are in flight, which would leave the persisted reply reading as already seen. */
+    await saveAssistantMessage({ user: { id: 'user-123' }, body: {} }, params);
+
+    expect(saveConvo).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-123' }),
+      expect.not.objectContaining({ lastResponseAt: expect.anything() }),
+      expect.objectContaining({ stampReply: true }),
+    );
+  });
+
+  it('never stamps a temporary conversation', async () => {
+    await saveAssistantMessage({ user: { id: 'user-123' }, body: { isTemporary: true } }, params);
+
+    expect(saveConvo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ stampReply: false }),
     );
   });
 });

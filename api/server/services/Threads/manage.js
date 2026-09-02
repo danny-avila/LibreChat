@@ -168,11 +168,15 @@ async function saveAssistantMessage(req, params) {
       model: params.model,
       iconURL: params.iconURL,
       spec: params.spec,
-      /** Only reached once the assistant message above has been persisted; drives the
-       *  unseen-reply indicator the same way BaseClient's reply path does. */
-      ...(req?.body?.isTemporary !== true && { lastResponseAt: new Date() }),
     },
-    { context: 'api/server/services/Threads/manage.js #saveAssistantMessage' },
+    {
+      context: 'api/server/services/Threads/manage.js #saveAssistantMessage',
+      /** Only reached once the assistant message above has been persisted; drives the
+       *  unseen-reply indicator the same way BaseClient's reply path does. `saveConvo` assigns
+       *  the timestamp past its own awaited reads, so a catch-up recorded while one of them is
+       *  in flight cannot outrank this reply. */
+      stampReply: req?.body?.isTemporary !== true,
+    },
   );
 
   return message;
