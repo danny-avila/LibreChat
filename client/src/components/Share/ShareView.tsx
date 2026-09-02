@@ -27,6 +27,7 @@ import { ShareMessagesProvider } from './ShareMessagesProvider';
 import { useForkSharedConvoMutation } from '~/data-provider';
 import { useGetSharedStartupConfig } from '~/data-provider';
 import { ShareArtifactsContainer } from './ShareArtifacts';
+import AppChatSurface from '../Chat/Surface';
 import { ShareContext } from '~/Providers';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
@@ -243,12 +244,14 @@ function SharedView() {
 
   return (
     <ShareContext.Provider value={{ isSharedConvo: true, shareId }}>
-      <div className="relative flex h-screen w-full overflow-hidden dark:bg-surface-secondary">
-        <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
-          {artifactsContainer}
-        </main>
-      </div>
-      <SharedSubagentActivityDialog shareId={shareId} />
+      <AppChatSurface>
+        <div className="relative flex h-screen w-full overflow-hidden dark:bg-surface-secondary">
+          <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
+            {artifactsContainer}
+          </main>
+        </div>
+        <SharedSubagentActivityDialog shareId={shareId} />
+      </AppChatSurface>
     </ShareContext.Provider>
   );
 }

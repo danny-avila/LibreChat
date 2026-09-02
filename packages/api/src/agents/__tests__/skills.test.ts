@@ -34,6 +34,7 @@ jest.mock('@librechat/agents', () => ({
 
 import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
+import { SkillsScope } from 'librechat-data-provider';
 import { HumanMessage, AIMessage } from '@librechat/agents/langchain/messages';
 import {
   scopeSkillIds,
@@ -309,10 +310,17 @@ describe('resolveAgentScopedSkillIds', () => {
   const persistedAgent = (
     skills?: string[],
     skills_enabled?: boolean,
-  ): { id: string; skills?: string[]; skills_enabled?: boolean } => ({
+    skills_scope?: SkillsScope,
+  ): {
+    id: string;
+    skills?: string[];
+    skills_enabled?: boolean;
+    skills_scope?: SkillsScope;
+  } => ({
     id: 'agent_persisted_1',
     skills,
     skills_enabled,
+    skills_scope,
   });
   const ephemeralAgent = (
     skills?: string[],
@@ -483,6 +491,42 @@ describe('resolveAgentScopedSkillIds', () => {
       });
       expect(scoped).toHaveLength(2);
       expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), c.toString()].sort());
+    });
+
+    it('returns no catalog for an enabled agent with explicit none scope', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: persistedAgent([], true, SkillsScope.none),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: false,
+        }),
+      ).toEqual([]);
+    });
+
+    it('returns the full catalog for explicit all scope even with stale selected ids', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: persistedAgent([a.toString()], true, SkillsScope.all),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped).toEqual([a, b]);
+    });
+
+    it('fails closed when explicit selected scope has no ids', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: persistedAgent([], true, SkillsScope.selected),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: false,
+        }),
+      ).toEqual([]);
     });
 
     it('is unaffected by the ephemeral toggle — the persisted config is authoritative', () => {

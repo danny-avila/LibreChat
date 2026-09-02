@@ -11,11 +11,17 @@ const mockRequireCapability = jest.fn((capability) => (req, _res, next) => {
   middlewareCalls.push(capability);
   next();
 });
+const mockCodeEnvironmentPairingLimiter = jest.fn((_req, _res, next) => {
+  middlewareCalls.push('pairing-limit');
+  next();
+});
 const mockRegistry = {};
 const mockGetCodeEnvironmentRegistry = jest.fn(() => mockRegistry);
 const mockHandlers = {
   list: jest.fn((_req, res) => res.status(200).json({ environments: [] })),
   register: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
+  pair: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
+  remove: jest.fn((_req, res) => res.status(200).json({ environment: { id: 'code-1' } })),
 };
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -25,10 +31,14 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   createCodeEnvironmentRegistry: jest.fn(() => mockRegistry),
   createCodeEnvironmentHttpHandlers: jest.fn(() => mockHandlers),
+  startCodeEnvironmentLifecycleReconciler: jest.fn(),
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   requireCapability: mockRequireCapability,
+}));
+jest.mock('~/server/middleware/limiters/code', () => ({
+  codeEnvironmentPairingLimiter: mockCodeEnvironmentPairingLimiter,
 }));
 
 jest.mock('~/server/middleware', () => ({ requireJwtAuth: mockRequireJwtAuth }));
@@ -36,6 +46,7 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
   getCodeEnvironmentRegistry: mockGetCodeEnvironmentRegistry,
 }));
+jest.mock('~/models', () => ({ isAgentTriggerPrincipalActive: jest.fn() }));
 
 function createApp() {
   delete require.cache[require.resolve('./code-environments')];
@@ -73,5 +84,22 @@ describe('code environment routes', () => {
 
     expect(middlewareCalls).toEqual(['jwt', 'manage:code_environments']);
     expect(mockHandlers.register).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an authenticated user to pair through an opted-in control plane', async () => {
+    await request(createApp())
+      .post('/api/code-environments/pairings')
+      .send({ name: 'Personal VM', controlPlaneId: 'shared-code-api' })
+      .expect(201);
+
+    expect(middlewareCalls).toEqual(['jwt', 'pairing-limit']);
+    expect(mockHandlers.pair).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an authenticated owner to remove an environment', async () => {
+    await request(createApp()).delete('/api/code-environments/code-1').expect(200);
+
+    expect(middlewareCalls).toEqual(['jwt']);
+    expect(mockHandlers.remove).toHaveBeenCalledTimes(1);
   });
 });

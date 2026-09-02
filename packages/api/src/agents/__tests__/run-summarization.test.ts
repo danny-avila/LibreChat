@@ -2022,6 +2022,74 @@ describe('subagentConfigs', () => {
     });
   });
 
+  it('prunes shared-agent cycles per traversal path without dropping valid edges', async () => {
+    const left = makeAgent({
+      id: 'agent_left',
+      name: 'Left',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_shared'] },
+    }) as TestRunAgent;
+    const right = makeAgent({
+      id: 'agent_right',
+      name: 'Right',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_shared'] },
+    }) as TestRunAgent;
+    const shared = makeAgent({
+      id: 'agent_shared',
+      name: 'Shared',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_left'] },
+    }) as TestRunAgent;
+    left.subagentAgentConfigs = [shared];
+    right.subagentAgentConfigs = [shared];
+    shared.subagentAgentConfigs = [left];
+
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: {
+            enabled: true,
+            allowSelf: false,
+            agent_ids: ['agent_left', 'agent_right'],
+          },
+          subagentAgentConfigs: [left, right],
+        }),
+      ],
+    });
+
+    const rootConfigs = agents[0].subagentConfigs as Parameters<typeof buildChildInputs>[0][];
+    const rootConfigsByType = new Map(rootConfigs.map((config) => [config.type, config]));
+    const leftConfig = rootConfigsByType.get('agent_left');
+    const rightConfig = rootConfigsByType.get('agent_right');
+    if (!leftConfig || !rightConfig) {
+      throw new Error('Expected both root subagent configs');
+    }
+    const leftInputs = buildChildInputs(leftConfig, 'agent_left', MAX_SUBAGENT_DEPTH);
+    const rightInputs = buildChildInputs(rightConfig, 'agent_right', MAX_SUBAGENT_DEPTH);
+    const leftShared = leftInputs.subagentConfigs?.[0];
+    const rightShared = rightInputs.subagentConfigs?.[0];
+    if (
+      !leftShared ||
+      !rightShared ||
+      leftInputs.maxSubagentDepth == null ||
+      rightInputs.maxSubagentDepth == null
+    ) {
+      throw new Error('Expected both shared subagent configs');
+    }
+    const leftSharedInputs = buildChildInputs(
+      leftShared,
+      'agent_shared',
+      leftInputs.maxSubagentDepth,
+    );
+    const rightSharedInputs = buildChildInputs(
+      rightShared,
+      'agent_shared',
+      rightInputs.maxSubagentDepth,
+    );
+
+    expect(leftSharedInputs.subagentConfigs).toBeUndefined();
+    expect(rightSharedInputs.subagentConfigs).toHaveLength(1);
+    expect(rightSharedInputs.subagentConfigs?.[0]).toMatchObject({ type: 'agent_left' });
+  });
+
   it('combines self-spawn and explicit subagents when both enabled', async () => {
     const child = makeAgent({ id: 'agent_child', name: 'Helper' });
     const agents = await callAndCapture({
@@ -3132,12 +3200,24 @@ describe('ask_user_question run wiring', () => {
   const firstAgent = (config: Record<string, unknown>) =>
     (config.graphConfig as { agents: Array<Record<string, unknown>> }).agents[0];
 
+  /**
+   * Every run now carries a `PostToolBatch`-only registry for step-budget
+   * awareness, so registry presence no longer proves HITL wiring. What still
+   * distinguishes an approval-gated run is the `PreToolUse` policy hook, and
+   * `PostToolBatch` is deliberately outside the SDK's
+   * `RESULT_ALTERING_HOOK_EVENTS`, so it cannot disable eager tool prestart.
+   */
+  const hasToolApprovalPolicyHook = (config: Record<string, unknown>) =>
+    (config.hooks as { hasHookFor?: (event: string) => boolean } | undefined)?.hasHookFor?.(
+      'PreToolUse',
+    ) === true;
+
   it('attaches the checkpointer WITHOUT humanInTheLoop when hitlCapable and the ask tool is present (approval disabled)', async () => {
     const config = await runAndGetConfig(makeAgent({ tools: [askToolInstance] }), {
       hitlCapable: true,
     });
     expect(config).not.toHaveProperty('humanInTheLoop');
-    expect(config).not.toHaveProperty('hooks');
+    expect(hasToolApprovalPolicyHook(config)).toBe(false);
     expect(getCheckpointer(config)).toBeDefined();
     const agent = firstAgent(config);
     // The tool rides the in-graph direct path (graphTools) — never the

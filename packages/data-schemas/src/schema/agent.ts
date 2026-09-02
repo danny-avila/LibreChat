@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import { SkillsScope } from 'librechat-data-provider';
 import type { IAgent } from '~/types';
 
 const agentSchema: Schema<IAgent> = new Schema<IAgent>(
@@ -50,6 +51,15 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     },
     skills_enabled: {
       type: Boolean,
+      default: undefined,
+    },
+    skill_authoring_enabled: {
+      type: Boolean,
+      default: undefined,
+    },
+    skills_scope: {
+      type: String,
+      enum: Object.values(SkillsScope),
       default: undefined,
     },
     tool_kwargs: {

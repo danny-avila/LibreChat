@@ -6,6 +6,7 @@ import type {
   SupportContact,
   AgentProvider,
   MemoryScope,
+  SkillsScope,
   StatefulCodeEnvironment,
   GraphEdge,
   Agent,
@@ -43,6 +44,8 @@ export type AgentForm = {
   tool_options?: AgentToolOptions;
   skills?: string[];
   skills_enabled?: boolean;
+  skill_authoring_enabled?: boolean;
+  skills_scope?: SkillsScope;
   /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
   memory_scope?: MemoryScope;
   /** Sharing scope for stateful Code API workspaces. */

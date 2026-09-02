@@ -13,9 +13,12 @@ const serverPath = path.resolve(
   replicaCount === 2 ? 'e2e/setup/start-server-cluster.js' : 'e2e/setup/start-server.js',
 );
 const mcpHttpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-http-server.js');
+const mcpOAuthServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-oauth-server.js');
 const dynamicMcpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-dynamic-network-server.js');
 /** Must match the `e2e-http` server URL in e2e/config/librechat.e2e.yaml. */
 const MCP_HTTP_PORT = process.env.E2E_MCP_HTTP_PORT || '8765';
+/** Must match the protected OAuth MCP fixture in e2e/config/librechat.e2e.yaml. */
+const MCP_OAUTH_PORT = process.env.E2E_MCP_OAUTH_PORT || '8767';
 /** Must match the dynamic Streamable HTTP and SSE URLs in the e2e config template. */
 const MCP_DYNAMIC_PORT = process.env.E2E_MCP_DYNAMIC_PORT || '8766';
 const MCP_STATE_PATH =
@@ -248,6 +251,9 @@ function writeRuntimeMockConfig() {
   if (enableDynamicMcp && MCP_DYNAMIC_PORT !== '8766') {
     config = config.split('127.0.0.1:8766').join(`127.0.0.1:${MCP_DYNAMIC_PORT}`);
   }
+  if (MCP_OAUTH_PORT !== '8767') {
+    config = config.split('127.0.0.1:8767').join(`127.0.0.1:${MCP_OAUTH_PORT}`);
+  }
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, config);
   if (enableDynamicMcp) {
@@ -336,6 +342,16 @@ export default defineConfig({
       cwd: rootPath,
       env: { ...process.env, E2E_MCP_HTTP_PORT: MCP_HTTP_PORT },
       url: `http://127.0.0.1:${MCP_HTTP_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      // Protected resource whose OAuth flow intentionally remains pending across navigation.
+      command: `node ${mcpOAuthServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_MCP_OAUTH_PORT: MCP_OAUTH_PORT },
+      url: `http://127.0.0.1:${MCP_OAUTH_PORT}/`,
       stdout: 'pipe',
       timeout: 60_000,
       reuseExistingServer: false,

@@ -82,6 +82,7 @@ import {
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
+import { projectPendingMCPOAuthPrompts } from '~/mcp/oauth/resume';
 import { sanitizeJobMetadata } from './metadata';
 
 /** Terminal error surfaced to a client still attached when its approval window lapses. */
@@ -1125,10 +1126,10 @@ class GenerationJobManagerClass {
     this.reconcileInactiveGeneration(streamId, createdAt, currentJob, observedRuntime);
   }
 
-  private async reconcileDiscoveredSuccessor(
+  private async reconcileFencedRuntimeHandoff(
     streamId: string,
     runtime: RuntimeJobState,
-    successor: SerializableJobData,
+    currentJob: SerializableJobData | null,
   ): Promise<void> {
     const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
     if (!runtime.abortController.signal.aborted) {
@@ -1140,7 +1141,7 @@ class GenerationJobManagerClass {
       ownsExactProvider,
     );
     if (abortProofPersisted) {
-      this.reconcileInactiveGeneration(streamId, runtime.createdAt, successor, runtime);
+      this.reconcileInactiveGeneration(streamId, runtime.createdAt, currentJob, runtime);
     }
     this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
   }
@@ -1162,6 +1163,21 @@ class GenerationJobManagerClass {
     if (Date.now() - startedAt < TERMINAL_PERSISTENCE_TIMEOUT_MS) {
       return jobData;
     }
+    const observedRuntime = this.runtimeState.get(jobData.streamId);
+    let runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+    /** Preserve the pre-await object when one exists, but also admit a predecessor
+     * attachment created while terminal finalization is in flight. Every late
+     * read remains generation-fenced, so a successor runtime is never captured. */
+    const captureMatchingRuntime = (): RuntimeJobState | undefined => {
+      if (runtime) {
+        return runtime;
+      }
+      const candidate = this.runtimeState.get(jobData.streamId);
+      if (candidate?.createdAt === jobData.createdAt) {
+        runtime = candidate;
+      }
+      return runtime;
+    };
 
     const reconcileEvent = buildTerminalPersistenceReconcile(jobData);
     const serialized = JSON.stringify(reconcileEvent);
@@ -1171,19 +1187,33 @@ class GenerationJobManagerClass {
       serialized,
     );
     if (!recovered) {
-      return this.jobStore.getJob(jobData.streamId);
+      const currentJob = await this.jobStore.getJob(jobData.streamId);
+      const predecessorRuntime = captureMatchingRuntime();
+      if (predecessorRuntime && currentJob?.createdAt !== jobData.createdAt) {
+        await this.reconcileFencedRuntimeHandoff(jobData.streamId, predecessorRuntime, currentJob);
+      }
+      return currentJob;
     }
 
-    const runtime = this.runtimeState.get(jobData.streamId);
-    if (runtime?.createdAt === jobData.createdAt) {
-      runtime.finalEvent = reconcileEvent;
+    const recoveredRuntime = captureMatchingRuntime();
+    if (recoveredRuntime) {
+      recoveredRuntime.finalEvent = reconcileEvent;
     }
     try {
       await this.eventTransport.emitDone(jobData.streamId, reconcileEvent, jobData.createdAt);
     } catch (err) {
       if (err instanceof GenerationPublicationFencedError) {
         const currentJob = await this.jobStore.getJob(jobData.streamId);
-        this.reconcileInactiveGeneration(jobData.streamId, jobData.createdAt, currentJob, runtime);
+        const predecessorRuntime = captureMatchingRuntime();
+        if (predecessorRuntime) {
+          await this.reconcileFencedRuntimeHandoff(
+            jobData.streamId,
+            predecessorRuntime,
+            currentJob,
+          );
+        } else {
+          this.reconcileInactiveGeneration(jobData.streamId, jobData.createdAt, currentJob);
+        }
         return currentJob;
       }
       logger.error(
@@ -4935,7 +4965,7 @@ class GenerationJobManagerClass {
         let terminalJob = await this.jobStore.getJob(streamId);
         if (terminalJob?.createdAt !== runtime.createdAt) {
           if (terminalJob) {
-            await this.reconcileDiscoveredSuccessor(streamId, runtime, terminalJob);
+            await this.reconcileFencedRuntimeHandoff(streamId, runtime, terminalJob);
           } else {
             queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
           }
@@ -4948,7 +4978,7 @@ class GenerationJobManagerClass {
           terminalJob = await this.recoverStaleTerminalPersistence(terminalJob);
           if (terminalJob?.createdAt !== runtime.createdAt) {
             if (terminalJob) {
-              await this.reconcileDiscoveredSuccessor(streamId, runtime, terminalJob);
+              await this.reconcileFencedRuntimeHandoff(streamId, runtime, terminalJob);
             } else {
               queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
             }
@@ -7538,6 +7568,7 @@ class GenerationJobManagerClass {
       model: jobData.model,
       titleEvent,
       replayEvents,
+      pendingOAuthPrompts: projectPendingMCPOAuthPrompts(replayEvents, effectiveRunSteps),
       collectedUsage,
       contextUsage,
       // Carry the live pending approval in the resume contract so a reloading /
@@ -8028,17 +8059,7 @@ class GenerationJobManagerClass {
         } catch (err) {
           if (err instanceof GenerationPublicationFencedError) {
             const currentJob = await this.jobStore.getJob(streamId);
-            if (currentJob) {
-              await this.reconcileDiscoveredSuccessor(streamId, observedRuntime, currentJob);
-            } else {
-              this.reconcileInactiveGeneration(
-                streamId,
-                observedRuntime.createdAt,
-                currentJob,
-                observedRuntime,
-              );
-              this.preserveFencedRuntimeUntilHandoff(streamId, observedRuntime);
-            }
+            await this.reconcileFencedRuntimeHandoff(streamId, observedRuntime, currentJob);
             continue;
           }
           logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);

@@ -1,11 +1,14 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { act, fireEvent, render as rtlRender, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import type { ChildActivity } from './adapters';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
+import { ChatSurfaceHarness } from 'test/harness';
 
-const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: RecoilRoot });
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+  <ChatSurfaceHarness>{children}</ChatSurfaceHarness>
+);
+const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: Wrapper });
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,

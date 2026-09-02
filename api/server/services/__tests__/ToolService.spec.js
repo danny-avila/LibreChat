@@ -955,6 +955,7 @@ describe('ToolService - Action Capability Gating', () => {
           executionProfile: 'stateful',
           runtimeSessionHint: 'v2:user:abc',
           statefulSessions: true,
+          bridgeWorkerId: 'worker-abc',
         },
       });
 
@@ -965,6 +966,7 @@ describe('ToolService - Action Capability Gating', () => {
         agentResourceType: undefined,
         codeApiBaseUrl: 'https://stateful-code.example.com',
         executionProfile: 'stateful',
+        bridgeWorkerId: 'worker-abc',
       });
     });
 

@@ -68,6 +68,23 @@ export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
   return request.deleteWithOptions(endpoints.deleteUser(), { data: payload });
 }
 
+export function getCodeEnvironments(): Promise<t.TCodeEnvironmentsResponse> {
+  return request.get(endpoints.codeEnvironments());
+}
+
+export function pairCodeEnvironment(payload: {
+  name: string;
+  controlPlaneId: string;
+}): Promise<t.TCodeEnvironmentPairingResponse> {
+  return request.post(endpoints.codeEnvironmentPairings(), payload);
+}
+
+export function deleteCodeEnvironment(
+  id: string,
+): Promise<{ environment: t.TCodeEnvironmentSummary }> {
+  return request.delete(endpoints.codeEnvironmentById(id));
+}
+
 export function getFavorites(): Promise<q.TUserFavorite[]> {
   return request.get(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`);
 }

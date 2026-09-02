@@ -333,4 +333,51 @@ describe('mergeAccessibleCodeEnvironments', () => {
       deploymentEnvironment,
     ]);
   });
+
+  test('defaults to an executable principal environment after a pairing-only control plane', async () => {
+    const pairingOnly = {
+      id: 'self-service',
+      name: 'Self-service',
+      type: 'attached' as const,
+      baseURL: 'https://code.example',
+      owner: 'deployment' as const,
+      default: true,
+      pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+    };
+    const appConfig = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { environments: [pairingOnly] },
+        },
+      },
+    } as unknown as AppConfig;
+
+    const result = await mergeAccessibleCodeEnvironments({
+      appConfig,
+      deploymentConfig: appConfig,
+      actor: { userId: '68b2f0c498f24c1e78fa0001', role: 'USER', idOnTheSource: null },
+      registry: {
+        listRegisteredIds: jest.fn().mockResolvedValue(['personal-vm']),
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://persisted.example',
+            controlPlaneId: 'self-service',
+            owner: 'principal',
+            workerId: 'personal-worker',
+          },
+        ]),
+      },
+    });
+
+    const environments = result.endpoints?.agents?.statefulCodeSessions?.environments;
+    expect(environments?.find((environment) => environment.id === 'self-service')?.default).toBe(
+      false,
+    );
+    expect(environments?.find((environment) => environment.id === 'personal-vm')?.default).toBe(
+      true,
+    );
+  });
 });

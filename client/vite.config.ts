@@ -85,7 +85,7 @@ export default defineConfig(({ command }) => ({
         this.emitFile({
           type: 'asset',
           fileName: 'sw-heal.js',
-          source: fs.readFileSync(path.resolve(__dirname, 'sw/heal.js'), 'utf8'),
+          source: fs.readFileSync(path.resolve(import.meta.dirname, 'sw/heal.js'), 'utf8'),
         });
       },
     },
@@ -422,8 +422,8 @@ export default defineConfig(({ command }) => ({
   },
   resolve: {
     alias: {
-      '~': path.join(__dirname, 'src/'),
-      $fonts: path.resolve(__dirname, 'public/fonts'),
+      '~': path.join(import.meta.dirname, 'src/'),
+      $fonts: path.resolve(import.meta.dirname, 'public/fonts'),
       'micromark-extension-math': 'micromark-extension-llm-math',
     },
   },

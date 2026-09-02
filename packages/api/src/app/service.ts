@@ -78,6 +78,8 @@ export interface GetAppConfigOptions {
   refresh?: boolean;
   /** When true, return only the YAML-derived base config — no DB override queries. */
   baseOnly?: boolean;
+  /** Propagate principal, override, and augmentation failures for security-sensitive callers. */
+  failClosed?: boolean;
 }
 
 export interface AppConfigUserLike {
@@ -214,7 +216,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * Use this for startup, auth strategies, and other pre-tenant code paths.
    */
   async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
-    const { role, userId, idOnTheSource, tenantId, refresh, baseOnly } = options;
+    const { role, userId, idOnTheSource, tenantId, refresh, baseOnly, failClosed } = options;
 
     const baseConfig = await ensureBaseConfig(refresh);
 
@@ -224,6 +226,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
 
     const principals = await buildPrincipals(role, userId, idOnTheSource).catch(
       (error: unknown) => {
+        if (failClosed) throw error;
         logger.error('[getAppConfig] Error building principals, falling back to base:', error);
         return null;
       },
@@ -254,6 +257,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       try {
         return await augmentConfig({ appConfig, baseConfig, principals, options });
       } catch (error) {
+        if (failClosed) throw error;
         logger.error('[getAppConfig] Error augmenting principal config:', error);
         return appConfig;
       }
@@ -274,6 +278,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         merged = materializeConfigModelSpecs(mergeConfigOverrides(baseConfig, configs));
       }
     } catch (error) {
+      if (failClosed) throw error;
       logger.error('[getAppConfig] Error resolving config overrides, falling back to base:', error);
       return baseConfig;
     }

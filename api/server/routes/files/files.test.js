@@ -1263,6 +1263,7 @@ describe('File Routes - Delete with Agent Access', () => {
         name: 'Managed VM',
         type: 'managed',
         baseURL: 'https://managed-code.example.com/v1',
+        workerId: 'personal-worker-1',
         default: true,
         owner: 'deployment',
       };
@@ -1290,7 +1291,11 @@ describe('File Routes - Delete with Agent Access', () => {
         `${sessionId}/${codeFileId}`,
         { kind: 'user', id: otherUserId.toString() },
         expect.any(Object),
-        { baseUrl: environment.baseURL, executionProfile: 'stateful' },
+        {
+          baseUrl: environment.baseURL,
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
+        },
       );
     });
 

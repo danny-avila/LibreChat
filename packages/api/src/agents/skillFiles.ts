@@ -1,5 +1,4 @@
 import { Readable } from 'stream';
-import { isAxiosError } from 'axios';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import {
@@ -19,10 +18,10 @@ import {
   inspectContent,
   UninspectableFileError,
 } from '~/protection';
+import { createConcurrencyLimiter, getCodeApiRetryAfterMs, getSafeErrorMetadata } from '~/utils';
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
 import { getCodeExecutionRouteKey, type CodeExecutionContext } from './execution';
-import { createConcurrencyLimiter, getSafeErrorMetadata } from '~/utils';
 import { assertSkillFileContentAllowed } from '~/skills/protection';
 import { createSkillContentDigest } from './compatibility';
 import { extractInvokedSkillsFromPayload } from './run';
@@ -75,6 +74,7 @@ export interface PrimeSkillFilesParams {
     read_only?: boolean;
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -86,12 +86,13 @@ export interface PrimeSkillFilesParams {
     route?: {
       baseUrl?: string;
       executionProfile?: CodeExecutionContext['executionProfile'];
+      bridgeWorkerId?: string;
     },
   ) => Promise<string | null>;
   /** Trusted Code API route selected for the executing agent. */
   codeExecutionContext?: Pick<
     CodeExecutionContext,
-    'baseUrl' | 'executionProfile' | 'executionRouteKey'
+    'baseUrl' | 'executionProfile' | 'executionRouteKey' | 'bridgeWorkerId'
   >;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
@@ -146,25 +147,13 @@ function isCurrentSkillRef(
   return ref?.kind === 'skill' && ref.version === skillVersion;
 }
 
-function getRetryAfterMs(error: unknown): number | null {
-  if (!isAxiosError(error) || error.response?.status !== 429) {
-    return null;
-  }
-  const header = error.response.headers?.['retry-after'];
-  const seconds = Number(Array.isArray(header) ? header[0] : header);
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return null;
-  }
-  return seconds * 1000;
-}
-
 /** Single retry on 429, honoring Retry-After up to MAX_RETRY_AFTER_MS.
  *  Runs inside an upload slot so the wait also brakes queued uploads. */
 async function retryOn429<T>(attempt: () => Promise<T>, label: string): Promise<T> {
   try {
     return await attempt();
   } catch (error) {
-    const retryAfterMs = getRetryAfterMs(error);
+    const retryAfterMs = getCodeApiRetryAfterMs(error);
     if (retryAfterMs == null || retryAfterMs > MAX_RETRY_AFTER_MS) {
       throw error;
     }
@@ -527,6 +516,7 @@ async function executePrimeSkillFiles(
           read_only: true,
           codeApiBaseUrl: codeExecutionContext?.baseUrl,
           executionProfile: codeExecutionContext?.executionProfile,
+          bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
         });
         return { filesToUpload, result };
       }, `skill "${skill.name}"`),

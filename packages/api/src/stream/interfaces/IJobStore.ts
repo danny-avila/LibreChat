@@ -860,6 +860,8 @@ export interface ResumeState {
     data?: unknown;
     [key: string]: unknown;
   }>;
+  /** Pending MCP authorization prompts projected from durable stream state. */
+  pendingOAuthPrompts?: Agents.PendingMCPOAuthPrompt[];
 }
 
 /**
