@@ -1205,6 +1205,11 @@ endpoints:
 # under any source so each input surface can use a different policy. Starter
 # ids are closed to the catalog below. Custom regexes use bounded,
 # linear-time syntax; unsupported constructs are rejected at config load.
+# `action` defaults to `block`. Set it to `audit` for a shadow rollout that
+# records raw-free findings without rejecting or modifying content. Redaction
+# is intentionally not an action yet because safe replacement requires a
+# mutation-aware boundary and match spans; configuring an unsupported action
+# is rejected rather than silently treated as enforcement.
 # Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
 # to disable starters while retaining any configured custom patterns.
 # Enabling or changing this policy does not rewrite or delete stored records.
@@ -1228,6 +1233,7 @@ endpoints:
 #   messages:
 #     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
 #     pii:
+#       action: audit # `block` (default) or `audit`
 #       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
 #       starterPatterns: [sk_prefix, bearer_header, api_key_header]
 #       customPatterns:
