@@ -288,10 +288,18 @@ describe('collectAttachedCodeEnvironmentAgentIds', () => {
         subagentAgentConfigs: [
           {
             id: 'attached-child',
+            skillAuthoringAvailable: true,
             codeExecutionContext: {
               environmentType: 'attached',
               codeEnvironmentSettings: { permissions: { fileWrite: 'allow' as const } },
             },
+          },
+        ],
+        lazySubagentConfigs: [
+          {
+            id: 'attached-lazy',
+            skillAuthoringAvailable: true,
+            codeExecutionContext: { environmentType: 'attached' },
           },
         ],
         subagentGraphConfigs: [
@@ -306,12 +314,17 @@ describe('collectAttachedCodeEnvironmentAgentIds', () => {
     ];
 
     expect(collectAttachedCodeEnvironmentAgentIds(agents)).toEqual(
-      new Set(['attached-child', 'attached-member']),
+      new Set(['attached-child', 'attached-lazy', 'attached-member']),
     );
     expect(collectAttachedCodeEnvironmentPolicySettings(agents).get('attached-child')).toEqual({
       configSchema: undefined,
       settings: { permissions: { fileWrite: 'allow' } },
-      skillAuthoringAvailable: false,
+      skillAuthoringAvailable: true,
+    });
+    expect(collectAttachedCodeEnvironmentPolicySettings(agents).get('attached-lazy')).toEqual({
+      configSchema: undefined,
+      settings: undefined,
+      skillAuthoringAvailable: true,
     });
   });
 });

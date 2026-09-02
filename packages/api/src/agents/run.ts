@@ -438,6 +438,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   codeSessionKey?: string;
   /** Trusted Code API route selected during initialization. */
   codeExecutionContext?: CodeExecutionContext;
+  /** Whether this initialized agent can route skills/ writes to persistent skill storage. */
+  skillAuthoringAvailable?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -483,6 +485,7 @@ type LazySubagentAgent = Pick<
   | 'statefulCodeEnvironment'
   | 'codeExecutionContext'
   | 'codeSessionKey'
+  | 'skillAuthoringAvailable'
   | 'includeReasoningHistory'
   | 'mcpToolAliases'
 > & {
@@ -505,6 +508,7 @@ type SubagentTreeNode = Pick<
   | 'statefulCodeEnvironment'
   | 'codeExecutionContext'
   | 'codeSessionKey'
+  | 'skillAuthoringAvailable'
   | 'includeReasoningHistory'
   | 'mcpToolAliases'
 > & {
@@ -1956,6 +1960,7 @@ export async function createRun({
       attachedCodeEnvironmentSettings.set(resolvedAgent.id, {
         configSchema: resolvedAgent.codeExecutionContext.codeEnvironmentConfigSchema,
         settings: resolvedAgent.codeExecutionContext.codeEnvironmentSettings,
+        skillAuthoringAvailable: resolvedAgent.skillAuthoringAvailable === true,
       });
     }
     const discoveredAliases = collectRunMCPToolAliases([resolvedAgent]).filter(
