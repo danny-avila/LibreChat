@@ -73,18 +73,18 @@ import {
   BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
 } from './backgroundCompletion';
 import {
-  hasIntentArg,
-  stripIntentArg,
-  stripIntentLabelsFromToolDefinitions,
-  INTENT_ARG,
-} from './intent';
-import {
   isAbortError,
   logAxiosError,
   truncateMiddle,
   runOutsideTracing,
   getSafeErrorMetadata,
 } from '~/utils';
+import {
+  hasIntentArg,
+  stripIntentArg,
+  stripIntentLabelsFromToolDefinitions,
+  INTENT_ARG,
+} from './intent';
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { createSkillContentDigest } from './compatibility';
