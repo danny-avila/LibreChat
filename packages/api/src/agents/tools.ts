@@ -19,6 +19,7 @@ import { collectReachableAgents } from './traversal';
 
 export const CREATE_FILE_TOOL_NAME = 'create_file';
 export const EDIT_FILE_TOOL_NAME = 'edit_file';
+export const SEARCH_WORKSPACE_TOOL_NAME = 'search_workspace';
 export const HOST_FILE_AUTHORING_ARTIFACT_KEY = '__librechat_file_authoring';
 export const FILE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_FILE_TOOL_NAME,
@@ -29,7 +30,11 @@ export function isCodeSessionToolName(
   name: string,
   hostFileAuthoringToolNames?: ReadonlySet<string>,
 ): boolean {
-  return CODE_EXECUTION_TOOLS.has(name) || hostFileAuthoringToolNames?.has(name) === true;
+  return (
+    CODE_EXECUTION_TOOLS.has(name) ||
+    name === SEARCH_WORKSPACE_TOOL_NAME ||
+    hostFileAuthoringToolNames?.has(name) === true
+  );
 }
 
 interface ToolDefLike {
@@ -97,6 +102,7 @@ export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig)
     toolNames.add('read_file');
     toolNames.add(CREATE_FILE_TOOL_NAME);
     toolNames.add(EDIT_FILE_TOOL_NAME);
+    toolNames.add(SEARCH_WORKSPACE_TOOL_NAME);
   }
   if (config.memoryAvailable === true) {
     toolNames.add('set_memory');
@@ -470,6 +476,32 @@ function createAttachedWorkspaceReadFileDef(includeSkillFileInstructions: boolea
 const ATTACHED_CODE_READ_FILE_DEF = createAttachedWorkspaceReadFileDef(false);
 const ATTACHED_SKILL_READ_FILE_DEF = createAttachedWorkspaceReadFileDef(true);
 
+const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
+  name: SEARCH_WORKSPACE_TOOL_NAME,
+  description:
+    'Search for literal text within the attached worker workspace directory. Git is not required. Respects normal ignore files, does not follow symlinks, and returns bounded path, line, column, and text matches. Use path to limit the search to a relative file or directory.',
+  parameters: Object.freeze({
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Non-empty literal text to find. This is not a regular expression.',
+      },
+      path: {
+        type: 'string',
+        description: 'Optional relative file or directory within the attached workspace.',
+      },
+      max_results: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        description: 'Optional maximum number of matches to return. Defaults to 50.',
+      },
+    },
+    required: ['query'],
+  }) as LCTool['parameters'],
+}) as LCTool;
+
 const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
@@ -759,9 +791,10 @@ export function registerCodeExecutionTools(
   } = params;
 
   const readFileDef = buildReadFileDef(includeSkillFileInstructions, workspaceTools);
-  const candidates: LCTool[] = includeBash
+  const codeTools: LCTool[] = includeBash
     ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
     : [readFileDef];
+  const candidates = workspaceTools ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF] : codeTools;
   const toolNames = candidates.map((def) => def.name);
 
   const inputDefinitions = toolDefinitions ?? [];

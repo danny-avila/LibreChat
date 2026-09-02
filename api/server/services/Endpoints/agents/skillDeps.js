@@ -5,6 +5,7 @@ const {
   getSessionInfo,
   checkIfActive,
   readWorkspaceFile,
+  searchWorkspace,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,
@@ -382,6 +383,7 @@ const skillToolDeps = {
   getSkillFileByPath: deploymentSkillMethods.getSkillFileByPath,
   updateSkillFileContent: deploymentSkillMethods.updateSkillFileContent,
   readWorkspaceFile,
+  searchWorkspace,
   /**
    * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths
    * and for `{firstSegment}/...` paths whose first segment isn't a known

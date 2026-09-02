@@ -1711,6 +1711,47 @@ async function readWorkspaceFile({
 }
 
 /**
+ * Searches literal text within the workspace directory registered by an attached worker.
+ *
+ * @param {Object} params
+ * @param {string} params.query
+ * @param {string} params.workspace_id
+ * @param {string} [params.path]
+ * @param {number} params.max_results
+ * @param {string} params.codeApiBaseUrl
+ * @param {'default' | 'stateful'} params.executionProfile
+ * @param {string} [params.bridgeWorkerId]
+ * @param {ServerRequest} [params.req]
+ */
+async function searchWorkspace({
+  query,
+  workspace_id,
+  path,
+  max_results,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'search_text',
+      workspaceId: workspace_id,
+      query,
+      ...(path ? { path } : {}),
+      maxResults: max_results,
+    },
+  });
+}
+
+/**
  * Reads a small code artifact as base64 so `read_file` can surface it to
  * vision-capable models. Reuses bytes fetched by the current request's
  * artifact preflight when the requested path resolves to the exact returned
@@ -1977,6 +2018,7 @@ module.exports = {
   processCodeOutput,
   prepareCodeOutputForInspection,
   readWorkspaceFile,
+  searchWorkspace,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,
