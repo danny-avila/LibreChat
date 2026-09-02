@@ -310,41 +310,53 @@ describe('createToolExecuteHandler', () => {
   });
 
   describe('run cancellation', () => {
-    it('forwards the batch abort signal into foreground tool invocations', async () => {
-      const capturedSignals: (AbortSignal | undefined)[] = [];
-      const controller = new AbortController();
-      const tool = {
-        name: 'slow_tool',
-        invoke: jest.fn(async (_args: unknown, config: Record<string, unknown>) => {
-          capturedSignals.push(config.signal as AbortSignal | undefined);
-          await new Promise<void>((resolve, reject) => {
-            const signal = config.signal as AbortSignal | undefined;
-            if (signal == null) {
-              setTimeout(resolve, 50);
-              return;
-            }
-            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-          });
-          return { content: 'never' };
-        }),
+    /** Production aborts with no reason, yielding a DOMException named
+     *  `AbortError` — the shape every cancellation check downstream keys on. */
+    function abortingTool(name = 'slow_tool') {
+      return {
+        name,
+        invoke: jest.fn(
+          (_args: unknown, config: Record<string, unknown>) =>
+            new Promise((_resolve, reject) => {
+              const signal = config.signal as AbortSignal | undefined;
+              if (signal == null) {
+                setTimeout(() => reject(new Error('never aborted')), 50);
+                return;
+              }
+              signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            }),
+        ),
       };
+    }
+
+    function runBatch(
+      tool: { name: string; invoke: jest.Mock },
+      request: Partial<ToolExecuteBatchRequest>,
+      controller: AbortController,
+    ): Promise<ToolExecuteResult[]> {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [tool] as never[],
       }));
       const handler = createToolExecuteHandler({ loadTools });
-
-      const results = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
-        const request: ToolExecuteBatchRequest = {
-          toolCalls: [{ id: 'call-1', name: 'slow_tool', args: {} }] as ToolCallRequest[],
+      return new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [{ id: 'call-1', name: tool.name, args: {} }] as ToolCallRequest[],
           signal: controller.signal,
+          ...request,
           resolve,
           reject,
-        };
-        handler.handle('on_tool_execute', request);
-        setTimeout(() => controller.abort(new Error('Operation aborted by user')), 10);
+        } as ToolExecuteBatchRequest);
+        setTimeout(() => controller.abort(), 10);
       });
+    }
 
-      expect(capturedSignals[0]).toBe(controller.signal);
+    it('forwards the batch abort signal into foreground tool invocations', async () => {
+      const controller = new AbortController();
+      const tool = abortingTool();
+
+      const results = await runBatch(tool, {}, controller);
+
+      expect(tool.invoke.mock.calls[0][1].signal).toBe(controller.signal);
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe('error');
     });
@@ -352,31 +364,8 @@ describe('createToolExecuteHandler', () => {
     it('logs a cancelled tool call as debug rather than a tool error', async () => {
       const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
       const controller = new AbortController();
-      const tool = {
-        name: 'slow_tool',
-        invoke: jest.fn(
-          (_args: unknown, config: Record<string, unknown>) =>
-            new Promise((_resolve, reject) => {
-              const signal = config.signal as AbortSignal;
-              signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-            }),
-        ),
-      };
-      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
-        loadedTools: [tool] as never[],
-      }));
-      const handler = createToolExecuteHandler({ loadTools });
 
-      await new Promise<ToolExecuteResult[]>((resolve, reject) => {
-        const request: ToolExecuteBatchRequest = {
-          toolCalls: [{ id: 'call-1', name: 'slow_tool', args: {} }] as ToolCallRequest[],
-          signal: controller.signal,
-          resolve,
-          reject,
-        };
-        handler.handle('on_tool_execute', request);
-        setTimeout(() => controller.abort(new Error('Operation aborted by user')), 10);
-      });
+      await runBatch(abortingTool(), {}, controller);
 
       expect(
         errorSpy.mock.calls.filter(([message]) =>
@@ -386,9 +375,39 @@ describe('createToolExecuteHandler', () => {
     });
 
     /**
-     * An aborted run means the turn is over, not that this particular rejection
-     * was the cancellation — an unrelated failure can always race the Stop. The
-     * quiet-log branch must therefore never become a way around output filtering.
+     * An aborted run says the turn is over, not that this rejection was the
+     * cancellation. A genuine failure that lands in the same tick as the Stop
+     * must stay visible to operational logging.
+     */
+    it('keeps an unrelated failure racing the Stop at error level', async () => {
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const controller = new AbortController();
+      const tool = {
+        name: 'slow_tool',
+        invoke: jest.fn(
+          (_args: unknown, config: Record<string, unknown>) =>
+            new Promise((_resolve, reject) => {
+              const signal = config.signal as AbortSignal;
+              signal.addEventListener(
+                'abort',
+                () => reject(new Error('upstream 503 from the tool backend')),
+                { once: true },
+              );
+            }),
+        ),
+      };
+
+      await runBatch(tool, {}, controller);
+
+      expect(
+        errorSpy.mock.calls.filter(([message]) =>
+          String(message).includes('[ON_TOOL_EXECUTE] Tool slow_tool error'),
+        ),
+      ).toHaveLength(1);
+    });
+
+    /**
+     * The quiet-log branch must never double as a way around output filtering.
      */
     it('still filters a tool failure that rejects after the run was aborted', async () => {
       const protectedValue = 'PROTECTED-CANCELLED-TOOL-OUTPUT';
@@ -405,22 +424,12 @@ describe('createToolExecuteHandler', () => {
             }),
         ),
       };
-      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
-        loadedTools: [tool] as never[],
-      }));
-      const handler = createToolExecuteHandler({ loadTools });
 
-      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
-        const request: ToolExecuteBatchRequest = {
-          toolCalls: [{ id: 'call-1', name: 'slow_tool', args: {} }] as ToolCallRequest[],
-          configurable: { req: protectedToolOutputRequest() },
-          signal: controller.signal,
-          resolve,
-          reject,
-        };
-        handler.handle('on_tool_execute', request);
-        setTimeout(() => controller.abort(new Error('Operation aborted by user')), 10);
-      });
+      const [result] = await runBatch(
+        tool,
+        { configurable: { req: protectedToolOutputRequest() } },
+        controller,
+      );
 
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('content_filter_block');

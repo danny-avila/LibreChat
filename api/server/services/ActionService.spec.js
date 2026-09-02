@@ -315,6 +315,88 @@ describe('createActionTool OAuth events', () => {
   });
 });
 
+describe('createActionTool OAuth flow cancellation', () => {
+  /**
+   * `monitorFlow` deletes the flow key when a waiter's signal aborts. The
+   * authorization and refresh flows are keyed `userId:action_id`, so a second
+   * run for the same action joins the very same record and the browser's OAuth
+   * callback reads its metadata to exchange the code — one Stop must not strand
+   * either of them. Only the run-scoped login flow may carry the run signal.
+   */
+  it('withholds the run signal from flows shared beyond this run', async () => {
+    const preparedExecutor = {
+      setAuth: jest.fn().mockResolvedValue(undefined),
+      execute: jest.fn().mockResolvedValue({ data: { ok: true } }),
+    };
+    const requestBuilder = {
+      createExecutor: jest.fn(() => ({
+        setParams: jest.fn(() => preparedExecutor),
+      })),
+    };
+    mockFindToken.mockResolvedValue(null);
+    mockActionFlowManager.createFlowWithHandler.mockImplementation(
+      async (_flowId, _type, handler) => handler(),
+    );
+    mockActionFlowManager.createFlow.mockResolvedValue({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      expires_in: 3600,
+    });
+
+    const actionTool = await createActionTool({
+      userId: 'action-user',
+      res: {},
+      action: {
+        action_id: 'action-1',
+        metadata: {
+          domain: 'https://api.example.com',
+          oauth_client_id: 'client-id',
+          auth: {
+            type: 'oauth',
+            authorization_url: 'https://auth.example.com/authorize',
+            client_url: 'https://auth.example.com/token',
+            scope: 'read',
+          },
+        },
+      },
+      requestBuilder,
+      encrypted: {
+        oauth_client_id: 'encrypted-client-id',
+        oauth_client_secret: 'encrypted-client-secret',
+      },
+      streamId: 'action-oauth-stream',
+      jobCreatedAt: 1234,
+    });
+
+    const signal = new AbortController().signal;
+    await actionTool._call(
+      {},
+      {
+        signal,
+        metadata: { thread_id: 'thread-1', run_id: 'run-1' },
+        toolCall: {
+          id: 'tool-call-1',
+          stepId: 'step-1',
+          name: 'action-tool',
+          type: 'tool_call',
+        },
+      },
+    );
+
+    const [sharedFlowId, sharedType, , sharedSignal] =
+      mockActionFlowManager.createFlow.mock.calls[0];
+    expect(sharedFlowId).toBe('action-user:action-1');
+    expect(sharedType).toBe('oauth');
+    expect(sharedSignal).toBeUndefined();
+
+    const loginCall = mockActionFlowManager.createFlowWithHandler.mock.calls.find(
+      ([, type]) => type === 'oauth_login',
+    );
+    expect(loginCall[0]).toBe('action-user:action-1:oauth_login:thread-1:run-1');
+    expect(loginCall[3]).toBe(signal);
+  });
+});
+
 describe('validateAndUpdateTool', () => {
   const mockReq = { user: { id: 'user123' } };
 

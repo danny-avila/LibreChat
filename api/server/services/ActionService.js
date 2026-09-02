@@ -267,22 +267,24 @@ async function createActionTool({
                   config?.signal,
                 );
                 logger.debug('Waiting for OAuth Authorization response', { action_id, identifier });
-                const result = await flowManager.createFlow(
-                  identifier,
-                  'oauth',
-                  {
-                    state: stateToken,
-                    userId: userId,
-                    client_url: metadata.auth.client_url,
-                    redirect_uri: `${process.env.DOMAIN_SERVER}/api/actions/${action_id}/oauth/callback`,
-                    token_exchange_method: metadata.auth.token_exchange_method,
-                    allowedAddresses,
-                    /** Encrypted values */
-                    encrypted_oauth_client_id: encrypted.oauth_client_id,
-                    encrypted_oauth_client_secret: encrypted.oauth_client_secret,
-                  },
-                  config?.signal,
-                );
+                /** Deliberately unsignalled. This key is `userId:action_id`, so a
+                 *  second run for the same action joins this very flow, and the
+                 *  browser's OAuth callback reads its metadata to exchange the
+                 *  code. `monitorFlow` deletes the key when a waiter's signal
+                 *  aborts, so forwarding the run signal here would let one Stop
+                 *  strand the other run and discard an authorization the user
+                 *  already granted. Run-scoped flows below still take it. */
+                const result = await flowManager.createFlow(identifier, 'oauth', {
+                  state: stateToken,
+                  userId: userId,
+                  client_url: metadata.auth.client_url,
+                  redirect_uri: `${process.env.DOMAIN_SERVER}/api/actions/${action_id}/oauth/callback`,
+                  token_exchange_method: metadata.auth.token_exchange_method,
+                  allowedAddresses,
+                  /** Encrypted values */
+                  encrypted_oauth_client_id: encrypted.oauth_client_id,
+                  encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                });
                 logger.debug('Received OAuth Authorization response', { action_id, identifier });
                 data.delta.auth = undefined;
                 data.delta.expires_at = undefined;
@@ -351,11 +353,12 @@ async function createActionTool({
                   );
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
                 const flowManager = getActionFlowStateManager(flowsCache);
+                /** Also shared across this user's runs for the action; see the
+                 *  authorization flow above for why it stays unsignalled. */
                 const refreshData = await flowManager.createFlowWithHandler(
                   `${identifier}:refresh`,
                   'oauth_refresh',
                   refreshTokens,
-                  config?.signal,
                 );
                 metadata.oauth_access_token = refreshData.access_token;
                 if (refreshData.refresh_token) {

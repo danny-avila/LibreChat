@@ -40,6 +40,7 @@ const {
   containsGraphTokenPlaceholder,
   createAuthIdentityContext,
   isOAuthServer,
+  isAbortError,
   OpenIDReauthRequiredError,
 } = require('@librechat/api');
 const {
@@ -1308,10 +1309,12 @@ function createToolInstance({
       }
       return result;
     } catch (error) {
-      /** A user Stop aborts every in-flight call at once. The rejection that
-       *  follows is the cancellation working, so it must not reach error-level
-       *  operational alerts; the wrapping below still reports it to the turn. */
-      if (config?.signal?.aborted === true) {
+      /** A user Stop aborts every in-flight call at once, and that rejection is
+       *  the cancellation working, so it must not reach error-level operational
+       *  alerts; the wrapping below still reports it to the turn. The error has
+       *  to look like an abort as well: a permission, OAuth, or upstream failure
+       *  can reject in the same tick as the Stop and must stay visible. */
+      if (config?.signal?.aborted === true && isAbortError(error)) {
         logger.debug(
           `[MCP][${serverName}][${toolName}][User: ${userId}] Tool call cancelled by user abort`,
         );

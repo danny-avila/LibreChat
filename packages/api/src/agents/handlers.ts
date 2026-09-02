@@ -78,7 +78,13 @@ import {
   stripIntentLabelsFromToolDefinitions,
   INTENT_ARG,
 } from './intent';
-import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import {
+  isAbortError,
+  logAxiosError,
+  truncateMiddle,
+  runOutsideTracing,
+  getSafeErrorMetadata,
+} from '~/utils';
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { createSkillContentDigest } from './compatibility';
@@ -5998,12 +6004,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     const { message, logContext } = getSafeToolError(toolError);
                     /** A user Stop rejects every in-flight call at once. That is
                      *  the abort working, not a fault, so it is logged at debug.
-                     *  It only ever changes the log level: an aborted run says
-                     *  the turn is over, not that this particular rejection was
-                     *  the cancellation, so an unrelated failure racing the Stop
-                     *  must still take the same filtering and result path. */
+                     *  An aborted run says the turn is over, not that THIS
+                     *  rejection was the cancellation, so the error must look
+                     *  like one too; an unrelated failure racing the Stop stays
+                     *  at error level. Either way the level is all that changes
+                     *  — filtering and the result shape are identical. */
                     const logToolFailure = (context: Record<string, unknown>): void => {
-                      if (runSignal?.aborted === true) {
+                      if (runSignal?.aborted === true && isAbortError(toolError)) {
                         logger.debug(
                           `[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`,
                           context,

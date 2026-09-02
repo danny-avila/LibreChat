@@ -4,6 +4,7 @@ const {
   isEnabled,
   sendEvent,
   countTokens,
+  isAbortError,
   GenerationJobManager,
   recordCollectedUsage,
   getTransactionsConfig,
@@ -15,36 +16,6 @@ const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
 const { abortRun } = require('./abortRun');
 const db = require('~/models');
-
-/**
- * @param {Error | unknown} error
- * @returns {boolean}
- */
-const isAbortError = (error) => {
-  const visited = new Set();
-  let current = error;
-
-  while (current && typeof current === 'object' && !visited.has(current)) {
-    visited.add(current);
-
-    const errorName = current.name;
-    const errorCode = current.code;
-    const errorMessage = typeof current.message === 'string' ? current.message : '';
-
-    if (
-      errorName === 'AbortError' ||
-      errorCode === 'ABORT_ERR' ||
-      errorMessage.includes('AbortError') ||
-      /(?:operation|request|stream) was aborted/i.test(errorMessage)
-    ) {
-      return true;
-    }
-
-    current = current.cause;
-  }
-
-  return false;
-};
 
 /**
  * Spend tokens for all models from collected usage.
