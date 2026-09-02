@@ -741,6 +741,28 @@ describe('useReplyWatcher', () => {
 
     await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
   });
+
+  it('refreshes the list on a slow tick while the tab stays focused', async () => {
+    /* A schedule or another device can finish a run this tab never streamed and never saw as
+       an active job; while the user sits here, nothing else would ask. */
+    (document.hasFocus as jest.Mock).mockReturnValue(true);
+    const { queryClient } = setup({ badge: true });
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      jest.advanceTimersByTime(60_000);
+    });
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(mockListConversations).not.toHaveBeenCalled();
+
+    await act(async () => {
+      jest.advanceTimersByTime(5 * 60_000);
+    });
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
+    /* The away poll stays away-only: a focused tab never issues its own list request. */
+    expect(mockListConversations).not.toHaveBeenCalled();
+  });
 });
 
 function updateCachedTimestamps(queryClient: QueryClient) {
