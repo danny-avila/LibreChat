@@ -814,6 +814,48 @@ describe('preempt wake channel', () => {
     expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
   });
 
+  /**
+   * Requests are level-triggered, so an arm that landed before the run
+   * installed its listener has no callback to notify — and on a silent or
+   * reasoning-only turn no later chunk poll may ever run, which is the exact
+   * stall this channel removes.
+   */
+  it('replays an arm that landed before the run subscribed', async () => {
+    const streamId = `preempt-wake-replay-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    await GenerationJobManager.requestPreempt(streamId, 's1', job.createdAt);
+
+    const wake = jest.fn();
+    GenerationJobManager.subscribePreempt(streamId, wake, job.createdAt);
+
+    expect(wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replay to a run that already looked', async () => {
+    const streamId = `preempt-wake-replay-once-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const first = jest.fn();
+    GenerationJobManager.subscribePreempt(streamId, first, job.createdAt);
+    await GenerationJobManager.requestPreempt(streamId, 's1', job.createdAt);
+    expect(first).toHaveBeenCalledTimes(1);
+
+    const second = jest.fn();
+    GenerationJobManager.subscribePreempt(streamId, second, job.createdAt);
+
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replay when nothing is armed', async () => {
+    const streamId = `preempt-wake-no-replay-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const wake = jest.fn();
+
+    GenerationJobManager.subscribePreempt(streamId, wake, job.createdAt);
+
+    expect(wake).not.toHaveBeenCalled();
+  });
+
   it('stops waking once the run unsubscribes', async () => {
     const streamId = `preempt-wake-unsub-${Date.now()}`;
     const job = await GenerationJobManager.createJob(streamId, 'user-1');

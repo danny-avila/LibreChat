@@ -1346,6 +1346,14 @@ class GenerationJobManagerClass {
    * itself to a replaced generation must not be woken by the replacement's
    * arms. A mismatch yields an inert unsubscribe rather than throwing, so the
    * run still starts — it simply falls back to the per-chunk poll.
+   *
+   * An arm that ALREADY happened is replayed on registration. Requests are
+   * level-triggered, and the window between a job becoming steerable and the
+   * SDK installing its listener is real: an interrupt landing there would be
+   * recorded with no callbacks to notify, and on a silent or reasoning-only
+   * turn no later chunk poll may ever run — the exact stall this channel
+   * exists to remove. The replay makes the host correct on its own terms
+   * rather than resting on when the SDK first reads the flag.
    */
   subscribePreempt(streamId: string, wake: () => void, jobCreatedAt?: number): () => void {
     const runtime = this.runtimeState.get(streamId);
@@ -1356,6 +1364,12 @@ class GenerationJobManagerClass {
     state.wakes ??= new Set();
     const wakes = state.wakes;
     wakes.add(wake);
+    if (state.ids.size > 0) {
+      /** Only the new listener, and only after it is registered: waking the
+       *  whole set would re-notify runs that already looked, and waking before
+       *  registration would leave a concurrent arm with nowhere to land. */
+      this.notePreemptArmed({ ...state, wakes: new Set([wake]) });
+    }
     return () => {
       wakes.delete(wake);
     };
