@@ -2,8 +2,8 @@ import { useRef, useCallback, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
+import { getRenderedContentMaxScrollTop, reconcileMessageContentLayout } from './messageLayout';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
-import { reconcileMessageContentLayout } from './messageLayout';
 import useScrollToRef from '~/hooks/useScrollToRef';
 import { autoScrollAtom } from '~/store/autoScroll';
 
@@ -59,7 +59,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     if (!scrollEl) {
       return true;
     }
-    const distance = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+    const distance = getRenderedContentMaxScrollTop(scrollEl) - scrollEl.scrollTop;
     return distance <= resizeFollowThreshold;
   }, []);
 
@@ -81,7 +81,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     if (!scrollEl) {
       return 0;
     }
-    return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+    return getRenderedContentMaxScrollTop(scrollEl) - scrollEl.scrollTop;
   }, []);
 
   /** Direction is judged against the last sample, so anything that moves the thread
@@ -103,6 +103,10 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     if (!scrollEl) {
       return;
     }
+    /** Exact-height projections can briefly leave the native scroll range
+     *  beyond the rendered column. Clamp reader gestures before interpreting
+     *  their direction so the blank range is never treated as the bottom. */
+    reconcileMessageContentLayout(scrollEl);
 
     /** Direction comes from where the thread actually moved, which covers the
      *  wheel, a trackpad and a dragged scrollbar alike. */
@@ -180,7 +184,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     if (!scrollEl) {
       return;
     }
-    const target = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    const target = getRenderedContentMaxScrollTop(scrollEl);
     if (Math.abs(scrollEl.scrollTop - target) < 1) {
       return;
     }
@@ -220,7 +224,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       /** Following stands down for the whole trip, so anything that streamed in
        *  meanwhile moved the bottom past the target this glide aimed at. Close that
        *  gap on arrival, or a short answer settles a few lines short of its end. */
-      const settled = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      const settled = getRenderedContentMaxScrollTop(scrollEl);
       if (Math.abs(scrollEl.scrollTop - settled) >= 1) {
         scrollEl.scrollTop = settled;
       }
@@ -237,7 +241,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return false;
     }
 
-    const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    const maxScrollTop = getRenderedContentMaxScrollTop(scrollEl);
     if (scrollEl.scrollTop <= maxScrollTop) {
       return false;
     }

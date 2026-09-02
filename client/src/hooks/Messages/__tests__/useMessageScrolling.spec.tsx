@@ -31,6 +31,7 @@ jest.mock('~/hooks/useScrollToRef', () => ({
 }));
 
 jest.mock('../messageLayout', () => ({
+  ...jest.requireActual('../messageLayout'),
   reconcileMessageContentLayout: jest.fn(),
 }));
 
@@ -214,6 +215,33 @@ describe('useMessageScrolling resize reconciliation', () => {
      *  scrollIntoView helper, so an answer arriving a few pixels at a time flows
      *  instead of lurching once every throttle window. */
     expect(scrollable.scrollTop).toBe(800);
+  });
+
+  it('follows the rendered message bottom when the native scroll range is oversized', () => {
+    renderScrolling();
+
+    const scrollable = screen.getByTestId('scrollable');
+    const content = screen.getByTestId('content');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 100;
+    setRect(scrollable, { top: 0, bottom: 200, height: 200 });
+    setRect(content, { top: -100, bottom: 400, height: 500 });
+
+    act(() => {
+      MockResizeObserver.last()?.trigger();
+    });
+
+    expect(scrollable.scrollTop).toBe(300);
+  });
+
+  it('reconciles an oversized native scroll range during reader scrolling', () => {
+    renderScrolling();
+
+    const scrollable = screen.getByTestId('scrollable');
+    fireEvent.scroll(scrollable);
+
+    expect(mockReconcileMessageContentLayout).toHaveBeenCalledWith(scrollable);
   });
 
   it('reconciles message layout after an explicit scroll to bottom', () => {
@@ -564,7 +592,7 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(scrollable.scrollTop).toBe(1200);
   });
 
-  it('does not clamp to rendered content bottom during general resize reconciliation', () => {
+  it('clamps to the rendered content bottom during general resize reconciliation', () => {
     renderScrolling();
 
     const scrollable = screen.getByTestId('scrollable');
@@ -572,8 +600,8 @@ describe('useMessageScrolling resize reconciliation', () => {
     Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
     Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
 
-    /** Move away from the end so the reader is left alone, which is the state this
-     *  is about: reconciliation must not drag them to the rendered content bottom. */
+    /** Simulate a stale native scroll extent that leaves the viewport entirely
+     *  below the rendered message column. */
     scrollable.scrollTop = 900;
     fireEvent.scroll(scrollable);
     scrollable.scrollTop = 700;
@@ -586,7 +614,7 @@ describe('useMessageScrolling resize reconciliation', () => {
       MockResizeObserver.last()?.trigger();
     });
 
-    expect(scrollable.scrollTop).toBe(700);
+    expect(scrollable.scrollTop).toBe(300);
     expect(mockScrollToBottom).not.toHaveBeenCalled();
   });
 });
