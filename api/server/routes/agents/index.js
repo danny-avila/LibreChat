@@ -794,6 +794,10 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                 jobData.userSubmittedMessageFieldPaths.length > 0 && {
                   userSubmittedMessageFieldPaths: jobData.userSubmittedMessageFieldPaths,
                 }),
+              /** The run published its compact context meta onto the job ahead
+               * of each model call; the stopped response must carry it so the
+               * next turn seeds the same tiers. */
+              ...(jobData.contextMeta != null && { contextMeta: jobData.contextMeta }),
               user: userId,
             };
 

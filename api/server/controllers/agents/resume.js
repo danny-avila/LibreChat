@@ -500,11 +500,12 @@ async function finalizeResumedTurn({
   if (Object.keys(responseMetadata).length > 0) {
     responseMessage.metadata = responseMetadata;
   }
-  // Carry the resumed run's context-window calibration (BaseClient.sendMessage persists
-  // this on the response). Without it, the NEXT turn can't seed its pruner from this
-  // run and falls back to uncalibrated token accounting.
-  if (client?.contextMeta != null) {
-    responseMessage.contextMeta = client.contextMeta;
+  // Carry the resumed run's compact context meta (calibration and fading tiers), as
+  // BaseClient.sendMessage persists it on the response. Without it, the NEXT turn can't
+  // seed its pruner from this run. A neutral finish unsets what the paused segment
+  // stored on this row, since an omitted field would otherwise survive the save.
+  if (client != null) {
+    responseMessage.contextMeta = client.contextMeta ?? null;
   }
 
   // Win terminal ownership BEFORE the outcome-defining response write. Stop

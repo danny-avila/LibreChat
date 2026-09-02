@@ -3227,6 +3227,34 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
     });
 
+    it('unsets the paused row context meta when the resumed run completes neutrally', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            contextMeta: {
+              calibrationRatio: 1.2,
+              encoding: 'claude',
+              fading: { v: 1, budgetTokens: 50_000, masked: true },
+            },
+          },
+        }),
+      );
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ contextMeta: undefined }),
+        userMCPAuthMap: {},
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ contextMeta: null }),
+        expect.objectContaining({ context: expect.stringContaining('resumed response end') }),
+      );
+    });
+
     it('carries manualSkills/alwaysAppliedSkills onto the resumed requestMessage', async () => {
       const job = makeToolApprovalJob();
       job.metadata.userMessage.manualSkills = ['skill-a'];
