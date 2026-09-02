@@ -156,12 +156,36 @@ describe('handleCompactRequest', () => {
     expect(deps.saveConvo).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user_1',
-        isTemporary: false,
+        isTemporary: undefined,
         interfaceConfig: {},
       }),
       expect.objectContaining({ conversationId: 'convo_1' }),
       expect.objectContaining({ appendMessageIds: ['summary_record_1'] }),
     );
+  });
+
+  it('keeps the expiring retention when the flag is omitted', async () => {
+    /** The branch's own rows prove the conversation is temporary even though
+     *  this client omitted the flag: an explicit false would promote an
+     *  expiring chat and its new summary to retained data. */
+    const branch = BRANCH.map((message, i) =>
+      i === 0 ? { ...message, expiredAt: new Date('2030-01-01') } : message,
+    ) as TMessage[];
+    const deps = makeDeps({
+      getMessages: jest.fn(async (filter) => (filter.parentMessageId != null ? [] : branch)),
+    });
+
+    const body = makeReq();
+    delete (body.body as Record<string, unknown>).isTemporary;
+    const result = await handleCompactRequest({ req: body, res }, deps);
+
+    expect(result.status).toBe(201);
+    const ctx = (deps.saveMessage as jest.Mock).mock.calls[0][0];
+    expect(ctx.isTemporary).toBe(true);
+    const convoArgs = (deps.saveConvo as jest.Mock).mock.calls[0][1];
+    expect(convoArgs).toMatchObject({ conversationId: 'convo_1' });
+    const convoCtx = (deps.saveConvo as jest.Mock).mock.calls[0][0];
+    expect(convoCtx.isTemporary).toBe(true);
   });
 
   it('refuses an Assistants conversation instead of failing inside model resolution', async () => {
