@@ -302,6 +302,7 @@ function compilePlans(plans: readonly FilterCompilationPlan[]): readonly Compile
 }
 
 function createInspector(rules: readonly CompiledFilter[]): ConfiguredContentInspector {
+  const hasAuditRules = rules.some((rule) => rule.action === 'audit');
   const rulesBySource = new Map<ContentSource, Array<readonly [number, CompiledFilter]>>();
   for (let ruleIndex = 0; ruleIndex < rules.length; ruleIndex++) {
     const rule = rules[ruleIndex];
@@ -323,6 +324,7 @@ function createInspector(rules: readonly CompiledFilter[]): ConfiguredContentIns
     if (sourceRules == null) {
       return null;
     }
+    let firstBlockingFinding: ProtectionFinding | null = null;
     for (const [ruleIndex, rule] of sourceRules) {
       if (rule.fields != null && !rule.fields.has(fragment.field)) {
         continue;
@@ -344,7 +346,7 @@ function createInspector(rules: readonly CompiledFilter[]): ConfiguredContentIns
           detectorId: rule.detectorId,
         };
         if (rule.action === 'audit') {
-          logger.info('[content-filter] Audit-only finding', {
+          const auditMetadata = {
             action: rule.action,
             detectorId: configuredFinding.detectorId,
             ruleId: configuredFinding.ruleId,
@@ -352,25 +354,34 @@ function createInspector(rules: readonly CompiledFilter[]): ConfiguredContentIns
             source: configuredFinding.source,
             field: configuredFinding.field,
             provenance: configuredFinding.provenance,
-          });
+          };
+          logger.info(
+            `[content-filter] Audit-only finding ${JSON.stringify(auditMetadata)}`,
+            auditMetadata,
+          );
           continue;
         }
-        return configuredFinding;
+        firstBlockingFinding ??= configuredFinding;
+        if (!hasAuditRules) {
+          return firstBlockingFinding;
+        }
       }
     }
-    return null;
+    return firstBlockingFinding;
   };
   const inspect = (
     fragments: Iterable<TextContentFragment>,
     inspectedTextByRule: Array<Set<string> | undefined>,
   ): ProtectionFinding | null => {
+    let firstBlockingFinding: ProtectionFinding | null = null;
     for (const fragment of fragments) {
       const finding = inspectFragment(fragment, inspectedTextByRule);
-      if (finding != null) {
-        return finding;
+      firstBlockingFinding ??= finding;
+      if (firstBlockingFinding != null && !hasAuditRules) {
+        break;
       }
     }
-    return null;
+    return firstBlockingFinding;
   };
   const createSession = (): ConfiguredContentInspectionSession => {
     const inspectedTextByRule: Array<Set<string> | undefined> = new Array(rules.length);

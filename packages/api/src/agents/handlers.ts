@@ -55,6 +55,7 @@ import {
   getBlockedUninspectableFileField,
   inspectContent,
   isContentTraversalLimitError,
+  isContentTraversalProtected,
 } from '~/protection';
 import {
   CREATE_FILE_TOOL_NAME,
@@ -872,10 +873,13 @@ function filteredToolArgumentsResult(
     if (!isContentTraversalLimitError(error)) {
       throw error;
     }
-    return (
-      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
-      errorResult(tc, error.body.message)
-    );
+    const filtered = filteredContentResult(tc, req, getContentTraversalFragments(error));
+    if (filtered != null) {
+      return filtered;
+    }
+    return isContentTraversalProtected({ error, filters: req?.config?.filters })
+      ? errorResult(tc, error.body.message)
+      : null;
   }
 }
 
@@ -923,10 +927,13 @@ function filteredToolOutputResult(
     if (!isContentTraversalLimitError(error)) {
       throw error;
     }
-    return (
-      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
-      errorResult(tc, error.body.message)
-    );
+    const filtered = filteredContentResult(tc, req, getContentTraversalFragments(error));
+    if (filtered != null) {
+      return filtered;
+    }
+    return isContentTraversalProtected({ error, filters: req?.config?.filters })
+      ? errorResult(tc, error.body.message)
+      : null;
   }
 }
 
@@ -971,7 +978,7 @@ function isFilteredSkillProjection(
     return filteredSkillResult(tc, req, input) != null;
   } catch (error) {
     if (isContentTraversalLimitError(error)) {
-      return true;
+      return isContentTraversalProtected({ error, filters: req?.config?.filters });
     }
     throw error;
   }

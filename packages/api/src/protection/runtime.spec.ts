@@ -172,7 +172,7 @@ describe('configured content inspection', () => {
     const secret = 'ORG-DO-NOT-ECHO';
 
     expect(inspectContent([fragment('message', 'text', secret)], { filters })).toBeNull();
-    expect(logger.info).toHaveBeenCalledWith('[content-filter] Audit-only finding', {
+    const metadata = {
       action: 'audit',
       detectorId: 'pii-pattern',
       ruleId: 'org-token',
@@ -180,7 +180,11 @@ describe('configured content inspection', () => {
       source: 'message',
       field: 'text',
       provenance: 'user',
-    });
+    };
+    expect(logger.info).toHaveBeenCalledWith(
+      `[content-filter] Audit-only finding ${JSON.stringify(metadata)}`,
+      metadata,
+    );
     const calls = (logger.info as jest.Mock).mock.calls;
     expect(JSON.stringify(calls[calls.length - 1])).not.toContain(secret);
   });
@@ -207,6 +211,33 @@ describe('configured content inspection', () => {
         filters,
       }),
     ).toMatchObject({ source: 'prompt', field: 'instructions' });
+  });
+
+  it('records audit findings even when an earlier legacy rule blocks the same fragment', () => {
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          action: 'audit',
+          starterPatterns: [],
+          customPatterns: [BLOCK_PATTERN],
+        },
+      },
+    };
+    const legacyPii: MessageFilterPiiConfig = {
+      starterPatterns: [],
+      customPatterns: [BLOCK_PATTERN],
+    };
+
+    expect(
+      inspectContent([{ ...fragment('message', 'text'), id: 'chat.text' }], {
+        filters,
+        legacyPii,
+      }),
+    ).toMatchObject({ ruleId: 'org-token' });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('"action":"audit"'),
+      expect.objectContaining({ action: 'audit', ruleId: 'org-token' }),
+    );
   });
 
   it('does not fail closed on incomplete audit-only traversal', () => {
