@@ -2303,6 +2303,57 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(docsWithMissingIndex).toBe(1);
     });
 
+    test('syncWithMeili reindexes older projections but never downgrades newer ones', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches.mockClear();
+
+      const futureId = new mongoose.Types.ObjectId();
+      const staleId = new mongoose.Types.ObjectId();
+      await conversationModel.collection.insertMany([
+        {
+          conversationId: futureId,
+          user: new mongoose.Types.ObjectId(),
+          title: 'Newer projection',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: true,
+          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION + 1,
+        },
+        {
+          conversationId: staleId,
+          user: new mongoose.Types.ObjectId(),
+          title: 'Stale projection',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          _meiliIndex: true,
+          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION - 1,
+        },
+      ]);
+
+      await conversationModel.syncWithMeili();
+
+      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+
+      const [futureDoc, staleDoc] = await Promise.all([
+        conversationModel.collection.findOne({ conversationId: futureId }),
+        conversationModel.collection.findOne({ conversationId: staleId }),
+      ]);
+
+      // Newer-stamped projection is left alone, not re-indexed nor downgraded.
+      expect(futureDoc?._meiliIndexSchemaVersion).toBe(MEILI_INDEX_SCHEMA_VERSION + 1);
+      expect(futureDoc?._meiliIndex).toBe(true);
+      expect(mockAddDocumentsInBatches).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ conversationId: futureId })]),
+      );
+
+      // Strictly older projection is re-indexed and stamped forward to the local version.
+      expect(staleDoc?._meiliIndexSchemaVersion).toBe(MEILI_INDEX_SCHEMA_VERSION);
+      expect(staleDoc?._meiliIndex).toBe(true);
+    });
+
     test('getSyncProgress counts documents with missing _meiliIndex as not indexed', async () => {
       const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
       await messageModel.deleteMany({});

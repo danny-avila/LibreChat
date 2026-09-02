@@ -391,8 +391,9 @@ const createMeiliMongooseModel = ({
             $set: {
               _meiliIndex: true,
               _meiliCleanupVersion: meiliCleanupVersion,
-              _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
             },
+            /** Monotonic: never stamp a document back to an older projection version. */
+            $max: { _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION },
           },
         );
         if (acknowledgement.matchedCount > 0) {
@@ -435,7 +436,8 @@ const createMeiliMongooseModel = ({
               { _meiliIndex: { $ne: true }, _meiliIndexAttempted: true },
               {
                 _meiliIndex: true,
-                _meiliIndexSchemaVersion: { $ne: MEILI_INDEX_SCHEMA_VERSION },
+                /** Monotonic: only strictly older projections are stale; newer ones are already current. */
+                _meiliIndexSchemaVersion: { $not: { $gte: MEILI_INDEX_SCHEMA_VERSION } },
               },
             ],
           },
@@ -448,7 +450,7 @@ const createMeiliMongooseModel = ({
             indexableQuery,
             {
               _meiliIndex: true,
-              _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+              _meiliIndexSchemaVersion: { $gte: MEILI_INDEX_SCHEMA_VERSION },
             },
           ],
         }),
@@ -509,7 +511,8 @@ const createMeiliMongooseModel = ({
                 { _meiliIndex: { $ne: true } },
                 {
                   _meiliIndex: true,
-                  _meiliIndexSchemaVersion: { $ne: MEILI_INDEX_SCHEMA_VERSION },
+                  /** Monotonic: reindex only strictly older projections; never downgrade newer ones. */
+                  _meiliIndexSchemaVersion: { $not: { $gte: MEILI_INDEX_SCHEMA_VERSION } },
                 },
               ],
             },
@@ -590,8 +593,9 @@ const createMeiliMongooseModel = ({
             $set: {
               _meiliIndex: true,
               _meiliCleanupVersion: meiliCleanupVersion,
-              _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
             },
+            /** Monotonic: never stamp a document back to an older projection version. */
+            $max: { _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION },
           },
           { timestamps: false },
         );
