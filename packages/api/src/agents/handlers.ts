@@ -23,7 +23,11 @@ import type {
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
-import type { WorkspaceReadResult, WorkspaceSearchResult } from '~/code/workspace';
+import type {
+  WorkspaceListResult,
+  WorkspaceReadResult,
+  WorkspaceSearchResult,
+} from '~/code/workspace';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
@@ -63,6 +67,7 @@ import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
+  LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
   isCodeSessionToolName,
 } from './tools';
@@ -468,6 +473,17 @@ export interface ToolExecuteOptions {
     req?: ServerRequest;
     signal?: AbortSignal;
   }) => Promise<WorkspaceSearchResult>;
+  /** Lists relative file paths within an attached worker's logical workspace. */
+  listWorkspaceFiles?: (params: {
+    workspace_id: string;
+    path?: string;
+    max_results: number;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceListResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
    * sandbox `/exec` endpoint. The host implementation supplies the
@@ -2376,6 +2392,74 @@ async function handleWorkspaceSearchCall(
       getSafeErrorMetadata(error),
     );
     return errorResult(tc, 'The attached workspace could not be searched.');
+  }
+}
+
+async function handleWorkspaceListCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown> | undefined,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+  signal?: AbortSignal,
+): Promise<ToolExecuteResult> {
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable ?? {});
+  if (
+    mergedConfigurable?.codeEnvAvailable !== true ||
+    codeExecutionContext?.environmentType !== 'attached'
+  ) {
+    return errorResult(tc, 'list_workspace_files requires an attached code environment.');
+  }
+  if (!options.listWorkspaceFiles) {
+    return errorResult(tc, 'Attached workspace file listing is not configured.');
+  }
+
+  const args = tc.args as { path?: unknown; max_results?: unknown };
+  const maxResults = args.max_results ?? 100;
+  if (
+    (args.path != null && typeof args.path !== 'string') ||
+    !Number.isSafeInteger(maxResults) ||
+    Number(maxResults) < 1 ||
+    Number(maxResults) > 500
+  ) {
+    return errorResult(tc, 'path or max_results is invalid for workspace file listing.');
+  }
+
+  try {
+    const result = await options.listWorkspaceFiles({
+      workspace_id: 'primary',
+      ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
+      max_results: Number(maxResults),
+      codeApiBaseUrl: codeExecutionContext.baseUrl,
+      executionProfile: codeExecutionContext.executionProfile,
+      ...(codeExecutionContext.bridgeWorkerId
+        ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
+        : {}),
+      ...(req ? { req } : {}),
+      ...(signal ? { signal } : {}),
+    });
+
+    for (const path of result.paths) {
+      const filtered = filteredFileNameResult(tc, req, path);
+      if (filtered != null) return filtered;
+    }
+    const content =
+      result.paths.length === 0
+        ? 'The attached workspace contains no discoverable files in that path.'
+        : result.paths.map((path) => `workspace/${path}`).join('\n');
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: result.truncated
+        ? `${content}\n\n[results truncated; narrow path and list again]`
+        : content,
+    };
+  } catch (error) {
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn(
+      '[handleWorkspaceListCall] Attached workspace file listing failed',
+      getSafeErrorMetadata(error),
+    );
+    return errorResult(tc, 'The attached workspace files could not be listed.');
   }
 }
 
@@ -5864,6 +5948,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||
                     tc.name === SEARCH_WORKSPACE_TOOL_NAME ||
+                    tc.name === LIST_WORKSPACE_FILES_TOOL_NAME ||
                     isFileAuthoringCall
                   ) {
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
@@ -5894,6 +5979,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         );
                       } else if (tc.name === SEARCH_WORKSPACE_TOOL_NAME) {
                         handlerResult = await handleWorkspaceSearchCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                          runSignal,
+                        );
+                      } else if (tc.name === LIST_WORKSPACE_FILES_TOOL_NAME) {
+                        handlerResult = await handleWorkspaceListCall(
                           tc,
                           mergedConfigurable,
                           options,

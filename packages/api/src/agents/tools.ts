@@ -20,6 +20,7 @@ import { collectReachableAgents } from './traversal';
 export const CREATE_FILE_TOOL_NAME = 'create_file';
 export const EDIT_FILE_TOOL_NAME = 'edit_file';
 export const SEARCH_WORKSPACE_TOOL_NAME = 'search_workspace';
+export const LIST_WORKSPACE_FILES_TOOL_NAME = 'list_workspace_files';
 export const HOST_FILE_AUTHORING_ARTIFACT_KEY = '__librechat_file_authoring';
 export const FILE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_FILE_TOOL_NAME,
@@ -33,6 +34,7 @@ export function isCodeSessionToolName(
   return (
     CODE_EXECUTION_TOOLS.has(name) ||
     name === SEARCH_WORKSPACE_TOOL_NAME ||
+    name === LIST_WORKSPACE_FILES_TOOL_NAME ||
     hostFileAuthoringToolNames?.has(name) === true
   );
 }
@@ -103,6 +105,7 @@ export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig)
     toolNames.add(CREATE_FILE_TOOL_NAME);
     toolNames.add(EDIT_FILE_TOOL_NAME);
     toolNames.add(SEARCH_WORKSPACE_TOOL_NAME);
+    toolNames.add(LIST_WORKSPACE_FILES_TOOL_NAME);
   }
   if (config.memoryAvailable === true) {
     toolNames.add('set_memory');
@@ -502,6 +505,27 @@ const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
   }) as LCTool['parameters'],
 }) as LCTool;
 
+const LIST_WORKSPACE_FILES_TOOL_DEF: LCTool = Object.freeze({
+  name: LIST_WORKSPACE_FILES_TOOL_NAME,
+  description:
+    'List relative file paths in the attached worker workspace directory. Use this to discover files in an existing project, Git repository, or empty directory before reading or searching them. Respects normal ignore files, does not follow symlinks, and returns a bounded deterministic listing.',
+  parameters: Object.freeze({
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'Optional relative file or directory within the attached workspace.',
+      },
+      max_results: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 500,
+        description: 'Optional maximum number of relative file paths to return. Defaults to 100.',
+      },
+    },
+  }) as LCTool['parameters'],
+}) as LCTool;
+
 const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
@@ -794,7 +818,9 @@ export function registerCodeExecutionTools(
   const codeTools: LCTool[] = includeBash
     ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
     : [readFileDef];
-  const candidates = workspaceTools ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF] : codeTools;
+  const candidates = workspaceTools
+    ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF, LIST_WORKSPACE_FILES_TOOL_DEF]
+    : codeTools;
   const toolNames = candidates.map((def) => def.name);
 
   const inputDefinitions = toolDefinitions ?? [];

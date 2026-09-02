@@ -7,6 +7,7 @@ const mockResolveRequestTenantId = jest.fn();
 const mockCreateDeploymentSkillMethods = jest.fn((methods) => methods);
 const mockReadWorkspaceFile = jest.fn();
 const mockSearchWorkspace = jest.fn();
+const mockListWorkspaceFiles = jest.fn();
 
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: (...args) => mockGetStrategyFunctions(...args),
@@ -22,6 +23,7 @@ jest.mock('~/server/services/Files/Code/process', () => ({
   readSandboxFile: jest.fn(),
   readWorkspaceFile: (...args) => mockReadWorkspaceFile(...args),
   searchWorkspace: (...args) => mockSearchWorkspace(...args),
+  listWorkspaceFiles: (...args) => mockListWorkspaceFiles(...args),
   writeSandboxFile: jest.fn(),
 }));
 
@@ -93,6 +95,12 @@ describe('skillDeps saveSkillFileContent', () => {
     expect(getSkillToolDeps().searchWorkspace).toBeDefined();
     getSkillToolDeps().searchWorkspace({ query: 'needle' });
     expect(mockSearchWorkspace).toHaveBeenCalledWith({ query: 'needle' });
+  });
+
+  it('exposes the stable attached-workspace file lister to agent handlers', () => {
+    expect(getSkillToolDeps().listWorkspaceFiles).toBeDefined();
+    getSkillToolDeps().listWorkspaceFiles({ path: 'src' });
+    expect(mockListWorkspaceFiles).toHaveBeenCalledWith({ path: 'src' });
   });
 
   it('cleans up the uploaded object when metadata upsert returns no row', async () => {

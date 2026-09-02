@@ -7,6 +7,7 @@ const MAX_READ_BYTES = 1024 * 1024;
 const MAX_READ_LINES = 500;
 const MAX_SEARCH_RESULTS = 200;
 const MAX_SEARCH_TEXT_LENGTH = 2000;
+const MAX_LIST_RESULTS = 500;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const READ_RESULT_KEYS = new Set([
   'protocolVersion',
@@ -27,6 +28,13 @@ const SEARCH_RESULT_KEYS = new Set([
   'truncated',
 ]);
 const SEARCH_MATCH_KEYS = new Set(['path', 'line', 'column', 'text']);
+const LIST_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'paths',
+  'truncated',
+]);
 
 export interface WorkspaceReadRequest {
   protocolVersion: 1;
@@ -46,7 +54,18 @@ export interface WorkspaceSearchRequest {
   maxResults?: number;
 }
 
-export type WorkspaceToolRequest = WorkspaceReadRequest | WorkspaceSearchRequest;
+export interface WorkspaceListRequest {
+  protocolVersion: 1;
+  operation: 'list_files';
+  workspaceId: string;
+  path?: string;
+  maxResults?: number;
+}
+
+export type WorkspaceToolRequest =
+  | WorkspaceReadRequest
+  | WorkspaceSearchRequest
+  | WorkspaceListRequest;
 
 export interface WorkspaceReadResult {
   protocolVersion: 1;
@@ -68,7 +87,15 @@ export interface WorkspaceSearchResult {
   truncated: boolean;
 }
 
-export type WorkspaceToolResult = WorkspaceReadResult | WorkspaceSearchResult;
+export interface WorkspaceListResult {
+  protocolVersion: 1;
+  operation: 'list_files';
+  workspaceId: string;
+  paths: string[];
+  truncated: boolean;
+}
+
+export type WorkspaceToolResult = WorkspaceReadResult | WorkspaceSearchResult | WorkspaceListResult;
 
 export class WorkspaceToolHttpError extends Error {
   constructor(
@@ -103,6 +130,12 @@ function isPositiveInteger(value: unknown, maximum: number): boolean {
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isWithinRequestedPath(candidate: string, requestedPath: string | undefined): boolean {
+  if (requestedPath == null || requestedPath === '.') return true;
+  const prefix = requestedPath.replace(/\/+$/, '');
+  return candidate === prefix || candidate.startsWith(`${prefix}/`);
 }
 
 async function readBoundedJson(response: Response, signal?: AbortSignal): Promise<unknown> {
@@ -165,6 +198,12 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
       (request.maxLines == null || isPositiveInteger(request.maxLines, MAX_READ_LINES))
     );
   }
+  if (request.operation === 'list_files') {
+    return (
+      (request.path == null || isSafePath(request.path)) &&
+      (request.maxResults == null || isPositiveInteger(request.maxResults, MAX_LIST_RESULTS))
+    );
+  }
   if (request.operation !== 'search_text') {
     return false;
   }
@@ -223,6 +262,16 @@ function isValidResult(
         : value.nextStartLine == null)
     );
   }
+  if (request.operation === 'list_files') {
+    const maxResults = request.maxResults ?? 100;
+    return (
+      hasOnlyKeys(value, LIST_RESULT_KEYS) &&
+      Array.isArray(value.paths) &&
+      value.paths.length <= maxResults &&
+      new Set(value.paths).size === value.paths.length &&
+      value.paths.every((path) => isSafePath(path) && isWithinRequestedPath(path, request.path))
+    );
+  }
   const maxResults = request.maxResults ?? 50;
   return (
     hasOnlyKeys(value, SEARCH_RESULT_KEYS) &&
@@ -233,6 +282,7 @@ function isValidResult(
         isRecord(match) &&
         hasOnlyKeys(match, SEARCH_MATCH_KEYS) &&
         isSafePath(match.path) &&
+        isWithinRequestedPath(match.path, request.path) &&
         isPositiveInteger(match.line, Number.MAX_SAFE_INTEGER) &&
         isPositiveInteger(match.column, Number.MAX_SAFE_INTEGER) &&
         typeof match.text === 'string' &&

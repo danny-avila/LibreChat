@@ -314,6 +314,7 @@ describe('buildHistoricalToolNames', () => {
         'create_file',
         'edit_file',
         'search_workspace',
+        'list_workspace_files',
         'set_memory',
         'delete_memory',
         'skill',
@@ -488,6 +489,9 @@ describe('registerCodeExecutionTools', () => {
       const searchWorkspace = result.toolDefinitions.find(
         (definition) => definition.name === 'search_workspace',
       );
+      const listWorkspaceFiles = result.toolDefinitions.find(
+        (definition) => definition.name === 'list_workspace_files',
+      );
       expect(readFile?.description).toContain('workspace/');
       expect(readFile?.description).toContain('attached');
       expect(readFile?.parameters).toMatchObject({
@@ -508,6 +512,16 @@ describe('registerCodeExecutionTools', () => {
         },
       });
       expect(searchWorkspace?.description).toContain('literal text');
+      expect(listWorkspaceFiles).toMatchObject({
+        name: 'list_workspace_files',
+        parameters: {
+          properties: {
+            path: { type: 'string' },
+            max_results: { type: 'integer', maximum: 500 },
+          },
+        },
+      });
+      expect(listWorkspaceFiles?.description).toContain('empty directory');
     });
 
     it('upgrades a code-only read_file definition when skills are enabled later in the run', () => {
@@ -770,6 +784,7 @@ describe('registerFileAuthoringTools', () => {
   it('recognizes host-side file authoring tools as code-session-aware without mutating the shared set', () => {
     expect(isCodeSessionToolName('bash_tool')).toBe(true);
     expect(isCodeSessionToolName('search_workspace')).toBe(true);
+    expect(isCodeSessionToolName('list_workspace_files')).toBe(true);
     expect(isCodeSessionToolName('create_file')).toBe(false);
     expect(isCodeSessionToolName('edit_file')).toBe(false);
     expect(isCodeSessionToolName('create_file', FILE_AUTHORING_TOOL_NAMES)).toBe(true);

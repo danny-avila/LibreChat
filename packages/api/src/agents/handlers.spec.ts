@@ -4695,6 +4695,7 @@ describe('createToolExecuteHandler', () => {
       req?: unknown;
       readWorkspaceFile?: ToolExecuteOptions['readWorkspaceFile'];
       searchWorkspace?: ToolExecuteOptions['searchWorkspace'];
+      listWorkspaceFiles?: ToolExecuteOptions['listWorkspaceFiles'];
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
       readSandboxImage?: ToolExecuteOptions['readSandboxImage'];
       getSkillByName?: ToolExecuteOptions['getSkillByName'];
@@ -4718,6 +4719,7 @@ describe('createToolExecuteHandler', () => {
         getAuthorSkillByName: params.getAuthorSkillByName,
         readWorkspaceFile: params.readWorkspaceFile,
         searchWorkspace: params.searchWorkspace,
+        listWorkspaceFiles: params.listWorkspaceFiles,
         readSandboxFile: params.readSandboxFile,
         readSandboxImage: params.readSandboxImage,
       });
@@ -5142,6 +5144,111 @@ describe('createToolExecuteHandler', () => {
 
       expect(result.errorMessage).toContain('requires an attached code environment');
       expect(searchWorkspace).not.toHaveBeenCalled();
+    });
+
+    it('lists files through the selected attached worker and forwards cancellation', async () => {
+      const controller = new AbortController();
+      const listWorkspaceFiles = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'list_files' as const,
+        workspaceId: 'primary',
+        paths: ['src/app.ts', 'src/worker.ts'],
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        listWorkspaceFiles,
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_workspace_list',
+              name: 'list_workspace_files',
+              args: { path: 'src', max_results: 20 },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(listWorkspaceFiles).toHaveBeenCalledWith({
+        workspace_id: 'primary',
+        path: 'src',
+        max_results: 20,
+        codeApiBaseUrl: 'https://code.example.com/v1',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+        signal: controller.signal,
+      });
+      expect(result).toMatchObject({
+        status: 'success',
+        content: 'workspace/src/app.ts\nworkspace/src/worker.ts',
+      });
+    });
+
+    it('filters every listed workspace filename before returning any path', async () => {
+      const protectedValue = 'PROTECTED-WORKSPACE-NAME';
+      const listWorkspaceFiles = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'list_files' as const,
+        workspaceId: 'primary',
+        paths: ['safe.txt', `${protectedValue}.txt`],
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        req: {
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['name'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'protected-workspace-name',
+                      label: 'protected workspace name',
+                      regex: protectedValue,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        listWorkspaceFiles,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_workspace_list',
+          name: 'list_workspace_files',
+          args: {},
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.content).not.toContain('safe.txt');
+      expect(JSON.stringify(result)).not.toContain(protectedValue);
     });
 
     it('filters every workspace search match before returning any result', async () => {
