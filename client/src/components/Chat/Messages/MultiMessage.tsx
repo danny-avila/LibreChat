@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import { useRecoilState } from 'recoil';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
@@ -15,36 +15,58 @@ import store from '~/store';
  *  null/undefined at the root level, so those can't mark "not yet bound". */
 const UNBOUND_PARENT: unique symbol = Symbol('multiMessageUnboundParent');
 
-function MountedRowSlot({
+function MessageRowSlot({
   depth,
   messageId,
   measureRow,
+  mounted,
+  placeholderHeight,
+  steerAnchors,
   children,
 }: {
   depth: number;
   messageId: string;
   measureRow?: (depth: number, messageId: string, height: number) => void;
+  mounted: boolean;
+  placeholderHeight?: number;
+  steerAnchors?: Array<{ id: string; text: string }>;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     const element = ref.current;
-    if (!element || !measureRow) {
+    if (!mounted || !element || !measureRow) {
       return;
     }
-    measureRow(depth, messageId, element.getBoundingClientRect().height);
-  }, [depth, measureRow, messageId]);
+    const measure = () => measureRow(depth, messageId, element.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [depth, measureRow, messageId, mounted]);
 
   return (
     <div
       ref={ref}
+      id={mounted ? undefined : messageId}
+      aria-hidden={mounted ? undefined : true}
+      className={mounted ? undefined : 'message-render w-full'}
       data-message-row-slot="true"
-      data-row-mounted="true"
+      data-row-mounted={String(mounted)}
       data-row-depth={depth}
       data-row-message-id={messageId}
+      style={mounted ? undefined : { height: placeholderHeight }}
     >
       {children}
+      {!mounted
+        ? steerAnchors?.map((steer) => (
+            <span key={steer.id} id={steer.id} className="steer-render sr-only">
+              <span className="message-content">{steer.text}</span>
+            </span>
+          ))
+        : null}
     </div>
   );
 }
@@ -57,6 +79,7 @@ function MultiMessage({
   setCurrentEditId,
 }: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
+  const activeSpeechMessageId = useRecoilValue(store.activeSpeechMessageId);
   const mountWindow = useRowMountWindow();
 
   const setSiblingIdxRev = useCallback(
@@ -216,6 +239,7 @@ function MultiMessage({
     isInPrimaryWindow ||
     isInStreamTail ||
     currentEditId === message.messageId ||
+    activeSpeechMessageId === message.messageId ||
     (mountWindow.mode === 'bounded' && !isMeasuredMessage);
 
   let row: ReactElement | null = null;
@@ -245,16 +269,23 @@ function MultiMessage({
   const hasParallelContent =
     !message.isCreatedByUser && message.content?.some((part) => part?.groupId != null) === true;
 
+  const steerAnchors = message.content?.flatMap((part) => {
+    if (part?.type !== ContentTypes.STEER || !part.steerId) return [];
+    return [{ id: `steer-${part.steerId}`, text: part[ContentTypes.STEER] }];
+  });
   let rowSlot: ReactElement | null = null;
-  if (rowMounted) {
+  if (rowMounted || (mountWindow?.mode === 'bounded' && measuredRow)) {
     rowSlot = (
-      <MountedRowSlot
+      <MessageRowSlot
         depth={depth}
         messageId={message.messageId}
+        mounted={rowMounted}
+        placeholderHeight={measuredRow?.height}
+        steerAnchors={steerAnchors}
         measureRow={mountWindow?.mode === 'bounded' ? mountWindow.measureRow : undefined}
       >
-        {row}
-        {!isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
+        {rowMounted ? row : null}
+        {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
           <div className="w-full border-0 bg-transparent">
             <EventSubagentActivityGroup
               conversationId={message.conversationId ?? ''}
@@ -263,20 +294,7 @@ function MultiMessage({
             />
           </div>
         ) : null}
-      </MountedRowSlot>
-    );
-  } else if (mountWindow?.mode === 'bounded' && measuredRow) {
-    rowSlot = (
-      <div
-        id={message.messageId}
-        aria-hidden="true"
-        className="message-render w-full"
-        data-message-row-slot="true"
-        data-row-mounted="false"
-        data-row-depth={depth}
-        data-row-message-id={message.messageId}
-        style={{ height: measuredRow.height }}
-      />
+      </MessageRowSlot>
     );
   }
 

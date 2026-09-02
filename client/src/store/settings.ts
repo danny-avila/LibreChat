@@ -32,6 +32,7 @@ const staticAtoms = {
   }),
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
   speechSettingsInitialized: atom<boolean>({ key: 'speechSettingsInitialized', default: false }),
+  activeSpeechMessageId: atom<string | null>({ key: 'activeSpeechMessageId', default: null }),
 };
 
 /** Read synchronously: `useMediaQuery` only resolves after the first paint. */

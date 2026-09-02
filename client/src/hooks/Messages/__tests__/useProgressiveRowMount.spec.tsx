@@ -106,6 +106,7 @@ describe('useProgressiveRowMount', () => {
     Object.defineProperty(container, 'getBoundingClientRect', {
       value: () => ({ top: 0, bottom: 600, left: 0, right: 390, width: 390, height: 600 }),
     });
+    Object.defineProperty(container, 'clientHeight', { value: 600 });
     for (let depth = 0; depth <= 267; depth += 1) {
       const slot = document.createElement('div');
       slot.dataset.messageRowSlot = 'true';
@@ -121,6 +122,7 @@ describe('useProgressiveRowMount', () => {
       container.appendChild(slot);
     }
     scrollableRef.current = container;
+    const querySpy = jest.spyOn(container, 'querySelectorAll');
 
     const { result } = setup();
     for (let i = 0; i < 20 && result.current?.mode === 'progressive'; i += 1) {
@@ -131,6 +133,7 @@ describe('useProgressiveRowMount', () => {
     expect(result.current?.start).toBe(0);
     expect(result.current?.end).toBe(14);
     expect(result.current?.heights?.size).toBe(268);
+    const queriesAfterMeasurement = querySpy.mock.calls.length;
 
     act(() => {
       container.scrollTop = 10_000;
@@ -140,6 +143,7 @@ describe('useProgressiveRowMount', () => {
 
     expect(result.current?.start).toBe(91);
     expect(result.current?.end).toBe(114);
+    expect(querySpy).toHaveBeenCalledTimes(queriesAfterMeasurement);
   });
 
   it('keeps progressive mounting bounded when a submission starts mid-expansion', () => {
@@ -152,7 +156,9 @@ describe('useProgressiveRowMount', () => {
       isSubmitting: true,
       conversationId: 'convo-a',
     });
+    flushFrames();
     expect(result.current?.mode).toBe('progressive');
+    expect(result.current?.tailStart).toBe(264);
   });
 
   it('force-completes in-flight mounts for DOM consumers, resolving after paint', async () => {
@@ -161,25 +167,28 @@ describe('useProgressiveRowMount', () => {
 
     let resolved = false;
     let completion: Promise<() => void> = Promise.resolve(() => {});
+    let overlappingCompletion: Promise<() => void> = Promise.resolve(() => {});
     act(() => {
       completion = completeProgressiveRowMounts().then((releaseMounts) => {
         resolved = true;
         return releaseMounts;
       });
+      overlappingCompletion = completeProgressiveRowMounts();
     });
     expect(result.current).toBeNull();
 
     flushFrames();
     flushFrames();
     let release = () => {};
+    let releaseOverlapping = () => {};
     await act(async () => {
       release = await completion;
+      releaseOverlapping = await overlappingCompletion;
     });
     expect(resolved).toBe(true);
     act(() => release());
-
-    /** With nothing in flight it resolves immediately, no frames needed. */
-    await expect(completeProgressiveRowMounts()).resolves.toEqual(expect.any(Function));
+    expect(result.current).toBeNull();
+    act(() => releaseOverlapping());
   });
 
   it('re-arms a fresh window when the conversation changes', () => {

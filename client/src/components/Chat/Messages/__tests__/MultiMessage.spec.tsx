@@ -1,8 +1,10 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import MultiMessage from '../MultiMessage';
+import store from '~/store';
 
 type RowProps = {
   message: TMessage;
@@ -365,12 +367,16 @@ describe('MultiMessage row mount window', () => {
       end: number;
       heights?: ReadonlyMap<number, { messageId: string; height: number }>;
     } | null,
+    activeSpeechMessageId: string | null = null,
+    root: TMessage = chain(),
   ) => (
-    <RecoilRoot>
+    <RecoilRoot
+      initializeState={({ set }) => set(store.activeSpeechMessageId, activeSpeechMessageId)}
+    >
       <RowMountProvider mountWindow={mountWindow}>
         <MultiMessage
           messageId="parent-1"
-          messagesTree={[chain()]}
+          messagesTree={[root]}
           currentEditId={null}
           setCurrentEditId={jest.fn()}
         />
@@ -416,5 +422,39 @@ describe('MultiMessage row mount window', () => {
     render(windowedTree({ mode: 'bounded', start: 2, end: 2, heights: staleHeights }));
 
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m0', 'm1', 'm2']);
+  });
+
+  it('preserves focus on the stable row slot when its rich content mounts', () => {
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    const view = render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }));
+    const slot = view.container.querySelector<HTMLElement>('#m0');
+    if (slot) slot.tabIndex = -1;
+    slot?.focus();
+
+    view.rerender(windowedTree({ mode: 'bounded', start: 0, end: 2, heights }));
+    expect(document.activeElement).toHaveAttribute('data-row-message-id', 'm0');
+  });
+
+  it('retains lightweight steer anchors in an off-window response', () => {
+    const root = chain();
+    root.content = [
+      { type: ContentTypes.STEER, steer: 'Keep this direction', steerId: 'steer-1' },
+    ] as TMessage['content'];
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    const { container } = render(
+      windowedTree({ mode: 'bounded', start: 1, end: 2, heights }, null, root),
+    );
+
+    expect(container.querySelector('#steer-steer-1')).toHaveClass('steer-render');
+    expect(container.querySelector('#steer-steer-1 .message-content')).toHaveTextContent(
+      'Keep this direction',
+    );
+  });
+
+  it('keeps the row owning active speech playback mounted', () => {
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }, 'm0'));
+
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toContain('m0');
   });
 });

@@ -42,8 +42,7 @@ const INITIAL_ROWS = 16;
 const CHUNK_ROWS = 32;
 const WINDOW_OVERSCAN_ROWS = 8;
 const STREAM_TAIL_ROWS = 4;
-const ROW_SLOT_SELECTOR = '[data-message-row-slot="true"]';
-const MOUNTED_ROW_SLOT_SELECTOR = `${ROW_SLOT_SELECTOR}[data-row-mounted="true"]`;
+const MOUNTED_ROW_SLOT_SELECTOR = '[data-message-row-slot="true"][data-row-mounted="true"]';
 
 type ProgressiveRowMountOptions = {
   tailDepth: number | undefined;
@@ -92,8 +91,12 @@ export function useProgressiveRowMount({
     progressiveWindow(tailDepth, anchorBottom),
   );
   const heightsRef = useRef(new Map<number, MeasuredRow>());
+  const rowOffsetsRef = useRef<number[]>([]);
+  const firstRowOffsetRef = useRef(0);
+  const containerWidthRef = useRef<number>();
   const anchorRef = useRef<{ element: Element; documentOffset: number } | null>(null);
   const updateFrameRef = useRef<number>();
+  const leaseCountRef = useRef(0);
   const tailDepthRef = useRef(tailDepth);
   const isSubmittingRef = useRef(isSubmitting);
   tailDepthRef.current = tailDepth;
@@ -103,6 +106,8 @@ export function useProgressiveRowMount({
   if (prevConversationId !== conversationId) {
     setPrevConversationId(conversationId);
     heightsRef.current = new Map();
+    rowOffsetsRef.current = [];
+    containerWidthRef.current = undefined;
     setMountWindow(progressiveWindow(tailDepth, anchorBottom));
     anchorRef.current = null;
   }
@@ -119,11 +124,32 @@ export function useProgressiveRowMount({
       : null;
   }, [anchorBottom, scrollableRef]);
 
+  const rebuildRowOffsets = useCallback(() => {
+    const currentTailDepth = tailDepthRef.current;
+    if (currentTailDepth == null) {
+      rowOffsetsRef.current = [];
+      return;
+    }
+    const offsets = new Array<number>(currentTailDepth + 2);
+    offsets[0] = firstRowOffsetRef.current;
+    for (let depth = 0; depth <= currentTailDepth; depth += 1) {
+      const measured = heightsRef.current.get(depth);
+      if (!measured) {
+        rowOffsetsRef.current = [];
+        return;
+      }
+      offsets[depth + 1] = offsets[depth] + measured.height;
+    }
+    rowOffsetsRef.current = offsets;
+  }, []);
+
   const measureMountedRows = useCallback(() => {
     const container = scrollableRef.current;
     if (!container) {
       return;
     }
+    const containerRect = container.getBoundingClientRect();
+    containerWidthRef.current = containerRect.width;
     const rows = container.querySelectorAll<HTMLElement>(MOUNTED_ROW_SLOT_SELECTOR);
     for (const row of rows) {
       const metadata = rowMetadata(row);
@@ -135,25 +161,34 @@ export function useProgressiveRowMount({
         continue;
       }
       heightsRef.current.set(metadata.depth, { messageId: metadata.messageId, height });
-    }
-  }, [scrollableRef]);
-
-  const measureRow = useCallback((depth: number, messageId: string, height: number) => {
-    if (height <= 0) {
-      return;
-    }
-    const previous = heightsRef.current.get(depth);
-    heightsRef.current.set(depth, { messageId, height });
-    if (previous == null || previous.messageId === messageId) {
-      return;
-    }
-    setMountWindow((current) => {
-      if (current?.mode !== 'bounded') {
-        return current;
+      if (metadata.depth === 0) {
+        firstRowOffsetRef.current =
+          row.getBoundingClientRect().top - containerRect.top + container.scrollTop;
       }
-      return { ...current, heights: new Map(heightsRef.current) };
-    });
-  }, []);
+    }
+    rebuildRowOffsets();
+  }, [rebuildRowOffsets, scrollableRef]);
+
+  const measureRow = useCallback(
+    (depth: number, messageId: string, height: number) => {
+      if (height <= 0) {
+        return;
+      }
+      const previous = heightsRef.current.get(depth);
+      if (previous?.messageId === messageId && Math.abs(previous.height - height) < 0.5) {
+        return;
+      }
+      heightsRef.current.set(depth, { messageId, height });
+      rebuildRowOffsets();
+      setMountWindow((current) => {
+        if (current?.mode !== 'bounded') {
+          return current;
+        }
+        return { ...current, heights: new Map(heightsRef.current) };
+      });
+    },
+    [rebuildRowOffsets],
+  );
 
   const boundedWindow = useCallback((): RowMountWindow => {
     const container = scrollableRef.current;
@@ -162,27 +197,36 @@ export function useProgressiveRowMount({
       return null;
     }
 
-    const containerRect = container.getBoundingClientRect();
-    let firstVisible = Number.POSITIVE_INFINITY;
-    let lastVisible = Number.NEGATIVE_INFINITY;
-    const slots = container.querySelectorAll<HTMLElement>(ROW_SLOT_SELECTOR);
-    for (const slot of slots) {
-      const metadata = rowMetadata(slot);
-      if (!metadata) {
-        continue;
-      }
-      const rect = slot.getBoundingClientRect();
-      if (rect.bottom < containerRect.top || rect.top > containerRect.bottom) {
-        continue;
-      }
-      firstVisible = Math.min(firstVisible, metadata.depth);
-      lastVisible = Math.max(lastVisible, metadata.depth);
-    }
-
-    if (!Number.isFinite(firstVisible) || !Number.isFinite(lastVisible)) {
+    const offsets = rowOffsetsRef.current;
+    let firstVisible: number;
+    let lastVisible: number;
+    if (offsets.length !== currentTailDepth + 2) {
       const anchor = anchorBottom ? currentTailDepth : 0;
       firstVisible = anchor;
       lastVisible = anchor;
+    } else {
+      const findDepth = (position: number) => {
+        let low = 0;
+        let high = currentTailDepth;
+        while (low < high) {
+          const middle = Math.floor((low + high) / 2);
+          if (offsets[middle + 1] < position) low = middle + 1;
+          else high = middle;
+        }
+        return low;
+      };
+      const findLastDepth = (position: number) => {
+        let low = 0;
+        let high = currentTailDepth;
+        while (low < high) {
+          const middle = Math.ceil((low + high) / 2);
+          if (offsets[middle] <= position) low = middle;
+          else high = middle - 1;
+        }
+        return low;
+      };
+      firstVisible = findDepth(container.scrollTop);
+      lastVisible = findLastDepth(container.scrollTop + container.clientHeight);
     }
 
     return {
@@ -198,7 +242,6 @@ export function useProgressiveRowMount({
   }, [anchorBottom, measureRow, scrollableRef]);
 
   const refreshBoundedWindow = useCallback(() => {
-    measureMountedRows();
     setMountWindow((current) => {
       if (current?.mode !== 'bounded') {
         return current;
@@ -214,7 +257,7 @@ export function useProgressiveRowMount({
       }
       return next;
     });
-  }, [boundedWindow, measureMountedRows]);
+  }, [boundedWindow]);
 
   const scheduleBoundedRefresh = useCallback(() => {
     if (updateFrameRef.current != null) {
@@ -248,12 +291,13 @@ export function useProgressiveRowMount({
             ...current,
             start: Math.max(0, current.start - CHUNK_ROWS),
             end: current.end >= tailDepth ? current.end : current.end + CHUNK_ROWS,
+            tailStart: isSubmitting ? Math.max(0, tailDepth - STREAM_TAIL_ROWS + 1) : undefined,
           };
         });
       });
     });
     return () => cancelAnimationFrame(frameId);
-  }, [mountWindow, tailDepth, boundedWindow, captureAnchor, measureMountedRows]);
+  }, [mountWindow, tailDepth, boundedWindow, captureAnchor, isSubmitting, measureMountedRows]);
 
   useLayoutEffect(() => {
     const captured = anchorRef.current;
@@ -279,13 +323,28 @@ export function useProgressiveRowMount({
     }
     container.addEventListener('scroll', scheduleBoundedRefresh, { passive: true });
     const resizeObserver =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleBoundedRefresh);
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(([entry]) => {
+            const nextWidth = entry?.contentRect.width ?? container.getBoundingClientRect().width;
+            if (
+              containerWidthRef.current != null &&
+              Math.abs(containerWidthRef.current - nextWidth) >= 0.5
+            ) {
+              heightsRef.current = new Map();
+              rowOffsetsRef.current = [];
+              containerWidthRef.current = nextWidth;
+              setMountWindow(progressiveWindow(tailDepthRef.current, anchorBottom));
+              return;
+            }
+            scheduleBoundedRefresh();
+          });
     resizeObserver?.observe(container);
     return () => {
       container.removeEventListener('scroll', scheduleBoundedRefresh);
       resizeObserver?.disconnect();
     };
-  }, [mountWindow?.mode, scheduleBoundedRefresh, scrollableRef]);
+  }, [anchorBottom, mountWindow?.mode, scheduleBoundedRefresh, scrollableRef]);
 
   useEffect(() => {
     if (mountWindow?.mode !== 'bounded') {
@@ -303,19 +362,25 @@ export function useProgressiveRowMount({
     [],
   );
 
-  const isWindowActive = mountWindow != null;
   useEffect(() => {
-    if (!isWindowActive) {
+    if (tailDepth == null || tailDepth + 1 <= MIN_WINDOWED_ROWS) {
       return;
     }
     const complete = () =>
       new Promise<() => void>((resolve) => {
-        setMountWindow(null);
+        leaseCountRef.current += 1;
+        if (leaseCountRef.current === 1) setMountWindow(null);
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
+            let released = false;
             resolve(() => {
-              measureMountedRows();
-              setMountWindow(boundedWindow());
+              if (released) return;
+              released = true;
+              leaseCountRef.current = Math.max(0, leaseCountRef.current - 1);
+              if (leaseCountRef.current === 0) {
+                measureMountedRows();
+                setMountWindow(boundedWindow());
+              }
             });
           }),
         );
@@ -324,7 +389,7 @@ export function useProgressiveRowMount({
     return () => {
       activeCompleters.delete(complete);
     };
-  }, [isWindowActive, boundedWindow, measureMountedRows]);
+  }, [tailDepth, boundedWindow, measureMountedRows]);
 
   return mountWindow;
 }

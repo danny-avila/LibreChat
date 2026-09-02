@@ -1,6 +1,6 @@
 // client/src/hooks/Audio/useTTSBrowser.ts
 import { useRef, useEffect, useState } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { parseTextParts } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
@@ -17,7 +17,7 @@ type TUseTextToSpeech = {
 };
 
 const useTTSBrowser = (props?: TUseTextToSpeech) => {
-  const { content, isLast = false, index = 0 } = props ?? {};
+  const { messageId, content, isLast = false, index = 0 } = props ?? {};
 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);
@@ -29,6 +29,15 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
   const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
+  const setActiveSpeechMessageId = useSetRecoilState(store.activeSpeechMessageId);
+
+  useEffect(() => {
+    setActiveSpeechMessageId((current) => {
+      if (isSpeaking && messageId) return messageId;
+      return current === messageId ? null : current;
+    });
+    return () => setActiveSpeechMessageId((current) => (current === messageId ? null : current));
+  }, [isSpeaking, messageId, setActiveSpeechMessageId]);
 
   const {
     generateSpeechLocal: generateSpeech,
