@@ -996,6 +996,8 @@ export async function initializeAgent(
     agentId: agent.id,
     conversationId,
   });
+  const attachedWorkspaceTools =
+    effectiveCodeEnvAvailable && codeExecutionContext.environmentType === 'attached';
   const requestFileIds = [
     ...new Set(
       requestFiles
@@ -1475,6 +1477,7 @@ export async function initializeAgent(
       includeSkillFileInstructions: false,
       enableToolOutputReferences: effectiveCodeEnvAvailable,
       statefulSessions: effectiveStatefulSessions,
+      workspaceTools: attachedWorkspaceTools,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.execute_code, codeExecResult.toolNames);
@@ -1523,6 +1526,7 @@ export async function initializeAgent(
       includeBash: false,
       includeSkillFileInstructions: true,
       enableToolOutputReferences: effectiveCodeEnvAvailable,
+      workspaceTools: attachedWorkspaceTools,
     });
     toolDefinitions = skillReadResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.skills, skillReadResult.toolNames);
@@ -1683,6 +1687,7 @@ export async function initializeAgent(
       listSkillsByAccess: db?.listSkillsByAccess,
       codeEnvAvailable: effectiveCodeEnvAvailable,
       statefulSessions: effectiveStatefulSessions,
+      workspaceTools: attachedWorkspaceTools,
       userId: user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,

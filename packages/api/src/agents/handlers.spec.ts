@@ -4548,6 +4548,7 @@ describe('createToolExecuteHandler', () => {
       skillAuthoringAvailable?: boolean;
       codeExecutionContext?: CodeExecutionContext;
       req?: unknown;
+      readWorkspaceFile?: ToolExecuteOptions['readWorkspaceFile'];
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
       readSandboxImage?: ToolExecuteOptions['readSandboxImage'];
       getSkillByName?: ToolExecuteOptions['getSkillByName'];
@@ -4569,10 +4570,192 @@ describe('createToolExecuteHandler', () => {
         loadTools,
         getSkillByName: params.getSkillByName,
         getAuthorSkillByName: params.getAuthorSkillByName,
+        readWorkspaceFile: params.readWorkspaceFile,
         readSandboxFile: params.readSandboxFile,
         readSandboxImage: params.readSandboxImage,
       });
     }
+
+    it('routes explicit workspace paths to the selected attached worker', async () => {
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        content: 'const ready = true;',
+        startLine: 1,
+        endLine: 1,
+        truncated: false,
+      }));
+      const readSandboxFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_workspace_read',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/src/app.ts' },
+        },
+      ]);
+
+      expect(readWorkspaceFile).toHaveBeenCalledWith({
+        file_path: 'src/app.ts',
+        workspace_id: 'primary',
+        start_line: 1,
+        max_lines: 200,
+        codeApiBaseUrl: 'https://code.example.com/v1',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+      });
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        status: 'success',
+        content: '1 | const ready = true;',
+      });
+    });
+
+    it('uses bounded pagination for attached workspace reads', async () => {
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'notes.txt',
+        content: 'third\nfourth',
+        startLine: 3,
+        endLine: 4,
+        truncated: true,
+        nextStartLine: 5,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_workspace_page',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/notes.txt', start_line: 3, max_lines: 2 },
+        },
+      ]);
+
+      expect(readWorkspaceFile).toHaveBeenCalledWith(
+        expect.objectContaining({ start_line: 3, max_lines: 2 }),
+      );
+      expect(result.content).toContain('3 | third\n4 | fourth');
+      expect(result.content).toContain('start_line 5');
+    });
+
+    it('rejects workspace paths unless the selected environment is attached', async () => {
+      const readWorkspaceFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:managed',
+          executionProfile: 'stateful',
+          environmentType: 'managed',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_managed_workspace_read',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/src/app.ts' },
+        },
+      ]);
+
+      expect(result).toMatchObject({
+        status: 'error',
+        errorMessage: 'workspace/ paths require an attached code environment.',
+      });
+      expect(readWorkspaceFile).not.toHaveBeenCalled();
+    });
+
+    it('rejects empty and unbounded attached workspace reads before dispatch', async () => {
+      const readWorkspaceFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [emptyPath] = await invokeHandler(handler, [
+        { id: 'call_empty_workspace', name: Constants.READ_FILE, args: { path: 'workspace/' } },
+      ]);
+      const [unbounded] = await invokeHandler(handler, [
+        {
+          id: 'call_unbounded_workspace',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/src/app.ts', max_lines: 501 },
+        },
+      ]);
+
+      expect(emptyPath.errorMessage).toContain('relative path');
+      expect(unbounded.errorMessage).toContain('between 1 and 500');
+      expect(readWorkspaceFile).not.toHaveBeenCalled();
+    });
+
+    it('does not expose attached-worker failure details to the model', async () => {
+      const readWorkspaceFile = jest.fn(async () => {
+        throw new Error('upstream response contained /Users/operator/private');
+      });
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_failed_workspace',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/src/app.ts' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('could not be read');
+      expect(result.errorMessage).not.toContain('/Users/operator/private');
+    });
 
     it('routes /mnt/data/ paths to the sandbox fallback when codeEnv is available', async () => {
       const readSandboxFile = jest.fn(async () => ({ content: 'hello-world' }));

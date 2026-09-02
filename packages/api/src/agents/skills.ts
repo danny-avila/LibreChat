@@ -428,6 +428,8 @@ export interface InjectSkillCatalogParams {
   codeEnvAvailable?: boolean;
   /** When true, bash_tool registers with the hedged stateful-session description. */
   statefulSessions?: boolean;
+  /** When true, read_file exposes the attached worker's workspace namespace. */
+  workspaceTools?: boolean;
   /** Current user ID — used to determine skill ownership for active-state resolution. */
   userId?: string;
   /** Per-user skill overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
@@ -606,6 +608,7 @@ export async function injectSkillCatalog(
     listSkillsByAccess,
     codeEnvAvailable,
     statefulSessions,
+    workspaceTools,
     userId,
     skillStates,
     defaultActiveOnShare = false,
@@ -756,6 +759,7 @@ export async function injectSkillCatalog(
     includeBash: codeEnvAvailable === true,
     enableToolOutputReferences: codeEnvAvailable === true,
     statefulSessions: statefulSessions === true,
+    workspaceTools: workspaceTools === true,
   });
   workingDefs = codeExecResult.toolDefinitions;
 

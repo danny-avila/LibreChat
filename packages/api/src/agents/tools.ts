@@ -342,6 +342,11 @@ export interface RegisterCodeExecutionToolsParams {
    */
   includeSkillFileInstructions?: boolean;
   /**
+   * When `true`, `read_file` advertises the explicit `workspace/` namespace
+   * backed by the selected attached worker, including bounded line pagination.
+   */
+  workspaceTools?: boolean;
+  /**
    * When `true`, the registered `bash_tool` description includes the
    * LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide so the
    * model knows it can substitute prior tool outputs in subsequent
@@ -406,6 +411,8 @@ const CODE_READ_FILE_DESCRIPTION = `Read a known file from the code-execution sa
 
 Use for text, CSV, JSON, Markdown, logs, small source files, and images at paths returned by tool output, just written, or under /mnt/data/. Do not run ls/find just to rediscover known paths. Use bash_tool for other binary files, large files, transforms, metadata, or true filesystem discovery. /tmp is per-call scratch and unavailable later.`;
 
+const ATTACHED_WORKSPACE_READ_FILE_INSTRUCTIONS = `For an attached environment, use "workspace/{relativePath}" to read a file from the workspace directory registered on the worker. It may be an existing project, a Git repository, or an empty directory; Git is not required. The worker's host path stays private. Use start_line and max_lines for bounded pagination.`;
+
 const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
@@ -418,12 +425,50 @@ const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   required: ['path'],
 }) as LCTool['parameters'];
 
+const ATTACHED_WORKSPACE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    path: {
+      type: 'string',
+      description:
+        'Use "workspace/{relativePath}" for a file in the attached worker workspace directory, or a code-execution sandbox path such as "/mnt/data/result.csv".',
+    },
+    start_line: {
+      type: 'integer',
+      minimum: 1,
+      description: 'Optional one-based line at which to start reading a workspace text file.',
+    },
+    max_lines: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 500,
+      description: 'Optional maximum number of workspace text-file lines to return.',
+    },
+  },
+  required: ['path'],
+}) as LCTool['parameters'];
+
 const CODE_READ_FILE_DEF: LCTool = Object.freeze({
   name: ReadFileToolDefinition.name,
   description: CODE_READ_FILE_DESCRIPTION,
   parameters: CODE_READ_FILE_PARAMETERS,
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
+
+function createAttachedWorkspaceReadFileDef(includeSkillFileInstructions: boolean): LCTool {
+  const baseDescription = includeSkillFileInstructions
+    ? SKILL_READ_FILE_DESCRIPTION
+    : CODE_READ_FILE_DESCRIPTION;
+  return Object.freeze({
+    name: ReadFileToolDefinition.name,
+    description: `${baseDescription}\n\n${ATTACHED_WORKSPACE_READ_FILE_INSTRUCTIONS}`,
+    parameters: ATTACHED_WORKSPACE_READ_FILE_PARAMETERS,
+    responseFormat: ReadFileToolDefinition.responseFormat,
+  }) as LCTool;
+}
+
+const ATTACHED_CODE_READ_FILE_DEF = createAttachedWorkspaceReadFileDef(false);
+const ATTACHED_SKILL_READ_FILE_DEF = createAttachedWorkspaceReadFileDef(true);
 
 const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
@@ -597,7 +642,12 @@ const CODE_EDIT_FILE_DEF: LCTool = Object.freeze({
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
 }) as LCTool;
 
-function buildReadFileDef(includeSkillFileInstructions: boolean): LCTool {
+function buildReadFileDef(includeSkillFileInstructions: boolean, workspaceTools: boolean): LCTool {
+  if (workspaceTools) {
+    return includeSkillFileInstructions
+      ? ATTACHED_SKILL_READ_FILE_DEF
+      : ATTACHED_CODE_READ_FILE_DEF;
+  }
   return includeSkillFileInstructions ? READ_FILE_DEF : CODE_READ_FILE_DEF;
 }
 
@@ -609,7 +659,9 @@ function buildFileAuthoringDefs(includeSkillFileInstructions: boolean): LCTool[]
 
 function isCodeOnlyReadFileDef(def: LCTool | undefined): boolean {
   return (
-    def?.name === ReadFileToolDefinition.name && def?.description === CODE_READ_FILE_DESCRIPTION
+    def?.name === ReadFileToolDefinition.name &&
+    (def?.description === CODE_READ_FILE_DESCRIPTION ||
+      def?.description === ATTACHED_CODE_READ_FILE_DEF.description)
   );
 }
 
@@ -701,11 +753,12 @@ export function registerCodeExecutionTools(
     toolDefinitions,
     includeBash,
     includeSkillFileInstructions = true,
+    workspaceTools = false,
     enableToolOutputReferences = false,
     statefulSessions = false,
   } = params;
 
-  const readFileDef = buildReadFileDef(includeSkillFileInstructions);
+  const readFileDef = buildReadFileDef(includeSkillFileInstructions, workspaceTools);
   const candidates: LCTool[] = includeBash
     ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
     : [readFileDef];

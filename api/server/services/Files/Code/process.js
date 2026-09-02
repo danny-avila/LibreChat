@@ -27,6 +27,7 @@ const {
   getCodeExecutionBaseUrl,
   buildCodeEnvDownloadQuery,
   codeExecutionHeaders,
+  executeWorkspaceTool,
   claimCodeDestination,
   createCodeDestinationSet,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
@@ -1651,6 +1652,49 @@ async function readSandboxFile({
 }
 
 /**
+ * Reads a bounded range from the workspace directory registered by an attached worker.
+ * The authenticated worker route is derived from the selected environment and
+ * the host path remains private to the worker.
+ *
+ * @param {Object} params
+ * @param {string} params.file_path
+ * @param {string} params.workspace_id
+ * @param {number} params.start_line
+ * @param {number} params.max_lines
+ * @param {string} params.codeApiBaseUrl
+ * @param {'default' | 'stateful'} params.executionProfile
+ * @param {string} [params.bridgeWorkerId]
+ * @param {ServerRequest} [params.req]
+ */
+async function readWorkspaceFile({
+  file_path,
+  workspace_id,
+  start_line,
+  max_lines,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'read_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      startLine: start_line,
+      maxLines: max_lines,
+    },
+  });
+}
+
+/**
  * Reads a small code artifact as base64 so `read_file` can surface it to
  * vision-capable models. Reuses bytes fetched by the current request's
  * artifact preflight when the requested path resolves to the exact returned
@@ -1916,6 +1960,7 @@ module.exports = {
   getSessionInfo,
   processCodeOutput,
   prepareCodeOutputForInspection,
+  readWorkspaceFile,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,
