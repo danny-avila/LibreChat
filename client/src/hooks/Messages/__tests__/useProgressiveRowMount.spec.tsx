@@ -303,6 +303,48 @@ describe('useProgressiveRowMount', () => {
     expect(result.current?.heights?.size).toBe(41);
   });
 
+  it('rebuilds the scroll index when the active message path shrinks', () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientHeight', { value: 600 });
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ top: 0, bottom: 600, left: 0, right: 390, width: 390, height: 600 }),
+    });
+    for (let depth = 0; depth <= 60; depth += 1) {
+      const slot = document.createElement('div');
+      slot.dataset.messageRowSlot = 'true';
+      slot.dataset.rowMounted = 'true';
+      slot.dataset.rowDepth = String(depth);
+      slot.dataset.rowMessageId = `message-${depth}`;
+      Object.defineProperty(slot, 'getBoundingClientRect', {
+        value: () => {
+          const top = depth * 100 - container.scrollTop;
+          return { top, bottom: top + 100, left: 0, right: 390, width: 390, height: 100 };
+        },
+      });
+      container.appendChild(slot);
+    }
+    scrollableRef.current = container;
+    const { result, rerender } = setup({ tailDepth: 60 });
+    while (result.current?.mode === 'progressive') flushFrames();
+    expect(result.current?.mode).toBe('bounded');
+
+    rerender({
+      tailDepth: 50,
+      anchorBottom: false,
+      isSubmitting: false,
+      conversationId: 'convo-a',
+    });
+    act(() => {
+      container.scrollTop = 2_500;
+      container.dispatchEvent(new Event('scroll'));
+    });
+    flushFrames();
+
+    expect(result.current?.start).toBe(16);
+    expect(result.current?.end).toBe(39);
+    expect(result.current?.heights?.size).toBe(51);
+  });
+
   it('keeps progressive mounting bounded when a submission starts mid-expansion', () => {
     const { result, rerender } = setup();
     expect(result.current).not.toBeNull();

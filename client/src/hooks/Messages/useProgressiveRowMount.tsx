@@ -394,7 +394,12 @@ export function useProgressiveRowMount({
         typeof MutationObserver === 'undefined' || !hasPendingLayout()
           ? null
           : new MutationObserver(handlePendingLayoutMutation);
-      mutationObserver?.observe(container, { childList: true, subtree: true });
+      mutationObserver?.observe(container, {
+        attributes: true,
+        attributeFilter: ['data-row-layout-pending'],
+        childList: true,
+        subtree: true,
+      });
       for (const row of container.querySelectorAll<HTMLElement>(MOUNTED_ROW_SLOT_SELECTOR)) {
         observer?.observe(row);
       }
@@ -537,6 +542,28 @@ export function useProgressiveRowMount({
     }
     scheduleBoundedRefresh();
   }, [isSubmitting, tailDepth, mountWindow?.mode, scheduleBoundedRefresh]);
+
+  const previousTailDepthRef = useRef(tailDepth);
+  useEffect(() => {
+    const previousTailDepth = previousTailDepthRef.current;
+    previousTailDepthRef.current = tailDepth;
+    if (
+      previousTailDepth == null ||
+      tailDepth == null ||
+      tailDepth >= previousTailDepth ||
+      mountWindow?.mode !== 'bounded'
+    ) {
+      return;
+    }
+    for (const depth of heightsRef.current.keys()) {
+      if (depth > tailDepth) heightsRef.current.delete(depth);
+    }
+    for (const depth of pinnedRowsRef.current.keys()) {
+      if (depth > tailDepth) pinnedRowsRef.current.delete(depth);
+    }
+    rebuildRowOffsets();
+    setMountWindow(boundedWindow());
+  }, [boundedWindow, mountWindow?.mode, rebuildRowOffsets, tailDepth]);
 
   useEffect(
     () => () => {
