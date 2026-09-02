@@ -153,5 +153,6 @@ export enum MutationKeys {
   deleteSchedule = 'deleteSchedule',
   runSchedule = 'runSchedule',
   pairCodeEnvironment = 'pairCodeEnvironment',
+  updateCodeEnvironmentSettings = 'updateCodeEnvironmentSettings',
   deleteCodeEnvironment = 'deleteCodeEnvironment',
 }

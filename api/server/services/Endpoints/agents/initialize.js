@@ -969,12 +969,16 @@ const initializeClient = async ({
             conversationId,
           })
         : undefined;
-    const { alwaysApplySkillPrimes, historicalToolNames, historicalMcpServerNames } =
-      await lazyHistoryResolver.resolve({
-        agent,
-        codeExecutionAvailable: lazyCodeEnvAvailable,
-        memoryAvailable,
-      });
+    const {
+      alwaysApplySkillPrimes,
+      historicalToolNames,
+      historicalMcpServerNames,
+      skillAuthoringAvailable,
+    } = await lazyHistoryResolver.resolve({
+      agent,
+      codeExecutionAvailable: lazyCodeEnvAvailable,
+      memoryAvailable,
+    });
     return {
       id: agent.id,
       name: agent.name,
@@ -997,6 +1001,7 @@ const initializeClient = async ({
       alwaysApplySkillPrimes,
       historicalToolNames,
       historicalMcpServerNames,
+      skillAuthoringAvailable: skillAuthoringAvailable === true,
     };
   };
 
@@ -1238,6 +1243,7 @@ const initializeClient = async ({
           codeExecutionContext: metadata.codeExecutionContext,
           codeSessionKey: metadata.codeSessionKey,
           includeReasoningHistory: metadata.includeReasoningHistory,
+          skillAuthoringAvailable: metadata.skillAuthoringAvailable,
           alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
           historicalToolNames: metadata.historicalToolNames,
           historicalMcpServerNames: metadata.historicalMcpServerNames,

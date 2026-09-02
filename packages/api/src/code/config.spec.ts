@@ -126,6 +126,11 @@ describe('mergeAccessibleCodeEnvironments', () => {
                 baseURL: 'https://override.example',
                 owner: 'deployment',
                 pairing: { workerId: 'override-worker', tokenEnv: 'OVERRIDE_TOKEN' },
+                configSchema: {
+                  permissions: {
+                    commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+                  },
+                },
               },
             ],
           },
@@ -146,6 +151,7 @@ describe('mergeAccessibleCodeEnvironments', () => {
             baseURL: 'https://persisted.example',
             controlPlaneId: 'approved-plane',
             owner: 'principal',
+            settings: { permissions: { commandExecution: 'deny' } },
           },
         ]),
       },
@@ -157,6 +163,14 @@ describe('mergeAccessibleCodeEnvironments', () => {
     expect(environments?.find((environment) => environment.id === 'personal-vm')?.baseURL).toBe(
       'https://approved.example',
     );
+    expect(environments?.find((environment) => environment.id === 'personal-vm')).toMatchObject({
+      configSchema: {
+        permissions: {
+          commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+        },
+      },
+      settings: { permissions: { commandExecution: 'deny' } },
+    });
   });
 
   test('replaces a merged override that shadows an accessible principal environment', async () => {

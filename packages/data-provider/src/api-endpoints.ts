@@ -53,6 +53,7 @@ export const codeEnvironments = () => `${BASE_URL}/api/code-environments`;
 export const codeEnvironmentPairings = () => `${codeEnvironments()}/pairings`;
 export const codeEnvironmentById = (id: string) =>
   `${codeEnvironments()}/${encodeURIComponent(id)}`;
+export const codeEnvironmentSettings = (id: string) => `${codeEnvironmentById(id)}/settings`;
 
 const messagesRoot = `${BASE_URL}/api/messages`;
 

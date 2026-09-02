@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { createHash } from 'crypto';
 import { ResourceType } from 'librechat-data-provider';
+import type { CodeEnvironmentUserSettings } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
 import type { CodeEnvironmentDocument } from '~/types';
 import type { IAclEntry } from '~/types';
@@ -203,6 +204,10 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   findCodeEnvironmentByEnvironmentId: (
     environmentId: string,
   ) => Promise<CodeEnvironmentDocument | null>;
+  updateCodeEnvironmentSettings: (
+    environmentId: string,
+    settings: CodeEnvironmentUserSettings,
+  ) => Promise<CodeEnvironmentDocument | null>;
   listCodeEnvironmentIds: () => Promise<string[]>;
   findCodeEnvironmentsByCreator: (
     userId: string | Types.ObjectId,
@@ -298,6 +303,31 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     environmentId: string,
   ): Promise<CodeEnvironmentDocument | null> {
     return await model().findOne({ environmentId }).lean<CodeEnvironmentDocument>();
+  }
+
+  async function updateCodeEnvironmentSettings(
+    environmentId: string,
+    settings: CodeEnvironmentUserSettings,
+  ): Promise<CodeEnvironmentDocument | null> {
+    const updates: Record<string, string> = {};
+    if (settings.permissions?.fileWrite != null) {
+      updates['settings.permissions.fileWrite'] = settings.permissions.fileWrite;
+    }
+    if (settings.permissions?.commandExecution != null) {
+      updates['settings.permissions.commandExecution'] = settings.permissions.commandExecution;
+    }
+    const lifecycleFilter = {
+      environmentId,
+      registrationPendingAt: { $exists: false },
+      deletionStartedAt: { $exists: false },
+      deletionCommittedAt: { $exists: false },
+    };
+    if (Object.keys(updates).length === 0) {
+      return await model().findOne(lifecycleFilter).lean<CodeEnvironmentDocument>();
+    }
+    return await model()
+      .findOneAndUpdate(lifecycleFilter, { $set: updates }, { new: true, runValidators: true })
+      .lean<CodeEnvironmentDocument>();
   }
 
   async function listCodeEnvironmentIds(): Promise<string[]> {
@@ -483,6 +513,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     createCodeEnvironmentWithinOwnerLimit,
     findCodeEnvironmentsByIds,
     findCodeEnvironmentByEnvironmentId,
+    updateCodeEnvironmentSettings,
     listCodeEnvironmentIds,
     findCodeEnvironmentsByCreator,
     deleteCodeEnvironmentById,

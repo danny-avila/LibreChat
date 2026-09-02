@@ -1106,6 +1106,7 @@ describe('initializeClient — subagent loading', () => {
         statefulCodeEnvironment: 'agent-user',
         memory_scope: 'agent',
         memoryToolsRegistered: false,
+        skillAuthoringAvailable: false,
         historicalToolNames: ['web'],
       }),
     );

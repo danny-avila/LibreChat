@@ -84,11 +84,13 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
                     environment.workerId == null
                   ),
               )
-              .map(({ id, name, type, default: isDefault }) => ({
+              .map(({ id, name, type, default: isDefault, configSchema, settings }) => ({
                 id,
                 name,
                 type,
                 default: isDefault,
+                configSchema,
+                settings,
               })),
           }
         : undefined;
