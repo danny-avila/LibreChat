@@ -149,7 +149,6 @@ export function useProgressiveRowMount({
       return;
     }
     const containerRect = container.getBoundingClientRect();
-    containerWidthRef.current = containerRect.width;
     const rows = container.querySelectorAll<HTMLElement>(MOUNTED_ROW_SLOT_SELECTOR);
     for (const row of rows) {
       const metadata = rowMetadata(row);
@@ -327,10 +326,11 @@ export function useProgressiveRowMount({
         ? null
         : new ResizeObserver(([entry]) => {
             const nextWidth = entry?.contentRect.width ?? container.getBoundingClientRect().width;
-            if (
-              containerWidthRef.current != null &&
-              Math.abs(containerWidthRef.current - nextWidth) >= 0.5
-            ) {
+            if (containerWidthRef.current == null) {
+              containerWidthRef.current = nextWidth;
+              return;
+            }
+            if (Math.abs(containerWidthRef.current - nextWidth) >= 0.5) {
               heightsRef.current = new Map();
               rowOffsetsRef.current = [];
               containerWidthRef.current = nextWidth;

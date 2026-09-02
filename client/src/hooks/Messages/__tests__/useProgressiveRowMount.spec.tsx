@@ -13,6 +13,7 @@ type HookProps = {
 describe('useProgressiveRowMount', () => {
   let frames: Array<FrameRequestCallback | undefined>;
   let scrollableRef: React.MutableRefObject<HTMLDivElement | null>;
+  let resizeCallback: ResizeObserverCallback;
 
   /** Runs only the frames scheduled BEFORE this flush, so one call advances
    *  the expansion by exactly one step even though each step schedules the
@@ -30,6 +31,10 @@ describe('useProgressiveRowMount', () => {
   beforeEach(() => {
     frames = [];
     scrollableRef = { current: null };
+    window.ResizeObserver = jest.fn((callback: ResizeObserverCallback) => {
+      resizeCallback = callback;
+      return { observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn() };
+    }) as unknown as typeof ResizeObserver;
     window.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
       frames.push(callback);
       return frames.length;
@@ -136,6 +141,14 @@ describe('useProgressiveRowMount', () => {
     const queriesAfterMeasurement = querySpy.mock.calls.length;
 
     act(() => {
+      resizeCallback(
+        [{ contentRect: { width: 390 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      );
+    });
+    expect(result.current?.mode).toBe('bounded');
+
+    act(() => {
       container.scrollTop = 10_000;
       container.dispatchEvent(new Event('scroll'));
     });
@@ -144,6 +157,14 @@ describe('useProgressiveRowMount', () => {
     expect(result.current?.start).toBe(91);
     expect(result.current?.end).toBe(114);
     expect(querySpy).toHaveBeenCalledTimes(queriesAfterMeasurement);
+
+    act(() => {
+      resizeCallback(
+        [{ contentRect: { width: 500 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      );
+    });
+    expect(result.current?.mode).toBe('progressive');
   });
 
   it('keeps progressive mounting bounded when a submission starts mid-expansion', () => {
