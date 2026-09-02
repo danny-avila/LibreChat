@@ -15,15 +15,46 @@ const FOCUS_LEASE_KEY = 'replyAlerts:focusedAt';
 const FOCUS_LEASE_HEARTBEAT_MS = 20_000;
 const FOCUS_LEASE_TTL_MS = 60_000;
 
-const writeLease = (): void => {
+/** Identifies this tab's own lease. Focus moves before the losing tab's blur handler runs, so a
+ *  release that did not check ownership would delete the lease the newly focused tab had just
+ *  written, and every background tab would be free to announce until its next heartbeat. */
+const tabId = Math.random().toString(36).slice(2);
+
+type Lease = { owner: string; at: number };
+
+const readLease = (): Lease | null => {
   try {
-    window.localStorage.setItem(FOCUS_LEASE_KEY, String(Date.now()));
+    const raw = window.localStorage.getItem(FOCUS_LEASE_KEY);
+    if (raw == null) {
+      return null;
+    }
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null;
+    }
+    const { owner, at } = parsed as Partial<Lease>;
+    return typeof owner === 'string' && typeof at === 'number' && Number.isFinite(at)
+      ? { owner, at }
+      : null;
   } catch {
-    /* Private windows and quota failures degrade to per-tab focus, as before. */
+    /* Private windows, quota failures and anything a previous version wrote: fall back to
+       per-tab focus, which is what this tab did before the lease existed. */
+    return null;
   }
 };
 
-const clearLease = (): void => {
+const writeLease = (): void => {
+  try {
+    window.localStorage.setItem(FOCUS_LEASE_KEY, JSON.stringify({ owner: tabId, at: Date.now() }));
+  } catch {
+    /* See above. */
+  }
+};
+
+const clearOwnLease = (): void => {
+  if (readLease()?.owner !== tabId) {
+    return;
+  }
   try {
     window.localStorage.removeItem(FOCUS_LEASE_KEY);
   } catch {
@@ -32,21 +63,12 @@ const clearLease = (): void => {
 };
 
 /**
- * Whether some other tab of this origin is currently focused. The caller checks its own focus
- * first, so a lease this tab wrote itself is only ever read while it is unfocused, by which time
- * its own cleanup has removed it.
+ * Whether some other tab of this origin is currently focused. This tab's own lease never counts:
+ * the caller checks its own focus first, so reading one here means a release did not land.
  */
 export const isAnotherTabFocused = (): boolean => {
-  try {
-    const raw = window.localStorage.getItem(FOCUS_LEASE_KEY);
-    if (raw == null) {
-      return false;
-    }
-    const focusedAt = Number(raw);
-    return Number.isFinite(focusedAt) && Date.now() - focusedAt < FOCUS_LEASE_TTL_MS;
-  } catch {
-    return false;
-  }
+  const lease = readLease();
+  return lease != null && lease.owner !== tabId && Date.now() - lease.at < FOCUS_LEASE_TTL_MS;
 };
 
 /** Publishes the lease for as long as this tab holds focus. */
@@ -69,7 +91,7 @@ export const startFocusLease = (): (() => void) => {
 
   const release = () => {
     stopHeartbeat();
-    clearLease();
+    clearOwnLease();
   };
 
   if (document.hasFocus()) {
