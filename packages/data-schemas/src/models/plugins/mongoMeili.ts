@@ -438,30 +438,29 @@ const createMeiliMongooseModel = ({
           },
         ],
       };
-      const [totalDocuments, indexedDocuments, pendingIndexing, pendingCleanup] =
-        await Promise.all([
-          this.countDocuments(indexableQuery),
-          this.countDocuments({
-            $and: [
-              indexableQuery,
-              {
-                _meiliIndex: true,
-                _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
-              },
-            ],
-          }),
-          this.countDocuments(needsIndexingQuery),
-          excludedIndexedQuery == null
-            ? Promise.resolve(0)
-            : this.countDocuments(excludedIndexedQuery),
-        ]);
+      const [totalDocuments, totalProcessed, pendingIndexing, pendingCleanup] = await Promise.all([
+        this.countDocuments(indexableQuery),
+        this.countDocuments({
+          $and: [
+            indexableQuery,
+            {
+              _meiliIndex: true,
+              _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+            },
+          ],
+        }),
+        this.countDocuments(needsIndexingQuery),
+        excludedIndexedQuery == null
+          ? Promise.resolve(0)
+          : this.countDocuments(excludedIndexedQuery),
+      ]);
 
       return {
-        totalProcessed: indexedDocuments,
+        totalProcessed,
         totalDocuments,
         pendingIndexing,
         pendingCleanup,
-        isComplete: indexedDocuments === totalDocuments && pendingCleanup === 0,
+        isComplete: totalProcessed === totalDocuments && pendingCleanup === 0,
       };
     }
 
