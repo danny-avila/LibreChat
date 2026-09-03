@@ -21,10 +21,6 @@ import {
   getBranchSiblingIndexesForTarget,
 } from '~/utils';
 import {
-  getGenerationProtocolVersion,
-  supportsGenerationProtocolV2,
-} from '~/data-provider/SSE/protocol';
-import {
   useStreamStatus,
   useActiveJobs,
   useAgentQueuedTurns,
@@ -32,6 +28,10 @@ import {
   isQueuedTurnSuccessorOwed,
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
+import {
+  getGenerationProtocolVersion,
+  supportsGenerationProtocolV2,
+} from '~/data-provider/SSE/protocol';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import store from '~/store';
 
