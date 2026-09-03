@@ -58,20 +58,58 @@ test.describe('MCP admin-panel allowlist override', () => {
     expect(before.status).toBe(200);
     expect(before.success).toBe(false);
 
-    // Admin-panel override: allow the fixture's origin for this user.
-    const put = await request.put(`/api/admin/config/user/${userId}`, {
-      headers,
-      data: { overrides: { mcpSettings: { allowedDomains: [FIXTURE_ORIGIN] } } },
-    });
-    expect(put.ok()).toBeTruthy();
+    try {
+      // Admin-panel override: allow the fixture's origin for this user.
+      const put = await request.put(`/api/admin/config/user/${userId}`, {
+        headers,
+        data: { overrides: { mcpSettings: { allowedDomains: [FIXTURE_ORIGIN] } } },
+      });
+      expect(put.ok()).toBeTruthy();
 
-    // The override is honored on reinit: the server now connects. invalidateConfigCaches
-    // runs asynchronously after the PUT, so poll until the merged allowlist lands.
-    await expect
-      .poll(async () => (await reinitialize(request, headers)).success, {
-        timeout: 30000,
-        intervals: [1000, 2000, 3000],
-      })
-      .toBe(true);
+      // The override is honored on reinit: the server now connects. invalidateConfigCaches
+      // runs asynchronously after the PUT, so poll until the merged allowlist lands.
+      await expect
+        .poll(async () => (await reinitialize(request, headers)).success, {
+          timeout: 30000,
+          intervals: [1000, 2000, 3000],
+        })
+        .toBe(true);
+    } finally {
+      /**
+       * The override is per-USER and this is the shared primary user, so without
+       * a teardown it outlives the test. The list holds only this fixture's
+       * origin and allowlist matching is port-inclusive, so every other MCP
+       * fixture is then blocked for the rest of the shard: `e2e-oauth` fails
+       * inspection, and an agent expecting its tools initializes into
+       * AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE (503) rather than producing its
+       * OAuth prompt. Whether that bites depends only on which specs the shard
+       * runs afterwards, so it surfaces as a deterministic failure in an
+       * unrelated spec that passes whenever it happens to run first.
+       */
+      const del = await request.delete(`/api/admin/config/user/${userId}`, { headers });
+      expect(del.ok()).toBeTruthy();
+      /**
+       * Confirm against the stored override rather than by re-running
+       * `reinitialize`: the connection this test established stays live, so
+       * reinitialize keeps succeeding once the allowlist is gone and would
+       * never report the baseline again. Invalidation is async, so poll the
+       * config itself until the override has actually cleared.
+       */
+      await expect
+        .poll(
+          async () => {
+            const res = await request.get(`/api/admin/config/user/${userId}`, { headers });
+            if (!res.ok()) {
+              return 'unreadable';
+            }
+            const body = (await res.json()) as {
+              overrides?: { mcpSettings?: { allowedDomains?: string[] } };
+            };
+            return body.overrides?.mcpSettings?.allowedDomains ?? 'cleared';
+          },
+          { timeout: 30000, intervals: [1000, 2000, 3000] },
+        )
+        .toBe('cleared');
+    }
   });
 });
