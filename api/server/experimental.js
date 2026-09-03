@@ -272,6 +272,41 @@ if (cluster.isMaster) {
     cluster.fork();
   });
 
+  /**
+   * Deliver the absolute deadline, then SIGTERM only once the worker has acknowledged it.
+   * IPC is asynchronous and worker.kill() is immediate, so without the acknowledgement a
+   * busy worker can enter its shutdown handler before the deadline arrives and fall back to
+   * a worker-local estimate the primary will not honor. Bounded so a stalled worker cannot
+   * hold the others.
+   */
+  const CLUSTER_DEADLINE_ACK_TIMEOUT_MS = 1_000;
+  const signalWorkerAfterDeadlineAck = (worker, deadlineAt) => {
+    let signaled = false;
+    let ackTimer = null;
+    const onMessage = (msg) => {
+      if (msg != null && msg.type === 'cluster-shutdown-ack') {
+        signal();
+      }
+    };
+    const signal = () => {
+      if (signaled) {
+        return;
+      }
+      signaled = true;
+      clearTimeout(ackTimer);
+      worker.off('message', onMessage);
+      worker.kill();
+    };
+    worker.on('message', onMessage);
+    ackTimer = setTimeout(signal, CLUSTER_DEADLINE_ACK_TIMEOUT_MS);
+    try {
+      worker.send({ type: 'cluster-shutdown', deadlineAt });
+    } catch (err) {
+      logger.warn('Could not send the shutdown deadline to a worker:', err);
+      signal();
+    }
+  };
+
   /** Graceful shutdown on SIGTERM/SIGINT */
   const shutdown = () => {
     if (shuttingDown) {
@@ -289,12 +324,7 @@ if (cluster.isMaster) {
      *  coordinator, and not from whenever their signal handler happened to run. */
     const deadlineAt = Date.now() + CLUSTER_FORCE_EXIT_MS;
     for (const worker of liveWorkers) {
-      try {
-        worker.send({ type: 'cluster-shutdown', deadlineAt });
-      } catch (err) {
-        logger.warn('Could not send the shutdown deadline to a worker:', err);
-      }
-      worker.kill();
+      signalWorkerAfterDeadlineAck(worker, deadlineAt);
     }
     setTimeout(() => {
       logger.info('Forcing shutdown after timeout');
@@ -390,6 +420,15 @@ if (cluster.isMaster) {
   process.on('message', (msg) => {
     if (msg != null && msg.type === 'cluster-shutdown' && Number.isFinite(msg.deadlineAt)) {
       clusterShutdownDeadlineAt = msg.deadlineAt;
+      /** The primary holds SIGTERM until this arrives, so the deadline is in place before
+       *  the shutdown handler can run. */
+      if (typeof process.send === 'function') {
+        try {
+          process.send({ type: 'cluster-shutdown-ack' });
+        } catch (err) {
+          logger.debug('Could not acknowledge the shutdown deadline to the primary:', err);
+        }
+      }
     }
   });
   process.on('message', (msg) => {
