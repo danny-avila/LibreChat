@@ -338,7 +338,7 @@ describe('executeWorkspaceTool', () => {
     ).rejects.toMatchObject({ reason: 'invalid' });
   });
 
-  test('accepts canonical search results for dot-segment request paths', async () => {
+  test('rejects non-canonical dot-segment request paths before dispatch', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       Response.json({
         protocolVersion: 1,
@@ -362,7 +362,8 @@ describe('executeWorkspaceTool', () => {
         },
         fetchImpl,
       }),
-    ).resolves.toMatchObject({ matches: [{ path: 'src/app.ts' }] });
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   test('validates bounded file listings within the requested subtree', async () => {
@@ -391,15 +392,6 @@ describe('executeWorkspaceTool', () => {
       }),
     ).resolves.toMatchObject({ paths: ['src/app.ts', 'src/worker.ts'] });
 
-    fetchImpl.mockResolvedValueOnce(
-      Response.json({
-        protocolVersion: 1,
-        operation: 'list_files',
-        workspaceId: 'primary',
-        paths: ['src/app.ts', 'src/worker.ts'],
-        truncated: false,
-      }),
-    );
     await expect(
       executeWorkspaceTool({
         baseURL: 'https://code.example.com/v1',
@@ -413,7 +405,8 @@ describe('executeWorkspaceTool', () => {
         },
         fetchImpl,
       }),
-    ).resolves.toMatchObject({ paths: ['src/app.ts', 'src/worker.ts'] });
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
 
     fetchImpl.mockResolvedValueOnce(
       Response.json({
