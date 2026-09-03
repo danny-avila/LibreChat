@@ -40,6 +40,7 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { isAbortError } from '~/utils/errors';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
@@ -95,15 +96,6 @@ const OAUTH_RECOVERY_RECONNECT_DELAY_MS = 2000;
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
-  private readonly oauthRecoveries = new WeakMap<
-    MCPConnection,
-    {
-      promise: Promise<void>;
-      callbacks: OAuthLifecycleRelay;
-      allowsTakeover: boolean;
-      takeoverClaimed?: boolean;
-    }
-  >();
 
   /** Live count of elicitation flows awaiting user input, keyed by
    *  `${userId}:${serverName}`. Bounds concurrent `elicitation/create` cards per
@@ -133,6 +125,16 @@ export class MCPManager extends UserConnectionManager {
     }
     this.pendingElicitations.set(key, next);
   }
+
+  private readonly oauthRecoveries = new WeakMap<
+    MCPConnection,
+    {
+      promise: Promise<void>;
+      callbacks: OAuthLifecycleRelay;
+      allowsTakeover: boolean;
+      takeoverClaimed?: boolean;
+    }
+  >();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -499,12 +501,18 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
     serverConfig?: t.ParsedServerConfig,
+    options?: { deadlineMs?: number; signal?: AbortSignal },
   ): Promise<{
     tools: t.LCAvailableTools | null;
     publicationGeneration?: string;
     publicationRevision?: string;
   }> {
     try {
+      const signal = createDeadlineAbortSignal(options?.deadlineMs, options?.signal);
+      const readToolCatalog = (connection: MCPConnection) =>
+        options == null
+          ? MCPServerInspector.getToolCatalog(serverName, connection)
+          : MCPServerInspector.getToolCatalog(serverName, connection, options.deadlineMs, signal);
       const registry = MCPServersRegistry.getInstance();
       const effectiveConfig = serverConfig ?? (await registry.getServerConfig(serverName, userId));
       const useAppConnection =
@@ -515,7 +523,7 @@ export class MCPManager extends UserConnectionManager {
         ? await this.appConnections?.get(serverName)
         : null;
       if (existingAppConnection != null) {
-        return MCPServerInspector.getToolCatalog(serverName, existingAppConnection);
+        return readToolCatalog(existingAppConnection);
       }
 
       let awaitedRecovery: Promise<void> | undefined;
@@ -556,12 +564,12 @@ export class MCPManager extends UserConnectionManager {
         if (recovery && recovery !== awaitedRecovery) {
           awaitedRecovery = recovery;
           await this.releaseConnection(connection);
-          await this.waitForConnectionRecovery(recovery);
+          await this.waitForConnectionRecovery(recovery, signal);
           continue;
         }
 
         try {
-          const { tools } = await MCPServerInspector.getToolCatalog(serverName, connection);
+          const { tools } = await readToolCatalog(connection);
           const generationAfterFetch = await getMCPToolsChangedGeneration({ userId, serverName });
           if (
             publicationGeneration != null &&
@@ -865,15 +873,15 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager,
     oauthStart,
     oauthEnd,
-    elicitationStart,
     customUserVars,
     graphTokenResolver,
     oboTokenResolver,
     oboTrustChecker,
-    elicitationStreamId,
-    elicitationStepId,
     upstreamTokenProvider,
     oboIdentityContext,
+    elicitationStart,
+    elicitationStreamId,
+    elicitationStepId,
   }: {
     user?: IUser;
     serverName: string;
@@ -890,6 +898,11 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
     oauthStart?: t.OAuthStartHandler;
     oauthEnd?: () => Promise<void>;
+    graphTokenResolver?: GraphTokenResolver;
+    oboTokenResolver?: OboTokenResolver;
+    oboTrustChecker?: OboTrustChecker;
+    upstreamTokenProvider?: UpstreamTokenProvider;
+    oboIdentityContext?: AuthIdentityContext;
     /**
      * When provided: (1) declares support for MCP elicitation, extending the
      * `tools/call` timeout to outlive the flow-state wait (see
@@ -911,9 +924,6 @@ Please follow these instructions when using tools from the respective MCP server
        *  `notifications/elicitation/complete` correlation. */
       elicitationId?: string;
     }) => Promise<void>;
-    graphTokenResolver?: GraphTokenResolver;
-    oboTokenResolver?: OboTokenResolver;
-    oboTrustChecker?: OboTrustChecker;
     /** Resumable-stream id capturing the elicitation's SSE context, so the
      *  out-of-band completion route (a different process/request) can resolve
      *  it via {@link FlowStateManager.completeFlowIfPending} even when the
@@ -923,8 +933,6 @@ Please follow these instructions when using tools from the respective MCP server
     /** Run-step id paired with {@link elicitationStreamId}, needed to emit
      *  `on_elicitation_resolved` onto the right step from the completion route. */
     elicitationStepId?: string;
-    upstreamTokenProvider?: UpstreamTokenProvider;
-    oboIdentityContext?: AuthIdentityContext;
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
@@ -1369,6 +1377,14 @@ Please follow these instructions when using tools from the respective MCP server
         if (error instanceof OAuthRecoveryTakeoverRequired) {
           recoveryTakeoverConsumed = true;
           continue;
+        }
+        /** A user Stop aborts the in-flight request; that rejection is the
+         *  cancellation working, not a fault, so it stays out of the error log.
+         *  The error must look like an abort too — a real failure can reject in
+         *  the same tick as the Stop and has to stay visible. */
+        if (options?.signal?.aborted === true && isAbortError(error)) {
+          logger.debug(`${logPrefix}[${toolName}] Tool call cancelled by user abort`);
+          throw error;
         }
         // Log with context and re-throw or handle as needed
         logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);

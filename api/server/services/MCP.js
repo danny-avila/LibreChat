@@ -40,6 +40,7 @@ const {
   containsGraphTokenPlaceholder,
   createAuthIdentityContext,
   isOAuthServer,
+  isAbortError,
   OpenIDReauthRequiredError,
 } = require('@librechat/api');
 const {
@@ -78,22 +79,6 @@ const RECONNECT_THROTTLE_MS = 10_000;
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
 
-/**
- * Bridges the URL-mode elicitation SSE stream to the out-of-band completion
- * route. `createElicitationStart` runs inside the streaming tool call, so it
- * holds the stream context (`res`/`streamId`/`stepId`); the
- * `POST /api/mcp/elicitation/:flowId` route runs in a separate request that has
- * none of it. Keyed by `flowId`, this registry lets the route emit
- * `on_elicitation_resolved` back onto the originating stream. Entries are
- * deleted on resolution; any left abandoned are bounded to {@link MAX_CACHE_SIZE}
- * and TTL-swept once the map exceeds that cap (see {@link evictStale}).
- * `elicitationId` is retained alongside them for future
- * `notifications/elicitation/complete` correlation.
- * @type {Map<string, { res?: import('http').ServerResponse, streamId: string | null, stepId: string, elicitationId?: string, createdAt: number }>}
- */
-const elicitationFlowContext = new Map();
-const ELICITATION_CONTEXT_TTL_MS = 10 * 60 * 1000;
-
 async function userCanUseMCPServers(user, req) {
   if (!user?.id || !user?.role) {
     return false;
@@ -118,6 +103,22 @@ function createMCPPermissionContext(req) {
     canUseServers: (user = req?.user) => userCanUseMCPServers(user, req),
   };
 }
+
+/**
+ * Bridges the URL-mode elicitation SSE stream to the out-of-band completion
+ * route. `createElicitationStart` runs inside the streaming tool call, so it
+ * holds the stream context (`res`/`streamId`/`stepId`); the
+ * `POST /api/mcp/elicitation/:flowId` route runs in a separate request that has
+ * none of it. Keyed by `flowId`, this registry lets the route emit
+ * `on_elicitation_resolved` back onto the originating stream. Entries are
+ * deleted on resolution; any left abandoned are bounded to {@link MAX_CACHE_SIZE}
+ * and TTL-swept once the map exceeds that cap (see {@link evictStale}).
+ * `elicitationId` is retained alongside them for future
+ * `notifications/elicitation/complete` correlation.
+ * @type {Map<string, { res?: import('http').ServerResponse, streamId: string | null, stepId: string, elicitationId?: string, createdAt: number }>}
+ */
+const elicitationFlowContext = new Map();
+const ELICITATION_CONTEXT_TTL_MS = 10 * 60 * 1000;
 
 function evictStale(map, ttl) {
   if (map.size <= MAX_CACHE_SIZE) {
@@ -419,11 +420,12 @@ async function getAssistantToolDefinitions({ req, res, tools }) {
       getAllServerConfigs: (userId, configServers, role) =>
         registry.getAllServerConfigs(userId, configServers, role),
       getMCPServerTools,
-      getServerToolFunctionsSnapshot: async (userId, serverName, serverConfig) =>
+      getServerToolFunctionsSnapshot: async (userId, serverName, serverConfig, options) =>
         (await getMCPManager()?.getServerToolFunctionsSnapshot(
           userId,
           serverName,
           serverConfig,
+          options,
         )) ?? {
           tools: null,
         },
@@ -484,6 +486,18 @@ async function resolveCollisionAuditNames({ rawServerNames, accessibleServerName
     );
     return { names: rawServerNames, complete: false };
   }
+}
+
+/**
+ * The MCP servers a user can reach, keyed by name, with the registry's tier
+ * precedence already applied. This is the resolution behind `GET /api/mcp/servers`,
+ * so anything derived from it agrees with the catalog the client was given.
+ * @param {string} userId
+ * @param {string} [role]
+ * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
+ */
+async function getAccessibleMCPServers(userId, role) {
+  return await resolveAllMcpConfigs(userId, role != null ? { role } : undefined);
 }
 
 async function resolveAllMcpConfigs(userId, user) {
@@ -1405,6 +1419,7 @@ function createToolInstance({
         streamId,
         jobCreatedAt,
       });
+
       // Elicitation is enabled by default; a server config sets `elicitation: false`
       // to opt out. When disabled, we pass no `elicitationStart`, so MCPManager's
       // `if (elicitationStart && userId)` guards skip all elicitation handling.
@@ -1416,7 +1431,6 @@ function createToolInstance({
               stepId,
               streamId,
             });
-
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
@@ -1471,10 +1485,21 @@ function createToolInstance({
       }
       return result;
     } catch (error) {
-      logger.error(
-        `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
-        error,
-      );
+      /** A user Stop aborts every in-flight call at once, and that rejection is
+       *  the cancellation working, so it must not reach error-level operational
+       *  alerts; the wrapping below still reports it to the turn. The error has
+       *  to look like an abort as well: a permission, OAuth, or upstream failure
+       *  can reject in the same tick as the Stop and must stay visible. */
+      if (config?.signal?.aborted === true && isAbortError(error)) {
+        logger.debug(
+          `[MCP][${serverName}][${toolName}][User: ${userId}] Tool call cancelled by user abort`,
+        );
+      } else {
+        logger.error(
+          `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
+          error,
+        );
+      }
 
       /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
       if (error instanceof OpenIDReauthRequiredError) {
@@ -1808,6 +1833,9 @@ async function getServerConnectionStatus(
 }
 
 module.exports = {
+  createElicitationStart,
+  getElicitationFlowContext,
+  resolveElicitationFlow,
   createMCPTool,
   createMCPTools,
   toProviderToolDefinition,
@@ -1823,10 +1851,8 @@ module.exports = {
   resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  getAccessibleMCPServers,
   createOAuthStart,
-  createElicitationStart,
-  getElicitationFlowContext,
-  resolveElicitationFlow,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,

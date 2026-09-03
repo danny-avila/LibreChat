@@ -11,7 +11,12 @@ const {
   getOAuthFailureMessage,
   redirectToAuthFailure,
 } = require('@librechat/api');
-const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
+const {
+  checkDomainAllowed,
+  loginLimiter,
+  logHeaders,
+  markOAuthNavigation,
+} = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
@@ -35,6 +40,7 @@ const authFailureRedirectOptions = {
 };
 
 router.use(logHeaders);
+router.use(markOAuthNavigation);
 router.use(loginLimiter);
 
 const oauthHandler = createOAuthHandler();

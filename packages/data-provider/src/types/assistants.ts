@@ -1,5 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider, MemoryScope, SkillsScope } from 'src/schemas';
 import type { StatefulCodeEnvironment } from '../stateful-code';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
@@ -368,6 +368,10 @@ export type Agent = {
   /** Master toggle for skill use on this agent. `true` = active (full catalog unless
    *  `skills` narrows it). `false`/undefined = inactive (no skills available). */
   skills_enabled?: boolean;
+  /** Enables runtime skill creation without exposing an existing skill catalog. */
+  skill_authoring_enabled?: boolean;
+  /** Explicit catalog exposure while skills are enabled. Missing preserves legacy semantics. */
+  skills_scope?: SkillsScope;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
   /** Memory partition: `agent` isolates memories per (user, agent); default shared pool */
@@ -402,6 +406,8 @@ export type AgentCreateParams = {
   | 'tool_options'
   | 'skills'
   | 'skills_enabled'
+  | 'skill_authoring_enabled'
+  | 'skills_scope'
   | 'subagents'
   | 'memory_scope'
 >;
@@ -433,6 +439,8 @@ export type AgentUpdateParams = {
   | 'tool_options'
   | 'skills'
   | 'skills_enabled'
+  | 'skill_authoring_enabled'
+  | 'skills_scope'
   | 'subagents'
   | 'memory_scope'
 >;

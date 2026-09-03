@@ -47,6 +47,7 @@ import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
 import { autoScrollAtom } from '~/store/autoScroll';
 import Avatar from '../SettingsTabs/Account/Avatar';
+import CodeEnvironments from './CodeEnvironments';
 import About from '../SettingsTabs/About/About';
 import ApiKeys from '../SettingsTabs/ApiKeys';
 import MemoryToggle from './MemoryToggle';
@@ -587,6 +588,15 @@ export const registry: SettingEntry[] = [
     keywords: ['agent', 'code', 'environment', 'sandbox', 'stateful', 'workspace'],
     show: (ctx) => ctx.hasStatefulCodeSessions,
     Component: StatefulWorkspaceDefault,
+  },
+  {
+    id: 'codeEnvironments',
+    tab: DATA,
+    section: 'codeExecution',
+    labelKey: 'com_ui_code_environments',
+    keywords: ['bridge', 'cli', 'code', 'environment', 'sandbox', 'vm', 'worker'],
+    show: (ctx) => ctx.hasStatefulCodeSessions,
+    Component: CodeEnvironments,
   },
   // Data controls · Your data
   {

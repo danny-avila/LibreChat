@@ -13,7 +13,7 @@ const {
   createRun,
   createChunk,
   applyContextToAgent,
-  buildToolSet,
+  buildRunToolSet,
   buildInitialToolSessions,
   buildAgentScopedContext,
   buildInlineMemoryContext,
@@ -53,6 +53,7 @@ const {
   hasModelBoundContentProtection,
   isContentFilterError,
   getSafeErrorMetadata,
+  getUserFacingProviderError,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
   buildNonStreamingResponse,
@@ -98,14 +99,6 @@ const db = require('~/models');
 
 const filterFilesByRemoteAgentAccess = (params) =>
   filterFilesByAgentAccess({ ...params, resourceType: ResourceType.REMOTE_AGENT });
-const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
-
-function getUserFacingProviderError(error, protectionEnabled) {
-  if (protectionEnabled) {
-    return GENERIC_PROVIDER_ERROR;
-  }
-  return error instanceof Error ? error.message : 'An error occurred';
-}
 
 /**
  * Creates a tool loader function for the agent.
@@ -282,10 +275,12 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
   // Request-backed tool adapters still observe the validated envelope payload;
   // shared initialization receives the transport-free runtime below.
   req.body = request;
+  req.turnStartedAt = envelope.receivedAt;
   const agentRuntime = createAgentExecutionContext({
     user: req.user,
     appConfig,
     requestBody: request,
+    turnStartedAt: envelope.receivedAt,
     conversationCreatedAt: req.conversationCreatedAt,
     resolvedConversation: req.resolvedConversation,
     hasResolvedConversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation'),
@@ -811,7 +806,13 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
       const openaiMessages = convertMessages(request.messages);
 
-      const toolSet = buildToolSet(primaryConfig);
+      const toolSet = buildRunToolSet(
+        primaryConfig,
+        handoffAgentConfigs.values(),
+        undefined,
+        openaiMessages,
+        true,
+      );
       const formatted = formatAgentMessages(stripActivityLabelParts(openaiMessages), {}, toolSet);
       const formattedMessages = formatted.messages;
       const initialSummary = formatted.summary;
@@ -1208,7 +1209,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       protocol: 'chat.completions',
       requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
       receivedAt,
-      principal: req.user,
+      principal: req.tenantId == null ? req.user : { ...req.user, tenantId: req.tenantId },
       payload: validation.request,
     });
   } catch (error) {

@@ -11,8 +11,10 @@ const mockCreateMCPTool = jest.fn();
 const mockCreateMCPTools = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
+const mockPrimeCodeFiles = jest.fn(async () => ({ files: [], toolContext: undefined }));
 
 const mockCreateSearchTool = jest.fn(() => ({ name: 'web_search' }));
+const mockCreateCodeExecutionTool = jest.fn(() => ({ name: 'execute_code' }));
 const mockLoadWebSearchAuth = jest.fn(async () => ({
   authenticated: true,
   authResult: { searchProvider: 'serper', searxngInstanceUrl: 'http://searxng.internal:8080' },
@@ -21,6 +23,11 @@ const mockLoadWebSearchAuth = jest.fn(async () => ({
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
   createSearchTool: (...args) => mockCreateSearchTool(...args),
+  createCodeExecutionTool: (...args) => mockCreateCodeExecutionTool(...args),
+}));
+
+jest.mock('~/server/services/Files/Code/process', () => ({
+  primeFiles: (...args) => mockPrimeCodeFiles(...args),
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -363,6 +370,32 @@ describe('Tool Handlers', () => {
       });
       expect(loadedTools).toHaveLength(1);
       expect(loadedTools[0].name).toBe(ASK_USER_QUESTION_TOOL_NAME);
+    });
+
+    it('routes code file priming to the selected bridge worker', async () => {
+      const bridgeWorkerId = 'principal-worker';
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.execute_code],
+        returnMap: true,
+        agent: { id: 'agent-1' },
+        options: {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com/v1',
+            bridgeWorkerId,
+          },
+        },
+      });
+
+      await toolMap[Tools.execute_code]();
+
+      expect(mockPrimeCodeFiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: 'agent-1',
+          codeApiBaseUrl: 'https://code.example.com/v1',
+          bridgeWorkerId,
+        }),
+      );
     });
 
     it('passes request body to chat MCP tool creation and skips stale cache for BODY-scoped servers', async () => {

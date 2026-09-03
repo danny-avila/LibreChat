@@ -24,6 +24,7 @@ const mockGenerationJobManager = {
   markProviderExecutionDrained: jest.fn(),
   failPausePersistence: jest.fn(),
   getResumeState: jest.fn(),
+  getJobStore: jest.fn(),
   updateMetadata: jest.fn(),
   persistAgentEventDetachedTerminalEvidence: jest.fn(),
   claimGeneration: jest.fn(),
@@ -444,6 +445,9 @@ describe('ResumableAgentController resume metadata', () => {
       emitter: { on: jest.fn() },
     });
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
+    mockGenerationJobManager.getJobStore.mockReturnValue({
+      getJob: jest.fn().mockResolvedValue(null),
+    });
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.isRedis = false;
@@ -937,6 +941,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(initializeClient).toHaveBeenCalledWith(
       expect.objectContaining({ checkpointNamespace: '1000', jobCreatedAt: 1000 }),
     );
+    expect(req.turnStartedAt).toBe(1000);
     expect(mockGenerationJobManager.updateMetadata).not.toHaveBeenCalled();
     const startupMilestones = mockStartupTelemetry.mark.mock.calls.map(([milestone]) => milestone);
     expect(startupMilestones.slice(0, 2)).toEqual(['request_admitted', 'job_created']);
@@ -5480,7 +5485,7 @@ describe('ResumableAgentController resume metadata', () => {
       getHaltReason: () => 'preempt_incomplete',
     };
 
-    const runFirstTurn = async ({ run, addTitle: suppliedAddTitle } = {}) => {
+    const runFirstTurn = async ({ run, addTitle: suppliedAddTitle, clientOverrides } = {}) => {
       let signalFinished;
       const finished = new Promise((resolve) => {
         signalFinished = resolve;
@@ -5499,6 +5504,7 @@ describe('ResumableAgentController resume metadata', () => {
         savedMessageIds: new Set(),
         skipSaveUserMessage: false,
         ...(run && { run }),
+        ...clientOverrides,
         sendMessage: jest.fn(async (_text, options) => {
           const userMessage = {
             messageId: 'user-msg',
@@ -5600,6 +5606,54 @@ describe('ResumableAgentController resume metadata', () => {
 
       expect(addTitle).toHaveBeenCalledTimes(1);
       expect(getTitleSignal().aborted).toBe(false);
+    });
+
+    /**
+     * The hop that makes the client notice possible: `AgentClient` swallows the
+     * graph's step-limit error and raises `stepLimitReached`, and the controller
+     * must turn that into an `unfinished` row stamped with the tool-call-limit
+     * finish reason on BOTH the durable write and the terminal SSE event.
+     */
+    const stepLimitClient = { stepLimitReached: true };
+
+    const savedResponseRow = () =>
+      mockSaveMessage.mock.calls
+        .map(([, message]) => message)
+        .find((message) => message?.messageId === 'response-msg');
+
+    it('persists a step-limited turn as unfinished with the tool-call-limit finish reason', async () => {
+      await runFirstTurn({ clientOverrides: stepLimitClient });
+
+      expect(savedResponseRow()).toEqual(
+        expect.objectContaining({
+          unfinished: true,
+          finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON,
+        }),
+      );
+    });
+
+    it('keeps the partial content on a step-limited turn instead of replacing it with an error', async () => {
+      await runFirstTurn({ clientOverrides: stepLimitClient });
+
+      const saved = savedResponseRow();
+      expect(saved.content).toEqual([{ type: 'text', text: 'Truncated answer' }]);
+      expect(saved.error).not.toBe(true);
+    });
+
+    it('publishes the finish reason on the terminal event so the client needs no refetch', async () => {
+      await runFirstTurn({ clientOverrides: stepLimitClient });
+
+      const published = mockGenerationJobManager.publishTerminalClaim.mock.calls.at(-1);
+      expect(published).toBeDefined();
+      expect(JSON.stringify(published)).toContain(Constants.TOOL_CALL_LIMIT_FINISH_REASON);
+    });
+
+    it('leaves an ordinary completed turn finished and unstamped', async () => {
+      await runFirstTurn();
+
+      const saved = savedResponseRow();
+      expect(saved.unfinished).toBe(false);
+      expect(saved.finish_reason).toBeUndefined();
     });
   });
 });

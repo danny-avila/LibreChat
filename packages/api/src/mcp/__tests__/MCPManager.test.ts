@@ -819,6 +819,99 @@ describe('MCPManager', () => {
     });
   });
 
+  describe('callTool - cancellation logging', () => {
+    const mockUser = { id: 'cancel-user' } as IUser;
+    const mockFlowManager = {} as Parameters<MCPManager['callTool']>[0]['flowManager'];
+    const serverConfig: t.SSEOptions = {
+      type: 'sse',
+      url: 'https://api.example.com',
+    };
+
+    /** Rejects the way the MCP SDK does once a request's signal aborts. */
+    function createAbortingConnection(): MCPConnection {
+      return {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        client: {
+          request: jest.fn(
+            (_request: unknown, _schema: unknown, options: { signal?: AbortSignal }) =>
+              new Promise((_resolve, reject) => {
+                options.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
+                  once: true,
+                });
+              }),
+          ),
+        },
+      } as unknown as MCPConnection;
+    }
+
+    beforeEach(() => {
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+      (logger.error as jest.Mock).mockClear();
+      (logger.debug as jest.Mock).mockClear();
+    });
+
+    async function callAndAbort(connection: MCPConnection): Promise<unknown> {
+      const manager = new MCPManager();
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+      const controller = new AbortController();
+      const call = manager.callTool({
+        user: mockUser,
+        serverName,
+        serverConfig,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager,
+        options: { signal: controller.signal },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      controller.abort();
+      return call.catch((error) => error);
+    }
+
+    it('logs a user-aborted tool call at debug rather than as a failure', async () => {
+      await callAndAbort(createAbortingConnection());
+
+      expect(logger.error).not.toHaveBeenCalledWith(
+        expect.stringContaining('Tool call failed'),
+        expect.anything(),
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('Tool call cancelled by user abort'),
+      );
+    });
+
+    it('keeps a real failure racing the Stop at error level', async () => {
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        client: {
+          request: jest.fn(
+            (_request: unknown, _schema: unknown, options: { signal?: AbortSignal }) =>
+              new Promise((_resolve, reject) => {
+                options.signal?.addEventListener(
+                  'abort',
+                  () => reject(new Error('upstream 503 from the MCP server')),
+                  { once: true },
+                );
+              }),
+          ),
+        },
+      } as unknown as MCPConnection;
+
+      await callAndAbort(connection);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Tool call failed'),
+        expect.anything(),
+      );
+    });
+  });
+
   describe('callTool - Graph Token Integration', () => {
     const mockUser: Partial<IUser> = {
       id: 'user-123',
@@ -3878,13 +3971,27 @@ describe('MCPManager', () => {
         )?.[1];
         const tools: t.MCPTool[] = [{ name: 'current', inputSchema: { type: 'object' } }];
         listener(tools);
-        const snapshot = await manager.getServerToolFunctionsSnapshot(userId, serverName);
+        const deadlineMs = Date.now() + 3000;
+        const snapshot = await manager.getServerToolFunctionsSnapshot(
+          userId,
+          serverName,
+          undefined,
+          {
+            deadlineMs,
+          },
+        );
 
         expect(generationSpy).toHaveBeenCalledWith({ userId, serverName });
         expect(snapshot).toEqual({
           tools: expectedToolFunctions,
           publicationGeneration: 'generation-a',
         });
+        expect(MCPServerInspector.getToolCatalog).toHaveBeenCalledWith(
+          serverName,
+          mockConnection,
+          deadlineMs,
+          expect.any(AbortSignal),
+        );
         expect(notifySpy).toHaveBeenCalledWith({
           tools,
           userId,

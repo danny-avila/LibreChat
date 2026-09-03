@@ -398,7 +398,16 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
         id: req.user.id,
       },
       req,
-      { baseUrl, executionProfile },
+      {
+        baseUrl,
+        executionProfile,
+        ...((configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId) != null
+          ? {
+              bridgeWorkerId:
+                configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+            }
+          : {}),
+      },
     );
     res.setHeader('Content-Disposition', 'attachment');
     res.setHeader('Content-Type', 'application/octet-stream');

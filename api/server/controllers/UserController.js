@@ -12,6 +12,7 @@ const {
   getWebSearchUninstallFields,
   deleteAgentCheckpoints,
   deleteAllSharedLinksWithCleanup,
+  revokeUserCodeEnvironmentWorkers,
 } = require('@librechat/api');
 const {
   Tools,
@@ -404,6 +405,7 @@ const deleteUserController = async (req, res) => {
     if (triggerDeletionFence != null) {
       await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
     }
+    const deletionAppConfig = await getAppConfig({ baseOnly: true });
     await drainAgentTriggerDeliveriesForUser(user.id);
     await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
     // Reversibly suspend the user's schedules under a per-attempt token BEFORE draining.
@@ -460,10 +462,6 @@ const deleteUserController = async (req, res) => {
     await db.deleteAllUserMemories(user.id);
     await db.deleteUserPrompts(user.id);
     await db.deleteUserSkills(user.id);
-    await db.deleteUserCodeEnvironments(user.id);
-    await invalidateCodeEnvironmentConfigCache(user.tenantId).catch((error) => {
-      logger.error('[deleteUserController] code environment cache invalidation failed:', error);
-    });
     await deleteUserMcpServers(user.id);
     await db.deleteActions({ user: user.id });
     await db.deleteTokens({ userId: user.id });
@@ -475,6 +473,27 @@ const deleteUserController = async (req, res) => {
       throw new Error('User disappeared before account deletion could commit');
     }
     userDeleted = true;
+    let codeEnvironmentCleanupSafe = true;
+    try {
+      await revokeUserCodeEnvironmentWorkers({
+        mongoose,
+        userId: user.id,
+        appConfig: deletionAppConfig,
+      });
+    } catch (error) {
+      codeEnvironmentCleanupSafe = false;
+      logger.error('[deleteUserController] Failed to revoke code environment workers', error);
+    }
+    if (codeEnvironmentCleanupSafe) {
+      try {
+        await db.deleteUserCodeEnvironments(user.id);
+      } catch (error) {
+        logger.error('[deleteUserController] Failed to delete code environments', error);
+      }
+    }
+    await invalidateCodeEnvironmentConfigCache(user.tenantId).catch((error) => {
+      logger.error('[deleteUserController] code environment cache invalidation failed:', error);
+    });
     await purgeAgentTriggerDeliveriesForUser(user.id);
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });

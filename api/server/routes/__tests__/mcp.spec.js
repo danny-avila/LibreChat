@@ -3326,6 +3326,7 @@ describe('MCP Routes', () => {
         servers: [{ serverName: 'user-server', serverConfig }],
         upstreamTokenProvider: expect.any(Function),
         oboIdentityContext: expect.any(Object),
+        signal: expect.any(AbortSignal),
       });
     });
 
@@ -3378,6 +3379,7 @@ describe('MCP Routes', () => {
         servers: [{ serverName: 'connected-server', serverConfig }],
         upstreamTokenProvider: expect.any(Function),
         oboIdentityContext: expect.any(Object),
+        signal: expect.any(AbortSignal),
       });
     });
 
@@ -3476,7 +3478,21 @@ describe('MCP Routes', () => {
         })),
         upstreamTokenProvider: expect.any(Function),
         oboIdentityContext: expect.any(Object),
+        signal: expect.any(AbortSignal),
       });
+    });
+
+    it('returns a retryable failure when process-wide catalog capacity is saturated', async () => {
+      const { MCPCatalogCapacityError } = require('@librechat/api');
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+        saturated: { type: 'sse', url: 'https://saturated.example.com/sse' },
+      });
+      mockLoadMCPServerCatalogs.mockRejectedValueOnce(new MCPCatalogCapacityError());
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(503);
+      expect(response.body).toEqual({ message: 'MCP catalog capacity is temporarily exhausted' });
     });
   });
 
@@ -4282,7 +4298,6 @@ describe('MCP Routes', () => {
       expect(response.body).toEqual({ message: 'Deletion failed' });
     });
   });
-
   describe('POST /elicitation/:flowId', () => {
     const { getLogStores } = require('~/cache');
 

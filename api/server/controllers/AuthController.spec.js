@@ -1,5 +1,26 @@
+let mockActiveTenantId;
+const mockRunAsSystem = jest.fn(async (fn) => {
+  const previousTenantId = mockActiveTenantId;
+  mockActiveTenantId = '__SYSTEM__';
+  try {
+    return await fn();
+  } finally {
+    mockActiveTenantId = previousTenantId;
+  }
+});
+const mockTenantStorageRun = jest.fn(async (context, fn) => {
+  const previousTenantId = mockActiveTenantId;
+  mockActiveTenantId = context.tenantId;
+  try {
+    return await fn();
+  } finally {
+    mockActiveTenantId = previousTenantId;
+  }
+});
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn(), info: jest.fn() },
+  runAsSystem: (fn) => mockRunAsSystem(fn),
+  tenantStorage: { run: (context, fn) => mockTenantStorageRun(context, fn) },
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -506,6 +527,7 @@ describe('refreshController – OpenID path', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockActiveTenantId = undefined;
     delete process.env.OPENID_SCOPE;
     delete process.env.OPENID_REFRESH_AUDIENCE;
     process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
@@ -900,6 +922,7 @@ describe('refreshController – OpenID path', () => {
       'user-db-id',
       '-password -__v -totpSecret -backupCodes -federatedTokens',
     );
+    expect(mockRunAsSystem).toHaveBeenCalledTimes(1);
     expect(setCloudFrontAuthCookies).toHaveBeenCalledWith(req, res, user);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith({
@@ -1049,10 +1072,15 @@ describe('refreshController – OpenID path', () => {
         openidIssuer: baseClaims.iss,
       },
     };
+    findOpenIDUser.mockImplementationOnce(async () => {
+      expect(mockActiveTenantId).toBe('tenant-1');
+      return { user: { ...defaultUser }, error: null, migration: false };
+    });
 
     await refreshController(req, res);
 
     expect(getUserById).toHaveBeenCalled();
+    expect(mockRunAsSystem).toHaveBeenCalledTimes(1);
     expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
     expectOpenIDRefreshGrant();
   });
@@ -1389,6 +1417,27 @@ describe('refreshController – OpenID path', () => {
     expect(res.redirect).toHaveBeenCalledWith('/login');
   });
 
+  it('rejects a refreshed identity that resolves to a different user', async () => {
+    findOpenIDUser.mockResolvedValue({
+      user: { ...defaultUser, _id: 'different-user-id' },
+      error: null,
+      migration: false,
+    });
+
+    await refreshController(req, res);
+
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] Refreshed identity resolved a different user; refusing token issuance',
+      {
+        refreshUserId: 'user-db-id',
+        resolvedUserId: 'different-user-id',
+      },
+    );
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.redirect).toHaveBeenCalledWith('/login');
+  });
+
   it('should preserve invalid OpenID refresh token behavior', async () => {
     openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
 
@@ -1446,7 +1495,10 @@ describe('refreshController – OpenID path', () => {
       tenantId: 'tenant-1',
       openidIssuer: 'https://issuer.example.com',
     });
-    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    getRefreshTokenBridge.mockImplementationOnce(async () => {
+      expect(mockActiveTenantId).toBe('tenant-1');
+      return 'bridged-refresh';
+    });
     const nonRotatingTokenset = { ...mockTokenset };
     delete nonRotatingTokenset.refresh_token;
     openIdClient.refreshTokenGrant

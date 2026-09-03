@@ -1034,6 +1034,60 @@ export function isSecureCodeEnvironmentControlURL(baseURL: string): boolean {
   }
 }
 
+export const codeEnvironmentPermissionDecisionSchema = z.enum(['allow', 'ask', 'deny']);
+export type CodeEnvironmentPermissionDecision = z.infer<
+  typeof codeEnvironmentPermissionDecisionSchema
+>;
+
+const codeEnvironmentPermissionFieldSchema = z
+  .object({
+    allowed: z.array(codeEnvironmentPermissionDecisionSchema).min(1),
+    default: codeEnvironmentPermissionDecisionSchema.optional().default('ask'),
+  })
+  .strict()
+  .superRefine((field, context) => {
+    if (!field.allowed.includes(field.default)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['default'],
+        message: 'Permission default must be included in allowed values',
+      });
+    }
+  });
+
+/**
+ * Typed user-tunable surface for one attached code environment. Omitted fields
+ * remain fixed at LibreChat's safe baseline. Isolation, networking, mounts,
+ * privileged execution, and secrets are deliberately not representable here.
+ */
+export const codeEnvironmentUserConfigSchema = z
+  .object({
+    permissions: z
+      .object({
+        fileWrite: codeEnvironmentPermissionFieldSchema.optional(),
+        commandExecution: codeEnvironmentPermissionFieldSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type CodeEnvironmentUserConfigSchema = z.infer<typeof codeEnvironmentUserConfigSchema>;
+
+export const codeEnvironmentUserSettingsSchema = z
+  .object({
+    permissions: z
+      .object({
+        fileWrite: codeEnvironmentPermissionDecisionSchema.optional(),
+        commandExecution: codeEnvironmentPermissionDecisionSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type CodeEnvironmentUserSettings = z.infer<typeof codeEnvironmentUserSettingsSchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1084,15 +1138,39 @@ export const agentsEndpointSchema = baseEndpointSchema
                 type: z.enum(['managed', 'attached']),
                 baseURL: codeEnvironmentBaseURLSchema,
                 default: z.boolean().optional(),
+                /** Server-only outbound worker route. Removed from public config. */
+                workerId: z
+                  .string()
+                  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
+                  .optional(),
                 /** Distinguishes operator policy from a principal-authorized
                  * environment merged into request-scoped server config. */
                 owner: z.enum(['deployment', 'principal']).optional().default('deployment'),
+                /** Administrator-controlled user-tunable settings. Only fields
+                 * represented here may be changed by a principal. */
+                configSchema: codeEnvironmentUserConfigSchema.optional(),
+                /** Request-scoped effective settings for a principal-owned environment.
+                 * Deployment config should define defaults through configSchema instead. */
+                settings: codeEnvironmentUserSettingsSchema.optional(),
                 /** Server-only enrollment metadata. `tokenEnv` names an
                  * environment variable and never contains the token itself. */
                 pairing: z
                   .object({
-                    workerId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+                    workerId: z
+                      .string()
+                      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)
+                      .optional(),
+                    allowPrincipalWorkers: z.boolean().optional().default(false),
                     tokenEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+                  })
+                  .superRefine((pairing, pairingContext) => {
+                    if (pairing.workerId != null || pairing.allowPrincipalWorkers === true) {
+                      return;
+                    }
+                    pairingContext.addIssue({
+                      code: z.ZodIssueCode.custom,
+                      message: 'Pairing requires a workerId or principal workers',
+                    });
                   })
                   .optional(),
               }),
@@ -1103,7 +1181,12 @@ export const agentsEndpointSchema = baseEndpointSchema
           if (!value?.environments) return;
           const ids = new Set<string>();
           let defaults = 0;
+          let executableEnvironments = 0;
           for (const environment of value.environments) {
+            const pairingOnly =
+              environment.pairing?.allowPrincipalWorkers === true &&
+              environment.pairing.workerId == null &&
+              environment.workerId == null;
             if (environment.pairing != null && environment.type !== 'attached') {
               context.addIssue({
                 code: z.ZodIssueCode.custom,
@@ -1128,6 +1211,24 @@ export const agentsEndpointSchema = baseEndpointSchema
                 path: ['environments', environment.id, 'baseURL'],
               });
             }
+            if (
+              environment.workerId != null &&
+              environment.pairing?.workerId != null &&
+              environment.workerId !== environment.pairing.workerId
+            ) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Code environment workerId must match pairing.workerId',
+                path: ['environments', environment.id, 'workerId'],
+              });
+            }
+            if (pairingOnly && environment.default === true) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Pairing-only code control planes cannot be execution defaults',
+                path: ['environments', environment.id, 'default'],
+              });
+            }
             if (ids.has(environment.id)) {
               context.addIssue({
                 code: z.ZodIssueCode.custom,
@@ -1136,9 +1237,12 @@ export const agentsEndpointSchema = baseEndpointSchema
               });
             }
             ids.add(environment.id);
-            if (environment.default === true) defaults += 1;
+            if (!pairingOnly) {
+              executableEnvironments += 1;
+              if (environment.default === true) defaults += 1;
+            }
           }
-          if (value.environments.length > 0 && defaults !== 1) {
+          if (executableEnvironments > 0 && defaults !== 1) {
             context.addIssue({
               code: z.ZodIssueCode.custom,
               message: 'Exactly one stateful code environment must be the default',
@@ -2559,6 +2663,7 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-fable-5-1',
   'claude-fable-5',
   'claude-opus-5',
   'claude-opus-4-8',
@@ -2594,6 +2699,7 @@ const sharedAnthropicModels = [
  * availability); Opus 4.1 has no global profile, so it uses `us.`.
  */
 export const bedrockModels = [
+  'global.anthropic.claude-fable-5-1',
   'global.anthropic.claude-fable-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
@@ -2633,6 +2739,8 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.8 Models
+    'gemini-3.8-flash',
     // Gemini 3.7 Models
     'gemini-3.7-flash',
     // Gemini 3.6 Models
@@ -3083,6 +3191,14 @@ export enum ErrorTypes {
    */
   AUTH_FAILED = 'auth_failed',
   /**
+   * Authentication rejected by a rate limiter
+   */
+  AUTH_RATE_LIMITED = 'auth_rate_limited',
+  /**
+   * Authentication rejected because the account or IP is banned
+   */
+  AUTH_BANNED = 'auth_banned',
+  /**
    * Model refused to respond (content policy violation)
    */
   REFUSAL = 'refusal',
@@ -3090,6 +3206,14 @@ export enum ErrorTypes {
    * SSE stream 404 — job completed, expired, or was deleted before the subscriber connected
    */
   STREAM_EXPIRED = 'stream_expired',
+  /**
+   * Provider does not serve the requested model
+   */
+  MODEL_NOT_FOUND = 'model_not_found',
+  /**
+   * Provider throttled or refused the request for exceeding a rate/spend allowance
+   */
+  MODEL_RATE_LIMIT = 'model_rate_limit',
 }
 
 /**
@@ -3232,7 +3356,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.14',
+  CONFIG_VERSION = '1.3.15',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -3286,6 +3410,15 @@ export enum Constants {
   SUBAGENT = 'subagent',
   /** Poll tool for retrieving the status/result of a backgrounded tool call. */
   CHECK_BACKGROUND_TASK = 'check_background_task',
+  /**
+   * `finish_reason` stamped on an assistant message whose turn ended because the
+   * agent exhausted its per-turn graph step budget (`recursionLimit`) rather than
+   * because the model chose to stop. Distinct from a user abort: nothing failed and
+   * nothing was cancelled, the turn simply ran out of room. The UI keys its
+   * "tool call limit reached" notice off this value. The hover Continue control
+   * is withheld for this reason because the notice already offers the way forward.
+   */
+  TOOL_CALL_LIMIT_FINISH_REASON = 'tool_call_limit',
 }
 
 /**

@@ -73,6 +73,8 @@ export namespace Agents {
     type?: ToolCallTypes.TOOL_CALL | 'tool_call';
     /** The name of the tool to be called */
     name: string;
+    /** Host-derived MCP server identity retained to disambiguate historical tool keys. */
+    mcpServerName?: string;
 
     /** The arguments to the tool call */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -337,6 +339,17 @@ export namespace Agents {
     alwaysAppliedSkills?: string[];
   }
 
+  /** Client-safe state for one MCP authorization prompt that remains actionable. */
+  export interface PendingMCPOAuthPrompt {
+    stepId: string;
+    runId?: string;
+    index: number;
+    toolCallId?: string;
+    toolName: string;
+    authURL: string;
+    expiresAt?: number;
+  }
+
   /** State data sent to reconnecting clients */
   export interface ResumeState {
     runSteps: RunStep[];
@@ -362,6 +375,8 @@ export namespace Agents {
       data?: unknown;
       [key: string]: unknown;
     }>;
+    /** Pending MCP authorization prompts projected from durable stream state. */
+    pendingOAuthPrompts?: PendingMCPOAuthPrompt[];
     /** Cumulative provider-reported usage for the run; backfills usage totals on resume */
     collectedUsage?: TTokenUsageEvent[];
     /** Latest context window snapshot; restores the usage gauge on resume */

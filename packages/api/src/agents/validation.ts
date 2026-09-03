@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   MemoryScope,
+  SkillsScope,
   getMaxSubagents,
   resolveModelCatalogKey,
   ViolationTypes,
@@ -431,6 +432,8 @@ export const agentBaseSchema: z.ZodObject<
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     /** @deprecated Use edges instead */
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -553,6 +556,8 @@ export const agentBaseSchema: z.ZodObject<
   tools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   skills_enabled: z.boolean().optional(),
+  skill_authoring_enabled: z.boolean().optional(),
+  skills_scope: z.nativeEnum(SkillsScope).optional(),
   memory_scope: z.nativeEnum(MemoryScope).optional(),
   /** @deprecated Use edges instead */
   agent_ids: z.array(z.string()).optional(),
@@ -601,6 +606,8 @@ export const agentCreateSchema: z.ZodObject<
     model_parameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<
@@ -733,6 +740,8 @@ export const agentUpdateSchema: z.ZodObject<
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
-import { Bot, ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
@@ -9,13 +8,15 @@ import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
 import { SubagentActivityContent, SubagentStatus } from './SubagentActivity';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
+import { isAbnormalTerminalStatus, isLiveSubagentStatus } from './status';
+import { messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { isAbnormalTerminalStatus } from './status';
 import { useAgentsMapContext } from '~/Providers';
+import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
+import { cn } from '~/utils';
 
 const TRIGGER_LABELS = {
   parent_dispatch: 'com_ui_subagent_trigger_parent_dispatch',
@@ -201,14 +202,21 @@ function ChildMessage({
   } else {
     limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
   }
-  let footer: ReactNode = null;
+  let footerContent: ReactNode = null;
   if (isAbnormalTerminalStatus(turn.activity.status)) {
-    footer = <SubagentStatus activity={turn.activity} />;
-  } else if (turn.activity.status === 'running' || turn.activity.status === 'dispatched') {
+    footerContent = <SubagentStatus activity={turn.activity} />;
+  } else if (isLiveSubagentStatus(turn.activity.status)) {
     const triggeredAt = turn.trigger.createdAt ?? turn.trigger.externalEvent?.occurredAt;
     const startedAt = triggeredAt == null ? NaN : Date.parse(triggeredAt);
-    footer = <ElapsedTimer start={Number.isFinite(startedAt) ? startedAt : undefined} />;
+    footerContent = <ElapsedTimer start={Number.isFinite(startedAt) ? startedAt : undefined} />;
   }
+  /** The main chat footer's own metrics, held whether or not anything occupies
+   *  the slot: the timer leaving at completion must not step the turns below it
+   *  upward, and the reading has to be sized by the same `text-xs` its main
+   *  chat counterpart inherits rather than by the panel's body size. */
+  const footer = (
+    <div className={cn('mt-1 flex justify-start gap-3', messageFooterClasses)}>{footerContent}</div>
+  );
   const iconData = {
     endpoint: EModelEndpoint.agents,
     modelLabel: label,
@@ -217,15 +225,10 @@ function ChildMessage({
   return (
     <MessageRow
       id={`${turn.taskId}:assistant`}
-      icon={
-        agent == null ? (
-          <span className="flex size-6 items-center justify-center rounded-full bg-surface-tertiary text-text-secondary">
-            <Bot size={14} aria-hidden />
-          </span>
-        ) : (
-          <MessageIcon iconData={iconData} agent={agent} />
-        )
-      }
+      /** The main chat author glyph, unconditionally: with no resolved agent it
+       *  falls back to the endpoint icon there too, so an unresolved child does
+       *  not get a differently-inset placeholder of its own. */
+      icon={<MessageIcon iconData={iconData} agent={agent} />}
       label={label}
       footer={footer}
       ariaLabel={label}
@@ -239,6 +242,7 @@ function ChildMessage({
         state={state}
         showPrompt={false}
         conversationId={conversationId}
+        underHeaderIcon
         onCancelControl={onCancelControl}
       />
       {detailsLimited && detailState !== 'loading' && (
@@ -272,7 +276,7 @@ export default function SubagentConversation({
   detailStateByTask?: ReadonlyMap<string, 'idle' | 'loading' | 'unavailable' | 'error'>;
   onLoadTurnDetails?: (taskId: string) => void;
 }) {
-  const fullWidth = useRecoilValue(store.maximizeChatSpace);
+  const { maximizeChatSpace: fullWidth } = useChatSurface();
   return (
     <div className="flex flex-col gap-6 py-4" data-subagent-conversation>
       {turns.map((turn) => (

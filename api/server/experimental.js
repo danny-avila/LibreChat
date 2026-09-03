@@ -1,4 +1,12 @@
 require('../config/credentials');
+/**
+ * The primary kills every worker and then force-exits the whole cluster this long after its own
+ * shutdown signal, regardless of what the workers are still doing.
+ */
+const CLUSTER_FORCE_EXIT_MS = 10_000;
+/** Absolute time the primary will force-exit the cluster, propagated to this worker over IPC. */
+let clusterShutdownDeadlineAt = null;
+
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -32,6 +40,9 @@ const {
   requestContextMiddleware,
   configureServerTimeouts,
   setupGracefulShutdown,
+  registerShutdownTask,
+  getRemainingShutdownMs,
+  getShutdownElapsedMs,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
   configureAgentEventRuntime,
@@ -261,6 +272,55 @@ if (cluster.isMaster) {
     cluster.fork();
   });
 
+  /**
+   * Deliver the absolute deadline, then SIGTERM only once the worker has acknowledged it.
+   * IPC is asynchronous and worker.kill() is immediate, so without the acknowledgement a
+   * busy worker can enter its shutdown handler before the deadline arrives and fall back to
+   * a worker-local estimate the primary will not honor. Bounded so a stalled worker cannot
+   * hold the others.
+   */
+  const signalWorkerAfterDeadlineAck = (worker, deadlineAt) => {
+    let signaled = false;
+    const onMessage = (msg) => {
+      if (msg != null && msg.type === 'cluster-shutdown-ack') {
+        signal();
+      }
+    };
+    /** A closed IPC channel is reported asynchronously, not thrown from send(); without a
+     *  listener it reaches the global uncaughtException handler and exits the primary,
+     *  killing every other worker before it can record its drain. */
+    const onError = (err) => {
+      logger.warn('Worker IPC error during the shutdown handoff; treating it as gone:', err);
+      signal();
+    };
+    const signal = () => {
+      if (signaled) {
+        return;
+      }
+      signaled = true;
+      worker.off('message', onMessage);
+      worker.off('error', onError);
+      try {
+        worker.kill();
+      } catch (err) {
+        logger.debug('Worker already gone before SIGTERM:', err);
+      }
+    };
+    worker.on('message', onMessage);
+    worker.on('error', onError);
+    /** Deliberately no separate timeout. SIGTERM is sent only after the worker has recorded
+     *  the deadline; a worker that never acknowledges is ended by the primary's own
+     *  force-exit, the one deadline it can honor. Signaling sooner would let a stalled
+     *  worker's SIGTERM handler run before the queued deadline message and fall back to a
+     *  local budget the primary will not honor, the exact case this handoff exists for.
+     *  Handshakes are per worker, so a stalled one holds no other. */
+    worker.send({ type: 'cluster-shutdown', deadlineAt }, (err) => {
+      if (err) {
+        onError(err);
+      }
+    });
+  };
+
   /** Graceful shutdown on SIGTERM/SIGINT */
   const shutdown = () => {
     if (shuttingDown) {
@@ -274,13 +334,16 @@ if (cluster.isMaster) {
       process.exit(0);
       return;
     }
+    /** Workers derive their settlement budget from THIS deadline — not from their own
+     *  coordinator, and not from whenever their signal handler happened to run. */
+    const deadlineAt = Date.now() + CLUSTER_FORCE_EXIT_MS;
     for (const worker of liveWorkers) {
-      worker.kill();
+      signalWorkerAfterDeadlineAck(worker, deadlineAt);
     }
     setTimeout(() => {
       logger.info('Forcing shutdown after timeout');
       process.exit(0);
-    }, 10000);
+    }, CLUSTER_FORCE_EXIT_MS);
   };
 
   process.on('SIGTERM', shutdown);
@@ -301,6 +364,43 @@ if (cluster.isMaster) {
     }),
   );
   GenerationJobManager.initialize();
+  // Stop active generations and close their SSE streams while the HTTP server drains.
+  registerShutdownTask(
+    'generation job manager prepare',
+    () => GenerationJobManager.prepareForShutdown(),
+    {
+      phase: 'pre-drain',
+      priority: 100,
+    },
+  );
+  /** Spend the shutdown budget that is actually left waiting for open provider executions to
+   *  record their own drains — but the budget this worker actually has is the primary's, not
+   *  its own 60s coordinator: the primary force-exits the whole cluster CLUSTER_FORCE_EXIT_MS
+   *  after signalling. Measure against that, and hold back a reserve for the tasks after this
+   *  one. Abandoning an unrecorded drain fences the next generation permanently. */
+  const CLUSTER_TEARDOWN_RESERVE_MS = 3_000;
+  const destroyGenerationJobManager = () => {
+    const remaining = getRemainingShutdownMs();
+    const elapsed = getShutdownElapsedMs();
+    if (remaining == null || elapsed == null) {
+      return GenerationJobManager.destroy();
+    }
+    /** Prefer the deadline the primary actually set. The elapsed-based estimate starts
+     *  counting only when this worker's signal handler ran, which lags the primary's timer
+     *  by however long the event loop was blocked. */
+    const primaryRemaining =
+      clusterShutdownDeadlineAt != null
+        ? clusterShutdownDeadlineAt - Date.now()
+        : CLUSTER_FORCE_EXIT_MS - elapsed;
+    return GenerationJobManager.destroy({
+      settlementBudgetMs: Math.max(
+        0,
+        Math.min(remaining, primaryRemaining) - CLUSTER_TEARDOWN_RESERVE_MS,
+      ),
+    });
+  };
+  // Tear down stream resources before shared caches and telemetry exporters shut down.
+  registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
   /**
    * The master may assign the sweep worker before or after this worker has
    * loaded app config. These flags join the IPC assignment with config
@@ -331,6 +431,20 @@ if (cluster.isMaster) {
   };
 
   /** Handle inter-process messages from master */
+  process.on('message', (msg) => {
+    if (msg != null && msg.type === 'cluster-shutdown' && Number.isFinite(msg.deadlineAt)) {
+      clusterShutdownDeadlineAt = msg.deadlineAt;
+      /** The primary holds SIGTERM until this arrives, so the deadline is in place before
+       *  the shutdown handler can run. */
+      if (typeof process.send === 'function') {
+        try {
+          process.send({ type: 'cluster-shutdown-ack' });
+        } catch (err) {
+          logger.debug('Could not acknowledge the shutdown deadline to the primary:', err);
+        }
+      }
+    }
+  });
   process.on('message', (msg) => {
     if (msg.type === 'file-retention-sweep-worker') {
       shouldStartExpiredFileSweep = true;
