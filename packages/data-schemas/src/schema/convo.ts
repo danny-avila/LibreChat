@@ -13,6 +13,7 @@ import {
   MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
   MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
 } from '~/types/convo';
+import { agentFadingContextDefinition } from './fading';
 import { conversationPreset } from './defaults';
 import { IConversation } from '~/types';
 
@@ -147,6 +148,7 @@ const convoSchema: Schema<IConversation> = new Schema(
               maxlength: MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
               default: undefined,
             },
+            ...agentFadingContextDefinition,
           },
           _id: false,
           default: undefined,

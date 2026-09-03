@@ -41,10 +41,10 @@ import type {
   ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
+import type { AppConfig, IAgentFadingTier, IUser } from '@librechat/data-schemas';
 import type { CallbackHandlerMethods } from '@langchain/core/callbacks/base';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Callbacks } from '@langchain/core/callbacks/manager';
-import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
@@ -53,6 +53,7 @@ import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
+import type { RunFadingTiers } from './fading';
 import type * as t from '~/types';
 import {
   assertAttachedCodeEnvironmentApprovalSupported,
@@ -1416,6 +1417,8 @@ export async function createRun({
   initialSummary,
   modelCallbacks,
   calibrationRatio,
+  fadingTier,
+  fadingTiers,
   appConfig,
   subagentUsageSink,
   subagentTasks,
@@ -1467,6 +1470,20 @@ export async function createRun({
   modelCallbacks?: readonly ModelBoundChatModelCallback[];
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
+  /**
+   * Default agent's latched context-fading tier from the previous run's
+   * contextMeta. It seeds the pruner so the provider-only projection of
+   * historical tool results keeps the same bytes across runs; graph messages
+   * stay canonical. Ships in `@librechat/agents` after 3.7.13; older SDK
+   * versions ignore it.
+   */
+  fadingTier?: IAgentFadingTier | null;
+  /**
+   * Latched tiers keyed by agent ID from the previous run's contextMeta, so
+   * every agent of a multi-agent run restores its own tier. Same SDK
+   * availability as `fadingTier`.
+   */
+  fadingTiers?: RunFadingTiers | null;
   /**
    * Resolved app config. Used to translate custom-endpoint provider names
    * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
@@ -2108,6 +2125,8 @@ export async function createRun({
     customHandlers,
     initialSessions,
     calibrationRatio,
+    fadingTier,
+    fadingTiers,
     indexTokenCountMap,
     subagentUsageSink,
     subagentTasks,
