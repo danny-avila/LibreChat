@@ -1776,6 +1776,20 @@ export const interfaceSchema = z
     marketplace: z
       .object({
         use: z.boolean().optional(),
+        categories: z
+          .object({
+            enableDefaultCategories: z.boolean().optional(),
+            list: z
+              .array(
+                z.object({
+                  value: z.string(),
+                  label: z.string().optional(),
+                  description: z.string().optional(),
+                }),
+              )
+              .optional(),
+          })
+          .optional(),
       })
       .optional(),
     fileSearch: z.boolean().optional(),
