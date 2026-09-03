@@ -82,8 +82,8 @@ export function getMachineClientId(payload: JwtPayload): string {
 
   if (
     typeof payload.exp !== 'number' ||
-    !Number.isSafeInteger(payload.exp) ||
-    payload.exp <= Math.floor(Date.now() / 1000)
+    !Number.isFinite(payload.exp) ||
+    payload.exp <= Date.now() / 1000
   ) {
     throw new AgentManagementAuthError('Token expiration is missing or invalid');
   }
@@ -108,10 +108,7 @@ async function resolvePrincipal(
   deps: Pick<AgentManagementAuthDeps, 'findUser' | 'isPrincipalActive'>,
 ): Promise<PrincipalResolution> {
   return tenantStorage.run({ tenantId: binding.tenantId }, async () => {
-    const [user, isActive] = await Promise.all([
-      deps.findUser({ _id: binding.userId, tenantId: binding.tenantId }),
-      deps.isPrincipalActive(binding.userId),
-    ]);
+    const user = await deps.findUser({ _id: binding.userId, tenantId: binding.tenantId });
     if (!user) return { status: 'missing' };
 
     const userId = String(user._id);
@@ -119,7 +116,7 @@ async function resolvePrincipal(
       return { status: 'missing' };
     }
 
-    if (!isActive) {
+    if (!(await deps.isPrincipalActive(userId))) {
       return { status: 'inactive' };
     }
 

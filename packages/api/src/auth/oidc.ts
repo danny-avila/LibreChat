@@ -30,6 +30,7 @@ type CacheEntry<T> = {
 
 const OIDC_DISCOVERY_TIMEOUT_MS = 10000;
 const JWKS_REQUESTS_PER_MINUTE = 10;
+const OIDC_THROTTLE_WINDOW_MS = 60000;
 const MAX_JWKS_CACHE_ENTRIES = 100;
 const JWT_ALGORITHMS: Algorithm[] = [
   'RS256',
@@ -134,8 +135,6 @@ async function resolveJwksUri(
     return ensureRemoteOidcUrlAllowed(process.env.OPENID_JWKS_URL, 'OIDC JWKS URI');
   }
 
-  if (!cacheOptions.enabled) return discoverJwksUri(oidcConfig.issuer);
-
   const cacheKey = oidcConfig.issuer;
   const cached = jwksUriCache.get(cacheKey);
   if (cached != null && cached.expiresAt > Date.now()) return cached.promise;
@@ -148,7 +147,7 @@ async function resolveJwksUri(
 
   setCacheEntry(jwksUriCache, cacheKey, {
     promise,
-    expiresAt: Date.now() + cacheOptions.maxAge,
+    expiresAt: Date.now() + Math.max(cacheOptions.maxAge, OIDC_THROTTLE_WINDOW_MS),
   });
   return promise;
 }
@@ -177,8 +176,6 @@ async function getJwksClient(
   const cacheOptions = getJwksCacheOptions();
   const uri = await resolveJwksUri(oidcConfig, cacheOptions, options);
 
-  if (!cacheOptions.enabled) return buildJwksClient(uri, cacheOptions);
-
   const cacheKey = uri;
   const cached = jwksClientCache.get(cacheKey);
   if (cached != null && cached.expiresAt > Date.now()) return cached.promise;
@@ -196,7 +193,7 @@ async function getJwksClient(
 
   setCacheEntry(jwksClientCache, cacheKey, {
     promise,
-    expiresAt: Date.now() + cacheOptions.maxAge,
+    expiresAt: Date.now() + Math.max(cacheOptions.maxAge, OIDC_THROTTLE_WINDOW_MS),
   });
   return promise;
 }

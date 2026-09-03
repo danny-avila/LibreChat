@@ -1270,14 +1270,18 @@ describe('createRemoteAgentAuth', () => {
       );
     });
 
-    it('honors disabled JWKS caching', async () => {
+    it('disables signing-key caching without recreating the rate-limited JWKS client', async () => {
       process.env.OPENID_JWKS_URL_CACHE_ENABLED = 'false';
       const deps = makeDeps(
         makeConfig({
-          jwksUri: 'https://cache-disabled.example.com/jwks',
+          jwksUri: undefined,
           issuer: 'https://issuer-cache-disabled.example.com',
         }),
       );
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ jwks_uri: 'https://cache-disabled.example.com/jwks' }),
+      });
 
       await createRemoteAgentAuth(asDeps(deps))(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
@@ -1291,7 +1295,15 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(jwksRsa).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(jwksRsa).toHaveBeenCalledTimes(1);
+      expect(jwksRsa).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cache: false,
+          rateLimit: true,
+          jwksRequestsPerMinute: 10,
+        }),
+      );
     });
 
     it('evicts the oldest JWKS client entry when the cache exceeds its limit', async () => {
@@ -1347,7 +1359,7 @@ describe('createRemoteAgentAuth', () => {
           await runRequest(`expired-${i}`);
         }
 
-        nowSpy.mockReturnValue(2000);
+        nowSpy.mockReturnValue(61000);
         mockMath.mockReturnValue(60000);
         await runRequest('new');
 

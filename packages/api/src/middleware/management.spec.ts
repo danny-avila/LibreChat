@@ -107,9 +107,14 @@ describe('getMachineClientId', () => {
     ['missing client identifier', { azp: undefined }],
     ['conflicting client identifiers', { azp: CLIENT_ID, client_id: 'other-client' }],
     ['missing expiration', { exp: undefined }],
+    ['a non-finite expiration', { exp: Number.POSITIVE_INFINITY }],
     ['expired token', { exp: Math.floor(Date.now() / 1000) - 1 }],
   ])('rejects %s', (_case, claims) => {
     expect(() => getMachineClientId(createPayload(claims))).toThrow();
+  });
+
+  it('accepts a fractional NumericDate expiration', () => {
+    expect(getMachineClientId(createPayload({ exp: Date.now() / 1000 + 60.5 }))).toBe(CLIENT_ID);
   });
 
   it('accepts a configured provider-specific token subject', async () => {
@@ -304,7 +309,7 @@ describe('createAgentManagementAuth', () => {
     });
   });
 
-  it('checks the bound User and deletion fence concurrently', async () => {
+  it('checks the deletion fence after resolving the bound User', async () => {
     let resolveUser: ((user: IUser) => void) | undefined;
     const findUser = jest.fn(
       () =>
@@ -321,10 +326,11 @@ describe('createAgentManagementAuth', () => {
     await Promise.resolve();
 
     expect(findUser).toHaveBeenCalledTimes(1);
-    expect(isPrincipalActive).toHaveBeenCalledWith(USER_ID);
+    expect(isPrincipalActive).not.toHaveBeenCalled();
     resolveUser?.(createUser());
     await pending;
 
+    expect(isPrincipalActive).toHaveBeenCalledWith(USER_ID);
     expect(next).toHaveBeenCalledTimes(1);
   });
 
