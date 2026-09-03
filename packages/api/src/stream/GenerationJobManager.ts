@@ -99,12 +99,11 @@ const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
 const PROVIDER_DRAIN_POLL_MS = 50;
 
 /**
- * How long shutdown waits for detached generations to settle. A generation records its own
- * provider drain only after its trailing writes finish, so exiting first strands the next
- * generation in that conversation behind a handoff that can never be confirmed. Bounded so
- * shutdown still completes inside a container stop grace period.
+ * Fallback wait for detached generations when the caller supplies no budget — a direct
+ * `destroy()` outside graceful shutdown. Graceful shutdown owns the real deadline and passes
+ * what is actually left, so a slow trailing write is not abandoned while time remained.
  */
-const SHUTDOWN_SETTLEMENT_TIMEOUT_MS = 5_000;
+const SHUTDOWN_SETTLEMENT_FALLBACK_MS = 5_000;
 type ToolExecutionStatus = 'success' | 'error' | 'cancelled';
 type ToolCallWithExecutionStatus = Agents.AgentToolCall & {
   executionStatus?: ToolExecutionStatus;
@@ -784,8 +783,8 @@ class GenerationJobManagerClass {
   /** Rejects new jobs once graceful shutdown has started. */
   private shuttingDown = false;
 
-  /** Detached generation chains, keyed `streamId:createdAt`, awaited during shutdown. */
-  private readonly generationSettlements = new Map<string, Promise<unknown>>();
+  /** Detached generation work awaited during shutdown so it can record its own provider drain. */
+  private readonly generationSettlements = new Set<Promise<unknown>>();
 
   /** Whether we're using Redis stores */
   private _isRedis = false;
@@ -7112,13 +7111,10 @@ class GenerationJobManagerClass {
     if (!Number.isFinite(createdAt)) {
       return;
     }
-    const key = `${streamId}:${createdAt}`;
     const tracked = settlement.finally(() => {
-      if (this.generationSettlements.get(key) === tracked) {
-        this.generationSettlements.delete(key);
-      }
+      this.generationSettlements.delete(tracked);
     });
-    this.generationSettlements.set(key, tracked);
+    this.generationSettlements.add(tracked);
   }
 
   /**
@@ -7127,8 +7123,8 @@ class GenerationJobManagerClass {
    * it has not reached is the unsafe direction, so we log and let the deployment's
    * hard-kill handling own that case.
    */
-  private async awaitGenerationSettlements(): Promise<void> {
-    const pending = [...this.generationSettlements.values()];
+  private async awaitGenerationSettlements(budget: number): Promise<void> {
+    const pending = [...this.generationSettlements];
     if (pending.length === 0) {
       return;
     }
@@ -7137,7 +7133,7 @@ class GenerationJobManagerClass {
       await Promise.race([
         Promise.allSettled(pending),
         new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, SHUTDOWN_SETTLEMENT_TIMEOUT_MS);
+          timer = setTimeout(resolve, budget);
         }),
       ]);
     } finally {
@@ -7148,7 +7144,7 @@ class GenerationJobManagerClass {
     const unsettled = this.generationSettlements.size;
     if (unsettled > 0) {
       logger.warn(
-        `[GenerationJobManager] ${unsettled} generation(s) did not settle within ${SHUTDOWN_SETTLEMENT_TIMEOUT_MS}ms of shutdown; their provider drains are unrecorded`,
+        `[GenerationJobManager] ${unsettled} generation(s) did not settle within ${budget}ms of shutdown; their provider drains are unrecorded`,
       );
     }
   }
@@ -8444,7 +8440,10 @@ class GenerationJobManagerClass {
    * Destroy the manager.
    * Cleans up all resources including runtime state, buffers, and stores.
    */
-  async destroy(): Promise<void> {
+  async destroy(options: { settlementBudgetMs?: number } = {}): Promise<void> {
+    const settlementBudgetMs = Number.isFinite(options.settlementBudgetMs)
+      ? Math.max(0, options.settlementBudgetMs as number)
+      : SHUTDOWN_SETTLEMENT_FALLBACK_MS;
     this.shuttingDown = true;
     this.cancelFencedRuntimeRetirements();
 
@@ -8461,7 +8460,7 @@ class GenerationJobManagerClass {
     }
 
     await this.drainSubscriberCleanups();
-    await this.awaitGenerationSettlements();
+    await this.awaitGenerationSettlements(settlementBudgetMs);
     await this.finalizeOwnedJobsForShutdown();
     await this.jobStore.destroy();
     this.eventTransport.destroy();

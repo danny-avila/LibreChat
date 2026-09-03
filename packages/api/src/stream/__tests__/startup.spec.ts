@@ -4162,6 +4162,55 @@ describe('GenerationJobManager startup telemetry', () => {
     expect(drainRecorded).toBe(true);
   });
 
+  it('waits for every settlement registered for one generation', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+    });
+    manager.initialize();
+
+    const streamId = 'stream-shutdown-multi-settlement';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    /** The controller registers twice for one generation: once for the initialization that
+     *  continues after the HTTP response is sent, and once for the detached chain. Shutdown
+     *  has to wait for both. */
+    let releaseInitialization: (() => void) | undefined;
+    let releaseGeneration: (() => void) | undefined;
+    manager.trackGenerationSettlement(
+      streamId,
+      job.createdAt,
+      new Promise<void>((resolve) => {
+        releaseInitialization = resolve;
+      }),
+    );
+    manager.trackGenerationSettlement(
+      streamId,
+      job.createdAt,
+      new Promise<void>((resolve) => {
+        releaseGeneration = resolve;
+      }),
+    );
+
+    manager.prepareForShutdown();
+    let destroyed = false;
+    const destroying = manager.destroy().then(() => {
+      destroyed = true;
+    });
+
+    releaseInitialization!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(false);
+
+    releaseGeneration!();
+    await destroying;
+    expect(destroyed).toBe(true);
+  });
+
   it('does not delay shutdown for a generation that already settled', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     jest.spyOn(jobStore, 'destroy').mockResolvedValue();

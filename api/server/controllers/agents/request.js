@@ -1420,6 +1420,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       : undefined;
   req._agentEventTriggerProjection = getAgentEventTriggerProjection(agentEventDelivery);
 
+  /** Resolved when the controller hands off to the detached generation chain. */
+  let resolveInitializationSettlement;
   try {
     logger.debug(`[ResumableAgentController] Creating job`, {
       streamId,
@@ -1600,6 +1602,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         status: 409,
       });
     }
+    /** The HTTP response is already sent by this point, so the remaining initialization
+     *  awaits are invisible to the HTTP drain. Register them before continuing, or
+     *  shutdown can tear down the stream services while this request is still on its way
+     *  to recording the provider drain — fencing the next generation permanently. */
+    GenerationJobManager.trackGenerationSettlement?.(
+      streamId,
+      jobCreatedAt,
+      new Promise((resolve) => {
+        resolveInitializationSettlement = resolve;
+      }),
+    );
     acceptAgentStartupTelemetry(req, streamId);
     startupTelemetry?.mark('metadata_persisted');
     req._resumableStreamId = streamId;
@@ -3245,6 +3258,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       });
     }
     await releaseEventChildLease?.();
+  } finally {
+    resolveInitializationSettlement?.();
   }
 };
 
