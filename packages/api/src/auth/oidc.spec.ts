@@ -55,5 +55,11 @@ it('does not use the interactive OpenID JWKS override unless explicitly enabled'
     `${issuer}/.well-known/openid-configuration`,
     expect.objectContaining({ signal: expect.any(AbortSignal) }),
   );
-  expect(jwksRsa).toHaveBeenCalledWith(expect.objectContaining({ jwksUri: discoveredJwksUri }));
+  expect(jwksRsa).toHaveBeenCalledWith(
+    expect.objectContaining({
+      jwksUri: discoveredJwksUri,
+      rateLimit: true,
+      jwksRequestsPerMinute: 10,
+    }),
+  );
 });

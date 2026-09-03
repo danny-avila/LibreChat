@@ -892,6 +892,7 @@ const remoteApiSchema = z.object({
 const managementClientBindingSchema = z
   .object({
     clientId: z.string().trim().min(1).max(128),
+    subject: z.string().trim().min(1).max(512).optional(),
     userId: z
       .string()
       .trim()

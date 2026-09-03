@@ -29,6 +29,7 @@ type CacheEntry<T> = {
 };
 
 const OIDC_DISCOVERY_TIMEOUT_MS = 10000;
+const JWKS_REQUESTS_PER_MINUTE = 10;
 const MAX_JWKS_CACHE_ENTRIES = 100;
 const JWT_ALGORITHMS: Algorithm[] = [
   'RS256',
@@ -157,6 +158,8 @@ function buildJwksClient(uri: string, cacheOptions: JwksCacheOptions): jwksRsa.J
     cache: cacheOptions.enabled,
     cacheMaxAge: cacheOptions.maxAge,
     jwksUri: uri,
+    rateLimit: true,
+    jwksRequestsPerMinute: JWKS_REQUESTS_PER_MINUTE,
   };
 
   const requestAgent = getHttpsProxyAgent(uri);

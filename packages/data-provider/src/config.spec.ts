@@ -101,6 +101,27 @@ describe('Agent Management authentication config', () => {
     ]);
   });
 
+  it('accepts a provider-specific token subject in a client binding', () => {
+    const subject = 'opaque-service-principal-subject';
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {},
+              clients: [{ ...binding, subject }],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.endpoints?.agents?.managementApi?.auth?.clients[0].subject).toBe(subject);
+  });
+
   it('rejects enabled auth without a client binding', () => {
     const result = configSchema.safeParse({
       version: '1.0',
@@ -127,6 +148,7 @@ describe('Agent Management authentication config', () => {
     ['an invalid user ID', [{ ...binding, userId: 'not-an-object-id' }]],
     ['an invalid tenant ID', [{ ...binding, tenantId: '-tenant' }]],
     ['the system tenant', [{ ...binding, tenantId: '__SYSTEM__' }]],
+    ['an empty token subject', [{ ...binding, subject: '  ' }]],
   ])('rejects %s', (_label, clients) => {
     const result = configSchema.safeParse({
       version: '1.0',

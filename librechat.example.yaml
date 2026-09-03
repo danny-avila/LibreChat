@@ -637,6 +637,7 @@ endpoints:
   #         # jwksUri: 'https://identity.example.com/.well-known/jwks.json'
   #       clients:
   #         - clientId: 'machine-client-id'
+  #           # subject: 'provider-specific-service-principal-subject'
   #           userId: '507f1f77bcf86cd799439011'
   #           tenantId: 'tenant-id'
 

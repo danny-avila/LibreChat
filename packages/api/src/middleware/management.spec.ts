@@ -106,11 +106,53 @@ describe('getMachineClientId', () => {
   it.each([
     ['missing client identifier', { azp: undefined }],
     ['conflicting client identifiers', { azp: CLIENT_ID, client_id: 'other-client' }],
-    ['a human subject', { sub: 'auth0|human-user' }],
     ['missing expiration', { exp: undefined }],
     ['expired token', { exp: Math.floor(Date.now() / 1000) - 1 }],
   ])('rejects %s', (_case, claims) => {
     expect(() => getMachineClientId(createPayload(claims))).toThrow();
+  });
+
+  it('accepts a configured provider-specific token subject', async () => {
+    const config = createConfig();
+    const binding = config.endpoints?.agents?.managementApi?.auth?.clients[0];
+    if (binding) binding.subject = 'opaque-service-principal-subject';
+    const deps = createDeps({
+      getAppConfig: jest.fn().mockResolvedValue(config),
+      verifyAccessToken: jest
+        .fn()
+        .mockResolvedValue(createPayload({ sub: 'opaque-service-principal-subject' })),
+    });
+    const next = jest.fn();
+
+    await runMiddleware(deps, createRequest(), createResponse(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['the default subject rule', createConfig(), createPayload({ sub: 'auth0|human-user' })],
+    [
+      'a configured provider subject',
+      (() => {
+        const config = createConfig();
+        const binding = config.endpoints?.agents?.managementApi?.auth?.clients[0];
+        if (binding) binding.subject = 'expected-service-principal';
+        return config;
+      })(),
+      createPayload({ sub: 'other-service-principal' }),
+    ],
+  ])('rejects a token that violates %s before querying a User', async (_case, config, payload) => {
+    const deps = createDeps({
+      getAppConfig: jest.fn().mockResolvedValue(config),
+      verifyAccessToken: jest.fn().mockResolvedValue(payload),
+    });
+    const res = createResponse();
+
+    await runMiddleware(deps, createRequest(), res, jest.fn());
+
+    expect(deps.findUser).not.toHaveBeenCalled();
+    expect(deps.isPrincipalActive).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 });
 
@@ -260,6 +302,30 @@ describe('createAgentManagementAuth', () => {
       error: 'Account deletion is in progress',
       code: 'ACCOUNT_DELETION_IN_PROGRESS',
     });
+  });
+
+  it('checks the bound User and deletion fence concurrently', async () => {
+    let resolveUser: ((user: IUser) => void) | undefined;
+    const findUser = jest.fn(
+      () =>
+        new Promise<IUser>((resolve) => {
+          resolveUser = resolve;
+        }),
+    );
+    const isPrincipalActive = jest.fn().mockResolvedValue(true);
+    const deps = createDeps({ findUser, isPrincipalActive });
+    const next = jest.fn();
+
+    const pending = runMiddleware(deps, createRequest(), createResponse(), next);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(findUser).toHaveBeenCalledTimes(1);
+    expect(isPrincipalActive).toHaveBeenCalledWith(USER_ID);
+    resolveUser?.(createUser());
+    await pending;
+
+    expect(next).toHaveBeenCalledTimes(1);
   });
 
   it('does not retain a removed binding after app config reload', async () => {

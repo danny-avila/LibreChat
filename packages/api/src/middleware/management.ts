@@ -80,11 +80,6 @@ export function getMachineClientId(payload: JwtPayload): string {
     throw new AgentManagementAuthError('Missing OAuth client identifier');
   }
 
-  const subject = getStringClaim(payload, 'sub');
-  if (subject !== clientId && subject !== `${clientId}@clients`) {
-    throw new AgentManagementAuthError('Token subject is not a machine client');
-  }
-
   if (
     typeof payload.exp !== 'number' ||
     !Number.isSafeInteger(payload.exp) ||
@@ -96,6 +91,14 @@ export function getMachineClientId(payload: JwtPayload): string {
   return clientId;
 }
 
+function hasExpectedMachineSubject(payload: JwtPayload, binding: ManagementClient): boolean {
+  const subject = getStringClaim(payload, 'sub');
+  const expectedSubject = binding.subject;
+
+  if (expectedSubject) return subject === expectedSubject;
+  return subject === binding.clientId || subject === `${binding.clientId}@clients`;
+}
+
 function findClientBinding(auth: ManagementAuth, clientId: string): ManagementClient | undefined {
   return auth.clients.find((client) => client.enabled !== false && client.clientId === clientId);
 }
@@ -105,7 +108,10 @@ async function resolvePrincipal(
   deps: Pick<AgentManagementAuthDeps, 'findUser' | 'isPrincipalActive'>,
 ): Promise<PrincipalResolution> {
   return tenantStorage.run({ tenantId: binding.tenantId }, async () => {
-    const user = await deps.findUser({ _id: binding.userId, tenantId: binding.tenantId });
+    const [user, isActive] = await Promise.all([
+      deps.findUser({ _id: binding.userId, tenantId: binding.tenantId }),
+      deps.isPrincipalActive(binding.userId),
+    ]);
     if (!user) return { status: 'missing' };
 
     const userId = String(user._id);
@@ -113,7 +119,7 @@ async function resolvePrincipal(
       return { status: 'missing' };
     }
 
-    if (!(await deps.isPrincipalActive(userId))) {
+    if (!isActive) {
       return { status: 'inactive' };
     }
 
@@ -173,6 +179,11 @@ export function createAgentManagementAuth(deps: AgentManagementAuthDeps): Reques
       const binding = findClientBinding(enabledAuth.auth, clientId);
       if (!binding) {
         logger.warn('[agentManagementAuth] Verified token has no enabled client binding');
+        sendAuthenticationError(res);
+        return;
+      }
+      if (!hasExpectedMachineSubject(payload, binding)) {
+        logger.warn('[agentManagementAuth] M2M token subject rejected');
         sendAuthenticationError(res);
         return;
       }
