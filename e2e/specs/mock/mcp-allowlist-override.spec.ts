@@ -79,9 +79,9 @@ test.describe('MCP admin-panel allowlist override', () => {
       expect(put.ok()).toBeTruthy();
       installed = true;
 
-      // The override is honored on reinit: the server now connects. The write
-      // awaits cache invalidation before responding, but poll anyway so a slow
-      // connection to the fixture cannot fail this on timing.
+      // The override is honored on reinit: the server now connects. The handler
+      // invalidates config caches asynchronously after responding, so poll until
+      // the merged allowlist has actually landed.
       await expect
         .poll(async () => (await reinitialize(request, headers)).success, {
           timeout: 30000,
@@ -90,31 +90,49 @@ test.describe('MCP admin-panel allowlist override', () => {
         .toBe(true);
     } finally {
       /**
-       * Deleting the principal's overrides removes its config document; the
-       * handler then invalidates the config caches asynchronously. The document
-       * being gone proves nothing about the caches, so confirm the EFFECTIVE
-       * allowlist reverted with the same cache-backed read the test itself
-       * relies on: `reinitialize` disconnects the user connection and re-resolves
-       * the merged allowlists per request (MCPManager → registry.resolveAllowlists
-       * → the per-user merged app config), so the baseline `success: false`
-       * returning is the definitive signal. The window exceeds the merged-config
-       * cache TTL (60s), so even a missed invalidation converges rather than
-       * leaking into the next spec. A 404 means there was nothing to remove —
-       * a failure only if this test actually installed the override, and an
+       * Always run, whether or not this attempt installed anything: a leaked
+       * override from an earlier interrupted attempt is exactly the state the
+       * cleanup exists to remove. A 404 means there was nothing to delete, which
+       * is only a failure if this attempt had installed the override — and an
        * assertion here must never mask the error that prevented installing it.
        */
       const del = await request.delete(`/api/admin/config/user/${userId}`, { headers });
       if (installed || del.status() !== 404) {
         expect(del.ok()).toBeTruthy();
       }
-      if (installed) {
-        await expect
-          .poll(async () => (await reinitialize(request, headers)).success, {
-            timeout: 90000,
-            intervals: [1000, 2000, 3000],
-          })
-          .toBe(false);
-      }
+      /**
+       * Confirm the override document is gone, retrying anything that is not a
+       * definitive answer (only 200-without-the-override and 404 are). The cache
+       * that gates the next spec — the merged app config that agent tool loading
+       * consults per request — is in-memory in these shards and is cleared by the
+       * mutation's (asynchronous) invalidation; the downstream victim,
+       * `mcp-oauth-resume`, passes with this cleanup in place. `reinitialize` is
+       * deliberately NOT used as the "reverted" signal: a server that has already
+       * connected keeps re-initializing successfully long after the override is
+       * removed (observed for more than 90 seconds in CI, past the 60-second
+       * merged-config TTL), because its allow decision is not on the path that
+       * poisoned the shard.
+       */
+      await expect
+        .poll(
+          async () => {
+            const res = await request.get(`/api/admin/config/user/${userId}`, { headers });
+            if (res.status() === 404) {
+              return 'cleared';
+            }
+            if (res.status() !== 200) {
+              return `retry:${res.status()}`;
+            }
+            const body = (await res.json()) as {
+              config?: { overrides?: { mcpSettings?: { allowedDomains?: string[] } } };
+            };
+            return body.config?.overrides?.mcpSettings?.allowedDomains == null
+              ? 'cleared'
+              : 'override still present';
+          },
+          { timeout: 30000, intervals: [500, 1000, 2000] },
+        )
+        .toBe('cleared');
     }
   });
 });
