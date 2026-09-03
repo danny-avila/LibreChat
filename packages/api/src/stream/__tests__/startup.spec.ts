@@ -4313,6 +4313,30 @@ describe('GenerationJobManager startup telemetry', () => {
     expect(recordProviderDrain).not.toHaveBeenCalled();
   });
 
+  it('refuses to begin a provider execution once shutdown has started', async () => {
+    const { manager, jobStore } = configureShutdownManager();
+    const streamId = 'stream-shutdown-late-begin';
+    const job = await manager.createJob(streamId, 'user-1');
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    const storeBegin = jest.spyOn(jobStore, 'beginProviderExecution');
+
+    manager.prepareForShutdown();
+    /** Began after the settlement wait could have observed it: must not start, must not
+     *  commit `providerDrained: false`, and must leave nothing for shutdown to wait on. */
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId),
+    ).resolves.toBe(false);
+    expect(storeBegin).not.toHaveBeenCalled();
+
+    let destroyed = false;
+    const destroying = manager.destroy({ settlementBudgetMs: 5_000 }).then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(true);
+    await destroying;
+  });
+
   it('does not let late success overwrite or delete a shutdown error', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     jest.spyOn(jobStore, 'destroy').mockResolvedValue();

@@ -279,32 +279,46 @@ if (cluster.isMaster) {
    * a worker-local estimate the primary will not honor. Bounded so a stalled worker cannot
    * hold the others.
    */
-  const CLUSTER_DEADLINE_ACK_TIMEOUT_MS = 1_000;
   const signalWorkerAfterDeadlineAck = (worker, deadlineAt) => {
     let signaled = false;
-    let ackTimer = null;
     const onMessage = (msg) => {
       if (msg != null && msg.type === 'cluster-shutdown-ack') {
         signal();
       }
+    };
+    /** A closed IPC channel is reported asynchronously, not thrown from send(); without a
+     *  listener it reaches the global uncaughtException handler and exits the primary,
+     *  killing every other worker before it can record its drain. */
+    const onError = (err) => {
+      logger.warn('Worker IPC error during the shutdown handoff; treating it as gone:', err);
+      signal();
     };
     const signal = () => {
       if (signaled) {
         return;
       }
       signaled = true;
-      clearTimeout(ackTimer);
       worker.off('message', onMessage);
-      worker.kill();
+      worker.off('error', onError);
+      try {
+        worker.kill();
+      } catch (err) {
+        logger.debug('Worker already gone before SIGTERM:', err);
+      }
     };
     worker.on('message', onMessage);
-    ackTimer = setTimeout(signal, CLUSTER_DEADLINE_ACK_TIMEOUT_MS);
-    try {
-      worker.send({ type: 'cluster-shutdown', deadlineAt });
-    } catch (err) {
-      logger.warn('Could not send the shutdown deadline to a worker:', err);
-      signal();
-    }
+    worker.on('error', onError);
+    /** Deliberately no separate timeout. SIGTERM is sent only after the worker has recorded
+     *  the deadline; a worker that never acknowledges is ended by the primary's own
+     *  force-exit, the one deadline it can honor. Signaling sooner would let a stalled
+     *  worker's SIGTERM handler run before the queued deadline message and fall back to a
+     *  local budget the primary will not honor, the exact case this handoff exists for.
+     *  Handshakes are per worker, so a stalled one holds no other. */
+    worker.send({ type: 'cluster-shutdown', deadlineAt }, (err) => {
+      if (err) {
+        onError(err);
+      }
+    });
   };
 
   /** Graceful shutdown on SIGTERM/SIGINT */

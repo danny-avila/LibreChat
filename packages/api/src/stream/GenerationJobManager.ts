@@ -7237,6 +7237,14 @@ class GenerationJobManagerClass {
     if (providerExecutionId.length === 0 || providerExecutionId.length > 128) {
       return false;
     }
+    /** A provider that has not started by the time shutdown begins must not start. The
+     *  settlement wait only covers executions begun before it returned; one begun after it
+     *  would commit `providerDrained: false` against a store that is about to close and
+     *  fence its successor. Callers already treat `false` as "stopped before provider
+     *  startup", and nothing has been committed. */
+    if (this.shuttingDown) {
+      return false;
+    }
     /** Opened before the CAS and closed only on a definitive `false`. A rejected reply is
      *  ambiguous — the store may already have committed `providerDrained: false` — and every
      *  caller treats it that way, running or cleaning up and recording the drain either way.
