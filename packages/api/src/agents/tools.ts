@@ -715,21 +715,22 @@ const ATTACHED_CODE_CREATE_FILE_DESCRIPTION = `Create a new file in the selected
 
 Use a path in the form "workspace/{relativePath}". Requires overwrite: true to replace an existing file and refuses otherwise. The workspace may be an existing project, a Git repository, or an empty directory.
 
-Very long content can exceed the streamed tool-argument limit (64 KB by default). Keep each call bounded.`;
+Very long content can exceed the streamed tool-argument limit (64 KB by default). The attached workspace also limits each write to 1 MiB. Keep each call bounded.`;
 
 const ATTACHED_CODE_EDIT_FILE_DESCRIPTION = `Apply one or more ordered exact text replacements to an existing file in the selected attached environment.
 
-Use a path in the form "workspace/{relativePath}". Every old_text must match exactly one location at its step in the batch. The entire batch commits atomically or makes no change.`;
+Use a path in the form "workspace/{relativePath}". Every old_text must match exactly one location at its step in the batch. Up to 100 replacements and 1 MiB of edit text are allowed; the entire batch commits atomically or makes no change.`;
 
 const ATTACHED_SKILL_CREATE_FILE_DESCRIPTION = `${SKILL_CREATE_FILE_DESCRIPTION.replace(
   'Non-skills paths target the code-execution sandbox when enabled. Prefer /mnt/data/{file}.',
   'For the selected attached environment, non-skill paths must use "workspace/{relativePath}".',
 )}`;
 
-const ATTACHED_SKILL_EDIT_FILE_DESCRIPTION = `${SKILL_EDIT_FILE_DESCRIPTION.replace(
-  'Paths starting with "skills/" target the skill file system. When code execution is enabled, non-skills paths target the code-execution sandbox.',
-  'Paths starting with "skills/" target the skill file system. For the selected attached environment, non-skill paths must use "workspace/{relativePath}" and every replacement is exact; a batch commits atomically.',
-)}`;
+const ATTACHED_SKILL_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
+
+For skills/{skillName}/... paths, exact matching falls back to whitespace-tolerant matching when needed and the result includes a unified diff. Keep SKILL.md YAML frontmatter name equal to {skillName}; create a new skills/{newName}/SKILL.md to rename a skill.
+
+For workspace/{relativePath} paths in the selected attached environment, every old_text must match exactly one location at its step. There is no whitespace-tolerant fallback. Up to 100 replacements and 1 MiB of edit text commit atomically, and the result is a write summary rather than a unified diff.`;
 
 function attachedFileAuthoringParameters(
   parameters: LCTool['parameters'],

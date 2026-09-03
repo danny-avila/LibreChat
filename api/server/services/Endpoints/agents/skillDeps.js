@@ -8,6 +8,7 @@ const {
   searchWorkspace,
   listWorkspaceFiles,
   writeWorkspaceFile,
+  previewWorkspaceEdit,
   editWorkspaceFile,
   readSandboxFile,
   readSandboxImage,
@@ -389,6 +390,7 @@ const skillToolDeps = {
   searchWorkspace,
   listWorkspaceFiles,
   writeWorkspaceFile,
+  previewWorkspaceEdit,
   editWorkspaceFile,
   /**
    * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths

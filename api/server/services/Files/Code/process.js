@@ -1833,6 +1833,7 @@ async function writeWorkspaceFile({
 async function editWorkspaceFile({
   file_path,
   edits,
+  expected_base_sha256,
   workspace_id,
   codeApiBaseUrl,
   executionProfile,
@@ -1850,6 +1851,36 @@ async function editWorkspaceFile({
     request: {
       protocolVersion: 1,
       operation: 'edit_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      edits,
+      ...(expected_base_sha256 ? { expectedBaseSha256: expected_base_sha256 } : {}),
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** Previews an ordered exact-edit batch without mutating the attached workspace. */
+async function previewWorkspaceEdit({
+  file_path,
+  edits,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'preview_edit',
       workspaceId: workspace_id,
       path: file_path,
       edits,
@@ -2128,6 +2159,7 @@ module.exports = {
   searchWorkspace,
   listWorkspaceFiles,
   writeWorkspaceFile,
+  previewWorkspaceEdit,
   editWorkspaceFile,
   readSandboxFile,
   readSandboxImage,

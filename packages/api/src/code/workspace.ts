@@ -8,8 +8,8 @@ const MAX_READ_LINES = 500;
 const MAX_SEARCH_RESULTS = 200;
 const MAX_SEARCH_TEXT_LENGTH = 2000;
 const MAX_LIST_RESULTS = 500;
-const MAX_WRITE_BYTES = 1024 * 1024;
-const MAX_EDIT_COUNT = 100;
+export const WORKSPACE_WRITE_MAX_BYTES = 1024 * 1024;
+export const WORKSPACE_EDIT_MAX_COUNT = 100;
 const MAX_COMMAND_BYTES = 32 * 1024;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const MAX_COMMAND_TIMEOUT_MS = 5 * 60_000;
@@ -72,6 +72,16 @@ const EDIT_RESULT_KEYS = new Set([
   'replacements',
   'bytesWritten',
 ]);
+const PREVIEW_EDIT_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'path',
+  'content',
+  'baseSha256',
+  'replacements',
+  'bytesWritten',
+]);
 const TEXT_EDIT_KEYS = new Set(['oldText', 'newText']);
 
 export interface WorkspaceReadRequest {
@@ -131,6 +141,15 @@ export interface WorkspaceEditRequest {
   workspaceId: string;
   path: string;
   edits: WorkspaceTextEdit[];
+  expectedBaseSha256?: string;
+}
+
+export interface WorkspacePreviewEditRequest {
+  protocolVersion: 1;
+  operation: 'preview_edit';
+  workspaceId: string;
+  path: string;
+  edits: WorkspaceTextEdit[];
 }
 
 export type WorkspaceToolRequest =
@@ -138,6 +157,7 @@ export type WorkspaceToolRequest =
   | WorkspaceSearchRequest
   | WorkspaceListRequest
   | WorkspaceWriteRequest
+  | WorkspacePreviewEditRequest
   | WorkspaceEditRequest
   | WorkspaceExecuteCommandRequest;
 
@@ -200,11 +220,23 @@ export interface WorkspaceEditResult {
   bytesWritten: number;
 }
 
+export interface WorkspacePreviewEditResult {
+  protocolVersion: 1;
+  operation: 'preview_edit';
+  workspaceId: string;
+  path: string;
+  content: string;
+  baseSha256: string;
+  replacements: number;
+  bytesWritten: number;
+}
+
 export type WorkspaceToolResult =
   | WorkspaceReadResult
   | WorkspaceSearchResult
   | WorkspaceListResult
   | WorkspaceWriteResult
+  | WorkspacePreviewEditResult
   | WorkspaceEditResult
   | WorkspaceExecuteCommandResult;
 
@@ -251,22 +283,22 @@ function isUtf8StringWithinBytes(value: unknown, maximum: number): value is stri
 
 function areValidWorkspaceEdits(edits: unknown): edits is WorkspaceTextEdit[] {
   if (!Array.isArray(edits)) return false;
-  if (edits.length < 1 || edits.length > MAX_EDIT_COUNT) return false;
+  if (edits.length < 1 || edits.length > WORKSPACE_EDIT_MAX_COUNT) return false;
   let bytes = 0;
   for (const edit of edits) {
     if (
       !isRecord(edit) ||
       !hasOnlyKeys(edit, TEXT_EDIT_KEYS) ||
-      !isUtf8StringWithinBytes(edit.oldText, MAX_WRITE_BYTES) ||
+      !isUtf8StringWithinBytes(edit.oldText, WORKSPACE_WRITE_MAX_BYTES) ||
       edit.oldText.length === 0 ||
-      !isUtf8StringWithinBytes(edit.newText, MAX_WRITE_BYTES)
+      !isUtf8StringWithinBytes(edit.newText, WORKSPACE_WRITE_MAX_BYTES)
     ) {
       return false;
     }
     bytes +=
       new TextEncoder().encode(edit.oldText).byteLength +
       new TextEncoder().encode(edit.newText).byteLength;
-    if (bytes > MAX_WRITE_BYTES) return false;
+    if (bytes > WORKSPACE_WRITE_MAX_BYTES) return false;
   }
   return true;
 }
@@ -384,12 +416,19 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
   if (request.operation === 'write_file') {
     return (
       isSafePath(request.path) &&
-      isUtf8StringWithinBytes(request.content, MAX_WRITE_BYTES) &&
+      isUtf8StringWithinBytes(request.content, WORKSPACE_WRITE_MAX_BYTES) &&
       (request.overwrite === undefined || typeof request.overwrite === 'boolean')
     );
   }
-  if (request.operation === 'edit_file') {
+  if (request.operation === 'preview_edit') {
     return isSafePath(request.path) && areValidWorkspaceEdits(request.edits);
+  }
+  if (request.operation === 'edit_file') {
+    return (
+      isSafePath(request.path) &&
+      areValidWorkspaceEdits(request.edits) &&
+      (request.expectedBaseSha256 == null || /^[a-f0-9]{64}$/.test(request.expectedBaseSha256))
+    );
   }
   if (request.operation !== 'search_text') {
     return false;
@@ -517,7 +556,21 @@ function isValidResult(
       value.replacements === request.edits.length &&
       Number.isSafeInteger(value.bytesWritten) &&
       Number(value.bytesWritten) >= 0 &&
-      Number(value.bytesWritten) <= MAX_WRITE_BYTES
+      Number(value.bytesWritten) <= WORKSPACE_WRITE_MAX_BYTES
+    );
+  }
+  if (request.operation === 'preview_edit') {
+    const content = typeof value.content === 'string' ? value.content : null;
+    return (
+      hasOnlyKeys(value, PREVIEW_EDIT_RESULT_KEYS) &&
+      value.path === request.path &&
+      content != null &&
+      Buffer.from(content).toString('utf8') === content &&
+      /^[a-f0-9]{64}$/.test(typeof value.baseSha256 === 'string' ? value.baseSha256 : '') &&
+      value.replacements === request.edits.length &&
+      Number.isSafeInteger(value.bytesWritten) &&
+      Number(value.bytesWritten) === new TextEncoder().encode(content).byteLength &&
+      Number(value.bytesWritten) <= WORKSPACE_WRITE_MAX_BYTES
     );
   }
   const maxResults = request.maxResults ?? 50;

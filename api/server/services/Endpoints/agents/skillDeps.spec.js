@@ -9,6 +9,7 @@ const mockReadWorkspaceFile = jest.fn();
 const mockSearchWorkspace = jest.fn();
 const mockListWorkspaceFiles = jest.fn();
 const mockWriteWorkspaceFile = jest.fn();
+const mockPreviewWorkspaceEdit = jest.fn();
 const mockEditWorkspaceFile = jest.fn();
 
 jest.mock('~/server/services/Files/strategies', () => ({
@@ -27,6 +28,7 @@ jest.mock('~/server/services/Files/Code/process', () => ({
   searchWorkspace: (...args) => mockSearchWorkspace(...args),
   listWorkspaceFiles: (...args) => mockListWorkspaceFiles(...args),
   writeWorkspaceFile: (...args) => mockWriteWorkspaceFile(...args),
+  previewWorkspaceEdit: (...args) => mockPreviewWorkspaceEdit(...args),
   editWorkspaceFile: (...args) => mockEditWorkspaceFile(...args),
   writeSandboxFile: jest.fn(),
 }));
@@ -109,8 +111,10 @@ describe('skillDeps saveSkillFileContent', () => {
 
   it('exposes attached-workspace mutations to agent handlers', () => {
     getSkillToolDeps().writeWorkspaceFile({ path: 'src/new.ts' });
+    getSkillToolDeps().previewWorkspaceEdit({ path: 'src/app.ts' });
     getSkillToolDeps().editWorkspaceFile({ path: 'src/app.ts' });
     expect(mockWriteWorkspaceFile).toHaveBeenCalledWith({ path: 'src/new.ts' });
+    expect(mockPreviewWorkspaceEdit).toHaveBeenCalledWith({ path: 'src/app.ts' });
     expect(mockEditWorkspaceFile).toHaveBeenCalledWith({ path: 'src/app.ts' });
   });
 

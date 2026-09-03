@@ -739,4 +739,81 @@ describe('executeWorkspaceTool', () => {
     ).rejects.toMatchObject({ reason: 'invalid' });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  test('validates exact edit previews and revision-fenced commits', async () => {
+    const edits = [{ oldText: ' suffix', newText: 'RET suffix' }];
+    const baseSha256 = 'a'.repeat(64);
+    const fetchImpl: CodeBridgeFetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          protocolVersion: 1,
+          operation: 'preview_edit',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          content: 'prefix SECRET suffix',
+          baseSha256,
+          replacements: 1,
+          bytesWritten: 20,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          replacements: 1,
+          bytesWritten: 20,
+        }),
+      );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'preview_edit',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ content: 'prefix SECRET suffix', baseSha256 });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+          expectedBaseSha256: baseSha256,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ replacements: 1 });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+          expectedBaseSha256: 'invalid',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });

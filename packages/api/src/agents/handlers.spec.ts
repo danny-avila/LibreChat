@@ -4149,6 +4149,37 @@ describe('createToolExecuteHandler', () => {
       expect(writeWorkspaceFile).toHaveBeenCalledTimes(1);
     });
 
+    it('rejects attached workspace writes above the worker protocol limit', async () => {
+      const writeWorkspaceFile = jest.fn();
+      const handler = makeSandboxAuthoringHandler(
+        { writeWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_workspace_oversized',
+          name: 'create_file',
+          args: {
+            path: 'workspace/large.txt',
+            content: 'x'.repeat(1024 * 1024 + 1),
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('1 MiB');
+      expect(writeWorkspaceFile).not.toHaveBeenCalled();
+    });
+
     it('sends attached edit batches as one atomic workspace mutation', async () => {
       const editWorkspaceFile = jest.fn(async () => ({
         protocolVersion: 1 as const,
@@ -4209,6 +4240,16 @@ describe('createToolExecuteHandler', () => {
     });
 
     it('blocks protected attached edit content before worker dispatch', async () => {
+      const previewWorkspaceEdit = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'preview_edit' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        content: 'prefix ATTACHED-SECRET suffix',
+        baseSha256: 'a'.repeat(64),
+        replacements: 1,
+        bytesWritten: 29,
+      }));
       const editWorkspaceFile = jest.fn();
       const filteredReq = {
         user: { id: 'user-1' },
@@ -4231,7 +4272,7 @@ describe('createToolExecuteHandler', () => {
         },
       } as never;
       const handler = makeSandboxAuthoringHandler(
-        { editWorkspaceFile },
+        { previewWorkspaceEdit, editWorkspaceFile },
         {
           req: filteredReq,
           codeExecutionContext: {
@@ -4250,15 +4291,88 @@ describe('createToolExecuteHandler', () => {
           name: 'edit_file',
           args: {
             path: 'workspace/src/app.ts',
-            old_text: 'safe',
-            new_text: 'ATTACHED-SECRET',
+            old_text: ' suffix',
+            new_text: '-SECRET suffix',
           },
         },
       ]);
 
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('content_filter_block');
+      expect(previewWorkspaceEdit).toHaveBeenCalledTimes(1);
       expect(editWorkspaceFile).not.toHaveBeenCalled();
+    });
+
+    it('commits inspected attached edits with the preview revision fence', async () => {
+      const previewWorkspaceEdit = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'preview_edit' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        content: 'const state = "ready";',
+        baseSha256: 'b'.repeat(64),
+        replacements: 1,
+        bytesWritten: 22,
+      }));
+      const editWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'edit_file' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        replacements: 1,
+        bytesWritten: 22,
+      }));
+      const protectedReq = {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'blocked-placeholder',
+                    label: 'blocked placeholder',
+                    regex: 'NEVER-MATCH-THIS',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        { previewWorkspaceEdit, editWorkspaceFile },
+        {
+          req: protectedReq,
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+            bridgeWorkerId: 'user-worker',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_workspace_inspected',
+          name: 'edit_file',
+          args: {
+            path: 'workspace/src/app.ts',
+            old_text: 'draft',
+            new_text: 'ready',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(editWorkspaceFile).toHaveBeenCalledWith(
+        expect.objectContaining({ expected_base_sha256: 'b'.repeat(64) }),
+      );
     });
 
     it('contains a file-artifact policy rejection to its call without rejecting the batch', async () => {

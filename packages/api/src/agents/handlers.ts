@@ -20,6 +20,7 @@ import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type {
   WorkspaceEditResult,
+  WorkspacePreviewEditResult,
   WorkspaceListResult,
   WorkspaceReadResult,
   WorkspaceSearchResult,
@@ -99,7 +100,11 @@ import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './sk
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
-import { WorkspaceToolHttpError } from '~/code/workspace';
+import {
+  WorkspaceToolHttpError,
+  WORKSPACE_EDIT_MAX_COUNT,
+  WORKSPACE_WRITE_MAX_BYTES,
+} from '~/code/workspace';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -500,10 +505,22 @@ export interface ToolExecuteOptions {
     req?: ServerRequest;
     signal?: AbortSignal;
   }) => Promise<WorkspaceWriteResult>;
+  /** Previews exact replacements without mutating an attached worker workspace. */
+  previewWorkspaceEdit?: (params: {
+    file_path: string;
+    edits: Array<{ oldText: string; newText: string }>;
+    workspace_id: string;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspacePreviewEditResult>;
   /** Applies exact replacements atomically within an attached worker workspace. */
   editWorkspaceFile?: (params: {
     file_path: string;
     edits: Array<{ oldText: string; newText: string }>;
+    expected_base_sha256?: string;
     workspace_id: string;
     codeApiBaseUrl: string;
     executionProfile: CodeExecutionContext['executionProfile'];
@@ -3646,6 +3663,9 @@ async function handleAttachedWorkspaceCreateFileCall({
   }
   const path = attachedWorkspaceAuthoringPath(tc, filePath);
   if ('status' in path) return path;
+  if (new TextEncoder().encode(content).byteLength > WORKSPACE_WRITE_MAX_BYTES) {
+    return errorResult(tc, 'Attached workspace files are limited to 1 MiB per write.');
+  }
   const filtered = filteredFileResult(tc, req, path.filePath, content);
   if (filtered != null) return filtered;
 
@@ -3695,23 +3715,63 @@ async function handleAttachedWorkspaceEditFileCall({
   }
   const path = attachedWorkspaceAuthoringPath(tc, filePath);
   if ('status' in path) return path;
-  if (edits.length > 100) {
-    return errorResult(tc, 'Attached workspace edits are limited to 100 replacements per call.');
+  if (edits.length > WORKSPACE_EDIT_MAX_COUNT) {
+    return errorResult(
+      tc,
+      `Attached workspace edits are limited to ${WORKSPACE_EDIT_MAX_COUNT} replacements per call.`,
+    );
+  }
+  const editBytes = edits.reduce(
+    (bytes, edit) =>
+      bytes +
+      new TextEncoder().encode(edit.old_text).byteLength +
+      new TextEncoder().encode(edit.new_text).byteLength,
+    0,
+  );
+  if (editBytes > WORKSPACE_WRITE_MAX_BYTES) {
+    return errorResult(tc, 'Attached workspace edit text is limited to 1 MiB per call.');
   }
   const filteredName = filteredFileNameResult(tc, req, path.filePath);
   if (filteredName != null) return filteredName;
-  const filteredContent = filteredFileResult(
-    tc,
-    req,
-    path.filePath,
-    edits.map((edit) => edit.new_text).join('\n'),
-  );
-  if (filteredContent != null) return filteredContent;
 
   try {
+    const workspaceEdits = edits.map((edit) => ({
+      oldText: edit.old_text,
+      newText: edit.new_text,
+    }));
+    let expectedBaseSha256: string | undefined;
+    if (hasActiveFileFieldPolicy(req?.config?.filters, ['content', 'extracted_text'])) {
+      if (!options.previewWorkspaceEdit) {
+        return errorResult(
+          tc,
+          'Attached workspace editing requires an updated BYOM worker while file-content protections are enabled.',
+        );
+      }
+      let preview: WorkspacePreviewEditResult;
+      try {
+        preview = await options.previewWorkspaceEdit({
+          file_path: path.filePath,
+          edits: workspaceEdits,
+          ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+        });
+      } catch (error) {
+        if (signal?.aborted === true && isAbortError(error)) throw error;
+        if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 400) {
+          return errorResult(
+            tc,
+            'This attached environment must update its LibreChat Code worker before protected files can be edited.',
+          );
+        }
+        throw error;
+      }
+      const filteredContent = filteredFileResult(tc, req, path.filePath, preview.content);
+      if (filteredContent != null) return filteredContent;
+      expectedBaseSha256 = preview.baseSha256;
+    }
     const result = await options.editWorkspaceFile({
       file_path: path.filePath,
-      edits: edits.map((edit) => ({ oldText: edit.old_text, newText: edit.new_text })),
+      edits: workspaceEdits,
+      ...(expectedBaseSha256 ? { expected_base_sha256: expectedBaseSha256 } : {}),
       ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
     });
     return successResult(
