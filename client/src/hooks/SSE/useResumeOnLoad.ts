@@ -24,7 +24,13 @@ import {
   getGenerationProtocolVersion,
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
-import { useStreamStatus, useActiveJobs, streamStatusQueryKey } from '~/data-provider';
+import {
+  useStreamStatus,
+  useActiveJobs,
+  useAgentQueuedTurns,
+  streamStatusQueryKey,
+  shouldPollAgentQueuedTurns,
+} from '~/data-provider';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import store from '~/store';
 
@@ -467,8 +473,28 @@ export default function useResumeOnLoad(
    * and an effect keyed on it would run once and never again. The stamp moves
    * on every fetch, which is the heartbeat this needs.
    */
-  const { data: activeJobsData, dataUpdatedAt: activeJobsUpdatedAt } =
-    useActiveJobs(resumableEnabled);
+  /**
+   * Positive evidence that the backend owes this conversation a run: a queued
+   * turn it has taken ownership of. The client never builds a submission for
+   * one — `useQueueDrain` declines the boundary — so the resulting run has to
+   * be recognised from the active-job list, and finishing the previous run is
+   * what empties that list. Saying so outright keeps the listening exact
+   * instead of betting on how long admission takes.
+   *
+   * Read from the server's own receipts rather than the chip projection, so
+   * this shares `shouldPollAgentQueuedTurns` with the queue itself instead of
+   * restating admission semantics in a second place. `useSteering` owns the
+   * fetch; subscribing with `enabled: false` observes that cache without
+   * competing for it, and an unpopulated cache simply falls back to the
+   * handover window.
+   */
+  const { data: queuedTurnReceipts } = useAgentQueuedTurns(conversationId ?? '', false);
+  const expectsServerSuccessor =
+    !hasLiveSubmissionForThisConvo && shouldPollAgentQueuedTurns(queuedTurnReceipts);
+  const { data: activeJobsData, dataUpdatedAt: activeJobsUpdatedAt } = useActiveJobs(
+    resumableEnabled,
+    expectsServerSuccessor,
+  );
   const hasActiveJobForThisConvo =
     !!conversationId &&
     conversationId !== Constants.NEW_CONVO &&

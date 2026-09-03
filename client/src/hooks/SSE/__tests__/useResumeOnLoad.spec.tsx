@@ -11,11 +11,20 @@ import store from '~/store';
 
 const mockUseStreamStatus = jest.fn();
 const mockUseActiveJobs = jest.fn();
+const mockUseAgentQueuedTurns = jest.fn();
 
 jest.mock('~/data-provider', () => ({
   useStreamStatus: (conversationId: string | undefined, enabled: boolean) =>
     mockUseStreamStatus(conversationId, enabled),
-  useActiveJobs: (enabled?: boolean) => mockUseActiveJobs(enabled),
+  useActiveJobs: (enabled?: boolean, expectsSuccessor?: boolean) =>
+    mockUseActiveJobs(enabled, expectsSuccessor),
+  useAgentQueuedTurns: (conversationId: string, enabled: boolean) =>
+    mockUseAgentQueuedTurns(conversationId, enabled),
+  /** Real predicate: admission semantics are the thing under test here, and a
+   *  restated copy in a mock is exactly the drift this shares a function to
+   *  avoid. */
+  shouldPollAgentQueuedTurns: jest.requireActual('~/data-provider/SSE/queuedTurns')
+    .shouldPollAgentQueuedTurns,
   streamStatusQueryKey: (conversationId: string) => ['streamStatus', conversationId],
 }));
 
@@ -180,6 +189,8 @@ describe('useResumeOnLoad', () => {
     });
     mockUseActiveJobs.mockReset();
     mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] }, dataUpdatedAt: 1 });
+    mockUseAgentQueuedTurns.mockReset();
+    mockUseAgentQueuedTurns.mockReturnValue({ data: [] });
   });
 
   afterEach(() => {
@@ -750,6 +761,57 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(mockUseStreamStatus).not.toHaveBeenCalledWith(CONVERSATION_ID, true);
+    });
+
+    it('declares an owed successor so the active list keeps being asked', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      /**
+       * A queued turn the backend has taken ownership of: `useQueueDrain`
+       * declines the boundary, so no submission is built here and the run must
+       * be recognised from the active list — which finishing the previous run
+       * empties. Saying the successor is owed is what keeps that list live,
+       * rather than betting on how long admission takes.
+       */
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }] });
+
+      renderUseResumeOnLoad({ messages: [buildUserMessage(CONVERSATION_ID)] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+    });
+
+    it('declares nothing owed while its own run is the one in flight', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }] });
+
+      /** The queued turn is waiting behind a run this pane is already
+       *  streaming; that attachment is what will report the successor. */
+      renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: true,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+    });
+
+    it('declares nothing owed for a turn the server cannot admit', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ status: 'claimed', failure: { code: 'ADMISSION_INDETERMINATE' } }],
+      });
+
+      renderUseResumeOnLoad({ messages: [buildUserMessage(CONVERSATION_ID)] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
     });
 
     it('does not re-arm for a conversation that is not the one being viewed', async () => {

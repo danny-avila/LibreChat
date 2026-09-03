@@ -130,6 +130,22 @@ describe('useActiveJobs successor grace', () => {
     expect(getActiveJobsRefetchInterval({ activeJobIds: [] })).toBe(ACTIVE_JOBS_POLL_MS);
   });
 
+  it('keeps listening for as long as a successor is known to be owed', () => {
+    /** The deterministic path: a queued turn the backend has taken ownership
+     *  of needs no window, because the client already knows a run is coming. */
+    expect(getActiveJobsRefetchInterval({ activeJobIds: [] }, true)).toBe(ACTIVE_JOBS_POLL_MS);
+
+    now += ACTIVE_JOBS_SUCCESSOR_GRACE_MS * 10;
+    expect(getActiveJobsRefetchInterval({ activeJobIds: [] }, true)).toBe(ACTIVE_JOBS_POLL_MS);
+  });
+
+  it('stops once a successor is no longer owed', () => {
+    expect(getActiveJobsRefetchInterval({ activeJobIds: [] }, true)).toBe(ACTIVE_JOBS_POLL_MS);
+
+    now += ACTIVE_JOBS_SUCCESSOR_GRACE_MS + 1;
+    expect(getActiveJobsRefetchInterval({ activeJobIds: [] }, false)).toBe(false);
+  });
+
   it('stops once the handover window has passed without a successor', () => {
     expect(getActiveJobsRefetchInterval({ activeJobIds: ['convo-1'] })).toBe(ACTIVE_JOBS_POLL_MS);
 
