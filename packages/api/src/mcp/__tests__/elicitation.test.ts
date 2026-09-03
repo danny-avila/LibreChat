@@ -143,6 +143,34 @@ describe('extractUrlElicitation', () => {
     },
   );
 
+  it.each([
+    ['missing message', { url: 'https://auth.example.com' }],
+    ['non-string message', { url: 'https://auth.example.com', message: { text: 'auth' } }],
+    ['blank message', { url: 'https://auth.example.com', message: '   ' }],
+    ['non-string url', { message: 'Authorize', url: { href: 'https://auth.example.com' } }],
+  ])(
+    'drops a malformed elicitation rather than surfacing it half-formed (%s)',
+    (_label, malformed) => {
+      // `message` and `url` are interpolated straight into user-facing strings,
+      // so a malformed payload would render "undefined" in the card.
+      const error = { code: -32042, data: { elicitations: [malformed] } };
+      expect(extractUrlElicitation(error)).toBeNull();
+    },
+  );
+
+  it('omits a non-string elicitationId instead of passing it through', () => {
+    const error = {
+      code: -32042,
+      data: {
+        elicitations: [{ message: 'Authorize', url: 'https://auth.example.com', elicitationId: 7 }],
+      },
+    };
+    expect(extractUrlElicitation(error)).toEqual({
+      message: 'Authorize',
+      url: 'https://auth.example.com',
+    });
+  });
+
   it.each(['javascript:alert(1)', 'data:text/html,pwn', 'vbscript:msgbox'])(
     'drops an HTTP-wrapped gateway elicitation carrying a hostile-scheme URL (%s)',
     (url) => {

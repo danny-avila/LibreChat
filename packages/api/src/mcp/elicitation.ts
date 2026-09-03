@@ -9,7 +9,9 @@ export interface UrlElicitation {
   mode?: string;
   message: string;
   url: string;
-  elicitationId: string;
+  /** Optional on the wire: servers may omit it, and it is only used for
+   *  `notifications/elicitation/complete` correlation. */
+  elicitationId?: string;
 }
 
 /**
@@ -30,14 +32,31 @@ export function isHttpUrl(url: string): boolean {
   return parsed.protocol === 'http:' || parsed.protocol === 'https:';
 }
 
-/** Returns the first elicitation only when its URL is a safe http(s) link;
- *  otherwise `null`, so a hostile-scheme URL is never surfaced as a URL elicitation. */
+/** Returns the first elicitation only when it is well formed: a safe http(s)
+ *  URL and a non-empty string message. The payload is server-supplied, so the
+ *  declared types are not a runtime guarantee, and both fields are interpolated
+ *  straight into user-facing strings (the card body and the McpError messages in
+ *  `MCPManager.callTool`) — a missing or non-string `message` would render
+ *  "undefined" to the user. A malformed entry is treated as no elicitation at
+ *  all rather than being half-surfaced. */
 function firstSafeUrlElicitation(elicitations?: UrlElicitation[]): UrlElicitation | null {
   const elicitation = elicitations?.[0];
-  if (!elicitation || !isHttpUrl(elicitation.url)) {
+  if (!elicitation || typeof elicitation !== 'object') {
     return null;
   }
-  return elicitation;
+  const { message, url, mode, elicitationId } = elicitation;
+  if (typeof message !== 'string' || message.trim().length === 0) {
+    return null;
+  }
+  if (typeof url !== 'string' || !isHttpUrl(url)) {
+    return null;
+  }
+  return {
+    message,
+    url,
+    ...(typeof mode === 'string' ? { mode } : {}),
+    ...(typeof elicitationId === 'string' ? { elicitationId } : {}),
+  };
 }
 
 /**

@@ -256,7 +256,7 @@ export default function ElicitationForm({
     card = (
       <div className="my-1.5 flex h-5 items-center gap-2 text-text-secondary">
         {succeeded ? (
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" aria-hidden="true" />
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         ) : (
           <XCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         )}
