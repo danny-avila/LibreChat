@@ -4264,6 +4264,55 @@ describe('GenerationJobManager startup telemetry', () => {
     await destroying;
   });
 
+  it('does not carry undrained executions across a reconfigure', async () => {
+    const { manager } = configureShutdownManager();
+    const streamId = 'stream-shutdown-reconfigure';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.beginProviderExecution(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+
+    /** Reconfiguring after initialization replaces the store and transport the open
+     *  execution belongs to; its tracker must go with them. */
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
+    manager.configure({ jobStore, eventTransport: new InMemoryEventTransport(), isRedis: false });
+
+    manager.prepareForShutdown();
+    let destroyed = false;
+    const destroying = manager.destroy({ settlementBudgetMs: 5_000 }).then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(true);
+    await destroying;
+  });
+
+  it('releases an abandoned provider execution without recording a drain', async () => {
+    const { manager, eventTransport } = configureShutdownManager();
+    const streamId = 'stream-shutdown-abandoned';
+    const job = await manager.createJob(streamId, 'user-1');
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    await manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId);
+    const recordProviderDrain = jest.spyOn(eventTransport, 'recordProviderDrain');
+
+    /** A remote run that settled its provider work but failed terminalization twice
+     *  deliberately publishes no drain marker; it must still stop shutdown waiting on it. */
+    manager.abandonProviderExecution(streamId, job.createdAt, providerExecutionId);
+
+    manager.prepareForShutdown();
+    let destroyed = false;
+    const destroying = manager.destroy({ settlementBudgetMs: 5_000 }).then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(true);
+    await destroying;
+    expect(recordProviderDrain).not.toHaveBeenCalled();
+  });
+
   it('does not let late success overwrite or delete a shutdown error', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     jest.spyOn(jobStore, 'destroy').mockResolvedValue();

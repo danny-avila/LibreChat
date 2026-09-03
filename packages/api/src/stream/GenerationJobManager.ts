@@ -906,6 +906,9 @@ class GenerationJobManagerClass {
     }
 
     this.ownedJobs.clear();
+    /** The trackers belong to the services being replaced; a stale one would make a later
+     *  graceful destroy() wait its whole budget on an execution that can never drain. */
+    this.releaseOpenProviderExecutions();
     setGenerationJobsInFlight(previousStore, 0);
 
     this.jobStore = services.jobStore;
@@ -7290,6 +7293,24 @@ class GenerationJobManagerClass {
     entry.settle();
   }
 
+  /**
+   * Release the tracker for an execution whose owner will never record its drain — a run
+   * that settled its provider work but failed terminalization and deliberately publishes no
+   * marker. Nothing is written: shutdown simply stops waiting on it, and the absent marker
+   * keeps telling a successor the truth.
+   */
+  abandonProviderExecution(streamId: string, createdAt: number, providerExecutionId: string): void {
+    this.closeProviderExecution(streamId, createdAt, providerExecutionId);
+  }
+
+  /** Settle and drop every open tracker; used wherever the services they belong to go away. */
+  private releaseOpenProviderExecutions(): void {
+    for (const entry of this.openProviderExecutions.values()) {
+      entry.settle();
+    }
+    this.openProviderExecutions.clear();
+  }
+
   private async waitForProviderExecutionDrain(
     streamId: string,
     expectedCreatedAt: number,
@@ -8535,10 +8556,7 @@ class GenerationJobManagerClass {
     /** Whatever the bounded wait left behind must not outlive this store: a later
      *  `configure()`/`initialize()` in the same process would otherwise wait a full budget
      *  on executions that can never drain. */
-    for (const entry of this.openProviderExecutions.values()) {
-      entry.settle();
-    }
-    this.openProviderExecutions.clear();
+    this.releaseOpenProviderExecutions();
     this.runtimeState.clear();
     this.ownedJobs.clear();
     this.syncRunningJobMetrics();

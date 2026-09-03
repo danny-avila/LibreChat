@@ -4,6 +4,8 @@ require('../config/credentials');
  * shutdown signal, regardless of what the workers are still doing.
  */
 const CLUSTER_FORCE_EXIT_MS = 10_000;
+/** Absolute time the primary will force-exit the cluster, propagated to this worker over IPC. */
+let clusterShutdownDeadlineAt = null;
 
 const fs = require('fs');
 const path = require('path');
@@ -283,7 +285,15 @@ if (cluster.isMaster) {
       process.exit(0);
       return;
     }
+    /** Workers derive their settlement budget from THIS deadline — not from their own
+     *  coordinator, and not from whenever their signal handler happened to run. */
+    const deadlineAt = Date.now() + CLUSTER_FORCE_EXIT_MS;
     for (const worker of liveWorkers) {
+      try {
+        worker.send({ type: 'cluster-shutdown', deadlineAt });
+      } catch (err) {
+        logger.warn('Could not send the shutdown deadline to a worker:', err);
+      }
       worker.kill();
     }
     setTimeout(() => {
@@ -331,7 +341,13 @@ if (cluster.isMaster) {
     if (remaining == null || elapsed == null) {
       return GenerationJobManager.destroy();
     }
-    const primaryRemaining = CLUSTER_FORCE_EXIT_MS - elapsed;
+    /** Prefer the deadline the primary actually set. The elapsed-based estimate starts
+     *  counting only when this worker's signal handler ran, which lags the primary's timer
+     *  by however long the event loop was blocked. */
+    const primaryRemaining =
+      clusterShutdownDeadlineAt != null
+        ? clusterShutdownDeadlineAt - Date.now()
+        : CLUSTER_FORCE_EXIT_MS - elapsed;
     return GenerationJobManager.destroy({
       settlementBudgetMs: Math.max(
         0,
@@ -371,6 +387,11 @@ if (cluster.isMaster) {
   };
 
   /** Handle inter-process messages from master */
+  process.on('message', (msg) => {
+    if (msg != null && msg.type === 'cluster-shutdown' && Number.isFinite(msg.deadlineAt)) {
+      clusterShutdownDeadlineAt = msg.deadlineAt;
+    }
+  });
   process.on('message', (msg) => {
     if (msg.type === 'file-retention-sweep-worker') {
       shouldStartExpiredFileSweep = true;
