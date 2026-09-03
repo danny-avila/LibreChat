@@ -73,12 +73,18 @@ import {
   BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
 } from './backgroundCompletion';
 import {
+  isAbortError,
+  logAxiosError,
+  truncateMiddle,
+  runOutsideTracing,
+  getSafeErrorMetadata,
+} from '~/utils';
+import {
   hasIntentArg,
   stripIntentArg,
   stripIntentLabelsFromToolDefinitions,
   INTENT_ARG,
 } from './intent';
-import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { createSkillContentDigest } from './compatibility';
@@ -4411,7 +4417,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
-      const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      const {
+        toolCalls,
+        agentId,
+        configurable,
+        metadata,
+        signal: runSignal,
+        resolve,
+        reject,
+      } = data;
       const callerCapabilityProjection = resolveCallerCapabilityProjectionSnapshot(
         (
           data as ToolExecuteBatchRequest & {
@@ -5884,6 +5898,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       toolCall: toolCallConfig,
                       configurable: mergedConfigurable,
                       metadata,
+                      /** The run's cancellation signal. Without it a foreground
+                       *  tool call keeps running after Stop: an MCP call never
+                       *  sends `notifications/cancelled`, and every other
+                       *  signal-aware tool keeps burning quota on a turn the
+                       *  user already abandoned. Detached background calls
+                       *  intentionally use their own controller instead. */
+                      ...(runSignal != null && { signal: runSignal }),
                     } as Record<string, unknown>);
 
                     /* Only sandbox-bound calls carry a runtime session hint, so
@@ -5981,18 +6002,35 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
                     }
                     const { message, logContext } = getSafeToolError(toolError);
+                    /** A user Stop rejects every in-flight call at once. That is
+                     *  the abort working, not a fault, so it is logged at debug.
+                     *  An aborted run says the turn is over, not that THIS
+                     *  rejection was the cancellation, so the error must look
+                     *  like one too; an unrelated failure racing the Stop stays
+                     *  at error level. Either way the level is all that changes
+                     *  — filtering and the result shape are identical. */
+                    const logToolFailure = (context: Record<string, unknown>): void => {
+                      if (runSignal?.aborted === true && isAbortError(toolError)) {
+                        logger.debug(
+                          `[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`,
+                          context,
+                        );
+                        return;
+                      }
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, context);
+                    };
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
                     const filteredError = filteredToolOutputResult(tc, req, {
                       errorMessage: message,
                     });
                     if (filteredError != null) {
-                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                      logToolFailure({
                         name: logContext.name,
                         contentFiltered: true,
                       });
                       return filteredError;
                     }
-                    logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                    logToolFailure({
                       ...logContext,
                       toolCallArgsShape: getValueShape(tc.args),
                       toolInputSchemaKind: getToolInputSchemaKind(tool),

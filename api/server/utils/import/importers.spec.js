@@ -966,6 +966,33 @@ describe('importLibreChatConvo', () => {
     ]);
   });
 
+  it('drops server-private context meta from imported messages', async () => {
+    const message = {
+      messageId: 'message-1',
+      parentMessageId: Constants.NO_PARENT,
+      text: 'Imported response',
+      isCreatedByUser: false,
+      contextMeta: {
+        calibrationRatio: 1,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 1, masked: true },
+      },
+    };
+    const jsonData = {
+      conversationId: 'context-meta-import',
+      title: 'Context meta import',
+      recursive: false,
+      messages: [message],
+    };
+    const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('contextMeta');
+    expect(importBatchBuilder.messages[0].isUserSubmitted).toBe(true);
+  });
+
   it('sanitizes singleton content and attachment fields before Mongoose array casting', async () => {
     const message = {
       messageId: 'message-1',

@@ -605,6 +605,16 @@ interface RuntimeJobState {
     /** Server-minted steerIds requested but not yet drained/cancelled. */
     ids: Set<string>;
     /**
+     * Run-scoped wake callbacks handed to the SDK's `StreamPreemption`.
+     * Notified after an arm is ACCEPTED so the model attempt can look at a
+     * request the per-chunk poll cannot reach — a provider that has gone
+     * silent, or one streaming reasoning that will never become sealable.
+     *
+     * Hints only. `ids` above stays the sole authority, so a spurious or
+     * duplicate wake costs one O(1) re-read and nothing else.
+     */
+    wakes?: Set<() => void>;
+    /**
      * steerIds whose removal was observed BEFORE their arm. Arm and clear are
      * published by different replicas over different connections, so a steer
      * drained at a tool boundary during the arming replica's enqueue round
@@ -1301,7 +1311,68 @@ class GenerationJobManagerClass {
       state.ids.add(id);
       accepted += 1;
     }
+    if (accepted > 0) {
+      this.notePreemptArmed(state);
+    }
     return accepted;
+  }
+
+  /**
+   * Wakes the live model attempt after an accepted arm. Called for local and
+   * cross-replica arms alike, since both land here through `armPreemptIds`.
+   *
+   * Errors are swallowed per listener: a wake is an optimization over the
+   * per-chunk poll, and a throwing listener must not fail the arm that a
+   * queued steer already depends on.
+   */
+  private notePreemptArmed(state: NonNullable<RuntimeJobState['preempt']>): void {
+    if (state.wakes == null) {
+      return;
+    }
+    for (const wake of state.wakes) {
+      try {
+        wake();
+      } catch (error) {
+        logger.error('[GenerationJobManager] Preempt wake listener failed:', error);
+      }
+    }
+  }
+
+  /**
+   * Registers a wake listener for the SDK's `StreamPreemption.subscribe`.
+   * Returns the unsubscribe the SDK calls when the model attempt ends.
+   *
+   * Fenced on `createdAt` like every other preempt entry point: a run wiring
+   * itself to a replaced generation must not be woken by the replacement's
+   * arms. A mismatch yields an inert unsubscribe rather than throwing, so the
+   * run still starts — it simply falls back to the per-chunk poll.
+   *
+   * An arm that ALREADY happened is replayed on registration. Requests are
+   * level-triggered, and the window between a job becoming steerable and the
+   * SDK installing its listener is real: an interrupt landing there would be
+   * recorded with no callbacks to notify, and on a silent or reasoning-only
+   * turn no later chunk poll may ever run — the exact stall this channel
+   * exists to remove. The replay makes the host correct on its own terms
+   * rather than resting on when the SDK first reads the flag.
+   */
+  subscribePreempt(streamId: string, wake: () => void, jobCreatedAt?: number): () => void {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime == null || (jobCreatedAt != null && runtime.createdAt !== jobCreatedAt)) {
+      return () => {};
+    }
+    const state = this.ensurePreemptState(runtime, jobCreatedAt ?? runtime.createdAt);
+    state.wakes ??= new Set();
+    const wakes = state.wakes;
+    wakes.add(wake);
+    if (state.ids.size > 0) {
+      /** Only the new listener, and only after it is registered: waking the
+       *  whole set would re-notify runs that already looked, and waking before
+       *  registration would leave a concurrent arm with nowhere to land. */
+      this.notePreemptArmed({ ...state, wakes: new Set([wake]) });
+    }
+    return () => {
+      wakes.delete(wake);
+    };
   }
 
   /** Non-terminal disarm used by a capable→incapable owner handover. The
@@ -2720,6 +2791,7 @@ class GenerationJobManagerClass {
         discoveredTools: jobData.discoveredTools,
         activityPhaseSnapshot: jobData.activityPhaseSnapshot,
         compactionSemanticIndex: jobData.compactionSemanticIndex,
+        contextMeta: jobData.contextMeta,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
@@ -4315,6 +4387,22 @@ class GenerationJobManagerClass {
         logger.warn(
           `[GenerationJobManager] Failed to refresh committed abort content for ${streamId}:`,
           contentError,
+        );
+      }
+      /** The owner publishes run state (context meta) ahead of each model call
+       * and awaits that write, so a publish that landed after the initial read
+       * describes the call whose partial output the snapshot above carries.
+       * Read it back from the same epoch so the stopped response persists the
+       * tier that produced its bytes, not the one seen before the claim. */
+      try {
+        const refreshed = await this.jobStore.getJob(streamId);
+        if (refreshed?.createdAt === jobData.createdAt && refreshed.contextMeta != null) {
+          jobData = { ...jobData, contextMeta: refreshed.contextMeta };
+        }
+      } catch (metadataError) {
+        logger.warn(
+          `[GenerationJobManager] Failed to refresh committed abort metadata for ${streamId}:`,
+          metadataError,
         );
       }
       if (options?.transformAbortContent) {

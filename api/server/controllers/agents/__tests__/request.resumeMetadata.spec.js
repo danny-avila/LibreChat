@@ -24,6 +24,7 @@ const mockGenerationJobManager = {
   markProviderExecutionDrained: jest.fn(),
   failPausePersistence: jest.fn(),
   getResumeState: jest.fn(),
+  getJobStore: jest.fn(),
   updateMetadata: jest.fn(),
   persistAgentEventDetachedTerminalEvidence: jest.fn(),
   claimGeneration: jest.fn(),
@@ -444,6 +445,9 @@ describe('ResumableAgentController resume metadata', () => {
       emitter: { on: jest.fn() },
     });
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
+    mockGenerationJobManager.getJobStore.mockReturnValue({
+      getJob: jest.fn().mockResolvedValue(null),
+    });
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.isRedis = false;
