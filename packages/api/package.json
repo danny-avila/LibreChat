@@ -23,6 +23,12 @@
         "types": "./dist/credentials.d.cts",
         "default": "./dist/credentials.cjs"
       }
+    },
+    "./braintrust": {
+      "require": {
+        "types": "./dist/braintrust.d.cts",
+        "default": "./dist/braintrust.cjs"
+      }
     }
   },
   "scripts": {
@@ -169,6 +175,7 @@
   "dependencies": {
     "@langchain/langgraph-checkpoint": "^1.1.2",
     "@langchain/langgraph-checkpoint-mongodb": "^1.4.0",
+    "braintrust": "^3.29.0",
     "cluster-key-slot": "^1.1.2",
     "croner": "^10.0.1",
     "express-rate-limit": "^8.5.1",

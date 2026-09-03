@@ -1,6 +1,7 @@
 require('../config/credentials');
 
 const telemetry = require('./telemetry');
+require('./braintrust');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
