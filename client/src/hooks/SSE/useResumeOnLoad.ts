@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import {
@@ -497,14 +497,20 @@ export default function useResumeOnLoad(
     false,
   );
   /**
-   * Receipts whose successor this pane has already attached to. An `admitted`
-   * receipt stays in the cache for a fetch after delivery, and it still counts
-   * as owed; without remembering that it was delivered, the latch would clear
-   * on the attachment and be re-recorded from the same receipt on the next
-   * render, synchronously, until the cache moved on. Keyed by the receipt
-   * signature so a genuinely new turn can latch again.
+   * Receipts whose successor this pane has already attached to, per turn and
+   * per conversation. An `admitted` receipt stays in the cache for a fetch
+   * after delivery and still reads as owed; without remembering it was
+   * delivered, the latch would clear on the attachment and be re-recorded from
+   * the same receipt on the next render, synchronously, until the cache moved
+   * on. Tracked per turn rather than per receipt set: two turns queued behind
+   * the same generation deliver one at a time, and marking the whole set on
+   * the first would let the still-attached first successor pass as delivery of
+   * the second. Entries are pruned once the conversation's receipts no longer
+   * mention them.
    */
-  const deliveredReceiptSignatureRef = useRef<string | null>(null);
+  const [deliveredTurnIdsByConvo, setDeliveredTurnIdsByConvo] = useState<
+    ReadonlyMap<string, ReadonlySet<string>>
+  >(() => new Map());
   /**
    * What the receipts say, reduced to the two facts this hook keys on. The
    * signature drives re-arming: a `queued` receipt is refetched every two
@@ -525,18 +531,31 @@ export default function useResumeOnLoad(
         .sort()
         .join('|')
     : '';
-  const successorOwedByReceipt =
-    isQueuedTurnSuccessorOwed(queuedTurnReceipts) &&
-    receiptSignature !== deliveredReceiptSignatureRef.current;
-  const receiptBoundary = Array.isArray(queuedTurnReceipts)
-    ? queuedTurnReceipts.reduce<number | null>((boundary, receipt) => {
-        const candidate =
-          receipt.effectivePredecessorCreatedAt ?? receipt.expectedPredecessorCreatedAt ?? null;
-        return candidate != null && (boundary == null || candidate > boundary)
-          ? candidate
-          : boundary;
-      }, null)
-    : null;
+  const deliveredTurnIds =
+    conversationId != null ? deliveredTurnIdsByConvo.get(conversationId) : undefined;
+  const owedReceipts = useMemo(
+    () =>
+      Array.isArray(queuedTurnReceipts)
+        ? queuedTurnReceipts.filter(
+            (receipt) =>
+              !deliveredTurnIds?.has(receipt.queuedTurnId) && isQueuedTurnSuccessorOwed([receipt]),
+          )
+        : [],
+    [queuedTurnReceipts, deliveredTurnIds],
+  );
+  const successorOwedByReceipt = owedReceipts.length > 0;
+  /** A turn still `queued`/`claimed` has not produced a run: whatever generation
+   *  is live right now is its predecessor — including a sibling turn's
+   *  successor that this pane is attached to. The boundary it enqueued with
+   *  names the root of the chain, not the link it now waits behind. */
+  const owedReceiptStillWaiting = owedReceipts.some(
+    (receipt) => receipt.status === 'queued' || receipt.status === 'claimed',
+  );
+  const receiptBoundary = owedReceipts.reduce<number | null>((boundary, receipt) => {
+    const candidate =
+      receipt.effectivePredecessorCreatedAt ?? receipt.expectedPredecessorCreatedAt ?? null;
+    return candidate != null && (boundary == null || candidate > boundary) ? candidate : boundary;
+  }, null);
 
   /**
    * The latch remembers the generation the owed turn waits behind, because
@@ -554,15 +573,17 @@ export default function useResumeOnLoad(
    * screen, where no receipt is observed at all — and is never pushed back by
    * a remount, so returning later cannot reopen a spent window.
    */
-  const [owedSuccessor, setOwedSuccessor] = useState<{
-    conversationId: string;
-    predecessorCreatedAt: number | null;
-    quietSince: number | null;
-  } | null>(null);
-  const owedSuccessorFor = owedSuccessor?.conversationId ?? null;
+  type OwedSuccessor = { predecessorCreatedAt: number | null; quietSince: number | null };
+  /** Keyed by conversation: navigating to a conversation that also owes a run
+   *  must not evict another's latch, or its expiry — and the history repair it
+   *  performs — is lost. */
+  const [owedSuccessors, setOwedSuccessors] = useState<ReadonlyMap<string, OwedSuccessor>>(
+    () => new Map(),
+  );
+  const owedSuccessor =
+    conversationId != null ? (owedSuccessors.get(conversationId) ?? null) : null;
   const successorOwed =
-    !hasLiveSubmissionForThisConvo &&
-    (successorOwedByReceipt || (conversationId != null && owedSuccessorFor === conversationId));
+    !hasLiveSubmissionForThisConvo && (successorOwedByReceipt || owedSuccessor != null);
   const { data: activeJobsData, dataUpdatedAt: activeJobsUpdatedAt } = useActiveJobs(
     resumableEnabled,
     successorOwed,
@@ -571,20 +592,68 @@ export default function useResumeOnLoad(
     !!conversationId &&
     conversationId !== Constants.NEW_CONVO &&
     activeJobsData?.activeJobIds?.includes(conversationId) === true;
-  const knownPredecessorCreatedAt = receiptBoundary ?? owedSuccessor?.predecessorCreatedAt ?? null;
+  /**
+   * The predecessor a turn actually waits behind is the LATEST link known:
+   * receipts can still name the chain's root long after a sibling's successor
+   * became the live link, and the latch may have learned that link while the
+   * turn was waiting. Generations are timestamps, so "latest" is the max of
+   * what the receipt says, what the latch learned, and — while the turn still
+   * waits — whatever is live right now.
+   */
+  const knownPredecessorCreatedAt = [
+    owedReceiptStillWaiting ? attachedGenerationCreatedAt : null,
+    receiptBoundary,
+    owedSuccessor?.predecessorCreatedAt ?? null,
+  ].reduce<number | null>(
+    (latest, candidate) =>
+      candidate != null && (latest == null || candidate > latest) ? candidate : latest,
+    null,
+  );
+  /** Delivery needs a boundary to compare against. With none known, a live
+   *  generation could as easily be the predecessor as the successor, and
+   *  guessing "delivered" would silence the poll while the run is still owed;
+   *  the expiry window is the bounded fallback for that ambiguity. */
   const attachedToSuccessor =
     owedSuccessor != null &&
-    owedSuccessor.conversationId === conversationId &&
     attachedGenerationCreatedAt != null &&
-    (knownPredecessorCreatedAt == null ||
-      attachedGenerationCreatedAt !== knownPredecessorCreatedAt);
+    !owedReceiptStillWaiting &&
+    knownPredecessorCreatedAt != null &&
+    attachedGenerationCreatedAt !== knownPredecessorCreatedAt;
 
   useEffect(() => {
     if (!conversationId) {
       return;
     }
+    if (Array.isArray(queuedTurnReceipts)) {
+      const stillMentioned = new Set(queuedTurnReceipts.map((receipt) => receipt.queuedTurnId));
+      setDeliveredTurnIdsByConvo((current) => {
+        const delivered = current.get(conversationId);
+        if (!delivered) {
+          return current;
+        }
+        const kept = [...delivered].filter((turnId) => stillMentioned.has(turnId));
+        if (kept.length === delivered.size) {
+          return current;
+        }
+        const next = new Map(current);
+        if (kept.length === 0) {
+          next.delete(conversationId);
+        } else {
+          next.set(conversationId, new Set(kept));
+        }
+        return next;
+      });
+    }
     if (attachedToSuccessor) {
-      deliveredReceiptSignatureRef.current = receiptSignature;
+      setDeliveredTurnIdsByConvo((current) => {
+        const next = new Map(current);
+        const merged = new Set(current.get(conversationId) ?? []);
+        for (const receipt of owedReceipts) {
+          merged.add(receipt.queuedTurnId);
+        }
+        next.set(conversationId, merged);
+        return next;
+      });
       /**
        * The list may never have seen this run — it can start and finish
        * between two polls — so its "recently active" clock is stale and would
@@ -593,84 +662,117 @@ export default function useResumeOnLoad(
        * continuation after this run is still discovered.
        */
       extendActiveJobsGrace();
-      setOwedSuccessor((current) => (current?.conversationId === conversationId ? null : current));
+      setOwedSuccessors((current) => {
+        if (!current.has(conversationId)) {
+          return current;
+        }
+        const next = new Map(current);
+        next.delete(conversationId);
+        return next;
+      });
       return;
     }
     if (!successorOwedByReceipt) {
       return;
     }
-    setOwedSuccessor((current) => {
-      if (current?.conversationId !== conversationId) {
+    setOwedSuccessors((current) => {
+      const existing = current.get(conversationId);
+      if (existing == null) {
         /** The receipt's boundary when it has one; otherwise whatever is live
-         *  right now — a turn that is still owed cannot have started, so a
-         *  live generation at the moment it is first seen is its predecessor. */
-        return {
-          conversationId,
-          predecessorCreatedAt: receiptBoundary ?? attachedGenerationCreatedAt,
+         *  right now — a turn that is still owed cannot have started, so a live
+         *  generation at the moment it is first seen is its predecessor. */
+        const next = new Map(current);
+        next.set(conversationId, {
+          predecessorCreatedAt: knownPredecessorCreatedAt ?? attachedGenerationCreatedAt,
           quietSince: null,
-        };
+        });
+        return next;
       }
-      /** Still reporting. A boundary the receipt learns later (admission
-       *  consumed it) supersedes what was guessed. The window is reopened only
-       *  by an observation newer than the moment it started: a remount first
-       *  exposes the cached receipt from before the turn went quiet, and that
-       *  stale data must not extend an expiry that is meant to be absolute. */
-      const refined = receiptBoundary ?? current.predecessorCreatedAt;
-      const reopen = current.quietSince != null && queuedTurnsObservedAt > current.quietSince;
-      if (!reopen && refined === current.predecessorCreatedAt) {
+      /** Still reporting. A boundary learned later (admission consumed it, or a
+       *  sibling's successor is now the live link) supersedes what was
+       *  guessed. The window is reopened only by an observation newer than the
+       *  moment it started: a remount first exposes the cached receipt from
+       *  before the turn went quiet, and that stale data must not extend an
+       *  expiry that is meant to be absolute. */
+      const refined = knownPredecessorCreatedAt ?? existing.predecessorCreatedAt;
+      const reopen = existing.quietSince != null && queuedTurnsObservedAt > existing.quietSince;
+      if (!reopen && refined === existing.predecessorCreatedAt) {
         return current;
       }
-      return {
-        ...current,
+      const next = new Map(current);
+      next.set(conversationId, {
         predecessorCreatedAt: refined,
-        quietSince: reopen ? null : current.quietSince,
-      };
+        quietSince: reopen ? null : existing.quietSince,
+      });
+      return next;
     });
   }, [
     conversationId,
+    queuedTurnReceipts,
+    owedReceipts,
     successorOwedByReceipt,
     attachedToSuccessor,
+    knownPredecessorCreatedAt,
     attachedGenerationCreatedAt,
-    receiptBoundary,
-    receiptSignature,
     queuedTurnsObservedAt,
   ]);
 
   /** Only a server observation newer than the window's start counts as the
-   *  turn still reporting; a remount's cached receipt predates it. */
+   *  turn still reporting; a remount's cached receipt predates it. Reporting
+   *  is observable only for the conversation on screen. */
   const owedIsReporting =
     owedSuccessor != null &&
-    owedSuccessor.conversationId === conversationId &&
     successorOwedByReceipt &&
     (owedSuccessor.quietSince == null || queuedTurnsObservedAt > owedSuccessor.quietSince);
   useEffect(() => {
-    if (owedSuccessor == null || owedIsReporting) {
-      return;
-    }
-    const owedConversationId = owedSuccessor.conversationId;
-    if (owedSuccessor.quietSince == null) {
-      const quietSince = Date.now();
-      setOwedSuccessor((current) =>
-        current?.conversationId === owedConversationId ? { ...current, quietSince } : current,
+    const now = Date.now();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let needsQuietStamp = false;
+    for (const [owedConversationId, latch] of owedSuccessors) {
+      if (owedConversationId === conversationId && owedIsReporting) {
+        continue;
+      }
+      if (latch.quietSince == null) {
+        needsQuietStamp = true;
+        continue;
+      }
+      const remaining = Math.max(0, ACTIVE_JOBS_SUCCESSOR_GRACE_MS - (now - latch.quietSince));
+      timers.push(
+        setTimeout(() => {
+          setOwedSuccessors((current) => {
+            if (!current.has(owedConversationId)) {
+              return current;
+            }
+            const next = new Map(current);
+            next.delete(owedConversationId);
+            return next;
+          });
+          /** The window closed without the successor being seen. If it ran
+           *  and finished inside a poll gap, its turns are on the server and
+           *  nowhere else; one refetch is the whole repair, and marking an
+           *  off-screen conversation stale costs nothing until it is opened. */
+          queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, owedConversationId] });
+        }, remaining),
       );
-      return;
     }
-    const remaining = Math.max(
-      0,
-      ACTIVE_JOBS_SUCCESSOR_GRACE_MS - (Date.now() - owedSuccessor.quietSince),
-    );
-    const expiry = setTimeout(() => {
-      setOwedSuccessor((current) =>
-        current?.conversationId === owedConversationId ? null : current,
-      );
-      /** The window closed without the successor being seen. If it ran and
-       *  finished inside a poll gap, its turns are on the server and nowhere
-       *  else; one refetch is the whole repair, and marking an off-screen
-       *  conversation stale costs nothing until it is opened. */
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, owedConversationId] });
-    }, remaining);
-    return () => clearTimeout(expiry);
-  }, [owedSuccessor, owedIsReporting, queryClient]);
+    if (needsQuietStamp) {
+      setOwedSuccessors((current) => {
+        const next = new Map(current);
+        for (const [owedConversationId, latch] of current) {
+          const reporting = owedConversationId === conversationId && owedIsReporting;
+          if (!reporting && latch.quietSince == null) {
+            next.set(owedConversationId, { ...latch, quietSince: now });
+          }
+        }
+        return next;
+      });
+    }
+    return () => {
+      for (const timer of timers) {
+        clearTimeout(timer);
+      }
+    };
+  }, [owedSuccessors, owedIsReporting, conversationId, queryClient]);
 
   const shouldCheck =
     resumableEnabled &&
@@ -936,7 +1038,6 @@ export default function useResumeOnLoad(
       processedConvoRef.current = null;
       consumedHandoffGenerationRef.current = null;
       answeredActiveJobRef.current = null;
-      deliveredReceiptSignatureRef.current = null;
     }
   }, [conversationId]);
 

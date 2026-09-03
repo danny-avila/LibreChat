@@ -1363,6 +1363,204 @@ describe('useResumeOnLoad', () => {
       jest.useRealTimers();
     });
 
+    it('tracks delivery per queued turn, not per receipt set', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      /**
+       * Two turns queued elsewhere behind the same generation. Delivering the
+       * first must not mark the second delivered — and the first successor,
+       * now the live link the second turn waits behind, is the SECOND turn's
+       * predecessor, not its successor.
+       */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [
+          { queuedTurnId: 'q1', status: 'queued', expectedPredecessorCreatedAt: 1000 },
+          { queuedTurnId: 'q2', status: 'queued', expectedPredecessorCreatedAt: 1000 },
+        ],
+        dataUpdatedAt: 2,
+      });
+      const { rerender, setIsSubmitting, setAttachedGenerationCreatedAt } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: true,
+        attachedGenerationCreatedAt: 1000,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** q1 admitted; predecessor ends; pane attaches to q1's successor (2000). */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [
+          { queuedTurnId: 'q1', status: 'admitted', effectivePredecessorCreatedAt: 1000 },
+          { queuedTurnId: 'q2', status: 'queued', expectedPredecessorCreatedAt: 1000 },
+        ],
+        dataUpdatedAt: 3,
+      });
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        setIsSubmitting(true);
+        setAttachedGenerationCreatedAt(2000);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** q1's receipt dropped; q2 still queued; successor 2000 finishes. The
+       *  pane must still owe q2 — the whole point of per-turn tracking. */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q2', status: 'queued', expectedPredecessorCreatedAt: 1000 }],
+        dataUpdatedAt: 4,
+      });
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      /** Pane re-attaches to 2000 (still q1's successor, q2's predecessor);
+       *  q2 is admitted while it is live, and its receipt still names only the
+       *  chain's ROOT. The link learned while q2 waited must outrank that: the
+       *  live 2000 is q2's predecessor, not its delivery. */
+      await act(async () => {
+        setIsSubmitting(true);
+        setAttachedGenerationCreatedAt(2000);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q2', status: 'admitted', expectedPredecessorCreatedAt: 1000 }],
+        dataUpdatedAt: 5,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      /** q2's own successor (3000) is the delivery. */
+      await act(async () => {
+        setIsSubmitting(true);
+        setAttachedGenerationCreatedAt(3000);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+    });
+
+    it("keeps one conversation's owed state when another also owes a run", async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(2_000_000);
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'a1', status: 'queued' }],
+        dataUpdatedAt: 1_999_000,
+      });
+      const { rerender, queryClient } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** Navigate to B, which reports its own queued turn. A's latch must
+       *  survive, and A's expiry must still fire while B is on screen. */
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'b1', status: 'queued' }],
+        dataUpdatedAt: 2_000_500,
+      });
+      rerender({ conversationId: STALE_CONVERSATION_ID });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(30_000 + 1);
+      });
+
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+      /** B's own owed state is untouched by A's expiry. */
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+      jest.useRealTimers();
+    });
+
+    it('does not treat a live generation as delivery when no boundary is known', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      /**
+       * Latched while unattached, from a receipt that carries no boundary, then
+       * a generation comes live. It could be the predecessor as easily as the
+       * successor; guessing "delivered" would silence the poll while the run is
+       * still owed. Stay owed and let the bounded expiry be the fallback.
+       */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'admitted' }],
+        dataUpdatedAt: 2,
+      });
+      const { rerender, setIsSubmitting, setAttachedGenerationCreatedAt } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: false,
+        attachedGenerationCreatedAt: null,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      await act(async () => {
+        setIsSubmitting(true);
+        setAttachedGenerationCreatedAt(1000);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockExtendActiveJobsGrace).not.toHaveBeenCalled();
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+    });
+
     it('does not re-arm for a conversation that is not the one being viewed', async () => {
       const observedSubmissions: Array<TSubmission | null> = [];
       mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
