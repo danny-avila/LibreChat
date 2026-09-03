@@ -244,7 +244,22 @@ function messageScope(
             'insightsConversation.initial_agent_id': { $exists: false },
             'insightsConversation.agent_id': { $in: agentIds },
           },
-          { isCreatedByUser: { $ne: true }, model: { $in: agentIds } },
+          {
+            isCreatedByUser: { $ne: true },
+            model: { $in: agentIds },
+            $or: [
+              {
+                'insightsConversation.initial_agent_id': {
+                  $exists: true,
+                  $nin: [null, ''],
+                },
+              },
+              {
+                'insightsConversation.initial_agent_id': { $exists: false },
+                'insightsConversation.agent_id': { $exists: true, $nin: [null, ''] },
+              },
+            ],
+          },
         ],
       },
     },
