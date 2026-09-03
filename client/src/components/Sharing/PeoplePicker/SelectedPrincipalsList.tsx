@@ -6,13 +6,14 @@ import type { TPrincipal, AccessRoleIds } from 'librechat-data-provider';
 import AccessRolesPicker from '~/components/Sharing/AccessRolesPicker';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
 import { RESOURCE_CONFIGS } from '~/utils/resources';
+import { principalKey } from '../shareChanges';
 import { useLocalize } from '~/hooks';
 
 interface SelectedPrincipalsListProps {
   principles: TPrincipal[];
-  onRemoveHandler: (idOnTheSource: string) => void;
-  onRoleChange?: (idOnTheSource: string, newRoleId: AccessRoleIds) => void;
-  onInsightsAccessChange?: (idOnTheSource: string, enabled: boolean) => void;
+  onRemoveHandler: (principalKey: string) => void;
+  onRoleChange?: (principalKey: string, newRoleId: AccessRoleIds) => void;
+  onInsightsAccessChange?: (principalKey: string, enabled: boolean) => void;
   showInsightsAccess?: boolean;
   resourceType?: ResourceType;
   className?: string;
@@ -59,9 +60,10 @@ export default function SelectedPrincipalsList({
           const isOwner = share.accessRoleId === ownerRoleId;
           const isSharedLink = resourceType === ResourceType.SHARED_LINK;
           const lockOwner = isSharedLink && isOwner;
+          const shareKey = principalKey(share);
           return (
             <div
-              key={share.idOnTheSource + '-principalList'}
+              key={`${shareKey}-principalList`}
               className="flex flex-col gap-3 rounded-xl border border-border-light bg-transparent p-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -87,7 +89,7 @@ export default function SelectedPrincipalsList({
                     <Checkbox
                       checked={share.viewInsights === true}
                       onCheckedChange={(checked) =>
-                        onInsightsAccessChange(share.idOnTheSource!, checked === true)
+                        onInsightsAccessChange(shareKey, checked === true)
                       }
                       aria-label={localize('com_ui_view_agent_insights')}
                     />
@@ -119,7 +121,7 @@ export default function SelectedPrincipalsList({
                       resourceType={resourceType}
                       selectedRoleId={share.accessRoleId}
                       onRoleChange={(newRole) => {
-                        onRoleChange?.(share.idOnTheSource!, newRole);
+                        onRoleChange?.(shareKey, newRole);
                       }}
                       className="min-w-0"
                     />
@@ -128,7 +130,7 @@ export default function SelectedPrincipalsList({
                 {!lockOwner && (
                   <Button
                     variant="outline"
-                    onClick={() => onRemoveHandler(share.idOnTheSource!)}
+                    onClick={() => onRemoveHandler(shareKey)}
                     className="h-9 w-9 p-0 hover:border-status-error-border hover:bg-status-error-subtle hover:text-text-destructive"
                     aria-label={localize('com_ui_remove_user', { 0: displayName })}
                   >

@@ -26,7 +26,7 @@ import {
   useAuthContext,
   useLocalize,
 } from '~/hooks';
-import { computeShareChanges, dedupeNewShares } from './shareChanges';
+import { computeShareChanges, dedupeNewShares, principalKey } from './shareChanges';
 import UnifiedPeopleSearch from './PeoplePicker/UnifiedPeopleSearch';
 import PeoplePickerAdminSettings from './PeoplePickerAdminSettings';
 import PublicSharingToggle from './PublicSharingToggle';
@@ -136,25 +136,27 @@ export default function GenericGrantAccessDialog({
   };
 
   // Handler for removing individual shares
-  const handleRemoveShare = (idOnTheSource: string) => {
-    setAllShares(allShares.filter((s) => s.idOnTheSource !== idOnTheSource));
+  const handleRemoveShare = (shareKey: string) => {
+    setAllShares(allShares.filter((share) => principalKey(share) !== shareKey));
     setHasChanges(true);
   };
 
   // Handler for changing individual share permissions
-  const handleRoleChange = (idOnTheSource: string, newRole: string) => {
+  const handleRoleChange = (shareKey: string, newRole: string) => {
     setAllShares(
-      allShares.map((s) =>
-        s.idOnTheSource === idOnTheSource ? { ...s, accessRoleId: newRole as AccessRoleIds } : s,
+      allShares.map((share) =>
+        principalKey(share) === shareKey
+          ? { ...share, accessRoleId: newRole as AccessRoleIds }
+          : share,
       ),
     );
     setHasChanges(true);
   };
 
-  const handleInsightsChange = (idOnTheSource: string, viewInsights: boolean) => {
+  const handleInsightsChange = (shareKey: string, viewInsights: boolean) => {
     setAllShares(
       allShares.map((share) =>
-        share.idOnTheSource === idOnTheSource ? { ...share, viewInsights } : share,
+        principalKey(share) === shareKey ? { ...share, viewInsights } : share,
       ),
     );
     setHasChanges(true);
