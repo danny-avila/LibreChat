@@ -182,9 +182,11 @@ function renderUseResumeOnLoad({
     setSubmission: (nextSubmission: TSubmission | null) => setSubmissionState?.(nextSubmission),
     setIsSubmitting: (value: boolean) => setIsSubmittingState?.(value),
     setAttachedGenerationCreatedAt: (value: number | null) => setAttachedEpochState?.(value),
-    ...renderHook(() => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded), {
-      wrapper,
-    }),
+    ...renderHook(
+      (props?: { conversationId?: string }) =>
+        useResumeOnLoad(props?.conversationId ?? conversationId, getMessages, 0, messagesLoaded),
+      { wrapper, initialProps: { conversationId } },
+    ),
   };
 }
 
@@ -860,15 +862,22 @@ describe('useResumeOnLoad', () => {
       /** Receipt gone, list still empty: the owed state has to carry this. */
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
 
+      /** The list naming the conversation is an announcement, not delivery —
+       *  it carries no generation identity, so it cannot prove the successor
+       *  exists. It arms a status read; attaching to a generation other than
+       *  the predecessor's is what finally releases the owed state. */
       mockUseActiveJobs.mockReturnValue({
         data: { activeJobIds: [CONVERSATION_ID] },
         dataUpdatedAt: 5,
+      });
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      await act(async () => {
+        jest.advanceTimersByTime(ACTIVE_JOB_REARM_INTERVAL_MS + 1);
       });
       rerender();
       await act(async () => {
         await Promise.resolve();
       });
-      /** Delivered: the list names the run, so nothing is owed any more. */
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
       jest.useRealTimers();
     });
@@ -1028,6 +1037,209 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+    });
+
+    it('does not let a listed, unattached predecessor deliver the successor', async () => {
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      /**
+       * The predecessor runs elsewhere: this pane is not attached, but the
+       * active list names the conversation. The list has no generation identity,
+       * so being listed cannot prove the successor exists — treating it as
+       * delivery means the latch is never recorded, and a successor that runs
+       * inside a poll gap after the predecessor ends is never seen.
+       */
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'queued', expectedPredecessorCreatedAt: 1000 }],
+        dataUpdatedAt: 2,
+      });
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** Predecessor ends and the successor is admitted, runs, and finishes
+       *  between two polls: list empty again, receipt already dropped. The
+       *  first arm happened at mount (the listed predecessor announced), so
+       *  step past the throttle before the transition. */
+      const nowSpy = jest.spyOn(Date, 'now');
+      const later = Date.now() + ACTIVE_JOB_REARM_INTERVAL_MS + 1;
+      nowSpy.mockImplementation(() => later);
+      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] }, dataUpdatedAt: 3 });
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
+      mockUseStreamStatus.mockClear();
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** Still owed — the latch survived the listed predecessor — so the pane
+       *  keeps asking and re-reads status/history instead of going idle. */
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+      nowSpy.mockRestore();
+    });
+
+    it('learns the predecessor from a generation seen while the turn still waits', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      /** Enqueued elsewhere without a boundary, so the only way to learn which
+       *  generation is the predecessor is to see it live while the receipt is
+       *  still queued. Once the turn is admitted, that same generation must
+       *  not read as the successor just because a boundary was never sent. */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'queued' }],
+        dataUpdatedAt: 2,
+      });
+      const { rerender, setIsSubmitting, setAttachedGenerationCreatedAt } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: false,
+        attachedGenerationCreatedAt: null,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** Predecessor becomes live here while the turn is still queued. */
+      await act(async () => {
+        setIsSubmitting(true);
+        setAttachedGenerationCreatedAt(1000);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      /** Turn admitted while that same generation is still attached. */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'admitted' }],
+        dataUpdatedAt: 3,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      /** Predecessor ends; receipt dropped. */
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 4 });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+    });
+
+    it('re-arms history only on a receipt transition, not on every receipt poll', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      const { rerender, queryClient } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+      const historyRefetches = () =>
+        invalidate.mock.calls.filter(([options]) => {
+          const key = (options as { queryKey?: unknown } | undefined)?.queryKey;
+          return Array.isArray(key) && key[0] === QueryKeys.messages;
+        }).length;
+
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'queued' }],
+        dataUpdatedAt: 2,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(historyRefetches()).toBe(1);
+
+      /** The same queued receipt, refetched on its two-second heartbeat while
+       *  admission is delayed. Nothing has happened; nothing should download. */
+      const nowSpy = jest.spyOn(Date, 'now');
+      let clock = Date.now();
+      nowSpy.mockImplementation(() => clock);
+      for (const stamp of [3, 4, 5]) {
+        clock += ACTIVE_JOB_REARM_INTERVAL_MS + 1;
+        mockUseAgentQueuedTurns.mockReturnValue({
+          data: [{ queuedTurnId: 'q1', status: 'queued' }],
+          dataUpdatedAt: stamp,
+        });
+        /** The active list polls on its own heartbeat while a successor is
+         *  owed, so the arm DOES re-enter here — only the gate keeps it from
+         *  downloading history again. */
+        mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] }, dataUpdatedAt: stamp });
+        rerender();
+        await act(async () => {
+          await Promise.resolve();
+        });
+      }
+      expect(historyRefetches()).toBe(1);
+
+      /** Admission is a transition: now history matters again. */
+      clock += ACTIVE_JOB_REARM_INTERVAL_MS + 1;
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'admitted' }],
+        dataUpdatedAt: 6,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(historyRefetches()).toBe(2);
+      nowSpy.mockRestore();
+    });
+
+    it('expires the owed state on an absolute window even while its conversation is off-screen', async () => {
+      jest.useFakeTimers();
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'queued' }],
+        dataUpdatedAt: 2,
+      });
+      const { rerender, queryClient } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      /** Navigate away. No receipts are observed for an off-screen
+       *  conversation, so the latch must start its window now rather than
+       *  waiting for a return it may never get. */
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+      rerender({ conversationId: STALE_CONVERSATION_ID });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(30_000 + 1);
+      });
+
+      /** Window spent off-screen: one repair refetch for THAT conversation. */
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+
+      /** Returning must not reopen it. */
+      rerender({ conversationId: CONVERSATION_ID });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+      jest.useRealTimers();
     });
 
     it('does not re-arm for a conversation that is not the one being viewed', async () => {
