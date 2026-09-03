@@ -93,19 +93,24 @@ test.describe('MCP admin-panel allowlist override', () => {
        * `reinitialize`: the connection this test established stays live, so
        * reinitialize keeps succeeding once the allowlist is gone and would
        * never report the baseline again. Invalidation is async, so poll the
-       * config itself until the override has actually cleared.
+       * config itself until the override has actually cleared. Deleting the
+       * last override removes the principal's config document outright, so a
+       * 404 here is the cleared state, not a read failure.
        */
       await expect
         .poll(
           async () => {
             const res = await request.get(`/api/admin/config/user/${userId}`, { headers });
+            if (res.status() === 404) {
+              return 'cleared';
+            }
             if (!res.ok()) {
-              return 'unreadable';
+              return `unreadable:${res.status()}`;
             }
             const body = (await res.json()) as {
-              overrides?: { mcpSettings?: { allowedDomains?: string[] } };
+              config?: { overrides?: { mcpSettings?: { allowedDomains?: string[] } } };
             };
-            return body.overrides?.mcpSettings?.allowedDomains ?? 'cleared';
+            return body.config?.overrides?.mcpSettings?.allowedDomains ?? 'cleared';
           },
           { timeout: 30000, intervals: [1000, 2000, 3000] },
         )
