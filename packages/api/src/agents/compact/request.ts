@@ -45,9 +45,9 @@ import {
 } from '~/middleware/concurrency';
 import { aggregateEmittedUsage, computeUsageCostUSD, recordCollectedUsage } from '~/agents/usage';
 import { getBalanceConfig, getTransactionsConfig } from '~/app/config';
+import { getContentFilterError } from '~/middleware/contentFilter';
 import { validateAgentModel } from '~/agents/validation';
 import { checkBalance } from '~/middleware/checkBalance';
-import { getContentFilterError } from '~/middleware/contentFilter';
 import { resolveSender } from '~/agents/sender';
 import { acquireCompactionLock } from './lock';
 

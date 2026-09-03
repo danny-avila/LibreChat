@@ -45,7 +45,6 @@ import {
   collectMessageFileRefs,
   collectHistoricalFileIds,
 } from '~/files/history';
-import { mergeSteerModelText } from '~/agents/steering/media';
 import {
   assertModelBoundProviderContent,
   projectModelBoundSourceFiles,
@@ -55,13 +54,14 @@ import { createMultiAgentMapper, prependFileContext, prependQuotes } from '~/age
 import { getProviderConfig, providerConfigMap } from '~/endpoints/config/providers';
 import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
 import { resolveReasoningParams } from '~/endpoints/openai/llm';
+import { mergeSteerModelText } from '~/agents/steering/media';
+import { processTextWithTokenLimit } from '~/utils/text';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { extractFileContext } from '~/files/context';
 import { extractLibreChatParams } from '~/utils/llm';
 import { getModelMaxTokens } from '~/utils/tokens';
 import { countTokens } from '~/utils/tokenizer';
 import { createSafeUser } from '~/utils/env';
-import { processTextWithTokenLimit } from '~/utils/text';
 
 /**
  * Resolves the bodies of skills invoked in the branch so the checkpoint can
