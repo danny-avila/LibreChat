@@ -29,7 +29,8 @@ import {
   useActiveJobs,
   useAgentQueuedTurns,
   streamStatusQueryKey,
-  shouldPollAgentQueuedTurns,
+  isQueuedTurnSuccessorOwed,
+  ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import store from '~/store';
@@ -482,23 +483,64 @@ export default function useResumeOnLoad(
    * instead of betting on how long admission takes.
    *
    * Read from the server's own receipts rather than the chip projection, so
-   * this shares `shouldPollAgentQueuedTurns` with the queue itself instead of
-   * restating admission semantics in a second place. `useSteering` owns the
-   * fetch; subscribing with `enabled: false` observes that cache without
-   * competing for it, and an unpopulated cache simply falls back to the
-   * handover window.
+   * admission semantics stay beside the queue's own predicate instead of being
+   * restated here. `useSteering` owns the fetch; subscribing with
+   * `enabled: false` observes that cache without competing for it, and an
+   * unpopulated cache simply falls back to the handover window.
    */
-  const { data: queuedTurnReceipts } = useAgentQueuedTurns(conversationId ?? '', false);
-  const expectsServerSuccessor =
-    !hasLiveSubmissionForThisConvo && shouldPollAgentQueuedTurns(queuedTurnReceipts);
+  const { data: queuedTurnReceipts, dataUpdatedAt: queuedTurnsUpdatedAt } = useAgentQueuedTurns(
+    conversationId ?? '',
+    false,
+  );
+  const successorOwedByReceipt = isQueuedTurnSuccessorOwed(queuedTurnReceipts);
+  /**
+   * The receipt cannot carry the handover on its own. It reports `admitted` for
+   * one fetch at most and is then dropped from the projection — before the
+   * active-job list has necessarily observed the run it started — so a pane
+   * keyed on the receipt alone would stop listening in the one window that
+   * matters. Once a successor is known to be owed, hold that until it is
+   * delivered: this pane attaches, or the list names the conversation. A
+   * bounded expiry backstops the case where neither ever happens (the run
+   * came and went inside one poll, or admission failed elsewhere), and starts
+   * only once the receipt has gone quiet, so a long wait behind an unadmitted
+   * turn does not burn the window before the handover begins.
+   */
+  const [owedSuccessorFor, setOwedSuccessorFor] = useState<string | null>(null);
+  const successorOwed =
+    !hasLiveSubmissionForThisConvo &&
+    (successorOwedByReceipt || (conversationId != null && owedSuccessorFor === conversationId));
   const { data: activeJobsData, dataUpdatedAt: activeJobsUpdatedAt } = useActiveJobs(
     resumableEnabled,
-    expectsServerSuccessor,
+    successorOwed,
   );
   const hasActiveJobForThisConvo =
     !!conversationId &&
     conversationId !== Constants.NEW_CONVO &&
     activeJobsData?.activeJobIds?.includes(conversationId) === true;
+  const successorDelivered = hasLiveSubmissionForThisConvo || hasActiveJobForThisConvo;
+
+  useEffect(() => {
+    if (!conversationId) {
+      return;
+    }
+    if (successorDelivered) {
+      setOwedSuccessorFor((current) => (current === conversationId ? null : current));
+      return;
+    }
+    if (successorOwedByReceipt) {
+      setOwedSuccessorFor(conversationId);
+    }
+  }, [conversationId, successorOwedByReceipt, successorDelivered]);
+
+  useEffect(() => {
+    if (conversationId == null || owedSuccessorFor !== conversationId || successorOwedByReceipt) {
+      return;
+    }
+    const expiry = setTimeout(() => {
+      setOwedSuccessorFor((current) => (current === conversationId ? null : current));
+    }, ACTIVE_JOBS_SUCCESSOR_GRACE_MS);
+    return () => clearTimeout(expiry);
+  }, [conversationId, owedSuccessorFor, successorOwedByReceipt]);
 
   const shouldCheck =
     resumableEnabled &&
@@ -787,16 +829,20 @@ export default function useResumeOnLoad(
    * ever collect those turns. The refetch also re-gates `messagesLoaded`, which
    * defers the effect above until the authoritative history has landed.
    */
+  /**
+   * Two announcement sources, one arm. The active-job list is the general one.
+   * An owed queued turn is the specific one, and it must be able to arm on its
+   * own: the run it announces can start and finish between two list polls, and
+   * the status read this arm enables is the authoritative answer either way —
+   * active attaches, inactive means the history refetch below is the repair.
+   */
+  const successorAnnounced = hasActiveJobForThisConvo || successorOwed;
   useEffect(() => {
-    if (
-      !resumableEnabled ||
-      !hasActiveJobForThisConvo ||
-      !conversationId ||
-      hasLiveSubmissionForThisConvo
-    ) {
-      if (!hasActiveJobForThisConvo) {
-        answeredActiveJobRef.current = null;
-      }
+    if (!successorAnnounced) {
+      answeredActiveJobRef.current = null;
+      return;
+    }
+    if (!resumableEnabled || !conversationId || hasLiveSubmissionForThisConvo) {
       return;
     }
 
@@ -830,11 +876,12 @@ export default function useResumeOnLoad(
   }, [
     conversationId,
     resumableEnabled,
-    hasActiveJobForThisConvo,
+    successorAnnounced,
     hasActiveSubmissionForThisConvo,
     hasLiveSubmissionForThisConvo,
     attachedGenerationCreatedAt,
     activeJobsUpdatedAt,
+    queuedTurnsUpdatedAt,
     setSubmission,
     queryClient,
   ]);

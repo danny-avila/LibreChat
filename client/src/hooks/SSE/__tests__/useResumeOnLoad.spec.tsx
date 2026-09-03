@@ -20,11 +20,13 @@ jest.mock('~/data-provider', () => ({
     mockUseActiveJobs(enabled, expectsSuccessor),
   useAgentQueuedTurns: (conversationId: string, enabled: boolean) =>
     mockUseAgentQueuedTurns(conversationId, enabled),
-  /** Real predicate: admission semantics are the thing under test here, and a
-   *  restated copy in a mock is exactly the drift this shares a function to
-   *  avoid. */
-  shouldPollAgentQueuedTurns: jest.requireActual('~/data-provider/SSE/queuedTurns')
-    .shouldPollAgentQueuedTurns,
+  /** Real predicate and real window: admission semantics are the thing under
+   *  test here, and a restated copy in a mock is exactly the drift sharing a
+   *  function is meant to avoid. */
+  isQueuedTurnSuccessorOwed: jest.requireActual('~/data-provider/SSE/queuedTurns')
+    .isQueuedTurnSuccessorOwed,
+  ACTIVE_JOBS_SUCCESSOR_GRACE_MS: jest.requireActual('~/data-provider/SSE/queries')
+    .ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
   streamStatusQueryKey: (conversationId: string) => ['streamStatus', conversationId],
 }));
 
@@ -190,7 +192,7 @@ describe('useResumeOnLoad', () => {
     mockUseActiveJobs.mockReset();
     mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] }, dataUpdatedAt: 1 });
     mockUseAgentQueuedTurns.mockReset();
-    mockUseAgentQueuedTurns.mockReturnValue({ data: [] });
+    mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 1 });
   });
 
   afterEach(() => {
@@ -772,7 +774,7 @@ describe('useResumeOnLoad', () => {
        * empties. Saying the successor is owed is what keeps that list live,
        * rather than betting on how long admission takes.
        */
-      mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }] });
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }], dataUpdatedAt: 2 });
 
       renderUseResumeOnLoad({ messages: [buildUserMessage(CONVERSATION_ID)] });
       await act(async () => {
@@ -784,7 +786,7 @@ describe('useResumeOnLoad', () => {
 
     it('declares nothing owed while its own run is the one in flight', async () => {
       mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
-      mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }] });
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }], dataUpdatedAt: 2 });
 
       /** The queued turn is waiting behind a run this pane is already
        *  streaming; that attachment is what will report the successor. */
@@ -804,6 +806,7 @@ describe('useResumeOnLoad', () => {
       mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
       mockUseAgentQueuedTurns.mockReturnValue({
         data: [{ status: 'claimed', failure: { code: 'ADMISSION_INDETERMINATE' } }],
+        dataUpdatedAt: 2,
       });
 
       renderUseResumeOnLoad({ messages: [buildUserMessage(CONVERSATION_ID)] });
@@ -812,6 +815,116 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+    });
+
+    it('keeps listening after the admitted receipt is dropped, until the list reports the run', async () => {
+      jest.useFakeTimers();
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      /**
+       * Admission outlasted the handover window, so the wall-clock fallback is
+       * already spent by the time the turn is admitted. The receipt reports
+       * `admitted` for one fetch and is then dropped from the projection —
+       * before the active list has observed the run it started. Keying on the
+       * receipt alone stops listening in exactly that gap.
+       */
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }], dataUpdatedAt: 2 });
+      const { rerender } = renderUseResumeOnLoad({ messages: [buildUserMessage(CONVERSATION_ID)] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ status: 'admitted' }],
+        dataUpdatedAt: 3,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 4 });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      /** Receipt gone, list still empty: the owed state has to carry this. */
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 5,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      /** Delivered: the list names the run, so nothing is owed any more. */
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+      jest.useRealTimers();
+    });
+
+    it('arms off an owed receipt alone, without waiting for the list', async () => {
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseStreamStatus.mockClear();
+      /** The run started and will be over before the next list poll. The
+       *  status read is the authoritative answer and must not wait on it. */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ status: 'admitted' }],
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+      const attached = observedSubmissions[observedSubmissions.length - 1] as
+        | (TSubmission & { resumeStreamId?: string })
+        | null;
+      expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
+    });
+
+    it('lets the owed state lapse once the receipt has gone quiet for the window', async () => {
+      jest.useFakeTimers();
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [{ status: 'queued' }], dataUpdatedAt: 2 });
+      const { rerender } = renderUseResumeOnLoad({ messages: [buildUserMessage(CONVERSATION_ID)] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** A long wait behind an unadmitted turn must not burn the window: the
+       *  countdown starts only when the receipt stops reporting. */
+      await act(async () => {
+        jest.advanceTimersByTime(ACTIVE_JOB_REARM_INTERVAL_MS * 20);
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      await act(async () => {
+        jest.advanceTimersByTime(30_000 + 1);
+      });
+      rerender();
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+      jest.useRealTimers();
     });
 
     it('does not re-arm for a conversation that is not the one being viewed', async () => {
