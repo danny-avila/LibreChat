@@ -8329,6 +8329,14 @@ class GenerationJobManagerClass {
           return;
         }
         await this.finishTerminalJob(claim);
+        /** The provider this process owns is aborted above and dies with the process, so no
+         *  one is left to record its drain. Without the marker the next generation in this
+         *  conversation waits `PROVIDER_DRAIN_TIMEOUT_MS` for a handoff that can never be
+         *  confirmed and fails — permanently, since every retry replays the same predecessor.
+         *  `createJob` already marks the drain on its own shutdown path; do the same here. */
+        if (job.providerExecutionId != null) {
+          await this.markProviderExecutionDrained(streamId, createdAt, job.providerExecutionId);
+        }
       }),
     );
 

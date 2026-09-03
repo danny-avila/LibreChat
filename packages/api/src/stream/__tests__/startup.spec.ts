@@ -4118,6 +4118,41 @@ describe('GenerationJobManager startup telemetry', () => {
     });
   });
 
+  it('records the provider drain for an owned job when the process shuts down', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
+    const eventTransport = new InMemoryEventTransport();
+    const recordProviderDrain = jest.spyOn(eventTransport, 'recordProviderDrain');
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+
+    const streamId = 'stream-shutdown-provider-drain';
+    const job = await manager.createJob(streamId, 'user-1');
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    await manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId);
+
+    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+      status: 'running',
+      providerDrained: false,
+    });
+
+    manager.prepareForShutdown();
+    await manager.destroy();
+
+    /** The dying process owns this execution, so nothing else can ever record its drain.
+     *  Without the marker the next generation waits out PROVIDER_DRAIN_TIMEOUT_MS for a
+     *  handoff that can never be confirmed, and every retry replays the same predecessor.
+     *  Asserted on the durable evidence rather than the transport's own map, which
+     *  `destroy()` clears immediately after finalization. */
+    expect(recordProviderDrain).toHaveBeenCalledWith(streamId, job.createdAt, providerExecutionId);
+    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+      status: 'error',
+      error: 'Generation interrupted because its server shut down',
+      providerDrained: true,
+    });
+  });
+
   it('does not let late success overwrite or delete a shutdown error', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     jest.spyOn(jobStore, 'destroy').mockResolvedValue();
