@@ -237,14 +237,7 @@ export interface AdminConfigDeps {
     tenantId?: string;
     baseOnly?: boolean;
   }) => Promise<AppConfig>;
-  /**
-   * Invalidate all config-related caches after a mutation. Awaited before the
-   * response is sent, so a caller that reads effective configuration right
-   * after a write — the admin UI, or a test restoring state it changed — sees
-   * the write rather than a cache that still holds the previous overrides. The
-   * implementation settles every clear and only logs failures, so awaiting it
-   * cannot fail the request.
-   */
+  /** Invalidate all config-related caches after a mutation. */
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
 }
 
@@ -762,7 +755,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      await invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after upsert:', err),
       );
       return res.status(config?.configVersion === 1 ? 201 : 200).json({
@@ -931,7 +924,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
-      await invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after patch:', err),
       );
       return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
@@ -1044,7 +1037,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         }
       }
 
-      await invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after field tombstone:', err),
       );
       return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
@@ -1135,7 +1128,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      await invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after field delete:', err),
       );
       return res.status(200).json({ config: redactConfigForResponse(config) });
@@ -1192,7 +1185,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      await invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after config delete:', err),
       );
       return res.status(200).json({ success: true });
@@ -1254,7 +1247,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      await invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after toggle:', err),
       );
       return res.status(200).json({ config: redactConfigForResponse(config) });

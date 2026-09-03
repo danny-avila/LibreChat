@@ -90,18 +90,30 @@ test.describe('MCP admin-panel allowlist override', () => {
         .toBe(true);
     } finally {
       /**
-       * Deleting the principal's overrides removes its config document, and the
-       * handler awaits `invalidateConfigCaches` — app config, override cache,
-       * cached tools and the MCP config-source cache — before it responds, so a
-       * 200 here means the effective configuration has reverted, not merely
-       * that the document is gone. A 404 means there was nothing to remove;
-       * that is only a failure if this test had actually installed the
-       * override, and an assertion here must never mask the error that
-       * prevented installing it.
+       * Deleting the principal's overrides removes its config document; the
+       * handler then invalidates the config caches asynchronously. The document
+       * being gone proves nothing about the caches, so confirm the EFFECTIVE
+       * allowlist reverted with the same cache-backed read the test itself
+       * relies on: `reinitialize` disconnects the user connection and re-resolves
+       * the merged allowlists per request (MCPManager → registry.resolveAllowlists
+       * → the per-user merged app config), so the baseline `success: false`
+       * returning is the definitive signal. The window exceeds the merged-config
+       * cache TTL (60s), so even a missed invalidation converges rather than
+       * leaking into the next spec. A 404 means there was nothing to remove —
+       * a failure only if this test actually installed the override, and an
+       * assertion here must never mask the error that prevented installing it.
        */
       const del = await request.delete(`/api/admin/config/user/${userId}`, { headers });
       if (installed || del.status() !== 404) {
         expect(del.ok()).toBeTruthy();
+      }
+      if (installed) {
+        await expect
+          .poll(async () => (await reinitialize(request, headers)).success, {
+            timeout: 90000,
+            intervals: [1000, 2000, 3000],
+          })
+          .toBe(false);
       }
     }
   });
