@@ -7124,21 +7124,29 @@ class GenerationJobManagerClass {
    * hard-kill handling own that case.
    */
   private async awaitGenerationSettlements(budget: number): Promise<void> {
-    const pending = [...this.generationSettlements];
-    if (pending.length === 0) {
-      return;
-    }
-    let timer: NodeJS.Timeout | undefined;
-    try {
-      await Promise.race([
-        Promise.allSettled(pending),
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, budget);
-        }),
-      ]);
-    } finally {
-      if (timer) {
-        clearTimeout(timer);
+    const deadline = Date.now() + budget;
+    /** Re-snapshot until the set drains. A settlement can be registered while an earlier
+     *  one is being awaited — the controller registers its detached chain just before its
+     *  initialization settlement resolves — and a one-time snapshot would return between
+     *  the two, tearing down the store and transport under a still-running provider. */
+    while (this.generationSettlements.size > 0) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        break;
+      }
+      const pending = [...this.generationSettlements];
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          Promise.allSettled(pending),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, remaining);
+          }),
+        ]);
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+        }
       }
     }
     const unsettled = this.generationSettlements.size;

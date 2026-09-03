@@ -4211,6 +4211,56 @@ describe('GenerationJobManager startup telemetry', () => {
     expect(destroyed).toBe(true);
   });
 
+  it('keeps waiting for a settlement registered while shutdown is already waiting', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+    });
+    manager.initialize();
+
+    const streamId = 'stream-shutdown-late-registration';
+    const job = await manager.createJob(streamId, 'user-1');
+    let releaseInitialization: (() => void) | undefined;
+    let releaseGeneration: (() => void) | undefined;
+    manager.trackGenerationSettlement(
+      streamId,
+      job.createdAt,
+      new Promise<void>((resolve) => {
+        releaseInitialization = resolve;
+      }),
+    );
+
+    manager.prepareForShutdown();
+    let destroyed = false;
+    const destroying = manager.destroy().then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(false);
+
+    /** The controller's real ordering: the detached chain is registered at the end of its
+     *  try block, and only then does the outer finally resolve the initialization
+     *  settlement. Shutdown snapshotted before the chain existed. */
+    manager.trackGenerationSettlement(
+      streamId,
+      job.createdAt,
+      new Promise<void>((resolve) => {
+        releaseGeneration = resolve;
+      }),
+    );
+    releaseInitialization!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(false);
+
+    releaseGeneration!();
+    await destroying;
+    expect(destroyed).toBe(true);
+  });
+
   it('does not delay shutdown for a generation that already settled', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     jest.spyOn(jobStore, 'destroy').mockResolvedValue();
