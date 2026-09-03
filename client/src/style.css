@@ -172,6 +172,8 @@ html {
   --surface-hover-alt: var(--gray-300);
   --surface-composer-hover: var(--gray-200);
   --surface-primary: var(--white);
+  --chart-widget-surface: 255 255 255; /* Click UI dashboards.chartWidget.color.background.default #ffffff */
+  --chart-widget-stroke: 230 231 233; /* Click UI dashboards.chartWidget.color.stroke.default #e6e7e9 */
   --surface-primary-alt: var(--gray-50);
   --surface-primary-contrast: var(--gray-100);
   --surface-secondary: var(--gray-50);
@@ -281,6 +283,8 @@ html {
   --surface-hover-alt: var(--gray-600);
   --surface-composer-hover: var(--gray-600);
   --surface-primary: var(--gray-900);
+  --chart-widget-surface: 40 40 40; /* Click UI dashboards.chartWidget.color.background.default #282828 */
+  --chart-widget-stroke: 50 50 50; /* Click UI dashboards.chartWidget.color.stroke.default #323232 */
   --surface-primary-alt: var(--gray-850);
   --surface-primary-contrast: var(--gray-850);
   --surface-secondary: var(--gray-800);
@@ -352,6 +356,8 @@ html {
   --text-secondary: var(--gizmo-gray-600);
   --text-tertiary: var(--gizmo-gray-500);
   --surface-primary: var(--white);
+  --chart-widget-surface: 255 255 255; /* Click UI dashboards.chartWidget.color.background.default #ffffff */
+  --chart-widget-stroke: 230 231 233; /* Click UI dashboards.chartWidget.color.stroke.default #e6e7e9 */
   --surface-secondary: var(--gray-50);
   --surface-tertiary: var(--gray-100);
   --border-light: 0 0 0;
@@ -368,6 +374,8 @@ html {
   --text-secondary: var(--gray-300);
   --text-tertiary: var(--gizmo-gray-500);
   --surface-primary: var(--gray-900);
+  --chart-widget-surface: 40 40 40; /* Click UI dashboards.chartWidget.color.background.default #282828 */
+  --chart-widget-stroke: 50 50 50; /* Click UI dashboards.chartWidget.color.stroke.default #323232 */
   --surface-secondary: var(--gray-800);
   --surface-tertiary: var(--gray-700);
   --border-light: 217 217 227;
