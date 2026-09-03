@@ -1,4 +1,4 @@
-import { getTenantId } from '@librechat/data-schemas';
+import { SYSTEM_TENANT_ID, getTenantId } from '@librechat/data-schemas';
 import { createHash, createPrivateKey, randomUUID, sign as cryptoSign } from 'crypto';
 import type { KeyObject, JsonWebKey } from 'crypto';
 import type { ServerRequest } from '~/types';
@@ -38,6 +38,7 @@ interface CodeApiClaims {
   service_id?: string;
   chc_user_id?: string;
   plan_id?: string;
+  code_worker_id?: string;
   auth_context_hash: string;
 }
 
@@ -167,6 +168,22 @@ function getSigningConfig(): SigningConfig {
   return signingConfigCache;
 }
 
+export function assertCodeApiJwtSigningReady(): void {
+  const config = getSigningConfig();
+  const keyType = config.key.asymmetricKeyType;
+  if (config.alg === 'EdDSA' && keyType !== 'ed25519' && keyType !== 'ed448') {
+    throw new Error(`Code API JWT algorithm EdDSA requires an EdDSA key, received ${keyType}`);
+  }
+  if (config.alg === 'RS256' && keyType !== 'rsa') {
+    throw new Error(`Code API JWT algorithm RS256 requires an RSA key, received ${keyType}`);
+  }
+  cryptoSign(
+    config.alg === 'RS256' ? 'RSA-SHA256' : null,
+    Buffer.from('librechat-codeapi-signing-readiness'),
+    config.key,
+  );
+}
+
 function stringifyClaimValue(value: unknown): string | undefined {
   if (typeof value === 'string' && value.trim() !== '') {
     return value;
@@ -202,15 +219,28 @@ function resolveSingleTenantId(): string {
   return DEFAULT_SINGLE_TENANT_ID;
 }
 
+/**
+ * `SYSTEM_TENANT_ID` marks an ambient background context (e.g. the expired-file
+ * sweep) rather than a real tenant, so it is treated as absent: minting it into
+ * `tenant_id` would claim a tenant whose Code API sessions never existed.
+ */
 function resolveTenantId(user: CodeApiUserContext): string | undefined {
   const tenantId = stringifyClaimValue(user.tenantId) ?? getTenantId();
-  if (tenantId) {
+  if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
     return tenantId;
   }
   if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {
     return undefined;
   }
   return resolveSingleTenantId();
+}
+
+export function getCodeApiTenantId(req: ServerRequest): string {
+  const tenantId = resolveTenantId(resolveUser(req));
+  if (!tenantId) {
+    throw new Error('Code API JWT auth requires tenant context');
+  }
+  return tenantId;
 }
 
 function isManagedCodeApiJwtMode(): boolean {
@@ -250,13 +280,15 @@ function canonicalContextHash(input: {
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
-function buildClaims(req: ServerRequest, config: SigningConfig, now: number): CodeApiClaims {
+function buildClaims(
+  req: ServerRequest,
+  config: SigningConfig,
+  now: number,
+  codeWorkerId?: string,
+): CodeApiClaims {
   const user = resolveUser(req);
   const userId = resolveUserId(user);
-  const tenantId = resolveTenantId(user);
-  if (!tenantId) {
-    throw new Error('Code API JWT auth requires tenant context');
-  }
+  const tenantId = getCodeApiTenantId(req);
 
   const role = user.role ?? 'USER';
   const principalSource = resolvePrincipalSource(req);
@@ -289,6 +321,7 @@ function buildClaims(req: ServerRequest, config: SigningConfig, now: number): Co
     ...(serviceId ? { service_id: serviceId } : {}),
     ...(chcUserId ? { chc_user_id: chcUserId } : {}),
     ...(planId ? { plan_id: planId } : {}),
+    ...(codeWorkerId != null && codeWorkerId !== '' ? { code_worker_id: codeWorkerId } : {}),
     auth_context_hash: authContextHash,
   };
 }
@@ -309,7 +342,7 @@ function signJwt(config: SigningConfig, claims: CodeApiClaims): string {
 }
 
 function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
-  return [
+  return JSON.stringify([
     config.alg,
     config.kid,
     claims.sub,
@@ -320,8 +353,9 @@ function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
     claims.service_id ?? '',
     claims.chc_user_id ?? '',
     claims.plan_id ?? '',
+    claims.code_worker_id ?? '',
     claims.auth_context_hash,
-  ].join(':');
+  ]);
 }
 
 function pruneTokenCache(now: number): void {
@@ -340,7 +374,7 @@ function pruneTokenCache(now: number): void {
   }
 }
 
-export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
+export async function mintCodeApiToken(req: ServerRequest, codeWorkerId?: string): Promise<string> {
   if (!isCodeApiJwtAuthEnabled()) {
     return '';
   }
@@ -348,7 +382,7 @@ export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
   const config = getSigningConfig();
   const now = Math.floor(Date.now() / 1000);
   pruneTokenCache(now);
-  const claims = buildClaims(req, config, now);
+  const claims = buildClaims(req, config, now, codeWorkerId);
   const key = cacheKey(config, claims);
   const cached = tokenCache.get(key);
   if (
@@ -371,10 +405,13 @@ export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
   return token;
 }
 
-export async function getCodeApiAuthHeaders(req?: ServerRequest): Promise<Record<string, string>> {
+export async function getCodeApiAuthHeaders(
+  req?: ServerRequest,
+  codeWorkerId?: string,
+): Promise<Record<string, string>> {
   if (!req || !isCodeApiJwtAuthEnabled()) {
     return {};
   }
-  const token = await mintCodeApiToken(req);
+  const token = await mintCodeApiToken(req, codeWorkerId);
   return token ? { Authorization: `Bearer ${token}` } : {};
 }

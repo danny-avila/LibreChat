@@ -1,7 +1,6 @@
 const {
   cacheConfig,
   ioredisClient,
-  isEnabled,
   registerShutdownTask,
   duplicateIoRedisClient,
   createSubagentThreadTaskStore,
@@ -17,7 +16,6 @@ const { enqueueAgentTrigger } = require('../../Agents/triggers');
 const GENERATION_DRAIN_TIMEOUT_MS = 45_000;
 const GENERATION_DRAIN_POLL_MS = 100;
 const completionWakeupHandler = createSubagentCompletionWakeupHandler(enqueueAgentTrigger);
-const completionWakeupsEnabled = () => isEnabled(process.env.ENABLE_SUBAGENT_COMPLETION_WAKEUPS);
 
 async function cancelUnroutedGeneration({ userId, tenantId, taskId }) {
   let job = await GenerationJobManager.getJob(taskId);
@@ -78,12 +76,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     renewOwnerAdmission: db.renewSubagentAdmission,
     releaseOwnerAdmission: db.releaseSubagentAdmission,
     cancelUnroutedTask: cancelUnroutedGeneration,
-    onTaskPrepared: (registration) => {
-      if (!completionWakeupsEnabled()) {
-        return;
-      }
-      return completionWakeupHandler(registration);
-    },
+    onTaskPrepared: completionWakeupHandler,
   },
 );
 
@@ -149,8 +142,4 @@ async function configureSubagentTaskRouting() {
 }
 
 module.exports = subagentThreadTaskStore;
-Object.defineProperty(module.exports, 'completionWakeupsEnabled', {
-  enumerable: true,
-  get: completionWakeupsEnabled,
-});
 module.exports.configureSubagentTaskRouting = configureSubagentTaskRouting;

@@ -186,6 +186,8 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'claude-opus-5': { prompt: 5, completion: 25 },
     'claude-fable-5': { prompt: 10, completion: 50 },
     'claude-mythos-5': { prompt: 10, completion: 50 },
+    'claude-fable-5-1': { prompt: 10, completion: 50 },
+    'claude-mythos-5-1': { prompt: 10, completion: 50 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
     'claude-sonnet-4-5': { prompt: 3, completion: 15 },
     'claude-sonnet-4-6': { prompt: 3, completion: 15 },
@@ -221,9 +223,10 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     'gemini-3.5-flash': { prompt: 1.5, completion: 9 },
     'gemini-3.5-flash-lite': { prompt: 0.3, completion: 2.5 },
-    // Gemini 3.6/3.7 Flash introductory pricing through 2026-12-31; revert to { prompt: 1.5, completion: 7.5 } after.
+    // Gemini 3.6/3.7/3.8 Flash introductory pricing through 2026-12-31; revert to { prompt: 1.5, completion: 7.5 } after.
     'gemini-3.6-flash': { prompt: 0.75, completion: 3.75 },
     'gemini-3.7-flash': { prompt: 0.75, completion: 3.75 },
+    'gemini-3.8-flash': { prompt: 0.75, completion: 3.75 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 },
     'grok-beta': { prompt: 5.0, completion: 15.0 },
@@ -367,6 +370,9 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'claude-opus-5': { write: 6.25, read: 0.5 },
   'claude-fable-5': { write: 12.5, read: 1 },
   'claude-mythos-5': { write: 12.5, read: 1 },
+  // Fable/Mythos 5.1 cache reads are 0.025x base input, not the usual 0.1x.
+  'claude-fable-5-1': { write: 12.5, read: 0.25 },
+  'claude-mythos-5-1': { write: 12.5, read: 0.25 },
   'gpt-4o': { write: 2.5, read: 1.25 },
   'gpt-4o-mini': { write: 0.15, read: 0.075 },
   'gpt-4.1': { write: 2, read: 0.5 },
@@ -418,9 +424,10 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gemini-3.5-flash': { write: 1.5, read: 0.15 },
   // Gemini 3.5 Flash-Lite - cache write: $0.30/1M, cache read: $0.03/1M
   'gemini-3.5-flash-lite': { write: 0.3, read: 0.03 },
-  // Gemini 3.6/3.7 Flash introductory pricing through 2026-12-31; revert to { write: 1.5, read: 0.15 } after.
+  // Gemini 3.6/3.7/3.8 Flash introductory pricing through 2026-12-31; revert to { write: 1.5, read: 0.15 } after.
   'gemini-3.6-flash': { write: 0.75, read: 0.075 },
   'gemini-3.7-flash': { write: 0.75, read: 0.075 },
+  'gemini-3.8-flash': { write: 0.75, read: 0.075 },
 };
 
 /**

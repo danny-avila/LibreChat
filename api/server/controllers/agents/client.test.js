@@ -6,6 +6,7 @@ const mockRecordCollectedUsage = jest.fn();
 const mockDetachedUsageRecorder = jest.fn();
 const mockCreateDetachedSubagentUsageRecorder = jest.fn(() => mockDetachedUsageRecorder);
 const mockGetAgentCheckpointer = jest.fn();
+const mockHasDurableAgentInterruptCheckpoint = jest.fn().mockResolvedValue(true);
 const mockBuildAgentScopedContext = jest.fn((...args) =>
   jest.requireActual('@librechat/api').buildAgentScopedContext(...args),
 );
@@ -15,10 +16,20 @@ const mockFormatAgentMessages = jest.fn(() => ({
   summary: undefined,
   boundaryTokenAdjustment: undefined,
 }));
+const mockStripActivityLabelParts = jest.fn((payload) =>
+  jest.requireActual('@librechat/api').stripActivityLabelParts(payload),
+);
 
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
-const { GenerationJobManager, createStreamServices } = require('@librechat/api');
+const {
+  GenerationJobManager,
+  createStreamServices,
+  registerToolApprovalHook,
+  clearToolApprovalHooks,
+  getPluginHookSource,
+  setPluginHookSource,
+} = require('@librechat/api');
 const BaseClient = require('~/app/clients/BaseClient');
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -48,6 +59,13 @@ jest.mock('@librechat/api', () => ({
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   createCachedTokenCounter: jest.fn(async () => jest.fn(() => 0)),
+  createInitializedAgentContextFingerprint: jest.fn(() => ({
+    algorithm: 'sha256',
+    version: 1,
+    digest: 'context',
+  })),
+  createSkillContentDigest: jest.fn((body) => `digest:${body}`),
+  MAX_AGENT_CONTEXT_SKILLS: 64,
   createDetachedSubagentUsageRecorder: (...args) =>
     mockCreateDetachedSubagentUsageRecorder(...args),
   captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),
@@ -66,7 +84,300 @@ jest.mock('@librechat/api', () => ({
   maybePrewarmCodeSandbox: jest.fn(),
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
   getAgentCheckpointer: mockGetAgentCheckpointer,
+  hasDurableAgentInterruptCheckpoint: (...args) => mockHasDurableAgentInterruptCheckpoint(...args),
+  stripActivityLabelParts: (...args) => mockStripActivityLabelParts(...args),
 }));
+
+describe('AgentClient - event actor history adapter', () => {
+  const fingerprint = { algorithm: 'sha256', version: 1, digest: 'context' };
+  const compactionSemanticIndex = {
+    version: 1,
+    providedEntryCount: 1,
+    entries: [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-history',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ],
+  };
+
+  it('loads no durable history after compatibility selected a warm continuation', async () => {
+    const loadHistory = jest.spyOn(BaseClient.prototype, 'loadHistory');
+    const client = Object.create(AgentClient.prototype);
+    client.eventActorContinuation = 'warm';
+
+    await expect(client.loadHistory('conversation-1', 'message-1')).resolves.toEqual([]);
+    expect(loadHistory).not.toHaveBeenCalled();
+    loadHistory.mockRestore();
+  });
+
+  it('delegates rebuilt continuation to the existing durable history loader', async () => {
+    const loadHistory = jest
+      .spyOn(BaseClient.prototype, 'loadHistory')
+      .mockResolvedValue([{ messageId: 'message-1' }]);
+    const client = Object.create(AgentClient.prototype);
+    client.eventActorContinuation = 'cold';
+
+    await expect(client.loadHistory('conversation-1', 'message-1')).resolves.toEqual([
+      { messageId: 'message-1' },
+    ]);
+    expect(loadHistory).toHaveBeenCalledWith('conversation-1', 'message-1');
+    loadHistory.mockRestore();
+  });
+
+  it('resolves and caches the exact durable Skill manifest before warming', async () => {
+    const skillManifest = [{ id: 'skill-1', name: 'analysis', version: 3 }];
+    const skillPrimeResult = {
+      skillManifest,
+      skills: new Map([['analysis', 'Analyze carefully.']]),
+    };
+    const primeInvokedSkills = jest.fn().mockResolvedValue(skillPrimeResult);
+    const client = Object.create(AgentClient.prototype);
+    client.options = {
+      req: { config: {} },
+      primeInvokedSkills,
+    };
+    client.getEventActorContext = jest.fn().mockResolvedValue({
+      fingerprint,
+      skillManifest,
+      discoveredToolNames: ['deferred_tool'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex,
+    });
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: fingerprint,
+        skillManifest,
+        discoveredToolNames: ['deferred_tool'],
+        summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+        contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+        compactionSemanticIndex,
+      }),
+    ).resolves.toMatchObject({
+      fingerprint,
+      skillManifest,
+      discoveredToolNames: ['deferred_tool'],
+      summary: { text: 'Earlier compacted context.', tokenCount: 12 },
+      contextMeta: { calibrationRatio: 1.25, encoding: 'o200k_base' },
+      compactionSemanticIndex,
+      checkpointMessageOverlay: {
+        source: 'skill',
+        messages: [
+          expect.objectContaining({
+            content: 'Analyze carefully.',
+            additional_kwargs: expect.objectContaining({
+              source: 'skill',
+              skillName: 'analysis',
+            }),
+          }),
+        ],
+      },
+    });
+    expect(primeInvokedSkills).toHaveBeenCalledWith([], ['analysis']);
+    expect(client.getEventActorContext).toHaveBeenCalledWith(skillManifest, ['deferred_tool']);
+    expect(client.eventActorSkillPrimeResult).toEqual(skillPrimeResult);
+    expect(client.eventActorDiscoveredToolNames).toEqual(['deferred_tool']);
+    expect(client.eventActorSummary).toEqual({
+      text: 'Earlier compacted context.',
+      tokenCount: 12,
+    });
+    expect(client.contextMeta).toEqual({ calibrationRatio: 1.25, encoding: 'o200k_base' });
+    expect(client.compactionSemanticIndexSnapshot).toEqual({
+      entries: compactionSemanticIndex.entries,
+      providedEntryCount: 1,
+    });
+  });
+
+  it('falls back when a durable Skill resolves to a different revision', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = {
+      req: { config: {} },
+      primeInvokedSkills: jest.fn().mockResolvedValue({
+        skillManifest: [{ id: 'skill-1', name: 'analysis', version: 4 }],
+      }),
+    };
+    client.getEventActorContext = jest.fn();
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: fingerprint,
+        skillManifest: [{ id: 'skill-1', name: 'analysis', version: 3 }],
+      }),
+    ).resolves.toBeUndefined();
+    expect(client.getEventActorContext).not.toHaveBeenCalled();
+  });
+
+  it('carries a freshly manual-primed Skill into the durable manifest', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [
+      {
+        id: 'agent-1',
+        manualSkillPrimes: [
+          { _id: 'skill-1', name: 'analysis', version: 3, body: 'Analyze carefully.' },
+        ],
+      },
+    ];
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({
+      skillManifest: [
+        {
+          id: 'skill-1',
+          name: 'analysis',
+          version: 3,
+          contentDigest: 'digest:Analyze carefully.',
+        },
+      ],
+    });
+  });
+
+  it('replays only root Skill primes into the global checkpoint overlay', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    client.eventActorAgentContextSources = [
+      {
+        id: 'root-agent',
+        alwaysApplySkillPrimes: [
+          { _id: 'root-skill', name: 'root-skill', version: 1, body: 'Root instructions.' },
+        ],
+      },
+      {
+        id: 'child-agent',
+        alwaysApplySkillPrimes: [
+          { _id: 'child-skill', name: 'child-skill', version: 1, body: 'Child instructions.' },
+        ],
+      },
+    ];
+    client.getEventActorContext = jest.fn().mockResolvedValue({ fingerprint });
+
+    const context = await client.prepareEventActorContext({ contextFingerprint: fingerprint });
+
+    expect(context.checkpointMessageOverlay.messages).toEqual([
+      expect.objectContaining({
+        content: 'Root instructions.',
+        additional_kwargs: expect.objectContaining({ skillName: 'root-skill' }),
+      }),
+    ]);
+    expect(context.checkpointMessageOverlay.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          additional_kwargs: expect.objectContaining({ skillName: 'child-skill' }),
+        }),
+      ]),
+    );
+  });
+
+  it('keeps child manual Skills out of the root durable manifest', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [
+      { id: 'root-agent', manualSkillPrimes: [] },
+      {
+        id: 'child-agent',
+        manualSkillPrimes: [
+          { _id: 'child-skill', name: 'child-skill', version: 1, body: 'Child instructions.' },
+        ],
+      },
+    ];
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({ skillManifest: [] });
+  });
+
+  it('captures the latest run summary and pruning calibration in continuation state', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: { endpoints: { agents: {} } } } };
+    client.eventActorAgentContextSources = [];
+    client.contentParts = [
+      {
+        type: ContentTypes.SUMMARY,
+        content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
+        tokenCount: 18,
+      },
+    ];
+    client.contextMeta = { calibrationRatio: 1.3, encoding: 'o200k_base' };
+    client.compactionSemanticIndexSnapshot = {
+      entries: compactionSemanticIndex.entries,
+      providedEntryCount: 1,
+    };
+    client.getEventActorAgents = jest.fn(() => []);
+    client.getEventActorMemorySnapshots = jest.fn().mockResolvedValue([]);
+
+    await expect(client.getEventActorContext()).resolves.toMatchObject({
+      summary: { text: 'Fresh compacted context.', tokenCount: 18 },
+      contextMeta: { calibrationRatio: 1.3, encoding: 'o200k_base' },
+      compactionSemanticIndex,
+    });
+  });
+
+  it('fingerprints agents reachable only through nested subagent graphs', () => {
+    const graphMember = { id: 'graph-member' };
+    const graphMetadata = { id: 'graph-metadata', configId: 'graph-metadata-v2' };
+    const lazy = {
+      id: 'lazy',
+      configId: 'lazy-config-v2',
+      subagentGraphMemberMetadata: [graphMetadata],
+    };
+    const nested = {
+      id: 'nested',
+      lazySubagentConfigs: [lazy],
+      subagentGraphConfigs: [{ memberConfigs: [graphMember] }],
+    };
+    const client = Object.create(AgentClient.prototype);
+    client.options = { agent: { id: 'primary', subagentAgentConfigs: [nested] } };
+    client.agentConfigs = new Map([['parallel', { id: 'parallel' }]]);
+
+    expect(client.getEventActorAgents().map((agent) => agent.id)).toEqual([
+      'primary',
+      'parallel',
+      'nested',
+      'lazy',
+      'graph-member',
+      'graph-metadata',
+    ]);
+  });
+
+  it('snapshots only memory partitions that can reach model context', async () => {
+    const getFormattedMemories = require('~/models').getFormattedMemories;
+    getFormattedMemories.mockClear();
+    getFormattedMemories.mockResolvedValue({ withKeys: 'private memory' });
+    const primary = { id: 'primary' };
+    const inertChild = {
+      id: 'inert-child',
+      memory_scope: 'agent',
+      memoryToolsRegistered: false,
+    };
+    const memoryChild = {
+      id: 'memory-child',
+      memory_scope: 'agent',
+      memoryToolsRegistered: true,
+    };
+    const client = Object.create(AgentClient.prototype);
+    client.options = { agent: primary, req: { user: { id: 'user-1' } } };
+    client.getSharedMemoryContext = jest.fn().mockResolvedValue({ withoutKeys: 'shared memory' });
+
+    await expect(
+      client.getEventActorMemorySnapshots([primary, inertChild, memoryChild]),
+    ).resolves.toEqual([
+      { scope: 'memory-child', withKeys: 'private memory' },
+      { scope: 'shared', withoutKeys: 'shared memory' },
+    ]);
+    expect(getFormattedMemories).toHaveBeenCalledTimes(1);
+    expect(getFormattedMemories).toHaveBeenCalledWith({
+      userId: 'user-1',
+      agentId: 'memory-child',
+    });
+  });
+});
 
 describe('AgentClient - final model-bound content protection', () => {
   const filters = {
@@ -463,6 +774,7 @@ describe('AgentClient - reasoning label accounting', () => {
 
 describe('AgentClient - interrupt discovery persistence', () => {
   beforeEach(async () => {
+    mockHasDurableAgentInterruptCheckpoint.mockClear();
     await GenerationJobManager.destroy();
     GenerationJobManager.configure({ ...createStreamServices(), cleanupOnComplete: false });
     GenerationJobManager.initialize();
@@ -470,6 +782,80 @@ describe('AgentClient - interrupt discovery persistence', () => {
 
   afterEach(async () => {
     await GenerationJobManager.destroy();
+  });
+
+  it('stages an event-actor interrupt until its signed suspension is durable', async () => {
+    const streamId = 'conversation-event-actor-staged-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-event-actor-pause';
+    client.jobCreatedAt = job.createdAt;
+    client.eventActorInvocationId = 'event-pause';
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'interrupt-event-actor',
+          threadId: streamId,
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Proceed?' },
+          },
+        }),
+        getDiscoveredTools: () => ['save_issue_mcp_linear'],
+      },
+      streamId,
+    );
+
+    await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('running');
+    expect(client.pendingApproval).toBeUndefined();
+    expect(client.readEventActorSuspension()).toMatchObject({
+      actionId: expect.any(String),
+      jobCreatedAt: job.createdAt,
+      interrupt: {
+        id: 'interrupt-event-actor',
+        payload: {
+          type: 'ask_user_question',
+          actionId: expect.any(String),
+        },
+      },
+    });
+
+    await expect(
+      client.publishStagedApproval({ version: 1, suspensionId: 'signed-suspension', attempt: 0 }),
+    ).resolves.toBe(true);
+    await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('requires_action');
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: {
+        agentEventSuspension: {
+          version: 1,
+          suspensionId: 'signed-suspension',
+          attempt: 0,
+        },
+      },
+    });
+    expect(client.pendingApproval).toMatchObject({ actionId: expect.any(String) });
+    expect(client.pendingRequestReleased).toBeFalsy();
+
+    await client.exposePendingApproval();
+    expect(client.pendingRequestReleased).toBe(true);
   });
 
   it('makes the run discovery snapshot durable when the run pauses', async () => {
@@ -495,6 +881,19 @@ describe('AgentClient - interrupt discovery persistence', () => {
     client.conversationId = streamId;
     client.responseMessageId = 'response-discovered-pause';
     client.jobCreatedAt = job.createdAt;
+    client.compactionSemanticIndexSnapshot = {
+      entries: [
+        {
+          type: 'activity_phase',
+          sourceMessageId: 'assistant-before-pause',
+          sourceContentIndex: 1,
+          revision: 1,
+          status: 'committed',
+          text: 'Prepared the change',
+        },
+      ],
+      providedEntryCount: 1,
+    };
 
     await client.handleRunInterrupt(
       {
@@ -515,6 +914,575 @@ describe('AgentClient - interrupt discovery persistence', () => {
     const paused = await GenerationJobManager.getJob(streamId);
     expect(paused?.status).toBe('requires_action');
     expect(paused?.metadata.discoveredTools).toEqual(['save_issue_mcp_linear']);
+    expect(paused?.metadata.compactionSemanticIndex).toEqual({
+      version: 1,
+      entries: client.compactionSemanticIndexSnapshot.entries,
+      providedEntryCount: 1,
+    });
+  });
+
+  it('makes the run context meta durable when the run pauses', async () => {
+    const streamId = 'conversation-context-meta-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-pause';
+    client.jobCreatedAt = job.createdAt;
+    const fading = { v: 1, budgetTokens: 50_000, masked: true };
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'ask-interrupt',
+          threadId: streamId,
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Proceed?' },
+          },
+        }),
+        getDiscoveredTools: () => [],
+        getRunMessages: () => [],
+        getCalibrationRatio: () => 1.2,
+        getFadingTier: () => ({ ...fading, latched: true }),
+        getFadingTiers: () => ({
+          'agent-123': { ...fading, latched: true },
+          'agent-worker': { v: 1, budgetTokens: 8_000, masked: false, latched: true },
+        }),
+      },
+      streamId,
+    );
+
+    const paused = await GenerationJobManager.getJob(streamId);
+    expect(paused?.status).toBe('requires_action');
+    /** Only the compact tiers travel: the SDK's provenance flag is stripped. */
+    expect(paused?.metadata.contextMeta).toEqual({
+      calibrationRatio: 1.2,
+      encoding: client.getEncoding(),
+      fading,
+      fadingTiers: [
+        { agentId: 'agent-123', v: 1, budgetTokens: 50_000, masked: true },
+        { agentId: 'agent-worker', v: 1, budgetTokens: 8_000, masked: false },
+      ],
+    });
+  });
+
+  it('captures the live graph state at a pause instead of the run seeds', async () => {
+    const streamId = 'conversation-context-meta-live-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-live-pause';
+    client.jobCreatedAt = job.createdAt;
+    const seeded = { v: 1, budgetTokens: 50_000, masked: false };
+    const live = { v: 1, budgetTokens: 25_000, masked: true };
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'ask-interrupt',
+          threadId: streamId,
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Proceed?' },
+          },
+        }),
+        getDiscoveredTools: () => [],
+        getRunMessages: () => [],
+        getCalibrationRatio: () => 1,
+        getFadingTier: () => seeded,
+        Graph: {
+          getCalibrationRatio: () => 1.4,
+          getFadingTier: () => live,
+        },
+      },
+      streamId,
+    );
+
+    const paused = await GenerationJobManager.getJob(streamId);
+    expect(paused?.metadata.contextMeta).toEqual({
+      calibrationRatio: 1.4,
+      encoding: client.getEncoding(),
+      fading: live,
+    });
+  });
+
+  it('publishes the live context meta onto the job after each context snapshot', async () => {
+    const streamId = 'conversation-context-meta-publish';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const contextUsageSink = { latest: null, count: 0 };
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+      contextUsageSink,
+    });
+    const seed = { calibrationRatio: 1.05, encoding: client.getEncoding() };
+    client.contextMeta = seed;
+    const updateMetadata = jest.spyOn(GenerationJobManager, 'updateMetadata');
+
+    /** Before the run exists the inherited seed is what a Stop must carry. */
+    await client.publishRunContextMeta();
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: { contextMeta: seed },
+    });
+
+    const tier = { v: 1, budgetTokens: 25_000, masked: true };
+    let ratio = 1.1;
+    client.run = {
+      Graph: {
+        getCalibrationRatio: () => ratio,
+        getFadingTier: () => tier,
+      },
+    };
+
+    expect(typeof contextUsageSink.onSnapshot).toBe('function');
+    await contextUsageSink.onSnapshot();
+    await contextUsageSink.onSnapshot();
+    ratio = 1.3;
+    await contextUsageSink.onSnapshot();
+
+    expect(updateMetadata).toHaveBeenCalledTimes(3);
+    expect(updateMetadata).toHaveBeenLastCalledWith(
+      streamId,
+      {
+        contextMeta: {
+          calibrationRatio: 1.3,
+          encoding: client.getEncoding(),
+          fading: tier,
+        },
+      },
+      job.createdAt,
+    );
+    const running = await GenerationJobManager.getJob(streamId);
+    expect(running?.metadata.contextMeta).toEqual({
+      calibrationRatio: 1.3,
+      encoding: client.getEncoding(),
+      fading: tier,
+    });
+    updateMetadata.mockRestore();
+  });
+
+  it('publishes a neutral record when live state stops carrying anything', async () => {
+    const streamId = 'conversation-context-meta-neutral';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const contextUsageSink = { latest: null, count: 0 };
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+      contextUsageSink,
+    });
+    let ratio = 1;
+    let tier;
+    client.run = {
+      Graph: {
+        getCalibrationRatio: () => ratio,
+        getFadingTier: () => tier,
+      },
+    };
+    const updateMetadata = jest.spyOn(GenerationJobManager, 'updateMetadata');
+
+    /** A fresh conversation's first neutral snapshot has nothing to clear. */
+    await contextUsageSink.onSnapshot();
+    expect(updateMetadata).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: expect.not.objectContaining({ contextMeta: expect.anything() }),
+    });
+
+    ratio = 1.25;
+    await contextUsageSink.onSnapshot();
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: { contextMeta: { calibrationRatio: 1.25, encoding: client.getEncoding() } },
+    });
+
+    ratio = 1;
+    await contextUsageSink.onSnapshot();
+    await contextUsageSink.onSnapshot();
+    expect(updateMetadata).toHaveBeenCalledTimes(2);
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: { contextMeta: { calibrationRatio: 1, encoding: client.getEncoding() } },
+    });
+    updateMetadata.mockRestore();
+  });
+
+  it('shares one in-flight write between equal concurrent snapshots', async () => {
+    const streamId = 'conversation-context-meta-inflight';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const contextUsageSink = { latest: null, count: 0 };
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+      contextUsageSink,
+    });
+    const tier = { v: 1, budgetTokens: 25_000, masked: true };
+    client.run = {
+      Graph: {
+        getCalibrationRatio: () => 1.2,
+        getFadingTier: () => tier,
+      },
+    };
+    let settled = false;
+    let releaseWrite;
+    const updateMetadata = jest
+      .spyOn(GenerationJobManager, 'updateMetadata')
+      .mockImplementationOnce(async () => {
+        await new Promise((resolve) => {
+          releaseWrite = resolve;
+        });
+        settled = true;
+      });
+
+    const first = contextUsageSink.onSnapshot();
+    const second = contextUsageSink.onSnapshot();
+    let secondSettled = false;
+    void second.then(() => {
+      secondSettled = true;
+    });
+    await Promise.resolve();
+    expect(secondSettled).toBe(false);
+    expect(updateMetadata).toHaveBeenCalledTimes(1);
+
+    releaseWrite();
+    await Promise.all([first, second]);
+    expect(settled).toBe(true);
+    expect(secondSettled).toBe(true);
+    updateMetadata.mockRestore();
+  });
+
+  it('serializes distinct concurrent snapshots so the newest value wins', async () => {
+    const streamId = 'conversation-context-meta-ordered';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const contextUsageSink = { latest: null, count: 0 };
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+      contextUsageSink,
+    });
+    let tier = { v: 1, budgetTokens: 50_000, masked: false };
+    client.run = {
+      Graph: {
+        getCalibrationRatio: () => 1.2,
+        getFadingTier: () => tier,
+      },
+    };
+    let releaseFirstWrite;
+    const originalUpdateMetadata = Object.getPrototypeOf(GenerationJobManager).updateMetadata;
+    const updateMetadata = jest.spyOn(GenerationJobManager, 'updateMetadata');
+    updateMetadata.mockImplementationOnce(async (...args) => {
+      await new Promise((resolve) => {
+        releaseFirstWrite = resolve;
+      });
+      return originalUpdateMetadata.apply(GenerationJobManager, args);
+    });
+
+    const older = contextUsageSink.onSnapshot();
+    tier = { v: 1, budgetTokens: 25_000, masked: true };
+    const newer = contextUsageSink.onSnapshot();
+    await Promise.resolve();
+    /** The newer write waits for the older one instead of racing it. */
+    expect(updateMetadata).toHaveBeenCalledTimes(1);
+
+    releaseFirstWrite();
+    await Promise.all([older, newer]);
+    expect(updateMetadata).toHaveBeenCalledTimes(2);
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      metadata: {
+        contextMeta: {
+          calibrationRatio: 1.2,
+          encoding: client.getEncoding(),
+          fading: { v: 1, budgetTokens: 25_000, masked: true },
+        },
+      },
+    });
+    updateMetadata.mockRestore();
+  });
+
+  it('publishes the inherited context meta before the resumed run continues', async () => {
+    const streamId = 'conversation-context-meta-resume-seed';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    const seed = {
+      calibrationRatio: 1.15,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 30_000, masked: true },
+    };
+    client.seedContextMeta(seed);
+    let metaWhenResumed;
+    let metaWhenCreated;
+    const resume = jest.fn(async () => {
+      metaWhenResumed = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
+    });
+    mockCreateRun.mockImplementationOnce(async () => {
+      metaWhenCreated = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
+      return {
+        Graph: null,
+        resume,
+        processStream: jest.fn().mockResolvedValue(),
+        getCalibrationRatio: jest.fn(() => 0),
+        getInterrupt: jest.fn(() => undefined),
+      };
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-resume-seed';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.resumeCompletion({
+      resumeValue: { decisions: [] },
+      streamId,
+      checkpointNamespace: 'resume-seed',
+    });
+
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(metaWhenCreated).toEqual(seed);
+    expect(metaWhenResumed).toEqual(seed);
+  });
+
+  it('publishes the inherited context meta before a fresh run streams', async () => {
+    const streamId = 'conversation-context-meta-stream-seed';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    const seed = {
+      calibrationRatio: 1.15,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 30_000, masked: true },
+    };
+    client.contextMeta = seed;
+    let metaWhenStreamed;
+    let metaWhenCreated;
+    const processStream = jest.fn(async () => {
+      metaWhenStreamed = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
+    });
+    /** Run creation is the first abortable setup stage; the seed must precede it. */
+    mockCreateRun.mockImplementationOnce(async () => {
+      metaWhenCreated = (await GenerationJobManager.getJob(streamId))?.metadata.contextMeta;
+      return {
+        Graph: null,
+        processStream,
+        getCalibrationRatio: jest.fn(() => 0),
+        getInterrupt: jest.fn(() => undefined),
+      };
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-stream-seed';
+    client.parentMessageId = 'parent-context-meta-stream-seed';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(processStream).toHaveBeenCalledTimes(1);
+    expect(metaWhenCreated).toEqual(seed);
+    expect(metaWhenStreamed).toEqual(seed);
+  });
+
+  it('keeps the inherited context meta when a fresh run fails before it exists', async () => {
+    const streamId = 'conversation-context-meta-setup-failure';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    const seed = {
+      calibrationRatio: 1.15,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 30_000, masked: true },
+    };
+    client.contextMeta = seed;
+    mockCreateRun.mockRejectedValueOnce(new Error('run creation failed'));
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-setup-failure';
+    client.parentMessageId = 'parent-context-meta-setup-failure';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] }).catch(() => undefined);
+
+    expect(client.run).toBeUndefined();
+    expect(client.contextMeta).toEqual(seed);
+  });
+
+  it('keeps the inherited context meta when a resumed run fails to rebuild', async () => {
+    const streamId = 'conversation-context-meta-resume-failure';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: streamId,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      jobCreatedAt: job.createdAt,
+    });
+    const seed = {
+      calibrationRatio: 1.15,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 30_000, masked: true },
+    };
+    client.seedContextMeta(seed);
+    mockCreateRun.mockRejectedValueOnce(new Error('rebuild failed'));
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-context-meta-resume-failure';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client
+      .resumeCompletion({
+        resumeValue: { decisions: [] },
+        streamId,
+        checkpointNamespace: 'resume-failure',
+      })
+      .catch(() => undefined);
+
+    expect(client.run).toBeUndefined();
+    expect(client.contextMeta).toEqual(seed);
   });
 
   it('caps an event-bound pause at the inherited binding deadline', async () => {
@@ -566,6 +1534,157 @@ describe('AgentClient - interrupt discovery persistence', () => {
     const paused = await GenerationJobManager.getJob(streamId);
     expect(paused?.metadata.pendingAction.expiresAt).toBeGreaterThanOrEqual(now + 4_900);
     expect(paused?.metadata.pendingAction.expiresAt).toBeLessThanOrEqual(now + 5_000);
+  });
+
+  it('does not expose an event-bound pause after its inherited deadline', async () => {
+    const streamId = 'conversation-expired-event-bound-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: { checkpointer: { ttl: 3600 } } } },
+        _agentEventBindingRetention: {
+          isTemporary: false,
+          expiredAt: new Date(Date.now() - 1),
+        },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-expired-event-bound-pause';
+    client.jobCreatedAt = job.createdAt;
+
+    await expect(
+      client.handleRunInterrupt(
+        {
+          getInterrupt: () => ({
+            interruptId: 'ask-interrupt',
+            threadId: streamId,
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Proceed?' },
+            },
+          }),
+        },
+        streamId,
+      ),
+    ).rejects.toMatchObject({ code: 'HITL_ACTION_EXPIRED' });
+    const liveJob = await GenerationJobManager.getJob(streamId);
+    expect(liveJob?.status).toBe('running');
+    expect(liveJob?.metadata.pendingAction).toBeUndefined();
+  });
+
+  it('does not expose a scheduled pause without its shared action store', async () => {
+    const streamId = 'scheduled-missing-shared-store';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _isScheduledFire: true,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'scheduled-missing-shared-store-response';
+    client.jobCreatedAt = job.createdAt;
+    client.checkpointNamespace = job.metadata.checkpointNamespace;
+
+    await expect(
+      client.handleRunInterrupt(
+        {
+          getInterrupt: () => ({
+            interruptId: 'ask-interrupt',
+            threadId: streamId,
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Proceed?' },
+            },
+          }),
+        },
+        streamId,
+      ),
+    ).rejects.toMatchObject({ code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE' });
+    expect(mockHasDurableAgentInterruptCheckpoint).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('running');
+  });
+
+  it('does not expose a scheduled pause without its durable interrupt checkpoint', async () => {
+    const isRedisSpy = jest.spyOn(GenerationJobManager, 'isRedis', 'get').mockReturnValue(true);
+    const streamId = 'scheduled-missing-interrupt-checkpoint';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _isScheduledFire: true,
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'scheduled-missing-checkpoint-response';
+    client.jobCreatedAt = job.createdAt;
+    client.checkpointNamespace = job.metadata.checkpointNamespace;
+    mockHasDurableAgentInterruptCheckpoint.mockResolvedValueOnce(false);
+
+    try {
+      await expect(
+        client.handleRunInterrupt(
+          {
+            getInterrupt: () => ({
+              interruptId: 'ask-interrupt',
+              checkpointId: 'checkpoint-current',
+              checkpointNs: 'nested-agent',
+              threadId: streamId,
+              payload: {
+                type: 'ask_user_question',
+                question: { question: 'Proceed?' },
+              },
+            }),
+          },
+          streamId,
+        ),
+      ).rejects.toMatchObject({ code: 'HITL_CHECKPOINT_UNAVAILABLE' });
+      expect(mockHasDurableAgentInterruptCheckpoint).toHaveBeenCalledWith(streamId, undefined, {
+        checkpointNamespace: job.metadata.checkpointNamespace,
+        checkpointId: 'checkpoint-current',
+        checkpointNs: 'nested-agent',
+        interruptId: 'ask-interrupt',
+      });
+      await expect(GenerationJobManager.getJobStatus(streamId)).resolves.toBe('running');
+    } finally {
+      isRedisSpy.mockRestore();
+    }
   });
 });
 
@@ -817,7 +1936,278 @@ describe('AgentClient - activity phase completion', () => {
 
 describe('AgentClient - startup telemetry', () => {
   afterEach(() => {
+    clearToolApprovalHooks();
+    mockIsHITLEnabled.mockReturnValue(false);
     jest.restoreAllMocks();
+  });
+
+  it('refuses scheduled pause-capable runs before provider startup without Redis', async () => {
+    mockIsHITLEnabled.mockReturnValue(false);
+    const createRunBefore = mockCreateRun.mock.calls.length;
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-hitl-no-redis',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'ask_user_question' }],
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-hitl-no-redis';
+    client.responseMessageId = 'scheduled-hitl-response';
+    client.parentMessageId = 'scheduled-hitl-parent';
+
+    await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+      code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+      message: expect.stringContaining('USE_REDIS_STREAMS=true'),
+    });
+    expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
+  });
+
+  it('includes host-generated background tools in scheduled pause admission', async () => {
+    const createRunBefore = mockCreateRun.mock.calls.length;
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: {
+                enabled: true,
+                mode: 'bypass',
+                ask: ['check_background_task'],
+              },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-background-tool',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'read_file' }],
+      },
+      subagentTasks: {},
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-background-tool';
+    client.responseMessageId = 'scheduled-background-response';
+    client.parentMessageId = 'scheduled-background-parent';
+
+    await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+      code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+    });
+    expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
+  });
+
+  it.each([
+    {
+      name: 'a bypass-only approval policy',
+      toolApproval: { enabled: true, mode: 'bypass' },
+      subagentAgentConfigs: undefined,
+    },
+    {
+      name: 'an approval rule that matches no selected tool',
+      toolApproval: { enabled: true, mode: 'bypass', ask: ['approval_probe'] },
+      subagentAgentConfigs: undefined,
+    },
+    {
+      name: 'ask_user_question denied by the approval policy',
+      toolApproval: { enabled: true, deny: ['ask_*'] },
+      primaryTools: [{ name: 'ask_user_question' }],
+      subagentAgentConfigs: undefined,
+    },
+    {
+      name: 'ask_user_question on a nested subagent only',
+      toolApproval: undefined,
+      subagentAgentConfigs: [
+        {
+          id: 'nested-agent',
+          tools: [{ name: 'ask_user_question' }],
+        },
+      ],
+    },
+  ])(
+    'does not reject scheduled runs for $name',
+    async ({ toolApproval, primaryTools, subagentAgentConfigs }) => {
+      mockDeleteAgentCheckpoint.mockReset().mockResolvedValue(undefined);
+      const processStream = jest.fn().mockResolvedValue();
+      mockCreateRun.mockResolvedValueOnce({
+        Graph: null,
+        processStream,
+        getCalibrationRatio: jest.fn(() => 0),
+        getInterrupt: jest.fn(() => undefined),
+      });
+      const createRunBefore = mockCreateRun.mock.calls.length;
+      const client = new AgentClient({
+        req: {
+          user: { id: 'user-123' },
+          body: {},
+          config: { endpoints: { [EModelEndpoint.agents]: { toolApproval } } },
+          _isScheduledFire: true,
+          _resumableStreamId: 'scheduled-non-pausing-policy',
+        },
+        res: {},
+        agent: {
+          id: 'agent-123',
+          endpoint: EModelEndpoint.openAI,
+          provider: EModelEndpoint.openAI,
+          model_parameters: { model: 'gpt-4' },
+          hide_sequential_outputs: false,
+          tools: primaryTools ?? [{ name: 'read_file' }],
+          subagentAgentConfigs,
+        },
+        endpointTokenConfig: {},
+        eventHandlers: {},
+        contentParts: [],
+        collectedUsage: [],
+        artifactPromises: [],
+      });
+      client.conversationId = 'scheduled-non-pausing-policy';
+      client.checkpointNamespace = 'scheduled-non-pausing-generation';
+      client.responseMessageId = 'scheduled-non-pausing-response';
+      client.parentMessageId = 'scheduled-non-pausing-parent';
+      client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+      await expect(client.chatCompletion({ payload: [] })).resolves.toBeUndefined();
+      expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore + 1);
+      expect(processStream).toHaveBeenCalledTimes(1);
+      if (toolApproval?.enabled === true) {
+        expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+          'scheduled-non-pausing-policy',
+          undefined,
+          undefined,
+          {
+            throwOnError: true,
+            checkpointNamespace: 'scheduled-non-pausing-generation',
+          },
+        );
+      } else {
+        expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('uses request-scoped hook resolution when deciding whether a scheduled run can pause', async () => {
+    mockIsHITLEnabled.mockReturnValue(true);
+    registerToolApprovalHook((context) =>
+      context.userId === 'different-user' ? async () => ({ decision: 'ask' }) : undefined,
+    );
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: { enabled: true, mode: 'bypass' },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-request-scoped-hook',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+        tools: [{ name: 'read_file' }],
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-request-scoped-hook';
+    client.checkpointNamespace = 'scheduled-request-scoped-generation';
+    client.responseMessageId = 'scheduled-request-scoped-response';
+    client.parentMessageId = 'scheduled-request-scoped-parent';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await expect(client.chatCompletion({ payload: [] })).resolves.toBeUndefined();
+    expect(mockCreateRun.mock.calls.at(-1)?.[0]?.resolvedToolApprovalHooks).toEqual([]);
+  });
+
+  it('admits deployment PreToolUse hooks as pause-capable for scheduled runs', async () => {
+    mockIsHITLEnabled.mockReturnValue(true);
+    const previousSource = getPluginHookSource();
+    setPluginHookSource({
+      hasHooks: () => true,
+      hasToolApprovalHooks: () => true,
+      register: () => 1,
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              toolApproval: { enabled: true, mode: 'bypass' },
+            },
+          },
+        },
+        _isScheduledFire: true,
+        _resumableStreamId: 'scheduled-deployment-hook',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        tools: [{ name: 'write_file' }],
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'scheduled-deployment-hook';
+    client.responseMessageId = 'scheduled-deployment-response';
+    client.parentMessageId = 'scheduled-deployment-parent';
+
+    try {
+      await expect(client.chatCompletion({ payload: [] })).rejects.toMatchObject({
+        code: 'SCHEDULED_HITL_REQUIRES_SHARED_STORE',
+      });
+    } finally {
+      setPluginHookSource(previousSource);
+    }
   });
 
   it('overlaps run creation with checkpoint pruning and joins both before stream processing', async () => {
@@ -851,9 +2241,12 @@ describe('AgentClient - startup telemetry', () => {
 
     const client = new AgentClient({
       req: {
-        user: { id: 'user-123' },
+        tenantId: 'request-tenant',
+        user: { id: 'user-123', tenantId: 'stale-user-tenant' },
         body: {},
-        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        config: {
+          endpoints: { [EModelEndpoint.agents]: { toolApproval: { enabled: true } } },
+        },
         _resumableStreamId: 'conversation-123',
       },
       res: {},
@@ -863,6 +2256,7 @@ describe('AgentClient - startup telemetry', () => {
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
+        tools: [{ name: 'write_file' }],
       },
       endpointTokenConfig: {},
       eventHandlers: {},
@@ -883,6 +2277,7 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
     expect(mockCreateRun.mock.calls[0][0]).toEqual(
       expect.objectContaining({
+        tenantId: 'request-tenant',
         modelCallbacks: [
           expect.objectContaining({
             name: 'librechat-model-bound-content-filter',
@@ -930,6 +2325,238 @@ describe('AgentClient - startup telemetry', () => {
       }),
     );
     expect(processStream.mock.calls[0][1]).not.toHaveProperty('callbacks');
+  });
+
+  it('derives and forwards compaction guidance without stripping activity labels', async () => {
+    jest.clearAllMocks();
+    mockIsHITLEnabled.mockReturnValue(false);
+    const compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'assistant-history',
+        sourceContentIndex: 1,
+        revision: 1,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ];
+    const payload = [
+      {
+        messageId: 'assistant-history',
+        content: [
+          { type: ContentTypes.TEXT, text: 'Details' },
+          {
+            type: ContentTypes.ACTIVITY_LABEL,
+            activity_label: 'Verified the release state',
+            activity_label_type: 'phase',
+          },
+        ],
+      },
+    ];
+    mockFormatAgentMessages.mockReturnValueOnce({
+      messages: [],
+      indexTokenCountMap: {},
+      summary: undefined,
+      boundaryTokenAdjustment: undefined,
+      compactionSemanticIndexSnapshot: {
+        entries: compactionSemanticIndex,
+        providedEntryCount: compactionSemanticIndex.length,
+      },
+    });
+    const processStream = jest.fn().mockResolvedValue();
+    mockCreateRun.mockResolvedValueOnce({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+      getInterrupt: jest.fn(() => undefined),
+    });
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'semantic-index-conversation',
+      },
+      res: {},
+      agent: {
+        id: 'agent-primary',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+        semanticIntentToolNames: ['web_search'],
+        semanticIntentBlockedToolNames: ['create_record'],
+      },
+      agentConfigs: new Map([
+        [
+          'agent-secondary',
+          {
+            id: 'agent-secondary',
+            endpoint: EModelEndpoint.openAI,
+            provider: EModelEndpoint.openAI,
+            model_parameters: { model: 'gpt-4' },
+            semanticIntentToolNames: ['read_file', 'create_record'],
+          },
+        ],
+      ]),
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'semantic-index-conversation';
+    client.responseMessageId = 'semantic-index-response';
+    client.parentMessageId = 'semantic-index-parent';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload });
+
+    expect(mockFormatAgentMessages).toHaveBeenCalledTimes(1);
+    const [formattedPayload, , , , formatOptions] = mockFormatAgentMessages.mock.calls[0];
+    expect(formattedPayload).toBe(payload);
+    expect(formattedPayload[0].content).toContainEqual(
+      expect.objectContaining({ type: ContentTypes.ACTIVITY_LABEL }),
+    );
+    expect(mockStripActivityLabelParts).not.toHaveBeenCalled();
+    expect(formatOptions.compactionSemanticIndex.intentToolNames).toEqual(
+      new Set(['web_search', 'read_file']),
+    );
+    expect(mockCreateRun).toHaveBeenCalledWith(
+      expect.objectContaining({ compactionSemanticIndex }),
+    );
+    expect(processStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves provider messages while deriving the full semantic index', () => {
+    const { formatAgentMessages } = jest.requireActual('@librechat/agents');
+    const { stripActivityLabelParts } = jest.requireActual('@librechat/api');
+    const payload = [
+      {
+        role: 'assistant',
+        messageId: 'semantic-history',
+        content: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              id: 'search-1',
+              name: 'search_docs',
+              args: JSON.stringify({ intent: 'Locate the cache implementation', query: 'cache' }),
+              output: 'Found the implementation.',
+              outcome: 'Located the cache implementation',
+            },
+          },
+          {
+            type: ContentTypes.THINK,
+            think: 'Private reasoning stays out of compaction guidance.',
+            reasoning_label: 'Checking cache ownership',
+            reasoning_label_step_id: 'reasoning-1',
+            reasoning_label_revision: 2,
+            reasoning_label_status: 'complete',
+          },
+          {
+            type: ContentTypes.ACTIVITY_LABEL,
+            activity_label: 'Mapped the cache request path',
+            activity_label_type: 'phase',
+            activity_start_index: 0,
+            pending: false,
+          },
+          { type: ContentTypes.TEXT, text: 'The cache is initialized in the request adapter.' },
+        ],
+      },
+    ];
+
+    const legacyProjection = formatAgentMessages(
+      stripActivityLabelParts(payload),
+      undefined,
+      undefined,
+      undefined,
+      { preserveReasoningContent: true },
+    );
+    const baseline = formatAgentMessages(payload, undefined, undefined, undefined, {
+      preserveReasoningContent: true,
+    });
+    const derived = formatAgentMessages(payload, undefined, undefined, undefined, {
+      preserveReasoningContent: true,
+      compactionSemanticIndex: { intentToolNames: new Set(['search_docs']) },
+    });
+
+    expect(derived.messages.map((message) => message.toDict())).toEqual(
+      baseline.messages.map((message) => message.toDict()),
+    );
+    const providerShape = (messages) =>
+      messages.map((message) => {
+        const serialized = message.toDict();
+        const {
+          sourceMessageId: _sourceMessageId,
+          sourceMessageIds: _sourceMessageIds,
+          provenance: _provenance,
+          ...additional_kwargs
+        } = serialized.data.additional_kwargs;
+        const { response_metadata: _responseMetadata, ...data } = serialized.data;
+        return { ...serialized, data: { ...data, additional_kwargs } };
+      });
+    expect(providerShape(derived.messages)).toEqual(providerShape(legacyProjection.messages));
+    expect(derived.compactionSemanticIndex).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'tool_intent', text: 'Locate the cache implementation' }),
+        expect.objectContaining({
+          type: 'tool_outcome',
+          text: 'Located the cache implementation',
+        }),
+        expect.objectContaining({ type: 'reasoning_label', text: 'Checking cache ownership' }),
+        expect.objectContaining({ type: 'activity_phase', text: 'Mapped the cache request path' }),
+      ]),
+    );
+  });
+
+  it('evolves a persisted semantic snapshot from only the warm payload', () => {
+    const { formatAgentMessages } = jest.requireActual('@librechat/agents');
+    const baseEntry = {
+      type: 'activity_phase',
+      sourceMessageId: 'assistant-history',
+      sourceContentIndex: 1,
+      revision: 1,
+      status: 'committed',
+      text: 'Verified the release state',
+    };
+    const baseSnapshot = { entries: [baseEntry], providedEntryCount: 7 };
+    const payload = [
+      {
+        role: 'assistant',
+        messageId: 'assistant-event',
+        content: [
+          {
+            type: ContentTypes.ACTIVITY_LABEL,
+            activity_label: 'Applied the warm event',
+            activity_label_type: 'phase',
+            activity_start_index: 0,
+            pending: false,
+          },
+          { type: ContentTypes.TEXT, text: 'The warm event completed.' },
+        ],
+      },
+    ];
+
+    const baseline = formatAgentMessages(payload);
+    const evolved = formatAgentMessages(payload, undefined, undefined, undefined, {
+      compactionSemanticIndex: { baseSnapshot },
+    });
+
+    expect(evolved.messages.map((message) => message.toDict())).toEqual(
+      baseline.messages.map((message) => message.toDict()),
+    );
+    expect(evolved.compactionSemanticIndexSnapshot).toEqual({
+      entries: expect.arrayContaining([
+        baseEntry,
+        expect.objectContaining({
+          type: 'activity_phase',
+          sourceMessageId: 'assistant-event',
+          text: 'Applied the warm event',
+        }),
+      ]),
+      providedEntryCount: 8,
+    });
   });
 
   it('propagates final model callback policy errors instead of persisting a generic error part', async () => {
@@ -992,28 +2619,75 @@ describe('AgentClient - startup telemetry', () => {
     );
   });
 
-  it('rehydrates a warm event actor from its fork and injects only the new event message', async () => {
+  it('ends a step-limit turn as incomplete rather than as an error part', async () => {
     jest.clearAllMocks();
-    const history = { _getType: () => 'human', content: 'old turn' };
-    const currentEvent = { _getType: () => 'human', content: 'new event' };
-    mockFormatAgentMessages.mockReturnValueOnce({
-      messages: [history, currentEvent],
-      indexTokenCountMap: { 0: 11, 1: 22 },
-      summary: { text: 'summary of earlier turns', tokenCount: 40 },
-      boundaryTokenAdjustment: undefined,
-    });
-    const processStream = jest.fn().mockResolvedValue();
+    const { GraphRecursionError } = require('@langchain/langgraph');
+    /** The exact error LangGraph throws once the graph runs out of supersteps. */
+    const stepLimitError = new GraphRecursionError(
+      'Recursion limit of 50 reached without hitting a stop condition.',
+      { lc_error_code: 'GRAPH_RECURSION_LIMIT' },
+    );
+
     mockCreateRun.mockResolvedValue({
       Graph: null,
-      processStream,
+      processStream: jest.fn().mockRejectedValue(stepLimitError),
       getCalibrationRatio: jest.fn(() => 0),
     });
+    mockIsHITLEnabled.mockReturnValue(false);
     const client = new AgentClient({
       req: {
         user: { id: 'user-123' },
         body: {},
         config: { endpoints: { [EModelEndpoint.agents]: {} } },
-        _resumableStreamId: 'conversation-123',
+        _resumableStreamId: 'conversation-step-limit',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      /** Work the turn already produced; it must survive the boundary. */
+      contentParts: [{ type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Partial findings' }],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-step-limit';
+    client.responseMessageId = 'response-step-limit';
+    client.parentMessageId = 'parent-step-limit';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(client.stepLimitReached).toBe(true);
+    expect(client.contentParts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
+    );
+    expect(client.contentParts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ [ContentTypes.TEXT]: 'Partial findings' }),
+      ]),
+    );
+  });
+
+  it('still surfaces an error part for an ordinary run failure', async () => {
+    jest.clearAllMocks();
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn().mockRejectedValue(new Error('provider exploded')),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-plain-error',
       },
       res: {},
       agent: {
@@ -1029,6 +2703,94 @@ describe('AgentClient - startup telemetry', () => {
       collectedUsage: [],
       artifactPromises: [],
     });
+    client.conversationId = 'conversation-plain-error';
+    client.responseMessageId = 'response-plain-error';
+    client.parentMessageId = 'parent-plain-error';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(client.stepLimitReached).toBe(false);
+    expect(client.contentParts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
+    );
+  });
+
+  it('evolves warm compaction guidance while injecting only the new event message', async () => {
+    jest.clearAllMocks();
+    const history = { _getType: () => 'human', content: 'old turn' };
+    const currentEvent = { _getType: () => 'human', content: 'new event' };
+    const baseCompactionSemanticIndexSnapshot = {
+      entries: [
+        {
+          type: 'activity_phase',
+          sourceMessageId: 'assistant-history',
+          sourceContentIndex: 1,
+          revision: 1,
+          status: 'committed',
+          text: 'Verified the release state',
+        },
+      ],
+      providedEntryCount: 1,
+    };
+    const evolvedCompactionSemanticIndexSnapshot = {
+      entries: [
+        ...baseCompactionSemanticIndexSnapshot.entries,
+        {
+          type: 'activity_phase',
+          sourceMessageId: 'assistant-event',
+          sourceContentIndex: 0,
+          revision: 1,
+          status: 'committed',
+          text: 'Applied the warm event',
+        },
+      ],
+      providedEntryCount: 2,
+    };
+    mockFormatAgentMessages.mockReturnValueOnce({
+      messages: [history, currentEvent],
+      indexTokenCountMap: { 0: 11, 1: 22 },
+      summary: undefined,
+      boundaryTokenAdjustment: undefined,
+      compactionSemanticIndexSnapshot: evolvedCompactionSemanticIndexSnapshot,
+    });
+    let client;
+    const processStream = jest.fn(async () => {
+      client.contentParts.push(
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Fresh compacted context.' }],
+          tokenCount: 18,
+        },
+        { type: ContentTypes.TEXT, text: 'Done.' },
+      );
+    });
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-123',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: true,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
     client.conversationId = 'conversation-123';
     client.responseMessageId = 'response-123';
     client.parentMessageId = 'parent-123';
@@ -1036,6 +2798,18 @@ describe('AgentClient - startup telemetry', () => {
     client.eventActorCheckpointId = 'checkpoint-base';
     client.eventActorInvocationId = 'event-2';
     client.eventActorContinuation = 'warm';
+    client.eventActorDiscoveredToolNames = ['deferred_tool'];
+    client.eventActorSummary = { text: 'summary of earlier turns', tokenCount: 40 };
+    client.contextMeta = {
+      calibrationRatio: 1.25,
+      encoding: client.getEncoding(),
+      fading: { v: 1, budgetTokens: 20_000, masked: true },
+      fadingTiers: [
+        { agentId: 'agent-123', v: 1, budgetTokens: 20_000, masked: true },
+        { agentId: 'agent-worker', v: 1, budgetTokens: 8_000, masked: false },
+      ],
+    };
+    client.compactionSemanticIndexSnapshot = baseCompactionSemanticIndexSnapshot;
     client.recordCollectedUsage = jest.fn().mockResolvedValue();
 
     await client.chatCompletion({ payload: [] });
@@ -1043,6 +2817,7 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockCreateRun).toHaveBeenCalledWith(
       expect.objectContaining({
         messages: [history, currentEvent],
+        discoveredToolNames: ['deferred_tool'],
         eventActorCheckpointing: true,
         /** The DB-derived token map is positional over full history, which a
          * checkpoint-restored graph state no longer matches. It must be blank
@@ -1051,8 +2826,28 @@ describe('AgentClient - startup telemetry', () => {
          * excluded from the history the committed checkpoint was built from. */
         indexTokenCountMap: {},
         initialSummary: { text: 'summary of earlier turns', tokenCount: 40 },
+        calibrationRatio: 1.25,
+        fadingTier: { v: 1, budgetTokens: 20_000, masked: true },
+        fadingTiers: {
+          'agent-123': { v: 1, budgetTokens: 20_000, masked: true },
+          'agent-worker': { v: 1, budgetTokens: 8_000, masked: false },
+        },
+        compactionSemanticIndex: evolvedCompactionSemanticIndexSnapshot.entries,
       }),
     );
+    /** The seeded map must be prototype-safe: a null-prototype record built from own keys. */
+    const seededTiers = mockCreateRun.mock.calls.at(-1)[0].fadingTiers;
+    expect(Object.getPrototypeOf(seededTiers)).toBeNull();
+    expect(mockFormatAgentMessages.mock.calls[0][4]).toEqual(
+      expect.objectContaining({
+        compactionSemanticIndex: expect.objectContaining({
+          baseSnapshot: baseCompactionSemanticIndexSnapshot,
+        }),
+      }),
+    );
+    expect(mockFormatAgentMessages).toHaveBeenCalledTimes(1);
+    expect(mockStripActivityLabelParts).not.toHaveBeenCalled();
+    expect(client.compactionSemanticIndexSnapshot).toBe(evolvedCompactionSemanticIndexSnapshot);
     expect(processStream).toHaveBeenCalledWith(
       { messages: [currentEvent] },
       expect.objectContaining({
@@ -1068,6 +2863,13 @@ describe('AgentClient - startup telemetry', () => {
       expect.anything(),
     );
     expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+    expect(client.eventActorSummary).toEqual({
+      text: 'Fresh compacted context.',
+      tokenCount: 18,
+    });
+    expect(client.contentParts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentTypes.SUMMARY })]),
+    );
   });
 
   it('does not expose or process a fresh graph when strict checkpoint pruning fails', async () => {
@@ -1094,7 +2896,9 @@ describe('AgentClient - startup telemetry', () => {
       req: {
         user: { id: 'user-123' },
         body: {},
-        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        config: {
+          endpoints: { [EModelEndpoint.agents]: { toolApproval: { enabled: true } } },
+        },
         _resumableStreamId: 'conversation-123',
       },
       res: {},
@@ -1104,6 +2908,7 @@ describe('AgentClient - startup telemetry', () => {
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
+        tools: [{ name: 'write_file' }],
       },
       endpointTokenConfig: {},
       eventHandlers: {},
@@ -1168,7 +2973,9 @@ describe('AgentClient - startup telemetry', () => {
       req: {
         user: { id: 'user-123' },
         body: {},
-        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        config: {
+          endpoints: { [EModelEndpoint.agents]: { toolApproval: { enabled: true } } },
+        },
         _resumableStreamId: 'conversation-123',
       },
       res: {},
@@ -1178,6 +2985,7 @@ describe('AgentClient - startup telemetry', () => {
         provider: EModelEndpoint.openAI,
         model_parameters: { model: 'gpt-4' },
         hide_sequential_outputs: false,
+        tools: [{ name: 'write_file' }],
       },
       endpointTokenConfig: {},
       eventHandlers: {},
@@ -3286,6 +5094,43 @@ describe('AgentClient - titleConvo', () => {
           {},
         ),
       ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
+    });
+
+    it.each([
+      ['seeds the run from a server-authored parent response', undefined, true],
+      ['ignores context meta on a client-submitted parent response', true, false],
+    ])('%s', async (_label, isUserSubmitted, expectSeed) => {
+      const contextMeta = {
+        calibrationRatio: 1.2,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+      };
+      const parentResponse = {
+        messageId: 'assistant-seed',
+        parentMessageId: null,
+        sender: 'Assistant',
+        role: 'assistant',
+        isCreatedByUser: false,
+        ...(isUserSubmitted != null && { isUserSubmitted }),
+        text: 'Prior response',
+        contextMeta,
+      };
+      const userMessage = {
+        messageId: 'user-next',
+        parentMessageId: 'assistant-seed',
+        sender: 'User',
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'Next question',
+      };
+      client.setModelBoundStoredMessages([parentResponse, userMessage]);
+      client.contextMeta = undefined;
+      client.publishRunContextMeta = jest.fn().mockResolvedValue(undefined);
+
+      await client.buildMessages([parentResponse, userMessage], 'user-next', {}, {});
+
+      expect(client.contextMeta).toEqual(expectSeed ? contextMeta : undefined);
+      expect(client.publishRunContextMeta).toHaveBeenCalledTimes(expectSeed ? 1 : 0);
     });
 
     it('preserves persisted source identity through both agent formatting passes', async () => {
@@ -5438,7 +7283,7 @@ describe('AgentClient - finalizeSubagentContent', () => {
    *  `ON_SUBAGENT_UPDATE` handler so we exercise the same get-or-create
    *  aggregator logic the live request uses, rather than constructing
    *  aggregators directly in the test. */
-  const runSubagentEvents = async (events) => {
+  const runSubagentEvents = async (events, resolveMcpServerName) => {
     const map = new Map();
     const handlers = getDefaultHandlers({
       res: { write: jest.fn(), writableEnded: false },
@@ -5446,6 +7291,7 @@ describe('AgentClient - finalizeSubagentContent', () => {
       toolEndCallback: jest.fn(),
       collectedUsage: [],
       subagentAggregatorsByToolCallId: map,
+      resolveMcpServerName,
     });
     const handler = handlers[GraphEvents.ON_SUBAGENT_UPDATE];
     for (const e of events) {
@@ -5520,6 +7366,94 @@ describe('AgentClient - finalizeSubagentContent', () => {
     /** Buffer drained so a second call (e.g. resumable retry) doesn't
      *  double-append. */
     expect(buffer.size).toBe(0);
+  });
+
+  it('stamps durable MCP server identity onto nested persisted tool calls', () => {
+    const client = makeClient(new Map());
+    client.options.agent.accessibleMcpServerNames = ['bar', 'foo_mcp_bar'];
+    client.options.agent.toolDefinitions = [
+      {
+        name: 'gitlab-get_mcp_server_version_mcp_bar',
+        serverName: 'bar',
+      },
+    ];
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          name: Constants.SUBAGENT,
+          subagent_content: [
+            {
+              type: 'tool_call',
+              tool_call: { name: 'gitlab-get_mcp_server_version_mcp_bar' },
+            },
+          ],
+        },
+      },
+    ];
+
+    client.stampMcpServerIdentities();
+
+    expect(client.contentParts[0].tool_call.subagent_content[0].tool_call.mcpServerName).toBe(
+      'bar',
+    );
+  });
+
+  it('retains the resolved lazy-agent MCP identity for an ambiguous nested key', async () => {
+    const resolveMcpServerName = jest.fn(() => 'bar');
+    const buffer = await runSubagentEvents(
+      [
+        {
+          ...event('run_step', {
+            id: 'step_tool',
+            index: 0,
+            stepDetails: {
+              type: 'tool_calls',
+              tool_calls: [
+                {
+                  id: 'inner_1',
+                  function: { name: 'lookup_mcp_foo_mcp_bar', arguments: '{}' },
+                },
+              ],
+            },
+          }),
+          memberAgentId: 'member',
+        },
+      ],
+      resolveMcpServerName,
+    );
+    const client = makeClient(buffer);
+    client.options.agent.accessibleMcpServerNames = ['bar', 'foo_mcp_bar'];
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_sub', name: Constants.SUBAGENT, args: '{}' },
+      },
+    ];
+
+    client.finalizeSubagentContent();
+    const inner = client.contentParts[0].tool_call.subagent_content[0].tool_call;
+    expect(resolveMcpServerName).toHaveBeenCalledWith('lookup_mcp_foo_mcp_bar', 'member');
+    expect(inner.mcpServerName).toBe('bar');
+
+    const emptyMemberResolver = jest.fn(() => 'bar');
+    await runSubagentEvents(
+      [
+        {
+          ...event('run_step', {
+            id: 'step_tool_2',
+            index: 0,
+            stepDetails: {
+              type: 'tool_calls',
+              tool_calls: [{ id: 'inner_2', name: 'lookup_mcp_foo_mcp_bar', args: '{}' }],
+            },
+          }),
+          memberAgentId: '',
+        },
+      ],
+      emptyMemberResolver,
+    );
+    expect(emptyMemberResolver).toHaveBeenCalledWith('lookup_mcp_foo_mcp_bar', 'child');
   });
 
   it('ignores tool_call parts whose name is not SUBAGENT', async () => {
@@ -5646,6 +7580,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
   const makeContext = (filters) => ({
     options: {
       req: {
+        tenantId: 'request-tenant',
         user: { id: 'user-123' },
         body: { files: [] },
         config: {
@@ -5680,6 +7615,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
     applyHideSequentialOutputsFilter: jest.fn(),
     rebaseActivityPhaseBounds: jest.fn(),
     finalizeSubagentContent: jest.fn(),
+    stampMcpServerIdentities: jest.fn(),
     settleActivityLabels: jest.fn().mockResolvedValue(undefined),
     recordCollectedUsage: jest.fn().mockResolvedValue(undefined),
   });
@@ -5893,12 +7829,30 @@ describe('AgentClient - resumeCompletion content protection', () => {
       },
     });
 
-    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+    const compactionSemanticIndex = {
+      version: 1,
+      entries: [
+        {
+          type: 'activity_phase',
+          sourceMessageId: 'assistant-history',
+          sourceContentIndex: 1,
+          revision: 1,
+          status: 'committed',
+          text: 'Verified the release state',
+        },
+      ],
+    };
+    await AgentClient.prototype.resumeCompletion.call(context, {
+      resumeValue: {},
+      compactionSemanticIndex,
+    });
 
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
     expect(mockCreateRun.mock.calls[0][0]).toEqual(
       expect.objectContaining({
+        tenantId: 'request-tenant',
         modelCallbacks: [expect.objectContaining({ name: 'librechat-model-bound-content-filter' })],
+        compactionSemanticIndex: compactionSemanticIndex.entries,
       }),
     );
     expect(resume).toHaveBeenCalledTimes(1);
@@ -6317,5 +8271,90 @@ describe('AgentClient - resumeCompletion content protection', () => {
       type: ContentTypes.ERROR,
       [ContentTypes.ERROR]: `An error occurred while resuming the request: ${providerMessage}`,
     });
+  });
+});
+
+describe('fading tier context meta', () => {
+  const fading = { v: 1, budgetTokens: 20_000, masked: true };
+  const fadingTiers = [
+    { agentId: 'agent-123', v: 1, budgetTokens: 20_000, masked: true },
+    { agentId: 'agent-worker', v: 1, budgetTokens: 8_000, masked: false },
+  ];
+
+  it('carries valid fading tiers through event actor context', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    const contextMeta = { calibrationRatio: 1.25, encoding: 'o200k_base', fading, fadingTiers };
+    client.getEventActorContext = jest.fn().mockResolvedValue({
+      fingerprint: 'fingerprint-1',
+      skillManifest: [],
+      discoveredToolNames: [],
+      contextMeta,
+    });
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: 'fingerprint-1',
+        skillManifest: [],
+        discoveredToolNames: [],
+        contextMeta,
+      }),
+    ).resolves.toMatchObject({ contextMeta });
+    expect(client.contextMeta).toEqual(contextMeta);
+  });
+
+  it('rejects event actor context carrying a malformed fading tier', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    client.getEventActorContext = jest.fn();
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: 'fingerprint-1',
+        skillManifest: [],
+        discoveredToolNames: [],
+        contextMeta: { calibrationRatio: 1.25, fading: { v: 1, budgetTokens: -5, masked: true } },
+      }),
+    ).resolves.toBeUndefined();
+    expect(client.getEventActorContext).not.toHaveBeenCalled();
+  });
+
+  it('rejects event actor context carrying malformed per-agent tiers', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { config: {} } };
+    client.getEventActorContext = jest.fn();
+
+    await expect(
+      client.prepareEventActorContext({
+        contextFingerprint: 'fingerprint-1',
+        skillManifest: [],
+        discoveredToolNames: [],
+        contextMeta: {
+          calibrationRatio: 1.25,
+          fadingTiers: [{ agentId: '', v: 1, budgetTokens: 20_000, masked: true }],
+        },
+      }),
+    ).resolves.toBeUndefined();
+    expect(client.getEventActorContext).not.toHaveBeenCalled();
+  });
+});
+
+describe('seedContextMeta', () => {
+  it('seeds valid context meta and drops a malformed fading tier', () => {
+    const client = Object.create(AgentClient.prototype);
+    const contextMeta = {
+      calibrationRatio: 1.25,
+      encoding: 'claude',
+      fading: { v: 1, budgetTokens: 20_000, masked: true },
+    };
+
+    client.seedContextMeta(contextMeta);
+    expect(client.contextMeta).toEqual(contextMeta);
+
+    client.seedContextMeta({ calibrationRatio: 1.25, fading: { v: 1, budgetTokens: 0 } });
+    expect(client.contextMeta).toBeUndefined();
+
+    client.seedContextMeta(undefined);
+    expect(client.contextMeta).toBeUndefined();
   });
 });

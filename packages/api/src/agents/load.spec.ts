@@ -125,7 +125,7 @@ describe('loadEphemeralAgent model-spec defaults', () => {
     skills: false,
   };
 
-  test('explicit request selections override model-spec tool defaults', async () => {
+  test('explicit request selections override optional defaults but retain model-spec MCP pins', async () => {
     const getMCPServerTools = jest.fn(async () => ({ spec_tool: {} }));
     const agent = await loadEphemeralAgent(
       {
@@ -145,10 +145,10 @@ describe('loadEphemeralAgent model-spec defaults', () => {
       { ...deps, getMCPServerTools },
     );
 
-    expect(agent?.tools).toEqual([]);
+    expect(agent?.tools).toEqual(['spec_tool']);
     expect(agent?.skills_enabled).toBe(false);
     expect(agent?.skills).toEqual([]);
-    expect(getMCPServerTools).not.toHaveBeenCalled();
+    expect(getMCPServerTools).toHaveBeenCalledWith('user-1', 'spec-server', undefined);
   });
 
   test('model-spec defaults apply when the request omits selections', async () => {
@@ -179,7 +179,7 @@ describe('loadEphemeralAgent model-spec defaults', () => {
     expect(getMCPServerTools).toHaveBeenCalledWith('user-1', 'spec-server', undefined);
   });
 
-  test('explicit selections also override defaults for added ephemeral agents', async () => {
+  test('added agents override optional defaults but retain model-spec MCP pins', async () => {
     const getMCPServerTools = jest.fn(async () => ({ spec_tool: {} }));
     const agent = await loadAddedAgent(
       {
@@ -199,9 +199,9 @@ describe('loadEphemeralAgent model-spec defaults', () => {
       { ...deps, getMCPServerTools },
     );
 
-    expect(agent?.tools).toEqual([]);
+    expect(agent?.tools).toEqual(['spec_tool']);
     expect(agent?.skills_enabled).toBe(false);
     expect(agent?.skills).toEqual([]);
-    expect(getMCPServerTools).not.toHaveBeenCalled();
+    expect(getMCPServerTools).toHaveBeenCalledWith('user-1', 'spec-server', undefined);
   });
 });

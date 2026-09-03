@@ -79,6 +79,18 @@ describe('Gemini 3.7 Flash', () => {
   });
 });
 
+describe('Gemini 3.8 Flash', () => {
+  it('resolves the 1,048,576-token context window', () => {
+    expect(getModelMaxTokens('gemini-3.8-flash', EModelEndpoint.google)).toBe(1048576);
+  });
+
+  it('matches the longest key over the shorter gemini-3 pattern for aliases', () => {
+    expect(getModelMaxTokens('models/gemini-3.8-flash-latest', EModelEndpoint.google)).toBe(
+      1048576,
+    );
+  });
+});
+
 describe('Qwen3.5 and later generations', () => {
   it('resolves 262K for the vLLM model id that regressed to the qwen3 window', () => {
     expect(getModelMaxTokens('Qwen/Qwen3.5-397B-A17B-FP8', EModelEndpoint.openAI)).toBe(262144);

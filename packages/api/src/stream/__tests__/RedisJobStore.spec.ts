@@ -87,6 +87,7 @@ describe('RedisJobStore', () => {
     expect(script).toContain('HGET", KEYS[1], "status") ~= "running"');
     expect(script).toContain('HGET", KEYS[1], "providerDrained") ~= "1"');
     expect(script).toContain('HSET", KEYS[1], "providerDrained", "0"');
+    expect(script).toContain('"providerExecutionStartedId", ARGV[2]');
     expect([keyCount, jobKey, createdAt, providerExecutionId]).toEqual([
       1,
       'stream:{stream-provider-begin}:job',
@@ -200,9 +201,9 @@ describe('RedisJobStore', () => {
       }),
     ).resolves.toBe(false);
 
-    // ARGV[4] is the terminal job TTL. The persistence owner/recovery path
+    // ARGV[5] is the terminal job TTL. The persistence owner/recovery path
     // gets five minutes even when ordinary completed records are immediate.
-    expect(evalTransition.mock.calls[0][15]).toBe('300');
+    expect(evalTransition.mock.calls[0][16]).toBe('300');
   });
 
   test('retains the generation epoch beyond the paused job TTL', async () => {
@@ -223,9 +224,9 @@ describe('RedisJobStore', () => {
     expect(transitionCall[0]).toContain(
       'redis.call("SET", KEYS[8], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
     );
-    expect(transitionCall[15]).toBe('4621');
-    expect(transitionCall[16]).toBe('0');
-    expect(transitionCall[20]).toBe('300');
+    expect(transitionCall[16]).toBe('4621');
+    expect(transitionCall[17]).toBe('0');
+    expect(transitionCall[21]).toBe('300');
   });
 
   test('seeds the guarded epoch when reaping a legacy job without a marker', async () => {
@@ -338,6 +339,10 @@ describe('RedisJobStore', () => {
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      agentEventDeliveryKey: 'completion-delivery-1',
+      agentEventInvocationKey: 'original-delivery-1',
+      agentEventInvocationGenerationCreatedAt: 987654,
+      agentEventDetachedActionProducerRequired: true,
       scheduleId: 'schedule-1',
       scheduledFor: '2026-08-17T12:00:00.000Z',
       scheduleConfigRevision: 4,
@@ -347,6 +352,25 @@ describe('RedisJobStore', () => {
       preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
+      contextMeta: {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1, budgetTokens: 50_000, masked: true }],
+      },
+      compactionSemanticIndex: {
+        version: 1,
+        entries: [
+          {
+            type: 'activity_phase',
+            sourceMessageId: 'assistant-history',
+            sourceContentIndex: 1,
+            revision: 1,
+            status: 'committed',
+            text: 'Verified the release state',
+          },
+        ],
+      },
       preemptCapable: true,
       steerQuotesExecutionId: 'exec-1',
       generationProtocolVersion: 2,
@@ -396,6 +420,10 @@ describe('RedisJobStore', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      agentEventDeliveryKey: 'completion-delivery-1',
+      agentEventInvocationKey: 'original-delivery-1',
+      agentEventInvocationGenerationCreatedAt: 987654,
+      agentEventDetachedActionProducerRequired: true,
       mcpRequestBody: {
         messageId: 'response-1',
         conversationId: 'overridden-conversation',
@@ -416,6 +444,21 @@ describe('RedisJobStore', () => {
       preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
+      contextMeta: {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1, budgetTokens: 50_000, masked: true }],
+      },
+      compactionSemanticIndex: {
+        version: 1,
+        entries: [
+          expect.objectContaining({
+            type: 'activity_phase',
+            text: 'Verified the release state',
+          }),
+        ],
+      },
       resolvedAskUserQuestions: [
         {
           request: { question: 'Deploy where?' },
@@ -491,6 +534,35 @@ describe('RedisJobStore', () => {
     await expect(store.getJob('stream-malformed-answer')).resolves.toMatchObject({
       streamId: 'stream-malformed-answer',
       resolvedAskUserQuestions: undefined,
+    });
+  });
+
+  test('restores detached terminal outbox evidence from Redis', async () => {
+    const evidence = {
+      version: 1 as const,
+      deliveryKey: 'trigger-1',
+      generationCreatedAt: 100,
+      taskId: 'task-1',
+      idempotencyKey: 'a'.repeat(64),
+      status: 'succeeded' as const,
+      result: 'accepted',
+      observedAt: 150,
+    };
+    const redis = {
+      isCluster: true,
+      hgetall: jest.fn().mockResolvedValue({
+        streamId: 'stream-detached-terminal',
+        userId: 'user-1',
+        status: 'complete',
+        createdAt: '100',
+        syncSent: '0',
+        agentEventDetachedTerminalEvidence: JSON.stringify(evidence),
+      }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.getJob('stream-detached-terminal')).resolves.toMatchObject({
+      agentEventDetachedTerminalEvidence: evidence,
     });
   });
 
@@ -683,6 +755,7 @@ describe('RedisJobStore', () => {
     const runningMembership = createDeferred<number>();
     const requiresActionRemoval = createDeferred<number>();
     const terminalHostActionRemoval = createDeferred<number>();
+    const detachedTerminalHostActionRemoval = createDeferred<number>();
     const userMembership = createDeferred<number>();
     const userExpiry = createDeferred<number>();
     const started: string[] = [];
@@ -711,6 +784,10 @@ describe('RedisJobStore', () => {
           started.push('requires_action');
           return requiresActionRemoval.promise;
         }
+        if (key === 'stream:agent_event_detached:terminal_host_action:v1') {
+          started.push('detached_terminal_host_action');
+          return detachedTerminalHostActionRemoval.promise;
+        }
         started.push('terminal_host_action');
         return terminalHostActionRemoval.promise;
       }),
@@ -727,9 +804,16 @@ describe('RedisJobStore', () => {
 
     expect(started).toEqual(['job']);
     evalResult.resolve(1);
-    await waitFor(() => started.length === 5);
+    await waitFor(() => started.length === 6);
 
-    expect(started).toEqual(['job', 'running', 'requires_action', 'terminal_host_action', 'user']);
+    expect(started).toEqual([
+      'job',
+      'running',
+      'requires_action',
+      'terminal_host_action',
+      'detached_terminal_host_action',
+      'user',
+    ]);
     expect(settled).toBe(false);
     expect(expire).not.toHaveBeenCalled();
 
@@ -741,6 +825,7 @@ describe('RedisJobStore', () => {
       'running',
       'requires_action',
       'terminal_host_action',
+      'detached_terminal_host_action',
       'user',
       'user_expiry',
     ]);
@@ -756,6 +841,10 @@ describe('RedisJobStore', () => {
     expect(settled).toBe(false);
 
     terminalHostActionRemoval.resolve(1);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    detachedTerminalHostActionRemoval.resolve(1);
     await Promise.resolve();
     expect(settled).toBe(false);
 
@@ -930,9 +1019,10 @@ describe('RedisJobStore', () => {
     expect(saveCall[0]).toContain('currentCreatedAt ~= ARGV[3]');
     expect(saveCall[0]).toContain('currentStatus ~= "running"');
     expect(saveCall[0]).toContain('currentStatus ~= "requires_action"');
-    expect(saveCall[0]).toContain('terminalHostActionPending ~= "1"');
+    expect(saveCall[0]).toContain('detachedAgentEventTerminalHostActionPending');
+    expect(saveCall[0]).toContain('and not terminalHostActionPending');
     expect(saveCall[0]).toContain(
-      'currentStatus == "requires_action" or terminalHostActionPending == "1"',
+      'currentStatus == "requires_action" or terminalHostActionPending',
     );
     expect(saveCall.slice(1)).toEqual([
       2,
@@ -991,9 +1081,121 @@ describe('RedisJobStore', () => {
       evalTransition.mock.invocationCallOrder[0],
     );
     const transitionCall = evalTransition.mock.calls[0];
-    expect(transitionCall[15]).toBe('86400');
-    expect(transitionCall[17]).toBe('86400');
+    expect(transitionCall[16]).toBe('86400');
     expect(transitionCall[18]).toBe('86400');
+    expect(transitionCall[19]).toBe('86400');
+  });
+
+  test('pre-arms detached completion recovery outside the legacy terminal index', async () => {
+    const evalTransition = jest.fn().mockResolvedValue(1);
+    const sadd = jest.fn().mockResolvedValue(1);
+    const detachedIdentity = {
+      agentEventDeliveryKey: 'completion-delivery',
+      agentEventInvocationKey: 'original-invocation',
+      agentEventInvocationGenerationCreatedAt: '90',
+    };
+    const redis = {
+      isCluster: true,
+      eval: evalTransition,
+      sadd,
+      srem: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+      hgetall: jest
+        .fn()
+        .mockResolvedValueOnce({
+          streamId: 'stream-detached-host-action',
+          userId: 'user-1',
+          status: 'running',
+          createdAt: '100',
+          syncSent: '0',
+          ...detachedIdentity,
+        })
+        .mockResolvedValue({
+          streamId: 'stream-detached-host-action',
+          userId: 'user-1',
+          status: 'complete',
+          createdAt: '100',
+          completedAt: '200',
+          detachedAgentEventTerminalHostActionPending: '1',
+          syncSent: '0',
+          ...detachedIdentity,
+        }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(
+      store.transitionStatus('stream-detached-host-action', {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: 100,
+        patch: { completedAt: 200, terminalHostActionPending: true },
+      }),
+    ).resolves.toBe(true);
+
+    expect(sadd.mock.calls[0]).toEqual([
+      'stream:agent_event_detached:terminal_host_action:v1',
+      '["stream-detached-host-action",100]',
+    ]);
+    expect(sadd.mock.calls).not.toContainEqual([
+      'stream:terminal_host_action',
+      '["stream-detached-host-action",100]',
+    ]);
+    const transitionCall = evalTransition.mock.calls[0];
+    expect(transitionCall).toContain('status');
+    expect(transitionCall).toContain('detached_terminal_pending_v1');
+    expect(transitionCall).toContain('detachedAgentEventTerminalStatus');
+    expect(transitionCall).toContain('complete');
+  });
+
+  test('retains an exact detached recovery hint until its terminal CAS is visible', async () => {
+    const member = '["stream-detached-prearm-race",100]';
+    const detachedIdentity = {
+      agentEventDeliveryKey: 'completion-delivery',
+      agentEventInvocationKey: 'original-invocation',
+      agentEventInvocationGenerationCreatedAt: '90',
+    };
+    const srem = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      smembers: jest.fn().mockResolvedValue([member]),
+      srem,
+      sadd: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+      hgetall: jest
+        .fn()
+        .mockResolvedValueOnce({
+          streamId: 'stream-detached-prearm-race',
+          userId: 'user-1',
+          status: 'running',
+          createdAt: '100',
+          syncSent: '0',
+          ...detachedIdentity,
+        })
+        .mockResolvedValueOnce({
+          streamId: 'stream-detached-prearm-race',
+          userId: 'user-1',
+          status: 'detached_terminal_pending_v1',
+          detachedAgentEventTerminalStatus: 'complete',
+          detachedAgentEventTerminalHostActionPending: '1',
+          createdAt: '100',
+          completedAt: '200',
+          syncSent: '0',
+          ...detachedIdentity,
+        }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.getDetachedAgentEventTerminalHostActionJobs()).resolves.toEqual([]);
+    expect(srem).not.toHaveBeenCalledWith(
+      'stream:agent_event_detached:terminal_host_action:v1',
+      member,
+    );
+    await expect(store.getDetachedAgentEventTerminalHostActionJobs()).resolves.toEqual([
+      expect.objectContaining({
+        streamId: 'stream-detached-prearm-race',
+        terminalHostActionPending: true,
+      }),
+    ]);
   });
 
   test('acknowledges evidence TTLs without removing a successor retry member', async () => {
@@ -1024,6 +1226,9 @@ describe('RedisJobStore', () => {
       '300',
       '7',
       '11',
+    );
+    expect(evalClear.mock.calls[0][0]).toContain(
+      'redis.call("HSET", KEYS[1], "status", detachedStatus)',
     );
     expect(srem).toHaveBeenCalledWith(
       'stream:terminal_host_action',

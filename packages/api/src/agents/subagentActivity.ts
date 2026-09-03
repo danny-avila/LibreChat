@@ -135,12 +135,10 @@ export const boundSubagentActivityUpdate = (
       'utf8',
     );
   }
-  /** Detached durable views expose only a reasoning marker. Keep that same boundary
-   * on the live path rather than transporting hidden reasoning text to the browser. */
-  const data =
-    event.phase === 'reasoning_delta'
-      ? undefined
-      : boundedData(event.data, Math.max(0, MAX_EVENT_BYTES - baseBytes - 32));
+  /** Reasoning deltas ride the detached stream like every other phase — the
+   * same user reads this reasoning in the main chat view, and the durable
+   * projection now retains its bounded text as well. */
+  const data = boundedData(event.data, Math.max(0, MAX_EVENT_BYTES - baseBytes - 32));
   return data == null ? base : { ...base, data };
 };
 

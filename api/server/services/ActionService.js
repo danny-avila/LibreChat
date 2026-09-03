@@ -2,13 +2,18 @@ const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
 const { GraphEvents, sleep } = require('@librechat/agents');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
+const { logger, decryptV2 } = require('@librechat/data-schemas');
 const {
   sendEvent,
+  isAbortError,
   logAxiosError,
+  detachOnAbort,
+  getTokenExpiresAt,
   refreshAccessToken,
   GenerationJobManager,
   createSSRFSafeAgents,
+  encryptSensitiveValue,
+  decryptSensitiveValue,
   validateActionOAuthMetadata,
 } = require('@librechat/api');
 const {
@@ -264,10 +269,17 @@ async function createActionTool({
                   config?.signal,
                 );
                 logger.debug('Waiting for OAuth Authorization response', { action_id, identifier });
-                const result = await flowManager.createFlow(
-                  identifier,
-                  'oauth',
-                  {
+                /** Detached rather than signalled. This key is `userId:action_id`,
+                 *  so a second run for the same action joins this very flow and
+                 *  the browser's OAuth callback reads its metadata to exchange
+                 *  the code; `monitorFlow` deletes the key when a waiter's signal
+                 *  aborts, which would strand the other run and discard an
+                 *  authorization the user already granted. Stopping only this
+                 *  waiter leaves the flow to finish for whoever else needs it,
+                 *  while keeping a late authorization from resuming this call
+                 *  into the API request below. */
+                const result = await detachOnAbort(
+                  flowManager.createFlow(identifier, 'oauth', {
                     state: stateToken,
                     userId: userId,
                     client_url: metadata.auth.client_url,
@@ -277,7 +289,7 @@ async function createActionTool({
                     /** Encrypted values */
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
-                  },
+                  }),
                   config?.signal,
                 );
                 logger.debug('Received OAuth Authorization response', { action_id, identifier });
@@ -294,9 +306,15 @@ async function createActionTool({
                 await sleep(3000);
                 metadata.oauth_access_token = result.access_token;
                 metadata.oauth_refresh_token = result.refresh_token;
-                const expiresAt = new Date(Date.now() + result.expires_in * 1000);
-                metadata.oauth_token_expires_at = expiresAt.toISOString();
+                const expiresAt = getTokenExpiresAt(result.expires_in);
+                metadata.oauth_token_expires_at = expiresAt?.toISOString();
               } catch (error) {
+                /** A stopped run is not an authentication failure. Relabelling it
+                 *  loses the abort identity every downstream boundary keys on and
+                 *  reports a fault the user caused deliberately. */
+                if (isAbortError(error)) {
+                  throw error;
+                }
                 const errorMessage = 'Failed to authenticate OAuth tool';
                 logger.error(errorMessage, error);
                 throw new Error(errorMessage);
@@ -348,19 +366,30 @@ async function createActionTool({
                   );
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
                 const flowManager = getActionFlowStateManager(flowsCache);
-                const refreshData = await flowManager.createFlowWithHandler(
-                  `${identifier}:refresh`,
-                  'oauth_refresh',
-                  refreshTokens,
+                /** Also shared across this user's runs for the action; see the
+                 *  authorization flow above for why it is detached, not
+                 *  signalled. */
+                const refreshData = await detachOnAbort(
+                  flowManager.createFlowWithHandler(
+                    `${identifier}:refresh`,
+                    'oauth_refresh',
+                    refreshTokens,
+                  ),
                   config?.signal,
                 );
                 metadata.oauth_access_token = refreshData.access_token;
                 if (refreshData.refresh_token) {
                   metadata.oauth_refresh_token = refreshData.refresh_token;
                 }
-                const expiresAt = new Date(Date.now() + refreshData.expires_in * 1000);
-                metadata.oauth_token_expires_at = expiresAt.toISOString();
+                const expiresAt = getTokenExpiresAt(refreshData.expires_in);
+                metadata.oauth_token_expires_at = expiresAt?.toISOString();
               } catch (error) {
+                /** The refresh did not fail — this run stopped waiting on it.
+                 *  Falling through to `requestLogin` would emit an OAuth prompt
+                 *  and open pending authorization state for a turn that is over. */
+                if (isAbortError(error)) {
+                  throw error;
+                }
                 logger.error('Failed to refresh token, requesting new login:', error);
                 await requestLogin();
               }
@@ -372,6 +401,7 @@ async function createActionTool({
           await preparedExecutor.setAuth(metadata);
         } catch (error) {
           if (
+            isAbortError(error) ||
             error.message.includes('No access token found') ||
             error.message.includes('Access token is expired')
           ) {
@@ -388,6 +418,13 @@ async function createActionTool({
       }
       return response.data;
     } catch (error) {
+      /** Surface the cancellation as a cancellation: `logAxiosError` would log it
+       *  at error level and return its text as the tool's result, presenting a
+       *  stopped turn as a failed API call. */
+      if (isAbortError(error)) {
+        logger.debug(`Action call to ${action.metadata.domain} cancelled by user abort`);
+        throw error;
+      }
       const message = `API call to ${action.metadata.domain} failed:`;
       return logAxiosError({ message, error });
     }
@@ -404,27 +441,6 @@ async function createActionTool({
   return {
     _call,
   };
-}
-
-/**
- * Encrypts a sensitive value.
- * @param {string} value
- * @returns {Promise<string>}
- */
-async function encryptSensitiveValue(value) {
-  // Encode API key to handle special characters like ":"
-  const encodedValue = encodeURIComponent(value);
-  return await encryptV2(encodedValue);
-}
-
-/**
- * Decrypts a sensitive value.
- * @param {string} value
- * @returns {Promise<string>}
- */
-async function decryptSensitiveValue(value) {
-  const decryptedValue = await decryptV2(value);
-  return decodeURIComponent(decryptedValue);
 }
 
 /**

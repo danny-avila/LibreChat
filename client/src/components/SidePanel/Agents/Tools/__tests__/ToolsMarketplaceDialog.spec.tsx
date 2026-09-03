@@ -69,11 +69,18 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),
 }));
 
+let mockFileEntries: {
+  contextFiles: Array<[string, unknown]>;
+  knowledgeFiles: Array<[string, unknown]>;
+  codeFiles: Array<[string, unknown]>;
+} = { contextFiles: [], knowledgeFiles: [], codeFiles: [] };
+
 jest.mock('../hooks', () => {
   const { buildCatalog } = jest.requireActual('../items/catalog');
   const { deriveSelectedItems } = jest.requireActual('../items/selectors');
   return {
     useUninstallToolCredentials: () => jest.fn(),
+    useAgentFileEntries: () => mockFileEntries,
     /** Mirrors the real pipeline over the mocked panel context + form watches. */
     useAgentItems: ({ agentId }: { agentId: string }) => {
       const { useAgentPanelContext } = jest.requireMock('~/Providers');
@@ -161,6 +168,7 @@ describe('ToolsMarketplaceDialog', () => {
     mockMcpServersMap = new Map();
     mockToggleFavorite.mockClear();
     mockFavoriteKeys = new Set<string>();
+    mockFileEntries = { contextFiles: [], knowledgeFiles: [], codeFiles: [] };
   });
 
   test('renders cards from catalog when open', () => {
@@ -183,6 +191,18 @@ describe('ToolsMarketplaceDialog', () => {
       expect.arrayContaining(['dalle']),
       expect.objectContaining({ shouldDirty: true }),
     );
+  });
+
+  test('routes a file-holding built-in to its file dialog instead of clearing the flag', () => {
+    /** Clearing the flag here left the row still selected (it reads the file count) while
+     *  the save wrote the tool off the flag alone, silently dropping it from the agent. */
+    mockExecuteCode = true;
+    mockFileEntries = { contextFiles: [], knowledgeFiles: [], codeFiles: [['c1', {}]] };
+
+    render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_run_code/ }));
+
+    expect(mockSetValue).not.toHaveBeenCalledWith('execute_code', false, expect.anything());
   });
 
   test('disabling Code Interpreter clears programmatic MCP callers immediately', () => {

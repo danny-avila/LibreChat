@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
-import { ArrowDown, CheckCircle2, Clock3, Maximize2, Minimize2, XCircle } from 'lucide-react';
+import { CSSTransition } from 'react-transition-group';
+import { CheckCircle2, Clock3, Maximize2, Minimize2, XCircle } from 'lucide-react';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ChildActivity, ChildActivityItem } from './adapters';
 import type { TranslationKeys } from '~/hooks';
+import {
+  isAbnormalTerminalStatus,
+  isLiveSubagentStatus,
+  subagentStatusIcon,
+  subagentStatusLabelKey,
+} from './status';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
-import { subagentStatusIcon, subagentStatusLabelKey } from './status';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
+import ScrollToBottom from '~/components/Messages/ScrollToBottom';
+import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -118,14 +126,20 @@ function SubagentControlHistory({
 export function SubagentActivityScrollSurface({
   children,
   padded = true,
+  headerInset = false,
 }: {
   children: React.ReactNode;
   padded?: boolean;
+  /** Clears the panel's overlay header, which floats above this surface so the
+   *  thread scrolls under it rather than starting below a solid bar. */
+  headerInset?: boolean;
 }) {
-  const localize = useLocalize();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const scrollButtonRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isSettled, setIsSettled] = useState(false);
+  const { showScrollButton: scrollButtonPreference } = useChatSurface();
 
   useEffect(() => {
     const scroll = scrollRef.current;
@@ -145,39 +159,47 @@ export function SubagentActivityScrollSurface({
     );
   }, []);
 
+  const scrollToBottom = useCallback(() => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+    setIsAtBottom(true);
+  }, []);
+
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className={cn('relative min-h-0 flex-1 overflow-y-auto', padded && 'px-4 py-4')}
-      data-subagent-activity-scroll-surface
-    >
-      {!isAtBottom && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => {
-            scrollRef.current?.scrollTo({
-              top: scrollRef.current.scrollHeight,
-              behavior: 'smooth',
-            });
-            setIsAtBottom(true);
-          }}
-          aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-          className="sticky top-[calc(100%-2.75rem)] z-10 ml-auto h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md"
-        >
-          <ArrowDown size={16} aria-hidden />
-        </Button>
-      )}
-      <div ref={contentRef}>{children}</div>
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className={cn('min-h-0 flex-1 overflow-y-auto', padded && 'px-4 py-4')}
+        data-subagent-activity-scroll-surface
+      >
+        <div ref={contentRef} className={cn(headerInset && 'pt-[52px]')}>
+          {children}
+        </div>
+      </div>
+      <CSSTransition
+        in={!isAtBottom && scrollButtonPreference}
+        timeout={{ enter: 300, exit: 180 }}
+        classNames="scroll-animation"
+        unmountOnExit={true}
+        appear={true}
+        nodeRef={scrollButtonRef}
+        onEntered={() => setIsSettled(true)}
+        onExit={() => setIsSettled(false)}
+      >
+        <ScrollToBottom
+          ref={scrollButtonRef}
+          scrollHandler={scrollToBottom}
+          interactive={isSettled}
+        />
+      </CSSTransition>
     </div>
   );
 }
 
-const toContentPart = (
-  item: ChildActivityItem,
-  reasoningMarkerLabel: string,
-): TMessageContentParts => {
+const toContentPart = (item: ChildActivityItem): TMessageContentParts => {
   if (item.type === 'writing') {
     return {
       type: ContentTypes.TEXT,
@@ -188,14 +210,15 @@ const toContentPart = (
   if (item.type === 'reasoning') {
     if (item.text == null || item.text === '') {
       return {
-        type: ContentTypes.ACTIVITY_LABEL,
-        [ContentTypes.ACTIVITY_LABEL]: item.label ?? reasoningMarkerLabel,
-        activity_label_type: 'phase',
+        type: ContentTypes.THINK,
+        think: '',
+        reasoning_unavailable: true,
+        ...(item.label == null ? {} : { reasoning_label: item.label }),
       } as TMessageContentParts;
     }
     return {
       type: ContentTypes.THINK,
-      think: item.text ?? '',
+      think: item.text,
       ...(item.label == null ? {} : { reasoning_label: item.label }),
     } as TMessageContentParts;
   }
@@ -278,45 +301,35 @@ function SubagentPrompt({ prompt }: { prompt: string }) {
   );
 }
 
-export const hasTruncatedActivityDetails = (activity: ChildActivity): boolean =>
-  activity.items.some(
-    (item) =>
-      (item.type === 'writing' && item.textTruncated === true) ||
-      (item.type === 'activity_label' && item.labelTruncated === true) ||
-      (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
-  );
-
 export function SubagentActivityContent({
   activity,
   activityId,
   state = 'ready',
   showPrompt = true,
-  showDetailTruncationNotice = true,
   conversationId = null,
+  underHeaderIcon = false,
   onCancelControl,
 }: {
   activity: ChildActivity;
   activityId?: string;
   state?: 'ready' | 'loading' | 'error';
   showPrompt?: boolean;
-  showDetailTruncationNotice?: boolean;
   conversationId?: string | null;
+  /** Set when this body sits directly beneath a `MessageRow` author header, so
+   *  the streaming dot centers on the header icon's axis as it does in main
+   *  chat (see `EmptyTextPart`). */
+  underHeaderIcon?: boolean;
   onCancelControl?: (controlId: string) => void;
 }) {
   const localize = useLocalize();
-  const isSubmitting = activity.status === 'running' || activity.status === 'dispatched';
-  const reasoningMarkerLabel = localize('com_ui_subagent_ticker_reasoning');
-  const parts = useMemo(
-    () => activity.items.map((item) => toContentPart(item, reasoningMarkerLabel)),
-    [activity.items, reasoningMarkerLabel],
-  );
-  const activityDetailsTruncated = hasTruncatedActivityDetails(activity);
+  const isSubmitting = isLiveSubagentStatus(activity.status);
+  const parts = useMemo(() => activity.items.map(toContentPart), [activity.items]);
 
   let body: React.ReactNode;
   if (state === 'loading') {
     body = (
       <Container>
-        <EmptyText />
+        <EmptyText underHeaderIcon={underHeaderIcon} />
       </Container>
     );
   } else if (state === 'error') {
@@ -328,7 +341,7 @@ export function SubagentActivityContent({
   } else if (activity.items.length === 0) {
     body = isSubmitting ? (
       <Container>
-        <EmptyText />
+        <EmptyText underHeaderIcon={underHeaderIcon} />
       </Container>
     ) : null;
   } else {
@@ -355,11 +368,6 @@ export function SubagentActivityContent({
       {activity.controlsTruncated === true && (
         <div className="mb-3 text-xs italic text-text-secondary">
           {localize('com_ui_subagent_control_history_truncated')}
-        </div>
-      )}
-      {showDetailTruncationNotice && activityDetailsTruncated && (
-        <div className="mb-3 text-xs italic text-text-secondary">
-          {localize('com_ui_subagent_activity_details_truncated')}
         </div>
       )}
       {body}
@@ -392,6 +400,7 @@ export default function SubagentActivity({
   state = 'ready',
   embedded = false,
   showPrompt = true,
+  headerInset = false,
   onCancelControl,
 }: {
   activity: ChildActivity;
@@ -399,14 +408,14 @@ export default function SubagentActivity({
   state?: 'ready' | 'loading' | 'error';
   embedded?: boolean;
   showPrompt?: boolean;
+  headerInset?: boolean;
   onCancelControl?: (controlId: string) => void;
 }) {
-  const statusHeader =
-    activity.status === 'completed' ? null : (
-      <div className="shrink-0 border-b border-border-light px-4 py-2">
-        <SubagentStatus activity={activity} />
-      </div>
-    );
+  const statusHeader = isAbnormalTerminalStatus(activity.status) ? (
+    <div className="shrink-0 border-b border-border-light px-4 py-2">
+      <SubagentStatus activity={activity} />
+    </div>
+  ) : null;
   const content = (
     <SubagentActivityContent
       activity={activity}
@@ -429,7 +438,9 @@ export default function SubagentActivity({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {statusHeader}
-      <SubagentActivityScrollSurface>{content}</SubagentActivityScrollSurface>
+      <SubagentActivityScrollSurface headerInset={headerInset}>
+        {content}
+      </SubagentActivityScrollSurface>
     </div>
   );
 }

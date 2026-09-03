@@ -9,6 +9,7 @@ import type {
   CheckpointTuple,
   PendingWrite,
 } from '@langchain/langgraph-checkpoint';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { RunnableConfig } from '@langchain/core/runnables';
 
@@ -403,6 +404,9 @@ export class LazyMongoSaver extends MongoDBSaver {
     if (isEventActorInvocation(config)) {
       await this.assertCheckpointFitsDocument(config, checkpoint, metadata);
       const persisted = await super.put(toStorageCheckpointConfig(config), checkpoint, metadata);
+      logger.debug(
+        `[checkpointer] Persisted durable checkpoint for thread ${config.configurable?.thread_id ?? 'unknown'} (${checkpoint.id})`,
+      );
       return fromStorageCheckpointConfig(persisted, config);
     }
     if (this.writeAnchorIds.delete(checkpoint.id)) {
@@ -413,6 +417,9 @@ export class LazyMongoSaver extends MongoDBSaver {
       sweepStale(this.persistedIds, (t) => t);
       this.persistedIds.set(checkpoint.id, Date.now());
       const persisted = await super.put(toStorageCheckpointConfig(config), checkpoint, metadata);
+      logger.debug(
+        `[checkpointer] Persisted durable checkpoint for thread ${config.configurable?.thread_id ?? 'unknown'} (${checkpoint.id})`,
+      );
       // `assertCheckpointFitsDocument` awaits a (potentially slow) serialization AFTER the
       // anchor was consumed above but BEFORE `persistedIds` was set — a bookkeeping-only
       // `putWrites` dispatched in that window sees neither marker and parks its batch. Flush
@@ -512,7 +519,7 @@ export class LazyMongoSaver extends MongoDBSaver {
       return;
     }
     logger.debug(
-      `[checkpointer] Persisting durable checkpoint for thread ${threadId ?? 'unknown'}: ${bytes} bytes`,
+      `[checkpointer] Prepared durable checkpoint for thread ${threadId ?? 'unknown'}: ${bytes} bytes`,
     );
   }
 }
@@ -588,6 +595,62 @@ export function getApprovalTtlMs(cfg: TCheckpointerConfig | undefined): number {
 }
 
 /**
+ * Prove that the durable saver contains a complete interrupt checkpoint for one generation.
+ *
+ * A pending Redis action is useful only when LangGraph can reload the state it
+ * interrupted. Read the exact checkpoint selected by the current interrupt and
+ * require its matching interrupt id, so an older retained pause cannot satisfy
+ * verification for a missing or misrouted re-pause.
+ * This runs once per interrupt, never on the ordinary generation path.
+ */
+export async function hasDurableAgentInterruptCheckpoint(
+  threadId: string,
+  cfg?: TCheckpointerConfig,
+  options?: {
+    checkpointNamespace?: string;
+    checkpointId: string;
+    checkpointNs?: string;
+    interruptId: string;
+  },
+): Promise<boolean> {
+  if (!threadId || !options?.checkpointId || !options.interruptId) {
+    return false;
+  }
+  const saver = await getAgentCheckpointer(cfg);
+  if (!saver) {
+    return false;
+  }
+
+  const checkpointNamespace = options?.checkpointNamespace ?? '';
+  const tuple = await saver.getTuple({
+    configurable: {
+      thread_id: threadId,
+      checkpoint_ns: options.checkpointNs ?? '',
+      checkpoint_id: options.checkpointId,
+      ...(checkpointNamespace !== '' && {
+        [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: checkpointNamespace,
+      }),
+    },
+  });
+  if (tuple?.checkpoint.id !== options.checkpointId) {
+    return false;
+  }
+  return (tuple.pendingWrites ?? []).some((write) => {
+    if (write[1] !== INTERRUPT) {
+      return false;
+    }
+    const values = Array.isArray(write[2]) ? write[2] : [write[2]];
+    return values.some(
+      (value) =>
+        value != null &&
+        typeof value === 'object' &&
+        'id' in value &&
+        value.id === options.interruptId,
+    );
+  });
+}
+
+/**
  * One saver per process, built lazily on first use so `setup()` (index creation)
  * runs exactly once. Keyed by the resolved settings so a config change rebuilds.
  */
@@ -634,6 +697,47 @@ export interface AgentEventCheckpointReference {
   checkpointNs: string;
 }
 
+export interface AgentEventCheckpointMessageOverlay {
+  source: string;
+  messages: readonly BaseMessage[];
+}
+
+function applyAgentEventCheckpointMessageOverlay(
+  checkpoint: Checkpoint,
+  overlay: AgentEventCheckpointMessageOverlay | undefined,
+): Checkpoint {
+  if (overlay == null) {
+    return checkpoint;
+  }
+  const channelValues = checkpoint.channel_values;
+  const messages = Array.isArray(channelValues.messages) ? channelValues.messages : [];
+  const retainedMessages = messages.filter((message) => {
+    if (message == null || typeof message !== 'object') {
+      return true;
+    }
+    const kwargs = (message as { additional_kwargs?: { source?: unknown } }).additional_kwargs;
+    return kwargs?.source !== overlay.source;
+  });
+  const agentMessages = channelValues.agentMessages;
+  const retainedAgentMessages = Array.isArray(agentMessages)
+    ? agentMessages.filter((message) => {
+        if (message == null || typeof message !== 'object') {
+          return true;
+        }
+        const kwargs = (message as { additional_kwargs?: { source?: unknown } }).additional_kwargs;
+        return kwargs?.source !== overlay.source;
+      })
+    : agentMessages;
+  return {
+    ...checkpoint,
+    channel_values: {
+      ...channelValues,
+      messages: [...retainedMessages, ...overlay.messages],
+      ...(retainedAgentMessages === undefined ? {} : { agentMessages: retainedAgentMessages }),
+    },
+  };
+}
+
 function eventActorRunnableConfig(
   reference: Pick<AgentEventCheckpointReference, 'threadId' | 'checkpointNs'>,
   invocationId: string,
@@ -656,6 +760,7 @@ export async function forkAgentEventCheckpoint(
   checkpointNs: string,
   invocationId: string,
   cfg?: TCheckpointerConfig,
+  messageOverlay?: AgentEventCheckpointMessageOverlay,
 ): Promise<AgentEventCheckpointReference | null> {
   const saver = await getAgentCheckpointer(cfg);
   if (!saver || checkpointNs.length === 0 || invocationId.length === 0) {
@@ -670,7 +775,7 @@ export async function forkAgentEventCheckpoint(
   const target = { threadId: source.threadId, checkpointNs };
   const persisted = await saver.put(
     eventActorRunnableConfig(target, invocationId),
-    tuple.checkpoint,
+    applyAgentEventCheckpointMessageOverlay(tuple.checkpoint, messageOverlay),
     tuple.metadata,
   );
   const checkpointId = persisted.configurable?.checkpoint_id;
@@ -711,6 +816,13 @@ async function buildMongoSaver(
       client: mongoose.connection.getClient() as unknown as ConstructorParameters<
         typeof MongoDBSaver
       >[0]['client'],
+      // MongoDBSaver calls MongoClient.db(dbName). Passing no name makes that
+      // resolve from the driver's URI default, which is not guaranteed to be the
+      // database Mongoose selected (for example when Mongoose connected with a
+      // dbName override). Every capture/delete path below uses connection.db, so
+      // bind the saver to that exact database as well or a pause can be written to
+      // one database while LibreChat looks for it in another.
+      dbName: mongoose.connection.db?.databaseName,
       checkpointCollectionName: resolved.checkpointCollectionName,
       checkpointWritesCollectionName: resolved.checkpointWritesCollectionName,
       // TTL index on `upserted_at`: an unresolved paused run is reclaimed after the

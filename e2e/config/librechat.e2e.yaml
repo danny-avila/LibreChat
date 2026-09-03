@@ -35,6 +35,7 @@ mcpSettings:
   # admin override is honored by inspection/connection. stdio servers skip this check.
   allowedDomains:
     - https://allowed.example.com
+    - http://127.0.0.1:8767
     # __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__
 
 actions:
@@ -57,6 +58,18 @@ mcpServers:
     title: E2E HTTP
     description: Local HTTP MCP fixture for allowlist-override e2e tests.
     timeout: 30000
+  e2e-oauth:
+    type: streamable-http
+    url: http://127.0.0.1:8767/mcp
+    startup: false
+    title: E2E OAuth
+    description: Protected MCP fixture used to verify resumable OAuth prompts.
+    timeout: 30000
+    requiresOAuth: true
+    oauth:
+      authorization_url: http://127.0.0.1:8767/authorize
+      token_url: http://127.0.0.1:8767/token
+      client_id: e2e-oauth-client
   # __E2E_DYNAMIC_MCP_NETWORK_SERVERS__
 
 endpoints:
@@ -79,6 +92,7 @@ endpoints:
       - chain
       - ocr
       - run_in_background
+    # __E2E_CODE_BRIDGE_CONFIG__
     # Keep the shared mock profile non-interactive except for the dedicated
     # approval probe. This exercises real HITL pause/resume without wedging the
     # existing file-authoring, steering, background-tool, or MCP specs.

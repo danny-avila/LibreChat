@@ -1,9 +1,18 @@
 # Amazon DocumentDB Compatibility Assessment (issue #14488)
 
+> **Update 2026-08-30 — adjudicated live.** Everything below was originally
+> decided from AWS's documentation, which omits unsupported operators rather
+> than listing them. It has now been run against a real DocumentDB **5.0.0**
+> cluster (the version this project supports, and the one the reference
+> deployment runs). `audit.documentdb.spec.ts` records the verdicts; the
+> corrections are in "Live verdicts" at the end of this document. Two claims
+> below were wrong: pipeline-form updates had returned in new code, and the
+> transaction probe reported a false negative.
+
 Adjudicated against official AWS documentation on 2026-07-28. Engine columns
 throughout: DocumentDB **3.6 / 4.0 / 5.0 / 8.0 instance-based** and **elastic
 clusters**. AWS's supported-APIs page states that unsupported operators are
-*omitted* from its tables, so several verdicts below are implicit-by-omission
+_omitted_ from its tables, so several verdicts below are implicit-by-omission
 and flagged as such.
 
 ## Executive summary
@@ -33,7 +42,7 @@ this and DocumentDB rejects it.
 
 AWS evidence: the [supported APIs page](https://docs.aws.amazon.com/documentdb/latest/developerguide/mongo-apis.html)
 lists only classic update operators (no pipeline form anywhere); the `$set`/
-`$unset` *stage* operators are marked unsupported for 3.6/4.0/5.0; `$$NOW` is
+`$unset` _stage_ operators are marked unsupported for 3.6/4.0/5.0; `$$NOW` is
 absent from the System variables table entirely (`$$CURRENT` and `$$REMOVE`
 are explicitly "No"). Implicit-by-omission, but consistent with the reported
 `Failed to parse update: field must be of BSON type object` class of error
@@ -150,7 +159,7 @@ in the docs.
   decides whether the partial-index caveat applies to them (5.0+: it doesn't).
   Worth asking directly on the issue.
 - **DocumentDB 8.0 pipeline-update acceptance** — 8.0 added `$set`/`$unset`
-  aggregation *stages*, but AWS never documents pipeline-form updates; the
+  aggregation _stages_, but AWS never documents pipeline-form updates; the
   harness probe answers this live.
 - **`collMod` is only "Partial"** on every version — avoid
   `Model.syncIndexes()` against DocumentDB (it may issue `collMod` beyond the
@@ -180,16 +189,103 @@ in the docs.
 
 ## Support matrix and recommendation
 
-| Capability (LibreChat dependency) | 3.6 | 4.0 | 5.0 | 8.0 | Elastic |
-| --- | --- | --- | --- | --- | --- |
-| Pipeline updates (**no longer used**) | ✗ | ✗ | ✗ | ? | ✗ |
-| Plain update operators (all writes now) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Unique indexes | ✓ | ✓ | ✓ | ✓ | ✗ |
-| Partial unique indexes (OAuth ids) | ✗ | ✗ | ✓ | ✓ | ✗ |
-| Transactions (runtime-probed) | ✗ | ✓ | ✓ | ✓ | ✗ |
-| TTL indexes | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Capability (LibreChat dependency)       | 3.6 | 4.0 | 5.0 | 8.0 | Elastic |
+| --------------------------------------- | --- | --- | --- | --- | ------- |
+| Pipeline updates (**no longer used**)   | ✗   | ✗   | ✗   | ?   | ✗       |
+| Plain update operators (all writes now) | ✓   | ✓   | ✓   | ✓   | ✓       |
+| Unique indexes                          | ✓   | ✓   | ✓   | ✓   | ✗       |
+| Partial unique indexes (OAuth ids)      | ✗   | ✗   | ✓   | ✓   | ✗       |
+| Transactions (runtime-probed)           | ✗   | ✓   | ✓   | ✓   | ✗       |
+| TTL indexes                             | ✓   | ✓   | ✓   | ✓   | ✓       |
 
 **Recommendation**: support **DocumentDB 5.0+ instance-based** with
 `retryWrites=false` documented as required. 4.0 functions with
 partial-unique-index loss (now logged loudly at startup) — "works, with a
 documented caveat". Elastic clusters: unsupported, full stop.
+
+## Live verdicts (DocumentDB 5.0.0, 2026-08-30)
+
+Probed by `audit.documentdb.spec.ts`, which drives the production methods
+themselves rather than re-implementations.
+
+| Construct                                            | Verdict  | Server error                                                |
+| ---------------------------------------------------- | -------- | ----------------------------------------------------------- |
+| Aggregation-pipeline update                          | rejected | `Failed to parse update: field must be of BSON type object` |
+| `$$REMOVE`                                           | rejected | `Feature not supported: $$REMOVE`                           |
+| `$facet`                                             | rejected | `Aggregation stage not supported: '$facet'`                 |
+| `$max`, `$set`/`$unset`                              | accepted | —                                                           |
+| Filtered positional `$[<id>]`                        | accepted | —                                                           |
+| `$regexMatch`, `$switch`, `$let`, `$convert`         | accepted | —                                                           |
+| `$strLenBytes`, `$substrCP`, `$mergeObjects`, `$map` | accepted | —                                                           |
+| Partial unique indexes, TTL indexes                  | accepted | —                                                           |
+
+### Correction 1 — pipeline updates returned after this document was written
+
+Six sites reintroduced unsupported constructs between 2026-07-29 and
+2026-08-30, all in code added with the durable trigger and background-task
+work. Nothing caught them: every unit suite runs `mongodb-memory-server`, which
+is real MongoDB and accepts all of it. `src/methods/documentdb.spec.ts` is now
+a static guard against the whole class.
+
+### Correction 2 — the transaction probe reported a false negative
+
+`supportsTransactions` read a canary collection that does not exist, and
+DocumentDB rejects a transaction touching a non-existent collection
+(`Feature not supported: non-existent collection in transaction`). The probe
+therefore returned `false` on an engine that fully supports transactions, and
+every caller silently took the non-transactional path. Verified directly: with
+the collection materialized, both read-only and multi-write transactions
+commit. The probe now creates the canary first.
+
+### Connection requirements for the live suites
+
+Established against the real cluster; all four are load-bearing through a
+tunnel and none were documented before:
+
+- `authSource=admin` — the user lives in `admin`; a database in the URI path
+  otherwise becomes the auth source and authentication fails
+- `authMechanism=SCRAM-SHA-1` — DocumentDB rejects SCRAM-SHA-256
+  (`Unsupported mechanism [ -301 ]`)
+- `directConnection=true` — replica-set discovery returns internal cluster
+  hostnames that are unreachable through a tunnel
+- `tlsAllowInvalidHostnames` — the tunnel endpoint never matches the certificate
+
+## Method sweep (2026-08-31)
+
+`sweep.documentdb.spec.ts` drives every exported data-schemas method (509 at
+the time of writing; constructor-valued exports are excluded) against a real engine, auto-synthesizing arguments,
+repairing them from validation errors, and counting the driver queries each
+method actually issues — a method that issues none is reported un-adjudicated
+instead of silently green. Run once against in-memory MongoDB
+(`SWEEP_BASELINE=true`) and once against DocumentDB, then diff the JSON
+matrices (`SWEEP_REPORT_PATH`).
+
+Corrected-harness baseline (replica-set MongoDB, real ACL cascades, index DDL
+and transaction-lifecycle instrumentation, per-invocation async attribution,
+seeded authority-transaction case, constructor exports excluded, a fresh
+method bundle per case): **370 of 509 methods issue at least one query; zero
+rejections on MongoDB**. The remaining 139 issue none (validation
+rejected the synthesized arguments, or a guard short-circuited); they are
+listed in the matrix and shrink by adding `ARG_OVERRIDES` entries. The report's `rows` payload is normalized for
+cross-engine diffing (`diff <(jq .rows a.json) <(jq .rows b.json)`); run
+metadata lives outside it.
+
+**Authoritative live run (2026-08-31, hardened harness, DocumentDB 5.0.0):
+370 of 509 methods drove at least one query; zero engine rejections; the
+matrix is byte-identical to the MongoDB baseline** — every row's outcome and
+query count matches, so there is no engine divergence anywhere the sweep can
+reach. This run adjudicated index DDL, transaction commits and aborts, ACL
+cascades, and the authority snapshot's own transaction, none of which the
+first (pre-hardening) run could see.
+
+The same run turned the compatibility suite's `MCP authority snapshot` probe
+green for the first time on any real cluster. It had failed since July with
+`proof_unavailable`: `loadAuthoritativeSnapshot` reads nine collections inside
+its transaction, DocumentDB rejects in-transaction statements against
+namespaces that do not exist, and `asMCPError` converted that server rejection
+into a reason naming nothing about the cause. The method now materializes
+those namespaces before opening the transaction.
+
+This sweep exists because every incompatibility found so far was invisible
+until someone thought to look for its class; here the engine adjudicates
+whatever each method emits, known class or not.

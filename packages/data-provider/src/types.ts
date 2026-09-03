@@ -10,6 +10,7 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
+import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
 import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
@@ -444,6 +445,7 @@ export type TPinConversationResponse = TConversation;
 
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
+  langfuseSessionUrl?: string;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
@@ -525,6 +527,48 @@ export type TSearchResults = {
   filter: object;
 };
 
+export type TPublicCodeEnvironment = {
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+  default?: boolean;
+  pairingAvailable?: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type TCodeEnvironmentSummary = {
+  resourceId: string;
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+  canEdit?: boolean;
+  canDelete: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type TCodeControlPlane = {
+  id: string;
+  name: string;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+};
+
+export type TCodeEnvironmentsResponse = {
+  environments: TCodeEnvironmentSummary[];
+  controlPlanes: TCodeControlPlane[];
+};
+
+export type TCodeEnvironmentPairingResponse = {
+  environment: TCodeEnvironmentSummary;
+  pairing: {
+    workerId: string;
+    code: string;
+    expiresAt: string;
+    endpoint: string;
+  };
+};
+
 export type TConfig = {
   order: number;
   type?: EModelEndpoint;
@@ -550,6 +594,7 @@ export type TConfig = {
   capabilities?: string[];
   statefulCodeSessions?: {
     allowedEnvironments: StatefulCodeEnvironment[];
+    environments?: TPublicCodeEnvironment[];
   };
   /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
   maxSubagents?: number;

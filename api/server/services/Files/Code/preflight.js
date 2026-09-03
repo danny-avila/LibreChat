@@ -34,6 +34,8 @@ const preflightCodeOutputBatch = async ({ req, artifact, codeExecutionContext })
         inspectContent,
         codeApiBaseUrl: codeExecutionContext?.baseUrl,
         executionProfile: codeExecutionContext?.executionProfile,
+        bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
+        executionRouteKey: codeExecutionContext?.executionRouteKey,
       }),
     onInspectionUnavailable: (index) => {
       logger.warn(

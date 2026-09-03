@@ -1,7 +1,7 @@
 import mongoose, { Types, Model } from 'mongoose';
-import { createModels, createMethods, RoleBits } from '@librechat/data-schemas';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
+import { createModels, createMethods, logger, RoleBits } from '@librechat/data-schemas';
 import { AccessControlService } from './accessControlService';
 
 // Mock the logger
@@ -688,6 +688,25 @@ describe('AccessControlService', () => {
         });
 
         expect(mockGetUserPrincipals).toHaveBeenCalledWith({ userId, role: 'admin' });
+      });
+
+      test('logs principal resolution failures before propagating them', async () => {
+        const error = new Error('principal lookup unavailable');
+        mockGetUserPrincipals.mockRejectedValue(error);
+
+        await expect(
+          service.getResourcePermissionsMap({
+            userId,
+            role: 'user',
+            resourceType: ResourceType.AGENT,
+            resourceIds: [resource1],
+          }),
+        ).rejects.toBe(error);
+
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining('Error resolving principals: principal lookup unavailable'),
+          error,
+        );
       });
     });
   });

@@ -10,6 +10,9 @@ jest.mock('../Parts', () => ({
   AgentUpdate: () => <div data-testid="agent-update" />,
   EmptyText: () => <div data-testid="empty-text" />,
   Reasoning: () => <div data-testid="reasoning" />,
+  ReasoningMarker: ({ label }: { label?: string }) => (
+    <div data-testid="reasoning-marker">{label}</div>
+  ),
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
   SkillCall: () => <div data-testid="skill-call" />,
@@ -130,5 +133,28 @@ describe('Part tool renderer selection', () => {
       'edit_file',
     );
     expect(screen.queryByTestId('tool-call')).not.toBeInTheDocument();
+  });
+
+  it('routes an unavailable reasoning marker to the marker renderer', () => {
+    renderPart({
+      type: ContentTypes.THINK,
+      think: '',
+      reasoning_unavailable: true,
+      reasoning_label: 'Planning the answer',
+    } as TMessageContentParts);
+
+    expect(screen.getByTestId('reasoning-marker')).toHaveTextContent('Planning the answer');
+    expect(screen.queryByTestId('reasoning')).not.toBeInTheDocument();
+  });
+
+  it('keeps reasoning with text on the full Reasoning renderer even when marked unavailable', () => {
+    renderPart({
+      type: ContentTypes.THINK,
+      think: 'Actual thoughts',
+      reasoning_unavailable: true,
+    } as TMessageContentParts);
+
+    expect(screen.getByTestId('reasoning')).toBeInTheDocument();
+    expect(screen.queryByTestId('reasoning-marker')).not.toBeInTheDocument();
   });
 });

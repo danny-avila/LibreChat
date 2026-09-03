@@ -1,4 +1,10 @@
-import { getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+  getTenantId,
+  SYSTEM_TENANT_ID,
+} from '@librechat/data-schemas';
 import type { AgentTriggerDeliveryPersistence, AgentTriggerStoredRecord } from './service';
 import { AgentTriggerServiceUnavailableError, createAgentTriggerService } from './service';
 import { __resetShutdownStateForTests } from '../../app/shutdown';
@@ -95,6 +101,8 @@ function deliveryMethods(
     beginAgentTriggerDeliveryAttempt: jest.fn(async () => 1),
     deferAgentTriggerDeliveryAttempt: jest.fn(async () => true),
     completeAgentTriggerDelivery: jest.fn(async () => true),
+    retireAgentTriggerDelivery: jest.fn(async () => true),
+    renewAgentTriggerDeliveryProducerLease: jest.fn(async () => true),
     retryAgentTriggerDelivery: jest.fn(async () => true),
     deadLetterAgentTriggerDelivery: jest.fn(async () => true),
     getAgentTriggerDelivery: jest.fn(async () => null),
@@ -142,24 +150,6 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
-  it('rejects coalesced work before persistence unless every worker has the capability', async () => {
-    const methods = deliveryMethods();
-    const service = createAgentTriggerService({
-      methods,
-      coalescingEnabled: () => false,
-      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
-    });
-    await service.initialize({
-      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
-    });
-
-    await expect(
-      service.enqueue(envelope(), { coalesce: { key: 'championship-commentary' } }),
-    ).rejects.toThrow('Agent event coalescing is not enabled on this server');
-    expect(methods.enqueueAgentTriggerDelivery).not.toHaveBeenCalled();
-    await service.stop();
-  });
-
   it('refuses to arm without a reachable self origin', async () => {
     const service = createAgentTriggerService({ methods: deliveryMethods() });
 
@@ -175,6 +165,7 @@ describe('durable agent trigger service', () => {
       methods,
       mintToken: () => 'token',
       fetch: async () => new Response('{}', { status: 500 }),
+      supportsDetachedActionCompletion: () => true,
       deliveryOptions: { concurrency: 1, tickMs: 60_000 },
     });
 
@@ -186,6 +177,15 @@ describe('durable agent trigger service', () => {
 
     expect(methods.ensureAgentTriggerDeliveryIndexes).toHaveBeenCalledTimes(1);
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalled();
+    expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+        ],
+      }),
+    );
     expect(methods.enqueueAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
         deliveryKey: expect.stringMatching(/^trigger_/),
@@ -205,11 +205,31 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
-  it('persists terminal handling serialization only for opted-in bound continuations', async () => {
+  it('advertises ordinary completion but not detached-action capability without durable storage', async () => {
     const methods = deliveryMethods();
     const service = createAgentTriggerService({
       methods,
-      actorMailboxEnabled: () => true,
+      supportsDetachedActionCompletion: () => false,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+
+    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+
+    expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+        ],
+      }),
+    );
+    await service.stop();
+  });
+
+  it('persists terminal handling serialization only for bound continuations', async () => {
+    const methods = deliveryMethods();
+    const service = createAgentTriggerService({
+      methods,
       deliveryOptions: { concurrency: 1, tickMs: 60_000 },
     });
     await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
@@ -223,23 +243,6 @@ describe('durable agent trigger service', () => {
     );
     expect(methods.enqueueAgentTriggerDelivery).toHaveBeenNthCalledWith(
       2,
-      expect.not.objectContaining({ awaitTerminalHandling: expect.anything() }),
-    );
-    await service.stop();
-  });
-
-  it('does not persist mailbox semantics before the rollout is enabled', async () => {
-    const methods = deliveryMethods();
-    const service = createAgentTriggerService({
-      methods,
-      actorMailboxEnabled: () => false,
-      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
-    });
-    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
-
-    await service.enqueue(boundEnvelope());
-
-    expect(methods.enqueueAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.not.objectContaining({ awaitTerminalHandling: expect.anything() }),
     );
     await service.stop();
@@ -383,6 +386,56 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
+  it('reclaims lanes even when another maintenance step rejects', async () => {
+    /** A single broken cleanup (e.g. an engine-specific query rejection) used
+     * to fail the whole Promise.all and skip the sequenced lane reclamation on
+     * every pass; each step must fail alone. */
+    const expireLegacyAgentEventActorReceipts = jest
+      .fn()
+      .mockRejectedValue(new Error('Projections cannot have a mix of inclusion and exclusion'));
+    const reclaimInactiveAgentTriggerLanes = jest.fn(async () => 1);
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({
+        expireLegacyAgentEventActorReceipts,
+        reclaimInactiveAgentTriggerLanes,
+      }),
+      purgeRecoveryIntervalMs: 60_000,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    expect(expireLegacyAgentEventActorReceipts).toHaveBeenCalledTimes(1);
+    expect(reclaimInactiveAgentTriggerLanes).toHaveBeenCalledTimes(1);
+    await service.stop();
+  });
+
+  it('holds lane reclamation while batch-receipt recovery fails', async () => {
+    /** Reclamation consumes the lane-cleanup markers; against a half-recovered
+     * batch it clears a request no later successful recovery can re-arm, so a
+     * failed batch pass must gate it — unlike the independent steps above. */
+    const recoverAgentTriggerBatchReceipts = jest
+      .fn()
+      .mockRejectedValue(new Error('transient settle failure'));
+    const reclaimInactiveAgentTriggerLanes = jest.fn(async () => 1);
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({
+        recoverAgentTriggerBatchReceipts,
+        reclaimInactiveAgentTriggerLanes,
+      }),
+      purgeRecoveryIntervalMs: 60_000,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(1);
+    expect(reclaimInactiveAgentTriggerLanes).not.toHaveBeenCalled();
+    await service.stop();
+  });
+
   it('settles interrupted batch receipts before reclaiming their lane', async () => {
     let finishBatchRecovery: ((count: number) => void) | undefined;
     const recoverAgentTriggerBatchReceipts = jest.fn(
@@ -428,9 +481,14 @@ describe('durable agent trigger service', () => {
       expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
       return deliveryRecord();
     });
+    const retireAgentTriggerDelivery = jest.fn(async () => {
+      expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
+      return true;
+    });
     const methods = deliveryMethods({
       getAgentTriggerDeadLetters,
       requeueAgentTriggerDelivery,
+      retireAgentTriggerDelivery,
     });
     const service = createAgentTriggerService({
       methods,
@@ -444,6 +502,27 @@ describe('durable agent trigger service', () => {
     await expect(service.requeue('delivery-row-1', START)).resolves.toMatchObject({
       status: 'pending',
     });
+    await expect(
+      service.retire('trigger_1', 'background-tool-completion', 'result unavailable', {
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(true);
+    expect(retireAgentTriggerDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'trigger_1',
+        sourceId: 'background-tool-completion',
+        reason: 'result unavailable',
+        onlyIfUnclaimed: true,
+      }),
+    );
+    await expect(
+      service.retire('trigger_1', 'background-tool-completion', 'dead recovery', {
+        onlyIfDead: true,
+      }),
+    ).resolves.toBe(true);
+    expect(retireAgentTriggerDelivery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ onlyIfDead: true }),
+    );
     await service.stop();
   });
 

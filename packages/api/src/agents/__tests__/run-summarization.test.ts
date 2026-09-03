@@ -6,12 +6,12 @@ import {
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
 } from 'librechat-data-provider';
+import type { CompactionSemanticIndex, SubagentTaskConfig } from '@librechat/agents';
 import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
+import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { BaseMessage } from '@langchain/core/messages';
-import type { SubagentTaskConfig } from '@librechat/agents';
-import type { AppConfig } from '@librechat/data-schemas';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
-import { createRun } from '~/agents/run';
+import { createRun, isAskUserQuestionAdminDisabled } from '~/agents/run';
 
 // Mock winston logger — `format` must be callable so @librechat/data-schemas
 // dist module-load completes cleanly; see api/test/__mocks__/logger.js.
@@ -107,9 +107,26 @@ function makeAgent(
   };
 }
 
+describe('isAskUserQuestionAdminDisabled', () => {
+  it('applies includedTools precedence and the filteredTools fallback', () => {
+    expect(isAskUserQuestionAdminDisabled(undefined)).toBe(false);
+    expect(isAskUserQuestionAdminDisabled({ includedTools: ['calculator'] } as AppConfig)).toBe(
+      true,
+    );
+    expect(
+      isAskUserQuestionAdminDisabled({ includedTools: ['ask_user_question'] } as AppConfig),
+    ).toBe(false);
+    expect(
+      isAskUserQuestionAdminDisabled({ filteredTools: ['ask_user_question'] } as AppConfig),
+    ).toBe(true);
+  });
+});
+
 type TestRunAgent = ReturnType<typeof makeAgent> & {
   subagentAgentConfigs?: TestRunAgent[];
 };
+
+type BuildChildInput = Parameters<typeof buildChildInputs>[0];
 
 function makeSubagentChain(hops: number): TestRunAgent {
   const agents = Array.from({ length: hops + 1 }, (_, index) =>
@@ -167,8 +184,11 @@ async function callAndCapture(
     appConfig?: AppConfig;
     messages?: BaseMessage[];
     discoveredToolNames?: string[];
+    compactionSemanticIndex?: CompactionSemanticIndex;
     subagentTasks?: SubagentTaskConfig;
     modelCallbacks?: readonly ModelBoundChatModelCallback[];
+    user?: IUser;
+    tenantId?: string;
   } = {},
 ) {
   const agents = opts.agents ?? [makeAgent()];
@@ -182,8 +202,11 @@ async function callAndCapture(
     appConfig: opts.appConfig,
     messages: opts.messages,
     discoveredToolNames: opts.discoveredToolNames,
+    compactionSemanticIndex: opts.compactionSemanticIndex,
     subagentTasks: opts.subagentTasks,
     modelCallbacks: opts.modelCallbacks,
+    user: opts.user,
+    tenantId: opts.tenantId,
     streaming: true,
     streamUsage: true,
   });
@@ -243,6 +266,57 @@ beforeEach(() => {
   delete process.env.LANGFUSE_TRACING_ENABLED;
   delete process.env.LANGFUSE_SAMPLE_RATE;
   process.env.TENANT_ISOLATION_STRICT = 'true';
+});
+
+describe('compaction semantic index forwarding', () => {
+  it('forwards one host-derived snapshot to every top-level agent input', async () => {
+    const compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'message-1',
+        sourceContentIndex: 3,
+        revision: 2,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ] satisfies CompactionSemanticIndex;
+
+    const agents = await callAndCapture({
+      agents: [makeAgent({ id: 'agent_1' }), makeAgent({ id: 'agent_2' })],
+      compactionSemanticIndex,
+    });
+
+    expect(agents).toHaveLength(2);
+    expect(agents[0].compactionSemanticIndex).toBe(compactionSemanticIndex);
+    expect(agents[1].compactionSemanticIndex).toBe(compactionSemanticIndex);
+  });
+
+  it('does not leak the parent history index into an isolated subagent', async () => {
+    const compactionSemanticIndex = [
+      {
+        type: 'activity_phase',
+        sourceMessageId: 'message-1',
+        sourceContentIndex: 3,
+        revision: 2,
+        status: 'committed',
+        text: 'Verified the release state',
+      },
+    ] satisfies CompactionSemanticIndex;
+    const child = makeAgent({ id: 'agent_child' });
+    const [root] = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+      compactionSemanticIndex,
+    });
+    const [childConfig] = root.subagentConfigs as Array<Record<string, unknown>>;
+
+    expect(root.compactionSemanticIndex).toBe(compactionSemanticIndex);
+    expect(childConfig.agentInputs).not.toHaveProperty('compactionSemanticIndex');
+  });
 });
 
 afterAll(() => {
@@ -1174,6 +1248,29 @@ describe('custom-endpoint provider resolution', () => {
     expect(call).toBeDefined();
   });
 
+  it('uses the authoritative run tenant in custom-endpoint summarization headers', async () => {
+    const appConfig = makeAppConfig([
+      {
+        name: 'Tenant Gateway',
+        baseURL: 'https://gateway.example.com/v1',
+        apiKey: 'gateway-key',
+        headers: { 'X-Tenant-ID': '{{LIBRECHAT_USER_TENANT_ID}}' },
+      },
+    ]);
+    const agents = await callAndCapture({
+      summarizationConfig: { provider: 'Tenant Gateway', model: 'summary-model' },
+      appConfig,
+      user: { id: 'user-1', tenantId: 'stale-user-tenant' } as IUser,
+      tenantId: 'request-tenant',
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    const configuration = parameters.configuration as Record<string, unknown>;
+
+    expect(configuration.defaultHeaders).toEqual({ 'X-Tenant-ID': 'request-tenant' });
+  });
+
   it('forwards PROXY env var into summarization client configuration', async () => {
     const originalProxy = process.env.PROXY;
     process.env.PROXY = 'http://proxy.internal:3128';
@@ -1942,7 +2039,7 @@ describe('subagentConfigs', () => {
     });
 
     expect(agents[0].maxSubagentDepth).toBe(MAX_SUBAGENT_DEPTH);
-    const childConfig = (agents[0].subagentConfigs as Parameters<typeof buildChildInputs>[0][])[0];
+    const childConfig = (agents[0].subagentConfigs as BuildChildInput[])[0];
     expect(childConfig.allowNested).toBe(true);
 
     const childInputs = buildChildInputs(childConfig, 'agent_child', MAX_SUBAGENT_DEPTH);
@@ -1952,6 +2049,74 @@ describe('subagentConfigs', () => {
       type: 'agent_grandchild',
       allowNested: true,
     });
+  });
+
+  it('prunes shared-agent cycles per traversal path without dropping valid edges', async () => {
+    const left = makeAgent({
+      id: 'agent_left',
+      name: 'Left',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_shared'] },
+    }) as TestRunAgent;
+    const right = makeAgent({
+      id: 'agent_right',
+      name: 'Right',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_shared'] },
+    }) as TestRunAgent;
+    const shared = makeAgent({
+      id: 'agent_shared',
+      name: 'Shared',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_left'] },
+    }) as TestRunAgent;
+    left.subagentAgentConfigs = [shared];
+    right.subagentAgentConfigs = [shared];
+    shared.subagentAgentConfigs = [left];
+
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: {
+            enabled: true,
+            allowSelf: false,
+            agent_ids: ['agent_left', 'agent_right'],
+          },
+          subagentAgentConfigs: [left, right],
+        }),
+      ],
+    });
+
+    const rootConfigs = agents[0].subagentConfigs as BuildChildInput[];
+    const rootConfigsByType = new Map(rootConfigs.map((config) => [config.type, config]));
+    const leftConfig = rootConfigsByType.get('agent_left');
+    const rightConfig = rootConfigsByType.get('agent_right');
+    if (!leftConfig || !rightConfig) {
+      throw new Error('Expected both root subagent configs');
+    }
+    const leftInputs = buildChildInputs(leftConfig, 'agent_left', MAX_SUBAGENT_DEPTH);
+    const rightInputs = buildChildInputs(rightConfig, 'agent_right', MAX_SUBAGENT_DEPTH);
+    const leftShared = leftInputs.subagentConfigs?.[0] as BuildChildInput | undefined;
+    const rightShared = rightInputs.subagentConfigs?.[0] as BuildChildInput | undefined;
+    if (
+      !leftShared ||
+      !rightShared ||
+      leftInputs.maxSubagentDepth == null ||
+      rightInputs.maxSubagentDepth == null
+    ) {
+      throw new Error('Expected both shared subagent configs');
+    }
+    const leftSharedInputs = buildChildInputs(
+      leftShared,
+      'agent_shared',
+      leftInputs.maxSubagentDepth,
+    );
+    const rightSharedInputs = buildChildInputs(
+      rightShared,
+      'agent_shared',
+      rightInputs.maxSubagentDepth,
+    );
+
+    expect(leftSharedInputs.subagentConfigs).toBeUndefined();
+    expect(rightSharedInputs.subagentConfigs).toHaveLength(1);
+    expect(rightSharedInputs.subagentConfigs?.[0]).toMatchObject({ type: 'agent_left' });
   });
 
   it('combines self-spawn and explicit subagents when both enabled', async () => {
@@ -3064,12 +3229,24 @@ describe('ask_user_question run wiring', () => {
   const firstAgent = (config: Record<string, unknown>) =>
     (config.graphConfig as { agents: Array<Record<string, unknown>> }).agents[0];
 
+  /**
+   * Every run now carries a `PostToolBatch`-only registry for step-budget
+   * awareness, so registry presence no longer proves HITL wiring. What still
+   * distinguishes an approval-gated run is the `PreToolUse` policy hook, and
+   * `PostToolBatch` is deliberately outside the SDK's
+   * `RESULT_ALTERING_HOOK_EVENTS`, so it cannot disable eager tool prestart.
+   */
+  const hasToolApprovalPolicyHook = (config: Record<string, unknown>) =>
+    (config.hooks as { hasHookFor?: (event: string) => boolean } | undefined)?.hasHookFor?.(
+      'PreToolUse',
+    ) === true;
+
   it('attaches the checkpointer WITHOUT humanInTheLoop when hitlCapable and the ask tool is present (approval disabled)', async () => {
     const config = await runAndGetConfig(makeAgent({ tools: [askToolInstance] }), {
       hitlCapable: true,
     });
     expect(config).not.toHaveProperty('humanInTheLoop');
-    expect(config).not.toHaveProperty('hooks');
+    expect(hasToolApprovalPolicyHook(config)).toBe(false);
     expect(getCheckpointer(config)).toBeDefined();
     const agent = firstAgent(config);
     // The tool rides the in-graph direct path (graphTools) — never the

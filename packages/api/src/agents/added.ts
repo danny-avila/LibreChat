@@ -17,7 +17,11 @@ import type {
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ParsedServerConfig } from '~/mcp/types';
-import { requiresEphemeralUserConnection, validateMCPServerConfig } from '~/mcp/utils';
+import {
+  requiresEphemeralUserConnection,
+  filterChatSelectableMCPServers,
+  validateMCPServerConfig,
+} from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
@@ -73,10 +77,17 @@ export interface LoadAddedAgentDeps {
     serverName: string,
     serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
+  /** The MCP servers this user can reach, with the registry's tier precedence
+   *  already applied — the resolution behind the client's catalog. Omitted, the
+   *  chat selection is used as sent. */
+  getAccessibleMCPServers?: (
+    userId: string,
+    role?: string,
+  ) => Promise<Record<string, ParsedServerConfig>>;
 }
 
 interface LoadAddedAgentParams {
-  req: { user?: { id?: string }; config?: Record<string, unknown> };
+  req: { user?: { id?: string; role?: string }; config?: Record<string, unknown> };
   conversation: TConversation | null;
   primaryAgent?: Agent | null;
 }
@@ -180,13 +191,26 @@ export async function loadAddedAgent(
   }
 
   const userId = req.user?.id ?? '';
+  /** Narrowed like the primary ephemeral loader: picker selection only, spec
+   *  servers added below. */
+  const mcpServers = new Set<string>(
+    await filterChatSelectableMCPServers(ephemeralAgent?.mcp, {
+      userId,
+      role: req.user?.role,
+      getAccessibleMCPServers: deps.getAccessibleMCPServers,
+    }),
+  );
 
   const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;
   let modelSpec: (typeof modelSpecs extends Array<infer T> | undefined ? T : never) | null = null;
   if (spec != null && spec !== '') {
     modelSpec = modelSpecs?.find((s) => s.name === spec) ?? null;
   }
-  const mcpServers = new Set<string>(ephemeralAgent?.mcp ?? modelSpec?.mcpServers);
+  if (modelSpec?.mcpServers) {
+    for (const mcpServer of modelSpec.mcpServers) {
+      mcpServers.add(mcpServer);
+    }
+  }
 
   const tools: string[] = [];
   if ((ephemeralAgent?.execute_code ?? modelSpec?.executeCode) === true) {

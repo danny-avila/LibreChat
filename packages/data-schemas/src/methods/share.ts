@@ -10,6 +10,7 @@ import {
 } from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import { CLIENT_MESSAGE_SELECT } from './message';
 import logger from '~/config/winston';
 
@@ -21,6 +22,8 @@ class ShareServiceError extends Error {
     this.code = code;
   }
 }
+
+const EXPECTED_SHARE_REJECTION_CODES = new Set(['TARGET_MESSAGE_NOT_FOUND', 'NO_MESSAGES']);
 
 type ShareOrder = Pick<t.ISharedLink, '_id' | 'createdAt'>;
 
@@ -968,6 +971,8 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         try {
           const searchResults = await Conversation.meiliSearch(search, {
             filter: `user = "${user}"`,
+            limit: MEILI_SEARCH_LIMIT,
+            attributesToRetrieve: ['conversationId'],
           });
 
           if (!searchResults?.hits?.length) {
@@ -1368,11 +1373,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       if (preflightFailed) {
         throw error;
       }
-      logger.error('[updateSharedLink] Error updating shared link', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        user,
-        shareId,
-      });
+      if (!(error instanceof ShareServiceError && EXPECTED_SHARE_REJECTION_CODES.has(error.code))) {
+        logger.error('[updateSharedLink] Error updating shared link', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          user,
+          shareId,
+        });
+      }
       throw new ShareServiceError(
         error instanceof ShareServiceError ? error.message : 'Error updating shared link',
         error instanceof ShareServiceError ? error.code : 'SHARE_UPDATE_ERROR',

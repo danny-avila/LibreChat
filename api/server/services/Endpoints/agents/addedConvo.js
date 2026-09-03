@@ -10,13 +10,17 @@ const {
 const { isEphemeralAgentId } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getMCPServerTools } = require('~/server/services/Config');
-const { getAccessibleMcpServerNames } = require('~/server/services/MCP');
+const { getAccessibleMcpServerNames, getAccessibleMCPServers } = require('~/server/services/MCP');
 const { isFatalAgentInitializationError } = require('~/server/services/ToolService');
 const { getSkillDbMethods, canAuthorSkillFiles } = require('./skillDeps');
 const db = require('~/models');
 
 const loadAddedAgent = (params) =>
-  loadAddedAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+  loadAddedAgentFn(params, {
+    getAgent: db.getAgent,
+    getMCPServerTools,
+    getAccessibleMCPServers,
+  });
 
 /**
  * Process addedConvo for parallel agent execution.

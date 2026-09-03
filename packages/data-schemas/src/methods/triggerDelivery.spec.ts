@@ -13,8 +13,14 @@ import {
   createAgentTriggerDeliveryMethods,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
+  AgentTriggerClaimContentionError,
+  CLAIM_CAS_MAX_ATTEMPTS,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+} from '~/types/triggerDelivery';
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
 import { createAgentTriggerUserPurgeModel } from '../models/triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from '../models/triggerDelivery';
@@ -237,6 +243,877 @@ describe('agent trigger delivery methods', () => {
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
   });
 
+  it('surfaces exhausted claim contention as a retryable failure, not an empty queue', async () => {
+    const enqueued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    const casSpy = jest.spyOn(Delivery.collection, 'findOneAndUpdate').mockResolvedValue(null);
+    try {
+      await expect(
+        methods.claimNextAgentTriggerDelivery({
+          workerId: 'worker-contended',
+          claimToken: 'claim-contended',
+          now: START,
+          leaseUntil: new Date(START.getTime() + 60_000),
+        }),
+      ).rejects.toBeInstanceOf(AgentTriggerClaimContentionError);
+      expect(casSpy).toHaveBeenCalledTimes(CLAIM_CAS_MAX_ATTEMPTS);
+    } finally {
+      casSpy.mockRestore();
+    }
+    /** The losing worker owns nothing: the delivery stays claimable. */
+    await expect(Delivery.findById(enqueued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  it('keeps capability work visible but nonclaimable to pre-capability consumers', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'legacy-visible-capability-lane',
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const stored = await Delivery.findById(queued.delivery.id).lean();
+    expect(stored).toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'pending',
+      claimAvailableAt: START,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+    });
+    expect(stored!.availableAt).toEqual(START);
+    expect(stored!.leaseUntil).toBeUndefined();
+
+    /** Exact pre-shield claim semantics: ordinary pending work or an expired
+     * lease. The inert outer lease has no deadline, so it is never claimable. */
+    const oldClaim = await Delivery.findOneAndUpdate(
+      {
+        $or: [
+          { status: 'pending', availableAt: { $lte: START } },
+          {
+            status: 'leased',
+            leaseUntil: { $lte: new Date(START.getTime() - 30_000) },
+          },
+        ],
+      },
+      {
+        $set: {
+          status: 'leased',
+          leaseBy: 'old-worker',
+          leaseUntil: new Date(START.getTime() + 60_000),
+          claimToken: 'old-claim',
+        },
+      },
+      { new: true },
+    ).lean();
+    expect(oldClaim).toBeNull();
+
+    const successor = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        orderingKey: 'legacy-visible-capability-lane',
+        deliveryKey: 'ordinary-after-shielded-capability',
+      }),
+    );
+    const oldSuccessorClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'old-worker',
+      claimToken: 'old-successor-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    expect(oldSuccessorClaim).toMatchObject({ id: successor.delivery.id });
+    /** Exact pre-shield ordering semantics see the inert lease, but its real
+     * due time and missing lease deadline produce a bounded recheck instead of
+     * copying the year-9999 claim fence onto the successor. */
+    const oldEarlier = await Delivery.findOne({
+      orderingKey: 'legacy-visible-capability-lane',
+      laneSequence: { $lt: successor.delivery.laneSequence },
+      status: { $in: ['pending', 'capability_pending', 'leased', 'capability_leased'] },
+    }).lean();
+    expect(oldEarlier).toMatchObject({ status: 'leased', availableAt: START });
+    expect(oldEarlier!.leaseUntil).toBeUndefined();
+    const successorRecheckAt = new Date(START.getTime() + 5_000);
+    await expect(
+      methods.releaseAgentTriggerDelivery({
+        id: oldSuccessorClaim!.id,
+        workerId: 'old-worker',
+        claimToken: 'old-successor-claim',
+        availableAt: successorRecheckAt,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      Delivery.countDocuments({ user, status: 'leased', leaseUntil: { $gt: START } }),
+    ).resolves.toBe(0);
+
+    const capabilityClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    expect(capabilityClaim).toMatchObject({ id: queued.delivery.id });
+    await expect(
+      Delivery.countDocuments({ user, status: 'leased', leaseUntil: { $gt: START } }),
+    ).resolves.toBe(1);
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: capabilityClaim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: capabilityClaim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      attempt: attempt!,
+      error: transientFailure(),
+      settledAt: START,
+    });
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'new-worker',
+        claimToken: 'successor-after-capability',
+        now: successorRecheckAt,
+        leaseUntil: new Date(successorRecheckAt.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
+  it('shields background completion work from workers that cannot resolve it', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    const claimInput = {
+      workerId: 'worker',
+      claimToken: 'claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    };
+
+    await expect(methods.claimNextAgentTriggerDelivery(claimInput)).resolves.toBeNull();
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        ...claimInput,
+        workerId: 'background-capable-worker',
+        claimToken: 'background-capable-claim',
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
+  });
+
+  it('renews and classifies process-local completion producer liveness idempotently', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const initialLease = new Date(START.getTime() + 30_000);
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-producer-lease',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        producerLeaseUntil: initialLease,
+      }),
+    );
+
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: START,
+      }),
+    ).resolves.toEqual({ status: 'live', leaseUntil: initialLease });
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: new Date(initialLease.getTime() + 1),
+      }),
+    ).resolves.toEqual({ status: 'expired', leaseUntil: initialLease });
+
+    const renewedUntil = new Date(START.getTime() + 60_000);
+    const renewal = {
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      leaseUntil: renewedUntil,
+    };
+    await expect(methods.renewAgentTriggerDeliveryProducerLease(renewal)).resolves.toBe(true);
+    await expect(methods.renewAgentTriggerDeliveryProducerLease(renewal)).resolves.toBe(true);
+    await expect(
+      methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        now: initialLease,
+      }),
+    ).resolves.toEqual({ status: 'live', leaseUntil: renewedUntil });
+  });
+
+  it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    expect(queued.delivery).toMatchObject({
+      status: 'capability_pending',
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+    });
+    const claimInput = {
+      workerId: 'capable-worker',
+      claimToken: 'capable-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    };
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        ...claimInput,
+        workerId: 'old-worker',
+        claimToken: 'old-claim',
+      }),
+    ).resolves.toBeNull();
+    const capable = await methods.claimNextAgentTriggerDelivery({
+      ...claimInput,
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    expect(capable).toMatchObject({ status: 'capability_leased' });
+
+    await Delivery.updateOne(
+      { _id: capable!.id },
+      { $set: { capabilityLeaseUntil: new Date(START.getTime() - 60_000) } },
+    );
+    const recoveryNow = new Date(START.getTime() + 60_000);
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'old-worker',
+        claimToken: 'old-recovery',
+        now: recoveryNow,
+        leaseUntil: new Date(recoveryNow.getTime() + 60_000),
+      }),
+    ).resolves.toBeNull();
+    const recovered = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker-2',
+      claimToken: 'capable-recovery',
+      now: recoveryNow,
+      leaseUntil: new Date(recoveryNow.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    expect(recovered).toMatchObject({ status: 'capability_leased' });
+
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: recovered!.id,
+      workerId: 'capable-worker-2',
+      claimToken: 'capable-recovery',
+      now: recoveryNow,
+    });
+    expect(attempt).toBe(1);
+    await expect(
+      methods.deadLetterAgentTriggerDelivery({
+        id: recovered!.id,
+        workerId: 'capable-worker-2',
+        claimToken: 'capable-recovery',
+        attempt: 1,
+        error: transientFailure({ attemptedAt: recoveryNow }),
+        settledAt: recoveryNow,
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(recovered!.id).lean()).resolves.toMatchObject({
+      status: 'capability_dead',
+      capabilityStatus: 'dead',
+    });
+
+    const [deadLetter] = await methods.getAgentTriggerDeadLetters();
+    expect(deadLetter).toMatchObject({ id: recovered!.id, status: 'capability_dead' });
+    const requeued = await methods.requeueAgentTriggerDelivery(recovered!.id, recoveryNow);
+    expect(requeued).toMatchObject({ status: 'capability_pending' });
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'old-worker',
+        claimToken: 'old-requeue',
+        now: recoveryNow,
+        leaseUntil: new Date(recoveryNow.getTime() + 60_000),
+      }),
+    ).resolves.toBeNull();
+    const finalClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker-3',
+      claimToken: 'capable-final',
+      now: recoveryNow,
+      leaseUntil: new Date(recoveryNow.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    const finalAttempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: finalClaim!.id,
+      workerId: 'capable-worker-3',
+      claimToken: 'capable-final',
+      now: recoveryNow,
+    });
+    await expect(
+      methods.completeAgentTriggerDelivery({
+        id: finalClaim!.id,
+        workerId: 'capable-worker-3',
+        claimToken: 'capable-final',
+        attempt: finalAttempt!,
+        result: { status: 'complete' },
+        settledAt: recoveryNow,
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it('claims the oldest eligible delivery without capability traffic priority', async () => {
+    const ordinary = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'ordinary-older',
+        availableAt: new Date(START.getTime() - 2_000),
+      }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'capability-newer',
+        availableAt: new Date(START.getTime() - 1_000),
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'capable-worker',
+        claimToken: 'claim-oldest',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: ordinary.delivery.id, status: 'leased' });
+  });
+
+  it('retires a failed internal completion admission and unblocks its lane successor', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'background-completion-lane';
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const first = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-1',
+        user,
+        orderingKey,
+        envelope: { event: { source } },
+      }),
+    );
+    const successor = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-2',
+        user,
+        orderingKey,
+        envelope: { event: { source } },
+      }),
+    );
+
+    const retirement = {
+      deliveryKey: first.delivery.deliveryKey,
+      sourceId: source.id,
+      settledAt: START,
+      reason: 'result persistence failed',
+    };
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    await expect(
+      methods.retireAgentTriggerDelivery({ ...retirement, sourceId: 'other-internal-source' }),
+    ).resolves.toBe(false);
+    await expect(
+      Delivery.findOne({ deliveryKey: first.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: {
+        status: 'settled',
+        backgroundToolCompletionRetired: true,
+        reason: 'result persistence failed',
+      },
+    });
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'successor-worker',
+        claimToken: 'successor-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+      }),
+    ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
+  it('treats an already successful internal delivery as terminal retirement evidence', async () => {
+    const source = { id: 'agent-queued-turn', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'queued-turn-already-succeeded',
+        envelope: { event: { source } },
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      now: START,
+    });
+    await methods.completeAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'queued-turn-worker',
+      claimToken: 'queued-turn-claim',
+      attempt: attempt!,
+      result: { status: 'settled' },
+      settledAt: START,
+    });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: new Date(START.getTime() + 1),
+        reason: 'source already terminalized',
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { status: 'settled' },
+      settledAt: START,
+    });
+  });
+
+  it('does not retire a completion already leased by a resolver for a manual poll', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-leased',
+        user,
+        envelope: { event: { source } },
+      }),
+    );
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'completion-worker',
+        claimToken: 'completion-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({ status: 'leased', leaseBy: 'completion-worker' });
+  });
+
+  it('retires a capability-shielded completion before a private resolver claims it', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-shielded-pending',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'pending',
+    });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(true);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { backgroundToolCompletionRetired: true },
+    });
+  });
+
+  it('does not retire a capability completion after a private resolver claims it', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-private-lease',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'background-capable-worker',
+        claimToken: 'background-capable-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+      }),
+    ).resolves.toMatchObject({ id: queued.delivery.id });
+
+    await expect(
+      methods.retireAgentTriggerDelivery({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        settledAt: START,
+        reason: 'manual poll elected',
+        onlyIfUnclaimed: true,
+      }),
+    ).resolves.toBe(false);
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'leased',
+    });
+  });
+
+  it('reconciles only an irreversibly dead completion for manual polling', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-dead',
+        user,
+        envelope: { event: { source } },
+      }),
+    );
+    await Delivery.updateOne(
+      { _id: queued.delivery.id },
+      { $set: { status: 'dead', settledAt: START } },
+    );
+
+    const retirement = {
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      settledAt: new Date(START.getTime() + 1),
+      reason: 'manual poll recovered dead completion',
+      onlyIfDead: true,
+    } as const;
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    /** A later claim-release retry must recognize the recovery receipt even
+     * though the delivery no longer has a dead status. */
+    await expect(methods.retireAgentTriggerDelivery(retirement)).resolves.toBe(true);
+    await expect(
+      Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey }).lean(),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { backgroundToolCompletionRetired: true },
+    });
+  });
+
+  it('claims older capability work before newer ordinary work', async () => {
+    const capability = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'capability-older',
+        availableAt: new Date(START.getTime() - 2_000),
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'ordinary-newer',
+        availableAt: new Date(START.getTime() - 1_000),
+      }),
+    );
+
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'capable-worker',
+        claimToken: 'claim-oldest-capability',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: capability.delivery.id, status: 'capability_leased' });
+  });
+
+  it('adopts capability publication completed by a legacy lane publisher', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'legacy-capability-publication';
+    const capability = await Delivery.create({
+      ...enqueueInput({
+        user,
+        orderingKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+      status: 'staging',
+      capabilityStatus: 'publishing',
+      claimAvailableAt: START,
+      availableAt: new Date('9999-12-31T23:59:59.999Z'),
+      leaseUntil: new Date('9999-12-31T23:59:59.999Z'),
+      laneSequence: 0,
+      attempts: 0,
+      requeueCount: 0,
+      stagingRecoveryAt: START,
+    });
+    await LaneSequence.create({
+      _id: orderingKey,
+      value: 1,
+      user,
+      publisherDeliveryId: capability._id,
+      publisherStartedAt: START,
+    });
+
+    /** Exact pre-capability publication writes: the old replica assigns the
+     * reserved sequence and releases the publisher without touching private fields. */
+    await Delivery.updateOne(
+      { _id: capability._id, orderingKey, status: 'staging' },
+      {
+        $set: { status: 'capability_pending', laneSequence: 1 },
+        $unset: { stagingRecoveryAt: 1 },
+      },
+    );
+    await LaneSequence.updateOne(
+      { _id: orderingKey, value: 1, publisherDeliveryId: capability._id },
+      {
+        $set: { tailDeliveryId: capability._id },
+        $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 },
+      },
+    );
+
+    const later = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey, deliveryKey: 'ordinary-after-capability' }),
+    );
+
+    await expect(Delivery.findById(capability._id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'pending',
+      laneSequence: 1,
+    });
+    expect(later.delivery).toMatchObject({ laneSequence: 2 });
+  });
+
+  it('keeps a privately dead capability delivery nonblocking to old and new workers', async () => {
+    const orderingKey = 'dead-capability-lane';
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        orderingKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'capable-dead-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-dead-claim',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'capable-dead-claim',
+      attempt: 1,
+      error: transientFailure(),
+      settledAt: START,
+    });
+    const successor = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ orderingKey, deliveryKey: 'successor-after-dead-capability' }),
+    );
+
+    await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
+      status: 'capability_dead',
+      capabilityStatus: 'dead',
+    });
+    /** Exact pre-shield ordering query. A `pending` shell here would make an
+     * old worker defer the successor until the year-9999 availability fence. */
+    const oldEarlier = await Delivery.findOne({
+      orderingKey,
+      laneSequence: { $lt: successor.delivery.laneSequence },
+      $or: [
+        {
+          status: {
+            $in: ['pending', 'capability_pending', 'leased', 'capability_leased'],
+          },
+        },
+        {
+          status: 'succeeded',
+          batchRootId: { $exists: false },
+          awaitTerminalHandling: true,
+          'handling.status': 'started',
+        },
+      ],
+    }).lean();
+    expect(oldEarlier).toBeNull();
+    await expect(methods.findEarlierAgentTriggerDelivery(successor.delivery)).resolves.toBeNull();
+    await expect(
+      methods.claimNextAgentTriggerDelivery({
+        workerId: 'new-worker',
+        claimToken: 'new-worker-successor-claim',
+        now: START,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      }),
+    ).resolves.toMatchObject({ id: successor.delivery.id });
+  });
+
+  it('adopts a private dead delivery explicitly requeued by a pre-shield replica', async () => {
+    await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        orderingKey: 'legacy-requeued-dead-capability',
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-requeue',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-requeue',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-requeue',
+      attempt: 1,
+      error: transientFailure(),
+      settledAt: START,
+    });
+
+    const requeueAt = new Date(START.getTime() + 1_000);
+    /** Final state produced by the pre-shield requeue implementation: it
+     * recognizes `capability_dead`, republishes `capability_pending`, and does
+     * not know that the private lifecycle field must also be reset. */
+    await Delivery.updateOne(
+      { _id: claim!.id, status: 'capability_dead', capabilityStatus: 'dead' },
+      {
+        $set: { status: 'capability_pending', availableAt: requeueAt },
+        $unset: { settledAt: 1, lastError: 1 },
+        $inc: { requeueCount: 1 },
+      },
+    );
+
+    const reclaimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'new-worker',
+      claimToken: 'claim-after-legacy-requeue',
+      now: requeueAt,
+      leaseUntil: new Date(requeueAt.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    expect(reclaimed).toMatchObject({ id: claim!.id, status: 'capability_leased' });
+    await expect(Delivery.findById(claim!.id).lean()).resolves.toMatchObject({
+      status: 'leased',
+      capabilityStatus: 'leased',
+      claimAvailableAt: requeueAt,
+    });
+  });
+
+  it('accepts legacy success as terminal over stale private dead state', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        orderingKey: 'legacy-completed-dead-capability',
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+    });
+    await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      now: START,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'capable-worker',
+      claimToken: 'claim-before-legacy-success',
+      attempt: 1,
+      error: transientFailure(),
+      settledAt: START,
+    });
+
+    const requeueAt = new Date(START.getTime() + 1_000);
+    await Delivery.updateOne(
+      { _id: claim!.id, status: 'capability_dead', capabilityStatus: 'dead' },
+      {
+        $set: { status: 'capability_pending', availableAt: requeueAt },
+        $unset: { settledAt: 1, lastError: 1 },
+        $inc: { requeueCount: 1 },
+      },
+    );
+    const legacyLeaseUntil = new Date(requeueAt.getTime() + 60_000);
+    const legacyClaim = await Delivery.findOneAndUpdate(
+      { _id: claim!.id, status: 'capability_pending', availableAt: { $lte: requeueAt } },
+      {
+        $set: {
+          status: 'capability_leased',
+          leaseBy: 'old-worker',
+          leaseUntil: legacyLeaseUntil,
+          claimToken: 'old-success-claim',
+        },
+      },
+      { new: true },
+    ).lean();
+    expect(legacyClaim).toMatchObject({
+      status: 'capability_leased',
+      capabilityStatus: 'dead',
+    });
+
+    const completedAt = new Date(requeueAt.getTime() + 1_000);
+    /** Exact terminal write left by the pre-shield worker: the outer lifecycle
+     * succeeds while the private lifecycle remains unknown and stale. */
+    await Delivery.updateOne(
+      {
+        _id: claim!.id,
+        status: 'capability_leased',
+        leaseBy: 'old-worker',
+        claimToken: 'old-success-claim',
+      },
+      {
+        $set: {
+          status: 'succeeded',
+          attempts: 2,
+          result: { status: 'legacy-complete' },
+          settledAt: completedAt,
+        },
+        $unset: {
+          leaseBy: 1,
+          leaseUntil: 1,
+          claimToken: 1,
+          lastError: 1,
+        },
+      },
+    );
+
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      result: { status: 'legacy-complete' },
+    });
+    await expect(methods.getAgentTriggerDeadLetters()).resolves.not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: claim!.id })]),
+    );
+  });
+
   it('allocates a replica-stable monotonic sequence within an ordering lane', async () => {
     const user = new mongoose.Types.ObjectId();
     const replicas = [
@@ -254,6 +1131,89 @@ describe('agent trigger delivery methods', () => {
     expect(enqueued.map(({ delivery }) => delivery.laneSequence).sort((a, b) => a - b)).toEqual(
       Array.from({ length: 12 }, (_, index) => index + 1),
     );
+  });
+
+  it('does not publish a later requeue through a stale lane reservation', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'stale-publication-generation';
+    const originalUpdateOne = Delivery.collection.updateOne.bind(Delivery.collection);
+    let releaseStalePublication!: () => void;
+    let stalePublicationPaused!: () => void;
+    const stalePublicationGate = new Promise<void>((resolve) => {
+      releaseStalePublication = resolve;
+    });
+    const stalePublicationObserved = new Promise<void>((resolve) => {
+      stalePublicationPaused = resolve;
+    });
+    let paused = false;
+    const updateSpy = jest
+      .spyOn(Delivery.collection, 'updateOne')
+      .mockImplementation(async (filter, update, options) => {
+        const status = (filter.status ??
+          (filter.$or as Array<{ status?: { $in?: string[] } }> | undefined)?.find(
+            (condition) => condition.status != null,
+          )?.status) as { $in?: string[] } | undefined;
+        if (
+          !paused &&
+          filter.orderingKey === orderingKey &&
+          status?.$in?.includes('staging') === true &&
+          filter.requeueCount === 0
+        ) {
+          paused = true;
+          stalePublicationPaused();
+          await stalePublicationGate;
+        }
+        return originalUpdateOne(filter, update, options);
+      });
+
+    try {
+      const enqueue = methods.enqueueAgentTriggerDelivery(enqueueInput({ user, orderingKey }));
+      await stalePublicationObserved;
+
+      await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(1);
+      const published = await Delivery.findOne({ orderingKey }).lean();
+      expect(published).toMatchObject({ status: 'pending', laneSequence: 1, requeueCount: 0 });
+
+      await originalUpdateOne(
+        { _id: published!._id },
+        {
+          $set: {
+            status: 'staging',
+            laneSequence: 0,
+            requeueCount: 1,
+            stagingRecoveryAt: new Date(),
+          },
+        },
+      );
+      await LaneSequence.updateOne(
+        {
+          _id: orderingKey,
+          value: 1,
+          publisherDeliveryId: { $exists: false },
+        },
+        {
+          $inc: { value: 1 },
+          $set: {
+            publisherDeliveryId: published!._id,
+            publisherRequeueCount: 1,
+            publisherStartedAt: new Date(),
+          },
+        },
+      );
+
+      releaseStalePublication();
+      await expect(enqueue).resolves.toMatchObject({
+        delivery: { status: 'pending', laneSequence: 2, requeueCount: 1 },
+      });
+      await expect(Delivery.findById(published!._id).lean()).resolves.toMatchObject({
+        status: 'pending',
+        laneSequence: 2,
+        requeueCount: 1,
+      });
+    } finally {
+      releaseStalePublication();
+      updateSpy.mockRestore();
+    }
   });
 
   it('coalesces a concurrent replica burst behind one claimable root and settles every receipt', async () => {
@@ -1665,6 +2625,9 @@ describe('agent trigger delivery methods', () => {
      * the exact transport attempt is still leased. */
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(true);
+    await expect(methods.getAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(
+      'admission-1',
+    );
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(false);
     const successorAdmission = { ...actionAdmission, admissionId: 'admission-2' };
     await expect(methods.admitAgentEventActorAction(successorAdmission)).resolves.toBe(false);
@@ -1675,6 +2638,7 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.hasAgentEventActorActionAdmission(successorAdmission)).resolves.toBe(true);
     await expect(methods.releaseAgentEventActorAction(successorAdmission)).resolves.toBe(true);
     await expect(methods.hasAgentEventActorActionAdmission(actionAdmission)).resolves.toBe(false);
+    await expect(methods.getAgentEventActorActionAdmission(actionAdmission)).resolves.toBeNull();
     /** A pre-token worker's live admission must remain opaque but protected
      * throughout a rolling upgrade. New workers may observe the fence, but
      * cannot replace or release it without its (unavailable) owner token. */
@@ -1754,6 +2718,14 @@ describe('agent trigger delivery methods', () => {
     await expect(methods.admitAgentEventActorAction(actionAdmission)).resolves.toBe(true);
     await expect(methods.settleAgentEventActorReceipt(settlement)).resolves.toBe(true);
     await expect(methods.releaseAgentEventActorAction(actionAdmission)).resolves.toBe(false);
+    const settledDelivery = await Delivery.findOne({ deliveryKey: settlement.deliveryKey })
+      .select('+actorActionAdmittedAt +actorActionAdmissionId')
+      .lean();
+    expect(settledDelivery).not.toHaveProperty('actorActionAdmittedAt');
+    expect(settledDelivery).not.toHaveProperty('actorActionAdmissionId');
+    await expect(
+      methods.countActiveAgentTriggerDeliveriesByUser(queued.delivery.user, settlement.settledAt),
+    ).resolves.toBe(0);
     /** Simulate a receipt written by the pre-normalization build after
      * transport dead-lettered the root. Exact replay must retire that dead
      * state instead of leaving a non-requeueable dead letter. */
@@ -1827,6 +2799,474 @@ describe('agent trigger delivery methods', () => {
         conversationId: 'conversation-1',
       }),
     ).resolves.toBeNull();
+  });
+
+  it('persists detached evidence before the started transport response settles', async () => {
+    const bindingId = 'binding-detached-leased';
+    const conversationId = 'conversation-detached-leased';
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        tenantId: undefined,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-detached-leased',
+      claimToken: 'claim-detached-leased',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-detached-leased',
+      claimToken: 'claim-detached-leased',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await expect(
+      methods.admitAgentEventActorAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        admittedAt: new Date(generationCreatedAt),
+        admissionId: 'admission-detached-leased',
+      }),
+    ).resolves.toBe(true);
+    const reservation = await methods.reserveAgentEventActorDetachedAction({
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      turnId: 'response-detached-leased:0',
+      invocationId: queued.delivery.deliveryKey,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-leased',
+      reservedAt: new Date(generationCreatedAt + 1_000),
+      recoveryAfter: new Date(generationCreatedAt + 61_000),
+    });
+    expect(reservation.status).toBe('reserved');
+    const update = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      taskId: reservation.action.taskId,
+      idempotencyKey: reservation.action.idempotencyKey,
+      observedAt: new Date(generationCreatedAt + 2_000),
+      recoveryAfter: new Date(generationCreatedAt + 1_802_000),
+    };
+    await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toEqual({
+      status: 'applied',
+    });
+    const retryAt = new Date(generationCreatedAt + 3_000);
+    await expect(
+      methods.retryAgentTriggerDelivery({
+        id: claimed!.id,
+        workerId: 'worker-detached-leased',
+        claimToken: 'claim-detached-leased',
+        attempt: attempt!,
+        error: transientFailure({ attemptedAt: retryAt }),
+        availableAt: retryAt,
+      }),
+    ).resolves.toBe(true);
+    await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toEqual({
+      status: 'already_applied',
+    });
+    const retryClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-detached-retry',
+      claimToken: 'claim-detached-retry',
+      now: retryAt,
+      leaseUntil: new Date(retryAt.getTime() + 60_000),
+    });
+    const retryAttempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: retryClaim!.id,
+      workerId: 'worker-detached-retry',
+      claimToken: 'claim-detached-retry',
+      now: retryAt,
+    });
+    await expect(
+      methods.deadLetterAgentTriggerDelivery({
+        id: retryClaim!.id,
+        workerId: 'worker-detached-retry',
+        claimToken: 'claim-detached-retry',
+        attempt: retryAttempt!,
+        error: transientFailure({ attemptedAt: retryAt }),
+        settledAt: retryAt,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        status: 'succeeded',
+        result: 'accepted',
+        observedAt: new Date(generationCreatedAt + 4_000),
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    await expect(
+      methods.getAgentEventActorDetachedAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ status: 'succeeded', result: 'accepted' }));
+  });
+
+  it('reserves a detached retry for the exact leased owner before handling is persisted', async () => {
+    const bindingId = 'binding-detached-leased-retry';
+    const conversationId = 'conversation-detached-leased-retry';
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        tenantId: undefined,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-detached-leased-retry',
+      claimToken: 'claim-detached-leased-retry',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    await expect(
+      methods.admitAgentEventActorAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        admittedAt: new Date(generationCreatedAt),
+        admissionId: 'admission-detached-leased-retry',
+      }),
+    ).resolves.toBe(true);
+    const first = await methods.reserveAgentEventActorDetachedAction({
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      turnId: 'response-detached-leased-retry:0',
+      invocationId: queued.delivery.deliveryKey,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-leased-retry-1',
+      reservedAt: new Date(generationCreatedAt + 1_000),
+      recoveryAfter: new Date(generationCreatedAt + 61_000),
+    });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+        taskId: first.action.taskId,
+        idempotencyKey: first.action.idempotencyKey,
+        status: 'failed',
+        error: 'definite adapter failure',
+        observedAt: new Date(generationCreatedAt + 2_000),
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+
+    const retryInput = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      turnId: 'response-detached-leased-retry:1',
+      invocationId: queued.delivery.deliveryKey,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-leased-retry-2',
+      reservedAt: new Date(generationCreatedAt + 3_000),
+      recoveryAfter: new Date(generationCreatedAt + 63_000),
+    };
+    const retry = await methods.reserveAgentEventActorDetachedAction(retryInput);
+
+    expect(retry).toMatchObject({
+      status: 'reserved',
+      action: {
+        launchAttempt: 1,
+        toolCallId: 'call-detached-leased-retry-2',
+        status: 'reserved',
+      },
+    });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        deliveryKey: queued.delivery.deliveryKey,
+        user: queued.delivery.user,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+        taskId: retry.action.taskId,
+        idempotencyKey: retry.action.idempotencyKey,
+        status: 'failed',
+        error: 'retry adapter failure',
+        observedAt: new Date(generationCreatedAt + 4_000),
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    await expect(
+      methods.reserveAgentEventActorDetachedAction({
+        ...retryInput,
+        reservedAt: new Date(generationCreatedAt + 5_000),
+        recoveryAfter: new Date(generationCreatedAt + 65_000),
+      }),
+    ).resolves.toMatchObject({
+      status: 'replay',
+      action: {
+        taskId: retry.action.taskId,
+        idempotencyKey: retry.action.idempotencyKey,
+        launchAttempt: 1,
+        status: 'failed',
+      },
+    });
+    const stored = await Delivery.findOne({ deliveryKey: queued.delivery.deliveryKey })
+      .select('+actorDetachedActionHistory')
+      .lean();
+    expect(stored).toMatchObject({
+      status: 'leased',
+      actorDetachedActionHistory: [
+        expect.objectContaining({ taskId: first.action.taskId, status: 'failed' }),
+      ],
+    });
+    expect(stored).not.toHaveProperty('handling');
+  });
+
+  it('gives one replica the detached expected-action launch reservation', async () => {
+    const bindingId = 'binding-detached-1';
+    const conversationId = 'conversation-detached-1';
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        awaitTerminalHandling: true,
+        tenantId: undefined,
+        envelope: {
+          mode: 'continue',
+          target: { bindingId },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
+        },
+      }),
+    );
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-detached-1',
+      claimToken: 'claim-detached-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-detached-1',
+      claimToken: 'claim-detached-1',
+      now: START,
+    });
+    const generationCreatedAt = START.getTime() + 1_000;
+    const admission = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      admittedAt: new Date(generationCreatedAt),
+      admissionId: 'admission-detached-1',
+    };
+    await expect(methods.admitAgentEventActorAction(admission)).resolves.toBe(true);
+    await methods.completeAgentTriggerDelivery({
+      id: claimed!.id,
+      workerId: 'worker-detached-1',
+      claimToken: 'claim-detached-1',
+      attempt: attempt!,
+      result: { status: 'started' },
+      settledAt: new Date(generationCreatedAt),
+      awaitTerminalHandling: true,
+      handling: {
+        status: 'started',
+        conversationId,
+        streamId: conversationId,
+        generationCreatedAt,
+        startedAt: new Date(generationCreatedAt),
+      },
+    });
+    const reservation = {
+      deliveryKey: queued.delivery.deliveryKey,
+      user: queued.delivery.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      turnId: 'response-detached-1:0',
+      invocationId: queued.delivery.deliveryKey,
+      expectedToolName: 'submit_move',
+      toolName: 'submit_move_mcp_chess',
+      toolCallId: 'call-detached-1',
+      reservedAt: new Date(generationCreatedAt + 1_000),
+      recoveryAfter: new Date(generationCreatedAt + 61_000),
+    };
+
+    const contenders = await Promise.all([
+      methods.reserveAgentEventActorDetachedAction(reservation),
+      methods.reserveAgentEventActorDetachedAction(reservation),
+    ]);
+
+    expect(contenders.map((result) => result.status).sort()).toEqual(['replay', 'reserved']);
+    expect(contenders[0].action).toEqual(contenders[1].action);
+    expect(contenders[0].action).toMatchObject({
+      version: 1,
+      invocationId: reservation.invocationId,
+      expectedToolName: reservation.expectedToolName,
+      toolName: reservation.toolName,
+      toolCallId: reservation.toolCallId,
+      taskId: expect.stringMatching(/^event_actor_[a-f0-9]{64}$/),
+      status: 'reserved',
+      launchAttempt: 0,
+      reservedAt: reservation.reservedAt,
+    });
+    expect(contenders[0].action.idempotencyKey).toMatch(/^[a-f0-9]{64}$/);
+    await expect(methods.reserveAgentEventActorDetachedAction(reservation)).resolves.toEqual({
+      status: 'replay',
+      action: contenders[0].action,
+    });
+
+    const update = {
+      deliveryKey: reservation.deliveryKey,
+      user: reservation.user,
+      bindingId,
+      conversationId,
+      generationCreatedAt,
+      taskId: contenders[0].action.taskId,
+      idempotencyKey: contenders[0].action.idempotencyKey,
+      observedAt: new Date(generationCreatedAt + 2_000),
+      recoveryAfter: new Date(generationCreatedAt + 1_802_000),
+    };
+    /** The same durable state covers process death both before invoke and in
+     * the unobservable invoke->acknowledgement window: neither permits relaunch. */
+    await expect(
+      methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+        ...update,
+        observedAt: reservation.recoveryAfter,
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        status: 'failed',
+        error: 'move service unavailable',
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    await expect(methods.markAgentEventActorDetachedActionRunning(update)).resolves.toEqual({
+      status: 'already_applied',
+    });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        observedAt: new Date(generationCreatedAt + 5_000),
+        status: 'failed',
+        error: 'move service unavailable',
+      }),
+    ).resolves.toEqual({ status: 'already_applied' });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...update,
+        status: 'succeeded',
+        result: 'conflicting result',
+      }),
+    ).resolves.toEqual({ status: 'conflict' });
+    await expect(methods.reserveAgentEventActorDetachedAction(reservation)).resolves.toMatchObject({
+      status: 'replay',
+      action: { taskId: contenders[0].action.taskId, status: 'failed' },
+    });
+    const retryReservation = await methods.reserveAgentEventActorDetachedAction({
+      ...reservation,
+      turnId: 'response-detached-1:1',
+      reservedAt: new Date(generationCreatedAt + 3_000),
+      recoveryAfter: new Date(generationCreatedAt + 63_000),
+    });
+    expect(retryReservation).toMatchObject({
+      status: 'reserved',
+      action: {
+        launchAttempt: 1,
+        toolCallId: reservation.toolCallId,
+        status: 'reserved',
+      },
+    });
+    expect(retryReservation.action.taskId).not.toBe(contenders[0].action.taskId);
+    const retryUpdate = {
+      ...update,
+      taskId: retryReservation.action.taskId,
+      idempotencyKey: retryReservation.action.idempotencyKey,
+      observedAt: new Date(generationCreatedAt + 4_000),
+    };
+    await expect(
+      methods.markAgentEventActorDetachedActionRunning({
+        ...retryUpdate,
+        recoveryAfter: new Date(generationCreatedAt + 1_804_000),
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    await expect(
+      methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+        ...retryUpdate,
+        observedAt: new Date(generationCreatedAt + 1_803_999),
+      }),
+    ).resolves.toEqual({ status: 'conflict' });
+    await expect(
+      methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+        ...retryUpdate,
+        observedAt: new Date(generationCreatedAt + 1_804_000),
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    await expect(
+      methods.markAgentEventActorDetachedActionLaunchIndeterminate({
+        ...retryUpdate,
+        observedAt: new Date(generationCreatedAt + 1_805_000),
+      }),
+    ).resolves.toEqual({ status: 'already_applied' });
+    await expect(
+      methods.settleAgentEventActorDetachedAction({
+        ...retryUpdate,
+        observedAt: new Date(generationCreatedAt + 1_806_000),
+        status: 'succeeded',
+        result: 'move accepted',
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    const stored = await Delivery.findOne({ deliveryKey: reservation.deliveryKey })
+      .select('+actorDetachedAction +actorDetachedActionHistory')
+      .lean();
+    expect(stored?.actorDetachedAction).toMatchObject({
+      status: 'succeeded',
+      result: 'move accepted',
+      launchAttempt: 1,
+    });
+    expect(stored?.actorDetachedActionHistory).toEqual([
+      expect.objectContaining({
+        taskId: contenders[0].action.taskId,
+        status: 'failed',
+        error: 'move service unavailable',
+      }),
+    ]);
+    await expect(
+      methods.getAgentEventActorDetachedAction({
+        deliveryKey: reservation.deliveryKey,
+        user: reservation.user,
+        bindingId,
+        conversationId,
+        generationCreatedAt,
+      }),
+    ).resolves.toMatchObject({
+      taskId: retryReservation.action.taskId,
+      status: 'succeeded',
+      result: 'move accepted',
+    });
   });
 
   it('serializes no-action settlement against renewed action admission', async () => {
@@ -2645,10 +4085,11 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
-  it('counts only live leases while an account deletion drains', async () => {
+  it('counts live leases and detached launch authority while an account deletion drains', async () => {
     const user = new mongoose.Types.ObjectId();
-    await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
-    await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    const leased = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    const detached = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    const admitted = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
     await methods.claimNextAgentTriggerDelivery({
       workerId: 'worker-1',
       claimToken: 'claim-1',
@@ -2656,13 +4097,140 @@ describe('agent trigger delivery methods', () => {
       leaseUntil: new Date(START.getTime() + 60_000),
     });
 
-    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(1);
+    await Delivery.updateOne(
+      { _id: detached.delivery.id },
+      {
+        $set: {
+          status: 'succeeded',
+          actorDetachedAction: {
+            version: 1,
+            invocationId: detached.delivery.deliveryKey,
+            expectedToolName: 'submit_move',
+            toolName: 'submit_move_mcp_chess',
+            toolCallId: 'call-delete-drain',
+            turnId: 'response-delete-drain:0',
+            taskId: `event_actor_${'d'.repeat(64)}`,
+            idempotencyKey: 'd'.repeat(64),
+            launchAttempt: 0,
+            status: 'running',
+            reservedAt: START,
+            observedAt: START,
+            recoveryAfter: new Date(START.getTime() + 60_000),
+            launchedAt: START,
+          },
+        },
+      },
+    );
+    await Delivery.updateOne(
+      { _id: admitted.delivery.id },
+      {
+        $set: {
+          status: 'succeeded',
+          actorActionAdmittedAt: START,
+          actorActionAdmissionId: 'admission-delete-drain',
+        },
+      },
+    );
+
+    expect(leased.delivery.id).not.toBe(detached.delivery.id);
+    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(3);
+    expect(
+      await methods.countActiveAgentTriggerDeliveriesByUser(
+        user,
+        new Date(START.getTime() + 60_001),
+      ),
+    ).toBe(2);
+    await Delivery.updateOne(
+      { _id: detached.delivery.id },
+      { $set: { 'actorDetachedAction.status': 'launch_indeterminate' } },
+    );
+    expect(
+      await methods.countActiveAgentTriggerDeliveriesByUser(
+        user,
+        new Date(START.getTime() + 60_001),
+      ),
+    ).toBe(2);
+    await Delivery.updateOne(
+      { _id: detached.delivery.id },
+      { $set: { 'actorDetachedAction.status': 'succeeded' } },
+    );
+    expect(
+      await methods.countActiveAgentTriggerDeliveriesByUser(
+        user,
+        new Date(START.getTime() + 60_001),
+      ),
+    ).toBe(1);
+    await Delivery.updateOne(
+      { _id: admitted.delivery.id },
+      { $unset: { actorActionAdmittedAt: 1, actorActionAdmissionId: 1 } },
+    );
     expect(
       await methods.countActiveAgentTriggerDeliveriesByUser(
         user,
         new Date(START.getTime() + 60_001),
       ),
     ).toBe(0);
+  });
+
+  it('serializes account deletion against action admission on each delivery row', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    await User.create({
+      _id: user,
+      email: 'admission-fence@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    const first = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        envelope: { mode: 'continue', target: { bindingId: 'binding-purge' } },
+      }),
+    );
+    const second = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        envelope: { mode: 'continue', target: { bindingId: 'binding-purge' } },
+      }),
+    );
+    await Delivery.updateMany({ user }, { $set: { status: 'succeeded' } });
+    const admission = {
+      deliveryKey: first.delivery.deliveryKey,
+      user,
+      tenantId: 'tenant-1',
+      bindingId: 'binding-purge',
+      conversationId: 'conversation-purge',
+      admittedAt: START,
+      admissionId: 'admission-before-purge',
+    };
+
+    await expect(methods.admitAgentEventActorAction(admission)).resolves.toBe(true);
+    await methods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await expect(
+      methods.countActiveAgentTriggerDeliveriesByUser(user, new Date(START.getTime() + 60_001)),
+    ).resolves.toBe(1);
+    await expect(
+      methods.admitAgentEventActorAction({
+        ...admission,
+        deliveryKey: second.delivery.deliveryKey,
+        admissionId: 'admission-after-purge',
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      Delivery.countDocuments({ user, actorActionAdmissionClosedAt: fenceStartedAt }),
+    ).resolves.toBe(2);
+
+    await expect(methods.cancelAgentTriggerUserPurge(user, fenceStartedAt)).resolves.toBe(true);
+    await expect(
+      Delivery.countDocuments({ user, actorActionAdmissionClosedAt: { $exists: true } }),
+    ).resolves.toBe(0);
+    await expect(
+      methods.admitAgentEventActorAction({
+        ...admission,
+        deliveryKey: second.delivery.deliveryKey,
+        admissionId: 'admission-after-cancel',
+      }),
+    ).resolves.toBe(true);
   });
 
   it('deletes all queued payloads for an erased user', async () => {
@@ -2689,6 +4257,43 @@ describe('agent trigger delivery methods', () => {
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
   });
 
+  it('retains trigger purge state when queued-turn cleanup fails', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    let unavailable = true;
+    const purgeQueuedTurnsForUser = jest.fn(async () => {
+      if (unavailable) {
+        throw new Error('queued-turn store unavailable');
+      }
+    });
+    const purgeMethods = createAgentTriggerDeliveryMethods(mongoose, {
+      purgeQueuedTurnsForUser,
+    });
+    await User.create({
+      _id: user,
+      email: 'purge-callback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await purgeMethods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await purgeMethods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(purgeMethods.deleteAgentTriggerDeliveriesByUser(user)).rejects.toThrow(
+      'queued-turn store unavailable',
+    );
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    unavailable = false;
+    await expect(purgeMethods.deleteAgentTriggerDeliveriesByUser(user)).resolves.toBeUndefined();
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+    expect(purgeQueuedTurnsForUser).toHaveBeenCalledTimes(2);
+  });
+
   it('recovers an armed purge after the user deletion commits', async () => {
     const user = new mongoose.Types.ObjectId();
     const fenceStartedAt = new Date(START);
@@ -2707,6 +4312,42 @@ describe('agent trigger delivery methods', () => {
 
     await User.deleteOne({ _id: user });
     await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+  });
+
+  it('retains a recovery marker when queued-turn purge cannot be confirmed', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    let unavailable = true;
+    const purgeQueuedTurnsForUser = jest.fn(async () => {
+      if (unavailable) {
+        throw new Error('queued-turn store unavailable');
+      }
+    });
+    const purgeMethods = createAgentTriggerDeliveryMethods(mongoose, {
+      purgeQueuedTurnsForUser,
+    });
+    await User.create({
+      _id: user,
+      email: 'purge-recovery-callback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await purgeMethods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await purgeMethods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(purgeMethods.recoverAgentTriggerUserPurges()).rejects.toThrow(
+      'queued-turn store unavailable',
+    );
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    unavailable = false;
+    await expect(purgeMethods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
     expect(await Delivery.countDocuments({ user })).toBe(0);
     expect(await LaneSequence.countDocuments({ user })).toBe(0);
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
@@ -2754,6 +4395,9 @@ describe('agent trigger delivery methods', () => {
 
     await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(0);
     expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(
+      await Delivery.countDocuments({ user, actorActionAdmissionClosedAt: { $exists: true } }),
+    ).toBe(0);
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
   });
 

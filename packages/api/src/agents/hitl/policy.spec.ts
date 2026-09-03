@@ -17,18 +17,95 @@ import {
   applyResumeContext,
   applyResumeModelParameters,
   exemptAskUserQuestionFromApproval,
+  isToolApprovalPauseCapable,
+  isToolDeniedByApprovalPolicy,
 } from './policy';
 
+describe('isToolApprovalPauseCapable', () => {
+  it('recognizes the default ask fallback and explicit ask rules', () => {
+    expect(isToolApprovalPauseCapable({ enabled: true })).toBe(true);
+    expect(isToolApprovalPauseCapable({ enabled: true, mode: 'bypass', ask: ['write_*'] })).toBe(
+      true,
+    );
+  });
+
+  it('excludes policies that can only allow or deny', () => {
+    expect(isToolApprovalPauseCapable({ enabled: true, mode: 'bypass' })).toBe(false);
+    expect(isToolApprovalPauseCapable({ enabled: true, mode: 'dontAsk' })).toBe(false);
+    expect(isToolApprovalPauseCapable({ enabled: true, allow: ['*'] })).toBe(false);
+    expect(isToolApprovalPauseCapable({ enabled: true, deny: ['*'], ask: ['write_*'] }, true)).toBe(
+      false,
+    );
+  });
+
+  it('treats a programmatic hook as pause-capable when policy does not deny every tool', () => {
+    expect(isToolApprovalPauseCapable({ enabled: true, mode: 'bypass' }, true)).toBe(true);
+  });
+
+  it('intersects approval rules with the selected run tool surface', () => {
+    const policy = { enabled: true, mode: 'bypass' as const, ask: ['write_*'] };
+    expect(isToolApprovalPauseCapable(policy, false, [])).toBe(false);
+    expect(isToolApprovalPauseCapable(policy, false, ['read_file'])).toBe(false);
+    expect(isToolApprovalPauseCapable(policy, false, ['write_file'])).toBe(true);
+    expect(isToolApprovalPauseCapable({ enabled: true }, false, ['read_file'])).toBe(true);
+  });
+
+  it('keeps deny precedence when a matching programmatic hook can ask', () => {
+    const policy = { enabled: true, mode: 'bypass' as const, deny: ['delete_*'] };
+    expect(isToolApprovalPauseCapable(policy, true, ['delete_file'])).toBe(false);
+    expect(isToolApprovalPauseCapable(policy, true, ['write_file'])).toBe(true);
+  });
+});
+
+describe('isToolDeniedByApprovalPolicy', () => {
+  it('matches exact and wildcard denies only when approval is enabled', () => {
+    expect(
+      isToolDeniedByApprovalPolicy({ enabled: true, deny: ['ask_*'] }, 'ask_user_question'),
+    ).toBe(true);
+    expect(
+      isToolDeniedByApprovalPolicy({ enabled: true, deny: ['write_*'] }, 'ask_user_question'),
+    ).toBe(false);
+    expect(
+      isToolDeniedByApprovalPolicy({ enabled: false, deny: ['ask_*'] }, 'ask_user_question'),
+    ).toBe(false);
+  });
+});
+
 describe('resolveToolApprovalPolicy', () => {
-  test('returns the endpoint policy unchanged (single layer wired today)', () => {
+  test('returns the endpoint policy unchanged when BYOM is not active', () => {
     const endpoint: TToolApprovalPolicy = { enabled: true, mode: 'default', deny: ['rm'] };
-    // Identity, not a copy — the resolver is a passthrough until more layers ship.
+    // Identity, not a copy — non-BYOM behavior remains unchanged.
     expect(resolveToolApprovalPolicy({ endpoint })).toBe(endpoint);
   });
 
   test('returns undefined when there is no endpoint policy', () => {
     expect(resolveToolApprovalPolicy({})).toBeUndefined();
     expect(resolveToolApprovalPolicy({ endpoint: undefined })).toBeUndefined();
+  });
+
+  test('enables the safe BYOM baseline without affecting unrelated tools', () => {
+    expect(resolveToolApprovalPolicy({ attachedCodeEnvironment: true })).toEqual({
+      enabled: true,
+      mode: 'bypass',
+    });
+  });
+
+  test('keeps the BYOM bypass baseline when the endpoint normally uses default mode', () => {
+    expect(
+      resolveToolApprovalPolicy({
+        endpoint: { enabled: true, mode: 'default', deny: ['dangerous_tool'] },
+        attachedCodeEnvironment: true,
+      }),
+    ).toEqual({
+      enabled: true,
+      mode: 'bypass',
+      deny: ['dangerous_tool'],
+    });
+  });
+
+  test('preserves the administrator emergency override for BYOM', () => {
+    const endpoint: TToolApprovalPolicy = { enabled: false };
+    expect(resolveToolApprovalPolicy({ endpoint, attachedCodeEnvironment: true })).toBe(endpoint);
   });
 
   test('ignores the reserved agent/skills layers for now (behaviour-preserving)', () => {
@@ -262,6 +339,17 @@ describe('buildPendingAction', () => {
     expect(action.expiresAt).toBeDefined();
     expect(action.expiresAt).toBeGreaterThanOrEqual(before);
     expect(action.expiresAt).toBeLessThanOrEqual(after);
+  });
+
+  test('caps the TTL at an inherited absolute deadline without a second clock read', () => {
+    const deadline = Date.now() + 1_000;
+    const action = buildPendingAction(toolApprovalPayload, {
+      ...ctx,
+      ttlMs: 5_000,
+      expiresAt: new Date(deadline),
+    });
+
+    expect(action.expiresAt).toBe(deadline);
   });
 });
 

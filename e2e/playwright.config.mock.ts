@@ -13,9 +13,12 @@ const serverPath = path.resolve(
   replicaCount === 2 ? 'e2e/setup/start-server-cluster.js' : 'e2e/setup/start-server.js',
 );
 const mcpHttpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-http-server.js');
+const mcpOAuthServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-oauth-server.js');
 const dynamicMcpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-dynamic-network-server.js');
 /** Must match the `e2e-http` server URL in e2e/config/librechat.e2e.yaml. */
 const MCP_HTTP_PORT = process.env.E2E_MCP_HTTP_PORT || '8765';
+/** Must match the protected OAuth MCP fixture in e2e/config/librechat.e2e.yaml. */
+const MCP_OAUTH_PORT = process.env.E2E_MCP_OAUTH_PORT || '8767';
 /** Must match the dynamic Streamable HTTP and SSE URLs in the e2e config template. */
 const MCP_DYNAMIC_PORT = process.env.E2E_MCP_DYNAMIC_PORT || '8766';
 const MCP_STATE_PATH =
@@ -136,6 +139,9 @@ const baseEnv = {
   ASSISTANTS_API_KEY: 'e2e-mock-assistants-key',
   ASSISTANTS_BASE_URL: `http://127.0.0.1:${ASSISTANTS_PORT}/v1`,
   ASSISTANTS_MODELS: 'gpt-4o-mini',
+  ...(process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
+    ? { E2E_CODE_BRIDGE_ADMIN_TOKEN: process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN }
+    : {}),
   ...vanillaOverrides,
 };
 
@@ -209,6 +215,40 @@ function writeRuntimeMockConfig() {
     .replace('# __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__', dynamicMcpConfig.allowedDomain)
     .replace('# __E2E_DYNAMIC_MCP_STDIO_ENV__', dynamicMcpConfig.stdioEnv)
     .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers);
+  const codeBridgeURL = process.env.E2E_CODE_BRIDGE_URL;
+  const codeBridgePairing = process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
+    ? [
+        '      owner: deployment',
+        '      pairing:',
+        '        workerId: e2e-vm',
+        '        tokenEnv: E2E_CODE_BRIDGE_ADMIN_TOKEN',
+      ]
+    : [];
+  config = config.replace(
+    '# __E2E_CODE_BRIDGE_CONFIG__',
+    codeBridgeURL
+      ? [
+          '  - stateful_code_sessions',
+          'statefulCodeSessions:',
+          '  allowedEnvironments: ["conversation"]',
+          '  environments:',
+          '    - id: e2e-vm',
+          '      name: E2E attached VM',
+          '      type: attached',
+          `      baseURL: ${JSON.stringify(codeBridgeURL)}`,
+          '      default: true',
+          '      configSchema:',
+          '        permissions:',
+          '          fileWrite:',
+          '            allowed: [allow, ask, deny]',
+          '            default: ask',
+          '          commandExecution:',
+          '            allowed: [ask, deny]',
+          '            default: ask',
+          ...codeBridgePairing,
+        ].join('\n    ')
+      : '# __E2E_CODE_BRIDGE_CONFIG__',
+  );
   /** Keep the generated config in lockstep with the overridable label-server
    *  port: the template hard-codes 8889, so an `E2E_LABEL_PORT` override that
    *  moved only the server and its health check would report ready while
@@ -218,6 +258,9 @@ function writeRuntimeMockConfig() {
   }
   if (enableDynamicMcp && MCP_DYNAMIC_PORT !== '8766') {
     config = config.split('127.0.0.1:8766').join(`127.0.0.1:${MCP_DYNAMIC_PORT}`);
+  }
+  if (MCP_OAUTH_PORT !== '8767') {
+    config = config.split('127.0.0.1:8767').join(`127.0.0.1:${MCP_OAUTH_PORT}`);
   }
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, config);
@@ -307,6 +350,16 @@ export default defineConfig({
       cwd: rootPath,
       env: { ...process.env, E2E_MCP_HTTP_PORT: MCP_HTTP_PORT },
       url: `http://127.0.0.1:${MCP_HTTP_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      // Protected resource whose OAuth flow intentionally remains pending across navigation.
+      command: `node ${mcpOAuthServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_MCP_OAUTH_PORT: MCP_OAUTH_PORT },
+      url: `http://127.0.0.1:${MCP_OAUTH_PORT}/`,
       stdout: 'pipe',
       timeout: 60_000,
       reuseExistingServer: false,

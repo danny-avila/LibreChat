@@ -153,6 +153,8 @@ html {
   --text-secondary: var(--gray-600);
   --text-secondary-alt: var(--gray-500);
   --text-tertiary: var(--gray-500);
+  --shimmer-dip: 129 130 134;
+  --shimmer-dip-alpha: 0.18;
   --text-warning: var(--amber-700);
   --text-destructive: var(--red-600);
   --link: var(--blue-600);
@@ -259,6 +261,10 @@ html {
   --text-secondary: var(--gray-300);
   --text-secondary-alt: var(--gray-400);
   --text-tertiary: var(--gray-400);
+  --shimmer-base: 255 255 255;
+  --shimmer-base-alpha: 0.8;
+  --shimmer-dip: 179 179 179;
+  --shimmer-dip-alpha: 0.25;
   --text-warning: var(--amber-500);
   --text-destructive: var(--red-400);
   --link: var(--blue-400);
@@ -2488,14 +2494,22 @@ html[data-input-modality='keyboard']
   }
 }
 
+/* The sweep every in-flight label shares: a running tool call, streaming
+   reasoning, the elapsed timer. Painted from theme roles rather than fixed
+   black/white keyed off `.dark`, so a stored or custom theme restates it the
+   way it restates any other color. Unset, the base falls back to whatever
+   `--text-primary` is in scope AT THE LABEL — resolving it in a `:root`
+   declaration instead would freeze the default and ignore theme scopes applied
+   further down. Dark declares a base outright: its established value is dimmer
+   than that theme's text color rather than equal to it. */
 .shimmer {
   display: inline-block;
   position: relative;
   background: linear-gradient(
     90deg,
-    rgb(33, 33, 33) 25%,
-    rgba(129, 130, 134, 0.18) 50%,
-    rgb(33, 33, 33) 75%
+    rgb(var(--shimmer-base, var(--text-primary)) / var(--shimmer-base-alpha, 1)) 25%,
+    rgb(var(--shimmer-dip) / var(--shimmer-dip-alpha, 1)) 50%,
+    rgb(var(--shimmer-base, var(--text-primary)) / var(--shimmer-base-alpha, 1)) 75%
   );
   background-size: 200% 100%;
   background-clip: text;
@@ -2504,18 +2518,16 @@ html[data-input-modality='keyboard']
   animation: shimmer 4s linear infinite;
 }
 
-.dark .shimmer {
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.8) 25%,
-    rgba(179, 179, 179, 0.25) 50%,
-    rgba(255, 255, 255, 0.8) 75%
-  );
-  background-size: 200% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 4s linear infinite;
+/* Halting the animation alone is not a fallback: the background would settle
+   at position 0 and show only half the sweep, stranding the tail of the label
+   in the near-invisible dip. Drop the gradient and hand the glyphs back to the
+   color they would have had. */
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    background: none;
+    animation: none;
+    -webkit-text-fill-color: currentcolor;
+  }
 }
 
 .sharepoint-picker-bg {

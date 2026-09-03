@@ -228,6 +228,7 @@ function makeDeps(appConfig: AppConfig = makeConfig()) {
     getRolesByNames: jest.fn(async (roleNames: string[]) =>
       roleNames.map((roleName) => ({ name: roleName })),
     ),
+    isPrincipalActive: jest.fn().mockResolvedValue(true),
     getAppConfig: jest.fn().mockResolvedValue(appConfig),
     apiKeyMiddleware: jest.fn((_req: unknown, _res: unknown, next: () => void) => next()),
   };
@@ -483,6 +484,24 @@ describe('createRemoteAgentAuth', () => {
       );
       expect(mockNext).toHaveBeenCalledWith();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('rejects an OIDC principal while account deletion is fenced', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp: 9999999999 });
+      const deps = makeDeps();
+      deps.isPrincipalActive.mockResolvedValue(false);
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(asDeps(deps))(req as Request, res, mockNext);
+
+      expect(status).toHaveBeenCalledWith(409);
+      expect(json).toHaveBeenCalledWith({
+        error: 'Account deletion is in progress',
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('restores tenant context from the OIDC user before continuing', async () => {
@@ -1660,7 +1679,7 @@ describe('createRemoteAgentAuth', () => {
       expect(req.user).toMatchObject({ role: 'user' });
     });
 
-    it('does not apply fallback when API group overage is unresolved', async () => {
+    it('applies fallback when API group overage cannot be resolved', async () => {
       enableApiRoleSync({ OPENID_ROLE_SYNC_CLAIM: 'groups' });
       setupOidcMocks({
         sub: 'sub123',
@@ -1669,11 +1688,12 @@ describe('createRemoteAgentAuth', () => {
       });
 
       const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ role: 'STANDARD-USER' }));
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
       await createRemoteAgentAuth(asDeps(deps))(req as Request, makeRes().res, mockNext);
 
-      expect(deps.updateUser).not.toHaveBeenCalled();
-      expect(req.user).toMatchObject({ role: 'user' });
+      expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'USER' });
+      expect(req.user).toMatchObject({ role: 'USER' });
     });
 
     it('runs role lookup and persistence in the resolved user tenant context', async () => {

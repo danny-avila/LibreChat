@@ -12,6 +12,8 @@ export const defaultTheme: IThemeRGB = {
   'rgb-text-tertiary': '89 89 89', // #595959 (gray-500)
   'rgb-text-warning': '180 83 9', // #b45309 (amber-700)
   'rgb-text-destructive': '220 38 38', // #dc2626 (red-600)
+  'rgb-shimmer-base': '33 33 33', // #212121 (gray-800), matching text-primary
+  'rgb-shimmer-dip': '129 130 134', // #818286
 
   // Link and accent colors
   'rgb-link': '37 99 235', // #2563eb (blue-600)

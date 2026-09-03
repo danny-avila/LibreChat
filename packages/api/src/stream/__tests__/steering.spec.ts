@@ -203,6 +203,111 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
   });
 
+  describe('terminal claim-or-seal', () => {
+    test('claims a v2 FIFO batch without closing admission', async () => {
+      const streamId = 'steer-terminal-claim';
+      const job = await manager.createJob(streamId, 'user-1');
+      const first = buildSteer('first');
+      const second = buildSteer('second');
+      await manager.steering.enqueue(streamId, first, job.createdAt);
+      await manager.steering.enqueue(streamId, second, job.createdAt);
+
+      await expect(
+        manager.steering.admitTerminal(
+          streamId,
+          { allowClaim: true, keepOpenWhenEmpty: false },
+          job.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'claimed', items: [first, second] });
+      await expect(jobStore.peekClaimedSteers(streamId, job.createdAt)).resolves.toEqual([
+        first,
+        second,
+      ]);
+      await expect(
+        manager.steering.enqueue(streamId, buildSteer('later'), job.createdAt),
+      ).resolves.toBe(1);
+    });
+
+    test.each([
+      { name: 'empty queue', queued: false, allowClaim: true },
+      { name: 'exhausted budget', queued: true, allowClaim: false },
+    ])('seals admission for $name', async ({ queued, allowClaim }) => {
+      const streamId = `steer-terminal-seal-${queued}-${allowClaim}`;
+      const job = await manager.createJob(streamId, 'user-1');
+      const existing = buildSteer('existing');
+      if (queued) {
+        await manager.steering.enqueue(streamId, existing, job.createdAt);
+      }
+
+      await expect(
+        manager.steering.admitTerminal(
+          streamId,
+          { allowClaim, keepOpenWhenEmpty: false },
+          job.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'sealed' });
+      await expect(
+        manager.steering.enqueue(streamId, buildSteer('raced'), job.createdAt),
+      ).resolves.toBe(STEER_ENQUEUE_NOT_RUNNING);
+      await expect(manager.steering.closeAndDrain(streamId, job.createdAt)).resolves.toEqual(
+        queued ? [existing] : [],
+      );
+    });
+
+    test('refuses a stale generation without sealing its replacement', async () => {
+      const streamId = 'steer-terminal-stale';
+      const stale = await manager.createJob(streamId, 'user-1');
+      const replacement = await manager.createJob(streamId, 'user-1');
+
+      await expect(
+        manager.steering.admitTerminal(
+          streamId,
+          { allowClaim: true, keepOpenWhenEmpty: false },
+          stale.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'unavailable' });
+      await expect(
+        manager.steering.enqueue(streamId, buildSteer('replacement'), replacement.createdAt),
+      ).resolves.toBe(1);
+    });
+
+    test('seals protocol v1 instead of claiming an unrecoverable batch', async () => {
+      const streamId = 'steer-terminal-v1';
+      const job = await manager.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { generationProtocolVersion: 1 },
+      });
+      const queued = buildSteer('legacy');
+      await manager.steering.enqueue(streamId, queued, job.createdAt);
+
+      await expect(
+        manager.steering.admitTerminal(
+          streamId,
+          { allowClaim: true, keepOpenWhenEmpty: false },
+          job.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'sealed' });
+      await expect(manager.steering.closeAndDrain(streamId, job.createdAt)).resolves.toEqual([
+        queued,
+      ]);
+    });
+
+    test('keeps an empty queue open while another continuation is already planned', async () => {
+      const streamId = 'steer-terminal-open';
+      const job = await manager.createJob(streamId, 'user-1');
+
+      await expect(
+        manager.steering.admitTerminal(
+          streamId,
+          { allowClaim: true, keepOpenWhenEmpty: true },
+          job.createdAt,
+        ),
+      ).resolves.toEqual({ outcome: 'open' });
+      await expect(
+        manager.steering.enqueue(streamId, buildSteer('planned continuation'), job.createdAt),
+      ).resolves.toBe(1);
+    });
+  });
+
   describe('cancel', () => {
     test('removes exactly the cancelled steer and preserves queue order', async () => {
       const streamId = 'steer-cancel';

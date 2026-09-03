@@ -1,11 +1,12 @@
 import { logger } from '@librechat/data-schemas';
-import { isEphemeralAgentId } from 'librechat-data-provider';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import { SkillsScope, isEphemeralAgentId, resolveAgentSkillsScope } from 'librechat-data-provider';
 import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
+import { createSkillContentDigest } from './compatibility';
 import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
 
@@ -30,6 +31,8 @@ export type TGetSkillByName = (
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Monotonic Skill document version used by checkpoint context compatibility. */
+  version?: number;
   author: Types.ObjectId;
   /** Structured SKILL.md metadata retained for model-bound policy checks. */
   frontmatter?: Record<string, unknown>;
@@ -146,6 +149,11 @@ export const MAX_SKILL_NAME_LENGTH = 200;
  * Keep the trailing slash — call sites concatenate `${SKILL_FILE_PREFIX}${skillName}/...`.
  */
 export const SKILL_FILE_PREFIX = 'skills/';
+
+/** Whether a model-facing file path is routed to persistent LibreChat skill storage. */
+export function isSkillFilePath(filePath: string): boolean {
+  return filePath.startsWith(SKILL_FILE_PREFIX);
+}
 
 /**
  * Marker tagged onto every skill-primed message (as `additional_kwargs.source`
@@ -308,8 +316,8 @@ export async function resolveModelSpecSkillIds({
 }
 
 export interface ResolveAgentScopedSkillIdsParams {
-  /** Agent being initialized. Reads `id`, `skills`, and `skills_enabled`. */
-  agent: Pick<Agent, 'id' | 'skills' | 'skills_enabled'>;
+  /** Agent being initialized. Reads its persisted skill capability and catalog scope. */
+  agent: Pick<Agent, 'id' | 'skills' | 'skills_enabled' | 'skills_scope'>;
   /** Full set of skill IDs the user can VIEW (pre-scoped by ACL). */
   accessibleSkillIds: Types.ObjectId[];
   /** Admin capability: `AgentCapabilities.skills` on the agents endpoint. */
@@ -325,9 +333,9 @@ export interface ResolveAgentScopedSkillIdsParams {
  *    `true` = full accessible catalog, string list = scoped allowlist,
  *    empty list / `false` = no skills. Otherwise the skills badge toggle
  *    controls the full accessible catalog.
- *  - Persisted agent  → the builder's `skills_enabled` master switch.
- *    Enabled + empty allowlist = full catalog; enabled + non-empty
- *    allowlist = narrow to those ids; disabled (or undefined) = no skills.
+ *  - Persisted agent  → the builder's `skills_enabled` master switch and
+ *    optional explicit `skills_scope`. Legacy agents without a scope retain
+ *    enabled + empty = full catalog behavior.
  *
  * When not activated, returns `[]` so `injectSkillCatalog`,
  * `resolveManualSkills`, and `resolveAlwaysApplySkills` all no-op.
@@ -360,8 +368,15 @@ export function resolveAgentScopedSkillIds(
   if (agent.skills_enabled !== true) {
     return [];
   }
-  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
+  const scope = resolveAgentSkillsScope(agent.skills, agent.skills_enabled, agent.skills_scope);
+  if (scope === SkillsScope.none) {
+    return [];
+  }
+  if (scope === SkillsScope.all) {
     return scopeSkillIds(accessibleSkillIds, undefined);
+  }
+  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
+    return [];
   }
   return scopeSkillIds(accessibleSkillIds, agent.skills);
 }
@@ -780,6 +795,27 @@ export function buildSkillPrimeMessage(skill: { name: string; body: string }): I
   };
 }
 
+/** Builds the exact live Skill overlay placed at the tail of an event actor checkpoint fork. */
+export function buildAgentEventActorSkillMessages(
+  skills: ReadonlyMap<string, string>,
+): HumanMessage[] {
+  return [...skills.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(
+      ([name, body]) =>
+        new HumanMessage({
+          id: `event-actor-skill:${createSkillContentDigest(`${name}\0${body}`)}`,
+          content: body,
+          additional_kwargs: {
+            isMeta: true,
+            source: SKILL_MESSAGE_SOURCE,
+            trigger: SKILL_TRIGGER_MODEL,
+            skillName: name,
+          },
+        }),
+    );
+}
+
 export interface ResolveManualSkillsParams {
   /** Skill names the user invoked (via `$` popover or `always-apply`). */
   names: string[];
@@ -798,6 +834,7 @@ export interface ResolveManualSkillsParams {
     _id: Types.ObjectId;
     name: string;
     body: string;
+    version?: number;
     author: Types.ObjectId | string;
     deployment?: boolean;
     /** Structured SKILL.md metadata retained for model-bound policy checks. */
@@ -846,6 +883,8 @@ export interface ResolvedSkillPrime {
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Monotonic Skill revision used by checkpoint compatibility. */
+  version?: number;
   /** Structured SKILL.md metadata retained for model-bound policy checks. */
   frontmatter?: Record<string, unknown>;
   /**
@@ -980,6 +1019,7 @@ export async function resolveManualSkills(
           _id: skill._id,
           name: skill.name,
           body: skill.body,
+          version: skill.version,
           frontmatter: skill.frontmatter,
         };
         if (skill.allowedTools !== undefined) {
@@ -1016,6 +1056,7 @@ export interface ResolveAlwaysApplySkillsParams {
       author: Types.ObjectId | string;
       frontmatter?: Record<string, unknown>;
       allowedTools?: string[];
+      version?: number;
       deployment?: boolean;
     }>;
     has_more?: boolean;
@@ -1140,6 +1181,7 @@ export async function resolveAlwaysApplySkills(
         _id: skill._id,
         name: skill.name,
         body: skill.body,
+        version: skill.version,
         frontmatter: skill.frontmatter,
       };
       if (skill.allowedTools !== undefined) {

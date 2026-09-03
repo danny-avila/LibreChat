@@ -349,6 +349,7 @@ export const defaultAgentFormValues = {
   [Tools.web_search]: false,
   [Tools.memory]: false,
   stateful_code_environment: 'user' as const,
+  code_environment_id: undefined as string | null | undefined,
   category: 'general',
   support_contact: {
     name: '',
@@ -360,6 +361,10 @@ export const defaultAgentFormValues = {
   /** Master toggle for skill use on this agent. `true` activates skills
    *  (full catalog unless `skills` narrows it). Anything else = inactive. */
   skills_enabled: undefined as boolean | undefined,
+  /** Enables runtime skill creation without exposing an existing skill catalog. */
+  skill_authoring_enabled: undefined as boolean | undefined,
+  /** Explicit catalog scope. Missing preserves the legacy enabled + empty = all behavior. */
+  skills_scope: undefined as SkillsScope | undefined,
   /** `undefined` = feature disabled by default (no subagent tool injected). */
   subagents: undefined as
     | {
@@ -830,6 +835,13 @@ export const tExampleSchema = z.object({
 
 export type TExample = z.infer<typeof tExampleSchema>;
 
+/** Compact context-fading tier persisted beside a message's calibration ratio. */
+const agentFadingTierSchema = z.object({
+  v: z.literal(1),
+  budgetTokens: z.number().positive(),
+  masked: z.boolean(),
+});
+
 export const tMessageSchema = z.object({
   messageId: z.string(),
   endpoint: z.string().optional(),
@@ -891,6 +903,15 @@ export const tMessageSchema = z.object({
         .describe(
           'Tokenizer encoding used when this ratio was computed (e.g. "claude", "o200k_base")',
         ),
+      fading: agentFadingTierSchema
+        .optional()
+        .describe(
+          'Latched context-fading tier of the default agent; seeds the next run so the provider projection of history keeps the same bytes',
+        ),
+      fadingTiers: z
+        .array(agentFadingTierSchema.extend({ agentId: z.string().min(1) }))
+        .optional()
+        .describe('Latched context-fading tiers keyed by agent ID, stored as entries'),
     })
     .optional(),
   /**
@@ -930,6 +951,28 @@ export enum MemoryScope {
   agent = 'agent',
 }
 
+/** Catalog exposure for a persisted agent with skills enabled. */
+export enum SkillsScope {
+  all = 'all',
+  selected = 'selected',
+  none = 'none',
+}
+
+/** Resolves explicit and legacy persisted-agent skill catalog states. */
+export function resolveAgentSkillsScope(
+  skills: readonly string[] | undefined,
+  enabled: boolean | undefined,
+  scope: SkillsScope | undefined,
+): SkillsScope {
+  if (enabled !== true) {
+    return SkillsScope.none;
+  }
+  if (scope !== undefined) {
+    return scope;
+  }
+  return (skills ?? []).length > 0 ? SkillsScope.selected : SkillsScope.all;
+}
+
 export type MemoryArtifact = {
   key: string;
   value?: string;
@@ -957,6 +1000,10 @@ export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  /** Saved-agent owner when provider tool-call ids repeat across handoffs. */
+  agentId?: string;
+  /** Host run-step owner when one agent repeats a provider tool-call id. */
+  stepId?: string;
   workspaceChange?: WorkspaceChange;
   [Tools.memory]?: MemoryArtifact;
   [Tools.ui_resources]?: UIResource[];
