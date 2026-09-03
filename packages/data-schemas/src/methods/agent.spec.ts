@@ -61,6 +61,7 @@ let addAgentResourceFile: AgentMethods['addAgentResourceFile'];
 let removeAgentResourceFiles: AgentMethods['removeAgentResourceFiles'];
 let removeAgentResourceFilesFromAllAgents: AgentMethods['removeAgentResourceFilesFromAllAgents'];
 let getListAgentsByAccess: AgentMethods['getListAgentsByAccess'];
+let getAgentManagementListByAccess: AgentMethods['getAgentManagementListByAccess'];
 let generateActionMetadataHash: AgentMethods['generateActionMetadataHash'];
 
 const getActions = jest.fn().mockResolvedValue([]);
@@ -108,6 +109,7 @@ beforeAll(async () => {
   removeAgentResourceFiles = methods.removeAgentResourceFiles;
   removeAgentResourceFilesFromAllAgents = methods.removeAgentResourceFilesFromAllAgents;
   getListAgentsByAccess = methods.getListAgentsByAccess;
+  getAgentManagementListByAccess = methods.getAgentManagementListByAccess;
   generateActionMetadataHash = methods.generateActionMetadataHash;
 
   await mongoose.connect(mongoUri);
@@ -4730,6 +4732,149 @@ describe('Support Contact Field', () => {
       expect(result.data).toHaveLength(105);
       expect(result.has_more).toBe(false);
     });
+  });
+});
+
+describe('getAgentManagementListByAccess', () => {
+  beforeEach(async () => {
+    await Agent.deleteMany({});
+  });
+
+  it('returns full configuration with version counts without changing updatedAt', async () => {
+    const tenantId = `tenant-${uuidv4()}`;
+    const created = await tenantStorage.run({ tenantId }, () =>
+      createAgent({
+        id: `agent_${uuidv4()}`,
+        name: 'Managed Agent',
+        instructions: 'Keep this configuration',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        tools: ['web_search'],
+      }),
+    );
+    await tenantStorage.run({ tenantId }, () =>
+      updateAgent({ id: created.id }, { instructions: 'Updated configuration' }),
+    );
+    const before = await Agent.findById(created._id).lean();
+    const beforeUpdatedAt = (before as unknown as { updatedAt?: Date } | null)?.updatedAt;
+
+    const result = await tenantStorage.run({ tenantId }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: [created._id],
+        tenantId,
+        limit: 20,
+      }),
+    );
+    const after = await Agent.findById(created._id).lean();
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: created.id,
+      instructions: 'Updated configuration',
+      tools: ['web_search'],
+      version: 2,
+    });
+    expect(result.data[0].versions).toBeUndefined();
+    expect((after as unknown as { updatedAt?: Date } | null)?.updatedAt).toEqual(beforeUpdatedAt);
+  });
+
+  it('enforces tenant scope even when accessible IDs contain another tenant record', async () => {
+    const tenantA = `tenant-a-${uuidv4()}`;
+    const tenantB = `tenant-b-${uuidv4()}`;
+    const publicId = `agent_${uuidv4()}`;
+    const author = new mongoose.Types.ObjectId();
+    const agentA = await tenantStorage.run({ tenantId: tenantA }, () =>
+      createAgent({ id: publicId, name: 'A', provider: 'openai', model: 'gpt-4', author }),
+    );
+    const agentB = await tenantStorage.run({ tenantId: tenantB }, () =>
+      createAgent({ id: publicId, name: 'B', provider: 'openai', model: 'gpt-4', author }),
+    );
+
+    const result = await tenantStorage.run({ tenantId: tenantA }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: [agentA._id, agentB._id],
+        tenantId: tenantA,
+        limit: 20,
+      }),
+    );
+
+    expect(result.data.map(({ name }) => name)).toEqual(['A']);
+  });
+
+  it('keeps an unrestricted capability listing inside the authenticated tenant', async () => {
+    const tenantA = `tenant-a-${uuidv4()}`;
+    const tenantB = `tenant-b-${uuidv4()}`;
+    const author = new mongoose.Types.ObjectId();
+    await tenantStorage.run({ tenantId: tenantA }, () =>
+      createAgent({
+        id: `agent_${uuidv4()}`,
+        name: 'A',
+        provider: 'openai',
+        model: 'gpt-4',
+        author,
+      }),
+    );
+    await tenantStorage.run({ tenantId: tenantB }, () =>
+      createAgent({
+        id: `agent_${uuidv4()}`,
+        name: 'B',
+        provider: 'openai',
+        model: 'gpt-4',
+        author,
+      }),
+    );
+
+    const result = await tenantStorage.run({ tenantId: tenantA }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: null,
+        tenantId: tenantA,
+        limit: 20,
+      }),
+    );
+
+    expect(result.data.map(({ name }) => name)).toEqual(['A']);
+  });
+
+  it('paginates deterministically without overlap', async () => {
+    const tenantId = `tenant-${uuidv4()}`;
+    const author = new mongoose.Types.ObjectId();
+    const agents = await tenantStorage.run({ tenantId }, () =>
+      Promise.all(
+        ['A', 'B', 'C'].map((name) =>
+          createAgent({
+            id: `agent_${uuidv4()}`,
+            name,
+            provider: 'openai',
+            model: 'gpt-4',
+            author,
+          }),
+        ),
+      ),
+    );
+
+    const first = await tenantStorage.run({ tenantId }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: agents.map(({ _id }) => _id),
+        tenantId,
+        limit: 2,
+      }),
+    );
+    const second = await tenantStorage.run({ tenantId }, () =>
+      getAgentManagementListByAccess({
+        accessibleIds: agents.map(({ _id }) => _id),
+        tenantId,
+        limit: 2,
+        after: first.after,
+      }),
+    );
+
+    expect(first.data).toHaveLength(2);
+    expect(first.has_more).toBe(true);
+    expect(first.after).toBeTruthy();
+    expect(second.data).toHaveLength(1);
+    expect(second.has_more).toBe(false);
+    expect(first.data.map(({ id }) => id)).not.toContain(second.data[0].id);
   });
 });
 
