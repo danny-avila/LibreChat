@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import keyBy from 'lodash/keyBy';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { Alert, Button, ControlCombobox } from '@librechat/client';
@@ -13,7 +13,7 @@ import {
   agentParamSettings,
   applyModelAwareDefaults,
   normalizeEndpointName,
-  dropParamsBackendToUIKey,
+  resolveDropParamsUIKeys,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
@@ -47,7 +47,7 @@ export default function ModelPanel({
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
 
-  const { control, setValue } = useFormContext<AgentForm>();
+  const { control, setValue, getValues } = useFormContext<AgentForm>();
 
   const model = useWatch({ control, name: 'model' });
   const providerOption = useWatch({ control, name: 'provider' });
@@ -89,10 +89,9 @@ export default function ModelPanel({
     const resolvedDropParams = Array.isArray(dropParamsEntry)
       ? dropParamsEntry
       : dropParamsEntry?.[model ?? ''];
-    const dropParamsSet = new Set(
-      (Array.isArray(resolvedDropParams) ? resolvedDropParams : []).map(
-        (param) => dropParamsBackendToUIKey[param] ?? param,
-      ),
+    const dropParamsSet = resolveDropParamsUIKeys(
+      Array.isArray(resolvedDropParams) ? resolvedDropParams : undefined,
+      overriddenEndpointKey,
     );
     const defaultParams =
       agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
@@ -107,6 +106,37 @@ export default function ModelPanel({
       (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
     );
   }, [endpointType, endpointsConfig, model, provider, startupConfig]);
+
+  /**
+   * Prunes `model_parameters` entries that no longer have a visible control (e.g. a
+   * parameter newly added to the endpoint's `dropParams`), mirroring the conversation
+   * panel's pruning effect. Otherwise the stale value stays saved and silently reactivates
+   * if the endpoint config later stops dropping it, with no control to inspect or clear it.
+   */
+  useEffect(() => {
+    const paramKeys = new Set(
+      parameters.filter((setting) => setting != null).map((setting) => setting.key),
+    );
+
+    const currentParameters = getValues('model_parameters') ?? ({} as t.AgentModelParameters);
+    const staleKeys = Object.keys(currentParameters).filter((key) => {
+      if (paramKeys.has(key)) {
+        return false;
+      }
+      return (currentParameters as Record<string, unknown>)[key] != null;
+    });
+
+    if (staleKeys.length === 0) {
+      return;
+    }
+
+    const prunedParameters = { ...currentParameters } as Record<string, unknown>;
+    staleKeys.forEach((key) => {
+      delete prunedParameters[key];
+    });
+
+    setValue('model_parameters', prunedParameters as t.AgentModelParameters);
+  }, [parameters, getValues, setValue]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
     setValue(`model_parameters.${optionKey}`, value);

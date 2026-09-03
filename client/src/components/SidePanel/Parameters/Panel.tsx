@@ -11,7 +11,7 @@ import {
   tConvoUpdateSchema,
   applyModelAwareDefaults,
   normalizeEndpointName,
-  dropParamsBackendToUIKey,
+  resolveDropParamsUIKeys,
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -56,10 +56,9 @@ export default function Parameters() {
     const resolvedDropParams = Array.isArray(dropParamsEntry)
       ? dropParamsEntry
       : dropParamsEntry?.[model];
-    const dropParamsSet = new Set(
-      (Array.isArray(resolvedDropParams) ? resolvedDropParams : []).map(
-        (param) => dropParamsBackendToUIKey[param] ?? param,
-      ),
+    const dropParamsSet = resolveDropParamsUIKeys(
+      Array.isArray(resolvedDropParams) ? resolvedDropParams : undefined,
+      overriddenEndpointKey,
     );
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];

@@ -1193,15 +1193,44 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
 /**
  * Maps effective backend param names for OpenAI-compatible/Azure endpoints (as deleted from
  * `llmConfig` via `dropParams`, e.g. `maxTokens`) to their corresponding UI/conversation keys
- * (e.g. `max_tokens`), so admin-configured `dropParams` entries using either form hide the
- * matching control.
+ * (e.g. `max_tokens`). Native providers (anthropic, google, bedrock, ...) already render these
+ * same camelCase names as their UI key (e.g. `topP`), so this alias must only be applied to
+ * OpenAI-compatible parameter sets — see `resolveDropParamsUIKeys`.
  */
-export const dropParamsBackendToUIKey: Record<string, string> = {
+const dropParamsBackendToUIKey: Record<string, string> = {
   maxTokens: 'max_tokens',
   topP: 'top_p',
   frequencyPenalty: 'frequency_penalty',
   presencePenalty: 'presence_penalty',
 };
+
+/** Endpoint keys whose parameter settings render the OpenAI-compatible (snake_case) UI keys. */
+const openAILikeParamEndpointKeys: Set<string> = new Set([
+  EModelEndpoint.openAI,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.custom,
+  Providers.OPENROUTER,
+]);
+
+/**
+ * Normalizes an admin-configured `dropParams` list into the UI/conversation keys used to hide
+ * the matching controls in the settings panels. `endpointKey` should be the same key used to
+ * resolve the panel's parameter settings (e.g. `overriddenEndpointKey`); the backend-name alias
+ * is only applied for OpenAI-compatible endpoints, since native providers (anthropic, google,
+ * bedrock, ...) already use these backend names as their UI key.
+ */
+export function resolveDropParamsUIKeys(
+  dropParams: string[] | undefined,
+  endpointKey: string,
+): Set<string> {
+  if (!dropParams || dropParams.length === 0) {
+    return new Set();
+  }
+  if (!openAILikeParamEndpointKeys.has(endpointKey)) {
+    return new Set(dropParams);
+  }
+  return new Set(dropParams.map((param) => dropParamsBackendToUIKey[param] ?? param));
+}
 
 const openAIColumns = {
   col1: openAICol1,
