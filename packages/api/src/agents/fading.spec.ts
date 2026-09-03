@@ -1,3 +1,7 @@
+import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
+import { createPruneMessages, resolveFadingCaps, seedFadingTier } from '@librechat/agents';
+import type { IAgentFadingTier } from '@librechat/data-schemas';
+import type { BaseMessage } from '@langchain/core/messages';
 import {
   isAgentFadingTier,
   resolvePersistableFadingTier,
@@ -159,5 +163,97 @@ describe('resolveRunContextMeta', () => {
       resolveRunContextMeta({ calibrationRatio: 0, fadingTier: { v: 1 }, getEncoding }),
     ).toBeUndefined();
     expect(getEncoding).not.toHaveBeenCalled();
+  });
+});
+
+describe('persisted tier round trip through the SDK pruner', () => {
+  const window = 20_000;
+  const tokenCounter = (message: BaseMessage): number =>
+    Math.ceil(JSON.stringify(message.content).length / 4);
+  const countMap = (messages: BaseMessage[]): Record<string, number> =>
+    Object.fromEntries(messages.map((message, index) => [String(index), tokenCounter(message)]));
+  const serializeToolExchange = (context: BaseMessage[]): string =>
+    JSON.stringify(
+      context
+        .filter((message) => message._getType() === 'tool' || message._getType() === 'ai')
+        .map((message) => [message._getType(), message.content, message.additional_kwargs]),
+    );
+  /** Fresh instances per run: the pruner rewrites the messages it is handed, as the Graph's per-Run projection clone allows. */
+  const makeTurnOne = (): BaseMessage[] => [
+    new HumanMessage('Fetch the alpha report and summarize it.'),
+    new AIMessage({
+      content: '',
+      tool_calls: [{ id: 'call-1', name: 'fetch_report', args: { name: 'alpha' } }],
+    }),
+    new ToolMessage({
+      tool_call_id: 'call-1',
+      name: 'fetch_report',
+      content: Array.from(
+        { length: 4_000 },
+        (_, i) => `row ${i}: value ${(i * 7919) % 10007}`,
+      ).join('\n'),
+    }),
+    new AIMessage('The alpha report lists 4000 rows.'),
+  ];
+  const prune = (
+    messages: BaseMessage[],
+    overrides: {
+      calibrationRatio: number;
+      instructionTokens: number;
+      fadingTier?: IAgentFadingTier;
+    },
+  ) =>
+    createPruneMessages({
+      startIndex: messages.length,
+      tokenCounter,
+      maxTokens: window,
+      indexTokenCountMap: countMap(messages),
+      summarizationEnabled: true,
+      calibrationRatio: overrides.calibrationRatio,
+      getInstructionTokens: () => overrides.instructionTokens,
+      ...(overrides.fadingTier == null ? {} : { fadingTier: overrides.fadingTier }),
+    })({ messages });
+
+  it("reproduces the first run's projection bytes when the next run is seeded from contextMeta", () => {
+    const turnOne = makeTurnOne();
+    const first = prune(turnOne, { calibrationRatio: 1, instructionTokens: 12_000 });
+    expect(first.fadingTier.budgetTokens).toBeLessThan(window);
+
+    const meta = resolveRunContextMeta({
+      calibrationRatio: first.calibrationRatio ?? 1,
+      fadingTier: first.fadingTier,
+      getEncoding: () => 'claude',
+    });
+    expect(meta?.fading).toEqual({
+      v: 1,
+      budgetTokens: first.fadingTier.budgetTokens,
+      masked: first.fadingTier.masked,
+    });
+    expect(resolveFadingCaps(seedFadingTier(window, meta?.fading))).toEqual(
+      resolveFadingCaps(first.fadingTier),
+    );
+
+    const makeTurnTwo = (): BaseMessage[] => [
+      ...makeTurnOne(),
+      new HumanMessage('Thanks. Anything else?'),
+      new AIMessage('No.'),
+      new HumanMessage('Say ok.'),
+    ];
+    const firstBytes = serializeToolExchange(first.context);
+    const drifted = { calibrationRatio: 1, instructionTokens: 9_000 };
+    const seeded = prune(makeTurnTwo(), { ...drifted, fadingTier: meta?.fading });
+    expect(serializeToolExchange(seeded.context.slice(0, turnOne.length))).toBe(firstBytes);
+    expect(seeded.fadingTier.budgetTokens).toBe(first.fadingTier.budgetTokens);
+
+    const recalibrated = prune(makeTurnTwo(), {
+      calibrationRatio: 1.2,
+      instructionTokens: 9_000,
+      fadingTier: meta?.fading,
+    });
+    expect(serializeToolExchange(recalibrated.context.slice(0, turnOne.length))).toBe(firstBytes);
+
+    const unseeded = prune(makeTurnTwo(), drifted);
+    expect(unseeded.fadingTier.budgetTokens).toBeGreaterThan(first.fadingTier.budgetTokens);
+    expect(serializeToolExchange(unseeded.context.slice(0, turnOne.length))).not.toBe(firstBytes);
   });
 });
