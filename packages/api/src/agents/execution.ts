@@ -1,8 +1,14 @@
 import { createHash } from 'node:crypto';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
-import type { StatefulCodeEnvironment, TAgentsEndpoint } from 'librechat-data-provider';
+import type {
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+  StatefulCodeEnvironment,
+  TAgentsEndpoint,
+} from 'librechat-data-provider';
 
 export const CODE_API_EXPECTED_PROFILE_HEADER = 'X-CodeAPI-Expected-Profile';
+export const CODE_API_BRIDGE_WORKER_HEADER = 'X-LibreChat-Code-Worker-ID';
 
 export type CodeExecutionProfile = 'default' | 'stateful';
 export type CodeEnvironmentConfig = NonNullable<
@@ -21,16 +27,23 @@ export interface CodeExecutionContext {
   statefulSessions: boolean;
   environmentId?: string;
   environmentType?: CodeEnvironmentConfig['type'];
+  bridgeWorkerId?: string;
+  codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
+  codeEnvironmentSettings?: CodeEnvironmentUserSettings;
 }
 
 export function createCodeExecutionRouteKey(
   profile: CodeExecutionProfile,
-  environment?: Pick<CodeEnvironmentConfig, 'id' | 'baseURL'>,
+  environment?: Pick<CodeEnvironmentConfig, 'id' | 'baseURL' | 'workerId' | 'pairing'>,
 ): string {
   if (profile === 'default' || environment == null) {
     return profile;
   }
-  const identity = JSON.stringify([environment.id, environment.baseURL.trim().replace(/\/+$/, '')]);
+  const identity = JSON.stringify([
+    environment.id,
+    environment.baseURL.trim().replace(/\/+$/, ''),
+    environment.workerId ?? environment.pairing?.workerId ?? '',
+  ]);
   return `stateful:${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
 }
 
@@ -102,14 +115,24 @@ function resolveConfiguredEnvironment(params: {
   environments?: readonly CodeEnvironmentConfig[];
 }): CodeEnvironmentConfig | undefined {
   const { environmentId, environments } = params;
+  const executableEnvironments = environments?.filter(
+    (environment) =>
+      !(
+        environment.pairing?.allowPrincipalWorkers === true &&
+        environment.pairing.workerId == null &&
+        environment.workerId == null
+      ),
+  );
   if (environmentId) {
-    const configured = environments?.find((environment) => environment.id === environmentId);
+    const configured = executableEnvironments?.find(
+      (environment) => environment.id === environmentId,
+    );
     if (!configured) {
       throw new Error(`Stateful code environment "${environmentId}" is not configured.`);
     }
     return configured;
   }
-  return environments?.find((environment) => environment.default === true);
+  return executableEnvironments?.find((environment) => environment.default === true);
 }
 
 export function resolveCodeExecutionContext(params: {
@@ -152,11 +175,31 @@ export function resolveCodeExecutionContext(params: {
     statefulSessions: true,
     environmentId: configuredEnvironment?.id,
     environmentType: configuredEnvironment?.type,
+    bridgeWorkerId: configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+    codeEnvironmentConfigSchema: configuredEnvironment?.configSchema,
+    codeEnvironmentSettings: configuredEnvironment?.settings,
   };
 }
 
 export function codeExecutionHeaders(
-  context: Pick<CodeExecutionContext, 'executionProfile'>,
+  context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
 ): Record<string, string> {
-  return { [CODE_API_EXPECTED_PROFILE_HEADER]: context.executionProfile };
+  return {
+    [CODE_API_EXPECTED_PROFILE_HEADER]: context.executionProfile,
+    ...(context.bridgeWorkerId != null
+      ? { [CODE_API_BRIDGE_WORKER_HEADER]: context.bridgeWorkerId }
+      : {}),
+  };
+}
+
+export async function codeExecutionAuthHeaders(
+  authHeaders: (
+    bridgeWorkerId?: string,
+  ) => Promise<Record<string, string>> | Record<string, string>,
+  context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
+): Promise<Record<string, string>> {
+  return {
+    ...(await authHeaders(context.bridgeWorkerId)),
+    ...codeExecutionHeaders(context),
+  };
 }

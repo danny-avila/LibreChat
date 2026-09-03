@@ -9,6 +9,7 @@ export * from './icons';
 export * from './email';
 export * from './share';
 export * from './files';
+export * from './media';
 export * from './greeting';
 export * from './latex';
 export * from './tilde';

@@ -523,6 +523,7 @@ async function selectOpenIdRoleForOpenIdSync(
     options,
     accessClaims: payload,
     decodeToken: () => payload,
+    resolveGroupOverage: async () => [],
   });
   if (openIdRoleValues === undefined) {
     logger.warn(

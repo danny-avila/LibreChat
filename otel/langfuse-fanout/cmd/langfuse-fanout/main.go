@@ -748,7 +748,11 @@ func (g *gateway) recordTraceExport(route route, result string, tenantID string)
 	if g.metrics == nil {
 		return
 	}
-	g.metrics.recordTraceExport(routeDestinationLabel(route), result, tenantID)
+	destination := centralName
+	if _, ok := g.cfg.tenants[route.destination]; ok {
+		destination = routeDestinationLabel(route)
+	}
+	g.metrics.recordTraceExport(destination, result, tenantID)
 }
 
 func (g *gateway) recordMediaDivergence(kind string, destination string) {

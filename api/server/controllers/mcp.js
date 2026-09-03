@@ -13,6 +13,7 @@ const {
   createAuthIdentityContext,
   MCPConnection,
   MCPErrorCodes,
+  MCPCatalogCapacityError,
   splitMCPToolKey,
   normalizeServerName,
   findShadowedServerNames,
@@ -201,21 +202,35 @@ const getMCPTools = async (req, res) => {
       user: req.user,
       tenantId: getTenantId(),
     });
-    const { serverTools: serverToolsMap, serversWithoutTools } = await loadMCPServerCatalogs({
-      user: req.user,
-      servers: configuredServers.map((serverName) => ({
-        serverName,
-        serverConfig: mcpConfig[serverName],
-      })),
-      upstreamTokenProvider: createOpenIDSessionTokenProvider({
-        req,
-        res,
+    const catalogAbortController = new AbortController();
+    const abortCatalogLoad = () => {
+      if (!res.writableEnded) {
+        catalogAbortController.abort();
+      }
+    };
+    res.once('close', abortCatalogLoad);
+    let catalogResult;
+    try {
+      catalogResult = await loadMCPServerCatalogs({
         user: req.user,
-        identityContext: oboIdentityContext,
-        tokenPreference: 'access_token',
-      }),
-      oboIdentityContext,
-    });
+        servers: configuredServers.map((serverName) => ({
+          serverName,
+          serverConfig: mcpConfig[serverName],
+        })),
+        upstreamTokenProvider: createOpenIDSessionTokenProvider({
+          req,
+          res,
+          user: req.user,
+          identityContext: oboIdentityContext,
+          tokenPreference: 'access_token',
+        }),
+        oboIdentityContext,
+        signal: catalogAbortController.signal,
+      });
+    } finally {
+      res.off('close', abortCatalogLoad);
+    }
+    const { serverTools: serverToolsMap, serversWithoutTools } = catalogResult;
     if (serversWithoutTools.length > 0) {
       logger.debug(
         `[getMCPTools] No tools (${serversWithoutTools.length}): ${serversWithoutTools.join(', ')}`,
@@ -286,7 +301,11 @@ const getMCPTools = async (req, res) => {
     res.status(200).json({ servers: mcpServers });
   } catch (error) {
     logger.error('[getMCPTools]', error);
-    res.status(500).json({ message: error.message });
+    if (res.destroyed || res.headersSent) {
+      return;
+    }
+    const status = error instanceof MCPCatalogCapacityError ? 503 : 500;
+    res.status(status).json({ message: error.message });
   }
 };
 /**

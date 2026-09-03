@@ -124,6 +124,160 @@ describe('resumable event generation fencing', () => {
     );
   });
 
+  it('keeps a tool result and its input at full size in the content parts LibreChat persists', async () => {
+    const { GraphEvents, createContentAggregator } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    /** Far beyond any cap the SDK's provider-only projection would apply. */
+    const output = 'r'.repeat(600_000);
+    const args = { query: 'q'.repeat(120_000) };
+    const { contentParts, stepMap, aggregateContent } = createContentAggregator();
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent,
+      contentParts,
+      stepMap,
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+    const step = {
+      id: 'step-full-size',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-full-size', name: 'fetch', args: JSON.stringify(args) }],
+      },
+    };
+
+    await handlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, step);
+    await handlers[GraphEvents.ON_RUN_STEP_COMPLETED].handle(GraphEvents.ON_RUN_STEP_COMPLETED, {
+      result: {
+        id: step.id,
+        index: 0,
+        tool_call: { id: 'call-full-size', name: 'fetch', args, output },
+      },
+    });
+
+    expect(contentParts).toHaveLength(1);
+    expect(contentParts[0].tool_call.output).toBe(output);
+    expect(contentParts[0].tool_call.args).toEqual(args);
+    expect(JSON.stringify(contentParts[0])).not.toContain('[truncated:');
+  });
+
+  it('publishes a hidden sequential agent snapshot without recording or forwarding it', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const onSnapshot = jest.fn(async () => undefined);
+    const contextUsageSink = { latest: null, count: 0, onSnapshot };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+      contextUsageSink,
+      usageEmitSink: [],
+    });
+
+    await handlers[GraphEvents.ON_CONTEXT_USAGE].handle(
+      GraphEvents.ON_CONTEXT_USAGE,
+      { contextBudget: 1000, remainingContextTokens: 400 },
+      {
+        hide_sequential_outputs: true,
+        last_agent_id: 'agent-final',
+        langgraph_node: 'agent-intermediate',
+      },
+    );
+
+    expect(onSnapshot).toHaveBeenCalledTimes(1);
+    expect(contextUsageSink).toMatchObject({ latest: null, count: 0 });
+    expect(GenerationJobManager.emitChunk).not.toHaveBeenCalled();
+  });
+
+  it('records a context snapshot and notifies the sink before forwarding it', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    let releaseSnapshot;
+    const onSnapshot = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          releaseSnapshot = resolve;
+        }),
+    );
+    const contextUsageSink = { latest: null, count: 0, onSnapshot };
+    const usageEmitSink = [{ input_tokens: 10 }];
+    const data = { contextBudget: 1000, remainingContextTokens: 400 };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+      contextUsageSink,
+      usageEmitSink,
+    });
+
+    let settled = false;
+    const handled = handlers[GraphEvents.ON_CONTEXT_USAGE]
+      .handle(GraphEvents.ON_CONTEXT_USAGE, data, { hide_sequential_outputs: false })
+      .then(() => {
+        settled = true;
+      });
+    await Promise.resolve();
+
+    expect(contextUsageSink).toMatchObject({ latest: data, count: 1, latestUsageIndex: 1 });
+    expect(onSnapshot).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+    releaseSnapshot();
+    await handled;
+    expect(settled).toBe(true);
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'conversation-1',
+      { event: GraphEvents.ON_CONTEXT_USAGE, data },
+      { expectedCreatedAt: 1234 },
+    );
+  });
+
+  it('resolves MCP identity from a function-shaped root tool call', async () => {
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const resolveMcpServerName = jest.fn(() => 'server');
+    const data = {
+      id: 'step-function-tool',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [
+          {
+            id: 'call-function-tool',
+            function: { name: 'lookup_mcp_server', arguments: '{}' },
+          },
+        ],
+      },
+    };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      resolveMcpServerName,
+    });
+
+    await handlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data, {
+      agent_id: 'lazy-agent',
+    });
+
+    expect(resolveMcpServerName).toHaveBeenCalledWith('lookup_mcp_server', 'lazy-agent');
+    expect(data.stepDetails.tool_calls[0]).toEqual(
+      expect.objectContaining({ name: 'lookup_mcp_server', mcpServerName: 'server' }),
+    );
+  });
+
   it('publishes root event-child progress through the child activity transport', async () => {
     const { nanoid } = require('nanoid');
     nanoid.mockReturnValueOnce('invocation-1').mockReturnValueOnce('invocation-2');

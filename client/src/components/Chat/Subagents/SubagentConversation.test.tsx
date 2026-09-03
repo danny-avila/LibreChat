@@ -1,8 +1,8 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ChildConversationTurn } from './adapters';
 import SubagentConversation from './SubagentConversation';
+import { ChatSurfaceHarness } from 'test/harness';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -40,7 +40,14 @@ jest.mock('~/components/Chat/Messages/Content/Container', () => ({
 }));
 
 jest.mock('~/components/Chat/Messages/Content/Parts', () => ({
-  EmptyText: () => <div data-testid="thinking-cursor" />,
+  EmptyText: ({ underHeaderIcon }: { underHeaderIcon?: boolean }) => (
+    <div data-testid="thinking-cursor" data-under-header-icon={String(underHeaderIcon === true)} />
+  ),
+}));
+
+jest.mock('~/components/Chat/Messages/MessageIcon', () => ({
+  __esModule: true,
+  default: () => <span data-testid="message-icon" />,
 }));
 
 jest.mock('lucide-react', () => ({
@@ -101,9 +108,9 @@ const turns: ChildConversationTurn[] = [
 describe('SubagentConversation', () => {
   it('renders host triggers and child activity through the main chat row and content modules', () => {
     const { container } = render(
-      <RecoilRoot>
+      <ChatSurfaceHarness>
         <SubagentConversation turns={turns} />
-      </RecoilRoot>,
+      </ChatSurfaceHarness>,
     );
 
     expect(screen.getAllByText('com_ui_subagent_trigger_parent_dispatch')).toHaveLength(2);
@@ -114,16 +121,22 @@ describe('SubagentConversation', () => {
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_status_completed')).not.toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_status_running')).not.toBeInTheDocument();
-    expect(screen.getByTestId('thinking-cursor')).toBeInTheDocument();
+    /** Both halves of the main chat author column: the shared glyph, and the
+     *  streaming dot inset onto that glyph's axis the way main chat insets it. */
+    expect(screen.getAllByTestId('message-icon')).toHaveLength(2);
+    expect(screen.getByTestId('thinking-cursor')).toHaveAttribute('data-under-header-icon', 'true');
     expect(container.querySelectorAll('.message-render')).toHaveLength(4);
     expect(container.querySelectorAll('.user-turn')).toHaveLength(2);
     expect(container.querySelectorAll('.agent-turn')).toHaveLength(2);
     expect(container.querySelector('[data-subagent-conversation]')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_prompt')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_activity_details_truncated')).toBeInTheDocument();
+    expect(
+      screen.queryByText('com_ui_subagent_activity_details_truncated'),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText('com_ui_subagent_activity_details_unavailable'),
     ).not.toBeInTheDocument();
+    expect(screen.getByTestId('stream-elapsed')).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', {
@@ -141,9 +154,9 @@ describe('SubagentConversation', () => {
       { ...turns[0], activity: { ...turns[0].activity, activityTruncated: true } },
     ];
     render(
-      <RecoilRoot>
+      <ChatSurfaceHarness>
         <SubagentConversation turns={shortened} onLoadTurnDetails={loadDetails} />
-      </RecoilRoot>,
+      </ChatSurfaceHarness>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_show_full_activity' }));
@@ -166,9 +179,9 @@ describe('SubagentConversation', () => {
     };
 
     render(
-      <RecoilRoot>
+      <ChatSurfaceHarness>
         <SubagentConversation turns={[turns[1], secondEvent]} />
-      </RecoilRoot>,
+      </ChatSurfaceHarness>,
     );
 
     expect(

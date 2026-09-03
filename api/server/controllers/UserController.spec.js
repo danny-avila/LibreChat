@@ -12,6 +12,7 @@ const mockQuiesceUserSchedules = jest.fn().mockResolvedValue(true);
 const mockRestoreUserSchedules = jest.fn().mockResolvedValue(undefined);
 const mockGetWebSearchInstallEntries = jest.fn();
 const mockInvalidateCodeEnvironmentConfigCache = jest.fn().mockResolvedValue(undefined);
+const mockRevokeUserCodeEnvironmentWorkers = jest.fn().mockResolvedValue(0);
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -90,6 +91,7 @@ jest.mock('@librechat/api', () => ({
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
   getWebSearchInstallEntries: (...args) => mockGetWebSearchInstallEntries(...args),
+  revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
   GenerationJobManager: {
     getCleanupBlockingJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
     abortJob: (...args) => mockAbortJob(...args),
@@ -161,6 +163,7 @@ const {
   deleteConvos,
   acceptTerms,
   deleteUserById,
+  deleteUserCodeEnvironments,
   deleteMessages,
   beginAgentTriggerUserDeletion,
   cancelAgentTriggerUserDeletion,
@@ -490,6 +493,12 @@ describe('deleteUserController', () => {
     );
     expect(deleteUserById.mock.invocationCallOrder[0]).toBeLessThan(
       mockPurgeAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
+    );
+    expect(deleteUserById.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0],
+    );
+    expect(mockRevokeUserCodeEnvironmentWorkers.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteUserCodeEnvironments.mock.invocationCallOrder[0],
     );
     expect(mockPurgeAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
     expect(cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();

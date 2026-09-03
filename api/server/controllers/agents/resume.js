@@ -447,6 +447,8 @@ async function finalizeResumedTurn({
   const preemptIncomplete =
     (preemptStats?.emptyBoundaries ?? 0) > 0 ||
     client?.run?.getHaltReason?.() === 'preempt_incomplete';
+  /** Same honest-incomplete contract for a resumed turn that runs out of steps. */
+  const stepLimitReached = client?.stepLimitReached === true;
 
   const responseMessage = {
     messageId: responseMessageId,
@@ -457,7 +459,8 @@ async function finalizeResumedTurn({
     endpoint: meta.endpoint,
     iconURL: meta.iconURL,
     model: meta.model,
-    unfinished: preemptIncomplete,
+    unfinished: preemptIncomplete || stepLimitReached,
+    ...(stepLimitReached && { finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON }),
     error: false,
     isCreatedByUser: false,
     user: userId,
@@ -497,11 +500,12 @@ async function finalizeResumedTurn({
   if (Object.keys(responseMetadata).length > 0) {
     responseMessage.metadata = responseMetadata;
   }
-  // Carry the resumed run's context-window calibration (BaseClient.sendMessage persists
-  // this on the response). Without it, the NEXT turn can't seed its pruner from this
-  // run and falls back to uncalibrated token accounting.
-  if (client?.contextMeta != null) {
-    responseMessage.contextMeta = client.contextMeta;
+  // Carry the resumed run's compact context meta (calibration and fading tiers), as
+  // BaseClient.sendMessage persists it on the response. Without it, the NEXT turn can't
+  // seed its pruner from this run. A neutral finish unsets what the paused segment
+  // stored on this row, since an omitted field would otherwise survive the save.
+  if (client != null) {
+    responseMessage.contextMeta = client.contextMeta ?? null;
   }
 
   // Win terminal ownership BEFORE the outcome-defining response write. Stop
@@ -612,11 +616,15 @@ async function finalizeResumedTurn({
         scheduledFor: meta.scheduledFor,
         streamId,
         jobCreatedAt: job.createdAt,
-        status: preemptIncomplete ? 'interrupted' : 'success',
+        status: preemptIncomplete || stepLimitReached ? 'interrupted' : 'success',
         conversationId,
         ...(preemptIncomplete && {
           error: 'Scheduled run was interrupted before completion',
         }),
+        ...(stepLimitReached &&
+          !preemptIncomplete && {
+            error: 'Scheduled run reached its tool call limit before completion',
+          }),
       });
     }
 
@@ -1736,23 +1744,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     generationProtocolVersion,
   );
 
-  // Restore the conversation's createdAt so temporal prompt vars ({{current_datetime}},
-  // {{iso_datetime}}, ...) resolve against the SAME anchor the paused graph used rather
-  // than the resume wall-clock. initializeAgent reads `req.conversationCreatedAt`; the
-  // normal path sets it from the convo timestamp (resolveConversationCreatedAt), so mirror
-  // that here. (The original `timezone` is replayed onto req.body via RESUME_CONTEXT_KEYS.)
-  try {
-    const resumedConvo = await getConvo(userId, conversationId);
-    const createdAt = resumedConvo?.createdAt ? new Date(resumedConvo.createdAt) : null;
-    if (createdAt && !Number.isNaN(createdAt.getTime())) {
-      req.conversationCreatedAt = createdAt.toISOString();
-    }
-  } catch (err) {
-    logger.warn(
-      '[ResumeAgentController] Failed to restore conversation timestamp anchor',
-      getSafeErrorMetadata(err),
-    );
-  }
+  req.turnStartedAt = job.createdAt;
 
   let client = null;
   /** Re-pause progress failures use the action/epoch-scoped terminal CAS. The
@@ -1806,6 +1798,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     client.checkpointNamespace = checkpointNamespace;
     client.responseMessageId = job.metadata.responseMessageId;
     client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
+    // Seed the rebuilt pruner from the tier and calibration captured at the pause, so the
+    // resumed segment keeps historical tool results byte-identical to the paused one.
+    client.seedContextMeta?.(job.metadata?.contextMeta);
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }

@@ -40,6 +40,7 @@ const {
   containsGraphTokenPlaceholder,
   createAuthIdentityContext,
   isOAuthServer,
+  isAbortError,
   OpenIDReauthRequiredError,
 } = require('@librechat/api');
 const {
@@ -399,11 +400,12 @@ async function getAssistantToolDefinitions({ req, res, tools }) {
       getAllServerConfigs: (userId, configServers, role) =>
         registry.getAllServerConfigs(userId, configServers, role),
       getMCPServerTools,
-      getServerToolFunctionsSnapshot: async (userId, serverName, serverConfig) =>
+      getServerToolFunctionsSnapshot: async (userId, serverName, serverConfig, options) =>
         (await getMCPManager()?.getServerToolFunctionsSnapshot(
           userId,
           serverName,
           serverConfig,
+          options,
         )) ?? {
           tools: null,
         },
@@ -464,6 +466,18 @@ async function resolveCollisionAuditNames({ rawServerNames, accessibleServerName
     );
     return { names: rawServerNames, complete: false };
   }
+}
+
+/**
+ * The MCP servers a user can reach, keyed by name, with the registry's tier
+ * precedence already applied. This is the resolution behind `GET /api/mcp/servers`,
+ * so anything derived from it agrees with the catalog the client was given.
+ * @param {string} userId
+ * @param {string} [role]
+ * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
+ */
+async function getAccessibleMCPServers(userId, role) {
+  return await resolveAllMcpConfigs(userId, role != null ? { role } : undefined);
 }
 
 async function resolveAllMcpConfigs(userId, user) {
@@ -1295,10 +1309,21 @@ function createToolInstance({
       }
       return result;
     } catch (error) {
-      logger.error(
-        `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
-        error,
-      );
+      /** A user Stop aborts every in-flight call at once, and that rejection is
+       *  the cancellation working, so it must not reach error-level operational
+       *  alerts; the wrapping below still reports it to the turn. The error has
+       *  to look like an abort as well: a permission, OAuth, or upstream failure
+       *  can reject in the same tick as the Stop and must stay visible. */
+      if (config?.signal?.aborted === true && isAbortError(error)) {
+        logger.debug(
+          `[MCP][${serverName}][${toolName}][User: ${userId}] Tool call cancelled by user abort`,
+        );
+      } else {
+        logger.error(
+          `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
+          error,
+        );
+      }
 
       /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
       if (error instanceof OpenIDReauthRequiredError) {
@@ -1647,6 +1672,7 @@ module.exports = {
   resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  getAccessibleMCPServers,
   createOAuthStart,
   checkOAuthFlowStatus,
   getServerConnectionStatus,

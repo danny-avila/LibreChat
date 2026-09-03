@@ -85,7 +85,9 @@ describe('loadMCPServerCatalogs', () => {
       });
       deps.formatServerTools('config-only', []);
       await deps.getCachedServerTools(user.id, 'config-only', servers[0].serverConfig);
-      await deps.getServerToolFunctionsSnapshot(user.id, 'config-only', servers[0].serverConfig);
+      await deps.getServerToolFunctionsSnapshot(user.id, 'config-only', servers[0].serverConfig, {
+        deadlineMs: 123,
+      });
       await deps.cacheServerTools({ serverName: 'config-only' });
       return { serverTools: new Map([['config-only', {}]]), serversWithoutTools: [] };
     });
@@ -126,6 +128,7 @@ describe('loadMCPServerCatalogs', () => {
       user.id,
       'config-only',
       servers[0].serverConfig,
+      { deadlineMs: 123 },
     );
     expect(mockCacheMCPServerTools).toHaveBeenCalledWith({ serverName: 'config-only' });
     expect(result).toEqual({

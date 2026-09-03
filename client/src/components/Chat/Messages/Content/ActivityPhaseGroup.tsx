@@ -2,7 +2,7 @@ import { useId, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@librechat/client';
 import { ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   useExpandCollapse,
@@ -12,7 +12,7 @@ import {
 } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { getActivityLabelText } from '~/utils/activityLabels';
-import { EmptyText } from './Parts';
+import { AttachmentGroup, EmptyText } from './Parts';
 import Container from './Container';
 import { cn } from '~/utils';
 
@@ -53,6 +53,7 @@ export default function ActivityPhaseGroup({
   labelPart,
   children,
   hasContent,
+  attachments,
   showCursor = false,
   animateEntrance = false,
   hasPendingApproval = false,
@@ -60,6 +61,13 @@ export default function ActivityPhaseGroup({
   labelPart: ActivityPhasePart;
   children: ReactNode;
   hasContent: boolean;
+  /** Files the phase produced, lifted out of the fold by the parent renderer.
+   *  A summary card is collapsed the moment it settles, so anything rendered
+   *  inside it is, for most readers, not rendered at all — and a chart the run
+   *  spent its turn producing is exactly what the reader came for. They ride
+   *  their own row under the header instead, where the fold cannot take
+   *  them. */
+  attachments?: TAttachment[];
   showCursor?: boolean;
   animateEntrance?: boolean;
   hasPendingApproval?: boolean;
@@ -159,8 +167,17 @@ export default function ActivityPhaseGroup({
       <EmptyText />
     </Container>
   ) : null;
+  const media =
+    attachments != null && attachments.length > 0 ? (
+      <AttachmentGroup attachments={attachments} />
+    ) : null;
   if (!label) {
-    return <>{children}</>;
+    return (
+      <>
+        {children}
+        {media}
+      </>
+    );
   }
   const group = !hasContent ? (
     <div
@@ -250,6 +267,7 @@ export default function ActivityPhaseGroup({
   return (
     <>
       {group}
+      {media}
       {cursor}
     </>
   );

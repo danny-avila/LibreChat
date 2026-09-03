@@ -33,6 +33,7 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { isAbortError } from '~/utils/errors';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
@@ -450,12 +451,18 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
     serverConfig?: t.ParsedServerConfig,
+    options?: { deadlineMs?: number; signal?: AbortSignal },
   ): Promise<{
     tools: t.LCAvailableTools | null;
     publicationGeneration?: string;
     publicationRevision?: string;
   }> {
     try {
+      const signal = createDeadlineAbortSignal(options?.deadlineMs, options?.signal);
+      const readToolCatalog = (connection: MCPConnection) =>
+        options == null
+          ? MCPServerInspector.getToolCatalog(serverName, connection)
+          : MCPServerInspector.getToolCatalog(serverName, connection, options.deadlineMs, signal);
       const registry = MCPServersRegistry.getInstance();
       const effectiveConfig = serverConfig ?? (await registry.getServerConfig(serverName, userId));
       const useAppConnection =
@@ -466,7 +473,7 @@ export class MCPManager extends UserConnectionManager {
         ? await this.appConnections?.get(serverName)
         : null;
       if (existingAppConnection != null) {
-        return MCPServerInspector.getToolCatalog(serverName, existingAppConnection);
+        return readToolCatalog(existingAppConnection);
       }
 
       let awaitedRecovery: Promise<void> | undefined;
@@ -507,12 +514,12 @@ export class MCPManager extends UserConnectionManager {
         if (recovery && recovery !== awaitedRecovery) {
           awaitedRecovery = recovery;
           await this.releaseConnection(connection);
-          await this.waitForConnectionRecovery(recovery);
+          await this.waitForConnectionRecovery(recovery, signal);
           continue;
         }
 
         try {
-          const { tools } = await MCPServerInspector.getToolCatalog(serverName, connection);
+          const { tools } = await readToolCatalog(connection);
           const generationAfterFetch = await getMCPToolsChangedGeneration({ userId, serverName });
           if (
             publicationGeneration != null &&
@@ -1190,6 +1197,14 @@ Please follow these instructions when using tools from the respective MCP server
         if (error instanceof OAuthRecoveryTakeoverRequired) {
           recoveryTakeoverConsumed = true;
           continue;
+        }
+        /** A user Stop aborts the in-flight request; that rejection is the
+         *  cancellation working, not a fault, so it stays out of the error log.
+         *  The error must look like an abort too — a real failure can reject in
+         *  the same tick as the Stop and has to stay visible. */
+        if (options?.signal?.aborted === true && isAbortError(error)) {
+          logger.debug(`${logPrefix}[${toolName}] Tool call cancelled by user abort`);
+          throw error;
         }
         // Log with context and re-throw or handle as needed
         logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);

@@ -20,10 +20,11 @@ import type {
   AgentToolOptions,
   TEndpointOption,
   ReasoningResponseKey,
+  StatefulCodeEnvironment,
+  ImageDetail,
   TFile,
   Agent,
   TUser,
-  StatefulCodeEnvironment,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
@@ -136,6 +137,7 @@ function assertResolvedSkillContentAllowed(
   const selectedFields = pii?.fields == null ? null : new Set<string>(pii.fields);
   const selected = (field: string): boolean => selectedFields == null || selectedFields.has(field);
   const traversalErrors: ContentTraversalLimitError[] = [];
+  let firstFinding: ReturnType<typeof inspectionSession.inspect> = null;
   for (const skill of skills) {
     const projected: SkillContentInput = {
       ...(selected('name') && { name: skill.name }),
@@ -167,8 +169,14 @@ function assertResolvedSkillContentAllowed(
     }
     const finding = inspectionSession.inspect(fragments);
     if (finding != null) {
-      throw new ContentFilterError(finding);
+      firstFinding ??= finding;
+      if (!inspectionSession.hasAuditRules) {
+        throw new ContentFilterError(finding);
+      }
     }
+  }
+  if (firstFinding != null) {
+    throw new ContentFilterError(firstFinding);
   }
   const protectedTraversal = traversalErrors.find((error) =>
     isContentTraversalProtected({ error, filters }),
@@ -373,6 +381,9 @@ export type InitializedAgent = Agent & {
   baseContextTokens?: number;
   useLegacyContent: boolean;
   resendFiles: boolean;
+  /** Detail level LibreChat encodes image content blocks with, from the agent's
+   * model parameters. Absent when the agent does not configure one. */
+  imageDetail?: ImageDetail;
   tool_resources?: AgentToolResources;
   userMCPAuthMap?: Record<string, Record<string, string>>;
   /** Tool map for ToolNode to use when executing tools (required for PTC) */
@@ -950,7 +961,7 @@ export async function initializeAgent(
     ),
   );
 
-  const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(
+  const { resendFiles, maxContextTokens, imageDetail, modelOptions } = extractLibreChatParams(
     _modelOptions as Record<string, unknown>,
   );
 
@@ -1633,7 +1644,7 @@ export async function initializeAgent(
     const resolvedInstructions = replaceSpecialVars({
       text: agent.instructions,
       user: user ? (user as unknown as TUser) : null,
-      now: runtime.conversationCreatedAt,
+      now: runtime.turnStartedAt,
       timezone: runtime.requestBody.timezone,
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
@@ -1776,6 +1787,7 @@ export async function initializeAgent(
   const initializedAgent: InitializedAgent = {
     ...agent,
     resendFiles,
+    imageDetail,
     toolRegistry,
     mcpAvailableTools,
     requestScopedConnections,

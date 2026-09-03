@@ -41,6 +41,7 @@ const {
 const {
   Time,
   Tools,
+  SkillsScope,
   CacheKeys,
   Constants,
   FileSources,
@@ -241,18 +242,38 @@ const blockFilteredAgentContent = async (req, res, agentData) => {
 
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
   const skillScopeEnabled = agent.skills_enabled === true;
+  const configuredScope = agent.skills_scope;
   delete agent.skills_enabled;
+  delete agent.skills_scope;
 
   if (!skillScopeEnabled) {
     delete agent.skills;
     return agent;
   }
 
-  const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
-  if (configuredSkills.length === 0) {
-    // Empty allowlist means the viewer's full accessible catalog.
+  if (configuredScope === SkillsScope.none) {
     delete agent.skills;
     agent.skills_enabled = true;
+    agent.skills_scope = SkillsScope.none;
+    return agent;
+  }
+
+  if (configuredScope === SkillsScope.all) {
+    delete agent.skills;
+    agent.skills_enabled = true;
+    agent.skills_scope = SkillsScope.all;
+    return agent;
+  }
+
+  const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
+  if (configuredSkills.length === 0) {
+    // Legacy empty allowlists mean the viewer's full accessible catalog;
+    // explicit selected scope remains an intentionally empty catalog.
+    delete agent.skills;
+    agent.skills_enabled = true;
+    if (configuredScope === SkillsScope.selected) {
+      agent.skills_scope = SkillsScope.selected;
+    }
     return agent;
   }
 
@@ -262,11 +283,18 @@ const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
 
   if (visibleSkills.length === 0) {
     delete agent.skills;
+    if (configuredScope === SkillsScope.selected) {
+      agent.skills_enabled = true;
+      agent.skills_scope = SkillsScope.selected;
+    }
     return agent;
   }
 
   agent.skills = visibleSkills;
   agent.skills_enabled = true;
+  if (configuredScope === SkillsScope.selected) {
+    agent.skills_scope = SkillsScope.selected;
+  }
   return agent;
 };
 
@@ -457,7 +485,14 @@ const validateStatefulCodeEnvironment = (
   if (environmentId != null) {
     const configuredEnvironments =
       req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments ?? [];
-    if (!configuredEnvironments.some((configured) => configured.id === environmentId)) {
+    const configuredEnvironment = configuredEnvironments.find(
+      (configured) => configured.id === environmentId,
+    );
+    const pairingOnly =
+      configuredEnvironment?.pairing?.allowPrincipalWorkers === true &&
+      configuredEnvironment.pairing.workerId == null &&
+      configuredEnvironment.workerId == null;
+    if (configuredEnvironment == null || pairingOnly) {
       res.status(400).json({
         error: `Stateful code environment is not configured: ${environmentId}`,
       });
@@ -883,6 +918,9 @@ const createAgentHandler = async (req, res) => {
       return res.status(400).json({ error: 'Invalid request data', details: error.errors });
     }
     logger.error('[/Agents] Error creating agent', error);
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -1533,7 +1571,18 @@ const duplicateAgentHandler = async (req, res) => {
     );
     newAgentData.actions = agentActions;
 
-    const newAgent = await db.createAgent(newAgentData);
+    let newAgent;
+    try {
+      newAgent = await db.createAgent(newAgentData);
+    } catch (error) {
+      await db.deleteActions({ agent_id: newAgentId, user: userId }).catch((cleanupError) => {
+        logger.error(
+          '[/agents/:id/duplicate] Failed to clean up cloned Actions after Agent creation failed:',
+          cleanupError,
+        );
+      });
+      throw error;
+    }
 
     try {
       await Promise.all([
@@ -1570,7 +1619,9 @@ const duplicateAgentHandler = async (req, res) => {
     });
   } catch (error) {
     logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', error);
-
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -2099,6 +2150,9 @@ const revertAgentVersionHandler = async (req, res) => {
     return res.json(updatedAgent);
   } catch (error) {
     logger.error('[/agents/:id/revert] Error reverting Agent version', error);
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };

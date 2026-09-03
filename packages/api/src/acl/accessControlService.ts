@@ -287,26 +287,55 @@ export class AccessControlService {
       return new Map();
     }
 
+    let principals: ResolvedPrincipal[];
     try {
-      // Get user principals (user + groups + public)
-      const principals = await this._dbMethods.getUserPrincipals({ userId, role });
+      principals = await this._dbMethods.getUserPrincipals({ userId, role });
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(
+          `[PermissionService.getResourcePermissionsMap] Error resolving principals: ${error.message}`,
+          error,
+        );
+      }
+      throw error;
+    }
+    return await this.getResourcePermissionsMapForPrincipals({
+      principalsList: principals,
+      resourceType,
+      resourceIds,
+    });
+  }
 
-      // Use batch method from aclEntry
+  public async getResourcePermissionsMapForPrincipals({
+    principalsList,
+    resourceType,
+    resourceIds,
+  }: {
+    principalsList: ResolvedPrincipal[];
+    resourceType: ResourceType;
+    resourceIds: (string | Types.ObjectId)[];
+  }): Promise<Map<string, number>> {
+    this.validateResourceType(resourceType);
+    if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
+      return new Map();
+    }
+
+    try {
       const permissionsMap = await this._dbMethods.getEffectivePermissionsForResources(
-        principals,
+        principalsList,
         resourceType,
         resourceIds,
       );
 
       logger.debug(
-        `[PermissionService.getResourcePermissionsMap] Computed permissions for ${resourceIds.length} resources, ${permissionsMap.size} have permissions`,
+        `[PermissionService.getResourcePermissionsMapForPrincipals] Computed permissions for ${resourceIds.length} resources, ${permissionsMap.size} have permissions`,
       );
 
       return permissionsMap;
     } catch (error) {
       if (error instanceof Error) {
         logger.error(
-          `[PermissionService.getResourcePermissionsMap] Error: ${error.message}`,
+          `[PermissionService.getResourcePermissionsMapForPrincipals] Error: ${error.message}`,
           error,
         );
       }

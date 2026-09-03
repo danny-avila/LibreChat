@@ -162,6 +162,7 @@ export const fileFilterFieldSchema = z.enum(FILE_FILTER_FIELDS);
 export const toolArgumentFilterFieldSchema = z.enum(TOOL_ARGUMENT_FILTER_FIELDS);
 export const modelParameterFilterFieldSchema = z.enum(MODEL_PARAMETER_FILTER_FIELDS);
 export const filterPiiStarterPatternSchema = z.enum(FILTER_PII_STARTER_PATTERNS);
+export const filterPiiActionSchema = z.enum(['block', 'audit']);
 export const actionMetadataFilterFieldSchema = z.enum(ACTION_METADATA_FILTER_FIELDS);
 export const unattributedAssistantContentSchema = z.enum(['model_output', 'inspect']);
 export type UnattributedAssistantContent = z.infer<typeof unattributedAssistantContentSchema>;
@@ -178,6 +179,7 @@ export type FileFilterField = z.infer<typeof fileFilterFieldSchema>;
 export type ToolArgumentFilterField = z.infer<typeof toolArgumentFilterFieldSchema>;
 export type ModelParameterFilterField = z.infer<typeof modelParameterFilterFieldSchema>;
 export type ActionMetadataFilterField = z.infer<typeof actionMetadataFilterFieldSchema>;
+export type FilterPiiAction = z.infer<typeof filterPiiActionSchema>;
 
 export const userSubmittedMessageFieldPathSchema = z
   .object({
@@ -285,6 +287,7 @@ export type FilterPiiCustomPatternConfig = z.infer<typeof filterPiiCustomPattern
 function createPiiFilterSchema<Field extends z.ZodTypeAny>(fieldSchema: Field) {
   return z
     .object({
+      action: filterPiiActionSchema.optional(),
       fields: z.array(fieldSchema).min(1).max(MAX_PII_PATTERNS_PER_SOURCE).optional(),
       starterPatterns: z
         .array(filterPiiStarterPatternSchema)
