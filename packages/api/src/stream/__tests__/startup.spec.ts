@@ -4155,13 +4155,18 @@ describe('GenerationJobManager startup telemetry', () => {
     expect(recordProviderDrain).toHaveBeenCalledWith(streamId, job.createdAt, providerExecutionId);
   });
 
-  it('keeps waiting for a provider execution begun while shutdown is already waiting', async () => {
+  it('keeps waiting for every execution begun before shutdown, not only the first to drain', async () => {
     const { manager } = configureShutdownManager();
     const first = await manager.createJob('stream-shutdown-first', 'user-1');
     const second = await manager.createJob('stream-shutdown-second', 'user-1');
     const firstExecution = first.metadata.providerExecutionId!;
     const secondExecution = second.metadata.providerExecutionId!;
     await manager.beginProviderExecution('stream-shutdown-first', first.createdAt, firstExecution);
+    await manager.beginProviderExecution(
+      'stream-shutdown-second',
+      second.createdAt,
+      secondExecution,
+    );
 
     manager.prepareForShutdown();
     let destroyed = false;
@@ -4170,13 +4175,7 @@ describe('GenerationJobManager startup telemetry', () => {
     });
     await new Promise((resolve) => setImmediate(resolve));
 
-    /** Begun after shutdown snapshotted the first execution. A one-shot snapshot would return
-     *  once the first drains and tear the transport down under this one. */
-    await manager.beginProviderExecution(
-      'stream-shutdown-second',
-      second.createdAt,
-      secondExecution,
-    );
+    /** The first draining must not release shutdown while the second is still open. */
     await manager.markProviderExecutionDrained(
       'stream-shutdown-first',
       first.createdAt,
