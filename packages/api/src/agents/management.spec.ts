@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_SUBAGENTS, setMaxSubagents } from 'librechat-data-provider';
 import {
   agentManagementCreateSchema,
   agentManagementListResponseSchema,
@@ -164,6 +165,23 @@ describe('Agent Management contract', () => {
       expect(response).not.toHaveProperty('versions');
       expect(response).not.toHaveProperty('mcpServerNames');
       expect(response).not.toHaveProperty('is_promoted');
+    });
+
+    it('does not apply the current request admission limit to persisted subagents', () => {
+      const subagents = {
+        enabled: true,
+        agent_ids: Array.from({ length: MAX_SUBAGENTS }, (_, index) => `agent_${index}`),
+      };
+
+      setMaxSubagents(1);
+      try {
+        expect(agentManagementUpdateSchema.safeParse({ subagents }).success).toBe(false);
+        expect(projectAgentManagementResponse({ ...persistedAgent, subagents }).subagents).toEqual(
+          subagents,
+        );
+      } finally {
+        setMaxSubagents(undefined);
+      }
     });
   });
 

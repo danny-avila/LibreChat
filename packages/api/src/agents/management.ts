@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import type {
+  AgentSubagentGraph,
+  AgentSubagentGraphEdge,
+  AgentSubagentsConfig,
+} from 'librechat-data-provider';
 import { agentCreateSchema, agentUpdateSchema } from './validation';
 
 const MAX_LIST_LIMIT = 100;
@@ -102,6 +107,36 @@ export const agentManagementListSchema: z.ZodType<AgentManagementList, z.ZodType
   .strict();
 
 const timestampSchema = z.string().datetime();
+const agentManagementGraphEdgeResponseSchema: z.ZodType<AgentSubagentGraphEdge> = z
+  .object({
+    from: z.union([z.string(), z.array(z.string())]),
+    to: z.union([z.string(), z.array(z.string())]),
+    description: z.string().optional(),
+    edgeType: z.literal('direct'),
+    prompt: z.string().optional(),
+    excludeResults: z.boolean().optional(),
+  })
+  .strict();
+const agentManagementGraphResponseSchema: z.ZodType<AgentSubagentGraph> = z
+  .object({
+    type: z.string(),
+    name: z.string(),
+    description: z.string(),
+    agent_ids: z.array(z.string()),
+    edges: z.array(agentManagementGraphEdgeResponseSchema),
+    entry_agent_id: z.string(),
+    result_agent_id: z.string(),
+  })
+  .strict();
+const agentManagementSubagentsResponseSchema: z.ZodType<AgentSubagentsConfig | undefined> = z
+  .object({
+    enabled: z.boolean().optional(),
+    allowSelf: z.boolean().optional(),
+    agent_ids: z.array(z.string()).optional(),
+    graphs: z.array(agentManagementGraphResponseSchema).optional(),
+  })
+  .strict()
+  .optional();
 
 /** The externally supported Agent shape. Persistence and ownership fields are intentionally absent. */
 export const agentManagementResponseSchema: z.ZodType<AgentManagementResponse> = agentUpdateSchema
@@ -112,6 +147,7 @@ export const agentManagementResponseSchema: z.ZodType<AgentManagementResponse> =
     version: z.number().int().nonnegative(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
+    subagents: agentManagementSubagentsResponseSchema,
   })
   .strict();
 
