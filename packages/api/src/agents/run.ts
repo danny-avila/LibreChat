@@ -1768,6 +1768,7 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
+    /** Preserve the configured endpoint structurally until the SDK input type includes it. */
     const agentInput: AgentInputs & { endpoint: string } = {
       provider,
       endpoint: agent.endpoint ?? provider,
