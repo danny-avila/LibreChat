@@ -52,7 +52,6 @@ jest.mock('../Attachment', () => ({
   ),
 }));
 
-
 jest.mock('lucide-react', () => ({
   // eslint-disable-next-line i18next/no-literal-string
   ChevronRight: () => <span>chevron</span>,

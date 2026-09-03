@@ -485,7 +485,6 @@ function tryPrompt(args: string): string | undefined {
   }
 }
 
-
 /** Stable key for a ticker line — helps React reuse the DOM node across
  *  in-place updates to the same live `writing` / `reasoning` line, and
  *  gives tool-call lines a stable identity by tool name. */
