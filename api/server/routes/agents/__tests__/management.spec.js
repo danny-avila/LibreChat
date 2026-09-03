@@ -49,15 +49,16 @@ describe('Agent Management route boundary', () => {
     expect(mockUaParser).not.toHaveBeenCalled();
   });
 
-  it('terminates authenticated unknown paths inside the management router', async () => {
+  it('allows an authenticated non-browser client into the management router', async () => {
     const response = await request(app)
       .get('/api/agents/v1/agents/not-a-management-operation')
-      .set('Authorization', 'Bearer valid-token');
+      .set('Authorization', 'Bearer valid-token')
+      .set('User-Agent', 'curl/8.0.0');
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: { code: 'not_found', message: 'Agent not found' } });
     expect(mockCheckBan).toHaveBeenCalledTimes(1);
-    expect(mockUaParser).toHaveBeenCalledTimes(1);
+    expect(mockUaParser).not.toHaveBeenCalled();
     expect(mockMapAgentManagementError).toHaveBeenCalledWith('not_found');
     expect(mockRequireAgentManagementAuth).toHaveBeenCalledTimes(1);
   });
