@@ -1768,8 +1768,9 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
-    const agentInput: AgentInputs = {
+    const agentInput: AgentInputs & { endpoint: string } = {
       provider,
+      endpoint: agent.endpoint ?? provider,
       reasoningKey,
       toolDefinitions,
       agentId: agent.id,
