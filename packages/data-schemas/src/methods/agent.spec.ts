@@ -4756,8 +4756,10 @@ describe('getAgentManagementListByAccess', () => {
     await tenantStorage.run({ tenantId }, () =>
       updateAgent({ id: created.id }, { instructions: 'Updated configuration' }),
     );
-    const before = await Agent.findById(created._id).lean();
-    const beforeUpdatedAt = (before as unknown as { updatedAt?: Date } | null)?.updatedAt;
+    const before = await Agent.findById(created._id)
+      .select({ updatedAt: 1 })
+      .lean<{ updatedAt?: Date }>();
+    const beforeUpdatedAt = before?.updatedAt;
 
     const result = await tenantStorage.run({ tenantId }, () =>
       getAgentManagementListByAccess({
@@ -4766,7 +4768,9 @@ describe('getAgentManagementListByAccess', () => {
         limit: 20,
       }),
     );
-    const after = await Agent.findById(created._id).lean();
+    const after = await Agent.findById(created._id)
+      .select({ updatedAt: 1 })
+      .lean<{ updatedAt?: Date }>();
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).toMatchObject({
@@ -4776,7 +4780,7 @@ describe('getAgentManagementListByAccess', () => {
       version: 2,
     });
     expect(result.data[0].versions).toBeUndefined();
-    expect((after as unknown as { updatedAt?: Date } | null)?.updatedAt).toEqual(beforeUpdatedAt);
+    expect(after?.updatedAt).toEqual(beforeUpdatedAt);
   });
 
   it('enforces tenant scope even when accessible IDs contain another tenant record', async () => {

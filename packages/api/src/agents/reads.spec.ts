@@ -1,6 +1,11 @@
 import { Types } from 'mongoose';
 import { SystemCapabilities } from '@librechat/data-schemas';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import {
+  Permissions,
+  PermissionBits,
+  PermissionTypes,
+  ResourceType,
+} from 'librechat-data-provider';
 import type { IRole, IUser } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { AgentManagementReadDeps } from './reads';
@@ -79,8 +84,8 @@ describe('Agent Management read handlers', () => {
       userId: user.id,
       role: user.role,
       idOnTheSource: user.idOnTheSource,
-      resourceType: 'agent',
-      requiredPermissions: 2,
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.EDIT,
     });
     expect(deps.getAgentManagementListByAccess).toHaveBeenCalledWith({
       accessibleIds: [objectId],
@@ -124,9 +129,9 @@ describe('Agent Management read handlers', () => {
     expect(deps.checkPermission).toHaveBeenCalledWith({
       userId: user.id,
       role: user.role,
-      resourceType: 'agent',
+      resourceType: ResourceType.AGENT,
       resourceId: objectId,
-      requiredPermission: 2,
+      requiredPermission: PermissionBits.EDIT,
     });
     expect(response.status).toHaveBeenCalledWith(200);
     expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ id: 'agent-one' }));
