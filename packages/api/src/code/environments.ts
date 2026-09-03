@@ -8,6 +8,7 @@ import {
   ResourceType,
   isSecureCodeEnvironmentControlURL,
 } from 'librechat-data-provider';
+import type { CodeEnvironmentUserSettings } from 'librechat-data-provider';
 import type { ResolvedPrincipal } from '~/types/principal';
 import { AccessControlService } from '~/acl/accessControlService';
 
@@ -23,7 +24,9 @@ export type CodeEnvironmentSummary = {
   id: string;
   name: string;
   type: 'managed' | 'attached';
+  canEdit?: boolean;
   canDelete: boolean;
+  settings?: CodeEnvironmentUserSettings;
 };
 
 export type CodeEnvironmentRegistration = {
@@ -48,6 +51,12 @@ export type AccessibleCodeEnvironmentConfiguration = {
   controlPlaneId: string;
   owner: 'principal';
   workerId?: string;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type AccessibleCodeEnvironmentDetails = {
+  summaries: CodeEnvironmentSummary[];
+  configurations: AccessibleCodeEnvironmentConfiguration[];
 };
 
 type CachedAccessibleCodeEnvironmentConfiguration = AccessibleCodeEnvironmentConfiguration & {
@@ -147,15 +156,19 @@ function toSummary(
     environmentId: string;
     name: string;
     type: 'managed' | 'attached';
+    settings?: CodeEnvironmentUserSettings;
   },
   canDelete = false,
+  canEdit = false,
 ): CodeEnvironmentSummary {
   return {
     resourceId: environment._id.toString(),
     id: environment.environmentId,
     name: environment.name,
     type: environment.type,
+    canEdit,
     canDelete,
+    ...(environment.settings != null ? { settings: environment.settings } : {}),
   };
 }
 
@@ -169,9 +182,13 @@ export function createCodeEnvironmentRegistry(
     maxOwned?: number;
   }) => Promise<CodeEnvironmentSummary>;
   listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
+  listAccessibleDetails: (
+    actor: CodeEnvironmentPrincipalContext,
+  ) => Promise<AccessibleCodeEnvironmentDetails>;
   listAccessibleConfigurations: (
     actor: CodeEnvironmentPrincipalContext,
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
+  resolvePrincipals: (actor: CodeEnvironmentPrincipalContext) => Promise<ResolvedPrincipal[]>;
   listRegisteredIds: () => Promise<string[]>;
   invalidateAccessibleConfigurations: (tenantId?: string) => Promise<void>;
   markRevocationPending: (environmentId: string) => Promise<void>;
@@ -179,6 +196,11 @@ export function createCodeEnvironmentRegistry(
     actor: CodeEnvironmentPrincipalContext;
     environmentId: string;
     beforeDelete?: (target: CodeEnvironmentLifecycleTarget) => Promise<void>;
+  }) => Promise<CodeEnvironmentSummary | null>;
+  updateSettings: (params: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    settings: CodeEnvironmentUserSettings;
   }) => Promise<CodeEnvironmentSummary | null>;
 } {
   const methods = createMethods(mongoose);
@@ -261,7 +283,7 @@ export function createCodeEnvironmentRegistry(
       if (permission == null) {
         throw new Error('Unable to grant code environment ownership');
       }
-      const summary = toSummary(created, true);
+      const summary = toSummary(created, true, true);
       await invalidateAccessibleConfigurations();
       await methods.completeCodeEnvironmentRegistration(created._id);
       return summary;
@@ -295,34 +317,65 @@ export function createCodeEnvironmentRegistry(
     });
   }
 
+  async function resolvePrincipals(
+    actor: CodeEnvironmentPrincipalContext,
+  ): Promise<ResolvedPrincipal[]> {
+    return actor.principals ?? (await methods.getUserPrincipals(actor));
+  }
+
   async function findAccessible(actor: CodeEnvironmentPrincipalContext) {
-    const principals = actor.principals ?? (await methods.getUserPrincipals(actor));
+    const principals = await resolvePrincipals(actor);
     const ids = await findAccessibleResourceIds(principals);
     const environments = await methods.findCodeEnvironmentsByIds(ids);
     const userId = actor.userId.toString();
-    return environments.filter(
-      (environment) =>
-        environment.registrationPendingAt == null &&
-        environment.deletionStartedAt == null &&
-        environment.deletionCommittedAt == null &&
-        (environment.workerPrincipal?.type !== 'user' || environment.workerPrincipal.id === userId),
-    );
+    return {
+      principals,
+      environments: environments.filter(
+        (environment) =>
+          environment.registrationPendingAt == null &&
+          environment.deletionStartedAt == null &&
+          environment.deletionCommittedAt == null &&
+          (environment.workerPrincipal?.type !== 'user' ||
+            environment.workerPrincipal.id === userId),
+      ),
+    };
   }
 
   async function listAccessible(
     actor: CodeEnvironmentPrincipalContext,
   ): Promise<CodeEnvironmentSummary[]> {
-    const environments = await findAccessible(actor);
-    const permissions = await access.getResourcePermissionsMap({
-      userId: actor.userId,
-      role: actor.role ?? '',
+    return (await listAccessibleDetails(actor)).summaries;
+  }
+
+  async function listAccessibleDetails(
+    actor: CodeEnvironmentPrincipalContext,
+  ): Promise<AccessibleCodeEnvironmentDetails> {
+    const { environments, principals } = await findAccessible(actor);
+    const permissions = await access.getResourcePermissionsMapForPrincipals({
+      principalsList: principals,
       resourceType: ResourceType.CODE_ENVIRONMENT,
       resourceIds: environments.map((environment) => environment._id),
     });
-    return environments.map((environment) => {
-      const permission = permissions.get(environment._id.toString()) ?? 0;
-      return toSummary(environment, (permission & PermissionBits.DELETE) === PermissionBits.DELETE);
-    });
+    return {
+      summaries: environments.map((environment) => {
+        const permission = permissions.get(environment._id.toString()) ?? 0;
+        return toSummary(
+          environment,
+          (permission & PermissionBits.DELETE) === PermissionBits.DELETE,
+          (permission & PermissionBits.EDIT) === PermissionBits.EDIT,
+        );
+      }),
+      configurations: environments.map((environment) => ({
+        id: environment.environmentId,
+        name: environment.name,
+        type: environment.type,
+        baseURL: environment.baseURL,
+        controlPlaneId: environment.controlPlaneId,
+        owner: 'principal',
+        workerId: environment.workerId,
+        settings: environment.settings,
+      })),
+    };
   }
 
   async function markRevocationPending(environmentId: string): Promise<void> {
@@ -389,6 +442,7 @@ export function createCodeEnvironmentRegistry(
             controlPlaneId: environment.controlPlaneId,
             owner: 'principal',
             workerId: environment.workerId,
+            settings: environment.settings,
           })),
       };
     };
@@ -415,15 +469,14 @@ export function createCodeEnvironmentRegistry(
       // ACL on every use so a failed revision write can delay grants but can never preserve a
       // revocation. Entries written before resourceId was cached are deliberately treated as
       // misses during rolling upgrades.
-      const accessibleIds = new Set(
-        (await findAccessibleResourceIds(principals)).map((id) => id.toString()),
-      );
       const cachedConfigurations = cached as CachedAccessibleCodeEnvironmentConfiguration[];
-      const liveEnvironments = await methods.findCodeEnvironmentsByIds(
-        cachedConfigurations.map(({ resourceId }) => resourceId),
-      );
+      const [accessibleResourceIds, liveEnvironments] = await Promise.all([
+        findAccessibleResourceIds(principals),
+        methods.findCodeEnvironmentsByIds(cachedConfigurations.map(({ resourceId }) => resourceId)),
+      ]);
+      const accessibleIds = new Set(accessibleResourceIds.map((id) => id.toString()));
       const userId = actor.userId.toString();
-      const liveIds = new Set(
+      const liveByResourceId = new Map(
         liveEnvironments
           .filter(
             (environment) =>
@@ -433,11 +486,13 @@ export function createCodeEnvironmentRegistry(
               (environment.workerPrincipal?.type !== 'user' ||
                 environment.workerPrincipal.id === userId),
           )
-          .map((environment) => environment._id.toString()),
+          .map((environment) => [environment._id.toString(), environment]),
       );
-      return cachedConfigurations
-        .filter(({ resourceId }) => accessibleIds.has(resourceId) && liveIds.has(resourceId))
-        .map(toPublicConfiguration);
+      return cachedConfigurations.flatMap((configuration) => {
+        const live = liveByResourceId.get(configuration.resourceId);
+        if (!accessibleIds.has(configuration.resourceId) || live == null) return [];
+        return [toPublicConfiguration({ ...configuration, settings: live.settings })];
+      });
     }
 
     const { configurations, hasPendingRegistration } = await load();
@@ -519,7 +574,7 @@ export function createCodeEnvironmentRegistry(
       const deleted = await methods.deleteCodeEnvironmentById(environment._id);
       if (deleted == null) return null;
       await invalidateAccessibleConfigurations();
-      return toSummary(deleted, true);
+      return toSummary(deleted, true, true);
     } catch (error) {
       if (!deletionCommitted && !externalLifecycleStarted) {
         await methods.cancelCodeEnvironmentRemoval(environment._id, removalLeaseId);
@@ -528,14 +583,48 @@ export function createCodeEnvironmentRegistry(
     }
   }
 
+  async function updateSettings({
+    actor,
+    environmentId,
+    settings,
+  }: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    settings: CodeEnvironmentUserSettings;
+  }): Promise<CodeEnvironmentSummary | null> {
+    const environment = await methods.findCodeEnvironmentByEnvironmentId(environmentId);
+    if (environment == null) return null;
+    if (
+      environment.workerPrincipal?.type === 'user' &&
+      environment.workerPrincipal.id !== actor.userId.toString()
+    ) {
+      return null;
+    }
+    const principals = await resolvePrincipals(actor);
+    const permissions = await access.getResourcePermissionsMapForPrincipals({
+      principalsList: principals,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceIds: [environment._id],
+    });
+    const permission = permissions.get(environment._id.toString()) ?? 0;
+    if ((permission & PermissionBits.EDIT) !== PermissionBits.EDIT) return null;
+    const updated = await methods.updateCodeEnvironmentSettings(environmentId, settings);
+    if (updated == null) return null;
+    await invalidateAccessibleConfigurations();
+    return toSummary(updated, (permission & PermissionBits.DELETE) === PermissionBits.DELETE, true);
+  }
+
   return {
     register,
     markRevocationPending,
     listAccessible,
+    listAccessibleDetails,
     listAccessibleConfigurations,
+    resolvePrincipals,
     listRegisteredIds,
     invalidateAccessibleConfigurations,
     remove,
+    updateSettings,
   };
 }
 

@@ -101,11 +101,12 @@ router.get('/', async (req, res) => {
     let scopedMessageRead;
     if (typeof conversationId === 'string') {
       const ownershipRead = db.getConvoOwnership(user, conversationId);
+      /** Client-facing reads never expose server-private fields such as `contextMeta`. */
       const messageRead = messageId
-        ? db.getMessages({ conversationId, messageId, user })
+        ? db.getMessages({ conversationId, messageId, user }, CLIENT_MESSAGE_SELECT)
         : db.getMessagesByCursor(
             { conversationId, user },
-            { sortField, sortOrder, limit: pageSize, cursor },
+            { sortField, sortOrder, limit: pageSize, cursor, select: CLIENT_MESSAGE_SELECT },
           );
       scopedMessageRead = Promise.resolve(messageRead).then(
         (value) => ({ ok: true, value }),
@@ -161,10 +162,13 @@ router.get('/', async (req, res) => {
         }
       }
 
-      const dbMessages = await db.getMessages({
-        user,
-        messageId: { $in: messageIds },
-      });
+      const dbMessages = await db.getMessages(
+        {
+          user,
+          messageId: { $in: messageIds },
+        },
+        CLIENT_MESSAGE_SELECT,
+      );
 
       const dbMessageMap = {};
       for (const dbMessage of dbMessages) {
@@ -175,9 +179,12 @@ router.get('/', async (req, res) => {
       for (const message of cleanedMessages) {
         const convo = result.convoMap[message.conversationId];
         const dbMessage = dbMessageMap[message.messageId];
+        /** Search hydrates every schema field; server-private state never leaves. */
+        const publicHit = { ...message };
+        delete publicHit.contextMeta;
 
         activeMessages.push({
-          ...message,
+          ...publicHit,
           title: convo.title,
           conversationId: message.conversationId,
           model: convo.model,
@@ -209,6 +216,18 @@ router.get('/', async (req, res) => {
  * @param {string} req.body.agentId - The agentId to filter content by
  * @returns {TMessage} The newly created branch message
  */
+/**
+ * Projects a saved row for a client response. The context meta stays in the
+ * database for the next turn; no client-facing read or write response carries it.
+ * @param {TMessage} message
+ * @returns {TMessage}
+ */
+function toClientMessage(message) {
+  const clientMessage = { ...message };
+  delete clientMessage.contextMeta;
+  return clientMessage;
+}
+
 router.post('/branch', configMiddleware, async (req, res) => {
   try {
     const { messageId, agentId } = req.body;
@@ -298,6 +317,9 @@ router.post('/branch', configMiddleware, async (req, res) => {
       endpoint: sourceMessage.endpoint,
       sender: sourceMessage.sender,
       iconURL: sourceMessage.iconURL,
+      // Server-private context meta (calibration and fading tier) travels with the branch so
+      // the next turn seeds its pruner the same way it would from the source response.
+      ...(sourceMessage.contextMeta != null && { contextMeta: sourceMessage.contextMeta }),
       ...(typeof sourceMessage.isUserSubmitted === 'boolean' && {
         isUserSubmitted: sourceMessage.isUserSubmitted,
       }),
@@ -339,7 +361,7 @@ router.post('/branch', configMiddleware, async (req, res) => {
       return res.status(500).json({ error: 'Failed to save branch message' });
     }
 
-    res.status(201).json(savedMessage);
+    res.status(201).json(toClientMessage(savedMessage));
   } catch (error) {
     if (isContentFilterError(error)) {
       return res.status(error.statusCode).json(error.body);
@@ -491,6 +513,9 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
     delete message.isUserSubmitted;
     delete message.userSubmittedPaths;
     delete message.userSubmittedMessageFieldPaths;
+    /** Server-private run state: a client-authored row must never seed a run's
+     * calibration or fading tiers, so the field only ever comes from the server. */
+    delete message.contextMeta;
     const reqCtx = {
       userId: req?.user?.id,
       isTemporary: req?.body?.isTemporary,
@@ -514,7 +539,7 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
       context: 'POST /api/messages/:conversationId',
       ...(savedMessage._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
-    res.status(201).json(savedMessage);
+    res.status(201).json(toClientMessage(savedMessage));
   } catch (error) {
     logger.error('Error saving message:', error);
     res.status(500).json({ error: 'Internal server error' });

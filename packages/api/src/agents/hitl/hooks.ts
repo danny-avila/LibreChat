@@ -47,6 +47,8 @@ export type ToolApprovalHookFactory = (
 export interface ResolvedToolApprovalHook {
   hook: ToolApprovalHook;
   matcher?: string;
+  /** Optional admission-only scope for hooks that inspect the executing agent at runtime. */
+  agentIds?: ReadonlySet<string>;
 }
 
 interface RegisteredHook {
@@ -126,8 +128,12 @@ export function buildToolApprovalHooks(
 export function resolvedToolApprovalHooksCanMatch(
   hooks: readonly ResolvedToolApprovalHook[],
   toolNames: readonly string[],
+  agentId?: string,
 ): boolean {
-  return hooks.some(({ matcher }) => {
+  return hooks.some(({ matcher, agentIds }) => {
+    if (agentIds != null && (agentId == null || !agentIds.has(agentId))) {
+      return false;
+    }
     if (matcher == null) {
       return toolNames.length > 0;
     }

@@ -94,6 +94,8 @@ const cacheConfig: {
   REDIS_RETRY_MAX_ATTEMPTS: number;
   /** Connection timeout in ms */
   REDIS_CONNECT_TIMEOUT: number;
+  /** Min spacing in ms between reconnects forced by READONLY replies after a failover */
+  REDIS_READONLY_RECOVERY_INTERVAL: number;
   /** Queue commands when disconnected */
   REDIS_ENABLE_OFFLINE_QUEUE: boolean;
   /** flag to modify redis connection by adding dnsLookup this is required when connecting to elasticache for ioredis
@@ -171,6 +173,8 @@ const cacheConfig: {
   REDIS_RETRY_MAX_ATTEMPTS: math(process.env.REDIS_RETRY_MAX_ATTEMPTS, 10),
   /** Connection timeout in ms */
   REDIS_CONNECT_TIMEOUT: math(process.env.REDIS_CONNECT_TIMEOUT, 10000),
+  /** Min spacing in ms between reconnects forced by READONLY replies after a failover */
+  REDIS_READONLY_RECOVERY_INTERVAL: math(process.env.REDIS_READONLY_RECOVERY_INTERVAL, 5000),
   /** Queue commands when disconnected */
   REDIS_ENABLE_OFFLINE_QUEUE: isEnabled(process.env.REDIS_ENABLE_OFFLINE_QUEUE ?? 'true'),
   /** flag to modify redis connection by adding dnsLookup this is required when connecting to elasticache for ioredis

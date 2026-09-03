@@ -25,10 +25,95 @@ interface RegisteredEnvironment {
   id: string;
   name: string;
   type: 'attached';
+  configSchema?: {
+    permissions?: {
+      fileWrite?: { allowed: string[]; default: string };
+      commandExecution?: { allowed: string[]; default: string };
+    };
+  };
+  settings?: {
+    permissions?: { fileWrite?: string; commandExecution?: string };
+  };
 }
 
 test.describe('attached stateful code environment', () => {
   test.skip(!process.env.E2E_CODE_BRIDGE_URL, 'E2E_CODE_BRIDGE_URL is required');
+
+  test('persists only the BYOM permissions exposed by the administrator', async ({ page }) => {
+    test.skip(
+      !process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN,
+      'E2E_CODE_BRIDGE_ADMIN_TOKEN is required for deployment-worker registration',
+    );
+    await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
+    const token = await getAccessToken(page);
+    let environmentId: string | undefined;
+    try {
+      const registration = await requestJson<{ environment: RegisteredEnvironment }>(page, {
+        path: '/api/code-environments',
+        token,
+        method: 'POST',
+        body: { name: 'E2E configurable VM', controlPlaneId: 'e2e-vm' },
+      });
+      environmentId = registration.environment.id;
+
+      const discovery = await requestJson<{ environments: RegisteredEnvironment[] }>(page, {
+        path: '/api/code-environments',
+        token,
+      });
+      expect(discovery.environments).toContainEqual(
+        expect.objectContaining({
+          id: environmentId,
+          configSchema: {
+            permissions: {
+              fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+              commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+            },
+          },
+        }),
+      );
+
+      const update = await requestJson<{ environment: RegisteredEnvironment }>(page, {
+        path: `/api/code-environments/${environmentId}/settings`,
+        token,
+        method: 'PATCH',
+        body: { settings: { permissions: { fileWrite: 'allow' } } },
+      });
+      expect(update.environment.settings).toEqual({
+        permissions: { fileWrite: 'allow' },
+      });
+      const secondUpdate = await requestJson<{ environment: RegisteredEnvironment }>(page, {
+        path: `/api/code-environments/${environmentId}/settings`,
+        token,
+        method: 'PATCH',
+        body: { settings: { permissions: { commandExecution: 'deny' } } },
+      });
+      expect(secondUpdate.environment.settings).toEqual({
+        permissions: { fileWrite: 'allow', commandExecution: 'deny' },
+      });
+
+      const invalid = await page.request.patch(`/api/code-environments/${environmentId}/settings`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { settings: { permissions: { commandExecution: 'allow' } } },
+      });
+      expect(invalid.status()).toBe(400);
+
+      const persisted = await requestJson<{ environments: RegisteredEnvironment[] }>(page, {
+        path: '/api/code-environments',
+        token,
+      });
+      expect(persisted.environments.find(({ id }) => id === environmentId)?.settings).toEqual({
+        permissions: { fileWrite: 'allow', commandExecution: 'deny' },
+      });
+    } finally {
+      if (environmentId != null) {
+        await requestJson(page, {
+          path: `/api/code-environments/${environmentId}`,
+          token,
+          method: 'DELETE',
+        });
+      }
+    }
+  });
 
   test('routes two conversation turns through the bridge and preserves workspace state', async ({
     page,

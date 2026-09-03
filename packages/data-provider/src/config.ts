@@ -1034,6 +1034,60 @@ export function isSecureCodeEnvironmentControlURL(baseURL: string): boolean {
   }
 }
 
+export const codeEnvironmentPermissionDecisionSchema = z.enum(['allow', 'ask', 'deny']);
+export type CodeEnvironmentPermissionDecision = z.infer<
+  typeof codeEnvironmentPermissionDecisionSchema
+>;
+
+const codeEnvironmentPermissionFieldSchema = z
+  .object({
+    allowed: z.array(codeEnvironmentPermissionDecisionSchema).min(1),
+    default: codeEnvironmentPermissionDecisionSchema.optional().default('ask'),
+  })
+  .strict()
+  .superRefine((field, context) => {
+    if (!field.allowed.includes(field.default)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['default'],
+        message: 'Permission default must be included in allowed values',
+      });
+    }
+  });
+
+/**
+ * Typed user-tunable surface for one attached code environment. Omitted fields
+ * remain fixed at LibreChat's safe baseline. Isolation, networking, mounts,
+ * privileged execution, and secrets are deliberately not representable here.
+ */
+export const codeEnvironmentUserConfigSchema = z
+  .object({
+    permissions: z
+      .object({
+        fileWrite: codeEnvironmentPermissionFieldSchema.optional(),
+        commandExecution: codeEnvironmentPermissionFieldSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type CodeEnvironmentUserConfigSchema = z.infer<typeof codeEnvironmentUserConfigSchema>;
+
+export const codeEnvironmentUserSettingsSchema = z
+  .object({
+    permissions: z
+      .object({
+        fileWrite: codeEnvironmentPermissionDecisionSchema.optional(),
+        commandExecution: codeEnvironmentPermissionDecisionSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type CodeEnvironmentUserSettings = z.infer<typeof codeEnvironmentUserSettingsSchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1092,6 +1146,12 @@ export const agentsEndpointSchema = baseEndpointSchema
                 /** Distinguishes operator policy from a principal-authorized
                  * environment merged into request-scoped server config. */
                 owner: z.enum(['deployment', 'principal']).optional().default('deployment'),
+                /** Administrator-controlled user-tunable settings. Only fields
+                 * represented here may be changed by a principal. */
+                configSchema: codeEnvironmentUserConfigSchema.optional(),
+                /** Request-scoped effective settings for a principal-owned environment.
+                 * Deployment config should define defaults through configSchema instead. */
+                settings: codeEnvironmentUserSettingsSchema.optional(),
                 /** Server-only enrollment metadata. `tokenEnv` names an
                  * environment variable and never contains the token itself. */
                 pairing: z
@@ -2604,6 +2664,7 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-fable-5-1',
   'claude-fable-5',
   'claude-opus-5',
   'claude-opus-4-8',
@@ -2639,6 +2700,7 @@ const sharedAnthropicModels = [
  * availability); Opus 4.1 has no global profile, so it uses `us.`.
  */
 export const bedrockModels = [
+  'global.anthropic.claude-fable-5-1',
   'global.anthropic.claude-fable-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
@@ -2678,6 +2740,8 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.8 Models
+    'gemini-3.8-flash',
     // Gemini 3.7 Models
     'gemini-3.7-flash',
     // Gemini 3.6 Models
@@ -3293,7 +3357,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.14',
+  CONFIG_VERSION = '1.3.15',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */

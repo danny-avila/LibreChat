@@ -7,6 +7,8 @@ import type {
   CodeEnvironmentPrincipalContext,
   CodeEnvironmentRegistration,
   CodeEnvironmentSummary,
+  AccessibleCodeEnvironmentDetails,
+  AccessibleCodeEnvironmentConfiguration,
 } from './environments';
 import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
@@ -29,6 +31,10 @@ import {
   getCodeApiTenantId,
   isCodeApiJwtAuthEnabled,
 } from '~/auth/codeapi';
+import {
+  CodeEnvironmentSettingsValidationError,
+  validateCodeEnvironmentUserSettings,
+} from './settings';
 import { getAppConfigOptionsFromUser } from '~/app/service';
 
 type Registry = {
@@ -38,6 +44,20 @@ type Registry = {
     maxOwned?: number;
   }) => Promise<CodeEnvironmentSummary>;
   listAccessible: (actor: CodeEnvironmentPrincipalContext) => Promise<CodeEnvironmentSummary[]>;
+  listAccessibleDetails?: (
+    actor: CodeEnvironmentPrincipalContext,
+  ) => Promise<AccessibleCodeEnvironmentDetails>;
+  listAccessibleConfigurations?: (
+    actor: CodeEnvironmentPrincipalContext,
+  ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
+  resolvePrincipals?: (
+    actor: CodeEnvironmentPrincipalContext,
+  ) => Promise<NonNullable<CodeEnvironmentPrincipalContext['principals']>>;
+  updateSettings?: (params: {
+    actor: CodeEnvironmentPrincipalContext;
+    environmentId: string;
+    settings: import('librechat-data-provider').CodeEnvironmentUserSettings;
+  }) => Promise<CodeEnvironmentSummary | null>;
   remove: (params: {
     actor: CodeEnvironmentPrincipalContext;
     environmentId: string;
@@ -101,7 +121,11 @@ function configuredPrincipalControlPlane(
   );
 }
 
-function principalControlPlanes(appConfig: AppConfig): Array<{ id: string; name: string }> {
+function principalControlPlanes(appConfig: AppConfig): Array<{
+  id: string;
+  name: string;
+  configSchema?: ConfiguredCodeEnvironment['configSchema'];
+}> {
   return (
     appConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments
       ?.filter(
@@ -110,7 +134,19 @@ function principalControlPlanes(appConfig: AppConfig): Array<{ id: string; name:
           environment.owner === 'deployment' &&
           environment.pairing?.allowPrincipalWorkers === true,
       )
-      .map(({ id, name }) => ({ id, name })) ?? []
+      .map(({ id, name, configSchema }) => ({ id, name, configSchema })) ?? []
+  );
+}
+
+function configuredAttachedControlPlane(
+  appConfig: AppConfig,
+  controlPlaneId: string,
+): ConfiguredCodeEnvironment | undefined {
+  return appConfig.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments?.find(
+    (environment) =>
+      environment.id === controlPlaneId &&
+      environment.type === 'attached' &&
+      environment.owner === 'deployment',
   );
 }
 
@@ -148,6 +184,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   list: (req: ServerRequest, res: Response) => Promise<Response>;
   register: (req: ServerRequest, res: Response) => Promise<Response>;
   pair: (req: ServerRequest, res: Response) => Promise<Response>;
+  updateSettings: (req: ServerRequest, res: Response) => Promise<Response>;
   remove: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const createEnvironmentId = deps.createEnvironmentId ?? (() => `code-${nanoid(20)}`);
@@ -163,19 +200,44 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (principal == null) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    let environments: CodeEnvironmentSummary[];
+    let details: AccessibleCodeEnvironmentDetails;
     let appConfig: AppConfig;
     try {
-      [environments, appConfig] = await Promise.all([
-        deps.registry.listAccessible(principal),
-        deps.getAppConfig({ ...getAppConfigOptionsFromUser(req.user), failClosed: true }),
+      const principals = await deps.registry.resolvePrincipals?.(principal);
+      const resolvedPrincipal = principals == null ? principal : { ...principal, principals };
+      [details, appConfig] = await Promise.all([
+        deps.registry.listAccessibleDetails?.(resolvedPrincipal) ??
+          Promise.all([
+            deps.registry.listAccessible(resolvedPrincipal),
+            deps.registry.listAccessibleConfigurations?.(resolvedPrincipal) ?? Promise.resolve([]),
+          ]).then(([summaries, configurations]) => ({ summaries, configurations })),
+        deps.getAppConfig({
+          ...getAppConfigOptionsFromUser(req.user),
+          ...(principals == null ? {} : { resolvedPrincipals: principals }),
+          failClosed: true,
+          skipRuntimeAugmentation: true,
+        }),
       ]);
     } catch (error) {
       logger.error('[codeEnvironments] discovery policy resolution failed:', error);
       return res.status(503).json({ error: 'Code environment policy is unavailable' });
     }
+    const configurationById = new Map(
+      details.configurations.map((configuration) => [configuration.id, configuration]),
+    );
     return res.status(200).json({
-      environments,
+      environments: details.summaries.map((environment) => {
+        const configuration = configurationById.get(environment.id);
+        const controlPlane =
+          configuration == null
+            ? undefined
+            : configuredAttachedControlPlane(appConfig, configuration.controlPlaneId);
+        return {
+          ...environment,
+          configSchema: controlPlane?.configSchema,
+          settings: configuration?.settings,
+        };
+      }),
       controlPlanes: principalAuthEnabled() ? principalControlPlanes(appConfig) : [],
     });
   }
@@ -486,6 +548,77 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
   }
 
+  async function updateSettings(req: ServerRequest, res: Response): Promise<Response> {
+    const principal = actor(req);
+    if (principal == null) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const environmentId = (
+      req.params as { environmentId?: string } | undefined
+    )?.environmentId?.trim();
+    if (!environmentId) {
+      return res.status(400).json({ error: 'Code environment id is required' });
+    }
+    let appConfig: AppConfig;
+    let configurations: AccessibleCodeEnvironmentConfiguration[];
+    let resolvedPrincipal = principal;
+    try {
+      const principals = await deps.registry.resolvePrincipals?.(principal);
+      resolvedPrincipal = principals == null ? principal : { ...principal, principals };
+      [appConfig, configurations] = await Promise.all([
+        deps.getAppConfig({
+          ...getAppConfigOptionsFromUser(req.user),
+          ...(principals == null ? {} : { resolvedPrincipals: principals }),
+          failClosed: true,
+          skipRuntimeAugmentation: true,
+        }),
+        deps.registry.listAccessibleConfigurations?.(resolvedPrincipal) ?? Promise.resolve([]),
+      ]);
+    } catch (error) {
+      logger.error('[codeEnvironments] settings policy resolution failed:', error);
+      return res.status(503).json({ error: 'Code environment policy is unavailable' });
+    }
+    const configuration = configurations.find(({ id }) => id === environmentId);
+    const controlPlane =
+      configuration == null
+        ? undefined
+        : configuredAttachedControlPlane(appConfig, configuration.controlPlaneId);
+    if (configuration == null || controlPlane == null) {
+      return res.status(404).json({ error: 'Code environment was not found' });
+    }
+    let settings;
+    try {
+      const body =
+        typeof req.body === 'object' && req.body != null
+          ? (req.body as unknown as { settings?: unknown })
+          : {};
+      settings = validateCodeEnvironmentUserSettings(controlPlane.configSchema, body.settings);
+    } catch (error) {
+      if (error instanceof CodeEnvironmentSettingsValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
+      throw error;
+    }
+    if (deps.registry.updateSettings == null) {
+      return res.status(503).json({ error: 'Code environment settings are unavailable' });
+    }
+    const environment = await deps.registry.updateSettings({
+      actor: resolvedPrincipal,
+      environmentId,
+      settings,
+    });
+    if (environment == null) {
+      return res.status(404).json({ error: 'Code environment was not found' });
+    }
+    return res.status(200).json({
+      environment: {
+        ...environment,
+        configSchema: controlPlane.configSchema,
+        settings: environment.settings ?? settings,
+      },
+    });
+  }
+
   async function remove(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
     if (principal == null) {
@@ -539,5 +672,5 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
   }
 
-  return { list, register, pair, remove };
+  return { list, register, pair, updateSettings, remove };
 }

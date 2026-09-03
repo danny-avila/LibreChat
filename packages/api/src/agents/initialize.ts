@@ -137,6 +137,7 @@ function assertResolvedSkillContentAllowed(
   const selectedFields = pii?.fields == null ? null : new Set<string>(pii.fields);
   const selected = (field: string): boolean => selectedFields == null || selectedFields.has(field);
   const traversalErrors: ContentTraversalLimitError[] = [];
+  let firstFinding: ReturnType<typeof inspectionSession.inspect> = null;
   for (const skill of skills) {
     const projected: SkillContentInput = {
       ...(selected('name') && { name: skill.name }),
@@ -168,8 +169,14 @@ function assertResolvedSkillContentAllowed(
     }
     const finding = inspectionSession.inspect(fragments);
     if (finding != null) {
-      throw new ContentFilterError(finding);
+      firstFinding ??= finding;
+      if (!inspectionSession.hasAuditRules) {
+        throw new ContentFilterError(finding);
+      }
     }
+  }
+  if (firstFinding != null) {
+    throw new ContentFilterError(firstFinding);
   }
   const protectedTraversal = traversalErrors.find((error) =>
     isContentTraversalProtected({ error, filters }),
