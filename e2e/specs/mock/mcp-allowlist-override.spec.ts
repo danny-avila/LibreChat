@@ -52,22 +52,36 @@ test.describe('MCP admin-panel allowlist override', () => {
     expect(userId).toBeTruthy();
 
     const headers = { Authorization: `Bearer ${token}` };
+    let installed = false;
 
-    // Baseline: the fixture's origin is not in the YAML allowlist, so reinit fails.
-    const before = await reinitialize(request, headers);
-    expect(before.status).toBe(200);
-    expect(before.success).toBe(false);
-
+    /**
+     * The override is per-USER and this is the shared primary user, so it must
+     * not outlive the test: the list holds only this fixture's origin and
+     * allowlist matching is port-inclusive, so every other MCP fixture would be
+     * blocked for the rest of the shard (`e2e-oauth` fails inspection and an
+     * agent expecting its tools 503s with AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE).
+     * The baseline assertion sits inside the cleanup scope on purpose: if an
+     * interrupted earlier attempt left the override behind, the baseline is
+     * what fails, and the `finally` is the only thing that can un-poison the
+     * shard for the retry and for every spec after it.
+     */
     try {
+      // Baseline: the fixture's origin is not in the YAML allowlist, so reinit fails.
+      const before = await reinitialize(request, headers);
+      expect(before.status).toBe(200);
+      expect(before.success).toBe(false);
+
       // Admin-panel override: allow the fixture's origin for this user.
       const put = await request.put(`/api/admin/config/user/${userId}`, {
         headers,
         data: { overrides: { mcpSettings: { allowedDomains: [FIXTURE_ORIGIN] } } },
       });
       expect(put.ok()).toBeTruthy();
+      installed = true;
 
-      // The override is honored on reinit: the server now connects. invalidateConfigCaches
-      // runs asynchronously after the PUT, so poll until the merged allowlist lands.
+      // The override is honored on reinit: the server now connects. The write
+      // awaits cache invalidation before responding, but poll anyway so a slow
+      // connection to the fixture cannot fail this on timing.
       await expect
         .poll(async () => (await reinitialize(request, headers)).success, {
           timeout: 30000,
@@ -76,45 +90,19 @@ test.describe('MCP admin-panel allowlist override', () => {
         .toBe(true);
     } finally {
       /**
-       * The override is per-USER and this is the shared primary user, so without
-       * a teardown it outlives the test. The list holds only this fixture's
-       * origin and allowlist matching is port-inclusive, so every other MCP
-       * fixture is then blocked for the rest of the shard: `e2e-oauth` fails
-       * inspection, and an agent expecting its tools initializes into
-       * AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE (503) rather than producing its
-       * OAuth prompt. Whether that bites depends only on which specs the shard
-       * runs afterwards, so it surfaces as a deterministic failure in an
-       * unrelated spec that passes whenever it happens to run first.
+       * Deleting the principal's overrides removes its config document, and the
+       * handler awaits `invalidateConfigCaches` — app config, override cache,
+       * cached tools and the MCP config-source cache — before it responds, so a
+       * 200 here means the effective configuration has reverted, not merely
+       * that the document is gone. A 404 means there was nothing to remove;
+       * that is only a failure if this test had actually installed the
+       * override, and an assertion here must never mask the error that
+       * prevented installing it.
        */
       const del = await request.delete(`/api/admin/config/user/${userId}`, { headers });
-      expect(del.ok()).toBeTruthy();
-      /**
-       * Confirm against the stored override rather than by re-running
-       * `reinitialize`: the connection this test established stays live, so
-       * reinitialize keeps succeeding once the allowlist is gone and would
-       * never report the baseline again. Invalidation is async, so poll the
-       * config itself until the override has actually cleared. Deleting the
-       * last override removes the principal's config document outright, so a
-       * 404 here is the cleared state, not a read failure.
-       */
-      await expect
-        .poll(
-          async () => {
-            const res = await request.get(`/api/admin/config/user/${userId}`, { headers });
-            if (res.status() === 404) {
-              return 'cleared';
-            }
-            if (!res.ok()) {
-              return `unreadable:${res.status()}`;
-            }
-            const body = (await res.json()) as {
-              config?: { overrides?: { mcpSettings?: { allowedDomains?: string[] } } };
-            };
-            return body.config?.overrides?.mcpSettings?.allowedDomains ?? 'cleared';
-          },
-          { timeout: 30000, intervals: [1000, 2000, 3000] },
-        )
-        .toBe('cleared');
+      if (installed || del.status() !== 404) {
+        expect(del.ok()).toBeTruthy();
+      }
     }
   });
 });
