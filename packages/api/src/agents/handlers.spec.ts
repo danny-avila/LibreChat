@@ -5076,8 +5076,46 @@ describe('createToolExecuteHandler', () => {
       });
       expect(result).toMatchObject({
         status: 'success',
-        content: 'src/app.ts:7:3: const needle = true;',
+        content: 'workspace/src/app.ts:7:3: const needle = true;',
       });
+    });
+
+    it('bounds workspace search output in UTF-8 bytes', async () => {
+      const searchWorkspace = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'search_text' as const,
+        workspaceId: 'primary',
+        matches: Array.from({ length: 200 }, (_, index) => ({
+          path: `src/result-${index}.txt`,
+          line: index + 1,
+          column: 1,
+          text: '界'.repeat(600),
+        })),
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_large_workspace_search',
+          name: 'search_workspace',
+          args: { query: '界', max_results: 200 },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('[results truncated]');
+      expect(Buffer.byteLength(result.content as string, 'utf8')).toBeLessThanOrEqual(262_144);
     });
 
     it('rejects workspace search outside attached environments', async () => {

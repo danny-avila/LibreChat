@@ -2349,16 +2349,29 @@ async function handleWorkspaceSearchCall(
       const filtered = filteredFileResult(tc, req, match.path, match.text);
       if (filtered != null) return filtered;
     }
-    const content =
+    const unboundedContent =
       result.matches.length === 0
         ? 'No matches found.'
         : result.matches
-            .map((match) => `${match.path}:${match.line}:${match.column}: ${match.text}`)
+            .map(
+              (match) =>
+                `workspace/${match.path}:${match.line}:${match.column}: ${match.text}`,
+            )
             .join('\n');
+    const truncationNotice = '\n\n[results truncated]';
+    const locallyTruncated =
+      Buffer.byteLength(unboundedContent, 'utf8') > MAX_READABLE_BYTES;
+    const truncated = locallyTruncated || result.truncated;
+    const content = truncated
+      ? truncateUtf8(
+          unboundedContent,
+          MAX_READABLE_BYTES - Buffer.byteLength(truncationNotice, 'utf8'),
+        )
+      : unboundedContent;
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: result.truncated ? `${content}\n\n[results truncated]` : content,
+      content: truncated ? `${content}${truncationNotice}` : content,
     };
   } catch (error) {
     if (signal?.aborted === true && isAbortError(error)) throw error;
