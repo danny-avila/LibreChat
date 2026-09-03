@@ -22,6 +22,22 @@ export type AgentManagementResponse = Omit<
   createdAt: string;
   updatedAt: string;
 };
+export type AgentManagementProjectionSource = Partial<
+  Omit<AgentManagementResponse, 'id' | 'provider' | 'model' | 'version' | 'createdAt' | 'updatedAt'>
+> & {
+  id?: string;
+  provider?: string;
+  model?: string | null;
+  version?: number;
+  versions?: readonly object[];
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+};
+export type AgentManagementListProjectionSource = {
+  data?: AgentManagementProjectionSource[];
+  has_more?: boolean;
+  after?: string | null;
+};
 export type AgentManagementListResponse = {
   object: 'list';
   data: AgentManagementResponse[];
@@ -145,74 +161,63 @@ export const agentManagementErrorSchema: z.ZodType<AgentManagementError> = z
   })
   .strict();
 
-const RESPONSE_CONFIG_FIELDS = [
-  'name',
-  'description',
-  'instructions',
-  'avatar',
-  'model_parameters',
-  'tools',
-  'skills',
-  'skills_enabled',
-  'skill_authoring_enabled',
-  'skills_scope',
-  'memory_scope',
-  'agent_ids',
-  'edges',
-  'end_after_tools',
-  'hide_sequential_outputs',
-  'stateful_code_sessions',
-  'stateful_code_environment',
-  'code_environment_id',
-  'artifacts',
-  'recursion_limit',
-  'conversation_starters',
-  'tool_resources',
-  'tool_options',
-  'subagents',
-  'support_contact',
-  'category',
-] as const;
-
-function toTimestamp(value: unknown): string | undefined {
+function toTimestamp(value: string | Date | undefined): string | undefined {
   if (value instanceof Date) {
     return value.toISOString();
   }
-  return typeof value === 'string' ? value : undefined;
+  return value;
 }
 
-/** Build an external response from an untrusted persistence result using an explicit allowlist. */
-export function projectAgentManagementResponse(source: unknown): AgentManagementResponse {
-  const record =
-    source != null && typeof source === 'object' ? (source as Record<string, unknown>) : {};
-  const projected: Record<string, unknown> = {
-    id: record.id,
-    provider: record.provider,
-    model: record.model,
-    version:
-      typeof record.version === 'number'
-        ? record.version
-        : Array.isArray(record.versions)
-          ? record.versions.length
-          : undefined,
-    createdAt: toTimestamp(record.createdAt),
-    updatedAt: toTimestamp(record.updatedAt),
-  };
-
-  for (const field of RESPONSE_CONFIG_FIELDS) {
-    if (record[field] !== undefined) {
-      projected[field] = record[field];
-    }
+function getVersion(source: AgentManagementProjectionSource): number | undefined {
+  if (source.version != null) {
+    return source.version;
   }
-
-  return agentManagementResponseSchema.parse(projected);
+  return source.versions?.length;
 }
 
-export function projectAgentManagementListResponse(source: {
-  data?: unknown[];
-  has_more?: unknown;
-  after?: unknown;
-}): AgentManagementListResponse {
+/** Build an external response from a persistence result using an explicit allowlist. */
+export function projectAgentManagementResponse(
+  source: AgentManagementProjectionSource,
+): AgentManagementResponse {
+  return agentManagementResponseSchema.parse({
+    id: source.id,
+    provider: source.provider,
+    model: source.model,
+    version: getVersion(source),
+    createdAt: toTimestamp(source.createdAt),
+    updatedAt: toTimestamp(source.updatedAt),
+    name: source.name,
+    description: source.description,
+    instructions: source.instructions,
+    avatar: source.avatar,
+    model_parameters: source.model_parameters,
+    tools: source.tools,
+    skills: source.skills,
+    skills_enabled: source.skills_enabled,
+    skill_authoring_enabled: source.skill_authoring_enabled,
+    skills_scope: source.skills_scope,
+    memory_scope: source.memory_scope,
+    agent_ids: source.agent_ids,
+    edges: source.edges,
+    end_after_tools: source.end_after_tools,
+    hide_sequential_outputs: source.hide_sequential_outputs,
+    stateful_code_sessions: source.stateful_code_sessions,
+    stateful_code_environment: source.stateful_code_environment,
+    code_environment_id: source.code_environment_id,
+    artifacts: source.artifacts,
+    recursion_limit: source.recursion_limit,
+    conversation_starters: source.conversation_starters,
+    tool_resources: source.tool_resources,
+    tool_options: source.tool_options,
+    subagents: source.subagents,
+    support_contact: source.support_contact,
+    category: source.category,
+  });
+}
+
+export function projectAgentManagementListResponse(
+  source: AgentManagementListProjectionSource,
+): AgentManagementListResponse {
   const data = (source.data ?? []).map(projectAgentManagementResponse);
   return agentManagementListResponseSchema.parse({
     object: 'list',
