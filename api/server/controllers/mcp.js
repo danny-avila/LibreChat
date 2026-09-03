@@ -19,6 +19,7 @@ const {
   findShadowedServerNames,
   redactServerSecrets,
   redactAllServerSecrets,
+  resolveMCPServerOwnerContacts,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
   isMCPOAuthSecretReentryRequiredError,
@@ -377,10 +378,21 @@ const getMCPServersList = async (req, res) => {
     }
 
     const serverConfigs = await resolveAllMcpConfigs(userId, req.user);
-    const canEditByServer = await computeCanEditByServer(req, serverConfigs, {
-      skipCapabilityWithoutDbIds: true,
-    });
-    return res.json(redactAllServerSecrets(serverConfigs, { canEditByServer }));
+    const [canEditByServer, ownerContacts] = await Promise.all([
+      computeCanEditByServer(req, serverConfigs, { skipCapabilityWithoutDbIds: true }),
+      resolveMCPServerOwnerContacts(serverConfigs, {
+        aggregateAclEntries: db.aggregateAclEntries,
+        findUsers: db.findUsers,
+        warn: (message, error) => logger.warn(message, error),
+      }),
+    ]);
+    const response = redactAllServerSecrets(serverConfigs, { canEditByServer });
+    for (const [serverName, ownerContact] of ownerContacts) {
+      if (response[serverName]) {
+        response[serverName].owner_contact = ownerContact;
+      }
+    }
+    return res.json(response);
   } catch (error) {
     logger.error('[getMCPServersList]', error);
     res.status(500).json({ error: error.message });
@@ -410,7 +422,7 @@ function configHasObo(parsedConfig) {
  * (`url`, `proxy`, `headers`), change scopes (`obo`), or reroute auth (`oauth`,
  * `apiKey`, `customUserVars`) MUST stay locked.
  */
-const OBO_USER_EDITABLE_FIELDS = new Set(['title', 'description', 'iconPath']);
+const OBO_USER_EDITABLE_FIELDS = new Set(['title', 'description', 'iconPath', 'support_contact']);
 
 /**
  * Returns true when any non-allowlisted user-input field differs between the

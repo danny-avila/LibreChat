@@ -129,7 +129,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           ),
           requestScoped: serverConfig?.requestScoped,
           metadata,
+          dbId: serverConfig?.dbId,
           consumeOnly: serverConfig?.consumeOnly,
+          support_contact: serverConfig?.support_contact,
+          owner_contact: serverConfig?.owner_contact,
         });
       }
     }
@@ -166,7 +169,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           Object.keys(serverConfig?.customUserVars ?? {}).length > 0,
         ),
         requestScoped: serverConfig?.requestScoped,
+        dbId: serverConfig?.dbId,
         consumeOnly: serverConfig?.consumeOnly,
+        support_contact: serverConfig?.support_contact,
+        owner_contact: serverConfig?.owner_contact,
       });
     }
 
