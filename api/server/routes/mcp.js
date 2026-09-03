@@ -1236,7 +1236,14 @@ router.post('/elicitation/:flowId', requireJwtAuth, async (req, res) => {
       if (!settledState) {
         return res.status(404).json({ error: 'Flow not found' });
       }
-      return res.status(409).json({ error: 'Elicitation already resolved' });
+      /** Return the action that actually won, not the one this request tried:
+       *  the loser's card must render the real outcome (a decline in another tab
+       *  is not an accept here). */
+      return res.status(409).json({
+        error: 'Elicitation already resolved',
+        action: settledState.result?.action,
+        content: settledState.result?.content,
+      });
     }
 
     /** Notify the originating stream so a resumed/replayed session renders the

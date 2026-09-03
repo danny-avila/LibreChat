@@ -213,10 +213,17 @@ export default function ElicitationForm({
       // same card acted on in another tab, or a double-submit) — the flow IS
       // resolved, just not by this request. Treat it like the success path
       // instead of a misleading "try again".
-      const status = (error as { response?: { status?: number } })?.response?.status;
+      const response = (
+        error as { response?: { status?: number; data?: { action?: ElicitationAction } } }
+      )?.response;
+      const status = response?.status;
       if (status === 409) {
-        setResolvedAction(action);
-        patchResolvedElicitation(action);
+        /** Render what actually won, not what this request tried: another tab may
+         *  have declined while this one submitted an accept. The route returns the
+         *  settled action; fall back to ours only if it is somehow absent. */
+        const settledAction = response?.data?.action ?? action;
+        setResolvedAction(settledAction);
+        patchResolvedElicitation(settledAction);
       } else {
         // Surface an inline retry affordance; the server-side flow keeps waiting
         // (or times out on its own), so the card stays interactive for a retry.

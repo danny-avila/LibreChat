@@ -1247,6 +1247,15 @@ Please follow these instructions when using tools from the respective MCP server
               throw error;
             }
 
+            /** A gateway may return the -32042 body under HTTP 401/403, and
+             *  `isOAuthAuthenticationError` matches on status alone. Let the
+             *  elicitation layer below claim the error first, or OAuth recovery
+             *  reads a "please authorize this tool" response as a bad token and
+             *  can replace the original error with a recovery failure. */
+            if (elicitationStart && extractUrlElicitation(error)) {
+              throw error;
+            }
+
             if (!connection.isOAuthAuthenticationError(error)) {
               throw error;
             }
@@ -1344,6 +1353,14 @@ Please follow these instructions when using tools from the respective MCP server
                 options?.signal,
               );
             } catch (flowError) {
+              /** A user Stop rejects the flow wait too. That is the cancellation
+               *  working, not a failed authorization, so it must stay an abort:
+               *  wrapping it as InvalidRequest would show the user an
+               *  "open this URL and retry" message for a run they just stopped,
+               *  and hide it from the abort-aware logging below. */
+              if (options?.signal?.aborted === true) {
+                throw flowError;
+              }
               const reason = flowError instanceof Error ? flowError.message : String(flowError);
               throw new McpError(
                 ErrorCode.InvalidRequest,

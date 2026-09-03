@@ -4308,4 +4308,160 @@ describe('useStepHandler', () => {
       expect(getEntries('call_ptc')).toEqual([]);
     });
   });
+
+  describe('elicitation events', () => {
+    const flowId = 'user-1:jira:create_issue:nonce-1';
+
+    const elicitationEvent = (overrides: Record<string, unknown> = {}) => ({
+      id: 'step-elicit',
+      runId: 'response-msg-1',
+      elicitation: {
+        flowId,
+        mode: 'url',
+        message: 'Authorize Jira to continue',
+        url: 'https://auth.example.com/authorize',
+      },
+      ...overrides,
+    });
+
+    /** The elicitation branches resolve the response message through
+     *  `messageMap`, which only a prior run step populates. */
+    const seed = (
+      result: { current: { stepHandler: (...args: never[]) => void } },
+      submission: unknown,
+    ) => {
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: createRunStep() } as never,
+          submission as never,
+        );
+      });
+      mockSetMessages.mockClear();
+    };
+
+    const elicitationParts = () => {
+      const call = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const message = call[0][call[0].length - 1] as TMessage;
+      return (message.content ?? []).filter(
+        (part) => part?.type === ContentTypes.ELICITATION,
+      ) as Array<{ type: string; elicitation: Record<string, unknown> }>;
+    };
+
+    it('appends an elicitation card as its own content part', () => {
+      mockGetMessages.mockReturnValue([createResponseMessage()]);
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+      seed(result, submission);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_ELICITATION, data: elicitationEvent() } as never,
+          submission,
+        );
+      });
+
+      const parts = elicitationParts();
+      expect(parts).toHaveLength(1);
+      expect(parts[0].elicitation).toMatchObject({ flowId, mode: 'url' });
+    });
+
+    it('dedupes by flowId so a re-emitted card replaces rather than stacks', () => {
+      mockGetMessages.mockReturnValue([createResponseMessage()]);
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+      seed(result, submission);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_ELICITATION, data: elicitationEvent() } as never,
+          submission,
+        );
+      });
+      mockGetMessages.mockReturnValue([
+        { ...createResponseMessage(), content: elicitationParts() as never },
+      ]);
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_ELICITATION,
+            data: elicitationEvent({
+              elicitation: {
+                flowId,
+                mode: 'url',
+                message: 'Authorize Jira to continue',
+                url: 'https://auth.example.com/authorize?v=2',
+              },
+            }),
+          } as never,
+          submission,
+        );
+      });
+
+      const parts = elicitationParts();
+      expect(parts).toHaveLength(1);
+      expect(parts[0].elicitation.url).toBe('https://auth.example.com/authorize?v=2');
+    });
+
+    it('patches the matching card in place when the flow resolves', () => {
+      mockGetMessages.mockReturnValue([createResponseMessage()]);
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission();
+      seed(result, submission);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_ELICITATION, data: elicitationEvent() } as never,
+          submission,
+        );
+      });
+      mockGetMessages.mockReturnValue([
+        { ...createResponseMessage(), content: elicitationParts() as never },
+      ]);
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_ELICITATION_RESOLVED,
+            data: { id: 'step-elicit', runId: 'response-msg-1', flowId, action: 'complete' },
+          } as never,
+          submission,
+        );
+      });
+
+      const parts = elicitationParts();
+      expect(parts).toHaveLength(1);
+      expect(parts[0].elicitation.action).toBe('complete');
+    });
+
+    it('ignores a resolution for a flowId that is not on the message', () => {
+      const withCard = {
+        ...createResponseMessage(),
+        content: [
+          {
+            type: ContentTypes.ELICITATION,
+            elicitation: { flowId, mode: 'url', message: 'Authorize', url: 'https://a.example' },
+          },
+        ] as never,
+      };
+      mockGetMessages.mockReturnValue([withCard]);
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      mockSetMessages.mockClear();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_ELICITATION_RESOLVED,
+            data: {
+              id: 'step-elicit',
+              runId: 'response-msg-1',
+              flowId: 'user-1:jira:create_issue:other',
+              action: 'complete',
+            },
+          } as never,
+          createSubmission(),
+        );
+      });
+
+      expect(mockSetMessages).not.toHaveBeenCalled();
+    });
+  });
 });

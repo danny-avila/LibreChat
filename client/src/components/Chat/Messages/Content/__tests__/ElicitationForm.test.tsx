@@ -185,4 +185,19 @@ describe('ElicitationForm - url mode', () => {
     );
     expect(screen.queryByText("Couldn't send your response — try again.")).not.toBeInTheDocument();
   });
+
+  it('renders the action that actually won the race, not the one it submitted', async () => {
+    // Another tab cancelled while this card submitted a continue; the route
+    // returns the settled action and the loser must render that, not its own.
+    const conflictError = Object.assign(new Error('Conflict'), {
+      response: { status: 409, data: { error: 'Elicitation already resolved', action: 'cancel' } },
+    });
+    (dataService.respondToElicitation as jest.Mock).mockRejectedValueOnce(conflictError);
+    renderUrlForm();
+    fireEvent.click(screen.getByText('Open authorization page'));
+    fireEvent.click(screen.getByText("I've authorized — continue"));
+
+    expect((await screen.findAllByText('Cancelled')).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('Authorization confirmed')).not.toBeInTheDocument();
+  });
 });

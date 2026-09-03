@@ -4442,7 +4442,13 @@ describe('MCP Routes', () => {
         .send({ action: 'complete' });
 
       expect(response.status).toBe(409);
-      expect(response.body).toEqual({ error: 'Elicitation already resolved' });
+      // The loser must be told what actually won ('cancel'), not echoed its own
+      // attempted 'complete' — otherwise its card renders the wrong outcome.
+      expect(response.body).toEqual({
+        error: 'Elicitation already resolved',
+        action: 'cancel',
+        content: undefined,
+      });
       expect(mockResolveElicitationFlow).not.toHaveBeenCalled();
     });
 
