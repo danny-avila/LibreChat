@@ -243,21 +243,14 @@ export function shouldShowActionButton(statusIconProps?: MCPServerStatusIconProp
 }
 
 /**
- * Servers to hide from pickers because the current user's loaded tool catalog is empty.
- *
- * A server is hidden only when all of the following hold:
- * - its config opts in via `hideWhenEmpty: true`;
- * - the user's tool catalog for it was actually loaded (`catalogLoaded`), so a server whose
- *   catalog is unknown (not yet connected, or OAuth pending) stays visible and reachable;
- * - the loaded catalog contains zero tools.
- */
-/**
- * Full visibility decision for `hideWhenEmpty` servers, including the catalog's
- * lifecycle states. Kept pure so the fail-open rule stays under test:
+ * Full visibility decision for `hideWhenEmpty` servers, covering the catalog's
+ * lifecycle states. Servers without the flag are never affected. Kept pure so
+ * the fail-open rule stays under test:
  * - catalog query errored -> hide NOTHING (a timeout must not empty the picker);
  * - catalog not yet loaded -> keep flagged servers out of the pickers (no
  *   show-then-yank flash); they appear once the catalog proves them non-empty;
- * - catalog loaded -> hide exactly the flagged servers with zero tools.
+ * - catalog loaded -> hide exactly the flagged servers with zero tools
+ *   (`catalogLoaded && tools.length === 0`, see `getHiddenEmptyServers`).
  */
 export function resolveHiddenEmptyServers(
   definitions: MCPServerDefinition[],
@@ -274,6 +267,12 @@ export function resolveHiddenEmptyServers(
   return getHiddenEmptyServers(definitions, toolServers);
 }
 
+/**
+ * The loaded-catalog rule of `resolveHiddenEmptyServers`: flagged servers whose
+ * catalog actually loaded (`catalogLoaded`) with zero tools. Servers missing from
+ * the response, or with an unknown catalog (legacy backends without the field),
+ * are never hidden here.
+ */
 export function getHiddenEmptyServers(
   definitions: MCPServerDefinition[],
   toolServers?: MCPServersResponse['servers'],
