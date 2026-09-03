@@ -1420,8 +1420,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       : undefined;
   req._agentEventTriggerProjection = getAgentEventTriggerProjection(agentEventDelivery);
 
-  /** Resolved when the controller hands off to the detached generation chain. */
-  let resolveInitializationSettlement;
   try {
     logger.debug(`[ResumableAgentController] Creating job`, {
       streamId,
@@ -1602,17 +1600,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         status: 409,
       });
     }
-    /** The HTTP response is already sent by this point, so the remaining initialization
-     *  awaits are invisible to the HTTP drain. Register them before continuing, or
-     *  shutdown can tear down the stream services while this request is still on its way
-     *  to recording the provider drain — fencing the next generation permanently. */
-    GenerationJobManager.trackGenerationSettlement?.(
-      streamId,
-      jobCreatedAt,
-      new Promise((resolve) => {
-        resolveInitializationSettlement = resolve;
-      }),
-    );
     acceptAgentStartupTelemetry(req, streamId);
     startupTelemetry?.mark('metadata_persisted');
     req._resumableStreamId = streamId;
@@ -3054,7 +3041,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     };
 
     // Start generation and handle any unhandled errors
-    const generationSettlement = startGeneration()
+    void startGeneration()
       .catch(async (err) => {
         logger.error(
           `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
@@ -3110,10 +3097,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           drainError,
         );
       });
-
-    /** Shutdown waits on this chain rather than publishing the drain itself: the marker is
-     *  only truthful once the trailing writes above have settled. */
-    GenerationJobManager.trackGenerationSettlement?.(streamId, jobCreatedAt, generationSettlement);
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
     const initializationFailure = getInitializationFailure(error);
@@ -3258,8 +3241,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       });
     }
     await releaseEventChildLease?.();
-  } finally {
-    resolveInitializationSettlement?.();
   }
 };
 

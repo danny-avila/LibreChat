@@ -4118,167 +4118,92 @@ describe('GenerationJobManager startup telemetry', () => {
     });
   });
 
-  it('waits for a tracked generation to settle before shutdown completes', async () => {
+  const configureShutdownManager = () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     jest.spyOn(jobStore, 'destroy').mockResolvedValue();
     const eventTransport = new InMemoryEventTransport();
     const manager = new GenerationJobManagerClass();
     manager.configure({ jobStore, eventTransport, isRedis: false });
     manager.initialize();
+    return { manager, jobStore, eventTransport };
+  };
 
-    const streamId = 'stream-shutdown-settlement';
+  it('waits for a begun provider execution to record its drain before shutdown completes', async () => {
+    const { manager, eventTransport } = configureShutdownManager();
+    const streamId = 'stream-shutdown-open-execution';
+    const job = await manager.createJob(streamId, 'user-1');
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId),
+    ).resolves.toBe(true);
+    const recordProviderDrain = jest.spyOn(eventTransport, 'recordProviderDrain');
+
+    manager.prepareForShutdown();
+    let destroyed = false;
+    const destroying = manager.destroy({ settlementBudgetMs: 5_000 }).then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(false);
+
+    /** The execution records its own drain — from the controller's `.finally`, after its
+     *  trailing writes — and that is what releases shutdown. No registration involved. */
+    await manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId);
+    await destroying;
+
+    expect(destroyed).toBe(true);
+    expect(recordProviderDrain).toHaveBeenCalledWith(streamId, job.createdAt, providerExecutionId);
+  });
+
+  it('keeps waiting for a provider execution begun while shutdown is already waiting', async () => {
+    const { manager } = configureShutdownManager();
+    const first = await manager.createJob('stream-shutdown-first', 'user-1');
+    const second = await manager.createJob('stream-shutdown-second', 'user-1');
+    const firstExecution = first.metadata.providerExecutionId!;
+    const secondExecution = second.metadata.providerExecutionId!;
+    await manager.beginProviderExecution('stream-shutdown-first', first.createdAt, firstExecution);
+
+    manager.prepareForShutdown();
+    let destroyed = false;
+    const destroying = manager.destroy({ settlementBudgetMs: 5_000 }).then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    /** Begun after shutdown snapshotted the first execution. A one-shot snapshot would return
+     *  once the first drains and tear the transport down under this one. */
+    await manager.beginProviderExecution(
+      'stream-shutdown-second',
+      second.createdAt,
+      secondExecution,
+    );
+    await manager.markProviderExecutionDrained(
+      'stream-shutdown-first',
+      first.createdAt,
+      firstExecution,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(false);
+
+    await manager.markProviderExecutionDrained(
+      'stream-shutdown-second',
+      second.createdAt,
+      secondExecution,
+    );
+    await destroying;
+    expect(destroyed).toBe(true);
+  });
+
+  it('does not delay shutdown for a provider execution that already drained', async () => {
+    const { manager } = configureShutdownManager();
+    const streamId = 'stream-shutdown-drained';
     const job = await manager.createJob(streamId, 'user-1');
     const providerExecutionId = job.metadata.providerExecutionId!;
     await manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId);
-
-    let releaseGeneration: (() => void) | undefined;
-    const generation = new Promise<void>((resolve) => {
-      releaseGeneration = resolve;
-    });
-    let drainRecorded = false;
-    /** Mirrors the controller: the drain is recorded by the generation itself, only once its
-     *  trailing writes have settled. Shutdown must not run ahead of that. */
-    manager.trackGenerationSettlement(
-      streamId,
-      job.createdAt,
-      generation.then(async () => {
-        await manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId);
-        drainRecorded = true;
-      }),
-    );
+    await manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId);
 
     manager.prepareForShutdown();
-    let destroyed = false;
-    const destroying = manager.destroy().then(() => {
-      destroyed = true;
-    });
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(destroyed).toBe(false);
-    expect(drainRecorded).toBe(false);
-
-    releaseGeneration!();
-    await destroying;
-
-    expect(drainRecorded).toBe(true);
-  });
-
-  it('waits for every settlement registered for one generation', async () => {
-    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
-    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
-    const manager = new GenerationJobManagerClass();
-    manager.configure({
-      jobStore,
-      eventTransport: new InMemoryEventTransport(),
-      isRedis: false,
-    });
-    manager.initialize();
-
-    const streamId = 'stream-shutdown-multi-settlement';
-    const job = await manager.createJob(streamId, 'user-1');
-
-    /** The controller registers twice for one generation: once for the initialization that
-     *  continues after the HTTP response is sent, and once for the detached chain. Shutdown
-     *  has to wait for both. */
-    let releaseInitialization: (() => void) | undefined;
-    let releaseGeneration: (() => void) | undefined;
-    manager.trackGenerationSettlement(
-      streamId,
-      job.createdAt,
-      new Promise<void>((resolve) => {
-        releaseInitialization = resolve;
-      }),
-    );
-    manager.trackGenerationSettlement(
-      streamId,
-      job.createdAt,
-      new Promise<void>((resolve) => {
-        releaseGeneration = resolve;
-      }),
-    );
-
-    manager.prepareForShutdown();
-    let destroyed = false;
-    const destroying = manager.destroy().then(() => {
-      destroyed = true;
-    });
-
-    releaseInitialization!();
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(destroyed).toBe(false);
-
-    releaseGeneration!();
-    await destroying;
-    expect(destroyed).toBe(true);
-  });
-
-  it('keeps waiting for a settlement registered while shutdown is already waiting', async () => {
-    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
-    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
-    const manager = new GenerationJobManagerClass();
-    manager.configure({
-      jobStore,
-      eventTransport: new InMemoryEventTransport(),
-      isRedis: false,
-    });
-    manager.initialize();
-
-    const streamId = 'stream-shutdown-late-registration';
-    const job = await manager.createJob(streamId, 'user-1');
-    let releaseInitialization: (() => void) | undefined;
-    let releaseGeneration: (() => void) | undefined;
-    manager.trackGenerationSettlement(
-      streamId,
-      job.createdAt,
-      new Promise<void>((resolve) => {
-        releaseInitialization = resolve;
-      }),
-    );
-
-    manager.prepareForShutdown();
-    let destroyed = false;
-    const destroying = manager.destroy().then(() => {
-      destroyed = true;
-    });
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(destroyed).toBe(false);
-
-    /** The controller's real ordering: the detached chain is registered at the end of its
-     *  try block, and only then does the outer finally resolve the initialization
-     *  settlement. Shutdown snapshotted before the chain existed. */
-    manager.trackGenerationSettlement(
-      streamId,
-      job.createdAt,
-      new Promise<void>((resolve) => {
-        releaseGeneration = resolve;
-      }),
-    );
-    releaseInitialization!();
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(destroyed).toBe(false);
-
-    releaseGeneration!();
-    await destroying;
-    expect(destroyed).toBe(true);
-  });
-
-  it('does not delay shutdown for a generation that already settled', async () => {
-    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
-    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
-    const manager = new GenerationJobManagerClass();
-    manager.configure({
-      jobStore,
-      eventTransport: new InMemoryEventTransport(),
-      isRedis: false,
-    });
-    manager.initialize();
-
-    const streamId = 'stream-shutdown-settled';
-    const job = await manager.createJob(streamId, 'user-1');
-    manager.trackGenerationSettlement(streamId, job.createdAt, Promise.resolve());
-    await new Promise((resolve) => setImmediate(resolve));
-
-    manager.prepareForShutdown();
-    await expect(manager.destroy()).resolves.toBeUndefined();
+    await expect(manager.destroy({ settlementBudgetMs: 5_000 })).resolves.toBeUndefined();
   });
 
   it('does not let late success overwrite or delete a shutdown error', async () => {

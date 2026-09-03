@@ -32,6 +32,8 @@ const {
   requestContextMiddleware,
   configureServerTimeouts,
   setupGracefulShutdown,
+  registerShutdownTask,
+  getRemainingShutdownMs,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
   configureAgentEventRuntime,
@@ -301,6 +303,29 @@ if (cluster.isMaster) {
     }),
   );
   GenerationJobManager.initialize();
+  // Stop active generations and close their SSE streams while the HTTP server drains.
+  registerShutdownTask(
+    'generation job manager prepare',
+    () => GenerationJobManager.prepareForShutdown(),
+    {
+      phase: 'pre-drain',
+      priority: 100,
+    },
+  );
+  /** Spend the shutdown budget that is actually left waiting for open provider executions
+   *  to record their own drains, holding back a reserve for the tasks after this one.
+   *  Abandoning an unrecorded drain fences the next generation permanently. */
+  const SHUTDOWN_TEARDOWN_RESERVE_MS = 10_000;
+  const destroyGenerationJobManager = () => {
+    const remaining = getRemainingShutdownMs();
+    return GenerationJobManager.destroy(
+      remaining == null
+        ? undefined
+        : { settlementBudgetMs: Math.max(0, remaining - SHUTDOWN_TEARDOWN_RESERVE_MS) },
+    );
+  };
+  // Tear down stream resources before shared caches and telemetry exporters shut down.
+  registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
   /**
    * The master may assign the sweep worker before or after this worker has
    * loaded app config. These flags join the IPC assignment with config

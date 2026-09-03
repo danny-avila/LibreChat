@@ -99,11 +99,12 @@ const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
 const PROVIDER_DRAIN_POLL_MS = 50;
 
 /**
- * Fallback wait for detached generations when the caller supplies no budget — a direct
- * `destroy()` outside graceful shutdown. Graceful shutdown owns the real deadline and passes
- * what is actually left, so a slow trailing write is not abandoned while time remained.
+ * The settlement budget is the opt-in. Graceful shutdown owns the real deadline and passes what
+ * is actually left, so open provider executions get the full remaining window to record their
+ * drains. A bare `destroy()` — test teardown, a direct reset — supplies nothing and must not
+ * block on executions that were begun and never drained.
  */
-const SHUTDOWN_SETTLEMENT_FALLBACK_MS = 5_000;
+const SHUTDOWN_SETTLEMENT_FALLBACK_MS = 0;
 type ToolExecutionStatus = 'success' | 'error' | 'cancelled';
 type ToolCallWithExecutionStatus = Agents.AgentToolCall & {
   executionStatus?: ToolExecutionStatus;
@@ -783,8 +784,17 @@ class GenerationJobManagerClass {
   /** Rejects new jobs once graceful shutdown has started. */
   private shuttingDown = false;
 
-  /** Detached generation work awaited during shutdown so it can record its own provider drain. */
-  private readonly generationSettlements = new Set<Promise<unknown>>();
+  /**
+   * Provider executions this process has begun and not yet drained, awaited during shutdown so
+   * each can record its own drain once its trailing writes settle. Opened in
+   * `beginProviderExecution` and closed in `markProviderExecutionDrained` — the two chokepoints
+   * every entry point (interactive, resume, remote API) already passes through — so no caller
+   * has to remember to register, and a new entry point cannot silently opt out.
+   */
+  private readonly openProviderExecutions = new Map<
+    string,
+    { promise: Promise<void>; settle: () => void }
+  >();
 
   /** Whether we're using Redis stores */
   private _isRedis = false;
@@ -7094,28 +7104,6 @@ class GenerationJobManagerClass {
   /** Records that one exact provider segment has completed every trailing write.
    * The opaque segment id prevents a paused controller from acknowledging a
    * later HITL resume that reuses the same generation epoch. */
-  /**
-   * Register a detached generation chain so shutdown can wait for it.
-   *
-   * The chain records its own provider drain, but only after awaiting its trailing writes —
-   * that ordering is what makes the drain marker mean "no further writes are coming". Shutdown
-   * must therefore wait for the chain rather than publish the marker itself, which would
-   * advertise a settlement that has not happened and let a replacement replica race the
-   * outgoing owner's writes.
-   */
-  trackGenerationSettlement(
-    streamId: string,
-    createdAt: number,
-    settlement: Promise<unknown>,
-  ): void {
-    if (!Number.isFinite(createdAt)) {
-      return;
-    }
-    const tracked = settlement.finally(() => {
-      this.generationSettlements.delete(tracked);
-    });
-    this.generationSettlements.add(tracked);
-  }
 
   /**
    * Wait for tracked generations to settle, bounded so shutdown still finishes inside a
@@ -7129,12 +7117,12 @@ class GenerationJobManagerClass {
      *  one is being awaited — the controller registers its detached chain just before its
      *  initialization settlement resolves — and a one-time snapshot would return between
      *  the two, tearing down the store and transport under a still-running provider. */
-    while (this.generationSettlements.size > 0) {
+    while (this.openProviderExecutions.size > 0) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         break;
       }
-      const pending = [...this.generationSettlements];
+      const pending = [...this.openProviderExecutions.values()].map((entry) => entry.promise);
       let timer: NodeJS.Timeout | undefined;
       try {
         await Promise.race([
@@ -7149,15 +7137,34 @@ class GenerationJobManagerClass {
         }
       }
     }
-    const unsettled = this.generationSettlements.size;
+    const unsettled = this.openProviderExecutions.size;
     if (unsettled > 0) {
       logger.warn(
-        `[GenerationJobManager] ${unsettled} generation(s) did not settle within ${budget}ms of shutdown; their provider drains are unrecorded`,
+        `[GenerationJobManager] ${unsettled} provider execution(s) did not drain within ${budget}ms of shutdown; their drains are unrecorded`,
       );
     }
   }
 
   async markProviderExecutionDrained(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    try {
+      return await this.recordProviderExecutionDrain(
+        streamId,
+        expectedCreatedAt,
+        providerExecutionId,
+      );
+    } finally {
+      /** Settles the shutdown wait whether or not the record succeeded: a drain that failed
+       *  to write has nothing further to wait for, and holding shutdown open on it would only
+       *  push the process into the force-exit with the same unrecorded marker. */
+      this.closeProviderExecution(streamId, expectedCreatedAt, providerExecutionId);
+    }
+  }
+
+  private async recordProviderExecutionDrain(
     streamId: string,
     expectedCreatedAt: number,
     providerExecutionId: string,
@@ -7227,10 +7234,54 @@ class GenerationJobManagerClass {
     if (providerExecutionId.length === 0 || providerExecutionId.length > 128) {
       return false;
     }
-    return (
-      this.jobStore.beginProviderExecution?.(streamId, expectedCreatedAt, providerExecutionId) ??
-      Promise.resolve(false)
-    );
+    const started =
+      (await this.jobStore.beginProviderExecution?.(
+        streamId,
+        expectedCreatedAt,
+        providerExecutionId,
+      )) ?? false;
+    if (started) {
+      this.openProviderExecution(streamId, expectedCreatedAt, providerExecutionId);
+    }
+    return started;
+  }
+
+  private providerExecutionKey(
+    streamId: string,
+    createdAt: number,
+    providerExecutionId: string,
+  ): string {
+    return `${streamId}:${createdAt}:${providerExecutionId}`;
+  }
+
+  private openProviderExecution(
+    streamId: string,
+    createdAt: number,
+    providerExecutionId: string,
+  ): void {
+    const key = this.providerExecutionKey(streamId, createdAt, providerExecutionId);
+    if (this.openProviderExecutions.has(key)) {
+      return;
+    }
+    let settle: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.openProviderExecutions.set(key, { promise, settle });
+  }
+
+  private closeProviderExecution(
+    streamId: string,
+    createdAt: number,
+    providerExecutionId: string,
+  ): void {
+    const key = this.providerExecutionKey(streamId, createdAt, providerExecutionId);
+    const entry = this.openProviderExecutions.get(key);
+    if (entry == null) {
+      return;
+    }
+    this.openProviderExecutions.delete(key);
+    entry.settle();
   }
 
   private async waitForProviderExecutionDrain(
@@ -8452,6 +8503,9 @@ class GenerationJobManagerClass {
     const settlementBudgetMs = Number.isFinite(options.settlementBudgetMs)
       ? Math.max(0, options.settlementBudgetMs as number)
       : SHUTDOWN_SETTLEMENT_FALLBACK_MS;
+    /** Anchored here, not after subscriber cleanup: that cleanup is unbounded, and the caller's
+     *  budget was measured against the force-exit timer that keeps running through it. */
+    const settlementDeadline = Date.now() + settlementBudgetMs;
     this.shuttingDown = true;
     this.cancelFencedRuntimeRetirements();
 
@@ -8468,7 +8522,7 @@ class GenerationJobManagerClass {
     }
 
     await this.drainSubscriberCleanups();
-    await this.awaitGenerationSettlements(settlementBudgetMs);
+    await this.awaitGenerationSettlements(Math.max(0, settlementDeadline - Date.now()));
     await this.finalizeOwnedJobsForShutdown();
     await this.jobStore.destroy();
     this.eventTransport.destroy();
