@@ -324,6 +324,35 @@ afterAll(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Suite: agent endpoint projection
+// ---------------------------------------------------------------------------
+describe('agent endpoint projection', () => {
+  it('preserves each logical endpoint independently from its resolved provider', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({ id: 'sales-copilot', provider: 'bedrock', endpoint: 'bedrock' }),
+        makeAgent({ id: 'dwaine', provider: 'openAI', endpoint: 'DWAINE' }),
+      ],
+    });
+
+    expect(agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          agentId: 'sales-copilot',
+          endpoint: 'bedrock',
+          provider: 'bedrock',
+        }),
+        expect.objectContaining({
+          agentId: 'dwaine',
+          endpoint: 'DWAINE',
+          provider: 'openAI',
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Suite: custom endpoint stream usage defaults
 // ---------------------------------------------------------------------------
 describe('custom endpoint stream usage defaults', () => {
