@@ -63,3 +63,33 @@ it('does not use the interactive OpenID JWKS override unless explicitly enabled'
     }),
   );
 });
+
+it('does not reuse an interactive OpenID JWKS override for a machine-token caller', async () => {
+  const issuer = 'https://shared-issuer.example.com';
+  const interactiveJwksUri = 'https://interactive-login.example.com/jwks';
+  const discoveredJwksUri = `${issuer}/machine-jwks`;
+  process.env.OPENID_JWKS_URL = interactiveJwksUri;
+  mockFetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({ jwks_uri: discoveredJwksUri }),
+  });
+  mockDecode.mockReturnValue({ header: { kid: 'shared-key' } });
+  mockGetSigningKey.mockResolvedValue({ getPublicKey: () => 'public-key' });
+  mockVerify.mockImplementation(
+    (_token: string, _key: string, _options: object, callback: JwtVerifyCallback) =>
+      callback(null, { sub: 'machine-client@clients' } satisfies JwtPayload),
+  );
+  const config = { issuer, audience: 'agent-management' };
+
+  await verifyOidcAccessToken('interactive-token', config, { useOpenIdJwksEnv: true });
+  await verifyOidcAccessToken('machine-token', config);
+
+  expect(jwksRsa).toHaveBeenNthCalledWith(
+    1,
+    expect.objectContaining({ jwksUri: interactiveJwksUri }),
+  );
+  expect(jwksRsa).toHaveBeenNthCalledWith(
+    2,
+    expect.objectContaining({ jwksUri: discoveredJwksUri }),
+  );
+});

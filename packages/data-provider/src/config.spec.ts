@@ -122,6 +122,28 @@ describe('Agent Management authentication config', () => {
     expect(result.data.endpoints?.agents?.managementApi?.auth?.clients[0].subject).toBe(subject);
   });
 
+  it('normalizes binding User ObjectIds', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {},
+              clients: [{ ...binding, userId: binding.userId.toUpperCase() }],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.endpoints?.agents?.managementApi?.auth?.clients[0].userId).toBe(
+      binding.userId,
+    );
+  });
+
   it('rejects enabled auth without a client binding', () => {
     const result = configSchema.safeParse({
       version: '1.0',

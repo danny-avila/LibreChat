@@ -896,7 +896,8 @@ const managementClientBindingSchema = z
     userId: z
       .string()
       .trim()
-      .regex(/^[a-f\d]{24}$/i, 'must be a MongoDB ObjectId'),
+      .regex(/^[a-f\d]{24}$/i, 'must be a MongoDB ObjectId')
+      .transform((userId) => userId.toLowerCase()),
     tenantId: z
       .string()
       .trim()

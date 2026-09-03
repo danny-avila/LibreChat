@@ -112,7 +112,7 @@ async function resolvePrincipal(
     if (!user) return { status: 'missing' };
 
     const userId = String(user._id);
-    if (userId !== binding.userId || user.tenantId !== binding.tenantId) {
+    if (userId !== binding.userId.toLowerCase() || user.tenantId !== binding.tenantId) {
       return { status: 'missing' };
     }
 

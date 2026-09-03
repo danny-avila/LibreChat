@@ -195,6 +195,22 @@ describe('createAgentManagementAuth', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it('accepts a binding with an uppercase User ObjectId', async () => {
+    const config = createConfig();
+    const binding = config.endpoints?.agents?.managementApi?.auth?.clients[0];
+    if (binding) binding.userId = USER_ID.toUpperCase();
+    const deps = createDeps({ getAppConfig: jest.fn().mockResolvedValue(config) });
+    const next = jest.fn();
+
+    await runMiddleware(deps, createRequest(), createResponse(), next);
+
+    expect(deps.findUser).toHaveBeenCalledWith({
+      _id: USER_ID.toUpperCase(),
+      tenantId: TENANT_ID,
+    });
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['absent', undefined],
     ['malformed', 'Basic credentials'],
