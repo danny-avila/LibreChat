@@ -3041,7 +3041,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     };
 
     // Start generation and handle any unhandled errors
-    void startGeneration()
+    const generationSettlement = startGeneration()
       .catch(async (err) => {
         logger.error(
           `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
@@ -3097,6 +3097,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           drainError,
         );
       });
+
+    /** Shutdown waits on this chain rather than publishing the drain itself: the marker is
+     *  only truthful once the trailing writes above have settled. */
+    GenerationJobManager.trackGenerationSettlement?.(streamId, jobCreatedAt, generationSettlement);
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
     const initializationFailure = getInitializationFailure(error);

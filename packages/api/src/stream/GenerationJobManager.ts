@@ -97,6 +97,14 @@ const REAPED_JOB_ERROR = 'Generation timed out';
  * queued commands by pacing the producer instead of growing without limit. */
 const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
 const PROVIDER_DRAIN_POLL_MS = 50;
+
+/**
+ * How long shutdown waits for detached generations to settle. A generation records its own
+ * provider drain only after its trailing writes finish, so exiting first strands the next
+ * generation in that conversation behind a handoff that can never be confirmed. Bounded so
+ * shutdown still completes inside a container stop grace period.
+ */
+const SHUTDOWN_SETTLEMENT_TIMEOUT_MS = 5_000;
 type ToolExecutionStatus = 'success' | 'error' | 'cancelled';
 type ToolCallWithExecutionStatus = Agents.AgentToolCall & {
   executionStatus?: ToolExecutionStatus;
@@ -775,6 +783,9 @@ class GenerationJobManagerClass {
 
   /** Rejects new jobs once graceful shutdown has started. */
   private shuttingDown = false;
+
+  /** Detached generation chains, keyed `streamId:createdAt`, awaited during shutdown. */
+  private readonly generationSettlements = new Map<string, Promise<unknown>>();
 
   /** Whether we're using Redis stores */
   private _isRedis = false;
@@ -7084,6 +7095,64 @@ class GenerationJobManagerClass {
   /** Records that one exact provider segment has completed every trailing write.
    * The opaque segment id prevents a paused controller from acknowledging a
    * later HITL resume that reuses the same generation epoch. */
+  /**
+   * Register a detached generation chain so shutdown can wait for it.
+   *
+   * The chain records its own provider drain, but only after awaiting its trailing writes —
+   * that ordering is what makes the drain marker mean "no further writes are coming". Shutdown
+   * must therefore wait for the chain rather than publish the marker itself, which would
+   * advertise a settlement that has not happened and let a replacement replica race the
+   * outgoing owner's writes.
+   */
+  trackGenerationSettlement(
+    streamId: string,
+    createdAt: number,
+    settlement: Promise<unknown>,
+  ): void {
+    if (!Number.isFinite(createdAt)) {
+      return;
+    }
+    const key = `${streamId}:${createdAt}`;
+    const tracked = settlement.finally(() => {
+      if (this.generationSettlements.get(key) === tracked) {
+        this.generationSettlements.delete(key);
+      }
+    });
+    this.generationSettlements.set(key, tracked);
+  }
+
+  /**
+   * Wait for tracked generations to settle, bounded so shutdown still finishes inside a
+   * container stop grace period. Anything still outstanding is left alone: asserting a drain
+   * it has not reached is the unsafe direction, so we log and let the deployment's
+   * hard-kill handling own that case.
+   */
+  private async awaitGenerationSettlements(): Promise<void> {
+    const pending = [...this.generationSettlements.values()];
+    if (pending.length === 0) {
+      return;
+    }
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        Promise.allSettled(pending),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, SHUTDOWN_SETTLEMENT_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+    const unsettled = this.generationSettlements.size;
+    if (unsettled > 0) {
+      logger.warn(
+        `[GenerationJobManager] ${unsettled} generation(s) did not settle within ${SHUTDOWN_SETTLEMENT_TIMEOUT_MS}ms of shutdown; their provider drains are unrecorded`,
+      );
+    }
+  }
+
   async markProviderExecutionDrained(
     streamId: string,
     expectedCreatedAt: number,
@@ -8329,14 +8398,6 @@ class GenerationJobManagerClass {
           return;
         }
         await this.finishTerminalJob(claim);
-        /** The provider this process owns is aborted above and dies with the process, so no
-         *  one is left to record its drain. Without the marker the next generation in this
-         *  conversation waits `PROVIDER_DRAIN_TIMEOUT_MS` for a handoff that can never be
-         *  confirmed and fails — permanently, since every retry replays the same predecessor.
-         *  `createJob` already marks the drain on its own shutdown path; do the same here. */
-        if (job.providerExecutionId != null) {
-          await this.markProviderExecutionDrained(streamId, createdAt, job.providerExecutionId);
-        }
       }),
     );
 
@@ -8400,6 +8461,7 @@ class GenerationJobManagerClass {
     }
 
     await this.drainSubscriberCleanups();
+    await this.awaitGenerationSettlements();
     await this.finalizeOwnedJobsForShutdown();
     await this.jobStore.destroy();
     this.eventTransport.destroy();

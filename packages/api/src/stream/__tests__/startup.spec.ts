@@ -4118,39 +4118,68 @@ describe('GenerationJobManager startup telemetry', () => {
     });
   });
 
-  it('records the provider drain for an owned job when the process shuts down', async () => {
+  it('waits for a tracked generation to settle before shutdown completes', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     jest.spyOn(jobStore, 'destroy').mockResolvedValue();
     const eventTransport = new InMemoryEventTransport();
-    const recordProviderDrain = jest.spyOn(eventTransport, 'recordProviderDrain');
     const manager = new GenerationJobManagerClass();
     manager.configure({ jobStore, eventTransport, isRedis: false });
     manager.initialize();
 
-    const streamId = 'stream-shutdown-provider-drain';
+    const streamId = 'stream-shutdown-settlement';
     const job = await manager.createJob(streamId, 'user-1');
     const providerExecutionId = job.metadata.providerExecutionId!;
     await manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId);
 
-    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
-      status: 'running',
-      providerDrained: false,
+    let releaseGeneration: (() => void) | undefined;
+    const generation = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
     });
+    let drainRecorded = false;
+    /** Mirrors the controller: the drain is recorded by the generation itself, only once its
+     *  trailing writes have settled. Shutdown must not run ahead of that. */
+    manager.trackGenerationSettlement(
+      streamId,
+      job.createdAt,
+      generation.then(async () => {
+        await manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId);
+        drainRecorded = true;
+      }),
+    );
 
     manager.prepareForShutdown();
-    await manager.destroy();
-
-    /** The dying process owns this execution, so nothing else can ever record its drain.
-     *  Without the marker the next generation waits out PROVIDER_DRAIN_TIMEOUT_MS for a
-     *  handoff that can never be confirmed, and every retry replays the same predecessor.
-     *  Asserted on the durable evidence rather than the transport's own map, which
-     *  `destroy()` clears immediately after finalization. */
-    expect(recordProviderDrain).toHaveBeenCalledWith(streamId, job.createdAt, providerExecutionId);
-    await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
-      status: 'error',
-      error: 'Generation interrupted because its server shut down',
-      providerDrained: true,
+    let destroyed = false;
+    const destroying = manager.destroy().then(() => {
+      destroyed = true;
     });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(false);
+    expect(drainRecorded).toBe(false);
+
+    releaseGeneration!();
+    await destroying;
+
+    expect(drainRecorded).toBe(true);
+  });
+
+  it('does not delay shutdown for a generation that already settled', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+    });
+    manager.initialize();
+
+    const streamId = 'stream-shutdown-settled';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.trackGenerationSettlement(streamId, job.createdAt, Promise.resolve());
+    await new Promise((resolve) => setImmediate(resolve));
+
+    manager.prepareForShutdown();
+    await expect(manager.destroy()).resolves.toBeUndefined();
   });
 
   it('does not let late success overwrite or delete a shutdown error', async () => {
