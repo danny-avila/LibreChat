@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
+import { AccessRoleIds, ResourceType, SystemRoles } from 'librechat-data-provider';
 import { Share2Icon, Users, Link, CopyCheck, UserCheck, AlertCircle } from 'lucide-react';
 import {
   Alert,
@@ -23,6 +23,7 @@ import {
   useResourcePermissionState,
   useCopyToClipboard,
   useCanSharePublic,
+  useAuthContext,
   useLocalize,
 } from '~/hooks';
 import { computeShareChanges, dedupeNewShares } from './shareChanges';
@@ -52,12 +53,15 @@ export default function GenericGrantAccessDialog({
   children?: React.ReactNode;
 }) {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const [isCopying, setIsCopying] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const peopleSectionId = React.useId();
   const ownerErrorId = React.useId();
   const canSharePublic = useCanSharePublic(resourceType);
+  const canEditAgentInsights =
+    resourceType === ResourceType.AGENT && user?.role === SystemRoles.ADMIN;
   const { hasPeoplePickerAccess, peoplePickerTypeFilter } = usePeoplePickerPermissions();
 
   /** User can use the share dialog if they have people picker access OR can share publicly */
@@ -123,6 +127,7 @@ export default function GenericGrantAccessDialog({
     const sharesWithDefaults = sharesToAdd.map((share) => ({
       ...share,
       accessRoleId: defaultPermissionId || config?.defaultViewerRoleId,
+      ...(canEditAgentInsights ? { viewInsights: false } : {}),
       isExisting: false, // Mark as newly added
     }));
 
@@ -141,6 +146,15 @@ export default function GenericGrantAccessDialog({
     setAllShares(
       allShares.map((s) =>
         s.idOnTheSource === idOnTheSource ? { ...s, accessRoleId: newRole as AccessRoleIds } : s,
+      ),
+    );
+    setHasChanges(true);
+  };
+
+  const handleInsightsChange = (idOnTheSource: string, viewInsights: boolean) => {
+    setAllShares(
+      allShares.map((share) =>
+        share.idOnTheSource === idOnTheSource ? { ...share, viewInsights } : share,
       ),
     );
     setHasChanges(true);
@@ -375,6 +389,8 @@ export default function GenericGrantAccessDialog({
                         onRemoveHandler={handleRemoveShare}
                         resourceType={resourceType}
                         onRoleChange={(id, newRole) => handleRoleChange(id, newRole)}
+                        showInsightsAccess={canEditAgentInsights}
+                        onInsightsAccessChange={handleInsightsChange}
                       />
                     )}
                   </>

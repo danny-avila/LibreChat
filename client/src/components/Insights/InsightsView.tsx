@@ -1,13 +1,19 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Info, Search } from 'lucide-react';
-import { Button, Input, Spinner, TooltipAnchor, useMediaQuery } from '@librechat/client';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import { AlertCircle, Bot, Info, Search } from 'lucide-react';
+import {
+  Button,
+  Input,
+  MultiSelect,
+  Spinner,
+  TooltipAnchor,
+  useMediaQuery,
+} from '@librechat/client';
 import {
   INSIGHTS_MAX_RANGE_DAYS,
   INSIGHTS_SEARCH_MAX_LENGTH,
   INSIGHTS_SEARCH_MIN_LENGTH,
-  SystemRoles,
 } from 'librechat-data-provider';
 import type {
   InsightsRange,
@@ -17,7 +23,7 @@ import type {
   TInsightsUser,
 } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
-import { useGetStartupConfig, useInsightsAccessQuery, useInsightsQuery } from '~/data-provider';
+import { useGetStartupConfig, useInsightsQuery } from '~/data-provider';
 import { useAuthContext, useDocumentTitle, useLocalize } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { LocalizedDateRangePicker } from '~/components/ui';
@@ -32,6 +38,7 @@ type CustomDateRange = { startDate: Date; endDate: Date };
 type KpiCardData = {
   id: 'conversations' | 'users' | 'messages' | 'tokens';
   title: string;
+  description?: string;
   value: number;
   sparkline: SparklinePoint[];
 };
@@ -238,7 +245,23 @@ function KpiCard({ card, locale }: { card: KpiCardData; locale: string }) {
   const localize = useLocalize();
   return (
     <Panel>
-      <h2 className="text-lg font-normal text-text-secondary">{card.title}</h2>
+      <h2 className="inline-flex items-center gap-1.5 text-lg font-normal text-text-secondary">
+        {card.title}
+        {card.description && (
+          <TooltipAnchor
+            description={card.description}
+            render={
+              <button
+                type="button"
+                aria-label={card.description}
+                className="text-text-secondary hover:text-text-primary"
+              >
+                <Info className="size-4" aria-hidden="true" />
+              </button>
+            }
+          />
+        )}
+      </h2>
       <div className="mt-3 text-4xl font-semibold tabular-nums leading-none text-text-primary">
         {formatValue(card.value, locale)}
       </div>
@@ -446,11 +469,12 @@ function LatestConversations({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] table-fixed text-left text-sm">
+        <table className="w-full min-w-[900px] table-fixed text-left text-sm">
           <thead className="border-b border-border-medium text-xs text-text-secondary">
             <tr>
               <th className="w-[120px] px-2 py-2 font-medium">{localize('com_insights_date')}</th>
               <th className="w-[192px] px-2 py-2 font-medium">{localize('com_insights_user')}</th>
+              <th className="w-[160px] px-2 py-2 font-medium">{localize('com_insights_agent')}</th>
               <th className="px-2 py-2 font-medium">{localize('com_insights_first_message')}</th>
               <th className="w-20 px-2 py-2 text-right font-medium">
                 {localize('com_insights_messages')}
@@ -472,6 +496,7 @@ function LatestConversations({
                 <td className="px-2 py-3">
                   <UserCell {...conversation} localize={localize} />
                 </td>
+                <td className="truncate px-2 py-3 text-text-secondary">{conversation.agentName}</td>
                 <td className="max-w-xl px-2 py-3">
                   <span className="line-clamp-2">
                     {conversation.firstMessage || localize('com_insights_no_message')}
@@ -524,6 +549,7 @@ function LatestConversations({
 
 export default function InsightsView() {
   const localize = useLocalize();
+  const [urlSearchParams, setUrlSearchParams] = useSearchParams();
   const { i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language ?? 'en';
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -537,13 +563,18 @@ export default function InsightsView() {
   const dateRangeSelectionTimeout = useRef<number>();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const insightsFeatureEnabled = startupConfig?.insightsEnabled === true;
-  const shouldCheckAccess = user?.role === SystemRoles.ADMIN && insightsFeatureEnabled;
-  const access = useInsightsAccessQuery(user?.id, {
-    enabled: shouldCheckAccess,
-  });
-  const isAllowed = insightsFeatureEnabled && access.data?.access === true;
+  const selectedAgentIds = useMemo(
+    () => [...new Set(urlSearchParams.getAll('agentIds').filter(Boolean))].sort(),
+    [urlSearchParams],
+  );
   const insightsParams = useMemo<TInsightsParams>(() => {
-    const params: TInsightsParams = { page, pageSize: 10, search, timeZone };
+    const params: TInsightsParams = {
+      page,
+      pageSize: 10,
+      search,
+      timeZone,
+      ...(selectedAgentIds.length > 0 ? { agentIds: selectedAgentIds } : {}),
+    };
     if (customDateRange) {
       return {
         ...params,
@@ -553,13 +584,36 @@ export default function InsightsView() {
       };
     }
     return { ...params, range };
-  }, [customDateRange, page, range, search, timeZone]);
+  }, [customDateRange, page, range, search, selectedAgentIds, timeZone]);
   const displayDateRange = useMemo(
     () => customDateRange ?? getShortcutDateRange(range),
     [customDateRange, range],
   );
-  const insights = useInsightsQuery(insightsParams, { enabled: isAllowed });
+  const insights = useInsightsQuery(insightsParams, {
+    enabled: !!user && insightsFeatureEnabled,
+    retry: false,
+  });
   const data = insights.data;
+  const agentItems = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+    const duplicateNames = new Map<string, number>();
+    for (const agent of data.agents) {
+      duplicateNames.set(agent.name, (duplicateNames.get(agent.name) ?? 0) + 1);
+    }
+    return data.agents.map((agent) => ({
+      value: agent.id,
+      label:
+        (duplicateNames.get(agent.name) ?? 0) > 1
+          ? `${agent.name} (${agent.id.slice(-6)})`
+          : agent.name,
+    }));
+  }, [data]);
+  const effectiveAgentIds = useMemo(
+    () => (selectedAgentIds.length > 0 ? selectedAgentIds : agentItems.map((agent) => agent.value)),
+    [agentItems, selectedAgentIds],
+  );
 
   useDocumentTitle(`${localize('com_insights_title')} | LibreChat`);
 
@@ -593,6 +647,7 @@ export default function InsightsView() {
       {
         id: 'conversations',
         title: localize('com_insights_total_conversations'),
+        description: localize('com_insights_conversations_definition'),
         value: data.summary.totalConversations,
         sparkline: data.daily.map((row) => ({ date: row.date, value: row.conversations })),
       },
@@ -628,27 +683,38 @@ export default function InsightsView() {
     }, dateRangeSelectionDelayMs);
   };
 
-  if (configLoading || (shouldCheckAccess && access.isLoading)) {
+  const handleAgentSelection = (agentIds: string[]) => {
+    if (agentIds.length === 0 || !data) {
+      return;
+    }
+    const normalizedIds = [...new Set(agentIds)].sort();
+    const allAgentIds = data.agents.map((agent) => agent.id).sort();
+    const nextParams = new URLSearchParams(urlSearchParams);
+    nextParams.delete('agentIds');
+    if (
+      normalizedIds.length !== allAgentIds.length ||
+      normalizedIds.some((agentId, index) => agentId !== allAgentIds[index])
+    ) {
+      for (const agentId of normalizedIds) {
+        nextParams.append('agentIds', agentId);
+      }
+    }
+    setUrlSearchParams(nextParams, { replace: true });
+    setPage(1);
+  };
+
+  if (configLoading || (insightsFeatureEnabled && insights.isLoading)) {
     return (
       <div className="h-full w-full bg-presentation p-4">
         <LoadingState message={localize('com_insights_loading')} />
       </div>
     );
   }
-  const accessStatus = responseStatus(access.error);
-  if (access.isError && accessStatus !== 403 && accessStatus !== 404) {
-    return (
-      <div className="h-full w-full bg-presentation p-4">
-        <Panel className="flex items-center gap-2">
-          <AlertCircle className="size-4 text-status-error" />
-          <span className="text-sm">{localize('com_insights_load_error')}</span>
-        </Panel>
-      </div>
-    );
-  }
-  if (!isAllowed) {
+  if (!insightsFeatureEnabled) {
     return <Navigate to="/c/new" replace />;
   }
+
+  const insightsStatus = responseStatus(insights.error);
 
   return (
     <div className="flex h-full w-full min-w-0 flex-col bg-presentation text-text-primary">
@@ -658,6 +724,41 @@ export default function InsightsView() {
           <h1 className="text-base font-semibold">{localize('com_insights_title')}</h1>
         </div>
         <div className="flex max-w-full flex-wrap items-center gap-2 md:flex-nowrap">
+          {data && (
+            <MultiSelect
+              items={agentItems}
+              selectedValues={effectiveAgentIds}
+              setSelectedValues={handleAgentSelection}
+              disabled={agentItems.length === 1}
+              className="w-full min-w-0 sm:w-56"
+              selectClassName="h-9 w-full rounded-lg border border-border-light bg-surface-primary"
+              popoverClassName="max-h-80"
+              selectIcon={<Bot className="size-4 text-text-secondary" aria-hidden="true" />}
+              renderSelectedValues={(values) => {
+                if (values.length === agentItems.length) {
+                  return localize('com_insights_all_agents', { count: agentItems.length });
+                }
+                if (values.length === 1) {
+                  return agentItems.find((agent) => agent.value === values[0])?.label ?? values[0];
+                }
+                return localize('com_insights_agents_selected', { count: values.length });
+              }}
+              popoverHeader={
+                <div className="mb-1 border-b border-border-light pb-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-full justify-start rounded-lg px-2"
+                    disabled={effectiveAgentIds.length === agentItems.length}
+                    onClick={() => handleAgentSelection(agentItems.map((agent) => agent.value))}
+                  >
+                    {localize('com_insights_select_all_agents')}
+                  </Button>
+                </div>
+              }
+            />
+          )}
           <div className="inline-flex rounded-lg border border-border-light p-0.5">
             {ranges.map((item) => (
               <Button
@@ -711,7 +812,11 @@ export default function InsightsView() {
           {insights.isError && (
             <Panel className="flex items-center gap-2">
               <AlertCircle className="size-4 text-status-error" />
-              <span className="text-sm">{localize('com_insights_load_error')}</span>
+              <span className="text-sm">
+                {insightsStatus === 403
+                  ? localize('com_insights_forbidden')
+                  : localize('com_insights_load_error')}
+              </span>
             </Panel>
           )}
           {data && (

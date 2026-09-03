@@ -46,6 +46,8 @@ interface MultiSelectProps<T extends string> {
     defaultContent: React.ReactNode,
     isSelected: boolean,
   ) => React.ReactNode;
+  popoverHeader?: React.ReactNode;
+  disabled?: boolean;
 }
 
 function defaultRender<T extends string>(
@@ -85,6 +87,8 @@ export default function MultiSelect<T extends string>({
   selectedValues = [],
   setSelectedValues,
   renderItemContent,
+  popoverHeader,
+  disabled = false,
 }: MultiSelectProps<T>): JSX.Element {
   const selectRef = useRef<HTMLButtonElement>(null);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -111,9 +115,11 @@ export default function MultiSelect<T extends string>({
         )}
         <Select
           ref={selectRef}
+          disabled={disabled}
           className={cn(
             'flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm',
             'bg-surface-tertiary text-text-primary shadow-sm hover:cursor-pointer hover:bg-surface-hover',
+            'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-surface-tertiary',
             'outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
             selectClassName,
             selectedValues.length > 0 && selectItemsClassName != null && selectItemsClassName,
@@ -146,6 +152,7 @@ export default function MultiSelect<T extends string>({
             popoverClassName,
           )}
         >
+          {popoverHeader}
           {items.map((item) => {
             const value = getItemValue(item);
             const label = getItemLabel(item);

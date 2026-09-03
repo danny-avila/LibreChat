@@ -34,6 +34,7 @@ const baseState = (overrides: Record<string, unknown> = {}) => ({
 });
 
 jest.mock('~/hooks', () => ({
+  useAuthContext: () => ({ user: { role: 'ADMIN' } }),
   useLocalize: () => (key: string) => key,
   useResourcePermissionState: () => mockUseResourcePermissionState(),
   usePeoplePickerPermissions: () => ({ hasPeoplePickerAccess: true, peoplePickerTypeFilter: '' }),

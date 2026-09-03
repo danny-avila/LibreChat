@@ -7,7 +7,12 @@ const {
   logger,
   runAfterTransaction,
 } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
+const {
+  ResourceType,
+  PrincipalType,
+  PrincipalModel,
+  PermissionBits,
+} = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
@@ -722,7 +727,7 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
  * @param {Array<TPrincipal>} params.revokedPrincipals - Array of principals to revoke permissions from
  * @param {string|mongoose.Types.ObjectId} params.grantedBy - User ID making the changes
  * @param {mongoose.ClientSession} [params.session] - Optional MongoDB session for transactions
- * @returns {Promise<Object>} Results object with granted, updated, revoked arrays and error details
+ * @returns {Promise<Object>} Results object with granted, updated, revoked, insightsChanges, and errors
  */
 const bulkUpdateResourcePermissions = async ({
   resourceType,
@@ -758,7 +763,12 @@ const bulkUpdateResourcePermissions = async ({
 
     const sessionOptions = localSession ? { session: localSession } : {};
 
-    const roles = await db.findRolesByResourceType(resourceType);
+    const [roles, currentEntries] = await Promise.all([
+      db.findRolesByResourceType(resourceType),
+      resourceType === ResourceType.AGENT
+        ? db.findEntriesByResource(resourceType, resourceId, localSession)
+        : Promise.resolve([]),
+    ]);
     const rolesMap = new Map();
     roles.forEach((role) => {
       rolesMap.set(role.accessRoleId, role);
@@ -768,6 +778,7 @@ const bulkUpdateResourcePermissions = async ({
       granted: [],
       updated: [],
       revoked: [],
+      insightsChanges: [],
       errors: [],
     };
 
@@ -786,6 +797,12 @@ const bulkUpdateResourcePermissions = async ({
      */
     const grantedPrincipalKeys = new Set();
     const principalKey = (principal) => `${principal.type}:${principal.id}`;
+    const currentEntriesByPrincipal = new Map(
+      currentEntries.map((entry) => [
+        `${entry.principalType}:${entry.principalId == null ? 'null' : entry.principalId.toString()}`,
+        entry,
+      ]),
+    );
 
     for (const principal of updatedPrincipals) {
       try {
@@ -819,6 +836,24 @@ const bulkUpdateResourcePermissions = async ({
               : new mongoose.Types.ObjectId(principal.id);
         }
 
+        const existingEntry = currentEntriesByPrincipal.get(
+          `${principal.type}:${principal.type === PrincipalType.PUBLIC ? 'null' : principal.id}`,
+        );
+        const hadInsights =
+          ((existingEntry?.permBits ?? 0) & PermissionBits.VIEW_INSIGHTS) ===
+          PermissionBits.VIEW_INSIGHTS;
+        const roleCanView = (role.permBits & PermissionBits.VIEW) === PermissionBits.VIEW;
+        const requestedInsights =
+          typeof principal.viewInsights === 'boolean' ? principal.viewInsights : undefined;
+        const wantsInsights =
+          resourceType === ResourceType.AGENT &&
+          principal.type !== PrincipalType.PUBLIC &&
+          roleCanView &&
+          (requestedInsights === undefined ? hadInsights : requestedInsights);
+        const permBits = wantsInsights
+          ? role.permBits | PermissionBits.VIEW_INSIGHTS
+          : role.permBits & ~PermissionBits.VIEW_INSIGHTS;
+
         const principalModelMap = {
           [PrincipalType.USER]: PrincipalModel.USER,
           [PrincipalType.GROUP]: PrincipalModel.GROUP,
@@ -827,7 +862,7 @@ const bulkUpdateResourcePermissions = async ({
 
         const update = {
           $set: {
-            permBits: role.permBits,
+            permBits,
             roleId: role._id,
             grantedBy,
             grantedAt: new Date(),
@@ -866,7 +901,19 @@ const bulkUpdateResourcePermissions = async ({
           accessRoleId: principal.accessRoleId,
           memberCount: principal.memberCount,
           memberIds: principal.memberIds,
+          ...(resourceType === ResourceType.AGENT ? { viewInsights: wantsInsights } : {}),
         });
+        if (hadInsights !== wantsInsights) {
+          results.insightsChanges.push({
+            action: wantsInsights ? 'assigned' : 'removed',
+            previousEntry: existingEntry ?? null,
+            principal: {
+              type: principal.type,
+              id: principal.id,
+              name: principal.name,
+            },
+          });
+        }
         if (principal.type !== PrincipalType.PUBLIC) {
           grantedPrincipalKeys.add(principalKey(principal));
         }
@@ -908,6 +955,13 @@ const bulkUpdateResourcePermissions = async ({
 
         deleteQueries.push(query);
 
+        const existingEntry = currentEntriesByPrincipal.get(
+          `${principal.type}:${principal.type === PrincipalType.PUBLIC ? 'null' : principal.id}`,
+        );
+        const hadInsights =
+          ((existingEntry?.permBits ?? 0) & PermissionBits.VIEW_INSIGHTS) ===
+          PermissionBits.VIEW_INSIGHTS;
+
         results.revoked.push({
           type: principal.type,
           id: principal.id,
@@ -919,6 +973,17 @@ const bulkUpdateResourcePermissions = async ({
           idOnTheSource: principal.idOnTheSource,
           memberCount: principal.memberCount,
         });
+        if (hadInsights) {
+          results.insightsChanges.push({
+            action: 'removed',
+            previousEntry: existingEntry,
+            principal: {
+              type: principal.type,
+              id: principal.id,
+              name: principal.name,
+            },
+          });
+        }
       } catch (error) {
         results.errors.push({
           principal,
@@ -959,6 +1024,38 @@ const bulkUpdateResourcePermissions = async ({
     if (shouldEndSession && localSession) {
       localSession.endSession();
     }
+  }
+};
+
+/** Restore ACL documents for Insights transitions that could not be audited. */
+const restoreInsightsPermissionChanges = async ({ resourceType, resourceId, changes = [] }) => {
+  const operations = changes.map((change) => {
+    if (change.previousEntry) {
+      return {
+        replaceOne: {
+          filter: { _id: change.previousEntry._id },
+          replacement: change.previousEntry,
+          upsert: true,
+        },
+      };
+    }
+
+    const filter = {
+      principalType: change.principal.type,
+      resourceType,
+      resourceId,
+    };
+    if (change.principal.type !== PrincipalType.PUBLIC) {
+      filter.principalId =
+        change.principal.type === PrincipalType.ROLE
+          ? change.principal.id
+          : new mongoose.Types.ObjectId(change.principal.id);
+    }
+    return { deleteOne: { filter } };
+  });
+
+  if (operations.length > 0) {
+    await db.bulkWriteAclEntries(operations);
   }
 };
 
@@ -1003,6 +1100,7 @@ module.exports = {
   hasPublicPermission,
   getAvailableRoles,
   bulkUpdateResourcePermissions,
+  restoreInsightsPermissionChanges,
   ensurePrincipalExists,
   ensureGroupPrincipalExists,
   syncUserEntraGroupMemberships,

@@ -6,9 +6,11 @@ const {
   AccessRoleIds,
   PrincipalType,
   PrincipalModel,
+  PermissionBits,
 } = require('librechat-data-provider');
 const {
   bulkUpdateResourcePermissions,
+  restoreInsightsPermissionChanges,
   syncUserEntraGroupMemberships,
   getEffectivePermissions,
   findAccessibleResources,
@@ -879,6 +881,140 @@ describe('PermissionService', () => {
         resourceId,
       }).populate('roleId', 'accessRoleId');
       expect(groupEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_OWNER);
+    });
+
+    test('adds, preserves, and removes agent Insights access independently of the role', async () => {
+      const grantResult = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId,
+            accessRoleId: AccessRoleIds.AGENT_VIEWER,
+            viewInsights: true,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      let entry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(entry.permBits & PermissionBits.VIEW_INSIGHTS).toBe(PermissionBits.VIEW_INSIGHTS);
+      expect(grantResult.insightsChanges).toEqual([
+        expect.objectContaining({ action: 'assigned' }),
+      ]);
+
+      const roleResult = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId,
+            accessRoleId: AccessRoleIds.AGENT_EDITOR,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+      entry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(entry.permBits & PermissionBits.VIEW_INSIGHTS).toBe(PermissionBits.VIEW_INSIGHTS);
+      expect(roleResult.insightsChanges).toEqual([]);
+
+      const revokeResult = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId,
+            accessRoleId: AccessRoleIds.AGENT_EDITOR,
+            viewInsights: false,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+      entry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(entry.permBits & PermissionBits.VIEW_INSIGHTS).toBe(0);
+      expect(revokeResult.insightsChanges).toEqual([
+        expect.objectContaining({ action: 'removed' }),
+      ]);
+    });
+
+    test('restores the prior ACL document after an Insights audit failure', async () => {
+      const before = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      }).lean();
+      const result = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId,
+            accessRoleId: AccessRoleIds.AGENT_EDITOR,
+            viewInsights: true,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      await restoreInsightsPermissionChanges({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        changes: result.insightsChanges,
+      });
+
+      const restored = await AclEntry.findById(before._id).lean();
+      expect(restored).toEqual(before);
+    });
+
+    test('removes a new ACL document after an Insights audit failure', async () => {
+      const result = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: otherUserId,
+            accessRoleId: AccessRoleIds.AGENT_VIEWER,
+            viewInsights: true,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      await restoreInsightsPermissionChanges({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        changes: result.insightsChanges,
+      });
+
+      await expect(
+        AclEntry.exists({
+          principalType: PrincipalType.USER,
+          principalId: otherUserId,
+          resourceType: ResourceType.AGENT,
+          resourceId,
+        }),
+      ).resolves.toBeNull();
     });
 
     test('should revoke specified permissions', async () => {

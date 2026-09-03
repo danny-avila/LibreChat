@@ -1,7 +1,7 @@
 import React from 'react';
-import { Users, X, ExternalLink } from 'lucide-react';
 import { ResourceType } from 'librechat-data-provider';
-import { Button, useMediaQuery } from '@librechat/client';
+import { Users, X, ExternalLink, Info } from 'lucide-react';
+import { Button, Checkbox, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import type { TPrincipal, AccessRoleIds } from 'librechat-data-provider';
 import AccessRolesPicker from '~/components/Sharing/AccessRolesPicker';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
@@ -12,6 +12,8 @@ interface SelectedPrincipalsListProps {
   principles: TPrincipal[];
   onRemoveHandler: (idOnTheSource: string) => void;
   onRoleChange?: (idOnTheSource: string, newRoleId: AccessRoleIds) => void;
+  onInsightsAccessChange?: (idOnTheSource: string, enabled: boolean) => void;
+  showInsightsAccess?: boolean;
   resourceType?: ResourceType;
   className?: string;
 }
@@ -21,6 +23,8 @@ export default function SelectedPrincipalsList({
   onRemoveHandler,
   className = '',
   onRoleChange,
+  onInsightsAccessChange,
+  showInsightsAccess = false,
   resourceType = ResourceType.AGENT,
 }: SelectedPrincipalsListProps) {
   const localize = useLocalize();
@@ -78,6 +82,32 @@ export default function SelectedPrincipalsList({
               </div>
 
               <div className="flex w-full flex-shrink-0 items-center justify-end gap-2 sm:w-auto">
+                {showInsightsAccess && onInsightsAccessChange && (
+                  <div className="mr-auto flex items-center gap-2 sm:mr-1">
+                    <Checkbox
+                      checked={share.viewInsights === true}
+                      onCheckedChange={(checked) =>
+                        onInsightsAccessChange(share.idOnTheSource!, checked === true)
+                      }
+                      aria-label={localize('com_ui_view_agent_insights')}
+                    />
+                    <span className="whitespace-nowrap text-sm text-text-secondary">
+                      {localize('com_ui_view_agent_insights')}
+                    </span>
+                    <TooltipAnchor
+                      description={localize('com_ui_view_agent_insights_description')}
+                      render={
+                        <button
+                          type="button"
+                          aria-label={localize('com_ui_view_agent_insights_description')}
+                          className="text-text-secondary hover:text-text-primary"
+                        >
+                          <Info className="size-4" aria-hidden="true" />
+                        </button>
+                      }
+                    />
+                  </div>
+                )}
                 {lockOwner ? (
                   <span className="px-3 py-2 text-sm font-medium text-text-secondary">
                     {localize('com_ui_role_owner')}
