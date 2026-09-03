@@ -1,9 +1,9 @@
-import { BashExecutionToolDefinition, BashToolOutputReferencesGuide } from '@librechat/agents';
-import type { LCTool } from '@librechat/agents';
 import { tool } from '@librechat/agents/langchain/tools';
+import { BashExecutionToolDefinition, BashToolOutputReferencesGuide } from '@librechat/agents';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
-import type { CodeBridgeFetch } from './bridge';
+import type { LCTool } from '@librechat/agents';
 import type { WorkspaceExecuteCommandResult } from './workspace';
+import type { CodeBridgeFetch } from './bridge';
 import { executeWorkspaceTool } from './workspace';
 
 const DEFAULT_WORKSPACE_ID = 'primary';
@@ -20,16 +20,23 @@ Session behavior:
 - Explicitly print every result the user should see.
 - Never use this tool to execute malicious commands.`;
 
-export const ATTACHED_WORKSPACE_BASH_SCHEMA: LCTool['parameters'] = Object.freeze({
-  ...BashExecutionToolDefinition.schema,
+const bashSchema = BashExecutionToolDefinition.schema as {
+  properties?: NonNullable<LCTool['parameters']>['properties'];
+};
+const attachedCommandSchema: NonNullable<LCTool['parameters']> = {
+  ...bashSchema.properties?.command,
+  type: 'string',
+  description:
+    'The bash command or script to execute from the attached workspace root. Files written in the workspace persist between calls, but each call starts a fresh process.',
+};
+
+export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> = Object.freeze({
+  type: 'object',
   properties: {
-    ...BashExecutionToolDefinition.schema.properties,
-    command: {
-      ...BashExecutionToolDefinition.schema.properties.command,
-      description:
-        'The bash command or script to execute from the attached workspace root. Files written in the workspace persist between calls, but each call starts a fresh process.',
-    },
+    ...bashSchema.properties,
+    command: attachedCommandSchema,
   },
+  required: ['command'],
 });
 
 export function buildAttachedWorkspaceBashDescription(enableToolOutputReferences: boolean): string {
