@@ -3100,13 +3100,56 @@ describe('BaseClient', () => {
       TestClient.modelOptions = undefined;
     });
 
-    test('resolves an agent policy by its provider, not the agents container', async () => {
-      /* getEndpointFileConfig prefers endpointType, and an agents chat carries `agents`,
-       * so supplying it answers with the generic entry rather than the provider's. */
+    test('resolves a custom endpoint policy by the name the admin configured', async () => {
+      /* `initializeAgent` rewrites `agent.provider` to the client family a custom endpoint
+       * runs on, so resolving by it looks up `openAI` and silently loses every override
+       * written against the endpoint's own name. Upload routed under that name, and
+       * delivery has to agree or the file is stored and never sent. */
       TestClient.options = {
         endpoint: EModelEndpoint.agents,
         endpointType: EModelEndpoint.agents,
-        agent: { provider: EModelEndpoint.openAI, endpoint: EModelEndpoint.agents },
+        agent: { provider: EModelEndpoint.openAI, endpoint: 'Mock Provider B' },
+        req: {
+          config: {
+            fileConfig: {
+              endpoints: {
+                'Mock Provider B': {
+                  defaultLLMDeliveryPath: { overrides: { 'image/*': 'none' } },
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'custom-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('resolves an agent policy by its own endpoint, not the agents container', async () => {
+      /* getEndpointFileConfig prefers endpointType, and an agents chat carries `agents`,
+       * so supplying it answers with the generic entry rather than the agent's.
+       * `initializeAgent` sets `agent.endpoint` from the agent's provider, so it names a
+       * configurable entry and never the container. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.agents,
+        agent: { provider: EModelEndpoint.openAI, endpoint: EModelEndpoint.openAI },
         req: {
           config: {
             fileConfig: {

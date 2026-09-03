@@ -1734,16 +1734,17 @@ class BaseClient {
 
     if (!this._mergedFileConfig) {
       this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
-      /* An agent's file policy belongs to its provider, and the conversation's own type is
-       * the `agents` container, which getEndpointFileConfig prefers over the endpoint and
-       * so would answer with the generic entry instead of the provider's. */
-      const agentProvider = this.options.agent?.provider;
-      this._deliveryEndpoint =
-        agentProvider ?? this.options.agent?.endpoint ?? this.options.endpoint;
+      /* An agent's file policy is configured under the endpoint it names, not the client
+       * family it runs on: initialization rewrites `provider` to openAI or anthropic for a
+       * custom endpoint, so resolving by it answers with the wrong entry and drops every
+       * override the admin wrote. `endpoint` keeps the configured identity, and is never
+       * the `agents` container, which would answer with the generic entry. */
+      const agentEndpoint = this.options.agent?.endpoint ?? this.options.agent?.provider;
+      this._deliveryEndpoint = agentEndpoint ?? this.options.endpoint;
       this._endpointFileConfig = getEndpointFileConfig({
         fileConfig: this._mergedFileConfig,
         endpoint: this._deliveryEndpoint,
-        endpointType: agentProvider != null ? undefined : this.options.endpointType,
+        endpointType: agentEndpoint != null ? undefined : this.options.endpointType,
       });
     }
 
