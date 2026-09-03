@@ -10,9 +10,10 @@ services:
       - mongodb
     image: registry.librechat.ai/danny-avila/librechat-dev:latest
     restart: always
-    user: "${UID}:${GID}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
     environment:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
@@ -25,9 +26,6 @@ services:
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-localhost,127.0.0.1,::1},${NO_PROXY:-},mongodb,chat-mongodb,host.docker.internal
     volumes:
-      - type: bind
-        source: ./.env
-        target: /app/.env
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/logs
@@ -37,7 +35,6 @@ services:
     container_name: chat-mongodb
     image: mongo:8.0.20
     restart: always
-    user: "${UID}:${GID}"
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
