@@ -66,6 +66,111 @@ describe('bedrockEndpointSchema', () => {
   });
 });
 
+describe('Agent Management authentication config', () => {
+  const binding = {
+    clientId: 'machine-client',
+    userId: '507f1f77bcf86cd799439011',
+    tenantId: 'tenant-a',
+  };
+
+  it('accepts an enabled OIDC configuration with a client binding', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+                audience: 'https://agents.example.com',
+              },
+              clients: [binding],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.managementApi?.auth?.clients).toEqual([
+      { ...binding, enabled: true },
+    ]);
+  });
+
+  it('rejects enabled auth without a client binding', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+                audience: 'https://agents.example.com',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
+    ['duplicate client IDs', [binding, { ...binding, tenantId: 'tenant-b' }]],
+    ['an invalid user ID', [{ ...binding, userId: 'not-an-object-id' }]],
+    ['an invalid tenant ID', [{ ...binding, tenantId: '-tenant' }]],
+    ['the system tenant', [{ ...binding, tenantId: '__SYSTEM__' }]],
+  ])('rejects %s', (_label, clients) => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {},
+              clients,
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects remote-execution scopes and unknown management auth fields', () => {
+    const makeConfig = (auth: Record<string, unknown>) => ({
+      version: '1.0',
+      endpoints: { agents: { managementApi: { auth } } },
+    });
+
+    expect(
+      configSchema.safeParse(
+        makeConfig({
+          oidc: { scope: 'remote_agent' },
+          clients: [binding],
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse(
+        makeConfig({
+          oidc: {},
+          clients: [binding],
+          apiKey: { enabled: true },
+        }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
 describe('attached code environment user config schema', () => {
   it('accepts typed permission controls exposed by the administrator', () => {
     const result = configSchema.safeParse({
