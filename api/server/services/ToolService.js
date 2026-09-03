@@ -45,6 +45,7 @@ const {
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
   codeExecutionAuthHeaders,
+  createAttachedWorkspaceBashTool,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
   LIST_WORKSPACE_FILES_TOOL_NAME,
@@ -2122,14 +2123,21 @@ async function loadToolsForExecution({
   }
   if (isBashTool) {
     try {
-      const bashTool = createBashExecutionTool({
-        authHeaders: () =>
-          codeExecutionAuthHeaders(
-            (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
-            codeExecutionContext,
-          ),
-        ...codeExecutionContext,
-      });
+      const authHeaders = () =>
+        codeExecutionAuthHeaders(
+          (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+          codeExecutionContext,
+        );
+      const bashTool =
+        codeExecutionContext.environmentType === 'attached'
+          ? createAttachedWorkspaceBashTool({
+              authHeaders,
+              baseUrl: codeExecutionContext.baseUrl,
+            })
+          : createBashExecutionTool({
+              authHeaders,
+              ...codeExecutionContext,
+            });
       allLoadedTools.push(bashTool);
     } catch (error) {
       logger.error(

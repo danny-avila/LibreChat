@@ -560,4 +560,78 @@ describe('executeWorkspaceTool', () => {
     ).rejects.toMatchObject({ reason: 'invalid' });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  test('accepts a bounded command result from the selected attached worker', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () =>
+      Response.json({
+        protocolVersion: 1,
+        operation: 'execute_command',
+        workspaceId: 'primary',
+        exitCode: 2,
+        stdout: '',
+        stderr: 'not found',
+        truncated: false,
+        timedOut: false,
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'execute_command',
+          workspaceId: 'primary',
+          command: 'test -f package.json',
+          maxOutputBytes: 256 * 1024,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ exitCode: 2, stderr: 'not found' });
+  });
+
+  test('rejects command requests and results outside protocol limits', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () =>
+      Response.json({
+        protocolVersion: 1,
+        operation: 'execute_command',
+        workspaceId: 'primary',
+        exitCode: 0,
+        stdout: 'x'.repeat(9),
+        stderr: '',
+        truncated: false,
+        timedOut: false,
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'execute_command',
+          workspaceId: 'primary',
+          command: 'printf x',
+          maxOutputBytes: 8,
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'execute_command',
+          workspaceId: 'primary',
+          command: 'x'.repeat(32 * 1024 + 1),
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
 });

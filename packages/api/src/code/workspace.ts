@@ -8,6 +8,13 @@ const MAX_READ_LINES = 500;
 const MAX_SEARCH_RESULTS = 200;
 const MAX_SEARCH_TEXT_LENGTH = 2000;
 const MAX_LIST_RESULTS = 500;
+const MAX_COMMAND_BYTES = 32 * 1024;
+const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+const MAX_COMMAND_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;
+const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
+const MAX_COMMAND_SIGNAL_LENGTH = 32;
+const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const READ_RESULT_KEYS = new Set([
   'protocolVersion',
@@ -35,6 +42,17 @@ const LIST_RESULT_KEYS = new Set([
   'paths',
   'truncated',
   'nextAfterPath',
+]);
+const COMMAND_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'exitCode',
+  'signal',
+  'stdout',
+  'stderr',
+  'truncated',
+  'timedOut',
 ]);
 
 export interface WorkspaceReadRequest {
@@ -64,10 +82,21 @@ export interface WorkspaceListRequest {
   afterPath?: string;
 }
 
+export interface WorkspaceExecuteCommandRequest {
+  protocolVersion: 1;
+  operation: 'execute_command';
+  workspaceId: string;
+  command: string;
+  cwd?: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+}
+
 export type WorkspaceToolRequest =
   | WorkspaceReadRequest
   | WorkspaceSearchRequest
-  | WorkspaceListRequest;
+  | WorkspaceListRequest
+  | WorkspaceExecuteCommandRequest;
 
 export interface WorkspaceReadResult {
   protocolVersion: 1;
@@ -98,7 +127,23 @@ export interface WorkspaceListResult {
   nextAfterPath?: string;
 }
 
-export type WorkspaceToolResult = WorkspaceReadResult | WorkspaceSearchResult | WorkspaceListResult;
+export interface WorkspaceExecuteCommandResult {
+  protocolVersion: 1;
+  operation: 'execute_command';
+  workspaceId: string;
+  exitCode: number | null;
+  signal?: string;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  timedOut: boolean;
+}
+
+export type WorkspaceToolResult =
+  | WorkspaceReadResult
+  | WorkspaceSearchResult
+  | WorkspaceListResult
+  | WorkspaceExecuteCommandResult;
 
 export class WorkspaceToolHttpError extends Error {
   constructor(
@@ -131,6 +176,14 @@ function isSafePath(value: unknown): value is string {
 
 function isPositiveInteger(value: unknown, maximum: number): boolean {
   return Number.isSafeInteger(value) && Number(value) >= 1 && Number(value) <= maximum;
+}
+
+function isUtf8StringWithinBytes(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === 'string' &&
+    Buffer.from(value).toString('utf8') === value &&
+    new TextEncoder().encode(value).byteLength <= maximum
+  );
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
@@ -232,6 +285,17 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
       (request.maxResults == null || isPositiveInteger(request.maxResults, MAX_LIST_RESULTS))
     );
   }
+  if (request.operation === 'execute_command') {
+    return (
+      isUtf8StringWithinBytes(request.command, MAX_COMMAND_BYTES) &&
+      request.command.trim().length > 0 &&
+      !request.command.includes('\0') &&
+      (request.cwd == null || isSafePath(request.cwd)) &&
+      (request.timeoutMs == null || isPositiveInteger(request.timeoutMs, MAX_COMMAND_TIMEOUT_MS)) &&
+      (request.maxOutputBytes == null ||
+        isPositiveInteger(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES))
+    );
+  }
   if (request.operation !== 'search_text') {
     return false;
   }
@@ -314,6 +378,32 @@ function isValidResult(
       ? value.paths.length > 0 && value.nextAfterPath === value.paths[value.paths.length - 1]
       : value.nextAfterPath == null;
   }
+  if (request.operation === 'execute_command') {
+    const stdout = typeof value.stdout === 'string' ? value.stdout : null;
+    const stderr = typeof value.stderr === 'string' ? value.stderr : null;
+    const outputLimit = request.maxOutputBytes ?? DEFAULT_COMMAND_OUTPUT_BYTES;
+    return (
+      hasOnlyKeys(value, COMMAND_RESULT_KEYS) &&
+      stdout != null &&
+      stderr != null &&
+      Buffer.from(stdout).toString('utf8') === stdout &&
+      Buffer.from(stderr).toString('utf8') === stderr &&
+      new TextEncoder().encode(stdout).byteLength + new TextEncoder().encode(stderr).byteLength <=
+        outputLimit &&
+      (value.exitCode === null ||
+        (Number.isSafeInteger(value.exitCode) &&
+          Number(value.exitCode) >= 0 &&
+          Number(value.exitCode) <= 255)) &&
+      (value.signal == null ||
+        (typeof value.signal === 'string' &&
+          value.signal.length <= MAX_COMMAND_SIGNAL_LENGTH &&
+          /^SIG[A-Z0-9]+$/.test(value.signal))) &&
+      typeof value.timedOut === 'boolean' &&
+      (value.exitCode === null
+        ? value.timedOut === true || value.signal != null
+        : value.timedOut === false && value.signal == null)
+    );
+  }
   const maxResults = request.maxResults ?? 50;
   return (
     hasOnlyKeys(value, SEARCH_RESULT_KEYS) &&
@@ -333,6 +423,11 @@ function isValidResult(
   );
 }
 
+function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
+  if (request.operation !== 'execute_command') return WORKSPACE_TOOL_TIMEOUT_MS;
+  return (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
+}
+
 export async function executeWorkspaceTool({
   baseURL,
   authHeaders,
@@ -350,7 +445,7 @@ export async function executeWorkspaceTool({
     throw new WorkspaceToolHttpError('invalid');
   }
   try {
-    const timeoutSignal = AbortSignal.timeout(WORKSPACE_TOOL_TIMEOUT_MS);
+    const timeoutSignal = AbortSignal.timeout(getWorkspaceToolTimeoutMs(request));
     const requestSignal =
       signal != null && typeof AbortSignal.any === 'function'
         ? AbortSignal.any([signal, timeoutSignal])
