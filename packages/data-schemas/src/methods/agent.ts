@@ -1310,7 +1310,7 @@ export function createAgentMethods(
     after: string | null;
   }> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const match: Record<string, unknown> = {
+    const match: FilterQuery<IAgent> = {
       tenantId,
       ...(accessibleIds != null ? { _id: { $in: accessibleIds } } : {}),
     };
