@@ -15,6 +15,7 @@ import type { CodeExecutionContext } from './execution';
 import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
 import { markSandboxReady } from './prewarm';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { WorkspaceToolHttpError } from '../code/workspace';
 
 function createMockTool(
   name: string,
@@ -4062,6 +4063,202 @@ describe('createToolExecuteHandler', () => {
       expect(writeSandboxFile.mock.calls[1][0].files).toEqual([
         { id: 'file-dup', name: 'dup.md', storage_session_id: 'store-1', kind: 'user' },
       ]);
+    });
+
+    it('creates a file atomically in an attached workspace', async () => {
+      const writeWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'write_file' as const,
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: true,
+        bytesWritten: 20,
+      }));
+      const handler = makeSandboxAuthoringHandler(
+        { writeWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+            bridgeWorkerId: 'user-worker',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_workspace',
+          name: 'create_file',
+          args: {
+            path: 'workspace/src/new.ts',
+            content: 'export const ok = 1;',
+          },
+        },
+      ]);
+
+      expect(result).toMatchObject({
+        status: 'success',
+        artifact: {
+          path: 'workspace/src/new.ts',
+          created: true,
+          bytes_written: 20,
+        },
+      });
+      expect(writeWorkspaceFile).toHaveBeenCalledWith({
+        file_path: 'src/new.ts',
+        content: 'export const ok = 1;',
+        overwrite: false,
+        workspace_id: 'primary',
+        codeApiBaseUrl: 'https://code.example.com',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'user-worker',
+        req,
+      });
+    });
+
+    it('surfaces an attached create-only conflict without retrying as an overwrite', async () => {
+      const writeWorkspaceFile = jest.fn(async () => {
+        throw new WorkspaceToolHttpError('rejected', 409);
+      });
+      const handler = makeSandboxAuthoringHandler(
+        { writeWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_workspace_conflict',
+          name: 'create_file',
+          args: { path: 'workspace/existing.txt', content: 'replacement' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('overwrite: true');
+      expect(writeWorkspaceFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends attached edit batches as one atomic workspace mutation', async () => {
+      const editWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'edit_file' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        replacements: 2,
+        bytesWritten: 24,
+      }));
+      const handler = makeSandboxAuthoringHandler(
+        { editWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+            bridgeWorkerId: 'user-worker',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_workspace',
+          name: 'edit_file',
+          args: {
+            path: 'workspace/src/app.ts',
+            edits: [
+              { old_text: 'draft', new_text: 'ready' },
+              { old_text: 'false', new_text: 'true' },
+            ],
+          },
+        },
+      ]);
+
+      expect(result).toMatchObject({
+        status: 'success',
+        artifact: {
+          path: 'workspace/src/app.ts',
+          edits: 2,
+          strategies: ['exact', 'exact'],
+        },
+      });
+      expect(editWorkspaceFile).toHaveBeenCalledWith({
+        file_path: 'src/app.ts',
+        edits: [
+          { oldText: 'draft', newText: 'ready' },
+          { oldText: 'false', newText: 'true' },
+        ],
+        workspace_id: 'primary',
+        codeApiBaseUrl: 'https://code.example.com',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'user-worker',
+        req,
+      });
+    });
+
+    it('blocks protected attached edit content before worker dispatch', async () => {
+      const editWorkspaceFile = jest.fn();
+      const filteredReq = {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'attached-secret',
+                    label: 'attached secret',
+                    regex: 'ATTACHED-SECRET',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        { editWorkspaceFile },
+        {
+          req: filteredReq,
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_workspace_filtered',
+          name: 'edit_file',
+          args: {
+            path: 'workspace/src/app.ts',
+            old_text: 'safe',
+            new_text: 'ATTACHED-SECRET',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('content_filter_block');
+      expect(editWorkspaceFile).not.toHaveBeenCalled();
     });
 
     it('contains a file-artifact policy rejection to its call without rejecting the batch', async () => {

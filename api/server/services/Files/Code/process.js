@@ -1798,6 +1798,66 @@ async function listWorkspaceFiles({
   });
 }
 
+/** Writes a UTF-8 file in the workspace registered by an attached worker. */
+async function writeWorkspaceFile({
+  file_path,
+  content,
+  overwrite,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'write_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      content,
+      overwrite,
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** Applies an ordered exact-edit batch in one attached-worker mutation. */
+async function editWorkspaceFile({
+  file_path,
+  edits,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'edit_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      edits,
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
 /**
  * Reads a small code artifact as base64 so `read_file` can surface it to
  * vision-capable models. Reuses bytes fetched by the current request's
@@ -2067,6 +2127,8 @@ module.exports = {
   readWorkspaceFile,
   searchWorkspace,
   listWorkspaceFiles,
+  writeWorkspaceFile,
+  editWorkspaceFile,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,

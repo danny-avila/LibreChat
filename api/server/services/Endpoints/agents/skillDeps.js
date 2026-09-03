@@ -7,6 +7,8 @@ const {
   readWorkspaceFile,
   searchWorkspace,
   listWorkspaceFiles,
+  writeWorkspaceFile,
+  editWorkspaceFile,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,
@@ -386,6 +388,8 @@ const skillToolDeps = {
   readWorkspaceFile,
   searchWorkspace,
   listWorkspaceFiles,
+  writeWorkspaceFile,
+  editWorkspaceFile,
   /**
    * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths
    * and for `{firstSegment}/...` paths whose first segment isn't a known

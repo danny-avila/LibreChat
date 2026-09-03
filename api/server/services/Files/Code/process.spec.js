@@ -251,6 +251,8 @@ const {
   readWorkspaceFile,
   searchWorkspace,
   listWorkspaceFiles,
+  writeWorkspaceFile,
+  editWorkspaceFile,
   readSandboxImage,
   writeSandboxFile,
   primeFiles,
@@ -1985,6 +1987,97 @@ describe('Code Process', () => {
         },
         signal: controller.signal,
       });
+    });
+  });
+
+  describe('workspace mutations', () => {
+    it('forwards create-only writes to the selected attached worker', async () => {
+      const controller = new AbortController();
+      const result = {
+        protocolVersion: 1,
+        operation: 'write_file',
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: true,
+        bytesWritten: 5,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        writeWorkspaceFile({
+          file_path: 'src/new.ts',
+          content: 'ready',
+          overwrite: false,
+          workspace_id: 'primary',
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith({
+        baseURL: 'https://attached-code.example.com/v1',
+        authHeaders: {
+          Authorization: 'Bearer workspace-token',
+          'X-CodeAPI-Expected-Profile': 'stateful',
+          'X-LibreChat-Code-Worker-ID': 'worker-user-1',
+        },
+        request: {
+          protocolVersion: 1,
+          operation: 'write_file',
+          workspaceId: 'primary',
+          path: 'src/new.ts',
+          content: 'ready',
+          overwrite: false,
+        },
+        signal: controller.signal,
+      });
+    });
+
+    it('forwards an edit batch as one attached-worker request', async () => {
+      const result = {
+        protocolVersion: 1,
+        operation: 'edit_file',
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        replacements: 2,
+        bytesWritten: 20,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        editWorkspaceFile({
+          file_path: 'src/app.ts',
+          edits: [
+            { oldText: 'draft', newText: 'ready' },
+            { oldText: 'false', newText: 'true' },
+          ],
+          workspace_id: 'primary',
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          request: {
+            protocolVersion: 1,
+            operation: 'edit_file',
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+            edits: [
+              { oldText: 'draft', newText: 'ready' },
+              { oldText: 'false', newText: 'true' },
+            ],
+          },
+        }),
+      );
     });
   });
 

@@ -19,15 +19,17 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type {
+  WorkspaceEditResult,
+  WorkspaceListResult,
+  WorkspaceReadResult,
+  WorkspaceSearchResult,
+  WorkspaceWriteResult,
+} from '~/code/workspace';
+import type {
   BackgroundToolDeadClaimRecovery,
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
-import type {
-  WorkspaceListResult,
-  WorkspaceReadResult,
-  WorkspaceSearchResult,
-} from '~/code/workspace';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
@@ -97,6 +99,7 @@ import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './sk
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
+import { WorkspaceToolHttpError } from '~/code/workspace';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -485,6 +488,29 @@ export interface ToolExecuteOptions {
     req?: ServerRequest;
     signal?: AbortSignal;
   }) => Promise<WorkspaceListResult>;
+  /** Writes a UTF-8 file within an attached worker's logical workspace. */
+  writeWorkspaceFile?: (params: {
+    file_path: string;
+    content: string;
+    overwrite: boolean;
+    workspace_id: string;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceWriteResult>;
+  /** Applies exact replacements atomically within an attached worker workspace. */
+  editWorkspaceFile?: (params: {
+    file_path: string;
+    edits: Array<{ oldText: string; newText: string }>;
+    workspace_id: string;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceEditResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
    * sandbox `/exec` endpoint. The host implementation supplies the
@@ -3560,6 +3586,159 @@ async function writeBundledSkillFile({
   });
 }
 
+function attachedWorkspaceAuthoringPath(
+  tc: ToolCallRequest,
+  filePath: string,
+): { filePath: string } | ToolExecuteResult {
+  if (!filePath.startsWith('workspace/')) {
+    return errorResult(tc, 'Attached environment file paths must use "workspace/{relativePath}".');
+  }
+  const relativePath = filePath.slice('workspace/'.length);
+  const pathError = invalidSandboxAuthoringPath(relativePath);
+  return pathError ? errorResult(tc, pathError) : { filePath: relativePath };
+}
+
+function attachedWorkspaceMutationParams(
+  codeExecutionContext: CodeExecutionContext,
+  req: ServerRequest | undefined,
+  signal: AbortSignal | undefined,
+): {
+  workspace_id: string;
+  codeApiBaseUrl: string;
+  executionProfile: CodeExecutionContext['executionProfile'];
+  bridgeWorkerId?: string;
+  req?: ServerRequest;
+  signal?: AbortSignal;
+} {
+  return {
+    workspace_id: 'primary',
+    codeApiBaseUrl: codeExecutionContext.baseUrl,
+    executionProfile: codeExecutionContext.executionProfile,
+    ...(codeExecutionContext.bridgeWorkerId
+      ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
+      : {}),
+    ...(req ? { req } : {}),
+    ...(signal ? { signal } : {}),
+  };
+}
+
+async function handleAttachedWorkspaceCreateFileCall({
+  tc,
+  options,
+  req,
+  filePath,
+  content,
+  overwrite,
+  codeExecutionContext,
+  signal,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  content: string;
+  overwrite: boolean;
+  codeExecutionContext: CodeExecutionContext;
+  signal?: AbortSignal;
+}): AuthoringResult {
+  if (!options.writeWorkspaceFile) {
+    return errorResult(tc, 'Attached workspace file writing is not configured.');
+  }
+  const path = attachedWorkspaceAuthoringPath(tc, filePath);
+  if ('status' in path) return path;
+  const filtered = filteredFileResult(tc, req, path.filePath, content);
+  if (filtered != null) return filtered;
+
+  try {
+    const result = await options.writeWorkspaceFile({
+      file_path: path.filePath,
+      content,
+      overwrite,
+      ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+    });
+    const action = result.created ? 'Created' : 'Updated';
+    return successResult(tc, `${action} workspace/${path.filePath} (${content.length} chars).`, {
+      path: `workspace/${path.filePath}`,
+      [HOST_FILE_AUTHORING_ARTIFACT_KEY]: true,
+      bytes_written: result.bytesWritten,
+      created: result.created,
+    });
+  } catch (error) {
+    if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 409 && !overwrite) {
+      return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+    }
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn('[file_authoring] Attached workspace write failed', getSafeErrorMetadata(error));
+    return errorResult(tc, `Failed to write "workspace/${path.filePath}".`);
+  }
+}
+
+async function handleAttachedWorkspaceEditFileCall({
+  tc,
+  options,
+  req,
+  filePath,
+  edits,
+  codeExecutionContext,
+  signal,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  edits: TextEdit[];
+  codeExecutionContext: CodeExecutionContext;
+  signal?: AbortSignal;
+}): AuthoringResult {
+  if (!options.editWorkspaceFile) {
+    return errorResult(tc, 'Attached workspace file editing is not configured.');
+  }
+  const path = attachedWorkspaceAuthoringPath(tc, filePath);
+  if ('status' in path) return path;
+  if (edits.length > 100) {
+    return errorResult(tc, 'Attached workspace edits are limited to 100 replacements per call.');
+  }
+  const filteredName = filteredFileNameResult(tc, req, path.filePath);
+  if (filteredName != null) return filteredName;
+  const filteredContent = filteredFileResult(
+    tc,
+    req,
+    path.filePath,
+    edits.map((edit) => edit.new_text).join('\n'),
+  );
+  if (filteredContent != null) return filteredContent;
+
+  try {
+    const result = await options.editWorkspaceFile({
+      file_path: path.filePath,
+      edits: edits.map((edit) => ({ oldText: edit.old_text, newText: edit.new_text })),
+      ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+    });
+    return successResult(
+      tc,
+      `Updated workspace/${path.filePath} with ${result.replacements} exact replacement${result.replacements === 1 ? '' : 's'}.`,
+      {
+        path: `workspace/${path.filePath}`,
+        [HOST_FILE_AUTHORING_ARTIFACT_KEY]: true,
+        bytes_written: result.bytesWritten,
+        created: false,
+        edits: result.replacements,
+        strategies: Array.from({ length: result.replacements }, () => 'exact'),
+      },
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 409) {
+      return errorResult(
+        tc,
+        `The requested text did not match exactly once in "workspace/${path.filePath}". Re-read the file and retry.`,
+      );
+    }
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn('[file_authoring] Attached workspace edit failed', getSafeErrorMetadata(error));
+    return errorResult(tc, `Failed to edit "workspace/${path.filePath}".`);
+  }
+}
+
 async function handleSandboxCreateFileCall({
   tc,
   options,
@@ -3569,6 +3748,7 @@ async function handleSandboxCreateFileCall({
   overwrite,
   sandboxContext,
   codeExecutionContext,
+  signal,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -3578,7 +3758,20 @@ async function handleSandboxCreateFileCall({
   overwrite: boolean;
   sandboxContext?: SandboxSessionContext;
   codeExecutionContext?: CodeExecutionContext;
+  signal?: AbortSignal;
 }): AuthoringResult {
+  if (codeExecutionContext?.environmentType === 'attached') {
+    return await handleAttachedWorkspaceCreateFileCall({
+      tc,
+      options,
+      req,
+      filePath,
+      content,
+      overwrite,
+      codeExecutionContext,
+      signal,
+    });
+  }
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
     return errorResult(tc, pathError);
@@ -3620,6 +3813,7 @@ async function handleSandboxEditFileCall({
   edits,
   sandboxContext,
   codeExecutionContext,
+  signal,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -3628,7 +3822,19 @@ async function handleSandboxEditFileCall({
   edits: TextEdit[];
   sandboxContext?: SandboxSessionContext;
   codeExecutionContext?: CodeExecutionContext;
+  signal?: AbortSignal;
 }): AuthoringResult {
+  if (codeExecutionContext?.environmentType === 'attached') {
+    return await handleAttachedWorkspaceEditFileCall({
+      tc,
+      options,
+      req,
+      filePath,
+      edits,
+      codeExecutionContext,
+      signal,
+    });
+  }
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
     return errorResult(tc, pathError);
@@ -3688,6 +3894,7 @@ async function handleCreateFileCall(
   req?: ServerRequest,
   sourceConfigurable?: Record<string, unknown>,
   sandboxContext?: SandboxSessionContext,
+  signal?: AbortSignal,
 ): AuthoringResult {
   const args = tc.args as { path?: unknown; content?: unknown; overwrite?: unknown };
   if (typeof args.path !== 'string' || args.path.length === 0) {
@@ -3722,6 +3929,7 @@ async function handleCreateFileCall(
       overwrite,
       sandboxContext,
       codeExecutionContext: getCodeExecutionContext(mergedConfigurable),
+      signal,
     });
   }
 
@@ -3801,6 +4009,7 @@ async function handleEditFileCall(
   options: ToolExecuteOptions,
   req?: ServerRequest,
   sandboxContext?: SandboxSessionContext,
+  signal?: AbortSignal,
 ): AuthoringResult {
   const args = tc.args as {
     path?: unknown;
@@ -3832,6 +4041,7 @@ async function handleEditFileCall(
       edits,
       sandboxContext,
       codeExecutionContext: getCodeExecutionContext(mergedConfigurable),
+      signal,
     });
   }
 
@@ -6036,6 +6246,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           req,
                           sourceConfigurable,
                           sandboxContext,
+                          runSignal,
                         );
                       } else if (tc.name === EDIT_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleEditFileCall(
@@ -6044,6 +6255,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           options,
                           req,
                           sandboxContext,
+                          runSignal,
                         );
                       } else {
                         handlerResult = errorResult(tc, `Tool ${tc.name} not found`);
