@@ -164,7 +164,7 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
 
     await updateTitle(conversationId, user, 'Indexed Conversation');
     await waitForMock(mockAddDocuments);
-    await wait(50);
+    await waitForIndexAcknowledgment(conversationId);
 
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
     expect(storedDoc?._meiliIndex).toBe(true);
