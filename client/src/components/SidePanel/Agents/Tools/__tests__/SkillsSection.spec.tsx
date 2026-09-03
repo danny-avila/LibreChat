@@ -405,15 +405,30 @@ describe('SkillsSection All mode body', () => {
     expect(screen.queryByRole('button', { name: /com_ui_skills_remove/ })).not.toBeInTheDocument();
   });
 
-  test('reports the count as a floor while more pages remain', () => {
+  test('reports what is loaded, not a lower bound, while more pages remain', () => {
+    /** `hasNextPage` tracks raw pagination and the rows are filtered to the
+     *  active ones, so the remaining pages may add nothing. Claiming "+ more
+     *  available" would overstate the catalog in that case. */
     setAvailableSkills([[makeSkill('s1', 'First skill')]]);
     mockInfiniteResult.hasNextPage = true;
     mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
 
     renderSection();
 
-    expect(screen.getByText('com_ui_skills_available_count_more')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_skills_available_count_loaded_one')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_skills_available_count')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count_one')).not.toBeInTheDocument();
+  });
+
+  test('uses the plural loaded phrasing for several loaded skills', () => {
+    setAvailableSkills([[makeSkill('s1', 'First skill'), makeSkill('s2', 'Second skill')]]);
+    mockInfiniteResult.hasNextPage = true;
+    mockFormValues = { skills_enabled: true, skills_scope: SkillsScope.all, skills: [] };
+
+    renderSection();
+
+    expect(screen.getByText('com_ui_skills_available_count_loaded')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count_loaded_one')).not.toBeInTheDocument();
   });
 
   test('leaves the rest of the catalog unfetched until the list is expanded', () => {

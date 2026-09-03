@@ -35,13 +35,20 @@ const ROW = 'flex items-center gap-2.5 px-3 py-2.5';
 const CHIP = 'flex size-[26px] shrink-0 items-center justify-center rounded-md';
 
 /**
- * Which of the three count phrasings the header row uses. Only the pages
- * already loaded are counted, so while more remain the number is a floor and
- * has to read as one: printing a page size as the catalog size would be wrong.
+ * Which count phrasing the header row uses.
+ *
+ * While pages remain the number describes what has been loaded, not a floor on
+ * what is available. `hasNextPage` tracks raw pagination, and the rows are
+ * filtered to the runtime-active ones, so the later pages may add nothing: 30
+ * active skills followed only by deactivated ones would read as "30+
+ * available" while 30 is the true total. Reporting the loaded count instead
+ * cannot overstate the catalog.
  */
 function availableCountKey(count: number, hasMore: boolean): TranslationKeys {
   if (hasMore) {
-    return 'com_ui_skills_available_count_more';
+    return count === 1
+      ? 'com_ui_skills_available_count_loaded_one'
+      : 'com_ui_skills_available_count_loaded';
   }
   return count === 1 ? 'com_ui_skills_available_count_one' : 'com_ui_skills_available_count';
 }
