@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import type { IMessage } from '~/types/message';
+import { agentFadingContextDefinition } from './fading';
 
 const messageSchema: Schema<IMessage> = new Schema(
   {
@@ -235,6 +236,7 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: {
         calibrationRatio: { type: Number },
         encoding: { type: String },
+        ...agentFadingContextDefinition,
       },
       _id: false,
       default: undefined,

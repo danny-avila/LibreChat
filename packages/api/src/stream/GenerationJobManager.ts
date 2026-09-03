@@ -2791,6 +2791,7 @@ class GenerationJobManagerClass {
         discoveredTools: jobData.discoveredTools,
         activityPhaseSnapshot: jobData.activityPhaseSnapshot,
         compactionSemanticIndex: jobData.compactionSemanticIndex,
+        contextMeta: jobData.contextMeta,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
@@ -4386,6 +4387,22 @@ class GenerationJobManagerClass {
         logger.warn(
           `[GenerationJobManager] Failed to refresh committed abort content for ${streamId}:`,
           contentError,
+        );
+      }
+      /** The owner publishes run state (context meta) ahead of each model call
+       * and awaits that write, so a publish that landed after the initial read
+       * describes the call whose partial output the snapshot above carries.
+       * Read it back from the same epoch so the stopped response persists the
+       * tier that produced its bytes, not the one seen before the claim. */
+      try {
+        const refreshed = await this.jobStore.getJob(streamId);
+        if (refreshed?.createdAt === jobData.createdAt && refreshed.contextMeta != null) {
+          jobData = { ...jobData, contextMeta: refreshed.contextMeta };
+        }
+      } catch (metadataError) {
+        logger.warn(
+          `[GenerationJobManager] Failed to refresh committed abort metadata for ${streamId}:`,
+          metadataError,
         );
       }
       if (options?.transformAbortContent) {

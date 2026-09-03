@@ -403,6 +403,47 @@ describe('abortMiddleware - transactions config', () => {
     );
   });
 
+  it('carries the context meta the run published onto the job into the stopped response', async () => {
+    const contextMeta = {
+      calibrationRatio: 1.2,
+      encoding: 'claude',
+      fading: { v: 1, budgetTokens: 50_000, masked: true },
+    };
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: { ...buildJobData(), contextMeta },
+      content: [],
+      text: 'partial',
+      collectedUsage: [],
+    });
+    const res = buildRes();
+
+    await handleAbort()(buildReq(), res);
+
+    expect(db.saveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ messageId: 'msg-123', contextMeta }),
+      expect.any(Object),
+    );
+    const finalEvent = JSON.parse(res.send.mock.calls[0][0]);
+    expect(finalEvent.responseMessage.contextMeta).toEqual(contextMeta);
+  });
+
+  it('unsets context meta on a stopped response when the job carries none', async () => {
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: buildJobData(),
+      content: [],
+      text: 'partial',
+      collectedUsage: [],
+    });
+
+    await handleAbort()(buildReq(), buildRes());
+
+    const [, savedMessage] = db.saveMessage.mock.calls[0];
+    expect(savedMessage.contextMeta).toBeNull();
+  });
+
   it('resolves the config from req and forwards it on the token-count fallback path', async () => {
     GenerationJobManager.abortJob.mockResolvedValue({
       success: true,

@@ -114,6 +114,11 @@ async function abortMessage(req, res) {
     error: false,
     isCreatedByUser: false,
     tokenCount: completionTokens,
+    /** The run publishes its calibration and fading tiers onto the job as it
+     * goes; a stopped response must carry them or the next turn re-derives its
+     * provider projection of history from scratch and loses the cached prefix.
+     * A job with none unsets what an earlier pause stored on this row. */
+    ...(jobData != null && { contextMeta: jobData.contextMeta ?? null }),
   };
 
   /** Persist the usage/cost rollup + context breakdown for the stopped response

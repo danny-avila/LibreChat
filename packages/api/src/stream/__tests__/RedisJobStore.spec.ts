@@ -352,6 +352,12 @@ describe('RedisJobStore', () => {
       preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
+      contextMeta: {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1, budgetTokens: 50_000, masked: true }],
+      },
       compactionSemanticIndex: {
         version: 1,
         entries: [
@@ -438,6 +444,12 @@ describe('RedisJobStore', () => {
       preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
+      contextMeta: {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1, budgetTokens: 50_000, masked: true }],
+      },
       compactionSemanticIndex: {
         version: 1,
         entries: [
