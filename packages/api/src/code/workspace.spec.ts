@@ -252,9 +252,15 @@ describe('executeWorkspaceTool', () => {
   });
 
   test('surfaces bounded upstream failures without returning their body', async () => {
-    const fetchImpl = jest
-      .fn()
-      .mockResolvedValue(new Response('internal details', { status: 503 }));
+    const cancel = jest.fn();
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          cancel,
+        }),
+        { status: 503 },
+      ),
+    );
 
     await expect(
       executeWorkspaceTool({
@@ -269,6 +275,7 @@ describe('executeWorkspaceTool', () => {
         fetchImpl,
       }),
     ).rejects.toMatchObject({ reason: 'rejected', upstreamStatus: 503 });
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   test('rejects an oversized response before parsing worker-controlled JSON', async () => {

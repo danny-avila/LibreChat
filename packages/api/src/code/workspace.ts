@@ -273,6 +273,7 @@ export async function executeWorkspaceTool({
       },
     );
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       throw new WorkspaceToolHttpError('rejected', response.status);
     }
     const result = await readBoundedJson(response, requestSignal);

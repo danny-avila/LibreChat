@@ -533,6 +533,19 @@ export interface ToolExecuteOptions {
 
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.byteLength <= maxBytes) {
+    return value;
+  }
+  let end = maxBytes;
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) {
+    end -= 1;
+  }
+  return bytes.subarray(0, end).toString('utf8');
+}
+
 /**
  * Inline ceiling for images pulled out of the code-execution sandbox —
  * deliberately tighter than {@link MAX_BINARY_BYTES}, which governs the
@@ -2238,8 +2251,8 @@ async function handleWorkspaceFileRead(
     let payload = result.content;
     let locallyTruncated = false;
     let localNextStartLine: number | undefined;
-    if (payload.length > MAX_READABLE_BYTES) {
-      payload = payload.slice(0, MAX_READABLE_BYTES);
+    if (Buffer.byteLength(payload, 'utf8') > MAX_READABLE_BYTES) {
+      payload = truncateUtf8(payload, MAX_READABLE_BYTES);
       locallyTruncated = true;
       const lastCompleteLine = payload.lastIndexOf('\n');
       if (lastCompleteLine >= 0) {

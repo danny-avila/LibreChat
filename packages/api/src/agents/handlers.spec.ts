@@ -4751,6 +4751,45 @@ describe('createToolExecuteHandler', () => {
       expect(result.content).not.toContain('start_line 12');
     });
 
+    it('applies local workspace truncation in UTF-8 bytes', async () => {
+      const firstLine = '界'.repeat(80_000);
+      const secondLine = '界'.repeat(10_000);
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'multibyte.txt',
+        content: `${firstLine}\n${secondLine}`,
+        startLine: 1,
+        endLine: 2,
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_workspace_multibyte',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/multibyte.txt', max_lines: 2 },
+        },
+      ]);
+
+      expect(result.content).toContain('1 | ');
+      expect(result.content).not.toContain('2 | ');
+      expect(result.content).toContain('start_line 2');
+      expect(Buffer.byteLength(result.content as string, 'utf8')).toBeLessThan(262_300);
+    });
+
     it('rejects workspace paths unless the selected environment is attached', async () => {
       const readWorkspaceFile = jest.fn();
       const handler = makeReadFileHandler({
