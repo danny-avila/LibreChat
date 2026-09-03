@@ -69,6 +69,7 @@ function createTailwindColors() {
     'text-secondary': cssVar('--text-secondary'),
     'text-secondary-alt': cssVar('--text-secondary-alt'),
     'text-tertiary': cssVar('--text-tertiary'),
+    'text-muted': cssVar('--text-muted'),
     'text-warning': cssVar('--text-warning'),
     'text-destructive': cssVar('--text-destructive'),
 
