@@ -6,6 +6,8 @@ import type {
   SupportContact,
   AgentProvider,
   MemoryScope,
+  SkillsScope,
+  StatefulCodeEnvironment,
   GraphEdge,
   Agent,
 } from 'librechat-data-provider';
@@ -42,8 +44,14 @@ export type AgentForm = {
   tool_options?: AgentToolOptions;
   skills?: string[];
   skills_enabled?: boolean;
+  skill_authoring_enabled?: boolean;
+  skills_scope?: SkillsScope;
   /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
   memory_scope?: MemoryScope;
+  /** Sharing scope for stateful Code API workspaces. */
+  stateful_code_environment?: StatefulCodeEnvironment;
+  /** Operator-configured managed or attached execution environment. */
+  code_environment_id?: string | null;
   provider?: AgentProvider | OptionWithIcon;
   /** @deprecated Use edges instead */
   agent_ids?: string[];

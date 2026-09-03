@@ -42,6 +42,7 @@ export default [
       'data-node/**/*',
       'meili_data/**/*',
       '**/node_modules/**/*',
+      'venv/**/*',
       '.devcontainer/**/*',
     ],
   },

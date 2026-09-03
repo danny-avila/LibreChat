@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Checkbox, HoverCard, HoverCardTrigger } from '@librechat/client';
+import type { DynamicSettingProps } from 'librechat-data-provider';
 import { TranslationKeys, useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
@@ -75,7 +75,7 @@ function DynamicCheckbox({
               disabled={readonly}
               checked={selectedValue}
               onCheckedChange={handleCheckedChange}
-              className="mt-[2px] focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
+              className="mt-[2px]"
               aria-label={localize(label as TranslationKeys)}
             />
           </div>

@@ -29,9 +29,19 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/FilePreviewDialog', () => ({
   __esModule: true,
-  default: ({ open, fileId, fileName }: { open: boolean; fileId?: string; fileName: string }) =>
+  default: ({
+    open,
+    fileId,
+    fileName,
+    fileSource,
+  }: {
+    open: boolean;
+    fileId?: string;
+    fileName: string;
+    fileSource?: string;
+  }) =>
     open ? (
-      <div data-testid="file-preview-dialog" data-file-id={fileId}>
+      <div data-testid="file-preview-dialog" data-file-id={fileId} data-file-source={fileSource}>
         {fileName}
       </div>
     ) : null,
@@ -76,6 +86,7 @@ describe('Citation', () => {
             metadata: {
               fileBytes: 2048,
               fileType: 'application/pdf',
+              storageType: 'text',
             },
             pageRelevance: { 1: 0.92 },
             pages: [1],
@@ -107,6 +118,7 @@ describe('Citation', () => {
     fireEvent.click(fileButton);
 
     expect(screen.getByTestId('file-preview-dialog')).toHaveAttribute('data-file-id', 'file-123');
+    expect(screen.getByTestId('file-preview-dialog')).toHaveAttribute('data-file-source', 'text');
   });
 
   it('keeps standalone web citations as links', () => {

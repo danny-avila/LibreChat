@@ -67,7 +67,12 @@ describe('MCPSelect', () => {
 
   it('renders the menu button', () => {
     render(<MCPSelect />);
-    expect(screen.getByRole('button', { name: /MCP Servers/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /MCP Servers/i })).toHaveClass(
+      'h-theme-control',
+      'min-w-theme-control',
+      'rounded-theme-control-round',
+      'gap-theme-compact',
+    );
   });
 
   it('opens menu on button click and shows server items', async () => {
@@ -119,6 +124,28 @@ describe('MCPSelect', () => {
     await user.keyboard('{ArrowDown}');
     await user.keyboard('{ArrowDown}');
     expect(items[0]).toHaveFocus();
+  });
+
+  it('labels the badge from the servers the menu offers, not the raw selection', () => {
+    mockMcpServerManager = {
+      ...defaultMcpServerManager,
+      mcpValues: ['server-a', 'hidden-server'],
+    };
+    render(<MCPSelect />);
+
+    expect(screen.getByRole('button', { name: /Server A/i })).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_x_selected')).not.toBeInTheDocument();
+  });
+
+  it('shows no label when every selected server is hidden from the menu', () => {
+    mockMcpServerManager = {
+      ...defaultMcpServerManager,
+      mcpValues: ['hidden-server'],
+    };
+    render(<MCPSelect />);
+
+    expect(screen.getByRole('button', { name: /MCP Servers/i })).toBeInTheDocument();
+    expect(screen.queryByText('hidden-server')).not.toBeInTheDocument();
   });
 
   it('renders nothing when user lacks MCP access', () => {

@@ -10,6 +10,7 @@ const {
 } = require('~/server/services/Files/Code/process');
 const {
   checkAccess,
+  isMemoryEnabled,
   getStorageMetadata,
   resolveRequestTenantId,
   enrichWithSkillConfigurable,
@@ -26,6 +27,7 @@ const {
   AccessRoleIds,
   PrincipalType,
   PermissionTypes,
+  AgentCapabilities,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
@@ -156,7 +158,11 @@ function canEditSkill({ req, skillId }) {
   });
 }
 
-function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
+function isAgentSkillAuthoringEnabledForRun({
+  agent,
+  skillsCapabilityEnabled,
+  ephemeralSkillsToggle,
+}) {
   if (!skillsCapabilityEnabled) {
     return false;
   }
@@ -169,7 +175,7 @@ function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralS
     }
     return ephemeralSkillsToggle === true;
   }
-  return agent.skills_enabled === true;
+  return agent.skills_enabled === true || agent.skill_authoring_enabled === true;
 }
 
 function canAuthorSkillFiles({
@@ -180,7 +186,11 @@ function canAuthorSkillFiles({
   ephemeralSkillsToggle,
 }) {
   return (
-    isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) &&
+    isAgentSkillAuthoringEnabledForRun({
+      agent,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    }) &&
     (scopedEditableSkillIds.length > 0 || skillCreateAllowed === true)
   );
 }
@@ -290,11 +300,29 @@ function buildAgentToolContext({ agent, config }) {
     accessibleSkillIds: config.accessibleSkillIds,
     activeSkillNames: config.activeSkillNames,
     codeEnvAvailable: config.codeEnvAvailable,
+    codeExecutionContext: config.codeExecutionContext,
     skillAuthoringAvailable: config.skillAuthoringAvailable,
     fileAuthoringToolNames: config.fileAuthoringToolNames,
     skillPrimedIdsByName:
       buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
   };
+}
+
+/** Resolves the full run-level gate used to expose inline memory tools. */
+function resolveMemoryAvailability({ enabledCapabilities, memoryConfig, user, getRoleByName }) {
+  if (
+    !enabledCapabilities.has(AgentCapabilities.memory) ||
+    !isMemoryEnabled(memoryConfig) ||
+    user?.personalization?.memories === false
+  ) {
+    return false;
+  }
+  return checkAccess({
+    user,
+    permissionType: PermissionTypes.MEMORIES,
+    permissions: [Permissions.USE, Permissions.CREATE, Permissions.UPDATE],
+    getRoleByName,
+  });
 }
 
 function hasOwn(value, key) {
@@ -377,12 +405,13 @@ function getSkillToolDeps() {
 module.exports = {
   getSkillToolDeps,
   canAuthorSkillFiles,
-  isAgentSkillsEnabledForRun,
+  isAgentSkillAuthoringEnabledForRun,
   getSkillDbMethods,
   withDeploymentSkillIds,
   getSkillStrategyFunctions,
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
   buildAgentToolContext,
+  resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 };

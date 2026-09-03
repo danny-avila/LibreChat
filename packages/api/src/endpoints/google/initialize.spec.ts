@@ -165,3 +165,60 @@ describe('initializeGoogle', () => {
     });
   });
 });
+
+describe('initializeGoogle streamRate resolution', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.GOOGLE_KEY = 'test-api-key';
+  });
+
+  async function initWithConfig(
+    endpointsConfig: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const req = createReq();
+    (req as unknown as { config: Record<string, unknown> }).config = {
+      endpoints: endpointsConfig,
+    };
+    const result = await initializeGoogle({
+      req,
+      endpoint: EModelEndpoint.google,
+      model_parameters: { model: 'gemini-2.5-flash' },
+      db: createDb(),
+    });
+    return result.llmConfig as Record<string, unknown>;
+  }
+
+  it('wires the endpoint streamRate into llmConfig._lc_stream_delay', async () => {
+    const llmConfig = await initWithConfig({ [EModelEndpoint.google]: { streamRate: 25 } });
+    expect(llmConfig._lc_stream_delay).toBe(25);
+  });
+
+  it('preserves the endpoint streamRate when `endpoints.all` exists without one', async () => {
+    const llmConfig = await initWithConfig({
+      [EModelEndpoint.google]: { streamRate: 25 },
+      all: { activityLabel: true },
+    });
+    expect(llmConfig._lc_stream_delay).toBe(25);
+  });
+
+  it('lets `endpoints.all.streamRate` override the endpoint value', async () => {
+    const llmConfig = await initWithConfig({
+      [EModelEndpoint.google]: { streamRate: 25 },
+      all: { streamRate: 10 },
+    });
+    expect(llmConfig._lc_stream_delay).toBe(10);
+  });
+
+  it('lets `endpoints.all.streamRate: 0` disable smoothing explicitly', async () => {
+    const llmConfig = await initWithConfig({
+      [EModelEndpoint.google]: { streamRate: 25 },
+      all: { streamRate: 0 },
+    });
+    expect(llmConfig._lc_stream_delay).toBe(0);
+  });
+
+  it('leaves the delay unset when neither level configures a streamRate', async () => {
+    const llmConfig = await initWithConfig({ all: { activityLabel: true } });
+    expect(llmConfig._lc_stream_delay).toBeUndefined();
+  });
+});

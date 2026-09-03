@@ -1,6 +1,7 @@
 /**
  * MCP-specific error classes
  */
+import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 export const MCPErrorCodes = {
   DOMAIN_NOT_ALLOWED: 'MCP_DOMAIN_NOT_ALLOWED',
@@ -9,6 +10,221 @@ export const MCPErrorCodes = {
 } as const;
 
 export type MCPErrorCode = (typeof MCPErrorCodes)[keyof typeof MCPErrorCodes];
+
+interface OAuthErrorLike {
+  code?: number;
+  status?: number;
+  statusCode?: number;
+  message?: string;
+}
+
+const OAUTH_HTTP_STATUS_PATTERN =
+  /(?:\bhttp\s+(?:401|403)\b|\bnon-2\d\d\s+status\s+code\s*\((?:401|403)\)|^(?:error:\s*)?(?:401|403)\b|\bunauthorized\s*\(\s*401\s*\)|\bforbidden\s*\(\s*403\s*\))/i;
+const MISSING_AUTHORIZATION_PATTERN = /\bno authorization (?:headers?|values?)\b/i;
+
+/** Detects HTTP authentication failures and OAuth protocol errors without matching unrelated IDs. */
+export function isOAuthAuthenticationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as OAuthErrorLike;
+  if (
+    [candidate.status, candidate.statusCode, candidate.code].some(
+      (status) => status === 401 || status === 403,
+    )
+  ) {
+    return true;
+  }
+
+  if (typeof candidate.message !== 'string') {
+    return false;
+  }
+
+  const message = candidate.message.toLowerCase();
+  return (
+    OAUTH_HTTP_STATUS_PATTERN.test(message) ||
+    message.includes('invalid_token') ||
+    message.includes('invalid_grant') ||
+    message.includes('insufficient_scope') ||
+    message.includes('authentication required') ||
+    MISSING_AUTHORIZATION_PATTERN.test(message)
+  );
+}
+
+/** The SDK's wording when the standalone `GET` SSE stream could not be opened. */
+const SDK_SSE_OPEN_FAILED = 'Failed to open SSE stream';
+
+/**
+ * A `409` opening the standalone `GET` SSE stream means the server still has the previous
+ * stream mapped to our session. The spec allows only one such stream per session, and the
+ * server drops its mapping from the response stream's cancel callback — which never runs when
+ * the connection dies at a proxy instead of at the client, leaving the server holding a stream
+ * no one is reading.
+ *
+ * Retrying cannot clear it: every `GET` carrying that session id conflicts for the same reason.
+ * Only a transport rebuild does, because the teardown `DELETE` drops the server's session along
+ * with the stream it leaked.
+ */
+export function isStandaloneSseConflict(error: unknown): boolean {
+  return (
+    error instanceof StreamableHTTPError &&
+    error.code === 409 &&
+    error.message.includes(SDK_SSE_OPEN_FAILED)
+  );
+}
+
+export interface SSEErrorDetails {
+  message: string;
+  code?: number;
+  isProxyHint: boolean;
+  isTransient: boolean;
+}
+
+/**
+ * Extracts a meaningful error message from SSE transport errors.
+ * The MCP SDK's SSEClientTransport can produce "SSE error: undefined" when the
+ * underlying eventsource library encounters connection issues without a specific message.
+ *
+ * @returns Object containing:
+ *   - message: Human-readable error description
+ *   - code: HTTP status code if available
+ *   - isProxyHint: Whether this error suggests proxy misconfiguration
+ *   - isTransient: Whether this is likely a transient error that will auto-reconnect
+ */
+export function extractSSEErrorMessage(error: unknown): SSEErrorDetails {
+  if (!error || typeof error !== 'object') {
+    return {
+      message: 'Unknown SSE transport error',
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  const errorObj = error as { message?: string; code?: number; event?: unknown };
+  const rawMessage = errorObj.message ?? '';
+  const code = errorObj.code;
+
+  /**
+   * Handle the common "SSE error: undefined" case.
+   * This typically occurs when:
+   * 1. A reverse proxy buffers the SSE stream (proxy issue)
+   * 2. The server closes an idle connection (normal SSE behavior)
+   * 3. Network interruption without specific error details
+   *
+   * In all cases, the eventsource library will attempt to reconnect automatically.
+   */
+  if (rawMessage === 'SSE error: undefined' || rawMessage === 'undefined' || !rawMessage) {
+    return {
+      message:
+        'SSE connection closed. This can occur due to: (1) idle connection timeout (normal), ' +
+        '(2) reverse proxy buffering (check proxy_buffering config), or (3) network interruption.',
+      code,
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  /**
+   * Check for timeout patterns. Use case-insensitive matching for common timeout error codes:
+   * - ETIMEDOUT: TCP connection timeout
+   * - ESOCKETTIMEDOUT: Socket timeout
+   * - "timed out" / "timeout": Generic timeout messages
+   */
+  const lowerMessage = rawMessage.toLowerCase();
+  if (
+    rawMessage.includes('ETIMEDOUT') ||
+    rawMessage.includes('ESOCKETTIMEDOUT') ||
+    lowerMessage.includes('timed out') ||
+    lowerMessage.includes('timeout after') ||
+    lowerMessage.includes('request timeout')
+  ) {
+    return {
+      message: `SSE connection timed out: ${rawMessage}. If behind a reverse proxy, increase proxy_read_timeout.`,
+      code,
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  // Connection reset is often transient (server restart, proxy reload)
+  if (rawMessage.includes('ECONNRESET')) {
+    return {
+      message: `SSE connection reset: ${rawMessage}. The server or proxy may have restarted.`,
+      code,
+      isProxyHint: false,
+      isTransient: true,
+    };
+  }
+
+  // Connection refused is more serious - server may be down
+  if (rawMessage.includes('ECONNREFUSED')) {
+    return {
+      message: `SSE connection refused: ${rawMessage}. Verify the MCP server is running and accessible.`,
+      code,
+      isProxyHint: false,
+      isTransient: false,
+    };
+  }
+
+  // DNS failure is usually a configuration issue, not transient
+  if (rawMessage.includes('ENOTFOUND') || rawMessage.includes('getaddrinfo')) {
+    return {
+      message: `SSE DNS resolution failed: ${rawMessage}. Check the server URL is correct.`,
+      code,
+      isProxyHint: false,
+      isTransient: false,
+    };
+  }
+
+  /**
+   * `StreamableHTTPError` and `SseError` carry the status on `code`, and their messages do not
+   * always repeat it — "Failed to open SSE stream: Conflict" arrives here with no digits to
+   * scan, so reading the message alone classified a 409 as an unrecognized fatal error. Prefer
+   * the structured status; keep scanning the message for transports that only stringify it.
+   */
+  const statusMatch = rawMessage.match(/\b(4\d{2}|5\d{2})\b/);
+  const scannedStatus = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
+  const carriesHttpStatus = code != null && code >= 400 && code < 600;
+  const httpStatus = carriesHttpStatus ? code : scannedStatus;
+
+  if (httpStatus != null) {
+    /**
+     * 5xx is transient by nature. 409 is transient by recovery: it reports a stale server-side
+     * session that the rebuild clears on its own, with nothing for an operator to do. Every
+     * other 4xx stays non-transient.
+     */
+    const isServerError = httpStatus >= 500 && httpStatus < 600;
+    return {
+      message: rawMessage,
+      code: httpStatus,
+      isProxyHint: httpStatus === 502 || httpStatus === 503 || httpStatus === 504,
+      isTransient: isServerError || httpStatus === 409,
+    };
+  }
+
+  /**
+   * "fetch failed" is a generic undici TypeError that occurs when an in-flight HTTP request
+   * is aborted (e.g. after an MCP protocol-level timeout fires). The transport itself is still
+   * functional — only the individual request was lost — so treat this as transient.
+   */
+  if (rawMessage === 'fetch failed') {
+    return {
+      message:
+        'fetch failed (request aborted, likely after a timeout — connection may still be usable)',
+      code,
+      isProxyHint: false,
+      isTransient: true,
+    };
+  }
+
+  return {
+    message: rawMessage,
+    code,
+    isProxyHint: false,
+    isTransient: false,
+  };
+}
 
 /**
  * Custom error for MCP domain restriction violations.

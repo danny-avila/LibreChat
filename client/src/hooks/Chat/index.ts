@@ -1,3 +1,6 @@
+export { default as useNewChat } from './useNewChat';
+export { default as useMultiConvo } from './useMultiConvo';
+export { default as useTemporaryChat } from './useTemporaryChat';
 export { default as useChatHelpers } from './useChatHelpers';
 export { default as useTokenLimits } from './useTokenLimits';
 export { default as useTokenUsage } from './useTokenUsage';

@@ -21,7 +21,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             {headerGroup.headers.map((header) => (
               <th
                 key={header.id}
-                className="sticky top-0 z-10 border-b border-border-light bg-background py-2 pr-3 text-left text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+                className="sticky top-0 z-10 border-b border-border-light bg-surface-primary py-2 pr-3 text-left text-[11px] font-medium uppercase tracking-wide text-text-secondary"
               >
                 {header.isPlaceholder
                   ? null

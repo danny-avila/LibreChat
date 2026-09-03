@@ -2,12 +2,12 @@ import React, { useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Label, Input, Button, SecretInput } from '@librechat/client';
 import type { Control, FieldErrors } from 'react-hook-form';
-import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import {
   CONFIG_HTML_INLINE_TAGS,
   CONFIG_HTML_CLASS_ATTR,
   createConfigHtmlSanitizer,
 } from '~/utils/configHtml';
+import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import { useLocalize } from '~/hooks';
 
 export interface CustomUserVarConfig {
@@ -58,7 +58,7 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
         <div aria-hidden="true">
           {hasValue ? (
             <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
-              <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              <div className="h-1.5 w-1.5 rounded-full bg-status-success" />
               <span>{localize('com_ui_set')}</span>
             </div>
           ) : (
@@ -100,11 +100,11 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
       />
       {sanitizedDescription && (
         <p
-          className="text-xs text-text-secondary [&_a]:text-blue-500 [&_a]:hover:underline"
+          className="text-xs text-text-secondary [&_a]:text-link [&_a]:hover:underline"
           dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
         />
       )}
-      {errors[name] && <p className="text-xs text-red-500">{errors[name]?.message}</p>}
+      {errors[name] && <p className="text-xs text-text-destructive">{errors[name]?.message}</p>}
     </div>
   );
 }

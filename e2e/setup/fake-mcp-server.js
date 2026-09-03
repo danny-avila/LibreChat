@@ -5,6 +5,7 @@ const path = require('node:path');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const z = require('zod/v4');
+const { watchDynamicTool } = require('./dynamic-mcp-tools');
 
 const APPROVAL_AUDIT_DIR = path.join('/tmp', 'librechat-e2e-approval-audit');
 
@@ -98,6 +99,19 @@ server.registerTool(
     };
   },
 );
+
+if (process.env.E2E_MCP_LIST_CHANGED === 'true') {
+  server.registerTool(
+    'transport_probe',
+    {
+      description: 'Confirms that the real stdio MCP transport is connected.',
+      inputSchema: {},
+    },
+    async () => ({ content: [{ type: 'text', text: 'stdio connected' }] }),
+  );
+
+  watchDynamicTool(server);
+}
 
 async function main() {
   await server.connect(new StdioServerTransport());

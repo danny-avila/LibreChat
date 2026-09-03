@@ -23,21 +23,18 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    OGDialogContent: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="dialog-content">{children}</div>
-    ),
-    Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-      <button {...props}>{children}</button>
-    ),
-    useToastContext: () => ({
-      showToast: jest.fn(),
-    }),
+jest.mock('@librechat/client', () => ({
+  OGDialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-content">{children}</div>
+  ),
+  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button {...props}>{children}</button>
+  ),
+  TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
+  useToastContext: () => ({
+    showToast: jest.fn(),
   }),
-  { virtual: true },
-);
+}));
 
 jest.mock('~/hooks', () => ({
   useDefaultConvo: () => jest.fn((value) => value.conversation),

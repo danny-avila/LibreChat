@@ -7,8 +7,8 @@ import {
   jsonTruncateFormat,
   stripHeavyErrorFields,
 } from './parsers';
-import { getTenantId, getUserId, getRequestId, SYSTEM_TENANT_ID } from './tenantContext';
-import { getLogDirectory } from './utils';
+import { appendLogContext, attachRequestContext } from './requestLogContext';
+import { getLogDirectory, logLevels, resolveConsoleLevel } from './utils';
 
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;
 
@@ -20,59 +20,7 @@ const useDebugLogging = typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING.toLow
 
 const useFileLogging = typeof LOG_TO_FILE !== 'string' || LOG_TO_FILE.toLowerCase() !== 'false';
 
-const levels: winston.config.AbstractConfigSetLevels = {
-  error: 0,
-  warn: 1,
-  info: 2,
-  http: 3,
-  verbose: 4,
-  debug: 5,
-  activity: 6,
-  silly: 7,
-};
-
-const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'] as const;
-
-function getLogTenantId(): string | undefined {
-  const tenantId = getTenantId();
-  return tenantId === SYSTEM_TENANT_ID ? undefined : tenantId;
-}
-
-const requestContextFormat = winston.format((info: winston.Logform.TransformableInfo) => {
-  if (info.tenantId === SYSTEM_TENANT_ID) {
-    delete info.tenantId;
-  }
-  const context = {
-    tenantId: getLogTenantId(),
-    userId: getUserId(),
-    requestId: getRequestId(),
-  };
-  LOG_CONTEXT_KEYS.forEach((key) => {
-    if (context[key] && info[key] == null) {
-      info[key] = context[key];
-    }
-  });
-  return info;
-});
-
-function formatRequestContext(info: winston.Logform.TransformableInfo): string {
-  const context: Partial<Record<(typeof LOG_CONTEXT_KEYS)[number], string>> = {};
-  LOG_CONTEXT_KEYS.forEach((key) => {
-    const value = info[key];
-    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
-      return;
-    }
-    if (typeof value === 'string' && value) {
-      context[key] = value;
-    }
-  });
-  return Object.keys(context).length > 0 ? JSON.stringify(context) : '';
-}
-
-function appendRequestContext(line: string, info: winston.Logform.TransformableInfo): string {
-  const context = formatRequestContext(info);
-  return context ? `${line} ${context}` : line;
-}
+const requestContextFormat = winston.format(attachRequestContext);
 
 winston.addColors({
   info: 'green',
@@ -134,21 +82,23 @@ const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.printf((info) => {
     const message = `${info.timestamp} ${info.level}: ${info.message}`;
-    const line = appendRequestContext(message, info);
+    const line = appendLogContext(message, info);
     return info.level.includes('error') ? redactMessage(line) : line;
   }),
 );
 
-let consoleLogLevel: string = 'info';
-if (useDebugConsole) {
-  consoleLogLevel = 'debug';
-}
+/** `DEBUG_CONSOLE` still picks the debug *format* below; here it only moves the
+ * default level, so an explicit `CONSOLE_LOG_LEVEL` stays in charge of verbosity. */
+const { level: consoleLogLevel, silent: consoleSilent } = resolveConsoleLevel(
+  useDebugConsole ? 'debug' : 'info',
+);
 
 // Add console transport
 if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: useConsoleJson
         ? winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json())
         : winston.format.combine(fileFormat, debugTraverse),
@@ -158,6 +108,7 @@ if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: winston.format.combine(fileFormat, jsonTruncateFormat(), winston.format.json()),
     }),
   );
@@ -165,6 +116,7 @@ if (useDebugConsole) {
   transports.push(
     new winston.transports.Console({
       level: consoleLogLevel,
+      silent: consoleSilent,
       format: consoleFormat,
     }),
   );
@@ -173,7 +125,7 @@ if (useDebugConsole) {
 // Create logger
 const logger: winston.Logger = winston.createLogger({
   level: level(),
-  levels,
+  levels: logLevels,
   transports,
 });
 

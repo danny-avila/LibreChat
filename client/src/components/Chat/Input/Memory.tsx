@@ -4,6 +4,7 @@ import { CheckboxButton } from '@librechat/client';
 import { defaultAgentCapabilities } from 'librechat-data-provider';
 import { useLocalize, useHasMemoryAccess, useAgentCapabilities, useAuthContext } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
+import { badgeAccents } from './accents';
 
 function Memory() {
   const localize = useLocalize();
@@ -26,11 +27,10 @@ function Memory() {
   return (
     (memoryActive || isPinned) && (
       <CheckboxButton
-        className="max-w-fit"
         checked={memoryActive}
         setValue={debouncedChange}
         label={localize('com_ui_memory')}
-        isCheckedClassName="border-purple-600/40 bg-purple-500/10 hover:bg-purple-700/10"
+        isCheckedClassName={badgeAccents.purple}
         icon={<Brain className="icon-md" aria-hidden="true" />}
       />
     )

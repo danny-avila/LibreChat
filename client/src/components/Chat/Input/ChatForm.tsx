@@ -1,9 +1,9 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
-import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
-import type { TMessage, TConversation } from 'librechat-data-provider';
+import { composerSurfaceClasses, composerSurfaceShadow, TextareaAutosize } from '@librechat/client';
+import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
@@ -17,17 +17,28 @@ import {
   useFocusChatEffect,
 } from '~/hooks';
 import {
+  cn,
+  getModelSpec,
+  hasIncompleteFiles,
+  removeFocusRings,
+  getComposerDraftId,
+  getFilesDraftCached,
+  isPastedTextFileMarked,
+} from '~/utils';
+import {
   useChatContext,
   useChatFormContext,
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
+import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
-import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import InterruptSteerButton from './InterruptSteerButton';
+import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
+import ProjectLandingChip from '../ProjectLandingChip';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
 import PendingSteerChips from './PendingSteerChips';
@@ -40,9 +51,9 @@ import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import SkillsCommand from './SkillsCommand';
 import AudioRecorder from './AudioRecorder';
+import AutoPlayAudio from './AutoPlayAudio';
 import CollapseChat from './CollapseChat';
 import QuoteButton from './QuoteButton';
-import StreamAudio from './StreamAudio';
 import TokenUsage from './TokenUsage';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -54,12 +65,12 @@ import store from '~/store';
 interface ChatFormProps {
   index: number;
   placeholder?: string;
-  /** From ChatContext — individual values so memo can compare them */
+  project?: TChatProject;
+  /** From ChatContext: individual values so memo can compare them */
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   conversation: TConversation | null;
   isSubmitting: boolean;
-  filesLoading: boolean;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -69,11 +80,11 @@ interface ChatFormProps {
 const ChatForm = memo(function ChatForm({
   index,
   placeholder,
+  project,
   files,
   setFiles,
   conversation,
   isSubmitting,
-  filesLoading,
   setFilesLoading,
   newConversation,
   handleStopGenerating,
@@ -123,6 +134,7 @@ const ChatForm = memo(function ChatForm({
     [conversation?.spec, startupConfig],
   );
   const hideBadgeRow = modelSpec?.hideBadgeRow === true;
+  const filesLoading = useMemo(() => hasIncompleteFiles(files), [files]);
   const conversationId = useMemo(
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
@@ -174,8 +186,16 @@ const ChatForm = memo(function ChatForm({
   }, []);
 
   const answerMode = useAskAnswerMode(conversationId);
+  const answerPlaceholder = answerMode.batchMode
+    ? localize('com_ui_answer_questions_above')
+    : (answerMode.otherLabel ?? localize('com_ui_something_else'));
+  /** The composer is not a plain chat composer: it either IS this pause's
+   *  answer box, or is locked behind the batch card that owns the answer. A
+   *  collapsed batch is neither — it hands the composer back to the thread. */
+  const composerReserved = answerMode.composerAnswers || answerMode.composerLocked;
 
   useAutoSave({
+    index,
     files,
     setFiles,
     textAreaRef,
@@ -186,6 +206,31 @@ const ChatForm = memo(function ChatForm({
     // when the question resolves.
     draftId: answerMode.draftId,
   });
+
+  const pastedTextEdit = usePastedTextEdit({ index, files, setFiles, textAreaRef });
+
+  /** Provenance, not the filename, decides which chips are pastes: a user can deliberately
+   * upload a `pasted-text.txt`. Restored provenance comes from the files draft; marks made
+   * this session are read live from the registry, so new pastes need no recompute. */
+  const pastedTextFileIds = useMemo(() => {
+    const draftId = getComposerDraftId(index, conversationId, isSubmitting);
+    const draftIds = getFilesDraftCached(draftId).pastedTextIds ?? [];
+    return new Set<string>(draftIds);
+  }, [index, conversationId, isSubmitting]);
+  const isPastedTextFile = useCallback(
+    (file: ExtendedFile) =>
+      pastedTextFileIds.has(file.file_id) ||
+      (file.temp_file_id != null && pastedTextFileIds.has(file.temp_file_id)) ||
+      isPastedTextFileMarked(file.file_id) ||
+      isPastedTextFileMarked(file.temp_file_id),
+    [pastedTextFileIds],
+  );
+  /** The chip's actions hide while a replacement upload or inline move is in flight, so the
+   * same original cannot be acted on twice. */
+  const isPasteActionPending = useCallback(
+    (file: ExtendedFile) => pastedTextEdit.isActionPending(file.file_id),
+    [pastedTextEdit],
+  );
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
@@ -263,7 +308,7 @@ const ChatForm = memo(function ChatForm({
     conversationId,
     conversation,
     isSubmitting,
-    answerModeActive: answerMode.active,
+    answerModeActive: composerReserved,
     files,
     setFiles,
     filesLoading,
@@ -281,8 +326,8 @@ const ChatForm = memo(function ChatForm({
   const liveFilesRef = useRef(files);
   liveFilesRef.current = files;
   /** Same reason: the run can pause on `ask_user_question` mid-reclaim. */
-  const liveAnswerModeRef = useRef(answerMode.active);
-  liveAnswerModeRef.current = answerMode.active;
+  const liveAnswerModeRef = useRef(composerReserved);
+  liveAnswerModeRef.current = composerReserved;
   /** A reclaim can resolve after this form unmounts (left the route, closed the
    *  pane). Its refs still hold the origin chat, so the restore would pass its
    *  checks and write into a dead form — reporting success and making the caller
@@ -387,18 +432,23 @@ const ChatForm = memo(function ChatForm({
     setIsScrollable,
     disabled: disableInputs,
     // The composer IS the free-form answer box while a question pause is live.
-    placeholder: answerMode.active
-      ? (answerMode.otherLabel ?? localize('com_ui_something_else'))
-      : placeholder,
+    placeholder: composerReserved ? answerPlaceholder : placeholder,
     // Enter stays live during a run when it can steer/queue instead of send.
     allowSubmitWhileGenerating: steering.duringRunActive,
     onDuringRunModifier: steering.duringRunActive ? handleDuringRunModifier : undefined,
+    answerModeActive: answerMode.composerAnswers,
   });
 
   useQueryParams({ textAreaRef });
 
+  /** Attachments stand in for text only on the normal send path. Answer mode
+   *  hands the composer text straight to the paused run, which answers with
+   *  values and cannot consume files, so an empty draft must stay unsubmittable
+   *  there rather than enabling a button whose submit is silently dropped. */
+  const submittableFileCount = composerReserved ? 0 : files.size;
+
   const { ref, ...registerProps } = methods.register('text', {
-    required: true,
+    required: submittableFileCount === 0,
     onChange: useCallback(
       (e: React.ChangeEvent<HTMLTextAreaElement>) =>
         methods.setValue('text', e.target.value, { shouldValidate: true }),
@@ -462,7 +512,7 @@ const ChatForm = memo(function ChatForm({
   const baseClasses = useMemo(
     () =>
       cn(
-        'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder-black/60 bg-transparent dark:placeholder-white/60 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+        'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder:text-text-tertiary bg-transparent [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
         isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
         isMoreThanThreeRows ? 'pl-5' : 'px-5',
       ),
@@ -474,7 +524,8 @@ const ChatForm = memo(function ChatForm({
       onSubmit={methods.handleSubmit((data) => {
         // Answer mode: composer text answers the paused run instead of
         // starting a new turn (submitText resets the composer itself).
-        // Dismissing the popover restores normal sends.
+        // Dismissing the popover — or collapsing a batch, which answers in its
+        // own card — restores normal sends.
         if (answerMode.active && answerMode.submitText(data.text)) {
           return;
         }
@@ -543,13 +594,15 @@ const ChatForm = memo(function ChatForm({
             <div
               onClick={handleContainerClick}
               className={cn(
-                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
-                isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
-                isTemporary
-                  ? 'border-violet-800/60 bg-violet-950/10'
-                  : 'border-border-light bg-surface-chat',
+                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl pb-4 sm:rounded-3xl sm:pb-0',
+                composerSurfaceClasses(),
+                isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
+                /* Temporary-chat accent is a ChatForm-only override, not part of
+                   the shared composer-surface decision. */
+                isTemporary && 'border-violet-800/60 bg-violet-950/10',
               )}
             >
+              {project ? <ProjectLandingChip project={project} /> : null}
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
               <PendingManualSkillsChips conversationId={conversationId} />
               {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
@@ -569,10 +622,20 @@ const ChatForm = memo(function ChatForm({
                 setBadges={setBadges}
               />
               <FileFormChat
+                index={index}
                 conversation={conversation}
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
+                isPastedTextFile={isPastedTextFile}
+                isPasteActionPending={isPasteActionPending}
+                onEditPastedText={pastedTextEdit.openEditor}
+                onMovePastedTextInline={pastedTextEdit.moveInline}
+              />
+              <PastedTextDialog
+                edit={pastedTextEdit.editing}
+                onClose={pastedTextEdit.closeEditor}
+                onSave={pastedTextEdit.saveEdit}
               />
               {endpoint && (
                 <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
@@ -596,7 +659,7 @@ const ChatForm = memo(function ChatForm({
                           textAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>
                         ).current = e;
                       }}
-                      disabled={disableInputs || isNotAppendable}
+                      disabled={disableInputs || isNotAppendable || answerMode.composerLocked}
                       onPaste={handlePaste}
                       onKeyDown={(e) => {
                         // Answer mode consumes option-navigation keys from the
@@ -689,23 +752,25 @@ const ChatForm = memo(function ChatForm({
                 <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
                   {isSubmitting &&
                   (showStopButton || steering.duringRunActive) &&
-                  !answerMode.active
+                  !answerMode.composerAnswers
                     ? duringRunSlot
                     : endpoint && (
                         <SendButton
                           ref={submitButtonRef}
                           control={methods.control}
+                          fileCount={submittableFileCount}
                           disabled={
                             filesLoading ||
                             disableInputs ||
                             isNotAppendable ||
-                            (isSubmitting && !answerMode.active)
+                            answerMode.composerLocked ||
+                            (isSubmitting && !answerMode.composerAnswers)
                           }
                         />
                       )}
                 </div>
               </div>
-              {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+              {TextToSpeech && automaticPlayback && <AutoPlayAudio index={index} />}
             </div>
           </div>
         </div>
@@ -720,13 +785,20 @@ ChatForm.displayName = 'ChatForm';
  * to the memo'd ChatForm. This prevents ChatForm from re-rendering on every
  * streaming chunk — it only re-renders when the specific values it uses change.
  */
-function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placeholder?: string }) {
+function ChatFormWrapper({
+  index = 0,
+  placeholder,
+  project,
+}: {
+  index?: number;
+  placeholder?: string;
+  project?: TChatProject;
+}) {
   const {
     files,
     setFiles,
     conversation,
     isSubmitting,
-    filesLoading,
     setFilesLoading,
     newConversation,
     handleStopGenerating,
@@ -781,11 +853,11 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     <ChatForm
       index={index}
       placeholder={placeholder}
+      project={project}
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}
       isSubmitting={isSubmitting}
-      filesLoading={filesLoading}
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}

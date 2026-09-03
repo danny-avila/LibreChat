@@ -16,6 +16,10 @@ import type { SetterOrUpdater } from 'recoil';
  */
 const streamTickAtom = atom<number>({ key: 'conversations-section-stream-tick', default: 0 });
 
+/** Generous because it covers a first-require module transform, not a race. */
+const LAZY_CHUNK_TIMEOUT = 15_000;
+const TEST_TIMEOUT = 30_000;
+
 const mockUseFavorites = jest.fn(() => ({
   favorites: [] as unknown[],
   reorderFavorites: jest.fn(),
@@ -62,6 +66,9 @@ jest.mock('~/data-provider', () => ({
     isLoading: false,
     isFetching: false,
   }),
+  usePinnedConversationsQuery: () => ({
+    data: { conversations: [], nextCursor: null },
+  }),
   useTitleGeneration: () => mockUseTitleGeneration(),
   useGetEndpointsQuery: () => ({ data: {}, isLoading: false }),
   useGetStartupConfig: () => ({ data: { modelSpecs: { list: [] } } }),
@@ -87,6 +94,11 @@ jest.mock('~/components/Conversations', () => ({
 jest.mock('~/components/Conversations/ProjectsSection', () => ({
   __esModule: true,
   default: () => <div data-testid="projects-stub" />,
+}));
+
+jest.mock('~/components/Conversations/PinnedSection', () => ({
+  __esModule: true,
+  default: () => <div data-testid="pinned-stub" />,
 }));
 
 jest.mock('~/components/Nav/SearchBar', () => ({
@@ -149,6 +161,22 @@ const renderSection = () =>
     </QueryClientProvider>,
   );
 
+describe('ConversationsSection section order', () => {
+  it('renders Pinned between Projects and Chats', async () => {
+    const { getByTestId } = renderSection();
+    await settleRenders();
+
+    const projects = getByTestId('projects-stub');
+    const pinned = getByTestId('pinned-stub');
+    const chats = getByTestId('conversations-stub');
+
+    expect(
+      projects.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(pinned.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
 describe('ConversationsSection streaming re-renders', () => {
   beforeEach(() => {
     mockUseFavorites.mockImplementation(() => ({
@@ -162,37 +190,46 @@ describe('ConversationsSection streaming re-renders', () => {
     });
   });
 
-  it('does not re-render FavoritesList or BookmarkNav when the section re-renders mid-stream', async () => {
-    renderSection();
+  it(
+    'does not re-render FavoritesList or BookmarkNav when the section re-renders mid-stream',
+    async () => {
+      renderSection();
 
-    // BookmarkNav is lazy-loaded; wait until it has actually rendered (its own
-    // data hook firing is the deterministic signal that the chunk resolved).
-    await waitFor(() => expect(mockUseGetConversationTags).toHaveBeenCalled());
-
-    // waitFor resolves once the hook first fires, but on loaded Windows shards the
-    // Suspense resolution can leave a trailing pass pending in the real scheduler,
-    // which the first stream tick's act would flush into the children's counts.
-    await settleRenders();
-
-    expect(mockUseFavorites.mock.calls.length).toBeGreaterThan(0);
-    expect(mockUseGetConversationTags.mock.calls.length).toBeGreaterThan(0);
-
-    const favBaseline = mockUseFavorites.mock.calls.length;
-    const tagBaseline = mockUseGetConversationTags.mock.calls.length;
-    const titleBaseline = mockUseTitleGeneration.mock.calls.length;
-
-    // Simulate a stream: repeatedly re-render ConversationsSection.
-    for (let i = 0; i < 5; i++) {
-      act(() => {
-        setStreamTick((prev) => prev + 1);
+      // BookmarkNav is lazy-loaded; wait until it has actually rendered (its own
+      // data hook firing is the deterministic signal that the chunk resolved).
+      // Resolving that import means transforming BookmarkNav's whole module graph
+      // on first require, which outruns the default one-second budget whenever the
+      // transform cache is cold or the machine is busy.
+      await waitFor(() => expect(mockUseGetConversationTags).toHaveBeenCalled(), {
+        timeout: LAZY_CHUNK_TIMEOUT,
       });
-    }
 
-    // Sanity check: the section genuinely re-rendered each tick.
-    expect(mockUseTitleGeneration.mock.calls.length).toBeGreaterThan(titleBaseline);
+      // waitFor resolves once the hook first fires, but on loaded Windows shards the
+      // Suspense resolution can leave a trailing pass pending in the real scheduler,
+      // which the first stream tick's act would flush into the children's counts.
+      await settleRenders();
 
-    // The memoized children, fed referentially stable props, did not re-render.
-    expect(mockUseFavorites.mock.calls.length).toBe(favBaseline);
-    expect(mockUseGetConversationTags.mock.calls.length).toBe(tagBaseline);
-  });
+      expect(mockUseFavorites.mock.calls.length).toBeGreaterThan(0);
+      expect(mockUseGetConversationTags.mock.calls.length).toBeGreaterThan(0);
+
+      const favBaseline = mockUseFavorites.mock.calls.length;
+      const tagBaseline = mockUseGetConversationTags.mock.calls.length;
+      const titleBaseline = mockUseTitleGeneration.mock.calls.length;
+
+      // Simulate a stream: repeatedly re-render ConversationsSection.
+      for (let i = 0; i < 5; i++) {
+        act(() => {
+          setStreamTick((prev) => prev + 1);
+        });
+      }
+
+      // Sanity check: the section genuinely re-rendered each tick.
+      expect(mockUseTitleGeneration.mock.calls.length).toBeGreaterThan(titleBaseline);
+
+      // The memoized children, fed referentially stable props, did not re-render.
+      expect(mockUseFavorites.mock.calls.length).toBe(favBaseline);
+      expect(mockUseGetConversationTags.mock.calls.length).toBe(tagBaseline);
+    },
+    TEST_TIMEOUT,
+  );
 });

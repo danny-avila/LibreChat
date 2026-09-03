@@ -117,7 +117,7 @@ test('renders login form', () => {
       setError={jest.fn()}
     />,
   );
-  expect(getByLabelText(/email/i)).toBeInTheDocument();
+  expect(getByLabelText(/email/i)).toHaveClass('h-auto');
   expect(getByLabelText(/password/i)).toBeInTheDocument();
 });
 

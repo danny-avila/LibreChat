@@ -49,6 +49,7 @@ export interface ActivityLabelBatchMeta {
 export interface ActivityLabelBlockContext {
   thinkingExcerpts?: string[];
   lastAssistantText?: string;
+  lastAssistantPhase?: 'commentary' | 'final_answer';
 }
 
 /**
@@ -317,7 +318,7 @@ function stringifyBounded(value: unknown, limit: number): string {
   return out.join('').slice(0, limit + 1);
 }
 
-function stringifyUnknown(value: unknown, limit: number): string {
+export function stringifyActivityEvidence(value: unknown, limit: number): string {
   if (value == null) {
     return '';
   }
@@ -398,7 +399,7 @@ export function buildPrompt(
           .join('\n'),
     );
   }
-  if (context?.lastAssistantText) {
+  if (context?.lastAssistantText && context.lastAssistantPhase !== 'final_answer') {
     sections.push(
       `Intent (assistant's last message): ${truncate(context.lastAssistantText, INTENT_CHAR_LIMIT)}`,
     );
@@ -426,11 +427,11 @@ export function buildPrompt(
       omitted += 1;
       continue;
     }
-    const input = truncate(stringifyUnknown(entry.toolInput, charLimit), charLimit);
+    const input = truncate(stringifyActivityEvidence(entry.toolInput, charLimit), charLimit);
     const outcome =
       entry.status === 'error'
         ? `ERROR: ${truncate(entry.error ?? 'unknown error', charLimit)}`
-        : truncate(stringifyUnknown(entry.toolOutput, charLimit), charLimit);
+        : truncate(stringifyActivityEvidence(entry.toolOutput, charLimit), charLimit);
     const line = `- ${entry.toolName}(${input}) → ${outcome}`;
     lines.push(line);
     used += line.length;

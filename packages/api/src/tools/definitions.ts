@@ -10,11 +10,13 @@ import {
   Constants,
   isActionTool,
   splitMCPToolKey,
+  normalizeServerName,
+  stripServerNamePrefix,
   buildServerNameAliases,
 } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
-import type { ToolDefinition } from './classification';
+import type { MCPToolAlias, ToolDefinition } from './classification';
 import { resolveJsonSchemaRefs, normalizeJsonSchema, sanitizeGeminiSchema } from '~/mcp/zod';
 import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
@@ -27,6 +29,7 @@ export interface MCPServerTool {
     description?: string;
     parameters?: JsonSchemaType;
   };
+  serverToolName?: string;
 }
 
 export type MCPServerTools = Record<string, MCPServerTool>;
@@ -72,6 +75,9 @@ export interface ActionToolDefinition {
   name: string;
   description?: string;
   parameters?: JsonSchemaType;
+  /** True when the action authenticates via OAuth — its calls may block on an
+   *  interactive login prompt, so it must never be dispatched in the background. */
+  oauth?: boolean;
 }
 
 export interface LoadToolDefinitionsDeps {
@@ -92,10 +98,14 @@ export interface LoadToolDefinitionsResult {
   toolDefinitions: (ToolDefinition | LCTool)[];
   toolRegistry: LCToolRegistry;
   hasDeferredTools: boolean;
+  /** Both-direction identity aliases for MCP tools whose key spelling changed */
+  mcpToolAliases: MCPToolAlias[];
   mcpResolution: {
     expectedToolCount: number;
     resolvedToolCount: number;
   };
+  /** Action tool names backed by OAuth — excluded from background dispatch. */
+  oauthActionToolNames: string[];
 }
 
 const mcpToolPattern = /_mcp_/;
@@ -145,7 +155,9 @@ export async function loadToolDefinitions(
     toolDefinitions: [],
     toolRegistry: new Map(),
     hasDeferredTools: false,
+    mcpToolAliases: [],
     mcpResolution: { expectedToolCount: 0, resolvedToolCount: 0 },
+    oauthActionToolNames: [],
   };
 
   if (!tools || tools.length === 0) {
@@ -247,9 +259,38 @@ export async function loadToolDefinitions(
       continue;
     }
 
+    /** Catalog keys are built after redundant server-name-prefix stripping —
+     *  a pre-strip persisted key (`acme_search_mcp_acme`) must also try its
+     *  stripped spelling or the agent fails initialization with its expected
+     *  tools "unavailable". The definition keeps the PERSISTED name so it
+     *  matches the runtime instance `createMCPTool` builds for the same key,
+     *  and the stripped entry is accepted only when its recorded raw name
+     *  PROVES the same upstream identity. */
+    const findToolMatch = (
+      tools: Record<string, MCPServerTool>,
+    ): { def: MCPServerTool; currentToolName?: string } | undefined => {
+      const direct = tools[toolName];
+      if (direct?.function) {
+        return { def: direct };
+      }
+      const keyServerName = normalizeServerName(serverName);
+      const [toolPart] = splitMCPToolKey(toolName, [parsed]);
+      const strippedPart = stripServerNamePrefix(toolPart, keyServerName);
+      if (strippedPart === toolPart) {
+        return undefined;
+      }
+      const entry = tools[`${strippedPart}${Constants.mcp_delimiter}${keyServerName}`];
+      /** `currentToolName` records the catalog spelling so approval policies
+       *  and hook matchers written against it still reach this legacy-named
+       *  definition (see `collectMCPToolAliases`). */
+      return entry?.serverToolName === toolPart
+        ? { def: entry, currentToolName: strippedPart }
+        : undefined;
+    };
+
     const selectedToolMissing = isMCPAllPlaceholder(toolName)
       ? Object.keys(serverTools).length === 0
-      : !serverTools[toolName]?.function;
+      : !findToolMatch(serverTools)?.def.function;
     if (selectedToolMissing && refreshMCPServerTools && !refreshedServerNames.has(serverName)) {
       refreshedServerNames.add(serverName);
       const refreshedTools = await refreshMCPServerTools(userId, serverName);
@@ -267,6 +308,7 @@ export async function loadToolDefinitions(
             description: toolDef.function.description || undefined,
             parameters: buildMcpParameters(toolDef.function.parameters),
             serverName,
+            serverToolName: toolDef.serverToolName,
           });
           resolvedMCPToolCount++;
         }
@@ -274,25 +316,33 @@ export async function loadToolDefinitions(
       continue;
     }
 
-    const toolDef = serverTools[toolName];
-    if (toolDef?.function) {
+    const toolMatch = findToolMatch(serverTools);
+    if (toolMatch?.def.function) {
       mcpToolDefs.push({
         name: toolName,
-        description: toolDef.function.description || undefined,
-        parameters: buildMcpParameters(toolDef.function.parameters),
+        description: toolMatch.def.function.description || undefined,
+        parameters: buildMcpParameters(toolMatch.def.function.parameters),
         serverName,
+        serverToolName: toolMatch.def.serverToolName,
+        currentToolName: toolMatch.currentToolName,
       });
       resolvedMCPToolCount++;
     }
   }
 
+  const oauthActionToolNames: string[] = [];
   if (actionToolNames.length > 0 && getActionToolDefinitions) {
     const fetchedActionDefs = await getActionToolDefinitions(agentId, actionToolNames);
-    actionToolDefs = fetchedActionDefs.map((def) => ({
-      name: def.name,
-      description: def.description,
-      parameters: def.parameters,
-    }));
+    actionToolDefs = fetchedActionDefs.map((def) => {
+      if (def.oauth === true) {
+        oauthActionToolNames.push(def.name);
+      }
+      return {
+        name: def.name,
+        description: def.description,
+        parameters: def.parameters,
+      };
+    });
   }
 
   const loadedTools = mcpToolDefs.map((def) => ({
@@ -301,6 +351,8 @@ export async function loadToolDefinitions(
     mcp: true as const,
     mcpJsonSchema: def.parameters,
     mcpRawServerName: def.serverName,
+    mcpServerToolName: def.serverToolName,
+    mcpCurrentToolName: def.currentToolName,
   })) as unknown as GenericTool[];
 
   const classificationResult = await buildToolClassification({
@@ -350,9 +402,11 @@ export async function loadToolDefinitions(
     toolDefinitions: allDefinitions,
     toolRegistry,
     hasDeferredTools,
+    mcpToolAliases: classificationResult.mcpToolAliases,
     mcpResolution: {
       expectedToolCount: expectedMCPToolCount,
       resolvedToolCount: resolvedMCPToolCount,
     },
+    oauthActionToolNames,
   };
 }

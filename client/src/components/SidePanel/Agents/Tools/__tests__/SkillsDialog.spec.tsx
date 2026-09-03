@@ -94,6 +94,9 @@ jest.mock('@librechat/client', () => ({
     </button>
   ),
   Input: (props: React.ComponentProps<'input'>) => <input {...props} />,
+  Label: ({ children, ...props }: React.ComponentProps<'label'>) => (
+    <label {...props}>{children}</label>
+  ),
   Radio: () => null,
   OGDialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
     open ? <div>{children}</div> : null,

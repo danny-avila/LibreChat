@@ -9,6 +9,9 @@ const GENERATED_CREDS_IV = crypto.randomBytes(16).toString('hex');
 const GENERATED_JWT_SECRET = crypto.randomBytes(32).toString('hex');
 const GENERATED_JWT_REFRESH_SECRET = crypto.randomBytes(32).toString('hex');
 const DEFAULT_REDIS_URI = 'redis://127.0.0.1:6379/15';
+const DEFAULT_REDIS_CLUSTER_URI = [7001, 7002, 7003]
+  .map((port) => `redis://127.0.0.1:${port}`)
+  .join(',');
 const DEFAULT_REDIS_KEY_PREFIX = 'LibreChatE2E';
 const PASSTHROUGH_ENV_KEYS = [
   'APPDATA',
@@ -80,6 +83,7 @@ function getStreamStoreEnv(): Record<string, string> {
       E2E_REQUIRE_REDIS_STREAMS: 'false',
       USE_REDIS: 'false',
       USE_REDIS_STREAMS: 'false',
+      USE_REDIS_CLUSTER: 'false',
       REDIS_KEY_PREFIX: '',
       REDIS_KEY_PREFIX_VAR: '',
     };
@@ -89,7 +93,19 @@ function getStreamStoreEnv(): Record<string, string> {
       E2E_REQUIRE_REDIS_STREAMS: 'true',
       USE_REDIS: 'true',
       USE_REDIS_STREAMS: 'true',
+      USE_REDIS_CLUSTER: 'false',
       REDIS_URI: process.env.REDIS_URI ?? DEFAULT_REDIS_URI,
+      REDIS_KEY_PREFIX: process.env.E2E_REDIS_KEY_PREFIX ?? DEFAULT_REDIS_KEY_PREFIX,
+      REDIS_KEY_PREFIX_VAR: '',
+    };
+  }
+  if (streamStore === 'redis-cluster') {
+    return {
+      E2E_REQUIRE_REDIS_STREAMS: 'true',
+      USE_REDIS: 'true',
+      USE_REDIS_STREAMS: 'true',
+      USE_REDIS_CLUSTER: 'true',
+      REDIS_URI: process.env.REDIS_URI ?? DEFAULT_REDIS_CLUSTER_URI,
       REDIS_KEY_PREFIX: process.env.E2E_REDIS_KEY_PREFIX ?? DEFAULT_REDIS_KEY_PREFIX,
       REDIS_KEY_PREFIX_VAR: '',
     };

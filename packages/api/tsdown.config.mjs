@@ -6,7 +6,7 @@ export default defineConfig({
   // `src/telemetry/index.ts` barrel: oxc emits declarations flat into outDir keyed
   // by source basename, so two `index.ts` entries would collide (index.d.cts +
   // index2.d.cts). Distinct basenames yield stable `index.*` / `telemetry.*` output.
-  entry: ['src/index.ts', 'src/telemetry.ts'],
+  entry: ['src/index.ts', 'src/telemetry.ts', 'src/credentials.ts'],
   format: ['cjs'],
   platform: 'node',
   dts: { oxc: true },

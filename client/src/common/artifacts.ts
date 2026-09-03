@@ -4,6 +4,8 @@ export interface CodeBlock {
   content: string;
 }
 
+export const MERMAID_ARTIFACT_TYPE = 'application/vnd.mermaid' as const;
+
 /**
  * Original-file download metadata for artifacts backed by a real
  * code-interpreter file (e.g. an office document whose panel preview is

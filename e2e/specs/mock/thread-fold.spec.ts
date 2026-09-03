@@ -146,7 +146,7 @@ test.describe('thread fold regressions', () => {
       .filter({ hasText: firstReply })
       .last();
     await render.hover();
-    await render.locator('button[title="Regenerate"]').last().click();
+    await render.getByRole('button', { name: 'Regenerate', exact: true }).last().click();
     await expect(messagesView(page).getByText(regeneratedReply)).toBeVisible({ timeout: 30000 });
     await expect(siblingCounter(page)).toHaveText('2 / 2');
 

@@ -11,7 +11,8 @@ import type {
   OAuthStoredClientMetadata,
   OAuthClientSource,
 } from '~/mcp/oauth';
-import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type { AuthIdentityContext } from '~/utils/identity';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import {
@@ -21,10 +22,10 @@ import {
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
-import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
+import { createDeadlineAbortSignal, isClientRejectionMessage, isOAuthServer } from './utils';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
+import { isOAuthAuthenticationError } from './errors';
 import { preProcessGraphTokens } from '~/utils/graph';
-import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 import { mcpConfig } from './mcpConfig';
@@ -43,6 +44,8 @@ type OAuthRequiredEvent = {
   statusCode?: number;
   skipSilentRefresh?: boolean;
 };
+
+type OAuthRecoveryPhase = 'silent-refresh' | 'interactive' | 'terminal';
 
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
@@ -69,8 +72,11 @@ export class MCPConnectionFactory {
   protected oauthEnd?: () => Promise<void>;
   protected returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
+  protected readonly deadlineMs?: number;
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
+  protected readonly upstreamTokenProvider?: UpstreamTokenProvider;
+  protected readonly oboIdentityContext?: AuthIdentityContext;
   private connectionReady = false;
   /**
    * Snapshot of the tenant context at factory construction time. Captured eagerly
@@ -132,6 +138,15 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'> | t.UserConnectionContext,
   ): Promise<ToolDiscoveryResult> {
+    /** Checked before credential preparation begins: a spent budget or an already-cancelled
+     *  caller must not start Graph preprocessing or token resolution it cannot cancel. */
+    if (
+      (options?.deadlineMs != null && Date.now() >= options.deadlineMs) ||
+      options?.signal?.aborted === true
+    ) {
+      logger.debug('[MCP] [Discovery] Cancelled or out of budget before discovery began');
+      return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
+    }
     const preparedBasic = await this.prepareBasicConnectionOptions(basic, options);
     if (options != null && 'useOAuth' in options) {
       const factory = new this(preparedBasic, { ...options, returnOnOAuth: true });
@@ -164,89 +179,197 @@ export class MCPConnectionFactory {
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
+    /** Rechecked here because credential preparation in `discoverTools` is uncancellable: a
+     *  budget that expired or a caller that cancelled while it ran must not go on to token
+     *  resolution or a connect. */
+    if (this.isDiscoveryCancelled()) {
+      logger.debug(
+        `${this.logPrefix} [Discovery] Cancelled or out of budget before discovery began`,
+      );
+      return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
+    }
     const oauthUrl: string | null = null;
     let oauthRequired = false;
+    let shouldAttemptAuthenticatedDiscovery = true;
+    const abortSignal = this.createDiscoveryAbortSignal();
 
     let oauthTokens: MCPOAuthTokens | null = null;
     if (this.usesObo) {
-      oauthTokens = await this.getOboTokens();
+      try {
+        oauthTokens = await this.getOboTokens();
+      } catch (error) {
+        if (!(error instanceof OboTokenResolutionError)) {
+          throw error;
+        }
+        oauthRequired = true;
+        shouldAttemptAuthenticatedDiscovery = false;
+        logger.debug(
+          `${this.logPrefix} [Discovery] OBO token resolution failed, attempting unauthenticated tool listing`,
+          error,
+        );
+      }
     } else if (this.useOAuth) {
       oauthTokens = await this.getOAuthTokens();
     }
-    const connection = new MCPConnection({
-      serverName: this.serverName,
-      serverConfig: this.serverConfig,
-      userId: this.userId,
-      oauthTokens,
-      useSSRFProtection: this.useSSRFProtection,
-      allowedAddresses: this.allowedAddresses,
-      ephemeralConnection: this.ephemeralConnection,
-    });
 
-    const oauthHandler = () => {
-      logger.info(
-        `${this.logPrefix} [Discovery] OAuth required; skipping URL generation in discovery mode`,
-      );
-      oauthRequired = true;
-      connection.emit('oauthFailed', new Error('OAuth required during tool discovery'));
-    };
+    let connection: MCPConnection | null = null;
+    let oauthHandler: (() => void) | null = null;
+    if (shouldAttemptAuthenticatedDiscovery) {
+      connection = new MCPConnection({
+        serverName: this.serverName,
+        serverConfig: this.serverConfig,
+        userId: this.userId,
+        oauthTokens,
+        useSSRFProtection: this.useSSRFProtection,
+        allowedAddresses: this.allowedAddresses,
+        ephemeralConnection: this.ephemeralConnection,
+      });
 
-    // Register unconditionally: non-OAuth servers that return 401 also emit 'oauthRequired',
-    // and without this listener, connectClient()'s oauthHandledPromise hangs for 30s+.
-    connection.once('oauthRequired', oauthHandler);
+      oauthHandler = () => {
+        logger.info(
+          `${this.logPrefix} [Discovery] OAuth required; skipping URL generation in discovery mode`,
+        );
+        oauthRequired = true;
+        connection?.emit('oauthFailed', new Error('OAuth required during tool discovery'));
+      };
 
-    try {
-      const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
-      await withTimeout(
-        connection.connect(),
-        connectTimeout,
-        `Connection timeout after ${connectTimeout}ms`,
-      );
+      // Register unconditionally: non-OAuth servers that return 401 also emit 'oauthRequired',
+      // and without this listener, connectClient()'s oauthHandledPromise hangs for 30s+.
+      connection.once('oauthRequired', oauthHandler);
 
-      if (await connection.isConnected()) {
-        const tools = await connection.fetchTools();
-        connection.removeListener('oauthRequired', oauthHandler);
-        return { tools, connection, oauthRequired: false, oauthUrl: null };
+      try {
+        await this.connectWithinBudget(connection, this.resolveConnectTimeout(30000), abortSignal);
+
+        if (await connection.isConnected(abortSignal)) {
+          const snapshot = await connection.fetchOrderedToolsSnapshot(this.deadlineMs, abortSignal);
+          connection.removeListener('oauthRequired', oauthHandler);
+          return {
+            tools: snapshot.complete ? snapshot.tools : null,
+            connection,
+            oauthRequired: false,
+            oauthUrl: null,
+          };
+        }
+      } catch {
+        MCPConnection.decrementCycleCount(this.serverName);
+        logger.debug(
+          `${this.logPrefix} [Discovery] Connection failed, attempting unauthenticated tool listing`,
+        );
       }
-    } catch {
-      MCPConnection.decrementCycleCount(this.serverName);
+
+      /** The authenticated attempt is done with, but abandoning `connect()` does not cancel it —
+       *  that socket stays open. Dispose before the fallback opens a second one so a single
+       *  discovery never holds two concurrent connects to the same server. */
+      connection.removeListener('oauthRequired', oauthHandler);
+      await this.disposeQuietly(connection);
+      connection = null;
+      oauthHandler = null;
+    }
+
+    if (this.isDiscoveryCancelled()) {
       logger.debug(
-        `${this.logPrefix} [Discovery] Connection failed, attempting unauthenticated tool listing`,
+        `${this.logPrefix} [Discovery] Cancelled or out of budget; skipping unauthenticated tool listing`,
       );
+      return { tools: null, connection: null, oauthRequired, oauthUrl };
     }
 
     try {
-      const tools = await this.attemptUnauthenticatedToolListing();
-      connection.removeListener('oauthRequired', oauthHandler);
+      const tools = await this.attemptUnauthenticatedToolListing(abortSignal);
       if (tools && tools.length > 0) {
         logger.info(
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
         );
-        try {
-          await connection.disconnect();
-        } catch {
-          // Ignore cleanup errors
-        }
         return { tools, connection: null, oauthRequired, oauthUrl };
       }
       MCPConnection.decrementCycleCount(this.serverName);
-    } catch (listError) {
-      MCPConnection.decrementCycleCount(this.serverName);
-      logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed:`, listError);
-    }
-
-    connection.removeListener('oauthRequired', oauthHandler);
-
-    try {
-      await connection.disconnect();
     } catch {
-      // Ignore cleanup errors
+      MCPConnection.decrementCycleCount(this.serverName);
+      logger.debug(`${this.logPrefix} [Discovery] Unauthenticated tool listing failed`);
     }
 
     return { tools: null, connection: null, oauthRequired, oauthUrl };
   }
 
-  protected async attemptUnauthenticatedToolListing(): Promise<Tool[] | null> {
+  /** Clamps a single `connect()` to whatever remains of the caller's overall discovery budget. */
+  private resolveConnectTimeout(fallback: number): number {
+    const configured = this.connectionTimeout ?? this.serverConfig.initTimeout ?? fallback;
+    if (this.deadlineMs == null) {
+      return configured;
+    }
+    return Math.max(1, Math.min(configured, this.deadlineMs - Date.now()));
+  }
+
+  private isPastDeadline(): boolean {
+    return this.deadlineMs != null && Date.now() >= this.deadlineMs;
+  }
+
+  /** The ONE cancellation predicate for discovery gates. The budget and the caller's signal are
+   *  two representations of the same fact; a gate that consults only one re-opens the class of
+   *  bug where cancelled callers keep starting work. */
+  private isDiscoveryCancelled(): boolean {
+    return this.isPastDeadline() || this.signal?.aborted === true;
+  }
+
+  /**
+   * Races `connect()` against the discovery signal as well as the timeout. `connect()` cannot
+   * carry the signal itself, so an abort rejects this wait and the caller's normal cleanup
+   * disposes the attempt — the connection's mid-connect disposal guard then discards whatever
+   * the abandoned connect still constructs, instead of the socket living to the full timeout.
+   */
+  private async connectWithinBudget(
+    connection: MCPConnection,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted === true) {
+      throw new Error('Discovery cancelled before connect');
+    }
+    const connect = connection.connect();
+    /** The abandoned attempt still settles eventually; swallow its rejection so losing the race
+     *  never surfaces as an unhandled rejection. */
+    connect.catch(() => undefined);
+    let timer: NodeJS.Timeout | undefined;
+    let onAbort: (() => void) | undefined;
+    const interrupted = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Connection timeout after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+      timer.unref?.();
+      if (signal != null) {
+        onAbort = () => reject(new Error('Discovery cancelled during connect'));
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+    try {
+      return await Promise.race([connect, interrupted]);
+    } finally {
+      clearTimeout(timer);
+      if (onAbort != null) {
+        signal?.removeEventListener('abort', onAbort);
+      }
+    }
+  }
+
+  /**
+   * One abort signal for this discovery operation: the remaining budget and the caller's own
+   * cancellation, whichever fires first. It reaches only work the SDK can genuinely cancel —
+   * the health probe and `tools/list` requests. Teardown is deliberately exempt: `dispose()`
+   * must finish, so cancelling it would trade a bounded overrun for a leaked session.
+   */
+  private createDiscoveryAbortSignal(): AbortSignal | undefined {
+    return createDeadlineAbortSignal(this.deadlineMs, this.signal);
+  }
+
+  private async disposeQuietly(connection: MCPConnection): Promise<void> {
+    try {
+      await connection.dispose();
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
+  protected async attemptUnauthenticatedToolListing(signal?: AbortSignal): Promise<Tool[] | null> {
     const unauthConnection = new MCPConnection({
       serverName: this.serverName,
       serverConfig: this.serverConfig,
@@ -268,23 +391,18 @@ export class MCPConnectionFactory {
     });
 
     try {
-      const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 15000;
-      await withTimeout(unauthConnection.connect(), connectTimeout, `Unauth connection timeout`);
+      await this.connectWithinBudget(unauthConnection, this.resolveConnectTimeout(15000), signal);
 
-      if (await unauthConnection.isConnected()) {
-        const tools = await unauthConnection.fetchTools();
-        await unauthConnection.disconnect();
-        return tools;
+      if (await unauthConnection.isConnected(signal)) {
+        const snapshot = await unauthConnection.fetchOrderedToolsSnapshot(this.deadlineMs, signal);
+        await this.disposeQuietly(unauthConnection);
+        return snapshot.complete ? snapshot.tools : null;
       }
     } catch {
       logger.debug(`${this.logPrefix} [Discovery] Unauthenticated connection attempt failed`);
     }
 
-    try {
-      await unauthConnection.disconnect();
-    } catch {
-      // Ignore cleanup errors
-    }
+    await this.disposeQuietly(unauthConnection);
 
     return null;
   }
@@ -308,11 +426,11 @@ export class MCPConnectionFactory {
     this.allowedAddresses = basic.allowedAddresses;
     this.ephemeralConnection = basic.ephemeralConnection === true;
     this.connectionTimeout = options?.connectionTimeout;
+    this.deadlineMs = options?.deadlineMs;
+    this.signal = options?.signal;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
-    this.logPrefix = options?.user
-      ? `[MCP][${basic.serverName}][${options.user.id}]`
-      : `[MCP][${basic.serverName}]`;
+    this.logPrefix = options?.user ? `[MCP][User: ${options.user.id}]` : '[MCP]';
 
     this.user = options?.user;
 
@@ -321,12 +439,13 @@ export class MCPConnectionFactory {
       this.userId = options.user?.id;
       this.flowManager = options.flowManager;
       this.tokenMethods = options.tokenMethods;
-      this.signal = options.signal;
       this.oauthStart = options.oauthStart;
       this.oauthEnd = options.oauthEnd;
       this.returnOnOAuth = options.returnOnOAuth;
       this.oboTokenResolver = options.oboTokenResolver;
       this.oboTrustChecker = options.oboTrustChecker;
+      this.upstreamTokenProvider = options.upstreamTokenProvider;
+      this.oboIdentityContext = options.oboIdentityContext;
     } else {
       this.useOAuth = false;
     }
@@ -337,6 +456,14 @@ export class MCPConnectionFactory {
     const oboConfig = this.serverConfig.obo;
     if (!oboConfig || !this.oboTokenResolver || !this.user) {
       return null;
+    }
+
+    if (!this.upstreamTokenProvider) {
+      throw new Error(
+        `${this.logPrefix} Internal: upstreamTokenProvider not plumbed for OBO connection. ` +
+          'OBO requires a live upstream-token closure; the caller must construct one via ' +
+          'createOpenIDSessionTokenProvider() and forward it through the MCP connection options.',
+      );
     }
 
     if (this.oboTrustChecker) {
@@ -355,7 +482,13 @@ export class MCPConnectionFactory {
     }
 
     logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
-    return resolveOboToken(this.user, oboConfig, this.oboTokenResolver);
+    return resolveOboToken(
+      this.user,
+      oboConfig,
+      this.oboTokenResolver,
+      this.upstreamTokenProvider,
+      this.oboIdentityContext,
+    );
   }
 
   /** Returns true if this server uses OBO instead of standard OAuth */
@@ -439,10 +572,8 @@ export class MCPConnectionFactory {
       }
       try {
         await connection.dispose();
-      } catch (disconnectError) {
-        logger.warn(`${this.logPrefix} Failed to clean up rejected MCP connection`, {
-          error: disconnectError,
-        });
+      } catch {
+        logger.warn(`${this.logPrefix} Failed to clean up rejected MCP connection`);
       }
       throw error;
     }
@@ -639,10 +770,10 @@ export class MCPConnectionFactory {
       return tokens;
     } catch (error) {
       if (error instanceof ReauthenticationRequiredError) {
-        logger.info(`${this.logPrefix} ${error.message}, will trigger OAuth flow`);
+        logger.info(`${this.logPrefix} Reauthentication required; triggering OAuth flow`);
         return null;
       }
-      logger.debug(`${this.logPrefix} No existing tokens found or error loading tokens`, error);
+      logger.debug(`${this.logPrefix} No existing tokens found or token loading failed`);
       return null;
     }
   }
@@ -732,10 +863,9 @@ export class MCPConnectionFactory {
         resolve(null);
       }, timeoutMs);
 
-      refreshPromise.then(resolve, (error: unknown) => {
+      refreshPromise.then(resolve, () => {
         logger.info(
           `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
-          error,
         );
         resolve(null);
       });
@@ -800,11 +930,12 @@ export class MCPConnectionFactory {
       return tokens;
     } catch (error) {
       if (error instanceof ReauthenticationRequiredError) {
-        logger.info(`${this.logPrefix} ${error.message}, falling back to interactive OAuth`);
+        logger.info(
+          `${this.logPrefix} Reauthentication required; falling back to interactive OAuth`,
+        );
       } else {
         logger.info(
           `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
-          error,
         );
       }
       return null;
@@ -834,8 +965,8 @@ export class MCPConnectionFactory {
         return;
       }
       await this.flowManager.deleteFlow(flowId, 'mcp_get_tokens');
-    } catch (err) {
-      logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err);
+    } catch {
+      logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`);
     }
   }
 
@@ -866,8 +997,8 @@ export class MCPConnectionFactory {
       if (oldState) {
         await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager);
       }
-    } catch (err) {
-      logger.debug(`${this.logPrefix} Failed to invalidate completed mcp_oauth cache`, err);
+    } catch {
+      logger.debug(`${this.logPrefix} Failed to invalidate completed mcp_oauth cache`);
     }
   }
 
@@ -983,16 +1114,46 @@ export class MCPConnectionFactory {
     connection: MCPConnection,
     eventName: 'oauthRequired' | 'oauthReauthenticationRequired' = 'oauthRequired',
   ): () => void {
-    const oauthHandler = async (data: OAuthRequiredEvent) => {
+    const isRequestRecovery = eventName === 'oauthReauthenticationRequired';
+    let recoveryPhase: OAuthRecoveryPhase = 'silent-refresh';
+    let eventHandling: Promise<void> | null = null;
+
+    const handleOAuthEvent = async (data: OAuthRequiredEvent) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
 
-      if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
-        const refreshedTokens = await this.attemptSilentTokenRefresh();
-        if (refreshedTokens) {
-          connection.setOAuthTokens(refreshedTokens);
-          connection.emit('oauthHandled');
+      if (this.connectionReady) {
+        const emitted = connection.emit('oauthReauthenticationRequired', {
+          ...data,
+          skipSilentRefresh: data.skipSilentRefresh,
+        });
+        if (emitted) {
           return;
         }
+        logger.info(`${this.logPrefix} Cached connection requires a live OAuth request handler`);
+        connection.emit('oauthFailed', new Error('OAuth reauthentication required'));
+        return;
+      }
+
+      if (isRequestRecovery && recoveryPhase === 'terminal') {
+        logger.warn(`${this.logPrefix} OAuth recovery phase budget exhausted`);
+        connection.emit('oauthFailed', new Error('OAuth recovery phase budget exhausted'));
+        return;
+      }
+
+      if (!isRequestRecovery || recoveryPhase === 'silent-refresh') {
+        recoveryPhase = 'interactive';
+        if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
+          const refreshedTokens = await this.attemptSilentTokenRefresh();
+          if (refreshedTokens) {
+            connection.setOAuthTokens(refreshedTokens);
+            connection.emit('oauthHandled', 'silent-refresh' satisfies t.OAuthHandledSource);
+            return;
+          }
+        }
+      }
+
+      if (isRequestRecovery) {
+        recoveryPhase = 'terminal';
       }
 
       // Silent refresh failed and we're about to fall through to interactive
@@ -1001,21 +1162,6 @@ export class MCPConnectionFactory {
       // tokens the resource server just rejected (see the `PENDING_STALE_MS`
       // window in `handleOAuthRequired`).
       await this.invalidateCompletedOAuthFlow();
-
-      if (this.connectionReady) {
-        const emitted = connection.emit('oauthReauthenticationRequired', {
-          ...data,
-          skipSilentRefresh: true,
-        });
-        if (emitted) {
-          return;
-        }
-        logger.info(
-          `${this.logPrefix} Silent refresh did not recover cached connection; requiring fresh OAuth prompt`,
-        );
-        connection.emit('oauthFailed', new Error('OAuth reauthentication required'));
-        return;
-      }
 
       if (this.returnOnOAuth) {
         try {
@@ -1093,15 +1239,10 @@ export class MCPConnectionFactory {
 
           // Start monitoring in background — createFlow will find the existing PENDING state
           // written by initFlow above, so metadata arg is unused (pass {} to make that explicit)
-          this.flowManager!.createFlow(newFlowId, 'mcp_oauth', {}, this.signal).catch(
-            async (error) => {
-              logger.debug(`${this.logPrefix} OAuth flow monitor ended`, error);
-              await this.clearStaleClientIfRejected(
-                flowMetadata.reusedClientCredentialSetId,
-                error,
-              );
-            },
-          );
+          this.flowManager!.createFlow(newFlowId, 'mcp_oauth', {}).catch(async (error) => {
+            logger.debug(`${this.logPrefix} OAuth flow monitor ended`);
+            await this.clearStaleClientIfRejected(flowMetadata.reusedClientCredentialSetId, error);
+          });
 
           if (this.oauthStart) {
             logger.info(`${this.logPrefix} OAuth flow started, issuing authorization URL`);
@@ -1110,8 +1251,8 @@ export class MCPConnectionFactory {
 
           connection.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
           return;
-        } catch (error) {
-          logger.error(`${this.logPrefix} Failed to initiate OAuth flow`, error);
+        } catch {
+          logger.error(`${this.logPrefix} Failed to initiate OAuth flow`);
           connection.emit('oauthFailed', new Error('OAuth initiation failed'));
           return;
         }
@@ -1171,7 +1312,7 @@ export class MCPConnectionFactory {
           await this.invalidateGetTokensFlow(tokens);
           logger.info(`${this.logPrefix} Verified OAuth callback tokens in storage`);
         } catch (error) {
-          logger.error(`${this.logPrefix} Failed to verify OAuth callback tokens`, error);
+          logger.error(`${this.logPrefix} Failed to verify OAuth callback tokens`);
           connection.emit(
             'oauthFailed',
             error instanceof Error ? error : new Error('OAuth token verification failed'),
@@ -1182,12 +1323,29 @@ export class MCPConnectionFactory {
 
       // Only emit oauthHandled if we actually got tokens (OAuth succeeded)
       if (result?.tokens) {
-        connection.emit('oauthHandled');
+        connection.emit('oauthHandled', 'interactive' satisfies t.OAuthHandledSource);
       } else {
         await this.clearStaleClientIfRejected(result?.reusedClientCredentialSetId, result?.error);
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
       }
+    };
+
+    const oauthHandler = (data: OAuthRequiredEvent): Promise<void> => {
+      if (!isRequestRecovery) {
+        return handleOAuthEvent(data);
+      }
+      if (eventHandling) {
+        return eventHandling;
+      }
+
+      const handling = handleOAuthEvent(data).finally(() => {
+        if (eventHandling === handling) {
+          eventHandling = null;
+        }
+      });
+      eventHandling = handling;
+      return handling;
     };
 
     connection.on(eventName, oauthHandler);
@@ -1274,13 +1432,13 @@ export class MCPConnectionFactory {
           throw error;
         }
 
-        if (this.useOAuth && this.isOAuthError(error)) {
+        if (this.useOAuth && isOAuthAuthenticationError(error)) {
           logger.info(`${this.logPrefix} OAuth required, stopping connection attempts`);
           throw error;
         }
 
         if (attempts === maxAttempts) {
-          logger.error(`${this.logPrefix} Failed to connect after ${maxAttempts} attempts`, error);
+          logger.error(`${this.logPrefix} Failed to connect after ${maxAttempts} attempts`);
           throw error;
         }
         await this.waitForRetry(2000 * attempts, signal);
@@ -1306,8 +1464,8 @@ export class MCPConnectionFactory {
         deleteTokens: this.tokenMethods!.deleteTokens,
         credentialSetId: reusedClientCredentialSetId,
       }),
-    ).catch((err) => {
-      logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
+    ).catch(() => {
+      logger.warn(`${this.logPrefix} Failed to clear stale client registration`);
     });
   }
 
@@ -1327,48 +1485,6 @@ export class MCPConnectionFactory {
     return false;
   }
 
-  // Determines if an error indicates OAuth authentication is required
-  private isOAuthError(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-
-    // Check for error code
-    if ('code' in error) {
-      const code = (error as { code?: number }).code;
-      if (code === 401 || code === 403) {
-        return true;
-      }
-    }
-
-    // Check message for various auth error indicators
-    if ('message' in error && typeof error.message === 'string') {
-      const message = error.message.toLowerCase();
-      // Check for 401 status
-      if (message.includes('401') || message.includes('non-200 status code (401)')) {
-        return true;
-      }
-      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
-      if (message.includes('invalid_token')) {
-        return true;
-      }
-      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
-      if (message.includes('invalid_grant')) {
-        return true;
-      }
-      // Check for authentication required
-      if (message.includes('authentication required') || message.includes('unauthorized')) {
-        return true;
-      }
-      // Check for missing authorization values (e.g., Amazon Ads MCP returns HTTP 400 with this)
-      if (message.includes('no authorization')) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   /** Manages OAuth flow initiation and completion */
   protected async handleOAuthRequired(): Promise<{
     tokens: MCPOAuthTokens | null;
@@ -1381,15 +1497,15 @@ export class MCPConnectionFactory {
     error?: unknown;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
-    logger.debug(
-      `${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
-    );
+    logger.debug(`${this.logPrefix} \`handleOAuthRequired\` called`, {
+      hasServerUrl: Boolean(serverUrl),
+    });
 
     if (!this.flowManager || !serverUrl) {
       logger.error(
-        `${this.logPrefix} OAuth required but flow manager not available or server URL missing for ${this.serverName}`,
+        `${this.logPrefix} OAuth required but flow manager or server URL is unavailable`,
       );
-      logger.warn(`${this.logPrefix} Please configure OAuth credentials for ${this.serverName}`);
+      logger.warn(`${this.logPrefix} OAuth credentials must be configured`);
       return null;
     }
 
@@ -1397,7 +1513,7 @@ export class MCPConnectionFactory {
     let reusedClientCredentialSetId: string | undefined;
 
     try {
-      logger.debug(`${this.logPrefix} Checking for existing OAuth flow for ${this.serverName}...`);
+      logger.debug(`${this.logPrefix} Checking for existing OAuth flow`);
 
       /** Flow ID to check if a flow already exists */
       const flowId = this.getBaseFlowId();
@@ -1432,13 +1548,11 @@ export class MCPConnectionFactory {
 
             reusedStoredClient = flowMeta?.reusedStoredClient === true;
             reusedClientCredentialSetId = flowMeta?.reusedClientCredentialSetId;
-            const tokens = await this.flowManager.createFlow(flowId, 'mcp_oauth', {}, this.signal);
+            const tokens = await this.waitForSharedOAuthFlow(flowId);
             if (typeof this.oauthEnd === 'function') {
               await this.oauthEnd();
             }
-            logger.info(
-              `${this.logPrefix} Joined existing OAuth flow completed for ${this.serverName}`,
-            );
+            logger.info(`${this.logPrefix} Joined existing OAuth flow completed`);
             return {
               tokens,
               clientInfo: flowMeta?.clientInfo,
@@ -1494,12 +1608,12 @@ export class MCPConnectionFactory {
           if (oldState) {
             await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager);
           }
-        } catch (error) {
-          logger.warn(`${this.logPrefix} Failed to clean up existing OAuth flow`, error);
+        } catch {
+          logger.warn(`${this.logPrefix} Failed to clean up existing OAuth flow`);
         }
       }
 
-      logger.debug(`${this.logPrefix} Initiating new OAuth flow for ${this.serverName}...`);
+      logger.debug(`${this.logPrefix} Initiating new OAuth flow`);
       const {
         authorizationUrl,
         flowId: newFlowId,
@@ -1537,11 +1651,11 @@ export class MCPConnectionFactory {
 
       // createFlow will find the existing PENDING state written by initFlow above,
       // so metadata arg is unused (pass {} to make that explicit)
-      const tokens = await this.flowManager.createFlow(newFlowId, 'mcp_oauth', {}, this.signal);
+      const tokens = await this.waitForSharedOAuthFlow(newFlowId);
       if (typeof this.oauthEnd === 'function') {
         await this.oauthEnd();
       }
-      logger.info(`${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`);
+      logger.info(`${this.logPrefix} OAuth flow completed; tokens received`);
 
       return {
         tokens,
@@ -1553,8 +1667,44 @@ export class MCPConnectionFactory {
         reusedClientCredentialSetId,
       };
     } catch (error) {
-      logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
+      logger.error(`${this.logPrefix} Failed to complete OAuth flow`);
       return { tokens: null, reusedStoredClient, reusedClientCredentialSetId, error };
     }
+  }
+
+  private waitForSharedOAuthFlow(flowId: string): Promise<MCPOAuthTokens | null> {
+    const flow = this.flowManager!.createFlow(flowId, 'mcp_oauth', {});
+    const signal = this.signal;
+    if (!signal) {
+      return flow;
+    }
+
+    return new Promise<MCPOAuthTokens | null>((resolve, reject) => {
+      const cleanup = () => signal.removeEventListener('abort', onAbort);
+      const onAbort = () => {
+        cleanup();
+        reject(
+          signal.reason instanceof Error ? signal.reason : new Error('MCP OAuth flow wait aborted'),
+        );
+      };
+
+      flow.then(
+        (tokens) => {
+          cleanup();
+          resolve(tokens);
+        },
+        (error: unknown) => {
+          cleanup();
+          reject(error);
+        },
+      );
+
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
   }
 }

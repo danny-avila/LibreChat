@@ -14,7 +14,7 @@ import session, { MemoryStore } from 'express-session';
 import { Time, CacheKeys } from 'librechat-data-provider';
 import { RedisStore as ConnectRedis } from 'connect-redis';
 import type { SendCommandFn } from 'rate-limit-redis';
-import { keyvRedisClient, ioredisClient } from './redisClients';
+import { keyvRedisClient, ioredisClient, handleKeyvRedisError } from './redisClients';
 import { batchDeleteKeys, scanKeys } from './redisUtils';
 import {
   instrumentIORedisClient,
@@ -34,6 +34,34 @@ import { violationFile } from './keyvFiles';
  * Only applies to the plain in-memory path (no Redis, no custom fallbackStore).
  */
 const inMemoryCacheMap = new Map<string, Keyv>();
+
+/**
+ * Deletes every key under a namespace through the raw client, which is the one
+ * write path that bypasses the Keyv error funnel; READONLY rejections are routed
+ * to failover recovery before propagating.
+ */
+async function clearRedisNamespace(namespace: string): Promise<void> {
+  if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
+    logger.warn(`Cannot clear namespace ${namespace}: Redis scanIterator not available`);
+    return;
+  }
+
+  const pattern = cacheConfig.REDIS_KEY_PREFIX
+    ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}${namespace}:*`
+    : `${namespace}:*`;
+
+  try {
+    const keysToDelete = await scanKeys(keyvRedisClient, pattern);
+    if (keysToDelete.length === 0) {
+      return;
+    }
+    await batchDeleteKeys(keyvRedisClient, keysToDelete);
+    logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
+  } catch (error) {
+    handleKeyvRedisError(error);
+    throw error;
+  }
+}
 
 /**
  * Creates a cache instance using Redis or a fallback store. Suitable for general caching needs.
@@ -57,33 +85,13 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
 
       cache.on('error', (err) => {
         logger.error(`Cache error in namespace ${namespace}:`, err);
+        handleKeyvRedisError(err);
       });
 
       // Override clear() to handle namespace-aware deletion
       // The default Keyv clear() doesn't respect namespace due to the workaround above
       // Workaround for issue #10487 https://github.com/danny-avila/LibreChat/issues/10487
-      cache.clear = async () => {
-        // Type-safe check for Redis client with scanIterator support
-        if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
-          logger.warn(`Cannot clear namespace ${namespace}: Redis scanIterator not available`);
-          return;
-        }
-
-        // Build pattern: globalPrefix::namespace:* or namespace:*
-        const pattern = cacheConfig.REDIS_KEY_PREFIX
-          ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}${namespace}:*`
-          : `${namespace}:*`;
-
-        // Use utility functions for efficient scan and parallel deletion
-        const keysToDelete = await scanKeys(keyvRedisClient, pattern);
-
-        if (keysToDelete.length === 0) {
-          return;
-        }
-
-        await batchDeleteKeys(keyvRedisClient, keysToDelete);
-        logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
-      };
+      cache.clear = () => clearRedisNamespace(namespace);
 
       return instrumentRedisCache(cache, namespace);
     } catch (err) {
@@ -98,7 +106,12 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
   if (existing) {
     return existing;
   }
-  const cache = new Keyv({ namespace, ttl });
+  /** The default serializer's Buffer-aware reviver costs ~8x a plain JSON round trip on
+   *  every read, and an instrumented sweep of the e2e suite found no namespace ever caching
+   *  a Buffer. Plain JSON keeps today's copy semantics (readers never share references with
+   *  the store, dates still come back as ISO strings); a Buffer would now round-trip as its
+   *  `{ type: 'Buffer', data }` JSON form instead of reviving. */
+  const cache = new Keyv({ namespace, ttl, serialize: JSON.stringify, deserialize: JSON.parse });
   inMemoryCacheMap.set(namespace, cache);
   return cache;
 };
@@ -111,10 +124,14 @@ export const tokenConfigCache = (): Keyv =>
  * Creates a cache instance for storing violation data.
  * Uses a file-based fallback store if Redis is not enabled.
  * @param namespace - The cache namespace for violations.
- * @param ttl - Time to live for cache entries.
+ * @param ttl - Time to live for cache entries. Defaults to `cacheConfig.VIOLATION_SCORE_TTL`
+ * so violation scores decay instead of accumulating forever; each write restarts the countdown.
  * @returns Cache instance for violations.
  */
-export const violationCache = (namespace: string, ttl?: number): Keyv => {
+export const violationCache = (
+  namespace: string,
+  ttl: number | undefined = cacheConfig.VIOLATION_SCORE_TTL,
+): Keyv => {
   return standardCache(`violations:${namespace}`, ttl, violationFile);
 };
 

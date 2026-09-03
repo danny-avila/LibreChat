@@ -6,6 +6,48 @@ import {
   MCP_USER_INPUT_FIELDS,
 } from '../src/mcp';
 
+describe('MCP server title validation', () => {
+  const titleCases = [
+    ['hyphenated ASCII title', 'Read-Only Tools'],
+    ['accented title', "Générateur d'images"],
+    ['Unicode title', '画像ツール'],
+    ['typographic apostrophe', 'Today’s Tools'],
+  ];
+
+  it.each(titleCases)('accepts a %s in configured MCP servers', (_label, title) => {
+    const result = MCPOptionsSchema.safeParse({
+      type: 'sse',
+      url: 'https://mcp-server.com/sse',
+      title,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each(titleCases)('accepts a %s from the MCP Builder', (_label, title) => {
+    const result = MCPServerUserInputSchema.safeParse({
+      type: 'sse',
+      url: 'https://mcp-server.com/sse',
+      title,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each(['', '   ', '-Tools', "'Tools", 'Tools@Home'])(
+    'rejects an invalid MCP server title: %p',
+    (title) => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        title,
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
+});
+
 describe('MCPOptionsSchema', () => {
   describe('OBO transport support', () => {
     it('should accept obo on SSE transport', () => {

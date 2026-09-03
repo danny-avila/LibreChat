@@ -46,6 +46,17 @@ describe('promptTokensFromUsage', () => {
     expect(promptTokensFromUsage(event)).toBe(120);
   });
 
+  it('accepts the reasoning-label usage bucket emitted on the wire', () => {
+    const event: TTokenUsageEvent = {
+      input_tokens: 85,
+      output_tokens: 7,
+      usage_type: 'reasoning-label',
+      runId: 'msg-1:1700000000000',
+      seq: -2,
+    };
+    expect(promptTokensFromUsage(event)).toBe(85);
+  });
+
   it('uses the magnitude heuristic when the provider is absent (cache ≤ input ⇒ included)', () => {
     /** OpenAI-compatible/custom payload with no provider: cache already folded
      *  into input_tokens, so it must NOT be re-added. */

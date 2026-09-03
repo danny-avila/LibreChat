@@ -1,4 +1,4 @@
-const { webcrypto } = require('node:crypto');
+const { webcrypto, timingSafeEqual } = require('node:crypto');
 const { hashBackupCode, decryptV3, decryptV2 } = require('@librechat/data-schemas');
 const { updateUser } = require('~/models');
 
@@ -103,6 +103,31 @@ const generateTOTP = async (secret, forTime = Date.now()) => {
 };
 
 /**
+ * Constant-time comparison of a candidate 2FA code against the expected value.
+ * A plain `===` comparison short-circuits at the first differing character, so
+ * an attacker submitting codes to the 2FA verification endpoint could, in
+ * principle, learn how many leading digits are correct from the response time.
+ * Codes are of a fixed, public length, so returning early on a length mismatch
+ * (or a non-string input) leaks nothing secret while keeping the match path
+ * timing-independent. Mirrors the `crypto.timingSafeEqual(Buffer.from(...))`
+ * pattern already used for CSRF token checks in `packages/api`.
+ * @param {string} expected
+ * @param {string} candidate
+ * @returns {boolean}
+ */
+const constantTimeEqual = (expected, candidate) => {
+  if (typeof expected !== 'string' || typeof candidate !== 'string') {
+    return false;
+  }
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  const candidateBuffer = Buffer.from(candidate, 'utf8');
+  if (expectedBuffer.length !== candidateBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(expectedBuffer, candidateBuffer);
+};
+
+/**
  * Verifies a TOTP token by checking a ±1 time step window.
  * @param {string} secret
  * @param {string} token
@@ -113,7 +138,7 @@ const verifyTOTP = async (secret, token) => {
   const currentTime = Date.now();
   for (let offset = -1; offset <= 1; offset++) {
     const expected = await generateTOTP(secret, currentTime + offset * timeStepMS);
-    if (expected === token) {
+    if (constantTimeEqual(expected, token)) {
       return true;
     }
   }

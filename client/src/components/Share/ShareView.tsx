@@ -2,28 +2,32 @@ import { memo, useState, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
 import { buildTree } from 'librechat-data-provider';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useRecoilState, useRecoilCallback } from 'recoil';
-import { CalendarDays, Settings, MessageSquarePlus } from 'lucide-react';
+import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
+import { CalendarDays, ExternalLink, RefreshCw, Settings, MessageSquarePlus } from 'lucide-react';
 import {
   Spinner,
   Button,
   OGDialog,
+  Separator,
   ThemeContext,
   OGDialogTitle,
   useMediaQuery,
   OGDialogHeader,
   OGDialogContent,
   OGDialogTrigger,
+  TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
-import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/Selectors';
-import { cn, getResponseStatus, selectActiveBranchTail } from '~/utils';
+import SharedSubagentActivityDialog from '~/components/Chat/Subagents/SharedSubagentActivityDialog';
+import { cn, DEFAULT_APP_TITLE, getResponseStatus, selectActiveBranchTail } from '~/utils';
+import { useLocalize, useDocumentTitle, useAuthContext } from '~/hooks';
+import { ThemeSelector, LangSelector } from '~/components/Appearance';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
 import { useForkSharedConvoMutation } from '~/data-provider';
 import { useGetSharedStartupConfig } from '~/data-provider';
 import { ShareArtifactsContainer } from './ShareArtifacts';
-import { useLocalize, useDocumentTitle } from '~/hooks';
+import AppChatSurface from '../Chat/Surface';
 import { ShareContext } from '~/Providers';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
@@ -36,10 +40,13 @@ function SharedView() {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const { isAuthReady } = useAuthContext();
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
-  const { data: config } = useGetSharedStartupConfig(shareId);
-  const { data, isLoading } = useGetSharedMessages(shareId ?? '');
+  const { data: config } = useGetSharedStartupConfig(shareId, { enabled: isAuthReady });
+  const { data, isLoading, isFetching, refetch } = useGetSharedMessages(shareId ?? '', {
+    enabled: isAuthReady,
+  });
   const dataTree = data && buildTree({ messages: data.messages });
   const messagesTree = dataTree?.length === 0 ? null : (dataTree ?? null);
 
@@ -55,6 +62,14 @@ function SharedView() {
        *  routes them through login (with a redirect back to this share), so a
        *  generic error toast would be misleading noise before the redirect. */
       if (status === 401) {
+        return;
+      }
+      /** A 409 means the owner republished the link between the load and the
+       *  request, so the payload this fork was aimed at no longer exists. Pull
+       *  the current version in so a retry continues what is on screen. */
+      if (status === 409) {
+        void refetch();
+        showToast({ message: localize('com_ui_shared_link_updated'), status: 'warning' });
         return;
       }
       showToast({
@@ -100,12 +115,19 @@ function SharedView() {
     if (shareId == null || shareId === '') {
       return;
     }
-    forkSharedConvo({ shareId, targetMessageIndex: getActiveTargetIndex() });
-  }, [shareId, forkSharedConvo, getActiveTargetIndex]);
+    forkSharedConvo({
+      shareId,
+      targetMessageIndex: getActiveTargetIndex(),
+      shareRevision: data?.updatedAt,
+    });
+  }, [shareId, forkSharedConvo, getActiveTargetIndex, data?.updatedAt]);
 
   // configure document title
+  const chatTitleInTab = useRecoilValue(store.chatTitleInTab);
   let docTitle = '';
-  if (config?.appTitle != null && data?.title != null) {
+  if (!chatTitleInTab) {
+    docTitle = config?.appTitle || DEFAULT_APP_TITLE;
+  } else if (config?.appTitle != null && data?.title != null) {
     docTitle = `${data.title} | ${config.appTitle}`;
   } else {
     docTitle = data?.title ?? config?.appTitle ?? document.title;
@@ -152,7 +174,7 @@ function SharedView() {
   );
 
   let content: JSX.Element;
-  if (isLoading) {
+  if (!isAuthReady || isLoading) {
     content = (
       <div className="flex h-screen items-center justify-center">
         <Spinner className="" />
@@ -170,6 +192,8 @@ function SharedView() {
           onLangChange={handleLangChange}
           settingsLabel={localize('com_nav_settings')}
           continueLabel={localize('com_ui_continue_chat')}
+          langfuseSessionLabel={localize('com_ui_langfuse_view_session')}
+          langfuseSessionUrl={data.langfuseSessionUrl}
           onContinue={handleContinue}
           isContinuing={forkShare.isLoading}
         />
@@ -180,9 +204,12 @@ function SharedView() {
     );
   } else {
     content = (
-      <div className="flex h-screen items-center justify-center">
-        {localize('com_ui_shared_link_not_found')}
-      </div>
+      <SharedLinkUnavailable
+        message={localize('com_ui_shared_link_not_found')}
+        retryLabel={localize('com_ui_retry')}
+        isRetrying={isFetching}
+        onRetry={() => void refetch()}
+      />
     );
   }
 
@@ -190,13 +217,13 @@ function SharedView() {
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-surface-secondary from-40% to-transparent">
       <Footer
         startupConfig={config ?? null}
-        className="pointer-events-auto relative mx-auto flex max-w-[55rem] flex-wrap items-center justify-center gap-2 px-3 pb-4 pt-6 text-center text-xs text-text-secondary"
+        className="pointer-events-auto relative mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-2 px-3 pb-4 pt-6 text-center text-xs text-text-secondary"
       />
     </div>
   );
 
   const mainContent = (
-    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary">
+    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-surface-secondary pt-0">
       <div className="relative flex h-full min-h-0 flex-col text-text-primary" role="presentation">
         {content}
         {footer}
@@ -217,12 +244,64 @@ function SharedView() {
 
   return (
     <ShareContext.Provider value={{ isSharedConvo: true, shareId }}>
-      <div className="relative flex h-screen w-full overflow-hidden dark:bg-surface-secondary">
-        <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
-          {artifactsContainer}
-        </main>
-      </div>
+      <AppChatSurface>
+        <div className="relative flex h-screen w-full overflow-hidden dark:bg-surface-secondary">
+          <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
+            {artifactsContainer}
+          </main>
+        </div>
+        <SharedSubagentActivityDialog shareId={shareId} />
+      </AppChatSurface>
     </ShareContext.Provider>
+  );
+}
+
+export function SharedLinkUnavailable({
+  message,
+  retryLabel,
+  isRetrying,
+  onRetry,
+}: {
+  message: string;
+  retryLabel: string;
+  isRetrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+      <p>{message}</p>
+      <Button type="button" variant="outline" onClick={onRetry} disabled={isRetrying}>
+        {isRetrying ? (
+          <Spinner className="size-4" />
+        ) : (
+          <RefreshCw className="size-4" aria-hidden="true" />
+        )}
+        {retryLabel}
+      </Button>
+    </div>
+  );
+}
+
+function ShareTitle({ title }: { title?: string }) {
+  if (title == null || title === '') {
+    return null;
+  }
+
+  return (
+    <TooltipAnchor
+      description={title}
+      side="bottom"
+      tabIndex={0}
+      className="block min-w-0 max-w-full cursor-default"
+      render={
+        <h1
+          data-testid="share-title"
+          className="cursor-default truncate text-2xl font-semibold text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary md:text-4xl"
+        >
+          {title}
+        </h1>
+      }
+    />
   );
 }
 
@@ -233,25 +312,30 @@ interface ShareHeaderProps {
   langcode: string;
   settingsLabel: string;
   continueLabel: string;
+  langfuseSessionLabel: string;
+  langfuseSessionUrl?: string;
   isContinuing: boolean;
   onContinue: () => void;
   onThemeChange: (value: string) => void;
   onLangChange: (value: string) => void;
 }
 
-function ShareHeader({
+export function ShareHeader({
   title,
   formattedDate,
   theme,
   langcode,
   settingsLabel,
   continueLabel,
+  langfuseSessionLabel,
+  langfuseSessionUrl,
   isContinuing,
   onContinue,
   onThemeChange,
   onLangChange,
 }: ShareHeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsContent, setSettingsContent] = useState<HTMLDivElement | null>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
 
   const handleDialogOutside = useCallback((event: Event) => {
@@ -263,12 +347,10 @@ function ShareHeader({
 
   return (
     <section className="mx-auto w-full px-2 pb-3 pt-4 md:px-5 md:pb-4 md:pt-6">
-      <div className="bg-surface-primary/80 relative mx-auto flex w-full max-w-[60rem] flex-col gap-3 rounded-2xl border border-border-light px-4 py-4 shadow-xl backdrop-blur md:gap-4 md:rounded-3xl md:px-6 md:py-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div className="min-w-0 space-y-1.5 md:space-y-2">
-            <h1 className="line-clamp-2 break-words text-2xl font-semibold text-text-primary md:text-4xl">
-              {title}
-            </h1>
+      <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-3 rounded-2xl border border-border-light bg-surface-secondary px-4 py-4 shadow-xl md:gap-4 md:rounded-3xl md:px-6 md:py-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0 flex-1 space-y-1.5 md:space-y-2">
+            <ShareTitle title={title} />
             {formattedDate && (
               <div className="flex items-center gap-2 text-sm text-text-secondary">
                 <CalendarDays className="size-4" aria-hidden="true" />
@@ -277,7 +359,19 @@ function ShareHeader({
             )}
           </div>
 
-          <div className="flex items-center gap-2 md:self-start">
+          <div className="flex flex-wrap items-center justify-end gap-2 md:flex-nowrap md:self-start">
+            {langfuseSessionUrl && (
+              <Button
+                asChild
+                variant="outline"
+                className="gap-2 rounded-full border-border-medium px-4 py-2 text-sm text-text-primary"
+              >
+                <a href={langfuseSessionUrl} target="_blank" rel="noopener noreferrer">
+                  <span>{langfuseSessionLabel}</span>
+                  <ExternalLink className="size-4 shrink-0" aria-hidden="true" />
+                </a>
+              </Button>
+            )}
             <Button
               type="button"
               variant="submit"
@@ -311,7 +405,8 @@ function ShareHeader({
                 </Button>
               </OGDialogTrigger>
               <OGDialogContent
-                className="w-11/12 max-w-lg"
+                ref={setSettingsContent}
+                className="w-11/12 max-w-lg overflow-y-visible"
                 showCloseButton={true}
                 onPointerDownOutside={handleDialogOutside}
                 onInteractOutside={handleDialogOutside}
@@ -319,16 +414,18 @@ function ShareHeader({
                 <OGDialogHeader className="text-left">
                   <OGDialogTitle>{settingsLabel}</OGDialogTitle>
                 </OGDialogHeader>
-                <div className="flex flex-col gap-4 pt-2 text-sm">
+                <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pt-2 text-sm">
                   <ThemeSelector
                     theme={theme}
                     onChange={onThemeChange}
+                    portalElement={settingsContent}
                     popoverClassName="z-[150]"
                   />
-                  <div className="bg-border-medium/60 h-px w-full" />
+                  <Separator orientation="horizontal" className="bg-border-medium/60" />
                   <LangSelector
                     langcode={langcode}
                     onChange={onLangChange}
+                    portalElement={settingsContent}
                     popoverClassName="z-[150]"
                   />
                 </div>

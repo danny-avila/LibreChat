@@ -11,6 +11,29 @@ const mockCreateMCPTool = jest.fn();
 const mockCreateMCPTools = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
+const mockPrimeCodeFiles = jest.fn(async () => ({ files: [], toolContext: undefined }));
+
+const mockCreateSearchTool = jest.fn(() => ({ name: 'web_search' }));
+const mockCreateCodeExecutionTool = jest.fn(() => ({ name: 'execute_code' }));
+const mockLoadWebSearchAuth = jest.fn(async () => ({
+  authenticated: true,
+  authResult: { searchProvider: 'serper', searxngInstanceUrl: 'http://searxng.internal:8080' },
+}));
+
+jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  createSearchTool: (...args) => mockCreateSearchTool(...args),
+  createCodeExecutionTool: (...args) => mockCreateCodeExecutionTool(...args),
+}));
+
+jest.mock('~/server/services/Files/Code/process', () => ({
+  primeFiles: (...args) => mockPrimeCodeFiles(...args),
+}));
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  loadWebSearchAuth: (...args) => mockLoadWebSearchAuth(...args),
+}));
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
 
@@ -70,7 +93,7 @@ jest.mock('~/config', () => ({
 }));
 
 const { Calculator } = require('@librechat/agents');
-const { Constants } = require('librechat-data-provider');
+const { Tools, Constants } = require('librechat-data-provider');
 const { ASK_USER_QUESTION_TOOL_NAME } = require('@librechat/api');
 
 const { User } = require('~/db/models');
@@ -295,6 +318,21 @@ describe('Tool Handlers', () => {
       expect(mockPluginService.getUserPluginAuthValue).toHaveBeenCalledTimes(2);
     });
 
+    it('marks credentials without an operator value as user-provided', async () => {
+      class CapturingTool {
+        constructor(fields) {
+          this.userProvidedAuthFields = fields.userProvidedAuthFields;
+        }
+      }
+
+      process.env.SD_WEBUI_URL = 'user_provided';
+      const initToolFunction = loadToolWithAuth('userId', ['SD_WEBUI_URL'], CapturingTool);
+      const tool = await initToolFunction();
+
+      expect(tool.userProvidedAuthFields).toEqual(new Set(['SD_WEBUI_URL']));
+      delete process.env.SD_WEBUI_URL;
+    });
+
     it('should throw an error for an unauthenticated tool', async () => {
       try {
         await loadTool2();
@@ -332,6 +370,32 @@ describe('Tool Handlers', () => {
       });
       expect(loadedTools).toHaveLength(1);
       expect(loadedTools[0].name).toBe(ASK_USER_QUESTION_TOOL_NAME);
+    });
+
+    it('routes code file priming to the selected bridge worker', async () => {
+      const bridgeWorkerId = 'principal-worker';
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.execute_code],
+        returnMap: true,
+        agent: { id: 'agent-1' },
+        options: {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com/v1',
+            bridgeWorkerId,
+          },
+        },
+      });
+
+      await toolMap[Tools.execute_code]();
+
+      expect(mockPrimeCodeFiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: 'agent-1',
+          codeApiBaseUrl: 'https://code.example.com/v1',
+          bridgeWorkerId,
+        }),
+      );
     });
 
     it('passes request body to chat MCP tool creation and skips stale cache for BODY-scoped servers', async () => {
@@ -812,6 +876,76 @@ describe('Tool Handlers', () => {
           toolKey: secondToolKey,
         }),
       );
+    });
+  });
+
+  describe('web_search SSRF-safe agent wiring', () => {
+    const buildReq = () => ({
+      user: { id: fakeUser._id.toString(), role: 'USER' },
+      body: {},
+    });
+
+    /** Uses the real resolver, so this fails if the wiring delivers agents that do not guard. */
+    async function loadWebSearchConfig(webSearch) {
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.web_search],
+        returnMap: true,
+        webSearch,
+        options: { req: buildReq() },
+      });
+      await toolMap[Tools.web_search]();
+      return mockCreateSearchTool.mock.calls.at(-1)[0];
+    }
+
+    it('threads pooled SSRF-safe agents into the search tool config', async () => {
+      const config = await loadWebSearchConfig({ allowedAddresses: ['localhost:8888'] });
+
+      expect(typeof config.httpAgent.createConnection).toBe('function');
+      expect(typeof config.httpsAgent.createConnection).toBe('function');
+      expect(config.httpAgent.options.keepAlive).toBe(true);
+    });
+
+    it('threads agents that actually reject a private target', async () => {
+      const config = await loadWebSearchConfig({});
+
+      expect(() =>
+        config.httpAgent.createConnection({ host: '169.254.169.254', port: 80 }),
+      ).toThrow(expect.objectContaining({ code: 'ESSRF' }));
+    });
+
+    it('honors allowedAddresses end to end, exempting the configured host:port only', async () => {
+      const config = await loadWebSearchConfig({ allowedAddresses: ['127.0.0.1:8080'] });
+
+      const socket = config.httpAgent.createConnection({ host: '127.0.0.1', port: 8080 });
+      socket?.destroy?.();
+      expect(() => config.httpAgent.createConnection({ host: '127.0.0.1', port: 9 })).toThrow(
+        expect.objectContaining({ code: 'ESSRF' }),
+      );
+    });
+
+    it('does not throw out of loadTools when allowedAddresses is not an array', async () => {
+      await expect(
+        loadWebSearchConfig({ allowedAddresses: { '10.0.0.5:11434': true } }),
+      ).resolves.toBeDefined();
+    });
+
+    it('does not construct web search when authentication is incomplete', async () => {
+      mockLoadWebSearchAuth.mockResolvedValueOnce({
+        authenticated: false,
+        authResult: { searchProvider: 'keenable' },
+      });
+
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.web_search],
+        returnMap: true,
+        webSearch: {},
+        options: { req: buildReq() },
+      });
+
+      expect(toolMap[Tools.web_search]).toBeUndefined();
+      expect(mockCreateSearchTool).not.toHaveBeenCalled();
     });
   });
 });

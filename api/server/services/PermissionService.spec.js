@@ -632,6 +632,24 @@ describe('PermissionService', () => {
       });
     });
 
+    test('should forward idOnTheSource so principal resolution can skip the user lookup', async () => {
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
+
+      await findAccessibleResources({
+        userId,
+        role: 'USER',
+        idOnTheSource: null,
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: 1, // VIEW
+      });
+
+      expect(getUserPrincipals).toHaveBeenCalledWith(
+        expect.objectContaining({ idOnTheSource: null }),
+      );
+    });
+
     test('should find resources user can view', async () => {
       // Mock getUserPrincipals to return user principal
       getUserPrincipals.mockResolvedValue([
@@ -733,7 +751,9 @@ describe('PermissionService', () => {
         getAvailableRoles({
           resourceType: 'non_existent_type',
         }),
-      ).rejects.toThrow('Invalid resourceType: non_existent_type. Valid types: agent, promptGroup');
+      ).rejects.toThrow(
+        'Invalid resourceType: non_existent_type. Valid types: agent, codeEnvironment, promptGroup, mcpServer, remoteAgent, skill, sharedLink',
+      );
     });
   });
 

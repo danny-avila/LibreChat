@@ -56,6 +56,14 @@ jest.mock('@ariakit/react', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
   SharePointIcon: () => <span />,
   DropdownPopup: () => null,
   TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,

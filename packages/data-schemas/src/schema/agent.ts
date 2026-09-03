@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import { SkillsScope } from 'librechat-data-provider';
 import type { IAgent } from '~/types';
 
 const agentSchema: Schema<IAgent> = new Schema<IAgent>(
@@ -52,6 +53,15 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       type: Boolean,
       default: undefined,
     },
+    skill_authoring_enabled: {
+      type: Boolean,
+      default: undefined,
+    },
+    skills_scope: {
+      type: String,
+      enum: Object.values(SkillsScope),
+      default: undefined,
+    },
     tool_kwargs: {
       type: [{ type: Schema.Types.Mixed }],
     },
@@ -76,6 +86,13 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     },
     stateful_code_sessions: {
       type: Boolean,
+    },
+    stateful_code_environment: {
+      type: String,
+      enum: ['user', 'agent-user', 'conversation'],
+    },
+    code_environment_id: {
+      type: String,
     },
     /** @deprecated Use edges instead */
     agent_ids: {
@@ -116,7 +133,6 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     mcpServerNames: {
       type: [String],
       default: [],
-      index: true,
     },
     /** Per-tool configuration (defer_loading, allowed_callers, run_in_background, describe_intent) */
     tool_options: {
@@ -145,6 +161,7 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
 );
 
 agentSchema.index({ id: 1, tenantId: 1 }, { unique: true });
+agentSchema.index({ mcpServerNames: 1, tenantId: 1 });
 agentSchema.index({ updatedAt: -1, _id: 1 });
 agentSchema.index({ 'edges.to': 1 });
 

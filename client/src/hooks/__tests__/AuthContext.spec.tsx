@@ -2,13 +2,11 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React from 'react';
-import { render, act } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-
+import { render, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TAuthConfig } from '~/common';
-
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
 import { SESSION_KEY } from '~/utils';
 
@@ -75,6 +73,7 @@ function TestConsumer() {
     <div
       data-testid="consumer"
       data-authenticated={ctx.isAuthenticated}
+      data-auth-ready={ctx.isAuthReady}
       data-roles={JSON.stringify(ctx.roles ?? {})}
     />
   );
@@ -116,6 +115,37 @@ function renderProviderLive() {
     </QueryClientProvider>,
   );
 }
+
+function renderOptionalProvider() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RecoilRoot>
+        <MemoryRouter>
+          <AuthContextProvider authConfig={{ loginRedirect: '/login', optional: true }}>
+            <TestConsumer />
+          </AuthContextProvider>
+        </MemoryRouter>
+      </RecoilRoot>
+    </QueryClientProvider>,
+  );
+}
+
+describe('AuthContextProvider — test mode', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('is ready without starting silent refresh', () => {
+    const { getByTestId } = renderProvider();
+
+    expect(getByTestId('consumer')).toHaveAttribute('data-auth-ready', 'true');
+    expect(mockRefreshMutate).not.toHaveBeenCalled();
+  });
+});
 
 describe('AuthContextProvider — login onError redirect handling', () => {
   beforeEach(() => {
@@ -359,6 +389,53 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     expect(mockNavigate).not.toHaveBeenCalledWith('https://evil.com/steal', expect.anything());
     expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
     jest.useRealTimers();
+  });
+});
+
+describe('AuthContextProvider — optional authentication', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.history.replaceState({}, '', '/share/share-1');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('keeps a public route visible when no refresh token exists', () => {
+    renderOptionalProvider();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+    act(() => {
+      refreshOptions.onSuccess(undefined);
+    });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="consumer"]')).toHaveAttribute(
+      'data-auth-ready',
+      'true',
+    );
+  });
+
+  it('keeps a public route visible when session refresh fails', () => {
+    renderOptionalProvider();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onError: (error: unknown) => void },
+    ];
+    act(() => {
+      refreshOptions.onError(new Error('No session'));
+    });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="consumer"]')).toHaveAttribute(
+      'data-auth-ready',
+      'true',
+    );
   });
 });
 

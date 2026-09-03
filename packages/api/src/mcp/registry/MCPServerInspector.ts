@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, normalizeServerName } from 'librechat-data-provider';
+import { Constants, normalizeServerName, stripServerNamePrefixes } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
@@ -150,7 +150,7 @@ export class MCPServerInspector {
 
   private async fetchServerInstructions(): Promise<void> {
     if (isEnabled(this.config.serverInstructions)) {
-      this.config.serverInstructions = this.connection!.client.getInstructions();
+      this.config.resolvedInstructions = this.connection!.client.getInstructions();
     }
   }
 
@@ -162,32 +162,44 @@ export class MCPServerInspector {
   }
 
   private async fetchToolFunctions(): Promise<void> {
-    this.config.toolFunctions = await MCPServerInspector.getToolFunctions(
-      this.serverName,
-      this.connection!,
-    );
+    this.config.toolFunctions = (
+      await MCPServerInspector.getToolCatalog(this.serverName, this.connection!)
+    ).tools;
   }
 
   /**
-   * Converts server tools to LibreChat-compatible tool functions format.
+   * Converts server tools to LibreChat-compatible tool functions format, keeping the ordering
+   * reserved before the `tools/list` that produced them. App-level publishers need that
+   * revision — a catalog write that cannot be ordered against concurrent replicas is dropped.
    * @param serverName - The name of the server
    * @param connection - The MCP connection
-   * @returns Tool functions formatted for LibreChat
    */
-  public static async getToolFunctions(
+  public static async getToolCatalog(
     serverName: string,
     connection: MCPConnection,
-  ): Promise<t.LCAvailableTools> {
-    const tools = await connection.fetchTools();
+    deadlineMs?: number,
+    signal?: AbortSignal,
+  ): Promise<{ tools: t.LCAvailableTools; publicationRevision?: string }> {
+    const snapshot = await connection.fetchOrderedToolsSnapshot(deadlineMs, signal);
+    if (!snapshot.complete) {
+      throw new Error(`Incomplete tools/list snapshot for MCP server ${serverName}`);
+    }
+    const { tools } = snapshot;
 
     const toolFunctions: t.LCAvailableTools = {};
     /** Model-facing key: must match the runtime instance name, which embeds
      *  the normalized server name (see `createToolInstance` in MCP.js). */
     const keyServerName = normalizeServerName(serverName);
+    const keyToolNames = stripServerNamePrefixes(
+      tools.map((tool) => tool.name),
+      keyServerName,
+    );
     tools.forEach((tool) => {
-      const name = `${tool.name}${Constants.mcp_delimiter}${keyServerName}`;
+      const keyToolName = keyToolNames.get(tool.name) ?? tool.name;
+      const name = `${keyToolName}${Constants.mcp_delimiter}${keyServerName}`;
       toolFunctions[name] = {
         type: 'function',
+        ...(keyToolName !== tool.name && { serverToolName: tool.name }),
         ['function']: {
           name,
           description: tool.description,
@@ -202,6 +214,6 @@ export class MCPServerInspector {
       };
     });
 
-    return toolFunctions;
+    return { tools: toolFunctions, publicationRevision: snapshot.publicationRevision };
   }
 }

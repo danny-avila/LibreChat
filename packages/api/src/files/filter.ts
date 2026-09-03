@@ -1,14 +1,15 @@
 import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import type { AppConfig, IMongoFile } from '@librechat/data-schemas';
+import type { RegexLike } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
 /**
  * Checks if a MIME type is supported by the endpoint configuration
  * @param mimeType - The MIME type to check
- * @param supportedMimeTypes - Array of RegExp patterns to match against
+ * @param supportedMimeTypes - Array of compiled matchers (RegexLike) to test against
  * @returns True if the MIME type matches any pattern
  */
-function isMimeTypeSupported(mimeType: string, supportedMimeTypes?: RegExp[]): boolean {
+function isMimeTypeSupported(mimeType: string, supportedMimeTypes?: RegexLike[]): boolean {
   if (!supportedMimeTypes || supportedMimeTypes.length === 0) {
     return true;
   }
@@ -36,13 +37,25 @@ export function filterFilesByEndpointConfig(
     endpointType?: string | null;
   },
 ): IMongoFile[] {
+  return filterFilesByEndpointRuntimeConfig(req.config, params);
+}
+
+/** Request-free endpoint file-policy adapter used by Agent execution hosts. */
+export function filterFilesByEndpointRuntimeConfig(
+  appConfig: AppConfig | undefined,
+  params: {
+    files: IMongoFile[] | undefined;
+    endpoint?: string | null;
+    endpointType?: string | null;
+  },
+): IMongoFile[] {
   const { files, endpoint, endpointType } = params;
 
   if (!files || files.length === 0) {
     return [];
   }
 
-  const mergedFileConfig = mergeFileConfig(req.config?.fileConfig);
+  const mergedFileConfig = mergeFileConfig(appConfig?.fileConfig);
   const endpointFileConfig = getEndpointFileConfig({
     fileConfig: mergedFileConfig,
     endpoint,

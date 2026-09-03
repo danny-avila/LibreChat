@@ -12,38 +12,39 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => {
-    const React = jest.requireActual<typeof import('react')>('react');
-    const ReactDOM = jest.requireActual<typeof import('react-dom')>('react-dom');
-    return {
-      Button: ({
-        children,
-        variant: _variant,
-        ...props
-      }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) =>
-        React.createElement('button', props, children),
-      OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
-        open ? React.createElement(React.Fragment, null, children) : null,
-      OGDialogContent: ({ children }: { children: ReactNode }) =>
-        ReactDOM.createPortal(React.createElement('div', null, children), globalThis.document.body),
-      TextareaAutosize: React.forwardRef<
-        HTMLTextAreaElement,
-        React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
-          minRows?: number;
-          maxRows?: number;
-        }
-      >(({ minRows: _minRows, maxRows: _maxRows, ...props }, ref) =>
-        React.createElement('textarea', { ...props, ref }),
-      ),
-      useToastContext: () => ({
-        showToast: mockShowToast,
-      }),
-    };
-  },
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const ReactDOM = jest.requireActual<typeof import('react-dom')>('react-dom');
+  return {
+    Button: ({
+      children,
+      variant: _variant,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) =>
+      React.createElement('button', props, children),
+    Input: React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+      (props, ref) => React.createElement('input', { ...props, ref }),
+    ),
+    Label: ({ children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) =>
+      React.createElement('label', props, children),
+    OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
+      open ? React.createElement(React.Fragment, null, children) : null,
+    OGDialogContent: ({ children }: { children: ReactNode }) =>
+      ReactDOM.createPortal(React.createElement('div', null, children), globalThis.document.body),
+    TextareaAutosize: React.forwardRef<
+      HTMLTextAreaElement,
+      React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+        minRows?: number;
+        maxRows?: number;
+      }
+    >(({ minRows: _minRows, maxRows: _maxRows, ...props }, ref) =>
+      React.createElement('textarea', { ...props, ref }),
+    ),
+    useToastContext: () => ({
+      showToast: mockShowToast,
+    }),
+  };
+});
 
 jest.mock('~/data-provider', () => ({
   useCreateSkillMutation: () => ({

@@ -67,9 +67,26 @@ describe('GenerationJobManager resume replay events', () => {
     manager = undefined;
   });
 
+  test('projects regeneration ownership into resume state', async () => {
+    manager = createInMemoryManager();
+    const streamId = `regenerate-resume-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId, {
+      initialMetadata: {
+        responseMessageId: 'edited-response',
+        isRegenerate: true,
+      },
+    });
+
+    await expect(manager.getResumeState(streamId)).resolves.toMatchObject({
+      responseMessageId: 'edited-response',
+      isRegenerate: true,
+    });
+  });
+
   test('includes OAuth run step and delta replay events in resume state', async () => {
     manager = createInMemoryManager();
     const streamId = `oauth-delta-resume-${Date.now()}`;
+    const expiresAt = Date.now() + 60_000;
     await manager.createJob(streamId, 'user-1', streamId);
 
     const runStepEvent = {
@@ -92,7 +109,7 @@ describe('GenerationJobManager resume replay events', () => {
           type: 'tool_calls',
           tool_calls: [{ name: 'oauth_mcp_Google-Workspace', args: '' }],
           auth: 'https://auth.example.com/oauth',
-          expires_at: 1780791946,
+          expires_at: expiresAt,
         },
       },
     } satisfies ServerSentEvent;
@@ -125,6 +142,36 @@ describe('GenerationJobManager resume replay events', () => {
     const resumeState = await manager.getResumeState(streamId);
 
     expect(resumeState?.replayEvents).toEqual([runStepEvent, authEvent]);
+    expect(resumeState?.pendingOAuthPrompts).toEqual([
+      {
+        stepId: 'step-oauth',
+        runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+        index: 0,
+        toolCallId: 'call-oauth',
+        toolName: 'oauth_mcp_Google-Workspace',
+        authURL: 'https://auth.example.com/oauth',
+        expiresAt,
+      },
+    ]);
+
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step_completed',
+      data: {
+        result: {
+          id: 'step-oauth',
+          index: 0,
+          tool_call: {
+            id: 'call-oauth',
+            name: 'oauth_mcp_Google-Workspace',
+            output: 'OAuth authentication completed',
+          },
+        },
+      },
+    });
+
+    await expect(manager.getResumeState(streamId)).resolves.toMatchObject({
+      pendingOAuthPrompts: undefined,
+    });
   });
 
   test('retains emitted run steps when the live graph is unavailable during resume', async () => {
@@ -150,6 +197,90 @@ describe('GenerationJobManager resume replay events', () => {
     const resumeState = await manager.getResumeState(streamId);
 
     expect(resumeState?.runSteps).toEqual([runStep]);
+  });
+
+  test('applies retained ask answers to reconnect snapshots', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    manager = createManagerWithStore(store);
+    const streamId = `ask-answer-resume-${Date.now()}`;
+    const job = await manager.createJob(streamId, 'user-1', streamId);
+    manager.setContentParts(streamId, [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' },
+      },
+    ]);
+    await store.updateJob(
+      streamId,
+      {
+        resolvedAskUserQuestions: [
+          { request: { question: 'Which env?' }, output: 'staging', toolCallId: 'ask-1' },
+        ],
+      },
+      job.createdAt,
+    );
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.aggregatedContent).toEqual([
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'ask-1',
+          name: 'ask_user_question',
+          args: JSON.stringify({ question: 'Which env?' }),
+          output: 'staging',
+          progress: 1,
+        },
+      },
+    ]);
+  });
+
+  test('does not return a stale pending action with a newly resolved answer', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    manager = createManagerWithStore(store);
+    const streamId = `ask-answer-lifecycle-resume-${Date.now()}`;
+    const job = await manager.createJob(streamId, 'user-1', streamId);
+    manager.setContentParts(streamId, [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' },
+      },
+    ]);
+    await store.updateJob(
+      streamId,
+      {
+        status: 'running',
+        resolvedAskUserQuestions: [
+          { request: { question: 'Which env?' }, output: 'staging', toolCallId: 'ask-1' },
+        ],
+      },
+      job.createdAt,
+    );
+    const getJob = store.getJob.bind(store);
+    jest.spyOn(store, 'getJob').mockImplementationOnce(async (...args) => {
+      const current = await getJob(...args);
+      if (current == null) {
+        return null;
+      }
+      return {
+        ...current,
+        status: 'requires_action',
+        pendingAction: {
+          actionId: 'stale-action',
+          streamId,
+          createdAt: Date.now(),
+          payload: { type: 'ask_user_question', question: { question: 'Which env?' } },
+        },
+      };
+    });
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.aggregatedContent?.[0]).toMatchObject({
+      tool_call: { output: 'staging' },
+    });
+    expect(resumeState?.pendingAction).toBeUndefined();
   });
 
   test('realigns a stale run-step index to the aggregated tool card by tool-call id', async () => {

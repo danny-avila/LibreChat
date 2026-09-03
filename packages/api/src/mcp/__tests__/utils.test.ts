@@ -13,12 +13,15 @@ import {
   getMissingCustomUserVars,
   hasCustomUserVars,
   hasRuntimeUrlPlaceholders,
-  hasRuntimeBodyPlaceholders,
+  getMCPRequestScope,
   hasRuntimeContextPlaceholders,
   getRuntimeBodyPlaceholderFields,
   getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
+  validateMCPServerConfig,
   requiresEphemeralUserConnection,
+  isChatSelectableMCPServer,
+  filterChatSelectableMCPServers,
 } from '~/mcp/utils';
 
 describe('normalizeServerName', () => {
@@ -400,6 +403,38 @@ describe('redactServerSecrets', () => {
     expect(redacted.customUserVars).toEqual(config.customUserVars);
   });
 
+  it('should expose request-scoped behavior without exposing placeholder-bearing fields', () => {
+    const config: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://infra.internal/mcp',
+      source: 'yaml',
+      headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+    };
+
+    const redacted = redactServerSecrets(config);
+
+    expect(redacted.requestScoped).toBe(true);
+    expect(redacted.url).toBeUndefined();
+    expect((redacted as Record<string, unknown>).headers).toBeUndefined();
+  });
+
+  it('should omit request-scoped metadata for ordinary and unsupported BODY placeholders', () => {
+    expect(
+      redactServerSecrets({
+        type: 'streamable-http',
+        url: 'https://example.com/mcp',
+        source: 'yaml',
+      }).requestScoped,
+    ).toBeUndefined();
+    expect(
+      redactServerSecrets({
+        type: 'streamable-http',
+        url: 'https://example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+        source: 'yaml',
+      }).requestScoped,
+    ).toBeUndefined();
+  });
+
   it('should pass URLs through unchanged when caller has edit authority', () => {
     const config: ParsedServerConfig = {
       type: 'sse',
@@ -736,6 +771,26 @@ describe('hasRuntimeContextPlaceholders', () => {
     ).toBe(true);
   });
 
+  it('detects trusted runtime placeholders introduced by environment expansion', () => {
+    const envName = 'MCP_UTILS_RUNTIME_IDENTITY_TEST';
+    const previous = process.env[envName];
+    process.env[envName] = '{{LIBRECHAT_USER_ID}}';
+    try {
+      expect(
+        hasRuntimeContextPlaceholders({
+          source: 'yaml',
+          headers: { 'X-User': `\${${envName}}` },
+        }),
+      ).toBe(true);
+    } finally {
+      if (previous == null) {
+        delete process.env[envName];
+      } else {
+        process.env[envName] = previous;
+      }
+    }
+  });
+
   it('ignores custom user variable placeholders', () => {
     expect(
       hasRuntimeContextPlaceholders({
@@ -781,33 +836,86 @@ describe('hasRuntimeUrlPlaceholders', () => {
   });
 });
 
-describe('hasRuntimeBodyPlaceholders', () => {
+describe('getMCPRequestScope', () => {
   it('detects trusted runtime BODY placeholders across connection fields', () => {
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'yaml',
         url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
-      }),
+      }).requestScoped,
     ).toBe(true);
 
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'config',
         headers: {
           'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
         },
-      }),
+      }).requestScoped,
     ).toBe(true);
+  });
+
+  it('tracks BODY placeholders introduced by environment expansion', () => {
+    const envName = 'MCP_UTILS_RUNTIME_BODY_TEST';
+    const previous = process.env[envName];
+    process.env[envName] = '{{LIBRECHAT_BODY_MESSAGEID}}';
+    try {
+      const config = {
+        source: 'yaml' as const,
+        headers: { 'X-Message': `\${${envName}}` },
+      };
+      expect(getMCPRequestScope(config).requestScoped).toBe(true);
+      expect(getRuntimeBodyPlaceholderFields(config)).toEqual(['messageId']);
+    } finally {
+      if (previous == null) {
+        delete process.env[envName];
+      } else {
+        process.env[envName] = previous;
+      }
+    }
   });
 
   it('ignores BODY placeholders in user-sourced configs', () => {
     expect(
-      hasRuntimeBodyPlaceholders({
+      getMCPRequestScope({
         source: 'user',
         dbId: 'server-123',
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
-      }),
+      }).requestScoped,
     ).toBe(false);
+  });
+
+  it('ignores unsupported BODY placeholder names that the resolver leaves literal', () => {
+    const config = {
+      source: 'yaml' as const,
+      url: 'https://example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+    };
+
+    expect(hasRuntimeContextPlaceholders(config)).toBe(false);
+    expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
+    expect(getMCPRequestScope(config).requestScoped).toBe(false);
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(requiresEphemeralUserConnection(config)).toBe(false);
+    expect(requiresUserScopedConnection(config)).toBe(false);
+  });
+
+  it('ignores BODY and USER literals in plugin-sourced configs', () => {
+    const config = {
+      source: 'plugin' as const,
+      url: 'https://example.com/users/{{LIBRECHAT_USER_ID}}/mcp',
+      headers: {
+        'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      },
+    };
+
+    expect(hasRuntimeContextPlaceholders(config)).toBe(false);
+    expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
+    expect(getMCPRequestScope(config).requestScoped).toBe(false);
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(requiresEphemeralUserConnection(config)).toBe(false);
+    expect(requiresUserScopedConnection(config)).toBe(false);
   });
 });
 
@@ -846,6 +954,29 @@ describe('getMissingRuntimeBodyPlaceholderFields', () => {
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('validateMCPServerConfig', () => {
+  it('preserves server-managed metadata on a valid effective config', () => {
+    const config = {
+      type: 'streamable-http' as const,
+      url: 'https://example.com/mcp',
+      source: 'config' as const,
+      dbId: 'server-123',
+    };
+
+    expect(validateMCPServerConfig(config)).toBe(config);
+    expect(validateMCPServerConfig(config)).toMatchObject({
+      source: 'config',
+      dbId: 'server-123',
+    });
+  });
+
+  it('rejects an incomplete effective config', () => {
+    expect(() => validateMCPServerConfig({ type: 'streamable-http' })).toThrow(
+      'Invalid effective MCP server configuration',
+    );
   });
 });
 
@@ -961,5 +1092,140 @@ describe('getMissingCustomUserVars', () => {
     expect(
       getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', UNRELATED: 'value' }),
     ).toEqual([]);
+  });
+});
+
+describe('isChatSelectableMCPServer', () => {
+  it('rejects a server hidden from the chat menu', () => {
+    expect(isChatSelectableMCPServer({ chatMenu: false })).toBe(false);
+  });
+
+  it('rejects a server reachable only through an agent', () => {
+    expect(isChatSelectableMCPServer({ consumeOnly: true })).toBe(false);
+  });
+
+  it('accepts a server with the flags unset or explicitly on', () => {
+    expect(isChatSelectableMCPServer({})).toBe(true);
+    expect(isChatSelectableMCPServer({ chatMenu: true, consumeOnly: false })).toBe(true);
+  });
+
+  it('accepts an unresolved config so request-tier servers are not dropped', () => {
+    expect(isChatSelectableMCPServer(undefined)).toBe(true);
+    expect(isChatSelectableMCPServer(null)).toBe(true);
+  });
+});
+
+describe('filterChatSelectableMCPServers', () => {
+  const catalog = {
+    visible: { chatMenu: true },
+    hidden: { chatMenu: false },
+    unset: {},
+    'agent-only': { consumeOnly: true },
+    'private server': { chatMenu: false },
+  };
+  const accessible = jest.fn(async () => catalog);
+
+  beforeEach(() => accessible.mockClear());
+
+  it('drops servers hidden from the chat menu', async () => {
+    await expect(
+      filterChatSelectableMCPServers(['visible', 'hidden'], {
+        userId: 'user123',
+        getAccessibleMCPServers: accessible,
+      }),
+    ).resolves.toEqual(['visible']);
+  });
+
+  it('drops servers the user only reaches through an agent', async () => {
+    await expect(
+      filterChatSelectableMCPServers(['visible', 'agent-only'], {
+        userId: 'user123',
+        getAccessibleMCPServers: accessible,
+      }),
+    ).resolves.toEqual(['visible']);
+  });
+
+  it('keeps servers with the flags unset', async () => {
+    await expect(
+      filterChatSelectableMCPServers(['unset'], {
+        userId: 'user123',
+        getAccessibleMCPServers: accessible,
+      }),
+    ).resolves.toEqual(['unset']);
+  });
+
+  it('resolves the catalog once, however long the selection', async () => {
+    await expect(
+      filterChatSelectableMCPServers(['visible', 'visible', 'unset', 'visible'], {
+        userId: 'user123',
+        getAccessibleMCPServers: accessible,
+      }),
+    ).resolves.toEqual(['visible', 'unset']);
+    expect(accessible).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the role through, since it scopes what the user can reach', async () => {
+    await filterChatSelectableMCPServers(['visible'], {
+      userId: 'user123',
+      role: 'ADMIN',
+      getAccessibleMCPServers: accessible,
+    });
+    expect(accessible).toHaveBeenCalledWith('user123', 'ADMIN');
+  });
+
+  it('drops a hidden server named by its normalized spelling', async () => {
+    await expect(
+      filterChatSelectableMCPServers(['private_server'], {
+        userId: 'user123',
+        getAccessibleMCPServers: accessible,
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('lets an exact accessible name win over another server normalizing onto it', async () => {
+    const crossTier = jest.fn(async () => ({
+      'private server': { chatMenu: false },
+      private_server: { chatMenu: true },
+    }));
+    await expect(
+      filterChatSelectableMCPServers(['private_server'], {
+        userId: 'user123',
+        getAccessibleMCPServers: crossTier,
+      }),
+    ).resolves.toEqual(['private_server']);
+  });
+
+  it('keeps a request-tier server the registry does not know', async () => {
+    await expect(
+      filterChatSelectableMCPServers(['body-scoped'], {
+        userId: 'user123',
+        getAccessibleMCPServers: accessible,
+      }),
+    ).resolves.toEqual(['body-scoped']);
+  });
+
+  it('keeps the selection when the catalog lookup fails', async () => {
+    const failing = jest.fn(async () => {
+      throw new Error('registry unavailable');
+    });
+    await expect(
+      filterChatSelectableMCPServers(['a', 'b'], {
+        userId: 'user123',
+        getAccessibleMCPServers: failing,
+      }),
+    ).resolves.toEqual(['a', 'b']);
+  });
+
+  it('uses the selection as sent when no resolver is supplied', async () => {
+    await expect(
+      filterChatSelectableMCPServers(['a', 'a', 'b'], { userId: 'user123' }),
+    ).resolves.toEqual(['a', 'b']);
+  });
+
+  it('returns an empty array for an empty or missing selection', async () => {
+    const opts = { userId: 'u', getAccessibleMCPServers: accessible };
+    await expect(filterChatSelectableMCPServers([], opts)).resolves.toEqual([]);
+    await expect(filterChatSelectableMCPServers(undefined, opts)).resolves.toEqual([]);
+    await expect(filterChatSelectableMCPServers(null, opts)).resolves.toEqual([]);
   });
 });

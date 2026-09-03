@@ -9,6 +9,8 @@ import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
+import type { ServerRequest } from '~/types/http';
+import type { ContextRequest } from './tenant';
 import {
   getLibreChatRolesForOpenIdSync,
   getOpenIdRolesForOpenIdSync,
@@ -17,6 +19,7 @@ import {
 } from '../auth/openidRoleSync';
 import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
 import { getEnvProxyDispatcher, getHttpsProxyAgent } from '~/utils/proxy';
+import { tenantContextMiddleware } from './tenant';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {
@@ -24,6 +27,7 @@ export interface RemoteAgentAuthDeps {
   findUser: UserMethods['findUser'];
   getRolesByNames: RoleMethods['findRolesByNames'];
   updateUser: UserMethods['updateUser'];
+  isPrincipalActive: (userId: string) => Promise<boolean>;
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
 }
 
@@ -293,12 +297,50 @@ function isApiKeyEnabled(config: AppConfig): boolean {
   return getRemoteAuthConfig(config)?.apiKey?.enabled !== false;
 }
 
+function rejectTenantContextConflict(
+  requestTenantId: string | undefined,
+  userTenantId: string | undefined,
+  res: Response,
+): boolean {
+  if (!requestTenantId || !userTenantId || requestTenantId === userTenantId) {
+    return false;
+  }
+
+  logger.warn('[remoteAgentAuth] Authenticated user tenant conflicts with request tenant context');
+  res.status(401).json({ error: 'Unauthorized' });
+  return true;
+}
+
+function continueWithAuthenticatedTenantContext(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const requestTenantId = getTenantId();
+  const userTenantId = (req.user as { tenantId?: string } | undefined)?.tenantId;
+
+  if (rejectTenantContextConflict(requestTenantId, userTenantId, res)) {
+    return;
+  }
+
+  const contextRequest = req as ContextRequest;
+  if (requestTenantId) {
+    contextRequest.tenantId = requestTenantId;
+  }
+  tenantContextMiddleware(req as ServerRequest, res, next);
+}
+
 async function enforceApiKeyTenantPolicy(
   req: Request,
   res: Response,
   next: NextFunction,
   getAppConfig: RemoteAgentAuthDeps['getAppConfig'],
 ): Promise<void> {
+  const userTenantId = (req.user as { tenantId?: string } | undefined)?.tenantId;
+  if (rejectTenantContextConflict(getTenantId(), userTenantId, res)) {
+    return;
+  }
+
   const config = await getAppConfig(getConfigOptions(req));
 
   if (!isApiKeyEnabled(config)) {
@@ -307,7 +349,7 @@ async function enforceApiKeyTenantPolicy(
     return;
   }
 
-  next();
+  continueWithAuthenticatedTenantContext(req, res, next);
 }
 
 async function runApiKeyAuth(
@@ -481,6 +523,7 @@ async function selectOpenIdRoleForOpenIdSync(
     options,
     accessClaims: payload,
     decodeToken: () => payload,
+    resolveGroupOverage: async () => [],
   });
   if (openIdRoleValues === undefined) {
     logger.warn(
@@ -560,6 +603,7 @@ export function createRemoteAgentAuth({
   findUser,
   getRolesByNames,
   updateUser,
+  isPrincipalActive,
   getAppConfig,
 }: RemoteAgentAuthDeps): RequestHandler {
   /**
@@ -648,6 +692,10 @@ export function createRemoteAgentAuth({
         return;
       }
 
+      if (rejectTenantContextConflict(getTenantId(), userResolution.user.tenantId, res)) {
+        return;
+      }
+
       if (
         !(await enforceOidcTenantPolicy(
           token,
@@ -684,10 +732,18 @@ export function createRemoteAgentAuth({
         return;
       }
 
+      if (!(await isPrincipalActive(userResolution.user.id))) {
+        res.status(409).json({
+          error: 'Account deletion is in progress',
+          code: 'ACCOUNT_DELETION_IN_PROGRESS',
+        });
+        return;
+      }
+
       await updateResolvedUser(userResolution, updateUser);
 
       req.user = userResolution.user;
-      return next();
+      return continueWithAuthenticatedTenantContext(req, res, next);
     } catch (err) {
       logger.error('[remoteAgentAuth] Unexpected error', err);
       res.status(500).json({ error: 'Internal server error' });

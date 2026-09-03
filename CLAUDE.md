@@ -13,7 +13,8 @@ LibreChat is a monorepo with the following key workspaces:
 | `/client` | TypeScript/React | Frontend | `packages/data-provider`, `packages/client` | Frontend SPA |
 | `/packages/client` | TypeScript | Frontend | `packages/data-provider` | Shared frontend utilities |
 
-The source code for `@librechat/agents` (major backend dependency, same team) is at `/home/danny/agentus`.
+The source code for `@librechat/agents` (major backend dependency, same team) lives at
+<https://github.com/danny-avila/agents>.
 
 ---
 
@@ -24,6 +25,29 @@ The source code for `@librechat/agents` (major backend dependency, same team) is
 - Database-specific shared logic goes in `/packages/data-schemas`.
 - Frontend/backend shared API logic (endpoints, types, data-service) goes in `/packages/data-provider`.
 - Build data-provider from project root: `npm run build:data-provider`.
+
+---
+
+## Branching and Pull Requests
+
+- **Branch off `dev`, and target `dev` with every pull request.** All work lands on `dev` first.
+- **`main` is the released branch.** It is kept as a fast-forward of `dev` and synced as-is, so it
+  is always an ancestor of `dev` — equal to it right after a sync, behind it otherwise. It never
+  carries a commit that `dev` does not have.
+- **Never open a backport pull request to `main`.** Anything merged to `dev` reaches `main` at the
+  next sync; a second pull request for the same change is redundant.
+- **The repository's default branch is `main`**, so `gh pr create` and the GitHub UI target it
+  unless told otherwise — always pass `--base dev` explicitly.
+- Pull requests opened against `main` are retargeted to `dev` automatically by
+  `.github/workflows/pr-retarget-dev.yml`. The `target: main` label exempts one, as do release-bound
+  upstream branches (`dev`, `release/*`, `hotfix/*`). Backport branches are deliberately not exempt —
+  a backport merged straight to `main` is what breaks the fast-forward invariant.
+- **`Fixes #N` does not close the issue.** GitHub honors closing keywords only when a pull request
+  merges into the default branch (`main`). Merging to `dev` does not close anything, and the later
+  fast-forward of `main` is not a merge event either — close linked issues by hand.
+- **Git worktrees share one stash stack.** `refs/stash` lives in the common `.git` directory, so a
+  bare `git stash pop` in one worktree can take work stashed in another. Prefer a throwaway WIP
+  commit; if you must stash, `git stash push -m <tag>` and `apply` that specific entry.
 
 ---
 
@@ -121,11 +145,54 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Group related components in feature directories (e.g., `SidePanel/Memories/`).
 - Use index files for clean exports.
 
+### Theming and styling
+
+- **Compose before styling.** Search `@librechat/client` for an existing primitive, semantic
+  variant, or composition before adding feature-local classes or CSS.
+- **Use semantic roles.** Colors and shared appearance values must come from the semantic
+  Tailwind/theme roles. Do not add raw palette utilities, hard-coded hex/RGB/HSL colors, or
+  light/dark-specific values in feature components.
+- **Deepen the system when the need is reusable.** Add a focused variant to a shared primitive or
+  extend the canonical, versioned theme-token registry when multiple screens should share the
+  same design decision. Do not create shallow local wrappers that merely relocate class strings.
+- **Themes are data, not arbitrary CSS.** Theme definitions may select semantic colors and shared
+  appearance roles. They must not contain selectors, arbitrary CSS, application behavior, or
+  alternate feature layouts. Preserve existing environment and stored-theme compatibility when
+  changing the theme engine.
+- **Keep layout and behavior local.** Feature structure, responsive layout, state-driven
+  transitions, and specialized visualization may remain feature-owned. Expose a theme role only
+  when it represents a stable, reusable appearance decision; do not turn every measurement into a
+  global token.
+- **Treat custom CSS as an exception.** Use it only when shared primitives and semantic utilities
+  cannot express the requirement. Keep it narrowly scoped, consume theme variables where
+  applicable, support light/dark and reduced motion, and add a brief code or PR explanation of why
+  the exception is necessary.
+- **Preserve defaults and prove variability.** New theme-aware variants must reproduce the current
+  default appearance unless a redesign is explicitly requested. Test semantic-token use and, when
+  extending theme capabilities, include a deliberately different reference theme to prove that
+  components adapt without feature-specific overrides.
+
 ### Data Management
 
 - Feature hooks: `client/src/data-provider/[Feature]/queries.ts` → `[Feature]/index.ts` → `client/src/data-provider/index.ts`.
 - React Query (`@tanstack/react-query`) for all API interactions; proper query invalidation on mutations.
 - QueryKeys and MutationKeys in `packages/data-provider/src/keys.ts`.
+
+### Client State Ownership
+
+The client is migrating from Recoil to Jotai. Convert the areas you touch rather than
+migrating wholesale, and split the work by who owns the state:
+
+- **Feature-owned state** — atoms a single feature both writes and reads. Convert these to
+  Jotai as you touch them, and keep them inside the feature.
+- **App-global state** — preferences and shell state a feature merely consumes
+  (`maximizeChatSpace`, `showScrollButton`, `enterToSend`, artifact visibility). A feature
+  that could plausibly be extracted must not reach into `~/store` for these; accept them
+  through props or a small context the host supplies.
+
+Passing app-global state in — rather than reaching for it — is what lets a feature move to
+its own workspace later without a rewrite, and it keeps the Jotai conversion scoped to the
+state a feature actually owns instead of dragging the global migration forward early.
 
 ### Data-Provider Integration
 
@@ -140,6 +207,16 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Cursor pagination for large datasets.
 - Proper dependency arrays to avoid unnecessary re-renders.
 - Leverage React Query caching and background refetching.
+
+---
+
+## Backend Rules (`api/**`, `packages/api/**`)
+
+### Auth cache invalidation
+
+When adding or changing code that mutates user documents, invalidate the auth user document cache
+for the affected users. This covers single-user updates as well as bulk role and user mutations.
+Without it, OpenID JWT request burst caching can serve a stale `req.user` until its TTL expires.
 
 ---
 
@@ -169,6 +246,20 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Frontend tests: `__tests__` directories alongside components; use `test/layout-test-utils` for rendering.
 - Cover loading, success, and error states for UI/data flows.
 
+### Typechecking
+
+- **A green build is not a typecheck.** `packages/api`, `packages/client` and `packages/data-schemas`
+  build with `tsdown` alone, which emits without checking types. Only `packages/data-provider` runs
+  `tsc` as part of its build.
+- Run `npx tsc --noEmit` in the workspace you changed before calling it done. `client` also exposes
+  it as `npm run typecheck`.
+- `packages/client/tsconfig.json` excludes `*.spec.ts(x)` and `*.test.ts(x)`, so test files there are
+  never typechecked — a type error in a spec surfaces only when the test runs.
+- `npm run static-checks` runs the Static Checks CI job locally against your staged files;
+  `npm run static-checks -- --against origin/dev` reproduces what CI sees for a pull request, and
+  `npm run static-checks:full` adds the slow gates (TypeScript, config migration tests, unused i18n
+  keys, unused npm packages).
+
 ### Philosophy
 
 - **Real logic over mocks.** Exercise actual code paths with real dependencies. Mocking is a last resort.
@@ -183,3 +274,7 @@ Multi-line imports count total character length across all lines. Consolidate va
 ## Formatting
 
 Fix all formatting lint errors (trailing spaces, tabs, newlines, indentation) using auto-fix when available. All TypeScript/ESLint warnings and errors **must** be resolved.
+
+`npm run sort-imports` with no arguments rewrites every file under `api/`, `client/src` and the four
+`packages/*/src` roots — far beyond what you touched. Always pass explicit paths:
+`npm run sort-imports -- path/to/file.ts`.

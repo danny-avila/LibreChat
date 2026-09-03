@@ -1,10 +1,13 @@
 import type { AxiosResponse } from 'axios';
+import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
 import { uploadEventStream } from './upload';
 import * as mcp from './types/mcpServers';
+import * as qt from './types/queuedTurns';
+import * as sch from './types/schedules';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
 import * as ag from './types/agents';
@@ -15,6 +18,21 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+
+export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request.get(`${endpoints.insights()}${suffix}`);
+}
+
+export function getInsightsAccess(): Promise<TInsightsAccessResponse> {
+  return request.get(endpoints.insightsAccess());
+}
 
 export function getLangfuseConnection(): Promise<t.TLangfuseConnectionStatus> {
   return request.get(endpoints.adminLangfuseConnection());
@@ -32,6 +50,12 @@ export function testLangfuseConnection(
   return request.post(endpoints.adminLangfuseConnectionTest(), payload);
 }
 
+export function getLangfuseSessionLink(
+  conversationId: string,
+): Promise<t.TLangfuseSessionLinkResponse> {
+  return request.get(endpoints.adminLangfuseSessionLink(conversationId));
+}
+
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
 }
@@ -44,12 +68,41 @@ export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
   return request.deleteWithOptions(endpoints.deleteUser(), { data: payload });
 }
 
+export function getCodeEnvironments(): Promise<t.TCodeEnvironmentsResponse> {
+  return request.get(endpoints.codeEnvironments());
+}
+
+export function pairCodeEnvironment(payload: {
+  name: string;
+  controlPlaneId: string;
+}): Promise<t.TCodeEnvironmentPairingResponse> {
+  return request.post(endpoints.codeEnvironmentPairings(), payload);
+}
+
+export function deleteCodeEnvironment(
+  id: string,
+): Promise<{ environment: t.TCodeEnvironmentSummary }> {
+  return request.delete(endpoints.codeEnvironmentById(id));
+}
+
+export function updateCodeEnvironmentSettings({
+  id,
+  settings,
+}: {
+  id: string;
+  settings: config.CodeEnvironmentUserSettings;
+}): Promise<{ environment: t.TCodeEnvironmentSummary }> {
+  return request.patch(endpoints.codeEnvironmentSettings(id), { settings });
+}
+
 export function getFavorites(): Promise<q.TUserFavorite[]> {
   return request.get(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`);
 }
 
 export function updateFavorites(favorites: q.TUserFavorite[]): Promise<q.TUserFavorite[]> {
-  return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
+  return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, {
+    favorites,
+  });
 }
 
 /** Tool favorites — starred marketplace items (builtins, tools, MCP servers, skills). */
@@ -112,7 +165,10 @@ export function updateSharedLink(
   targetMessageId?: string,
   snapshotFiles?: boolean,
 ): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId, snapshotFiles });
+  return request.patch(endpoints.updateSharedLink(shareId), {
+    targetMessageId,
+    snapshotFiles,
+  });
 }
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
@@ -164,6 +220,12 @@ export function getSearchEnabled(): Promise<boolean> {
 
 export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
+}
+
+export function updateUserPreferences(
+  preferences: t.TUpdateUserPreferencesRequest,
+): Promise<t.TUpdateUserPreferencesResponse> {
+  return request.patch(endpoints.userPreferences(), preferences);
 }
 
 export function getUserBalance(): Promise<t.TBalanceResponse> {
@@ -844,12 +906,18 @@ export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkC
 export function forkSharedConversation(
   shareId: string,
   targetMessageIndex?: number,
+  shareRevision?: string,
 ): Promise<t.TForkConvoResponse> {
-  return request.post(endpoints.forkSharedMessages(shareId), { targetMessageIndex });
+  return request.post(endpoints.forkSharedMessages(shareId), {
+    targetMessageIndex,
+    shareRevision,
+  });
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
-  return request.deleteWithOptions(endpoints.deleteConversation(), { data: { arg: payload } });
+  return request.deleteWithOptions(endpoints.deleteConversation(), {
+    data: { arg: payload },
+  });
 }
 
 export function clearAllConversations(): Promise<unknown> {
@@ -882,6 +950,10 @@ export function archiveConversation(
   return request.post(endpoints.archiveConversation(), { arg: payload });
 }
 
+export function archiveAllConversations(): Promise<t.TArchiveAllConversationsResponse> {
+  return request.post(endpoints.archiveAllConversations(), {});
+}
+
 export function listProjects(params?: q.ProjectListParams): Promise<q.ProjectListResponse> {
   return request.get(endpoints.projects(params ?? {}));
 }
@@ -907,7 +979,9 @@ export function assignConversationToProject(
   payload: t.TAssignConversationToProjectRequest,
 ): Promise<t.TAssignConversationToProjectResponse> {
   const { conversationId, projectId } = payload;
-  return request.put(endpoints.projectConversation(conversationId), { projectId });
+  return request.put(endpoints.projectConversation(conversationId), {
+    projectId,
+  });
 }
 
 export function pinConversation(
@@ -930,7 +1004,9 @@ export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown
     throw new Error('conversationId is required');
   }
 
-  return request.put(endpoints.messages({ conversationId, messageId }), { text });
+  return request.put(endpoints.messages({ conversationId, messageId }), {
+    text,
+  });
 }
 
 export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<unknown> {
@@ -939,7 +1015,10 @@ export function updateMessageContent(payload: t.TUpdateMessageContent): Promise<
     throw new Error('conversationId is required');
   }
 
-  return request.put(endpoints.messages({ conversationId, messageId }), { text, index });
+  return request.put(endpoints.messages({ conversationId, messageId }), {
+    text,
+    index,
+  });
 }
 
 export const editArtifact = async ({
@@ -963,6 +1042,31 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
     return Promise.resolve([]);
   }
   return request.get(endpoints.messages({ conversationId }));
+}
+
+export function getMessageById(conversationId: string, messageId: string): Promise<s.TMessage[]> {
+  return request.get(endpoints.messages({ conversationId, messageId }));
+}
+
+export function getParentSubagents(parentConversationId: string): Promise<t.ParentSubagentIndex> {
+  return request.get(endpoints.parentSubagents(parentConversationId));
+}
+
+export function getSubagentThread(
+  parentConversationId: string,
+  threadId: string,
+  taskId?: string,
+  cursor?: string,
+): Promise<t.SubagentThreadView> {
+  return request.get(endpoints.subagentThread(parentConversationId, threadId, taskId, cursor));
+}
+
+export function controlSubagentTask(
+  parentConversationId: string,
+  threadId: string,
+  body: t.SubagentControlRequest,
+): Promise<t.SubagentControlResponse> {
+  return request.post(endpoints.subagentControl(parentConversationId, threadId), body);
 }
 
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {
@@ -1040,6 +1144,49 @@ export function getRandomPrompts(
 
 export function listSkills(params?: sk.TSkillListRequest): Promise<sk.TSkillListResponse> {
   return request.get(endpoints.listSkillsWithFilters(params ?? {}));
+}
+
+export function getSchedules(): Promise<sch.TSchedulesResponse> {
+  return request.get(endpoints.schedules());
+}
+
+export function enqueueAgentQueuedTurn(
+  payload: qt.TEnqueueAgentQueuedTurnRequest,
+): Promise<qt.TEnqueueAgentQueuedTurnResponse> {
+  return request.post(endpoints.agentQueuedTurns(), payload);
+}
+
+export function listAgentQueuedTurns(
+  conversationId: string,
+  clientRequestIds?: string[],
+): Promise<qt.TListAgentQueuedTurnsResponse> {
+  return request.get(endpoints.agentQueuedTurnsByConversation(conversationId, clientRequestIds));
+}
+
+export function cancelAgentQueuedTurn(
+  queuedTurnId: string,
+): Promise<qt.TCancelAgentQueuedTurnResponse> {
+  return request.delete(endpoints.agentQueuedTurn(queuedTurnId));
+}
+
+export function getSchedule(id: string): Promise<sch.TSchedule> {
+  return request.get(endpoints.schedule(id));
+}
+
+export function createSchedule(payload: sch.TCreateSchedule): Promise<sch.TSchedule> {
+  return request.post(endpoints.schedules(), payload);
+}
+
+export function updateSchedule(id: string, payload: sch.TUpdateSchedule): Promise<sch.TSchedule> {
+  return request.patch(endpoints.schedule(id), payload);
+}
+
+export function deleteSchedule(id: string): Promise<{ id: string }> {
+  return request.delete(endpoints.schedule(id));
+}
+
+export function runScheduleNow(id: string): Promise<sch.TScheduleRunNowResponse> {
+  return request.post(endpoints.runSchedule(id), {});
 }
 
 export function getSkill(id: string): Promise<sk.TSkill> {
@@ -1348,8 +1495,12 @@ export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 
-export const deleteMemory = (key: string, agentId?: string): Promise<void> => {
+export const deleteMemory = (key: string, agentId?: string): Promise<q.DeleteMemoryResponse> => {
   return request.delete(endpoints.memory(key, agentId));
+};
+
+export const deleteMemoryById = (id: string, agentId?: string): Promise<q.DeleteMemoryResponse> => {
+  return request.delete(endpoints.memoryById(id, agentId));
 };
 
 export const updateMemory = (
@@ -1357,8 +1508,23 @@ export const updateMemory = (
   value: string,
   originalKey?: string,
   agentId?: string,
-): Promise<q.TUserMemory> => {
-  return request.patch(endpoints.memory(originalKey || key, agentId), { key, value });
+): Promise<q.UpdateMemoryResponse> => {
+  return request.patch(endpoints.memory(originalKey || key, agentId), {
+    key,
+    value,
+  });
+};
+
+export const updateMemoryById = (
+  id: string,
+  value: string,
+  key?: string,
+  agentId?: string,
+): Promise<q.UpdateMemoryResponse> => {
+  return request.patch(endpoints.memoryById(id, agentId), {
+    value,
+    ...(key ? { key } : {}),
+  });
 };
 
 export const updateMemoryPreferences = (preferences: {

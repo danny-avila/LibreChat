@@ -1,3 +1,6 @@
+import { GraphEvents } from '@librechat/agents';
+import { ErrorTypes } from 'librechat-data-provider';
+import type { FiltersConfig } from 'librechat-data-provider';
 import type { ChatCompletionDependencies } from './service';
 import { createAgentChatCompletion } from './service';
 
@@ -14,16 +17,20 @@ type CreateRunArgs = {
   user?: Record<string, unknown>;
   tenantId?: string;
   appConfig?: Record<string, unknown>;
+  requestBody?: Record<string, unknown>;
 };
-type ProcessStreamConfig = { configurable?: Record<string, unknown> };
+type ProcessStreamConfig = { configurable?: Record<string, unknown>; recursionLimit?: number };
 
-function createMockReq(user?: Record<string, unknown>) {
+function createMockReq(
+  user?: Record<string, unknown>,
+  body: Record<string, unknown> = {
+    model: 'agent_test',
+    messages: [{ role: 'user', content: 'hi' }],
+    stream: false,
+  },
+) {
   return {
-    body: {
-      model: 'agent_test',
-      messages: [{ role: 'user', content: 'hi' }],
-      stream: false,
-    },
+    body,
     user,
     on: jest.fn(),
   } as unknown as Parameters<typeof createAgentChatCompletion>[0];
@@ -40,6 +47,31 @@ function createMockRes() {
   res.status = jest.fn(() => res);
   res.json = jest.fn(() => res);
   return res as unknown as Parameters<typeof createAgentChatCompletion>[1];
+}
+
+function getResponseMock(
+  res: Parameters<typeof createAgentChatCompletion>[1],
+  method: 'flushHeaders' | 'json' | 'setHeader' | 'status',
+): jest.Mock {
+  return res[method] as unknown as jest.Mock;
+}
+
+function expectRawFreeFilterError(
+  res: Parameters<typeof createAgentChatCompletion>[1],
+  rawValue: string,
+  code: string | null = 'content_filter_block',
+): void {
+  expect(getResponseMock(res, 'status')).toHaveBeenCalledWith(400);
+  const body = getResponseMock(res, 'json').mock.calls[0][0] as {
+    error: { code: string | null; message: string; param: string | null; type: string };
+  };
+  expect(body.error).toMatchObject({
+    code,
+    param: null,
+    type: 'invalid_request_error',
+  });
+  expect(body.error.message).not.toContain(rawValue);
+  expect(JSON.stringify(body)).not.toContain(rawValue);
 }
 
 describe('createAgentChatCompletion - MCP permission user propagation', () => {
@@ -94,6 +126,19 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(streamConfig.configurable?.user_id).toBe('user-123');
   });
 
+  it('invokes the graph with the same resolved recursion limit the step-budget hook uses', async () => {
+    deps.appConfig = { endpoints: { agents: { recursionLimit: 123 } } };
+
+    await createAgentChatCompletion(
+      createMockReq({ id: 'user-123', role: 'USER' }),
+      createMockRes(),
+      deps,
+    );
+
+    const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
+    expect(streamConfig.recursionLimit).toBe(123);
+  });
+
   it('falls back to a bare id when no authenticated user is attached', async () => {
     const req = createMockReq(undefined);
 
@@ -109,6 +154,140 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(streamConfig.configurable?.user).not.toHaveProperty('role');
   });
 
+  it('adapts runtime tool loading to the request-backed public dependency', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' });
+    const res = createMockRes();
+    const loadAgentTools = jest.fn().mockResolvedValue({
+      tools: [],
+      toolContextMap: {},
+    });
+    deps.loadAgentTools = loadAgentTools;
+    (deps.initializeAgent as jest.Mock).mockImplementation(
+      async ({
+        loadTools,
+      }: {
+        loadTools?: (params: Record<string, unknown>) => Promise<unknown>;
+      }) => {
+        await loadTools?.({
+          provider: 'openai',
+          agentId: 'agent_test',
+          tools: ['tool-a'],
+          model: 'gpt-4o-mini',
+          tool_options: undefined,
+          tool_resources: undefined,
+          requestBody: { conversationId: 'conversation-123' },
+          codeExecutionContext: { endpoint: 'openai' },
+        });
+        return {
+          id: 'agent_test',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          tools: [],
+          attachments: [],
+          toolContextMap: {},
+          maxContextTokens: 1000,
+          model_parameters: {},
+        };
+      },
+    );
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(loadAgentTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        req,
+        res,
+        provider: 'openai',
+        agentId: 'agent_test',
+        tools: ['tool-a'],
+        codeExecutionContext: { endpoint: 'openai' },
+      }),
+    );
+  });
+
+  it('threads the parent message id into the run and execution context', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' }) as unknown as {
+      body: Record<string, unknown>;
+    };
+    req.body.parent_message_id = 'parent-123';
+
+    await createAgentChatCompletion(req as never, createMockRes(), deps);
+
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: expect.objectContaining({ parentMessageId: 'parent-123' }),
+      }),
+    );
+    const runArgs = createRun.mock.calls[0][0] as CreateRunArgs;
+    expect(runArgs.requestBody).toEqual(expect.objectContaining({ parentMessageId: 'parent-123' }));
+    const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
+    expect(streamConfig.configurable?.requestBody).toEqual(runArgs.requestBody);
+  });
+
+  it('forwards the normalized MCP body to deferred execution loaders', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' }) as unknown as {
+      body: Record<string, unknown>;
+    };
+    req.body.stream = true;
+    req.body.parent_message_id = 'parent-123';
+    const loadTools = jest.fn().mockResolvedValue({ loadedTools: [] });
+    deps.toolExecuteOptions = { loadTools };
+
+    await createAgentChatCompletion(req as never, createMockRes(), deps);
+
+    const runArgs = createRun.mock.calls[0][0] as CreateRunArgs & {
+      customHandlers: Record<string, { handle: (event: string, data: unknown) => Promise<void> }>;
+    };
+    const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
+    const resolve = jest.fn();
+    const reject = jest.fn();
+    await runArgs.customHandlers[GraphEvents.ON_TOOL_EXECUTE].handle(GraphEvents.ON_TOOL_EXECUTE, {
+      toolCalls: [{ id: 'tool-call-1', name: 'deferred_mcp_tool', args: {} }],
+      agentId: 'agent_test',
+      configurable: streamConfig.configurable,
+      metadata: {},
+      resolve,
+      reject,
+    });
+
+    expect(loadTools).toHaveBeenCalledWith(
+      ['deferred_mcp_tool'],
+      'agent_test',
+      expect.objectContaining({ requestBody: runArgs.requestBody }),
+      undefined,
+    );
+  });
+
+  it('uses the root parent sentinel when chat completions omit a parent id', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' });
+
+    await createAgentChatCompletion(req, createMockRes(), deps);
+
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: expect.objectContaining({
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+        }),
+      }),
+    );
+  });
+
+  it('omits an unavailable parent for an existing chat-completions conversation', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' }) as unknown as {
+      body: Record<string, unknown>;
+    };
+    req.body.conversation_id = 'conversation-123';
+
+    await createAgentChatCompletion(req as never, createMockRes(), deps);
+
+    const requestBody = (deps.initializeAgent as jest.Mock).mock.calls[0][0].requestBody;
+    expect(requestBody).toEqual({
+      messageId: expect.any(String),
+      conversationId: 'conversation-123',
+    });
+    expect(requestBody).not.toHaveProperty('parentMessageId');
+  });
+
   it('forwards appConfig and tenantId to createRun', async () => {
     const appConfig = {
       endpoints: {
@@ -120,6 +299,18 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
       },
       interfaceConfig: {
         modelSelect: true,
+      },
+      filters: {
+        messages: {
+          pii: {
+            starterPatterns: [],
+          },
+        },
+      },
+      messageFilter: {
+        pii: {
+          starterPatterns: [],
+        },
       },
     };
     deps.appConfig = appConfig as never;
@@ -136,8 +327,667 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(runArgs.tenantId).toBe('tenant-1');
     expect(runArgs.appConfig).toEqual({
       endpoints: appConfig.endpoints,
+      filters: appConfig.filters,
       langfuse: appConfig.langfuse,
+      messageFilter: appConfig.messageFilter,
     });
     expect(runArgs.appConfig).not.toHaveProperty('interfaceConfig');
+  });
+
+  it('forwards the stateful environment allowlist from appConfig to agent initialization', async () => {
+    deps.appConfig = {
+      endpoints: {
+        agents: {
+          capabilities: ['execute_code', 'stateful_code_sessions'],
+          statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
+        },
+      },
+    } as never;
+
+    await createAgentChatCompletion(createMockReq({ id: 'user-123' }), createMockRes(), deps);
+
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        codeEnvAvailable: true,
+        statefulSessionsAvailable: true,
+        allowedStatefulCodeEnvironments: ['user', 'agent-user'],
+      }),
+    );
+  });
+
+  it('preserves stateful scope policy status and code in an initialization error response', async () => {
+    const policyError = Object.assign(
+      new Error('Stateful code environment is not allowed by this deployment: conversation'),
+      {
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+        status: 403,
+        statusCode: 403,
+      },
+    );
+    (deps.initializeAgent as jest.Mock).mockRejectedValueOnce(policyError);
+    const res = createMockRes();
+
+    await createAgentChatCompletion(createMockReq({ id: 'user-123' }), res, deps);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: {
+        message: policyError.message,
+        type: 'invalid_request_error',
+        param: null,
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      },
+    });
+  });
+});
+
+describe('createAgentChatCompletion - provider error disclosure', () => {
+  const rawValue = 'PRIVATE-PROVIDER-ECHO';
+  let deps: ChatCompletionDependencies;
+
+  beforeEach(() => {
+    const processStream = jest.fn().mockRejectedValue(new Error(`Provider echoed ${rawValue}`));
+    deps = {
+      getAgent: jest.fn().mockResolvedValue({
+        id: 'agent_test',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        tools: [],
+      }),
+      initializeAgent: jest.fn().mockResolvedValue({
+        id: 'agent_test',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        tools: [],
+        attachments: [],
+        toolContextMap: {},
+        maxContextTokens: 1000,
+        model_parameters: {},
+      }),
+      createRun: jest.fn().mockResolvedValue({
+        processStream,
+      }) as unknown as ChatCompletionDependencies['createRun'],
+      appConfig: {
+        filters: {
+          messages: {
+            pii: {},
+          },
+        },
+      },
+    };
+  });
+
+  it('returns a generic non-streaming error when a provider echoes submitted content', async () => {
+    const res = createMockRes();
+
+    await createAgentChatCompletion(createMockReq(), res, deps);
+
+    expect(getResponseMock(res, 'status')).toHaveBeenCalledWith(500);
+    expect(getResponseMock(res, 'json')).toHaveBeenCalledWith({
+      error: {
+        code: null,
+        message: 'An error occurred while processing the request',
+        param: null,
+        type: 'server_error',
+      },
+    });
+    expect(JSON.stringify(getResponseMock(res, 'json').mock.calls)).not.toContain(rawValue);
+  });
+
+  it('returns a generic streaming error when a provider echoes submitted content', async () => {
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    });
+    const res = createMockRes();
+    getResponseMock(res, 'flushHeaders').mockImplementation(() => {
+      (res as unknown as { headersSent: boolean }).headersSent = true;
+    });
+
+    await createAgentChatCompletion(req, res, deps);
+
+    const writes = (res.write as unknown as jest.Mock).mock.calls;
+    expect(JSON.stringify(writes)).toContain('An error occurred while processing the request');
+    expect(JSON.stringify(writes)).not.toContain(rawValue);
+  });
+
+  it('preserves the legacy non-streaming provider error when protection is inactive', async () => {
+    deps.appConfig = undefined;
+    const res = createMockRes();
+
+    await createAgentChatCompletion(createMockReq(), res, deps);
+
+    expect(getResponseMock(res, 'json')).toHaveBeenCalledWith({
+      error: {
+        code: null,
+        message: `Provider echoed ${rawValue}`,
+        param: null,
+        type: 'server_error',
+      },
+    });
+  });
+
+  it.each<{ filters: FiltersConfig; policy: string }>([
+    {
+      policy: 'a management-only prompt',
+      filters: { prompts: { pii: {} } },
+    },
+    {
+      policy: 'an inert message',
+      filters: { messages: { pii: { starterPatterns: [] } } },
+    },
+  ])('preserves the legacy provider error for $policy policy', async ({ filters }) => {
+    deps.appConfig = { filters };
+    const res = createMockRes();
+
+    await createAgentChatCompletion(createMockReq(), res, deps);
+
+    expect(getResponseMock(res, 'json')).toHaveBeenCalledWith({
+      error: {
+        code: null,
+        message: `Provider echoed ${rawValue}`,
+        param: null,
+        type: 'server_error',
+      },
+    });
+  });
+
+  it('preserves the legacy streaming provider error when protection is inactive', async () => {
+    deps.appConfig = undefined;
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    });
+    const res = createMockRes();
+    getResponseMock(res, 'flushHeaders').mockImplementation(() => {
+      (res as unknown as { headersSent: boolean }).headersSent = true;
+    });
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(JSON.stringify((res.write as unknown as jest.Mock).mock.calls)).toContain(
+      `Provider echoed ${rawValue}`,
+    );
+  });
+});
+
+describe('createAgentChatCompletion - source-aware content protection', () => {
+  let createRun: jest.Mock;
+  let initializeAgent: jest.Mock;
+  let getAgent: jest.Mock;
+  let deps: ChatCompletionDependencies;
+
+  beforeEach(() => {
+    createRun = jest.fn().mockResolvedValue({
+      processStream: jest.fn().mockResolvedValue(undefined),
+    });
+    initializeAgent = jest.fn().mockResolvedValue({
+      id: 'agent_test',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      tools: [],
+      attachments: [],
+      toolContextMap: {},
+      maxContextTokens: 1000,
+      model_parameters: {},
+    });
+    getAgent = jest.fn().mockResolvedValue({
+      id: 'agent_test',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      tools: [],
+    });
+    deps = {
+      getAgent,
+      initializeAgent,
+      createRun: createRun as unknown as ChatCompletionDependencies['createRun'],
+    };
+  });
+
+  it('blocks submitted message content before agent lookup without echoing the value', async () => {
+    const rawValue = 'PRIVATE-MESSAGE';
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: rawValue }],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, rawValue);
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(initializeAgent).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+  });
+
+  it('blocks submitted tool arguments before agent lookup', async () => {
+    const rawValue = 'PRIVATE-TOOL-ARG';
+    const filters: FiltersConfig = {
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: {
+                name: 'lookup',
+                arguments: JSON.stringify({ token: rawValue }),
+              },
+            },
+          ],
+        },
+      ],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, rawValue);
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+  });
+
+  it('rejects structured tool arguments before lookup without echoing their content', async () => {
+    const rawValue = 'PRIVATE-STRUCTURED-TOOL-ARG';
+    const filters: FiltersConfig = {
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: {
+                name: 'lookup',
+                arguments: { token: rawValue },
+              },
+            },
+          ],
+        },
+      ],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, rawValue, null);
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(initializeAgent).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+  });
+
+  it('blocks registered submitted model parameters before agent lookup', async () => {
+    const rawValue = 'PRIVATE-MODEL-PARAMETER';
+    const filters: FiltersConfig = {
+      modelParameters: {
+        pii: {
+          fields: ['metadata'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: 'safe' }],
+      metadata: { trace: rawValue },
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, rawValue);
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+  });
+
+  it('re-inspects initialized agent instructions before headers or run creation', async () => {
+    const rawValue = 'PRIVATE-INITIALIZED-INSTRUCTION';
+    const filters: FiltersConfig = {
+      agentInstructions: {
+        pii: {
+          fields: ['instructions'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    initializeAgent.mockResolvedValue({
+      id: 'agent_test',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      tools: [],
+      instructions: `Persisted ${rawValue}`,
+      attachments: [],
+      toolContextMap: {},
+      maxContextTokens: 1000,
+      model_parameters: {},
+    });
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: 'safe' }],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(getAgent).toHaveBeenCalledTimes(1);
+    expect(initializeAgent).toHaveBeenCalledTimes(1);
+    expectRawFreeFilterError(res, rawValue);
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'flushHeaders')).not.toHaveBeenCalled();
+  });
+
+  it('re-inspects late-loaded tool definitions on nested pure subagents', async () => {
+    const rawValue = 'PRIVATE-NESTED-TOOL-DEFINITION';
+    const filters: FiltersConfig = {
+      agentInstructions: {
+        pii: {
+          fields: ['description'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    const initializedAgentBase = {
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      tools: [],
+      attachments: [],
+      requestAttachments: [],
+      agentContextAttachments: [],
+      toolContextMap: {},
+      maxContextTokens: 1000,
+      model_parameters: {},
+    };
+    initializeAgent.mockResolvedValue({
+      ...initializedAgentBase,
+      id: 'agent_test',
+      subagentAgentConfigs: [
+        {
+          ...initializedAgentBase,
+          id: 'agent_pure',
+          subagentAgentConfigs: [
+            {
+              ...initializedAgentBase,
+              id: 'agent_nested_pure',
+              toolDefinitions: [
+                {
+                  name: 'nested_lookup',
+                  description: rawValue,
+                  parameters: { type: 'object' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: 'safe' }],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, rawValue);
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'flushHeaders')).not.toHaveBeenCalled();
+  });
+
+  it('re-inspects initialized agent-context attachments before headers or run creation', async () => {
+    const rawValue = 'PRIVATE-INITIALIZED-FILE';
+    const filters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    initializeAgent.mockResolvedValue({
+      id: 'agent_test',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      tools: [],
+      attachments: [],
+      requestAttachments: [],
+      agentContextAttachments: [
+        {
+          filename: 'context.txt',
+          filepath: '/context.txt',
+          text: `Persisted ${rawValue}`,
+        },
+      ],
+      toolContextMap: {},
+      maxContextTokens: 1000,
+      model_parameters: {},
+    });
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: 'safe' }],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(getAgent).toHaveBeenCalledTimes(1);
+    expect(initializeAgent).toHaveBeenCalledTimes(1);
+    expectRawFreeFilterError(res, rawValue);
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'flushHeaders')).not.toHaveBeenCalled();
+  });
+
+  it('re-inspects the exact initialized dynamic tool context before headers or run creation', async () => {
+    const rawValue = 'PRIVATE-DYNAMIC-TOOL-CONTEXT';
+    const filters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    initializeAgent.mockResolvedValue({
+      id: 'agent_test',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      tools: [],
+      attachments: [],
+      requestAttachments: [],
+      agentContextAttachments: [],
+      dynamicToolContextMap: {
+        ignored: 42,
+        empty: '',
+        files: `  Persisted ${rawValue}  `,
+      },
+      toolContextMap: {},
+      maxContextTokens: 1000,
+      model_parameters: {},
+    });
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: 'safe' }],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, rawValue);
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'flushHeaders')).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on opaque file input before agent lookup', async () => {
+    const filters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'input_file', file_id: 'file-private-reference' }],
+        },
+      ],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, 'file-private-reference', 'content_filter_uninspectable');
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when protected nested message content exceeds traversal limits', async () => {
+    let nested: Record<string, unknown> = { value: 'safe' };
+    for (let depth = 0; depth < 30; depth++) {
+      nested = { nested };
+    }
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: ['sk_prefix'],
+        },
+      },
+    };
+    deps.appConfig = { filters };
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'safe', payload: nested }],
+        },
+      ],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, 'safe', 'content_filter_uninspectable');
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+    expect(getResponseMock(res, 'setHeader')).not.toHaveBeenCalled();
+  });
+
+  it('keeps filtering disabled when both policies are omitted', async () => {
+    const rawValue = 'PRIVATE-UNFILTERED';
+    deps.appConfig = {
+      endpoints: {
+        agents: { capabilities: [] },
+      },
+    };
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: rawValue }],
+      metadata: { trace: rawValue },
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(getAgent).toHaveBeenCalledTimes(1);
+    expect(initializeAgent).toHaveBeenCalledTimes(1);
+    expect(createRun).toHaveBeenCalledTimes(1);
+    expect(getResponseMock(res, 'setHeader')).toHaveBeenCalled();
+    expect(getResponseMock(res, 'status')).not.toHaveBeenCalledWith(400);
+  });
+
+  it('applies the legacy message filter with an OpenAI-format raw-free error', async () => {
+    const rawValue = 'sk-private-legacy-token';
+    deps.appConfig = {
+      messageFilter: {
+        pii: {
+          starterPatterns: ['sk_prefix'],
+        },
+      },
+    };
+    const req = createMockReq(undefined, {
+      model: 'agent_test',
+      messages: [{ role: 'user', content: rawValue }],
+      stream: true,
+    });
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expectRawFreeFilterError(res, rawValue, 'message_filter_pii_block');
+    expect(getAgent).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
   });
 });

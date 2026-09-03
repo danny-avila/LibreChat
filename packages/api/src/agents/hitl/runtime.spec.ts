@@ -27,6 +27,32 @@ describe('buildHITLRunWiring', () => {
     const wiring = buildHITLRunWiring({ enabled: true });
     expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(1);
   });
+
+  test('updates the baseline policy for aliases learned after run creation', async () => {
+    const wiring = buildHITLRunWiring({ enabled: true, mode: 'dontAsk', allow: ['legacy_tool'] });
+    const policyHook = wiring?.hooks.getMatchers('PreToolUse')[0].hooks[0];
+    expect(
+      await policyHook?.({ toolName: 'current_tool' } as never, new AbortController().signal),
+    ).toEqual({ decision: 'deny' });
+
+    wiring?.addMCPToolAliases([{ name: 'current_tool', aliasName: 'legacy_tool' }], {
+      enabled: true,
+      mode: 'dontAsk',
+      allow: ['legacy_tool', 'current_tool'],
+    });
+    expect(
+      await policyHook?.({ toolName: 'current_tool' } as never, new AbortController().signal),
+    ).toEqual({ decision: 'allow' });
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(1);
+
+    // Re-resolving the same descriptor must not grow the run-wide hook registry.
+    wiring?.addMCPToolAliases([{ name: 'current_tool', aliasName: 'legacy_tool' }], {
+      enabled: true,
+      mode: 'dontAsk',
+      allow: ['legacy_tool', 'current_tool'],
+    });
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(1);
+  });
 });
 
 describe('buildHITLRunWiring host-hook composition', () => {
@@ -60,5 +86,38 @@ describe('buildHITLRunWiring host-hook composition', () => {
     expect(factory).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'u1', conversationId: 'c1' }),
     );
+  });
+
+  test('reuses request-scoped hooks resolved by admission without invoking factories twice', () => {
+    const hook = async () => ({ decision: 'ask' as const });
+    const factory = jest.fn(() => hook);
+    registerToolApprovalHook(factory);
+    const resolved = [{ hook }];
+    factory.mockClear();
+
+    const wiring = buildHITLRunWiring({ enabled: true }, {}, [], resolved);
+
+    expect(factory).not.toHaveBeenCalled();
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(2);
+  });
+
+  test('matches lazy aliases without changing host-hook ordering', async () => {
+    const hook = jest.fn(async () => ({ decision: 'deny' as const }));
+    registerToolApprovalHook(() => hook, {
+      matcher: '^legacy_tool$',
+    });
+    const wiring = buildHITLRunWiring({ enabled: true, mode: 'bypass' });
+    const hostHook = wiring?.hooks.getMatchers('PreToolUse')[1].hooks[0];
+    await hostHook?.({ toolName: 'current_tool' } as never, new AbortController().signal);
+    expect(hook).not.toHaveBeenCalled();
+
+    wiring?.addMCPToolAliases([{ name: 'current_tool', aliasName: 'legacy_tool' }], {
+      enabled: true,
+      mode: 'bypass',
+    });
+    await hostHook?.({ toolName: 'current_tool' } as never, new AbortController().signal);
+    expect(hook).toHaveBeenCalledTimes(1);
+    // Baseline policy + host matcher; plugins registered later remain last.
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(2);
   });
 });

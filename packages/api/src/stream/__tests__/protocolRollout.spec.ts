@@ -110,7 +110,7 @@ describe('generation protocol rollout storage', () => {
       undefined,
       undefined,
       undefined,
-      { text: leased.text, fileIds: [] },
+      { text: leased.text, fileIds: [], quotes: [] },
     );
 
     const downgraded = await store.claimParkedSteersDetailed(streamId, 'user-1', undefined, 1);
@@ -189,7 +189,7 @@ describe('generation protocol rollout storage', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'legacy words', fileIds: [] },
+        { text: 'legacy words', fileIds: [], quotes: [] },
       ),
     ).rejects.toMatchObject({ code: 'RECOVERY_PAYLOAD_MISMATCH' });
   });

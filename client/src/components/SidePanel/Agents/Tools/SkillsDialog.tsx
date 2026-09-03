@@ -5,6 +5,7 @@ import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Radio,
   Input,
+  Label,
   Button,
   OGDialog,
   OGDialogTitle,
@@ -18,7 +19,7 @@ import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
 import { useLocalize, useHasAccess, useAuthContext, useToolFavorites } from '~/hooks';
 import { CreateSkillDialog } from '~/components/Skills/dialogs';
-import { skillsEnabledTransition } from './items/mutations';
+import { skillsSelectionTransition } from './items/mutations';
 import { useSkillsInfiniteQuery } from '~/data-provider';
 import MarketplaceCatalog from './MarketplaceCatalog';
 import { CategoryIcon } from '~/components/Prompts';
@@ -142,9 +143,20 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
   const applySkillsSelection = useCallback(
     (next: string[]) => {
       setValue('skills', next, { shouldDirty: true });
-      const flag = skillsEnabledTransition(next, getValues('skills_enabled'));
-      if (flag !== undefined) {
-        setValue('skills_enabled', flag, { shouldDirty: true });
+      const transition = skillsSelectionTransition(
+        next,
+        getValues('skills_enabled'),
+        getValues('skill_authoring_enabled'),
+        getValues('skills_scope'),
+      );
+      if (transition.enabled !== undefined) {
+        setValue('skills_enabled', transition.enabled, { shouldDirty: true });
+      }
+      if (transition.authoringEnabled !== undefined) {
+        setValue('skill_authoring_enabled', transition.authoringEnabled, { shouldDirty: true });
+      }
+      if (transition.scope !== undefined) {
+        setValue('skills_scope', transition.scope, { shouldDirty: true });
       }
     },
     [getValues, setValue],
@@ -223,9 +235,9 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
                 />
               </div>
               <CategoryFilter options={categoryOptions} value={category} onChange={setCategory} />
-              <label id="skills-view-label" className="sr-only">
+              <Label id="skills-view-label" className="sr-only">
                 {localize('com_ui_skills_filter')}
-              </label>
+              </Label>
               <Radio
                 options={viewOptions}
                 value={view}

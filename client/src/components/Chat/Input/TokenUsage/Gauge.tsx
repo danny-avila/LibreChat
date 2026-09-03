@@ -1,7 +1,7 @@
 import { cn } from '~/utils';
 
-const SIZE = 28;
-const STROKE_WIDTH = 3.5;
+const SIZE = 20;
+const STROKE_WIDTH = 2.5;
 const RADIUS = (SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
@@ -17,10 +17,10 @@ function getStrokeClass(percent: number, indeterminate: boolean): string {
     return 'stroke-text-secondary';
   }
   if (percent > 90) {
-    return 'stroke-red-500';
+    return 'stroke-status-error';
   }
   if (percent > 75) {
-    return 'stroke-yellow-500';
+    return 'stroke-status-warning';
   }
   return 'stroke-text-secondary';
 }

@@ -126,6 +126,8 @@ export class AccessControlService {
    * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
    * @param {string} params.resourceType - Type of resource (e.g., 'agent')
    * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
+   * @param {Types.ObjectId[]} [params.resourceIds] - Optional candidate bound; only these
+   *   resources are considered, so the query cost scales with the candidate set
    * @returns {Promise<Array>} Array of resource IDs
    */
   public async findAccessibleResources({
@@ -133,11 +135,13 @@ export class AccessControlService {
     role,
     resourceType,
     requiredPermissions,
+    resourceIds,
   }: {
     userId: string | Types.ObjectId;
     role?: string;
     resourceType: string;
     requiredPermissions: number;
+    resourceIds?: Types.ObjectId[];
   }): Promise<Types.ObjectId[]> {
     try {
       const principalsList = await this.getUserPrincipals({ userId, role });
@@ -145,6 +149,7 @@ export class AccessControlService {
         principalsList,
         resourceType,
         requiredPermissions,
+        resourceIds,
       });
     } catch (error) {
       if (error instanceof Error) {
@@ -172,10 +177,12 @@ export class AccessControlService {
     principalsList,
     resourceType,
     requiredPermissions,
+    resourceIds,
   }: {
     principalsList: ResolvedPrincipal[];
     resourceType: string;
     requiredPermissions: number;
+    resourceIds?: Types.ObjectId[];
   }): Promise<Types.ObjectId[]> {
     try {
       if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
@@ -192,6 +199,7 @@ export class AccessControlService {
         principalsList,
         resourceType,
         requiredPermissions,
+        resourceIds,
       );
     } catch (error) {
       if (error instanceof Error) {
@@ -211,14 +219,18 @@ export class AccessControlService {
    * @param {Object} params - Parameters for finding publicly accessible resources
    * @param {ResourceType} params.resourceType - Type of resource (e.g., 'agent')
    * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
+   * @param {Types.ObjectId[]} [params.resourceIds] - Optional candidate bound; only these
+   *   resources are considered, so the query cost scales with the candidate set
    * @returns {Promise<Types.ObjectId[]>} Array of resource IDs
    */
   public async findPubliclyAccessibleResources({
     resourceType,
     requiredPermissions,
+    resourceIds,
   }: {
     resourceType: ResourceType;
     requiredPermissions: number;
+    resourceIds?: Types.ObjectId[];
   }): Promise<Types.ObjectId[]> {
     try {
       if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
@@ -227,7 +239,11 @@ export class AccessControlService {
 
       this.validateResourceType(resourceType);
 
-      return await this._dbMethods.findPublicResourceIds(resourceType, requiredPermissions);
+      return await this._dbMethods.findPublicResourceIds(
+        resourceType,
+        requiredPermissions,
+        resourceIds,
+      );
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`[PermissionService.findPubliclyAccessibleResources] Error: ${error.message}`);
@@ -271,26 +287,55 @@ export class AccessControlService {
       return new Map();
     }
 
+    let principals: ResolvedPrincipal[];
     try {
-      // Get user principals (user + groups + public)
-      const principals = await this._dbMethods.getUserPrincipals({ userId, role });
+      principals = await this._dbMethods.getUserPrincipals({ userId, role });
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(
+          `[PermissionService.getResourcePermissionsMap] Error resolving principals: ${error.message}`,
+          error,
+        );
+      }
+      throw error;
+    }
+    return await this.getResourcePermissionsMapForPrincipals({
+      principalsList: principals,
+      resourceType,
+      resourceIds,
+    });
+  }
 
-      // Use batch method from aclEntry
+  public async getResourcePermissionsMapForPrincipals({
+    principalsList,
+    resourceType,
+    resourceIds,
+  }: {
+    principalsList: ResolvedPrincipal[];
+    resourceType: ResourceType;
+    resourceIds: (string | Types.ObjectId)[];
+  }): Promise<Map<string, number>> {
+    this.validateResourceType(resourceType);
+    if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
+      return new Map();
+    }
+
+    try {
       const permissionsMap = await this._dbMethods.getEffectivePermissionsForResources(
-        principals,
+        principalsList,
         resourceType,
         resourceIds,
       );
 
       logger.debug(
-        `[PermissionService.getResourcePermissionsMap] Computed permissions for ${resourceIds.length} resources, ${permissionsMap.size} have permissions`,
+        `[PermissionService.getResourcePermissionsMapForPrincipals] Computed permissions for ${resourceIds.length} resources, ${permissionsMap.size} have permissions`,
       );
 
       return permissionsMap;
     } catch (error) {
       if (error instanceof Error) {
         logger.error(
-          `[PermissionService.getResourcePermissionsMap] Error: ${error.message}`,
+          `[PermissionService.getResourcePermissionsMapForPrincipals] Error: ${error.message}`,
           error,
         );
       }

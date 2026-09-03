@@ -2,10 +2,44 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.13
+version: 1.3.15
 
 # Cache settings: Set to true to enable caching
 cache: true
+
+# Langfuse connections are managed through Settings > Langfuse when available.
+# That flow verifies the credentials and stores the secret key encrypted; do not
+# place a plaintext langfuse.secretKey in this file. Environment-managed central
+# credentials and optional fanout routing are documented in .env.example.
+#
+# Self-hosted Langfuse behind an authenticating proxy or gateway can be given
+# custom request headers. They are sent on every outbound Langfuse request —
+# trace and media export, feedback scores, and credential verification.
+# Values support ${ENV_VAR} interpolation; a header whose variable is unset is
+# dropped with a warning rather than sent as a literal placeholder.
+#
+# These are deployment-level: trace export batches spans from every user through
+# a single exporter, so unlike endpoints.custom headers they cannot carry
+# per-user placeholders such as {{LIBRECHAT_USER_ID}}.
+#
+# Values are masked in admin config reads and in the startup config log, but
+# prefer ${ENV_VAR} references over literal credentials here regardless.
+#
+# Scope: these are sent only when the deployment configures exactly ONE Langfuse
+# origin (a self-hosted base URL, or a single tenant destination URL), and only
+# to that origin. The map has no way to say which endpoint it authenticates to,
+# so a deployment configuring several origins — e.g. a fanout collector plus a
+# separate central host — gets a warning and no headers, rather than having a
+# gateway credential sent somewhere it was not meant for.
+#
+# Fanout deployments additionally need collector support: the gateway forwards
+# only Authorization upstream, so a tenant Langfuse behind its own proxy is not
+# covered even when the collector receives these.
+#
+# langfuse:
+#   headers:
+#     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
+#     CF-Access-Client-Secret: "${CF_ACCESS_CLIENT_SECRET}"
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
@@ -162,6 +196,28 @@ interface:
     create: true
     share: false
     public: false
+  # Scheduled chats are experimental and disabled unless explicitly enabled.
+  # A deployment with Redis-backed resumable streams can run this on every replica.
+  # A single-process deployment without Redis must also set
+  # `SCHEDULES_SINGLE_PROCESS=true`; unsafe multi-replica writes fail closed.
+  # Scheduled agents that can pause require both `USE_REDIS_STREAMS=true` for
+  # shared action state and a durable shared checkpointer for graph continuation.
+  # MongoDB is currently the built-in durable checkpointer (and the default).
+  # schedules:
+  #   use: true
+  #   create: true
+  #   maxPerUser: 10
+  #   minIntervalMinutes: 60
+  #   autoDisableAfterFailures: 5
+  #   fireConcurrency: 5
+  #   # Require every schedule to be filed under a chat project. Enforced on
+  #   # create/update AND at each fire, so turning it on stops (auto-disables)
+  #   # schedules that predate it rather than letting their runs land loose.
+  #   requireProject: false
+  #   # Pin every scheduled run to ONE chat project, ignoring the user's choice.
+  #   # Implies `requireProject`. Chat projects are user-owned, so a value set here
+  #   # only makes sense as a per-user or per-role config override.
+  #   # projectId: '000000000000000000000000'
   peoplePicker:
     users: true
     groups: true
@@ -169,6 +225,8 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Show the thumbs up/thumbs down feedback buttons on responses (default: true)
+  feedback: true
   # Tools pinned to the prompt bar by default for all users.
   # Only seeds the initial state — once a user pins/unpins a tool, their choice is kept.
   # Valid tool keys: artifacts, execute_code, web_search, file_search, skills.
@@ -257,6 +315,20 @@ registration:
 # Note: If balance.enabled is true, transactions will always be enabled
 # regardless of this setting to ensure balance tracking works correctly
 
+# Speech (STT/TTS) outbound requests to operator-provided target URLs are SSRF-guarded
+# at connect time: private, loopback, link-local, and cloud-metadata targets are blocked
+# by default. To point STT/TTS at a private or self-hosted service (LocalAI, a self-hosted
+# Whisper server), add its host:port to `allowedAddresses` on the `stt` / `tts` section.
+# SECURITY: `allowedAddresses` entries are trusted before the private-IP check. A listed
+# host:port is permitted even when it resolves to a private IP, so list only hosts you fully
+# control and that cannot be repointed by an attacker. Do not list attacker-controllable or
+# DNS-rebindable hostnames, because doing so re-opens the private-address path this guard
+# closes. Prefer a private IP literal over a hostname when exempting a private target. Entries
+# must include a port (`host:port`, `private.ip:port`, or `[ipv6]:port`); do not use URLs, paths,
+# CIDR ranges, bare hosts/IPs, or public IP literals.
+# When a forward proxy is configured (PROXY / HTTP(S)_PROXY), it performs DNS and egress in its
+# own network context, so these requests are delegated to it and it must be SSRF-enforcing; the
+# connect-time guard only covers direct, non-proxied connections.
 # speech:
 #   tts:
 #     openai:
@@ -264,15 +336,38 @@ registration:
 #       apiKey: '${TTS_API_KEY}'
 #       model: ''
 #       voices: ['']
-
+#     allowedAddresses:
+#       - 'localhost:8020'
+#       - '127.0.0.1:8020'
 #
 #   stt:
 #     openai:
 #       url: ''
 #       apiKey: '${STT_API_KEY}'
 #       model: ''
+#     allowedAddresses:
+#       - 'localhost:8000'
+#       - '127.0.0.1:8000'
+
+# OCR (Mistral / Mistral-compatible) outbound requests to `ocr.baseURL` are SSRF-guarded at
+# connect time with the same default-deny for private targets. To point OCR at a private or
+# self-hosted Mistral-compatible service, add its host:port to `allowedAddresses`. The same
+# trust caveat as speech applies: a listed host:port is trusted before the private-IP check,
+# so list only hosts you fully control and that cannot be repointed by an attacker. Entries
+# must include a port and must not be URLs, paths, CIDR ranges, bare hosts/IPs, or public IP
+# literals.
+# ocr:
+#   baseURL: '${OCR_BASEURL}'
+#   apiKey: '${OCR_API_KEY}'
+#   allowedAddresses:
+#     - 'localhost:8080'
+#     - '127.0.0.1:8080'
 
 # rateLimits:
+#   # Authenticated agent-event admission has its own API-key-principal bucket.
+#   agentEvents:
+#     userMax: 40
+#     userWindowInMinutes: 1
 #   fileUploads:
 #     ipMax: 100
 #     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
@@ -426,6 +521,29 @@ endpoints:
   #   #   final: defer generation until the full response completes (legacy behavior).
   #   # Set under `endpoints.all` instead to apply as the global default for all endpoints.
   #   titleTiming: immediate
+  #   # (optional) Generate one-line headers for blocks of Agent reasoning and tool calls.
+  #   # Header generation is a separate model call whose usage and cost are recorded.
+  #   activityLabel: true
+  #   activityEndpoint: openAI
+  #   activityModel: gpt-4.1-nano
+  #   # activityPrompt: 'Write a short activity label...'
+  #   # activityMaxPerRun: 20
+  #   # activityCharLimit: 600
+  #   # (optional) Replace the generic Thinking/Thoughts heading with a live
+  #   # generated orientation as sufficiently long top-level reasoning evolves.
+  #   # Enabling this sends a bounded snapshot (up to 4,000 characters) of the
+  #   # visible reasoning to the resolved label endpoint, which may be a different provider.
+  #   # With Langfuse tracing enabled, that snapshot is also recorded as generation input
+  #   # unless the active redaction policy suppresses the label call.
+  #   # reasoningLabel: true
+  #   # reasoningLabelModel: gpt-4.1-nano # falls back to activity/title/run model
+  #   # reasoningLabelEndpoint: openAI    # falls back to activity/run endpoint
+  #   # reasoningLabelPrompt: 'Describe the current reasoning direction...'
+  #   # reasoningLabelMinChars: 500       # text required before the first label
+  #   # reasoningLabelUpdateChars: 400    # new text between streaming revisions
+  #   # reasoningLabelUpdateIntervalMs: 3000 # minimum time between streaming revisions
+  #   # A final rewrite may run immediately after a meaningful 120-character tail.
+  #   # reasoningLabelMaxPerRun: 8        # provider-call cap per response
   #   # (optional) Maximum total citations to include in agent responses, defaults to 30
   #   maxCitations: 30
   #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
@@ -433,15 +551,80 @@ endpoints:
   #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
   #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
   #   minRelevanceScore: 0.45
+  #   # (optional) Maximum explicit subagents per agent, for both the flat list and
+  #   # graph definitions. Defaults to 10; hard cap 50.
+  #   maxSubagents: 20
   #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:
   #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-  #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
-  #   # Off-by-default capabilities you can add to the list above:
-  #   # - "run_in_background": opted-in tools gain a `run_in_background` param so the model can dispatch them detached and poll via `check_background_task`.
-  #   # - "tool_intents": opted-in tools (native tools by default) gain an `intent` param — one model-written sentence per call, streamed into the tool-call arguments. Backend groundwork today: the chat UI renders it as each call's live status label in an upcoming release; opt tools in per agent via `tool_options[tool].describe_intent`.
+  #   capabilities: ["deferred_tools", "execute_code", "file_search", "web_search", "artifacts", "subagents", "actions", "context", "skills", "memory", "ask_user_question", "tools", "chain", "ocr"]
+  #   # The following capabilities are opt-in and must be added explicitly:
+  #   # "programmatic_tools", "stateful_code_sessions", "run_in_background", "tool_intents"
+  #   # "stateful_code_sessions" is highly experimental and may change substantially.
+  #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
+  #   statefulCodeSessions:
+  #     allowedEnvironments: ["user", "agent-user", "conversation"]
+  #     # Route an agent to an operator-managed Code API or to a Code API whose
+  #     # `remote-bridge` backend leases work to an outbound @librechat/code worker.
+  #     environments:
+  #       - id: managed-default
+  #         name: Managed Code API
+  #         type: managed
+  #         baseURL: https://code.example.com/v1
+  #         default: true
+  #       - id: engineering-vm
+  #         name: Engineering VM
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Pins an administrator-managed environment to one worker.
+  #         owner: deployment
+  #         pairing:
+  #           workerId: engineering-vm
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #       - id: personal-workers
+  #         name: Personal Code Workers
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Lets authenticated users create principal-bound environments and
+  #         # receive a one-time code for an outbound @librechat/code worker.
+  #         # The administrator secret stays in the named environment variable.
+  #         owner: deployment
+  #         # Optionally expose only these bounded preferences to environment owners.
+  #         configSchema:
+  #           permissions:
+  #             fileWrite:
+  #               allowed: [allow, ask, deny]
+  #               default: ask
+  #             commandExecution:
+  #               allowed: [ask, deny]
+  #               default: ask
+  #         pairing:
+  #           allowPrincipalWorkers: true
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #   # (optional) Trusted origin for internal event delivery. By default, LibreChat
+  #   # uses its own bound listener; override only for an internal TLS/front-door route.
+  #   eventDriven:
+  #     # selfUrl: 'https://librechat.internal'
+  #   # (optional) Automatic conversational delivery for supported completed background tasks.
+  #   # Enabled by default; set false to keep background tools and subagents poll-only.
+  #   backgroundTasks:
+  #     completionWakeups: true
+  #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
+  #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
+  #   # (optional) Require user approval before matching tool calls. Disabled by default.
+  #   toolApproval:
+  #     enabled: true
+  #     mode: default # default, dontAsk, or bypass
+  #     allow: ["mcp:trusted-server:read_*"]
+  #     deny: ["mcp:*:delete_*"] # Deny rules always take precedence
+  #     ask: ["mcp:*:*"]
+  #     reason: "Review {tool} before it runs."
+  #   # (optional) Persist Agent runs paused for approval or Ask User. MongoDB is the durable default.
+  #   checkpointer:
+  #     type: mongo # mongo (default) or memory (single-process development only)
+  #     ttl: 86400 # Approval window in seconds; defaults to 24 hours
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
@@ -461,7 +644,9 @@ endpoints:
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
   # anthropic:
-  #   # (optional) Stream rate limiting in milliseconds
+  #   # (optional) Override the adaptive stream-smoothing cadence in milliseconds.
+  #   # Agents SDK-backed providers smooth at 25ms by default; set 0 to disable
+  #   # smoothing. (Legacy Assistants/Ollama paths sleep this long per chunk instead.)
   #   streamRate: 20
   #   # (optional) Title model for conversation titles
   #   titleModel: claude-3.5-haiku  # Use the visible model name (key from models config)
@@ -480,7 +665,7 @@ endpoints:
   #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
   #     # Multi-region endpoints: us, eu, global
   #     # IMPORTANT: specific regional endpoints only serve Claude Sonnet 4.6 and earlier. Newer
-  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5) require "global" or a multi-region value
+  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5/5.1) require "global" or a multi-region value
   #     # ("us"/"eu") and will 404 on a specific region. "global" also avoids the 10% regional premium.
   #     region: "us-east5"
   #     # Path to Google service account key file (optional)
@@ -499,6 +684,7 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
+  #     #   - "claude-fable-5-1"
   #     #   - "claude-fable-5"
   #     #   - "claude-opus-5"
   #     #   - "claude-opus-4-8"
@@ -512,6 +698,8 @@ endpoints:
   #     # The deploymentName is the actual Vertex AI model ID used for API calls
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
+  #       claude-fable-5.1:
+  #         deploymentName: claude-fable-5-1
   #       claude-fable-5:
   #         deploymentName: claude-fable-5
   #       claude-opus-5:
@@ -567,6 +755,28 @@ endpoints:
       # activityPrompt: 'Write a 5-9 word past-tense label...'
       # activityMaxPerRun: 20           # cost cap per response
       # activityCharLimit: 600          # per-entry prompt truncation
+      # Parent phase summaries are an independent opt-in. They collapse 2+
+      # logical activities before the answer into one run-level summary.
+      # activityPhaseLabel: true
+      # activityPhaseModel: 'claude-3-5-haiku' # falls back to activity/title/run model
+      # activityPhaseEndpoint: 'anthropic'     # falls back to activity/run endpoint
+      # activityPhasePrompt: 'Summarize the completed agent phase...'
+      # activityPhaseMaxPerRun: 5               # cost cap per response
+      # Live reasoning labels are also independent. They update one top-level
+      # THINK heading in place and never create or shift message content parts.
+      # Enabling this sends a bounded snapshot (up to 4,000 characters) of the
+      # visible reasoning to the resolved label endpoint, which may be a different provider.
+      # With Langfuse tracing enabled, that snapshot is also recorded as generation input
+      # unless the active redaction policy suppresses the label call.
+      # reasoningLabel: true
+      # reasoningLabelModel: 'claude-3-5-haiku' # falls back to activity/title/run model
+      # reasoningLabelEndpoint: 'anthropic'     # falls back to activity/run endpoint
+      # reasoningLabelPrompt: 'Describe the current reasoning direction...'
+      # reasoningLabelMinChars: 500
+      # reasoningLabelUpdateChars: 400
+      # reasoningLabelUpdateIntervalMs: 3000
+      # A final rewrite may run immediately after a meaningful 120-character tail.
+      # reasoningLabelMaxPerRun: 8
       modelDisplayLabel: 'Claude (Compatible)'
 
     # Groq Example
@@ -724,6 +934,7 @@ endpoints:
 #       description: "Most capable GPT-4 model with multimodal support"
 #       # default: true      # Hard admin default; takes precedence over prior user choices
 #       # softDefault: true  # First-time default only; skipped after a user selects a model/spec/agent
+#       # showInMenu: false  # Hide from the model selector while keeping explicit `spec` access
 #       group: "openAI"  # String value matching the endpoint name
 #       preset:
 #         endpoint: "openAI"
@@ -789,6 +1000,15 @@ endpoints:
 #         endpoint: "openAI"
 #         model: "gpt-4o-mini"
 
+# Automatic conversation summarization (optional)
+# summarization:
+#   enabled: true
+#   provider: "openAI"
+#   model: "gpt-4o-mini"
+#   retainRecent:
+#     turns: 2 # Keep the newest complete user/assistant turns outside the summary
+#     tokens: 2000 # Also preserve up to this many recent tokens
+
 # fileConfig:
 #   endpoints:
 #     assistants:
@@ -811,6 +1031,8 @@ endpoints:
 #     percentage: 100
 #     px: 1024
 #   # Client-side image resizing to prevent upload errors
+#   # Users can toggle this in Settings > Chat. Setting `enabled` here overrides
+#   # that choice for everyone and locks the toggle; omit it to leave users in control.
 #   clientImageResize:
 #     enabled: false  # Enable/disable client-side image resizing (default: false)
 #     maxWidth: 1900  # Maximum width for resized images (default: 1900)
@@ -832,9 +1054,38 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Keenable (search provider; keyless by default, a key only lifts rate limits)
+#   keenableApiKey: '${KEENABLE_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   # Outbound search and scrape requests are validated at connect time against
+#   # their resolved IP and blocked from reaching private, loopback, link-local,
+#   # or cloud-metadata space. `allowedAddresses` is an SSRF exemption list, NOT a
+#   # strict whitelist: hostname/IP + port pairs listed here bypass that block for
+#   # one deliberately-private endpoint (for example a self-hosted SearXNG
+#   # instance); public destinations continue to work normally.
+#   #
+#   # Entries must include a port: `host:port`, `private.ip:port`, or `[ipv6]:port`.
+#   # Do not use URLs, paths, CIDR ranges, bare hosts/IPs, or public IP literals.
+#   # A hostname entry trusts whatever IP that name resolves to on the listed port,
+#   # so only list hosts you fully control and whose DNS cannot be repointed by an
+#   # attacker. Listing an attacker-controllable or DNS-rebindable host re-opens the
+#   # private-address path this guard closes. Prefer literal IPs where you can.
+#   #
+#   # Self-hosted endpoints need an entry. A private destination such as
+#   # `http://searxng:8080`, `http://firecrawl:3002`, or `http://127.0.0.1:8080` is
+#   # blocked once this guard is active, so list it here or those requests will fail.
+#   #
+#   # A proxy from `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` (either case) is
+#   # exempted automatically and needs no entry. That exemption is applied to the
+#   # whole tool rather than per destination, so a host `NO_PROXY` sends direct also
+#   # carries it. Note that when a proxy carries the request the proxy resolves the
+#   # destination, so destination egress policy is the proxy's to enforce, and for
+#   # https targets the proxy's own tunnel replaces this guard entirely.
+#   # allowedAddresses:
+#   #   - 'searxng:8080'
+#   #   - '127.0.0.1:8080'
 #
 # Tavily as both search and scraper provider example:
 # webSearch:
@@ -867,6 +1118,63 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# Keenable as both search provider and scraper example — a fully keyless web
+# search stack: no API key for any of the three categories. The public search and
+# fetch endpoints are rate-limited; a key only lifts the cap.
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: keenable
+#   rerankerType: none          # Rerankers all require a key; 'none' skips reranking
+#   # keenableApiKey: '${KEENABLE_API_KEY}'   # Optional: a key only lifts rate limits (public endpoints used when unset)
+#   # keenableApiUrl: '${KEENABLE_API_URL}'   # Optional: search API URL override (fetch uses KEENABLE_FETCH_URL)
+#   keenableSearchOptions:
+#     maxResults: 5             # 1-20 results per search (default: 8)
+#     # site: example.com       # Restrict search to a single domain
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each request
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
+#   keenableScraperOptions:
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each fetch
+#     timeout: 15000            # HTTP request timeout in milliseconds (max 120000)
+#
+# Keenable search paired with another scraper (Firecrawl here) also works; each
+# category is configured independently:
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: firecrawl
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#
+# The reverse (someone else's search, Keenable as the scraper) also works. Pin
+# the stack for every user as shown below, or leave the providers unpinned so
+# each user can save this same keyless combination in the API-key dialog:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   scraperProvider: keenable
+#   rerankerType: none
+#
+# SearXNG as the search provider example:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   # searxngApiKey: '${SEARXNG_API_KEY}'
+#   searxngSearchOptions:
+#     # Engines your instance should query. Accepts a comma-separated string or a list.
+#     # Defaults to 'google,bing,duckduckgo'; DuckDuckGo serves CAPTCHAs to most
+#     # self-hosted instances, so override it when results come back empty.
+#     #
+#     # Names must match engines enabled on your own instance. SearXNG ignores an
+#     # engine it does not know instead of reporting an error, so a typo or a
+#     # disabled engine shows up as fewer results rather than a failure. Check the
+#     # enabled list at https://your-instance/config before setting this.
+#     engines:
+#       - google
+#       - bing
+#       - startpage
+#       - qwant
+#     # language: en            # Result language code (default: 'all')
+#     # timeRange: month        # 'day', 'month', or 'year'
+#     # timeout: 10000          # HTTP request timeout in milliseconds (1-120000, default: 10000)
 
 # Memory configuration for user memories
 # memory:
@@ -895,11 +1203,96 @@ endpoints:
 #     # model_parameters:
 #     #   temperature: 0.1
 
-# Reject chat messages whose text matches credential-shaped patterns
-# before they reach moderation, the model, or persistence. Filter
-# types live under `messageFilter.<type>`; today only `pii` ships, but
-# the namespace is structured so future filter types can plug in.
-# Omit the whole section to disable.
+# Apply opt-in content filters to source-classified submitted and reusable content.
+# `filters` is base-config-only: database overrides and tombstones cannot add,
+# change, or remove this policy for individual users, groups, or roles.
+# In multi-replica deployments, use a coordinated deploy or restart and verify
+# every replica loaded the same base config before considering policy active;
+# local cache invalidation is not a rollout barrier.
+# Omit `filters` or a source to leave that scope disabled. Omitting a source's
+# `pii` block disables its source-aware detectors; for messages, `inspect` can
+# still change how an enabled legacy `messageFilter.pii` attributes old rows.
+# Omit `fields` to filter every supported field for an enabled source.
+# `starterPatterns` and `customPatterns` can be configured independently
+# under any source so each input surface can use a different policy. Starter
+# ids are closed to the catalog below. Custom regexes use bounded,
+# linear-time syntax; unsupported constructs are rejected at config load.
+# `action` defaults to `block`. Set it to `audit` for a shadow rollout that
+# records raw-free findings without rejecting or modifying content. Redaction
+# is intentionally not an action yet because safe replacement requires a
+# mutation-aware boundary and match spans; configuring an unsupported action
+# is rejected rather than silently treated as enforcement.
+# Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
+# to disable starters while retaining any configured custom patterns.
+# Enabling or changing this policy does not rewrite or delete stored records.
+# Current policy rechecks protected fields when they are resubmitted and when
+# records are copied, shared, or become model-bound. Safe partial metadata edits
+# can succeed so records remain repairable, but persisted protected fields remain
+# unusable on those paths until repaired. Protected prompt or preset fields may
+# be blanked with `contentFilterBlocked: true` in management views. Prompt-group
+# metadata blocked by policy returns an explicit error on direct GET, while
+# collection and reuse responses omit that group.
+# Automatic memory maintenance may log and skip a rejected background update
+# while allowing the main chat response to continue.
+# Legacy assistant rows without provenance default to `model_output`, preserving
+# legacy behavior. Inventory or migrate those records before relying on retroactive
+# enforcement. Opting into `inspect` treats otherwise unattributed assistant content,
+# including selected attachment projections, as submitted; explicit model provenance
+# remains exempt.
+# Roll out strict file inspection deliberately: `uninspectable: block` can make
+# older opaque files unavailable for reuse until inspectable text is present.
+# filters:
+#   messages:
+#     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
+#     pii:
+#       action: audit # `block` (default) or `audit`
+#       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
+#       starterPatterns: [sk_prefix, bearer_header, api_key_header]
+#       customPatterns:
+#         - id: organization_identifier
+#           label: Organization identifier
+#           regex: "ORG-[A-Z0-9]{12}"
+#   prompts:
+#     pii:
+#       fields: [name, description, oneliner, category, command, text, preset_text, system, context, instructions, additional_instructions, greeting, example_input, example_output]
+#   agentInstructions:
+#     pii:
+#       fields: [name, category, description, instructions, additional_instructions, edge_description, edge_prompt, edge_prompt_key, artifacts, support_contact_name, support_contact_email]
+#   conversationStarters:
+#     pii:
+#       fields: [text]
+#   conversationTitles:
+#     pii:
+#       fields: [title]
+#   feedback:
+#     pii:
+#       fields: [text]
+#   skills:
+#     pii:
+#       fields: [name, display_title, description, category, frontmatter, instructions, imported_text, file_name, file_text]
+#   memories:
+#     pii:
+#       fields: [key, value, summary]
+#   files:
+#     pii:
+#       fields: [name, content, extracted_text, transcript, uri]
+#       # `allow` is the compatibility default. `block` rejects opaque or
+#       # oversized selected file content before provider/storage side effects.
+#       uninspectable: block
+#   toolArguments:
+#     pii:
+#       fields: [name, arguments, output]
+#   modelParameters:
+#     pii:
+#       fields: [stop, request_fields, response_format, metadata]
+#   actionMetadata:
+#     pii:
+#       fields: [raw_spec, domain, privacy_policy_url, authorization_type, custom_auth_header, authorization_content_type, authorization_url, client_url, scope, token_exchange_method, api_key, oauth_client_id, oauth_client_secret]
+
+# Legacy message-only filter configuration. Existing deployments can continue
+# using this shape while migrating message policy into `filters.messages`.
+# When both shapes are configured, both policies apply. Prefer
+# `filters.messages` for centrally managed source-aware policy.
 # messageFilter:
 #   pii:
 #     # (optional) Pick a subset of the starter catalog by id; omit to

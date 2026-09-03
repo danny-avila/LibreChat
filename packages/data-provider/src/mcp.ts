@@ -154,12 +154,16 @@ const OboOptionsSchema = z.object({
   scopes: z.string().min(1),
 });
 
+export const MCP_SERVER_TITLE_PATTERN = new RegExp(
+  "^[\\p{L}\\p{N}][\\p{L}\\p{N}\\p{M}'’ -]*$",
+  'u',
+);
+export const MCP_SERVER_TITLE_ERROR =
+  'Title must start with a letter or number and can include spaces, hyphens, and apostrophes';
+
 const BaseOptionsSchema = z.object({
-  /** Display name for the MCP server - only letters, numbers, and spaces allowed */
-  title: z
-    .string()
-    .regex(/^[a-zA-Z0-9 ]+$/, 'Title can only contain letters, numbers, and spaces')
-    .optional(),
+  /** Display name for the MCP server */
+  title: z.string().regex(MCP_SERVER_TITLE_PATTERN, MCP_SERVER_TITLE_ERROR).optional(),
   /** Description of the MCP server */
   description: z.string().optional(),
   /**
@@ -174,7 +178,14 @@ const BaseOptionsSchema = z.object({
   /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
   sseReadTimeout: z.number().int().positive().optional(),
   initTimeout: z.number().int().nonnegative().optional(),
-  /** Controls visibility in chat dropdown menu (MCPSelect) */
+  /**
+   * Whether the server is offered in chat.
+   *
+   * `false` hides it from the chat dropdown (MCPSelect) AND bars it from the
+   * chat selection a request carries, so a stale or hand-written request cannot
+   * reach it either. It does not restrict agents, nor a server a model spec
+   * pins through `mcpServers` — both are the operator's own choice.
+   */
   chatMenu: z.boolean().optional(),
   /**
    * Controls server instruction behavior:
@@ -249,6 +260,33 @@ const ProxyUrlSchema = z
     },
   );
 
+const PROCESS_MCP_SERVER_FIELDS = new Set(['command', 'args', 'env', 'cwd', 'stderr']);
+
+export function isProcessMCPServerField(field: string): boolean {
+  return PROCESS_MCP_SERVER_FIELDS.has(field);
+}
+
+export function isProcessMCPServerConfig(value: unknown): boolean {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const config = value as Record<string, unknown>;
+  if (config.type === 'stdio') {
+    return true;
+  }
+
+  return Object.keys(config).some(isProcessMCPServerField);
+}
+
+export function hasProcessMCPServerConfig(value: unknown): boolean {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.values(value).some(isProcessMCPServerConfig);
+}
+
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('stdio').default('stdio'),
   obo: z.undefined().optional(),
@@ -288,6 +326,11 @@ export const StdioOptionsSchema = BaseOptionsSchema.extend({
   stderr: z
     .union([z.enum(['pipe', 'ignore', 'inherit']), z.number().int().nonnegative()])
     .optional(),
+  /**
+   * Working directory for the spawned process. Supplied by Agent Plugins
+   * packages, which resolve and contain the path before it reaches this schema.
+   */
+  cwd: z.string().optional(),
 });
 
 export const WebSocketOptionsSchema = BaseOptionsSchema.extend({

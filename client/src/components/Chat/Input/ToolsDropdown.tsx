@@ -27,6 +27,10 @@ interface ToolsDropdownProps {
   disabled?: boolean;
 }
 
+/** Ariakit portals to document.body by default, which puts the menu outside every landmark.
+ *  Returning null falls back to that default. */
+const getMainLandmark = () => document.querySelector<HTMLElement>('main');
+
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -379,8 +383,8 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           id="tools-dropdown-button"
           aria-label="Tools Options"
           className={cn(
-            'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
-            isPopoverActive && 'bg-surface-hover',
+            'flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
+            isPopoverActive && 'bg-surface-composer-hover',
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">
@@ -400,7 +404,10 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       menuId="tools-dropdown-menu"
       isOpen={isPopoverActive}
       setIsOpen={setIsPopoverActive}
-      modal={true}
+      modal={false}
+      portal={true}
+      portalElement={getMainLandmark}
+      preserveTabOrder={false}
       unmountOnHide={true}
       trigger={menuTrigger}
       items={dropdownItems}

@@ -1,6 +1,6 @@
 {
   "name": "@librechat/data-schemas",
-  "version": "0.0.56",
+  "version": "0.0.69",
   "description": "Mongoose schemas and models for LibreChat",
   "type": "module",
   "main": "dist/index.cjs",
@@ -52,6 +52,16 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://librechat.ai",
+  "dependencies": {
+    "mdast-util-directive": "^3.0.0",
+    "mdast-util-from-markdown": "^2.0.1",
+    "mdast-util-gfm": "^3.0.0",
+    "mdast-util-math": "^3.0.0",
+    "micromark-extension-directive": "^3.0.1",
+    "micromark-extension-gfm": "^3.0.0",
+    "micromark-extension-llm-math": "^3.1.0",
+    "micromark-util-decode-string": "^2.0.0"
+  },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
@@ -71,7 +81,7 @@
     "lodash": "^4.17.23",
     "meilisearch": "^0.38.0",
     "mongoose": "^8.24.1",
-    "nanoid": "^3.3.7",
+    "nanoid": "^3.3.18",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0"
   },

@@ -1,4 +1,5 @@
 export * from './format';
+export * from './protection';
 export * from './registry';
 export * from './toolkits';
 export * from './definitions';

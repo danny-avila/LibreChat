@@ -9,6 +9,8 @@ import type {
   SteerArmResult,
   SteerEnqueueReceiptResult,
   SteerEnqueueVersionedResult,
+  TerminalSteerAdmissionPolicy,
+  TerminalSteerAdmissionResult,
   SteerQueueItem,
   SteerReceipt,
   SteerReceiptInput,
@@ -23,6 +25,7 @@ import type {
 } from '~/stream/interfaces/IJobStore';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
+  JobStatusTransitionDeadlineError,
   JobPredecessorMismatchError,
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -30,7 +33,9 @@ import {
   STEER_QUEUE_MAX_DEPTH,
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
+  PROVIDER_DRAIN_TIMEOUT_MS,
   isPendingActionStale,
+  toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
 import {
   isRecoveredSteerPayload,
@@ -46,6 +51,10 @@ const STEER_RECEIPT_MAX_PER_STREAM: number = 100;
 const CREATE_REPLACEMENT_RECEIPT_MAX = 32;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 const TERMINAL_PERSISTENCE_RETENTION_MS = 5 * 60 * 1000;
+/** Bounded window a terminal job owing a host lifecycle hook is retained for retry before
+ *  it is reaped even if unacknowledged (a permanently-failing hook cannot leak forever).
+ *  Mirrors the Redis store's 24h host-action TTL. */
+const HOST_ACTION_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 function assertCreateIdempotencyArguments(
   claimKey?: string,
@@ -134,6 +143,8 @@ interface ContentState {
  * - No chunk persistence needed - same instance handles generation and reconnects
  */
 export class InMemoryJobStore implements IJobStoreV2 {
+  readonly detachedAgentEventActionStoreMode = 'process_local' as const;
+
   private jobs = new Map<string, SerializableJobData>();
   private contentState = new Map<string, ContentState>();
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -264,6 +275,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     recoveredSteerPayload?: RecoveredSteerPayload,
     creationAttemptId?: string,
     expectedPredecessorCreatedAt?: number,
+    rejectActivePredecessor?: boolean,
   ): Promise<CreatedJobData> {
     if (typeof userId !== 'string' || userId.length === 0) {
       throw new Error('Generation job requires a non-empty user id');
@@ -285,6 +297,18 @@ export class InMemoryJobStore implements IJobStoreV2 {
     ) {
       throw new Error('Invalid expected generation predecessor');
     }
+    if (rejectActivePredecessor != null && typeof rejectActivePredecessor !== 'boolean') {
+      throw new Error('Invalid active generation predecessor policy');
+    }
+    const providerExecutionId = initialMetadata.providerExecutionId;
+    if (
+      providerExecutionId != null &&
+      (providerExecutionId.length === 0 || providerExecutionId.length > 128)
+    ) {
+      throw new Error('Invalid provider execution id');
+    }
+    const safeInitialMetadata = { ...initialMetadata };
+    delete safeInitialMetadata.providerDrained;
     const assertOwnerCompatible = (): void => {
       const existingJob = this.jobs.get(streamId);
       if (
@@ -332,6 +356,21 @@ export class InMemoryJobStore implements IJobStoreV2 {
     const assertExpectedPredecessorCompatible = (): void => {
       const current = this.jobs.get(streamId);
       const currentCreatedAt = current?.createdAt ?? this.getRetainedGenerationEpoch(streamId);
+      if (
+        current?.terminalHostActionPending === true ||
+        (rejectActivePredecessor === true &&
+          (current?.status === 'running' ||
+            current?.status === 'requires_action' ||
+            current?.terminalPersistencePending === true))
+      ) {
+        throw new JobPredecessorMismatchError({
+          createdAt: current.createdAt,
+          active: true,
+          verified: true,
+          status: current.status,
+          ...(current.conversationId !== undefined && { conversationId: current.conversationId }),
+        });
+      }
       if (
         expectedPredecessorCreatedAt == null ||
         currentCreatedAt === expectedPredecessorCreatedAt
@@ -467,11 +506,23 @@ export class InMemoryJobStore implements IJobStoreV2 {
           enumerable: false,
         });
       }
+      if (previousJob.providerExecutionId != null) {
+        Object.defineProperty(replaced, 'providerExecutionId', {
+          value: previousJob.providerExecutionId,
+          enumerable: false,
+        });
+      }
+      if (previousJob.providerDrained != null) {
+        Object.defineProperty(replaced, 'providerDrained', {
+          value: previousJob.providerDrained,
+          enumerable: false,
+        });
+      }
       addReplacedJob(replaced);
     }
     this.lastGenerationEpoch = createdAt;
     const job: CreatedJobData = {
-      ...initialMetadata,
+      ...safeInitialMetadata,
       streamId,
       userId,
       ...(tenantId && { tenantId }),
@@ -485,6 +536,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       ...(idempotencyClientRequestId !== undefined && { idempotencyClientRequestId }),
       ...(recoveredSteerId !== undefined && { recoveredSteerId }),
       providerAbortReady: false,
+      ...(providerExecutionId != null && { providerDrained: true }),
       syncSent: false,
     };
     if (creationAttemptId != null) {
@@ -661,6 +713,38 @@ export class InMemoryJobStore implements IJobStoreV2 {
     Object.assign(job, updates);
   }
 
+  async markProviderExecutionDrained(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (job?.createdAt !== expectedCreatedAt || job.providerExecutionId !== providerExecutionId) {
+      return false;
+    }
+    job.providerDrained = true;
+    return true;
+  }
+
+  async beginProviderExecution(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (
+      job?.createdAt !== expectedCreatedAt ||
+      job.providerExecutionId !== providerExecutionId ||
+      job.status !== 'running' ||
+      job.providerDrained !== true
+    ) {
+      return false;
+    }
+    job.providerDrained = false;
+    job.providerExecutionStartedId = providerExecutionId;
+    return true;
+  }
+
   async finalizeTerminalPersistence(
     streamId: string,
     expectedCreatedAt: number,
@@ -691,6 +775,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     if (args.expectCreatedAt != null && job.createdAt !== args.expectCreatedAt) {
       return false;
+    }
+    if (args.notAfterMs != null && Date.now() >= args.notAfterMs) {
+      throw new JobStatusTransitionDeadlineError(args.notAfterMs);
     }
     if (['complete', 'error', 'aborted'].includes(args.to)) {
       if (!this.isParkedRecoveryCompatible(streamId, job)) {
@@ -805,6 +892,30 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     this.idempotencyClaims.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
     return { claimed: true, existing: value };
+  }
+
+  async hasIdempotencyKey(key: string): Promise<boolean> {
+    const existing = this.idempotencyClaims.get(key);
+    if (existing == null) {
+      return false;
+    }
+    if (existing.expiresAt > Date.now()) {
+      return true;
+    }
+    this.idempotencyClaims.delete(key);
+    return false;
+  }
+
+  async getIdempotencyClaim(key: string): Promise<IdempotencyClaimValue | null> {
+    const existing = this.idempotencyClaims.get(key);
+    if (existing == null) {
+      return null;
+    }
+    if (existing.expiresAt <= Date.now()) {
+      this.idempotencyClaims.delete(key);
+      return null;
+    }
+    return { ...existing.value };
   }
 
   async takeoverIdempotencyKey(
@@ -955,6 +1066,54 @@ export class InMemoryJobStore implements IJobStoreV2 {
     return running;
   }
 
+  async getRequiresActionJobs(): Promise<SerializableJobData[]> {
+    const paused: SerializableJobData[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.status === 'requires_action') {
+        paused.push(job);
+      }
+    }
+    return paused;
+  }
+
+  async getTerminalHostActionJobs(): Promise<SerializableJobData[]> {
+    const pending: SerializableJobData[] = [];
+    const now = Date.now();
+    for (const job of this.jobs.values()) {
+      if (job.terminalHostActionPending !== true) {
+        continue;
+      }
+      if (
+        job.providerDrained === false &&
+        job.completedAt != null &&
+        now - job.completedAt >= PROVIDER_DRAIN_TIMEOUT_MS
+      ) {
+        // No owner can renew this terminal segment. The pre-CAS snapshot is
+        // already retained; force the same bounded recovery used by callers
+        // waiting for a provider drain so one crashed process cannot hold the
+        // conversation lane forever.
+        job.providerDrained = true;
+      }
+      if (job.providerDrained !== false) {
+        // Enumerating IS the retry attempt: refresh retention so evidence outlives a host
+        // dependency that is unreachable for longer than the retention window.
+        job.terminalHostActionRefreshedAt = now;
+        pending.push(job);
+      }
+    }
+    return pending;
+  }
+
+  async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {
+    const job = this.jobs.get(streamId);
+    // Identity-fenced: a replacement generation at this streamId (a newer createdAt) must
+    // not have a predecessor's marker cleared on its behalf.
+    if (job == null || (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)) {
+      return;
+    }
+    delete job.terminalHostActionPending;
+  }
+
   async cleanup(): Promise<number> {
     const now = Date.now();
     const toDelete: Array<{ streamId: string; createdAt: number }> = [];
@@ -1003,6 +1162,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
           patch: {
             completedAt: now,
             error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+            ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
           },
           clear: [
             'pendingAction',
@@ -1018,7 +1178,19 @@ export class InMemoryJobStore implements IJobStoreV2 {
       }
 
       const isFinished = ['complete', 'error', 'aborted'].includes(job.status);
-      if (isFinished && job.completedAt) {
+      // A terminal job that still owes a host lifecycle hook is retained (like a
+      // reconcile-preserved job) so a later cleanup pass can enumerate and retry it —
+      // but only within a bounded window, so a permanently-failing hook cannot leak.
+      const hostActionHeld =
+        job.terminalHostActionPending === true &&
+        now - (job.terminalHostActionRefreshedAt ?? job.completedAt ?? 0) <=
+          HOST_ACTION_RETENTION_MS;
+      if (
+        isFinished &&
+        job.completedAt &&
+        job.preserveForScheduleReconcile !== true &&
+        !hostActionHeld
+      ) {
         // A pending final event is a persistence barrier, not an ordinary
         // completed row. Give its owner/recovery path a bounded window even
         // when normal terminal retention is configured to zero.
@@ -1046,11 +1218,13 @@ export class InMemoryJobStore implements IJobStoreV2 {
         job.status = 'aborted';
         job.completedAt = now;
         job.error = 'Approval expired before a decision was made';
+        // Store-won expiry (the manager's own sweep did not win the CAS): mark the host
+        // action pending so the manager relay still runs its lifecycle hook, and RETAIN the
+        // job (even under zero terminal retention) so a sweep can enumerate it — cleared and
+        // reaped once the hook acknowledges.
+        job.terminalHostActionPending = true;
         delete job.pendingAction;
         delete job.pendingActionId;
-        if (this.ttlAfterComplete === 0) {
-          toDelete.push({ streamId, createdAt: job.createdAt });
-        }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
         // longer than the stale timeout. These are crashed/hung generations that
@@ -1174,6 +1348,18 @@ export class InMemoryJobStore implements IJobStoreV2 {
    * Also performs self-healing cleanup: removes stale entries for jobs that no longer exist.
    */
   async getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.getJobIdsByUser(userId, tenantId, false);
+  }
+
+  async getCleanupBlockingJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.getJobIdsByUser(userId, tenantId, true);
+  }
+
+  private getJobIdsByUser(
+    userId: string,
+    tenantId: string | undefined,
+    includeUndrained: boolean,
+  ): string[] {
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
     const trackedIds = this.userJobMap.get(userKey);
     if (!trackedIds || trackedIds.size === 0) {
@@ -1196,12 +1382,20 @@ export class InMemoryJobStore implements IJobStoreV2 {
       // A pending-approval job still occupies the user's conversation slot — but
       // only while its prompt is live: a past-`expiresAt` approval no longer
       // counts as active (cleanup/expiry will finalize it).
-      if (job.status === 'running' || job.status === 'requires_action') {
-        if (job.status === 'requires_action' && isPendingActionStale(job)) {
+      if (
+        job.status === 'running' ||
+        job.status === 'requires_action' ||
+        (includeUndrained && job.providerDrained === false)
+      ) {
+        if (
+          job.status === 'requires_action' &&
+          isPendingActionStale(job) &&
+          !(includeUndrained && job.providerDrained === false)
+        ) {
           continue;
         }
         activeIds.push(streamId);
-      } else {
+      } else if (job.providerDrained !== false) {
         // Self-healing: job completed/deleted but mapping wasn't cleaned - fix it now
         trackedIds.delete(streamId);
       }
@@ -1323,7 +1517,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
 
     // Dereference WeakRef - may return undefined if GC'd
     const graph = state.graphRef.deref();
-    return graph?.contentData ?? [];
+    return toWireRunSteps(graph?.contentData ?? []);
   }
 
   /**
@@ -1441,6 +1635,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
         ...(job.preemptCapable === true && { preempt: true }),
       }),
     };
+    if (
+      persisted.quotes != null &&
+      (job.steerQuotesExecutionId == null || job.steerQuotesExecutionId !== job.providerExecutionId)
+    ) {
+      delete persisted.quotes;
+    }
     queue.push(persisted);
     return { item: { ...persisted }, position: queue.length };
   }
@@ -1559,6 +1759,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
         ...(job.preemptCapable === true && { preempt: true }),
       }),
     };
+    if (
+      persisted.quotes != null &&
+      (job.steerQuotesExecutionId == null || job.steerQuotesExecutionId !== job.providerExecutionId)
+    ) {
+      delete persisted.quotes;
+    }
     queue.push(persisted);
     const receipt: SteerReceipt = {
       ...receiptInput,
@@ -1707,6 +1913,39 @@ export class InMemoryJobStore implements IJobStoreV2 {
       this.settleSteerReceipts(streamId, restored, 'queued');
     }
     return true;
+  }
+
+  async admitTerminalSteers(
+    streamId: string,
+    policy: TerminalSteerAdmissionPolicy,
+    expectedCreatedAt?: number,
+  ): Promise<TerminalSteerAdmissionResult> {
+    const job = this.jobs.get(streamId);
+    if (
+      job?.status !== 'running' ||
+      this.closedSteerQueues.has(streamId) ||
+      (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)
+    ) {
+      return { outcome: 'unavailable' };
+    }
+    const queue = this.steerQueues.get(streamId);
+    if (!policy.allowClaim || job.generationProtocolVersion !== 2) {
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    if (queue == null || queue.length === 0) {
+      if (policy.keepOpenWhenEmpty) {
+        return { outcome: 'open' };
+      }
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    const items = await this.drainSteers(streamId, expectedCreatedAt);
+    if (items.length === 0) {
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    return { outcome: 'claimed', items };
   }
 
   async closeAndDrainSteers(

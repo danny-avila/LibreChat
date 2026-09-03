@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
 import type { Agents, TConversation, TPendingSteer } from 'librechat-data-provider';
+import { isNotFoundError, updateConvoInAllQueries, setDocumentTitle } from '~/utils';
 import { generationProtocolHeaders, withGenerationProtocolQuery } from './protocol';
-import { isNotFoundError, updateConvoInAllQueries } from '~/utils';
 import { useGetStartupConfig } from '../Endpoints';
 
 export interface StreamStatusResponse {
@@ -17,6 +17,9 @@ export interface StreamStatusResponse {
   status?: 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
   aggregatedContent?: Array<{ type: string; text?: string }>;
   createdAt?: number;
+  /** Generation age computed on the server's clock, so a reattaching client
+   *  can rebuild a clock-local elapsed baseline free of cross-machine skew. */
+  elapsedMs?: number;
   resumeState?: Agents.ResumeState;
   /** Live pending approval when `status === 'requires_action'`; mirrors
    *  `resumeState.pendingAction`, surfaced top-level for the resume-on-load path. */
@@ -179,7 +182,7 @@ export function useTitleGeneration(enabled = true) {
         updateConvoInAllQueries(queryClient, conversationId, (c) => ({ ...c, title }));
         // Only update document title if this conversation is currently active
         if (window.location.pathname.includes(conversationId)) {
-          document.title = title;
+          setDocumentTitle(title);
         }
         markTitleGenerationProcessed(conversationId);
         setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
@@ -216,6 +219,40 @@ export function useTitleGeneration(enabled = true) {
  * - Polls while jobs are active
  * - Shows generation indicators in conversation list
  */
+export const ACTIVE_JOBS_POLL_MS = 5_000;
+/**
+ * How long to keep asking after the last job this client knew about ended.
+ *
+ * A successor the server admits for itself — a queued turn handed to the
+ * backend, a background-tool continuation — starts as part of terminalizing
+ * the run before it. But finishing a run also empties this list, partly
+ * because the client removes its own job optimistically the moment `FINAL`
+ * lands. Stopping the poll on an empty list therefore goes quiet at exactly
+ * the moment a successor appears, and with the tab already focused there is no
+ * focus refetch to recover: the pane waits for a reload. Keep asking across
+ * that handover instead.
+ */
+export const ACTIVE_JOBS_SUCCESSOR_GRACE_MS = 30_000;
+
+/** Module-scoped rather than per-observer: this is one shared query, and a
+ *  component mounting mid-handover should inherit the grace, not restart it. */
+let lastListedActiveJobsAt = 0;
+
+/** @internal Test seam — the grace window is wall-clock state. */
+export function resetActiveJobsGrace(): void {
+  lastListedActiveJobsAt = 0;
+}
+
+export function getActiveJobsRefetchInterval(data?: ActiveJobsResponse): number | false {
+  if ((data?.activeJobIds?.length ?? 0) > 0) {
+    lastListedActiveJobsAt = Date.now();
+    return ACTIVE_JOBS_POLL_MS;
+  }
+  return Date.now() - lastListedActiveJobsAt < ACTIVE_JOBS_SUCCESSOR_GRACE_MS
+    ? ACTIVE_JOBS_POLL_MS
+    : false;
+}
+
 export function useActiveJobs(enabled = true) {
   return useQuery({
     queryKey: [QueryKeys.activeJobs],
@@ -223,8 +260,12 @@ export function useActiveJobs(enabled = true) {
     enabled,
     staleTime: 5_000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    refetchInterval: (data) => ((data?.activeJobIds?.length ?? 0) > 0 ? 5_000 : false),
+    /** Unconditional: the interval is off while nothing is listed, so a run
+     *  another client started during the last `staleTime` window would be
+     *  invisible until some unrelated refetch, and returning to the tab is
+     *  exactly when a pane needs to know whether its history has moved. */
+    refetchOnWindowFocus: 'always',
+    refetchInterval: getActiveJobsRefetchInterval,
     retry: false,
   });
 }

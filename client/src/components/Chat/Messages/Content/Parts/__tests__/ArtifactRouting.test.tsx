@@ -45,8 +45,21 @@ jest.mock('~/components/Chat/Messages/Content/Image', () => ({
 
 jest.mock('~/components/Messages/Content/Mermaid/Mermaid', () => ({
   __esModule: true,
-  default: ({ children }: { children: string }) => (
-    <div data-testid="mermaid-render">{children}</div>
+  default: ({
+    children,
+    artifact,
+  }: {
+    children: string;
+    artifact?: { id: string; title?: string; type?: string };
+  }) => (
+    <div
+      data-testid="mermaid-render"
+      data-artifact-id={artifact?.id}
+      data-artifact-title={artifact?.title}
+      data-artifact-type={artifact?.type}
+    >
+      {children}
+    </div>
   ),
 }));
 
@@ -187,7 +200,11 @@ describe('Attachment routing for tool artifacts', () => {
       text: 'graph TD\nA-->B',
     } as Partial<TAttachment>);
     renderWith(<Attachment attachment={mmd} />);
-    expect(screen.getByTestId('mermaid-render')).toHaveTextContent('graph TD');
+    const renderer = screen.getByTestId('mermaid-render');
+    expect(renderer).toHaveTextContent('graph TD');
+    expect(renderer).toHaveAttribute('data-artifact-id', 'tool-artifact-file-1');
+    expect(renderer).toHaveAttribute('data-artifact-title', 'flow.mmd');
+    expect(renderer).toHaveAttribute('data-artifact-type', 'application/vnd.mermaid');
     // The card-style trigger should NOT be rendered for mermaid
     expect(screen.queryByText('com_ui_artifact_click')).not.toBeInTheDocument();
   });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Label,
   Button,
@@ -17,8 +17,14 @@ import { useLocalize } from '~/hooks';
 export default function ProviderKeys() {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const endpoints = useProviderKeys();
+
+  const handleOpenAutoFocus = (event: Event) => {
+    event.preventDefault();
+    contentRef.current?.focus();
+  };
 
   return (
     <div className="flex items-center justify-between">
@@ -32,7 +38,10 @@ export default function ProviderKeys() {
           </Button>
         </OGDialogTrigger>
         <OGDialogContent
-          className="w-11/12 max-w-2xl bg-background text-text-primary shadow-2xl"
+          ref={contentRef}
+          tabIndex={-1}
+          onOpenAutoFocus={handleOpenAutoFocus}
+          className="w-11/12 max-w-2xl bg-surface-dialog text-text-primary shadow-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
           aria-describedby={undefined}
         >
           <OGDialogHeader className="space-y-0 pr-8 text-left">

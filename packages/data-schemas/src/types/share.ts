@@ -24,6 +24,9 @@ export interface SharedFileSnapshot {
    * was reused/overwritten by a later turn), so a link can't surface post-share
    * content. */
   previewRevision?: string;
+  /** Stable generation marker stamped whenever a source artifact is dispatched.
+   * Unlike `updatedAt`, preview finalization does not change this value. */
+  sourceDispatchedAt?: number;
   tenantId?: string;
 }
 
@@ -77,6 +80,9 @@ export type SharedMessage = Pick<
   | 'content'
   | 'iconURL'
   | 'isCreatedByUser'
+  | 'isUserSubmitted'
+  | 'userSubmittedPaths'
+  | 'userSubmittedMessageFieldPaths'
   | 'createdAt'
   | 'updatedAt'
   | 'tokenCount'
@@ -99,7 +105,7 @@ export interface SharedLinksResult {
     createdAt: Date;
     conversationId: string;
   }>;
-  nextCursor?: Date;
+  nextCursor?: Date | string;
   hasNextPage: boolean;
 }
 

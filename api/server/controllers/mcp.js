@@ -6,12 +6,14 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
-const { logger, SystemCapabilities } = require('@librechat/data-schemas');
+const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
   isUserSourced,
+  createAuthIdentityContext,
   MCPConnection,
   MCPErrorCodes,
+  MCPCatalogCapacityError,
   splitMCPToolKey,
   normalizeServerName,
   findShadowedServerNames,
@@ -35,7 +37,14 @@ const {
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
-const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+const { loadMCPServerCatalogs } = require('~/server/services/Tools/mcp');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
+const {
+  cacheMCPServerTools,
+  getMCPServerTools,
+  getMCPToolsCacheGeneration,
+  invalidateCachedTools,
+} = require('~/server/services/Config');
 const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
@@ -94,6 +103,68 @@ function handleMCPError(error, res) {
   return null;
 }
 
+/** Disposes a stale local connection after its DB-backed config has changed. */
+async function disconnectLocalMCPServer(userId, serverName) {
+  try {
+    await getMCPManager()?.disconnectUserConnection(userId, serverName);
+  } catch (error) {
+    logger.warn(
+      `[MCP Cache] Failed to disconnect the local connection for ${serverName} (user: ${userId}):`,
+      error,
+    );
+  }
+}
+
+const POST_COMMIT_FENCE_RETRY_DELAYS_MS = [0, 50, 200];
+
+/** Retries the shared fence after persistence; config-bound connections remain a durable
+ * fallback if Redis stays unavailable, so an old connection cannot serve the new config. */
+async function fenceCommittedMCPMutation({ userId, serverName }) {
+  let lastError;
+  for (const delay of POST_COMMIT_FENCE_RETRY_DELAYS_MS) {
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    try {
+      await invalidateCachedTools({ userId, serverName });
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.warn(
+        `[MCP Cache] Failed to fence committed mutation for ${serverName} (user: ${userId}); retrying:`,
+        error,
+      );
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Republishes the pre-mutation catalog under the new fence when persistence
+ * fails. The retained connection will reacquire that generation on its next
+ * use; this snapshot keeps every replica authoritative in the meantime.
+ */
+async function restoreRetainedServerCatalog({ userId, serverName, serverConfig, serverTools }) {
+  if (serverTools == null) {
+    return;
+  }
+  try {
+    const publicationGeneration = await getMCPToolsCacheGeneration({ userId, serverName });
+    await cacheMCPServerTools({
+      userId,
+      serverName,
+      serverConfig,
+      serverTools,
+      publicationGeneration,
+    });
+  } catch (error) {
+    logger.error(
+      `[MCP Cache] Failed to restore the retained catalog for ${serverName} (user: ${userId}):`,
+      error,
+    );
+  }
+}
+
 /**
  * Get all MCP tools available to the user.
  */
@@ -126,53 +197,44 @@ const getMCPTools = async (req, res) => {
       return res.status(200).json({ servers: {} });
     }
 
-    const mcpManager = getMCPManager();
     const mcpServers = {};
-
-    const serverToolsMap = new Map();
-    const cacheResults = await Promise.all(
-      configuredServers.map(async (serverName) => {
-        try {
-          return {
-            serverName,
-            tools: await getMCPServerTools(userId, serverName, mcpConfig[serverName]),
-          };
-        } catch (error) {
-          logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
-          return { serverName, tools: null };
-        }
-      }),
-    );
-    for (const { serverName, tools } of cacheResults) {
-      if (tools) {
-        serverToolsMap.set(serverName, tools);
-        continue;
+    const oboIdentityContext = createAuthIdentityContext({
+      user: req.user,
+      tenantId: getTenantId(),
+    });
+    const catalogAbortController = new AbortController();
+    const abortCatalogLoad = () => {
+      if (!res.writableEnded) {
+        catalogAbortController.abort();
       }
-
-      let serverTools;
-      try {
-        serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
-      } catch (error) {
-        logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
-        continue;
-      }
-      if (!serverTools) {
-        logger.debug(`[getMCPTools] No tools found for server ${serverName}`);
-        continue;
-      }
-      serverToolsMap.set(serverName, serverTools);
-
-      if (Object.keys(serverTools).length > 0) {
-        // Cache asynchronously without blocking
-        cacheMCPServerTools({
-          userId,
+    };
+    res.once('close', abortCatalogLoad);
+    let catalogResult;
+    try {
+      catalogResult = await loadMCPServerCatalogs({
+        user: req.user,
+        servers: configuredServers.map((serverName) => ({
           serverName,
-          serverTools,
           serverConfig: mcpConfig[serverName],
-        }).catch((err) =>
-          logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
-        );
-      }
+        })),
+        upstreamTokenProvider: createOpenIDSessionTokenProvider({
+          req,
+          res,
+          user: req.user,
+          identityContext: oboIdentityContext,
+          tokenPreference: 'access_token',
+        }),
+        oboIdentityContext,
+        signal: catalogAbortController.signal,
+      });
+    } finally {
+      res.off('close', abortCatalogLoad);
+    }
+    const { serverTools: serverToolsMap, serversWithoutTools } = catalogResult;
+    if (serversWithoutTools.length > 0) {
+      logger.debug(
+        `[getMCPTools] No tools (${serversWithoutTools.length}): ${serversWithoutTools.join(', ')}`,
+      );
     }
 
     // Process each configured server
@@ -219,6 +281,10 @@ const getMCPTools = async (req, res) => {
               name: toolName,
               pluginKey: toolKey,
               description: toolData.function.description || '',
+              /** Upstream identity for keys that stripped a redundant
+               *  server-name prefix — the agent editor migrates legacy
+               *  persisted ids only when this proves the same tool. */
+              ...(toolData.serverToolName != null && { serverToolName: toolData.serverToolName }),
             });
           }
         }
@@ -235,7 +301,11 @@ const getMCPTools = async (req, res) => {
     res.status(200).json({ servers: mcpServers });
   } catch (error) {
     logger.error('[getMCPTools]', error);
-    res.status(500).json({ message: error.message });
+    if (res.destroyed || res.headersSent) {
+      return;
+    }
+    const status = error instanceof MCPCatalogCapacityError ? 503 : 500;
+    res.status(status).json({ message: error.message });
   }
 };
 /**
@@ -509,12 +579,30 @@ const updateMCPServerController = async (req, res) => {
         .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
 
-    const parsedConfig = await getMCPServersRegistry().updateServer(
+    const registry = getMCPServersRegistry();
+    const parsedConfig = await registry.inspectServerUpdate(
       serverName,
       validation.data,
       'DB',
       userId,
     );
+    const retainedTools = await getMCPServerTools(userId, serverName, existingConfig);
+    await invalidateCachedTools({ userId, serverName });
+    try {
+      await registry.commitServerUpdate(serverName, parsedConfig, 'DB', userId);
+    } catch (error) {
+      await restoreRetainedServerCatalog({
+        userId,
+        serverName,
+        serverConfig: existingConfig,
+        serverTools: retainedTools,
+      });
+      throw error;
+    }
+    /** Fence connections another replica could have created from the old DB
+     * config between the pre-commit fence and the committed update. */
+    await fenceCommittedMCPMutation({ userId, serverName });
+    await disconnectLocalMCPServer(userId, serverName);
 
     res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
   } catch (error) {
@@ -535,7 +623,24 @@ const deleteMCPServerController = async (req, res) => {
   try {
     const userId = req.user?.id;
     const { serverName } = req.params;
-    await getMCPServersRegistry().removeServer(serverName, 'DB', userId);
+    const registry = getMCPServersRegistry();
+    const existingConfig = await registry.getServerConfig(serverName, userId);
+    const retainedTools = await getMCPServerTools(userId, serverName, existingConfig);
+    await invalidateCachedTools({ userId, serverName });
+    try {
+      await registry.removeServer(serverName, 'DB', userId);
+    } catch (error) {
+      await restoreRetainedServerCatalog({
+        userId,
+        serverName,
+        serverConfig: existingConfig,
+        serverTools: retainedTools,
+      });
+      throw error;
+    }
+    /** Fence connections another replica could have created before deletion committed. */
+    await fenceCommittedMCPMutation({ userId, serverName });
+    await disconnectLocalMCPServer(userId, serverName);
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {
     logger.error('[deleteMCPServer]', error);

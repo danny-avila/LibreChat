@@ -19,6 +19,7 @@ const mockRecordCollectedUsage = jest
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
 const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
+const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: false });
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -30,6 +31,9 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /** Real implementation: these tests exist to verify abort classification
+   *  itself, so mocking it would assert the mock rather than the behavior. */
+  isAbortError: jest.requireActual('@librechat/api').isAbortError,
   countTokens: jest.fn().mockResolvedValue(100),
   isEnabled: jest.fn().mockReturnValue(false),
   sendEvent: jest.fn(),
@@ -37,10 +41,15 @@ jest.mock('@librechat/api', () => ({
     abortJob: jest.fn(),
   },
   recordCollectedUsage: mockRecordCollectedUsage,
+  getTransactionsConfig: (...args) => mockGetTransactionsConfig(...args),
   sanitizeMessageForTransmit: jest.fn((msg) => msg),
+  buildAbortedResponseMetadata: jest.fn().mockReturnValue(null),
 }));
 
 jest.mock('librechat-data-provider', () => ({
+  /** Keep the module real: `@librechat/api` is partially un-mocked above and
+   *  reads constants (`CacheKeys`, ...) from it at import time. */
+  ...jest.requireActual('librechat-data-provider'),
   isAssistantsEndpoint: jest.fn().mockReturnValue(false),
   ErrorTypes: { INVALID_REQUEST: 'INVALID_REQUEST', NO_SYSTEM_MESSAGES: 'NO_SYSTEM_MESSAGES' },
 }));
@@ -75,7 +84,9 @@ jest.mock('./abortRun', () => ({
 
 const { logger } = require('@librechat/data-schemas');
 const { sendError } = require('~/server/middleware/error');
-const { handleAbortError, spendCollectedUsage } = require('./abortMiddleware');
+const { GenerationJobManager } = require('@librechat/api');
+const db = require('~/models');
+const { handleAbort, handleAbortError, spendCollectedUsage } = require('./abortMiddleware');
 
 const buildAbortRequest = () => ({
   body: {
@@ -308,5 +319,150 @@ describe('abortMiddleware - handleAbortError', () => {
     );
     expect(logger.debug).not.toHaveBeenCalled();
     expect(sendError).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The transactions config is resolved from the request's app config and must reach
+ * every write path in this file. `createTransaction` reads `transactions` from the
+ * caller-supplied data, so an omitted value is indistinguishable from enabled and
+ * the write proceeds even when `transactions.enabled` is false.
+ */
+describe('abortMiddleware - transactions config', () => {
+  const buildJobData = () => ({
+    model: 'gpt-4',
+    responseMessageId: 'msg-123',
+    conversationId: 'convo-123',
+    endpoint: 'agents',
+    sender: 'AI',
+    promptTokens: 25,
+    userMessage: {
+      messageId: 'user-msg-123',
+      parentMessageId: 'parent-123',
+      conversationId: 'convo-123',
+      text: 'hello',
+    },
+  });
+
+  const buildReq = () => ({
+    body: { abortKey: 'convo-123:1', endpoint: 'agents' },
+    user: { id: 'user-123', email: 'user@example.com' },
+    config: { transactions: { enabled: false } },
+  });
+
+  const buildRes = () => ({
+    headersSent: false,
+    setHeader: jest.fn(),
+    send: jest.fn(),
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetTransactionsConfig.mockReturnValue({ enabled: false });
+    mockRecordCollectedUsage.mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
+    db.getConvo.mockResolvedValue({ title: 'Test Chat' });
+  });
+
+  it('forwards transactions through spendCollectedUsage to recordCollectedUsage', async () => {
+    const collectedUsage = [{ input_tokens: 100, output_tokens: 50, model: 'gpt-4' }];
+
+    await spendCollectedUsage({
+      userId: 'user-123',
+      conversationId: 'convo-123',
+      collectedUsage,
+      fallbackModel: 'gpt-4',
+      transactions: { enabled: false },
+    });
+
+    expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ context: 'abort', transactions: { enabled: false } }),
+    );
+  });
+
+  it('resolves the config from req and forwards it on the collected-usage path', async () => {
+    const collectedUsage = [{ input_tokens: 100, output_tokens: 50, model: 'gpt-4' }];
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: buildJobData(),
+      content: [],
+      text: 'partial',
+      collectedUsage,
+    });
+
+    const req = buildReq();
+    await handleAbort()(req, buildRes());
+
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(mockGetTransactionsConfig).toHaveBeenCalledWith(req.config);
+    expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ context: 'abort', transactions: { enabled: false } }),
+    );
+  });
+
+  it('carries the context meta the run published onto the job into the stopped response', async () => {
+    const contextMeta = {
+      calibrationRatio: 1.2,
+      encoding: 'claude',
+      fading: { v: 1, budgetTokens: 50_000, masked: true },
+    };
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: { ...buildJobData(), contextMeta },
+      content: [],
+      text: 'partial',
+      collectedUsage: [],
+    });
+    const res = buildRes();
+
+    await handleAbort()(buildReq(), res);
+
+    expect(db.saveMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ messageId: 'msg-123', contextMeta }),
+      expect.any(Object),
+    );
+    const finalEvent = JSON.parse(res.send.mock.calls[0][0]);
+    expect(finalEvent.responseMessage.contextMeta).toEqual(contextMeta);
+  });
+
+  it('unsets context meta on a stopped response when the job carries none', async () => {
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: buildJobData(),
+      content: [],
+      text: 'partial',
+      collectedUsage: [],
+    });
+
+    await handleAbort()(buildReq(), buildRes());
+
+    const [, savedMessage] = db.saveMessage.mock.calls[0];
+    expect(savedMessage.contextMeta).toBeNull();
+  });
+
+  it('resolves the config from req and forwards it on the token-count fallback path', async () => {
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: buildJobData(),
+      content: [],
+      text: 'partial',
+      collectedUsage: [],
+    });
+
+    const req = buildReq();
+    await handleAbort()(req, buildRes());
+
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(mockGetTransactionsConfig).toHaveBeenCalledWith(req.config);
+    expect(mockRecordCollectedUsage).not.toHaveBeenCalled();
+    expect(mockSpendTokens).toHaveBeenCalledTimes(1);
+    expect(mockSpendTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ context: 'incomplete', transactions: { enabled: false } }),
+      expect.any(Object),
+    );
   });
 });

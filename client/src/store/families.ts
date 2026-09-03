@@ -38,6 +38,23 @@ const submissionByIndex = atomFamily<TSubmission | null, string | number>({
   default: null,
 });
 
+/**
+ * Epoch ms baseline for the streaming elapsed indicator at this chat index.
+ * Stamped when this session submits a generation (every path through `ask`),
+ * cleared by the terminal handlers when that generation ends, and only FILLED
+ * — never overwritten — when resume-on-load attaches a run, preferring the
+ * server-recorded generation start so a reload reports real elapsed time.
+ * The reading therefore survives mid-stream remounts (new-conversation id
+ * hydration, navigating away from a still-live run and back) without a later,
+ * externally-started generation inheriting a stale baseline. Known residual:
+ * a run whose end this pane never observed (left mid-stream, finished
+ * elsewhere) leaves its stamp for the next attach at this index to inherit.
+ */
+const submissionStartFamily = atomFamily<number | null, string | number>({
+  key: 'submissionStartByIndex',
+  default: null,
+});
+
 const submissionKeysSelector = selector<(string | number)[]>({
   key: 'submissionKeysSelector',
   get: ({ get }) => {
@@ -57,7 +74,11 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
     ({ onSet, node }) => {
       onSet(async (newValue, oldValue) => {
         const index = Number(node.key.split('__')[1]);
-        logger.log('conversation', 'Setting conversation:', { index, newValue, oldValue });
+        logger.log('conversation', 'Setting conversation:', {
+          index,
+          newValue,
+          oldValue,
+        });
         if (newValue?.assistant_id != null && newValue.assistant_id) {
           localStorage.setItem(
             `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,
@@ -105,7 +126,11 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
           }
           const searchParams = createSearchParams(newParams);
           const url = `${window.location.pathname}?${searchParams.toString()}`;
-          window.history.pushState({}, '', url);
+          /** Mirror, not navigation: Back-worthy entries are minted by real
+           * `navigate()` calls (useNewConvo), and in-place writers like
+           * ProjectLandingChip deliberately replace. Pushing here buried the
+           * Back target under one inert entry per draft edit. */
+          window.history.replaceState({}, '', url);
         }
       });
     },
@@ -274,11 +299,6 @@ const showPromptsPopoverFamily = atomFamily<boolean, string | number | null>({
   default: false,
 });
 
-const showSkillsPopoverFamily = atomFamily<boolean, string | number | null>({
-  key: 'showSkillsPopoverByIndex',
-  default: false,
-});
-
 /**
  * Per-conversation queue of skill names the user invoked manually via the
  * `$` popover for the next submission. Structured channel that the submit
@@ -308,6 +328,25 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
 });
 
 /**
+ * Text handed to a conversation's composer by a surface the user is leaving —
+ * today, a subagent thread continued into a chat of its own, where the panel
+ * and its composer unmount as the destination opens.
+ *
+ * Keyed by conversation rather than by composer index because the handoff
+ * outlives the navigation that carries it: a first visit resolves its record
+ * before the route moves, so the destination's composer mounts commits later.
+ * `useTextarea` drains it when that conversation's composer is on screen.
+ *
+ * Deliberately in memory rather than in the composer draft store: nothing the
+ * user has not sent should be written to storage they asked not to use, and
+ * draft restoration is itself gated on the Save Drafts preference.
+ */
+const pendingComposerTextByConvoId = atomFamily<string | undefined, string>({
+  key: 'pendingComposerTextByConvoId',
+  default: undefined,
+});
+
+/**
  * A steer message submitted mid-run. Server truth: `sending` covers the POST
  * in flight, `pending` means the server queued it (awaiting its injection
  * boundary — the next tool batch, or the next safe token boundary when
@@ -330,10 +369,12 @@ export type PendingSteer = {
   createdAt: number;
   /** Attachments steered with the message (refs; already uploaded). */
   files?: TMessage['files'];
-  /** Quote chips carried by a queued-origin steer (client-only; never sent to
-   *  the server), restored onto the queued item if the run ends first. */
+  /** Quoted excerpts riding this steer (also sent on the POST — the server
+   *  merges them into the injected turn); kept on the chip so a steer that
+   *  never injects restores onto the queued item with them intact. */
   quotes?: string[];
-  /** Manual skill picks carried the same way as `quotes`. */
+  /** Manual skill picks, carried for restoration only (a skill pick
+   *  configures a NEW turn's run, so it never rides the steer POST). */
   manualSkills?: string[];
   /** Asked the run to seal generation at the next safe boundary rather than
    *  wait for a tool step. Labelling only — the server owns the behaviour and
@@ -369,9 +410,33 @@ export type QueuedMessage = {
   id: string;
   text: string;
   createdAt: number;
-  /** Stable only for this queued recovery attempt and its transport retries.
-   * A failed generation re-converts the durable source with a fresh key. */
+  /** Server authority for an Agent queued turn. Absence means the row remains
+   * on the legacy mounted-client drain path (including a definite old-server
+   * fallback). `uncertain` is deliberately still server-owned: falling back
+   * after an ambiguous POST could submit the same words twice. */
+  server?: {
+    id?: string;
+    status: 'sending' | 'uncertain' | 'indeterminate' | 'rejected' | 'queued' | 'claimed';
+    errorCode?: string;
+    errorMessage?: string;
+    /** Observation time for a transport-ambiguous enqueue. The logical item
+     * may be much older than the request that just became uncertain. */
+    uncertainSince?: number;
+    /** The bounded reconciliation window elapsed without authoritative
+     * evidence. The outcome remains ambiguous and must never become resendable. */
+    reconciliationExpired?: boolean;
+    /** Current one-based projection; server sequence remains the stable
+     * fallback when predecessors settle and positions close up. */
+    position?: number;
+    revision?: number;
+  };
+  /** Stable identity for server enqueue/retry. Recovered steer rows also use
+   * it to dismiss their parked source; a later recovery attempt gets a fresh
+   * identity. */
   clientRequestId?: string;
+  /** Exact visible branch leaf captured when this turn entered the server
+   * queue. The server revalidates it before admitting the fresh successor. */
+  parentMessageId?: string;
   /** Correlation used only to durably dismiss/reclaim the parked source. */
   recoveryClientSteerId?: string;
   recoverySteerId?: string;
@@ -405,6 +470,29 @@ export type QueuedMessageOrigin = {
  */
 const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   key: 'queuedMessagesByConvoId',
+  default: [],
+});
+
+export type SettledQueuedTurnReceipt = {
+  clientRequestId: string;
+  status: 'admitted' | 'admitted_pending_boundary' | 'indeterminate' | 'cancelled' | 'dead';
+  effectivePredecessorCreatedAt?: number;
+  rootPredecessor?: true;
+  boundaryConsumed?: boolean;
+};
+
+/** Monotonic client knowledge of terminal server queue receipts. Admission
+ * records preserve boundary multiplicity by request identity. Other terminal
+ * records exist only while their original enqueue callback is outstanding. */
+const settledQueuedTurnReceiptsByConvoId = atomFamily<SettledQueuedTurnReceipt[], string>({
+  key: 'settledQueuedTurnReceiptsByConvoId',
+  default: [],
+});
+
+/** Enqueue callbacks that can still race newer GET/cancellation evidence.
+ * Entries retire as soon as that one callback settles. */
+const pendingQueuedTurnEnqueueIdsByConvoId = atomFamily<string[], string>({
+  key: 'pendingQueuedTurnEnqueueIdsByConvoId',
   default: [],
 });
 
@@ -515,6 +603,28 @@ const drainAfterAbortByIndex = atomFamily<DrainAfterAbort | false, string | numb
 const appliedSteerIdsByConvoId = atomFamily<string[], string>({
   key: 'appliedSteerIdsByConvoId',
   default: [],
+});
+
+/**
+ * Steer ids whose applied event landed in THIS session, pending their one-shot
+ * receipt draw-in. `SteerPart` consumes its id on mount so the animation plays
+ * exactly once, at the live chip→inline hand-off — never on reload, share, or
+ * a later revisit. Global rather than per-conversation: steer ids are unique,
+ * and the applied part renders in surfaces that don't know their convo id. */
+const liveAppliedSteerIds = atom<string[]>({
+  key: 'liveAppliedSteerIds',
+  default: [],
+});
+
+/** Membership view of `liveAppliedSteerIds` so each `SteerPart` subscribes to
+ *  its own id only: stamping/consuming one steer re-renders that part, not
+ *  every mounted historical part in a long conversation. */
+const liveAppliedSteerFamily = selectorFamily<boolean, string>({
+  key: 'liveAppliedSteerFamily',
+  get:
+    (steerId) =>
+    ({ get }) =>
+      steerId.length > 0 && get(liveAppliedSteerIds).includes(steerId),
 });
 
 /** Optimistic ids the server has proven accepted via ACK or SYNC. Separate
@@ -679,6 +789,7 @@ export default {
   filesByIndex,
   presetByIndex,
   submissionByIndex,
+  submissionStartFamily,
   textByIndex,
   showStopButtonByIndex,
   abortScrollFamily,
@@ -709,15 +820,19 @@ export default {
   activePromptByIndex,
   useClearSubmissionState,
   showPromptsPopoverFamily,
-  showSkillsPopoverFamily,
+  pendingComposerTextByConvoId,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
+  settledQueuedTurnReceiptsByConvoId,
+  pendingQueuedTurnEnqueueIdsByConvoId,
   runEndByIndex,
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,
   appliedSteerIdsByConvoId,
+  liveAppliedSteerIds,
+  liveAppliedSteerFamily,
   acceptedSteerClientIdsByConvoId,
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,
