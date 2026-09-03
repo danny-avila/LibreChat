@@ -245,6 +245,18 @@ export function resetActiveJobsGrace(): void {
   lastListedActiveJobsAt = 0;
 }
 
+/**
+ * A generation was just observed live by some other means — a pane attached to
+ * the run a queued turn produced — without the list ever reporting it, because
+ * the run started and finished between two polls. The list's own notion of
+ * "recently active" is therefore stale, and an unpredicted successor after
+ * that run (a background-tool continuation) would find no poll left to notice
+ * it. Restart the handover window from this observation instead.
+ */
+export function extendActiveJobsGrace(): void {
+  lastListedActiveJobsAt = Date.now();
+}
+
 export function getActiveJobsRefetchInterval(
   data?: ActiveJobsResponse,
   expectsSuccessor = false,

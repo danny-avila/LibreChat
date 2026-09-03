@@ -12,6 +12,7 @@ import store from '~/store';
 const mockUseStreamStatus = jest.fn();
 const mockUseActiveJobs = jest.fn();
 const mockUseAgentQueuedTurns = jest.fn();
+const mockExtendActiveJobsGrace = jest.fn();
 
 jest.mock('~/data-provider', () => ({
   useStreamStatus: (conversationId: string | undefined, enabled: boolean) =>
@@ -27,6 +28,7 @@ jest.mock('~/data-provider', () => ({
     .isQueuedTurnSuccessorOwed,
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS: jest.requireActual('~/data-provider/SSE/queries')
     .ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
+  extendActiveJobsGrace: () => mockExtendActiveJobsGrace(),
   streamStatusQueryKey: (conversationId: string) => ['streamStatus', conversationId],
 }));
 
@@ -203,6 +205,7 @@ describe('useResumeOnLoad', () => {
     mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] }, dataUpdatedAt: 1 });
     mockUseAgentQueuedTurns.mockReset();
     mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 1 });
+    mockExtendActiveJobsGrace.mockReset();
   });
 
   afterEach(() => {
@@ -1238,6 +1241,124 @@ describe('useResumeOnLoad', () => {
       await act(async () => {
         await Promise.resolve();
       });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+      jest.useRealTimers();
+    });
+
+    it('settles when the successor attaches while its admitted receipt is still cached', async () => {
+      const depthErrors: string[] = [];
+      const consoleError = jest.spyOn(console, 'error').mockImplementation((...args) => {
+        const text = args.map(String).join(' ');
+        if (text.includes('Maximum update depth')) {
+          depthErrors.push(text);
+        }
+      });
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      /**
+       * The receipt carries the predecessor epoch and stays `admitted` in the
+       * cache for a fetch after the successor attaches. Attachment to a
+       * different generation is delivery — but the same still-reporting
+       * receipt must not immediately relatch, or clear/relatch cycles
+       * synchronously until the cache moves on.
+       */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'admitted', effectivePredecessorCreatedAt: 1000 }],
+        dataUpdatedAt: 2,
+      });
+      const { rerender, setIsSubmitting, setAttachedGenerationCreatedAt } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: false,
+        attachedGenerationCreatedAt: null,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, true);
+
+      /** The successor (a different generation than the boundary) attaches. */
+      await act(async () => {
+        setIsSubmitting(true);
+        setAttachedGenerationCreatedAt(2000);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(depthErrors).toHaveLength(0);
+      /** Delivered: with the receipt still cached, nothing is owed and the
+       *  fallback window was restarted from this live observation. */
+      expect(mockExtendActiveJobsGrace).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+      consoleError.mockRestore();
+    });
+
+    it("does not let a remount's cached receipt reopen a window that already started", async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(1_000_000);
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'queued' }],
+        dataUpdatedAt: 900_000,
+      });
+      const { rerender, queryClient } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** Leave: the window starts now (quietSince = 1_000_000). Receipts are
+       *  fetched per conversation, so the other conversation reports none. */
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 900_000 });
+      rerender({ conversationId: STALE_CONVERSATION_ID });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(10_000);
+      });
+
+      /** Return: React Query first exposes the receipt cached BEFORE the
+       *  window started, while its refetch is still in flight. That stale
+       *  observation must not reset the clock. */
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ queuedTurnId: 'q1', status: 'queued' }],
+        dataUpdatedAt: 900_000,
+      });
+      rerender({ conversationId: CONVERSATION_ID });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      /** The authoritative refetch: the turn is gone. */
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 1_010_500 });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** Absolute expiry: 30s from the ORIGINAL start, not from the return. */
+      await act(async () => {
+        jest.advanceTimersByTime(20_000 + 1);
+      });
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+      rerender();
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
       jest.useRealTimers();
     });

@@ -26,6 +26,7 @@ import {
   useAgentQueuedTurns,
   streamStatusQueryKey,
   isQueuedTurnSuccessorOwed,
+  extendActiveJobsGrace,
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
 import {
@@ -491,8 +492,19 @@ export default function useResumeOnLoad(
    * `enabled: false` observes that cache without competing for it, and an
    * unpopulated cache simply falls back to the handover window.
    */
-  const { data: queuedTurnReceipts } = useAgentQueuedTurns(conversationId ?? '', false);
-  const successorOwedByReceipt = isQueuedTurnSuccessorOwed(queuedTurnReceipts);
+  const { data: queuedTurnReceipts, dataUpdatedAt: queuedTurnsObservedAt } = useAgentQueuedTurns(
+    conversationId ?? '',
+    false,
+  );
+  /**
+   * Receipts whose successor this pane has already attached to. An `admitted`
+   * receipt stays in the cache for a fetch after delivery, and it still counts
+   * as owed; without remembering that it was delivered, the latch would clear
+   * on the attachment and be re-recorded from the same receipt on the next
+   * render, synchronously, until the cache moved on. Keyed by the receipt
+   * signature so a genuinely new turn can latch again.
+   */
+  const deliveredReceiptSignatureRef = useRef<string | null>(null);
   /**
    * What the receipts say, reduced to the two facts this hook keys on. The
    * signature drives re-arming: a `queued` receipt is refetched every two
@@ -513,6 +525,9 @@ export default function useResumeOnLoad(
         .sort()
         .join('|')
     : '';
+  const successorOwedByReceipt =
+    isQueuedTurnSuccessorOwed(queuedTurnReceipts) &&
+    receiptSignature !== deliveredReceiptSignatureRef.current;
   const receiptBoundary = Array.isArray(queuedTurnReceipts)
     ? queuedTurnReceipts.reduce<number | null>((boundary, receipt) => {
         const candidate =
@@ -569,6 +584,15 @@ export default function useResumeOnLoad(
       return;
     }
     if (attachedToSuccessor) {
+      deliveredReceiptSignatureRef.current = receiptSignature;
+      /**
+       * The list may never have seen this run — it can start and finish
+       * between two polls — so its "recently active" clock is stale and would
+       * leave nothing polling once the latch clears. A live generation was
+       * just observed; restart the handover window from it so an unpredicted
+       * continuation after this run is still discovered.
+       */
+      extendActiveJobsGrace();
       setOwedSuccessor((current) => (current?.conversationId === conversationId ? null : current));
       return;
     }
@@ -586,13 +610,21 @@ export default function useResumeOnLoad(
           quietSince: null,
         };
       }
-      /** Still reporting: the window has not started. A boundary the receipt
-       *  learns later (admission consumed it) supersedes what was guessed. */
+      /** Still reporting. A boundary the receipt learns later (admission
+       *  consumed it) supersedes what was guessed. The window is reopened only
+       *  by an observation newer than the moment it started: a remount first
+       *  exposes the cached receipt from before the turn went quiet, and that
+       *  stale data must not extend an expiry that is meant to be absolute. */
       const refined = receiptBoundary ?? current.predecessorCreatedAt;
-      if (current.quietSince == null && refined === current.predecessorCreatedAt) {
+      const reopen = current.quietSince != null && queuedTurnsObservedAt > current.quietSince;
+      if (!reopen && refined === current.predecessorCreatedAt) {
         return current;
       }
-      return { ...current, predecessorCreatedAt: refined, quietSince: null };
+      return {
+        ...current,
+        predecessorCreatedAt: refined,
+        quietSince: reopen ? null : current.quietSince,
+      };
     });
   }, [
     conversationId,
@@ -600,12 +632,17 @@ export default function useResumeOnLoad(
     attachedToSuccessor,
     attachedGenerationCreatedAt,
     receiptBoundary,
+    receiptSignature,
+    queuedTurnsObservedAt,
   ]);
 
+  /** Only a server observation newer than the window's start counts as the
+   *  turn still reporting; a remount's cached receipt predates it. */
   const owedIsReporting =
     owedSuccessor != null &&
     owedSuccessor.conversationId === conversationId &&
-    successorOwedByReceipt;
+    successorOwedByReceipt &&
+    (owedSuccessor.quietSince == null || queuedTurnsObservedAt > owedSuccessor.quietSince);
   useEffect(() => {
     if (owedSuccessor == null || owedIsReporting) {
       return;
@@ -899,6 +936,7 @@ export default function useResumeOnLoad(
       processedConvoRef.current = null;
       consumedHandoffGenerationRef.current = null;
       answeredActiveJobRef.current = null;
+      deliveredReceiptSignatureRef.current = null;
     }
   }, [conversationId]);
 
