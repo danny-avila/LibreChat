@@ -7234,14 +7234,20 @@ class GenerationJobManagerClass {
     if (providerExecutionId.length === 0 || providerExecutionId.length > 128) {
       return false;
     }
+    /** Opened before the CAS and closed only on a definitive `false`. A rejected reply is
+     *  ambiguous — the store may already have committed `providerDrained: false` — and every
+     *  caller treats it that way, running or cleaning up and recording the drain either way.
+     *  Leaving the tracker open makes shutdown wait for that record instead of tearing the
+     *  transport down underneath it; the deadline still bounds the wait if it never comes. */
+    this.openProviderExecution(streamId, expectedCreatedAt, providerExecutionId);
     const started =
       (await this.jobStore.beginProviderExecution?.(
         streamId,
         expectedCreatedAt,
         providerExecutionId,
       )) ?? false;
-    if (started) {
-      this.openProviderExecution(streamId, expectedCreatedAt, providerExecutionId);
+    if (!started) {
+      this.closeProviderExecution(streamId, expectedCreatedAt, providerExecutionId);
     }
     return started;
   }
@@ -8526,6 +8532,13 @@ class GenerationJobManagerClass {
     await this.finalizeOwnedJobsForShutdown();
     await this.jobStore.destroy();
     this.eventTransport.destroy();
+    /** Whatever the bounded wait left behind must not outlive this store: a later
+     *  `configure()`/`initialize()` in the same process would otherwise wait a full budget
+     *  on executions that can never drain. */
+    for (const entry of this.openProviderExecutions.values()) {
+      entry.settle();
+    }
+    this.openProviderExecutions.clear();
     this.runtimeState.clear();
     this.ownedJobs.clear();
     this.syncRunningJobMetrics();

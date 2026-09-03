@@ -1,4 +1,10 @@
 require('../config/credentials');
+/**
+ * The primary kills every worker and then force-exits the whole cluster this long after its own
+ * shutdown signal, regardless of what the workers are still doing.
+ */
+const CLUSTER_FORCE_EXIT_MS = 10_000;
+
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -34,6 +40,7 @@ const {
   setupGracefulShutdown,
   registerShutdownTask,
   getRemainingShutdownMs,
+  getShutdownElapsedMs,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
   configureAgentEventRuntime,
@@ -282,7 +289,7 @@ if (cluster.isMaster) {
     setTimeout(() => {
       logger.info('Forcing shutdown after timeout');
       process.exit(0);
-    }, 10000);
+    }, CLUSTER_FORCE_EXIT_MS);
   };
 
   process.on('SIGTERM', shutdown);
@@ -312,17 +319,25 @@ if (cluster.isMaster) {
       priority: 100,
     },
   );
-  /** Spend the shutdown budget that is actually left waiting for open provider executions
-   *  to record their own drains, holding back a reserve for the tasks after this one.
-   *  Abandoning an unrecorded drain fences the next generation permanently. */
-  const SHUTDOWN_TEARDOWN_RESERVE_MS = 10_000;
+  /** Spend the shutdown budget that is actually left waiting for open provider executions to
+   *  record their own drains — but the budget this worker actually has is the primary's, not
+   *  its own 60s coordinator: the primary force-exits the whole cluster CLUSTER_FORCE_EXIT_MS
+   *  after signalling. Measure against that, and hold back a reserve for the tasks after this
+   *  one. Abandoning an unrecorded drain fences the next generation permanently. */
+  const CLUSTER_TEARDOWN_RESERVE_MS = 3_000;
   const destroyGenerationJobManager = () => {
     const remaining = getRemainingShutdownMs();
-    return GenerationJobManager.destroy(
-      remaining == null
-        ? undefined
-        : { settlementBudgetMs: Math.max(0, remaining - SHUTDOWN_TEARDOWN_RESERVE_MS) },
-    );
+    const elapsed = getShutdownElapsedMs();
+    if (remaining == null || elapsed == null) {
+      return GenerationJobManager.destroy();
+    }
+    const primaryRemaining = CLUSTER_FORCE_EXIT_MS - elapsed;
+    return GenerationJobManager.destroy({
+      settlementBudgetMs: Math.max(
+        0,
+        Math.min(remaining, primaryRemaining) - CLUSTER_TEARDOWN_RESERVE_MS,
+      ),
+    });
   };
   // Tear down stream resources before shared caches and telemetry exporters shut down.
   registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });

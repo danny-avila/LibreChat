@@ -49,6 +49,18 @@ export function registerShutdownTask(
  * Milliseconds left before graceful shutdown force-exits, or `null` when not shutting down.
  * Lets a shutdown task spend the budget it actually has instead of guessing at a fixed cutoff.
  */
+/**
+ * Milliseconds since graceful shutdown began, or `null` when not shutting down. For a task whose
+ * real deadline is imposed from outside this process — a cluster primary that force-exits the
+ * whole group on its own timer — this is what lets it measure against that deadline instead.
+ */
+export function getShutdownElapsedMs(): number | null {
+  if (shutdownStartedAt == null) {
+    return null;
+  }
+  return Math.max(0, Date.now() - shutdownStartedAt);
+}
+
 export function getRemainingShutdownMs(): number | null {
   if (shutdownStartedAt == null) {
     return null;

@@ -4206,6 +4206,64 @@ describe('GenerationJobManager startup telemetry', () => {
     await expect(manager.destroy({ settlementBudgetMs: 5_000 })).resolves.toBeUndefined();
   });
 
+  it('keeps waiting when the provider-begin reply is lost after the store may have committed', async () => {
+    const { manager, jobStore } = configureShutdownManager();
+    const streamId = 'stream-shutdown-ambiguous-begin';
+    const job = await manager.createJob(streamId, 'user-1');
+    const providerExecutionId = job.metadata.providerExecutionId!;
+    jest
+      .spyOn(jobStore, 'beginProviderExecution')
+      .mockRejectedValueOnce(new Error('reply lost after commit'));
+    await expect(
+      manager.beginProviderExecution(streamId, job.createdAt, providerExecutionId),
+    ).rejects.toThrow('reply lost after commit');
+
+    manager.prepareForShutdown();
+    let destroyed = false;
+    const destroying = manager.destroy({ settlementBudgetMs: 5_000 }).then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    /** The caller treats the rejection as possibly-started and still records the drain from
+     *  its cleanup; shutdown has to wait for that rather than assume nothing began. */
+    expect(destroyed).toBe(false);
+
+    await manager.markProviderExecutionDrained(streamId, job.createdAt, providerExecutionId);
+    await destroying;
+    expect(destroyed).toBe(true);
+  });
+
+  it('does not carry undrained executions into a re-initialized manager', async () => {
+    const { manager } = configureShutdownManager();
+    const streamId = 'stream-shutdown-stale-execution';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.beginProviderExecution(
+      streamId,
+      job.createdAt,
+      job.metadata.providerExecutionId!,
+    );
+
+    /** A bare reset: zero budget, so the execution is still open when teardown runs. */
+    manager.prepareForShutdown();
+    await manager.destroy();
+
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
+    manager.configure({ jobStore, eventTransport: new InMemoryEventTransport(), isRedis: false });
+    manager.initialize();
+
+    manager.prepareForShutdown();
+    let destroyed = false;
+    const destroying = manager.destroy({ settlementBudgetMs: 5_000 }).then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    /** Resolved without consuming the budget: nothing from the previous store is left to wait
+     *  on. Asserted before awaiting, or a 5s stale wait would pass this test too. */
+    expect(destroyed).toBe(true);
+    await destroying;
+  });
+
   it('does not let late success overwrite or delete a shutdown error', async () => {
     const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     jest.spyOn(jobStore, 'destroy').mockResolvedValue();
