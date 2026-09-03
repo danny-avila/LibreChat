@@ -80,7 +80,7 @@ describe('Agent Management read handlers', () => {
       role: user.role,
       idOnTheSource: user.idOnTheSource,
       resourceType: 'agent',
-      requiredPermissions: 1,
+      requiredPermissions: 2,
     });
     expect(deps.getAgentManagementListByAccess).toHaveBeenCalledWith({
       accessibleIds: [objectId],
@@ -111,7 +111,7 @@ describe('Agent Management read handlers', () => {
     expect(deps.getAgentManagementListByAccess).not.toHaveBeenCalled();
   });
 
-  it('retrieves by public ID and authenticated tenant before applying VIEW access', async () => {
+  it('retrieves by public ID and authenticated tenant before applying EDIT access', async () => {
     const deps = makeDeps();
     const response = makeResponse();
 
@@ -126,7 +126,7 @@ describe('Agent Management read handlers', () => {
       role: user.role,
       resourceType: 'agent',
       resourceId: objectId,
-      requiredPermission: 1,
+      requiredPermission: 2,
     });
     expect(response.status).toHaveBeenCalledWith(200);
     expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ id: 'agent-one' }));
@@ -145,7 +145,7 @@ describe('Agent Management read handlers', () => {
     expect(deps.checkPermission).not.toHaveBeenCalled();
   });
 
-  it('denies a known Agent when neither VIEW ACL nor the management capability is held', async () => {
+  it('denies a known Agent when neither EDIT ACL nor the management capability is held', async () => {
     const deps = makeDeps({ checkPermission: jest.fn().mockResolvedValue(false) });
     const response = makeResponse();
 

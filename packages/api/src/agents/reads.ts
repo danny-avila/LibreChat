@@ -86,7 +86,7 @@ async function canViewAgent(
     role: user.role,
     resourceType: ResourceType.AGENT,
     resourceId: agent._id,
-    requiredPermission: PermissionBits.VIEW,
+    requiredPermission: PermissionBits.EDIT,
   });
 }
 
@@ -136,7 +136,7 @@ export function createAgentManagementReadHandlers(deps: AgentManagementReadDeps)
             role: user.role,
             idOnTheSource: user.idOnTheSource,
             resourceType: ResourceType.AGENT,
-            requiredPermissions: PermissionBits.VIEW,
+            requiredPermissions: PermissionBits.EDIT,
           });
       const result = await deps.getAgentManagementListByAccess({
         accessibleIds,
