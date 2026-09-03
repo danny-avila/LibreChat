@@ -5198,6 +5198,45 @@ describe('createToolExecuteHandler', () => {
       });
     });
 
+    it('bounds workspace listings without returning a partial path', async () => {
+      const listWorkspaceFiles = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'list_files' as const,
+        workspaceId: 'primary',
+        paths: Array.from(
+          { length: 500 },
+          (_, index) => `src/${String(index).padStart(3, '0')}-${'a'.repeat(600)}.txt`,
+        ),
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        listWorkspaceFiles,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_large_workspace_list',
+          name: 'list_workspace_files',
+          args: { max_results: 500 },
+        },
+      ]);
+
+      const content = result.content as string;
+      const [listedPaths] = content.split('\n\n');
+      expect(result.status).toBe('success');
+      expect(content).toContain('[results truncated; narrow path and list again]');
+      expect(Buffer.byteLength(content, 'utf8')).toBeLessThanOrEqual(262_144);
+      expect(listedPaths.split('\n').every((path) => path.endsWith('.txt'))).toBe(true);
+    });
+
     it('filters every listed workspace filename before returning any path', async () => {
       const protectedValue = 'PROTECTED-WORKSPACE-NAME';
       const listWorkspaceFiles = jest.fn(async () => ({

@@ -2442,16 +2442,30 @@ async function handleWorkspaceListCall(
       const filtered = filteredFileNameResult(tc, req, path);
       if (filtered != null) return filtered;
     }
-    const content =
+    const unboundedContent =
       result.paths.length === 0
         ? 'The attached workspace contains no discoverable files in that path.'
         : result.paths.map((path) => `workspace/${path}`).join('\n');
+    const truncationNotice = '\n\n[results truncated; narrow path and list again]';
+    const locallyTruncated =
+      Buffer.byteLength(unboundedContent, 'utf8') > MAX_READABLE_BYTES;
+    const truncated = locallyTruncated || result.truncated;
+    let content = truncated
+      ? truncateUtf8(
+          unboundedContent,
+          MAX_READABLE_BYTES - Buffer.byteLength(truncationNotice, 'utf8'),
+        )
+      : unboundedContent;
+    if (locallyTruncated) {
+      const lastCompletePath = content.lastIndexOf('\n');
+      if (lastCompletePath >= 0) {
+        content = content.slice(0, lastCompletePath);
+      }
+    }
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: result.truncated
-        ? `${content}\n\n[results truncated; narrow path and list again]`
-        : content,
+      content: truncated ? `${content}${truncationNotice}` : content,
     };
   } catch (error) {
     if (signal?.aborted === true && isAbortError(error)) throw error;
