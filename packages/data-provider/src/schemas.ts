@@ -1007,6 +1007,9 @@ export const tConversationSchema = z.object({
   url_context: z.boolean().optional(),
   /* disable streaming */
   disableStreaming: z.boolean().optional(),
+  /* Moonshot Kimi Partial Mode */
+  responsePrefill: z.string().max(32768).optional(),
+  reasoningPrefill: z.string().max(32768).optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   /* agents */
@@ -1123,6 +1126,8 @@ export const tQueryParamsSchema = tConversationSchema
     url_context: true,
     /** @endpoints openAI, custom, azureOpenAI */
     disableStreaming: true,
+    responsePrefill: true,
+    reasoningPrefill: true,
     /** @endpoints google, anthropic, bedrock */
     topP: true,
     /** @endpoints google, anthropic */
@@ -1243,6 +1248,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   thinkingLevel: true,
   web_search: true,
   url_context: true,
+  disableStreaming: true,
   fileTokenLimit: true,
   iconURL: true,
   greeting: true,
@@ -1434,6 +1440,8 @@ export const openAIBaseSchema = tConversationSchema.pick({
   useResponsesApi: true,
   web_search: true,
   disableStreaming: true,
+  responsePrefill: true,
+  reasoningPrefill: true,
   fileTokenLimit: true,
 });
 

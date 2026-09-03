@@ -126,7 +126,7 @@ export default function Message(props: TMessageProps) {
               className={cn(
                 'relative flex flex-col',
                 hasParallelContent ? 'w-full' : 'w-11/12',
-                isCreatedByUser ? 'user-turn' : 'agent-turn',
+                isCreatedByUser ? 'user-turn user-message-panel' : 'agent-turn',
               )}
             >
               {!hasParallelContent && (

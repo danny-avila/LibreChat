@@ -1144,6 +1144,11 @@ export async function createRun({
         agent.provider as keyof typeof providerEndpointMap
       ] as unknown as Providers) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
+    const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
+    const hasKimiPrefill = modelParameters?._lc_kimi_prefill === true;
+    if (modelParameters) {
+      delete modelParameters._lc_kimi_prefill;
+    }
 
     const summarization = shapeSummarizationConfig(
       agent.summarization ?? summarizationConfig,
@@ -1153,8 +1158,10 @@ export async function createRun({
       agent.endpoint ?? undefined,
       { user, requestBody },
     );
+    if (hasKimiPrefill) {
+      summarization.enabled = false;
+    }
 
-    const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
     const hasExplicitStreamUsage = Object.prototype.hasOwnProperty.call(
       modelParameters ?? {},
       'streamUsage',

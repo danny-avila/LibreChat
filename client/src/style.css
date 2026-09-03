@@ -91,8 +91,8 @@
 .t-icon-swap .t-icon {
   grid-area: 1 / 1;
   transition:
-    opacity   var(--icon-swap-dur) var(--icon-swap-ease),
-    filter    var(--icon-swap-dur) var(--icon-swap-ease),
+    opacity var(--icon-swap-dur) var(--icon-swap-ease),
+    filter var(--icon-swap-dur) var(--icon-swap-ease),
     transform var(--icon-swap-dur) var(--icon-swap-ease);
   will-change: opacity, filter, transform;
 }
@@ -721,7 +721,7 @@ pre {
 /* Scroll-to-bottom button — enter */
 .scroll-animation-enter {
   opacity: 0;
-  transform: translateY(12px) scale(0.9);
+  transform: translateY(12px);
   pointer-events: none;
 }
 
@@ -731,17 +731,17 @@ pre {
 
 .scroll-animation-enter-done {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
 }
 
 @keyframes scroll-btn-enter {
   0% {
     opacity: 0;
-    transform: translateY(12px) scale(0.9);
+    transform: translateY(12px);
   }
   100% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
@@ -758,11 +758,11 @@ pre {
 @keyframes scroll-btn-exit {
   0% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
   100% {
     opacity: 0;
-    transform: translateY(8px) scale(0.95);
+    transform: translateY(8px);
   }
 }
 
@@ -771,22 +771,16 @@ pre {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 100%;
+  height: 44px;
   padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  background-color: #ffffff;
+  border: 0;
+  border-radius: 0.75rem;
+  box-shadow: none;
+  background-color: var(--surface-primary-alt);
   z-index: 10;
   overflow: hidden;
   transition: transform 100ms ease;
-}
-
-.dark .premium-scroll-button {
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  background-color: #2a2a2e;
 }
 
 .scroll-animation-enter-active .premium-scroll-button {
@@ -794,7 +788,13 @@ pre {
 }
 
 .premium-scroll-button:active {
-  transform: scale(0.95);
+  background-color: var(--surface-active);
+}
+
+.user-message-panel {
+  border-radius: 0.75rem;
+  background-color: var(--surface-primary-alt);
+  padding: 0.5rem 0.75rem;
 }
 
 .blink {

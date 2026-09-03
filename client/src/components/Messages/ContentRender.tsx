@@ -199,7 +199,7 @@ const ContentRender = memo(function ContentRender({
         className={cn(
           'relative flex flex-col',
           hasParallelContent ? 'w-full' : 'w-11/12',
-          msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
+          msg.isCreatedByUser ? 'user-turn user-message-panel' : 'agent-turn',
         )}
       >
         {!hasParallelContent && (

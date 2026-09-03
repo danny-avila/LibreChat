@@ -1,4 +1,4 @@
-import { EModelEndpoint } from './types';
+import { Providers, EModelEndpoint } from './types';
 import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
 import type { SettingDefinition } from './generate';
 
@@ -53,5 +53,28 @@ describe('applyModelAwareDefaults', () => {
     const override = { ...maxOut(modelAware), default: 2048 } as SettingDefinition;
     const final = modelAware.map((p) => (p.key === 'maxOutputTokens' ? override : p));
     expect(maxOut(final)?.default).toBe(2048);
+  });
+
+  it('exposes disable streaming for Google conversations', () => {
+    expect(googleParams.find((param) => param.key === 'disableStreaming')).toMatchObject({
+      component: 'switch',
+      default: false,
+    });
+  });
+
+  it('exposes native Kimi K3 prefill fields only in Moonshot settings', () => {
+    const moonshotParams = paramSettings[Providers.MOONSHOT] as SettingDefinition[];
+    expect(moonshotParams.map((param) => param.key)).toEqual(
+      expect.arrayContaining(['reasoningPrefill', 'responsePrefill']),
+    );
+    expect(moonshotParams.find((param) => param.key === 'reasoning_effort')?.options).toEqual([
+      '',
+      'low',
+      'high',
+      'max',
+    ]);
+    expect(paramSettings[EModelEndpoint.custom]?.map((param) => param.key)).not.toContain(
+      'reasoningPrefill',
+    );
   });
 });

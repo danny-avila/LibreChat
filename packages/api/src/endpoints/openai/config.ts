@@ -12,6 +12,7 @@ import { getProxyDispatcher } from '~/utils/proxy';
 import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
 import { mergeHeaders } from '~/utils/headers';
+import { createKimiPrefillFetch, isKimiK3Model, isOfficialMoonshotURL } from './prefill';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 type FetchOptions = RequestInit & { dispatcher?: Dispatcher };
@@ -293,6 +294,22 @@ export function getOpenAIConfig(
     }) as unknown as Fetch;
   }
 
+  const responsePrefill = options.modelOptions?.responsePrefill ?? '';
+  const reasoningPrefill = options.modelOptions?.reasoningPrefill ?? '';
+  const useKimiK3PartialMode =
+    isKimiK3Model(llmConfig.model) && isOfficialMoonshotURL(configOptions.baseURL);
+  if (useKimiK3PartialMode) {
+    llmConfig.includeReasoningContent = true;
+    llmConfig.includeAllReasoningContent = true;
+  }
+  if ((responsePrefill || reasoningPrefill) && useKimiK3PartialMode) {
+    llmConfig._lc_kimi_prefill = true;
+    configOptions.fetch = createKimiPrefillFetch({
+      fetch: (configOptions.fetch as unknown as Fetch | undefined) ?? globalThis.fetch,
+      prefill: { response: responsePrefill, reasoning: reasoningPrefill },
+    }) as unknown as Fetch;
+  }
+
   const result: t.OpenAIConfigResult = {
     llmConfig,
     configOptions,
@@ -300,6 +317,8 @@ export function getOpenAIConfig(
   };
   if (useOpenRouter) {
     result.provider = Providers.OPENROUTER;
+  } else if (useKimiK3PartialMode) {
+    result.provider = Providers.MOONSHOT;
   }
   return result;
 }

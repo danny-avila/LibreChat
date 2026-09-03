@@ -115,6 +115,22 @@ describe('getGoogleConfig', () => {
 
       expect(result.llmConfig).toHaveProperty('maxOutputTokens', 4096);
     });
+
+    it('should preserve disableStreaming for the model constructor', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          disableStreaming: true,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('disableStreaming', true);
+      expect(knownGoogleParams).toContain('disableStreaming');
+    });
   });
 
   describe('Model-aware maxOutputTokens default', () => {

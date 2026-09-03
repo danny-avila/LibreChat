@@ -1,5 +1,6 @@
 require('dotenv').config();
 const fs = require('fs');
+require('../../config/patch-agents.cjs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cluster = require('cluster');

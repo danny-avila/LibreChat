@@ -6,6 +6,7 @@ import {
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
+  ReasoningResponseKey,
   paramEndpoints,
   isAgentsEndpoint,
   replaceSpecialVars,
@@ -15,7 +16,6 @@ import type {
   AgentToolResources,
   AgentToolOptions,
   TEndpointOption,
-  ReasoningResponseKey,
   TFile,
   Agent,
   TUser,
@@ -1356,6 +1356,11 @@ export async function initializeAgent(
       .filter((toolDefinition) => isFileAuthoringToolDefinition(toolDefinition))
       .map((toolDefinition) => toolDefinition.name),
   );
+  const effectiveModel = agent.model_parameters?.model ?? agent.model;
+  const useKimiReasoningHistory =
+    agent.provider === Providers.MOONSHOT &&
+    typeof effectiveModel === 'string' &&
+    /^kimi-k3(?:[-.]|$)/i.test(effectiveModel.trim());
 
   const initializedAgent: InitializedAgent = {
     ...agent,
@@ -1373,8 +1378,11 @@ export async function initializeAgent(
     memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     statefulCodeSessions: effectiveStatefulSessions,
-    reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
-    includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
+    reasoningKey:
+      customEndpointConfig?.customParams?.reasoningKey ??
+      (useKimiReasoningHistory ? ReasoningResponseKey.reasoningContent : undefined),
+    includeReasoningHistory:
+      customEndpointConfig?.customParams?.includeReasoningHistory ?? useKimiReasoningHistory,
     skillAuthoringAvailable,
     fileAuthoringToolNames: fileAuthoringToolNames.size > 0 ? fileAuthoringToolNames : undefined,
     skillCount,

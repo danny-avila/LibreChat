@@ -6,6 +6,7 @@ import {
   googleSettings,
   anthropicSettings,
   compactGoogleSchema,
+  openAISchema,
   eAnthropicEffortSchema,
   eReasoningEffortSchema,
   eReasoningModeSchema,
@@ -549,6 +550,24 @@ describe('googleSettings', () => {
       });
       expect(result.chatProjectId).toBe('project-1');
     });
+
+    it('preserves the Gemini disable-streaming override', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        disableStreaming: true,
+      });
+      expect(result.disableStreaming).toBe(true);
+    });
+  });
+
+  it('preserves native Moonshot prefill fields in the OpenAI-compatible schema', () => {
+    const result = openAISchema.parse({
+      model: 'kimi-k3',
+      responsePrefill: 'Visible prefix ',
+      reasoningPrefill: 'Thinking prefix ',
+    });
+    expect(result.responsePrefill).toBe('Visible prefix ');
+    expect(result.reasoningPrefill).toBe('Thinking prefix ');
   });
 });
 

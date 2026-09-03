@@ -173,6 +173,12 @@ export const conversationPreset: {
   disableStreaming: {
     type: BooleanConstructor;
   };
+  responsePrefill: {
+    type: StringConstructor;
+  };
+  reasoningPrefill: {
+    type: StringConstructor;
+  };
   fileTokenLimit: {
     type: NumberConstructor;
   };
@@ -345,6 +351,12 @@ export const conversationPreset: {
   },
   disableStreaming: {
     type: Boolean,
+  },
+  responsePrefill: {
+    type: String,
+  },
+  reasoningPrefill: {
+    type: String,
   },
   fileTokenLimit: {
     type: Number,

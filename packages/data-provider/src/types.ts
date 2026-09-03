@@ -77,6 +77,9 @@ export type TEndpointOption = Pick<
   | 'examples'
   // Context
   | 'context'
+  | 'disableStreaming'
+  | 'responsePrefill'
+  | 'reasoningPrefill'
 > & {
   // Fields specific to endpoint options that don't exist on TConversation
   modelDisplayLabel?: string;

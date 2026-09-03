@@ -170,6 +170,7 @@ export type AgentModelParameters = {
   frequency_penalty: AgentParameterValue;
   presence_penalty: AgentParameterValue;
   useResponsesApi?: boolean;
+  _lc_kimi_prefill?: boolean;
 };
 
 export interface AgentBaseResource {

@@ -57,6 +57,8 @@ export interface IConversation extends Document {
   web_search?: boolean;
   url_context?: boolean;
   disableStreaming?: boolean;
+  responsePrefill?: string;
+  reasoningPrefill?: string;
   fileTokenLimit?: number;
   // Additional fields
   files?: string[];

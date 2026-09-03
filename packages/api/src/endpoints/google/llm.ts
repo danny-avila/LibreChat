@@ -74,6 +74,7 @@ export const knownGoogleParams: Set<string> = new Set([
   'convertSystemMessageToHumanContent',
   'speechConfig',
   'streamUsage',
+  'disableStreaming',
   'apiKey',
   'baseUrl',
   'endpoint',

@@ -3,6 +3,7 @@ import { EModelEndpoint, endpointSettings } from 'librechat-data-provider';
 import {
   Input,
   Label,
+  Switch,
   Slider,
   HoverCard,
   InputNumber,
@@ -28,6 +29,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     topK,
     maxContextTokens,
     maxOutputTokens,
+    disableStreaming,
   } = conversation ?? {};
 
   const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
@@ -49,6 +51,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setTopP = setOption('topP');
   const setTopK = setOption('topK');
   const setMaxOutputTokens = setOption('maxOutputTokens');
+  const setDisableStreaming = setOption('disableStreaming');
   const maxOutputTokensDefault = google.maxOutputTokens.reset(model ?? '');
 
   return (
@@ -309,6 +312,18 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             side={ESide.Left}
           />
         </HoverCard>
+        <div className="flex w-full items-center justify-between gap-2">
+          <Label htmlFor="disable-streaming" className="text-left text-sm font-medium">
+            {localize('com_endpoint_disable_streaming_label')}
+          </Label>
+          <Switch
+            id="disable-streaming"
+            checked={disableStreaming ?? false}
+            onCheckedChange={(checked: boolean) => setDisableStreaming(checked)}
+            disabled={readonly}
+            aria-label={localize('com_endpoint_disable_streaming_label')}
+          />
+        </div>
       </div>
     </div>
   );

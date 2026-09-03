@@ -31,6 +31,23 @@ function isOpenRouterEndpoint(endpoint) {
   return includesOpenRouter(endpoint.name) || includesOpenRouter(endpoint.baseURL);
 }
 
+function isMoonshotEndpoint(endpoint) {
+  if (
+    typeof endpoint.name === 'string' &&
+    endpoint.name.toLowerCase().includes(Providers.MOONSHOT)
+  ) {
+    return true;
+  }
+  if (typeof endpoint.baseURL !== 'string') {
+    return false;
+  }
+  try {
+    return new URL(endpoint.baseURL).hostname.toLowerCase() === 'api.moonshot.ai';
+  } catch {
+    return false;
+  }
+}
+
 function shouldPreserveCustomParams(customParams) {
   const defaultEndpoint = customParams?.defaultParamsEndpoint;
   return (
@@ -57,6 +74,20 @@ function addOpenRouterDefaults(endpoint) {
     paramDefinitions: hasPromptCache
       ? paramDefinitions
       : [...paramDefinitions, OPENROUTER_PROMPT_CACHE_DEFAULT],
+  };
+}
+
+function addMoonshotDefaults(endpoint) {
+  if (!isMoonshotEndpoint(endpoint)) {
+    return;
+  }
+
+  endpoint.customParams = {
+    ...(endpoint.customParams ?? {}),
+    defaultParamsEndpoint: endpoint.customParams?.defaultParamsEndpoint ?? Providers.MOONSHOT,
+    reasoningKey: endpoint.customParams?.reasoningKey ?? 'reasoning_content',
+    includeReasoningContent: endpoint.customParams?.includeReasoningContent ?? true,
+    includeReasoningHistory: endpoint.customParams?.includeReasoningHistory ?? true,
   };
 }
 
@@ -162,7 +193,10 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     }
   }
 
-  (customConfig.endpoints?.custom ?? []).forEach(addOpenRouterDefaults);
+  (customConfig.endpoints?.custom ?? []).forEach((endpoint) => {
+    addOpenRouterDefaults(endpoint);
+    addMoonshotDefaults(endpoint);
+  });
 
   (customConfig.endpoints?.custom ?? [])
     .filter((endpoint) => endpoint.customParams)

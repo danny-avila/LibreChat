@@ -10,6 +10,7 @@ import type { AzureOpenAIInput } from '@librechat/agents/langchain/openai';
 import type { SettingDefinition } from 'librechat-data-provider';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
+import { isKimiK3Model } from './prefill';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
 
@@ -530,6 +531,8 @@ export function getOpenAILLMConfig({
     _modelOptions,
     true,
   ) as Partial<t.OpenAIParameters>;
+  delete cleanedModelOptions.responsePrefill;
+  delete cleanedModelOptions.reasoningPrefill;
 
   const {
     reasoning_effort,
@@ -815,7 +818,25 @@ export function getOpenAILLMConfig({
    * Note: OpenAI reasoning models (o1/o3/gpt-5) do not support temperature and other sampling parameters
    * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters
    */
-  if (
+  if (isKimiK3Model(llmConfig.model)) {
+    const kimiK3ExcludeParams = [
+      'frequencyPenalty',
+      'presencePenalty',
+      'temperature',
+      'topP',
+      'top_p',
+      'logitBias',
+      'n',
+      'logprobs',
+      'thinking',
+    ];
+    const updatedDropParams = dropParams || [];
+    const combinedDropParams = [...new Set([...updatedDropParams, ...kimiK3ExcludeParams])];
+    combinedDropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
+    if (!['low', 'high', 'max'].includes(String(modelKwargs.reasoning_effort ?? ''))) {
+      delete modelKwargs.reasoning_effort;
+    }
+  } else if (
     modelOptions.model &&
     /\b(o[13]|gpt-5)(?!\.|-chat)(?:-|$)/.test(modelOptions.model as string)
   ) {

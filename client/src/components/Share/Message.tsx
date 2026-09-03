@@ -64,7 +64,10 @@ export default function Message(props: TMessageProps) {
               </div>
             </div>
             <div
-              className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}
+              className={cn(
+                'relative flex w-11/12 flex-col',
+                isCreatedByUser ? 'user-turn user-message-panel' : 'agent-turn',
+              )}
             >
               <div className={cn('select-none font-semibold', fontSize)}>
                 {messageLabel}

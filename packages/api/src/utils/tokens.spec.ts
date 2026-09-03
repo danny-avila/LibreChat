@@ -47,3 +47,10 @@ describe('gpt-5.6 tiers', () => {
     expect(getModelMaxTokens('gpt-5', EModelEndpoint.openAI)).toBe(400000);
   });
 });
+
+describe('kimi-k3 token limits', () => {
+  it('resolves the documented one-million-token context and output limits', () => {
+    expect(getModelMaxTokens('kimi-k3', EModelEndpoint.custom)).toBe(1048576);
+    expect(getModelMaxOutputTokens('kimi-k3', EModelEndpoint.custom)).toBe(1048576);
+  });
+});

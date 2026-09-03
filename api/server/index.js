@@ -1,3 +1,4 @@
+require('../../config/patch-agents.cjs');
 const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');

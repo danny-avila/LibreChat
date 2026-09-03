@@ -840,6 +840,7 @@ const googleConfig: SettingsConfiguration = [
   google.thinkingLevel,
   google.web_search,
   google.url_context,
+  openAIParams.disableStreaming,
   librechat.fileTokenLimit,
 ];
 
@@ -861,6 +862,7 @@ const googleCol2: SettingsConfiguration = [
   google.thinkingLevel,
   google.web_search,
   google.url_context,
+  openAIParams.disableStreaming,
   librechat.fileTokenLimit,
 ];
 
@@ -891,6 +893,59 @@ const openRouter: SettingsConfiguration = [
   ...openAI,
   anthropic.promptCache,
   anthropic.promptCacheTtl,
+];
+
+const moonshotPrefill: SettingsConfiguration = [
+  {
+    key: 'reasoningPrefill',
+    label: 'com_endpoint_moonshot_reasoning_prefill',
+    labelCode: true,
+    description: 'com_endpoint_moonshot_reasoning_prefill_desc',
+    descriptionCode: true,
+    placeholder: 'com_endpoint_moonshot_reasoning_prefill_placeholder',
+    placeholderCode: true,
+    type: 'string',
+    component: 'textarea',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 4,
+  },
+  {
+    key: 'responsePrefill',
+    label: 'com_endpoint_moonshot_response_prefill',
+    labelCode: true,
+    description: 'com_endpoint_moonshot_response_prefill_desc',
+    descriptionCode: true,
+    placeholder: 'com_endpoint_moonshot_response_prefill_placeholder',
+    placeholderCode: true,
+    type: 'string',
+    component: 'textarea',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 4,
+  },
+];
+
+const moonshotReasoningEffort = createDefinition(openAIParams.reasoning_effort, {
+  options: [ReasoningEffort.unset, ReasoningEffort.low, ReasoningEffort.high, ReasoningEffort.max],
+  enumMappings: {
+    [ReasoningEffort.unset]: 'com_ui_auto',
+    [ReasoningEffort.low]: 'com_ui_low',
+    [ReasoningEffort.high]: 'com_ui_high',
+    [ReasoningEffort.max]: 'com_ui_max',
+  },
+});
+
+const moonshot: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  openAIParams.max_tokens,
+  librechat.resendFiles,
+  baseDefinitions.imageDetail,
+  moonshotReasoningEffort,
+  librechat.fileTokenLimit,
+  ...moonshotPrefill,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -1161,6 +1216,7 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
   [EModelEndpoint.azureOpenAI]: openAI,
   [EModelEndpoint.custom]: openAI,
   [Providers.OPENROUTER]: openRouter,
+  [Providers.MOONSHOT]: moonshot,
   [EModelEndpoint.anthropic]: anthropicConfig,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
@@ -1200,6 +1256,18 @@ export const presetSettings: Record<
   [Providers.OPENROUTER]: {
     col1: openAICol1,
     col2: [...openAICol2, anthropic.promptCache, anthropic.promptCacheTtl],
+  },
+  [Providers.MOONSHOT]: {
+    col1: openAICol1,
+    col2: [
+      librechat.maxContextTokens,
+      openAIParams.max_tokens,
+      librechat.resendFiles,
+      baseDefinitions.imageDetail,
+      moonshotReasoningEffort,
+      librechat.fileTokenLimit,
+      ...moonshotPrefill,
+    ],
   },
   [EModelEndpoint.anthropic]: {
     col1: anthropicCol1,

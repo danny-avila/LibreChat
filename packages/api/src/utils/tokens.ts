@@ -245,6 +245,7 @@ const moonshotModels = {
   'kimi-k2-thinking': 262144,
   'kimi-k2-thinking-turbo': 262144,
   'kimi-k2.5': 262144,
+  'kimi-k3': 1048576,
   // Bedrock moonshot models
   'moonshot.kimi-k2-0711': 131072,
   'moonshot.kimi': 262144,
@@ -488,11 +489,15 @@ const deepseekMaxOutputs = {
   'deepseek.r1': 64000,
 };
 
+const moonshotMaxOutputs = {
+  'kimi-k3': 1048576,
+};
+
 export const maxOutputTokensMap: Record<string, Record<string, number>> = {
   [EModelEndpoint.anthropic]: anthropicMaxOutputs,
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
-  [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
-  [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
+  [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs, ...moonshotMaxOutputs },
+  [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs, ...moonshotMaxOutputs },
 };
 
 /** Finds the longest matching key in the tokens map via substring match. */

@@ -34,6 +34,9 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   include_reasoning?: boolean;
   /** Replays `reasoning_content` on tool-bearing turns (DeepSeek thinking-mode, #13366). */
   includeReasoningContent?: boolean;
+  /** Replays reasoning_content on every historical assistant turn (Kimi K3). */
+  includeAllReasoningContent?: boolean;
+  _lc_kimi_prefill?: boolean;
   promptCache?: boolean;
   promptCacheTtl?: '5m' | '1h';
   _lc_stream_delay?: number;

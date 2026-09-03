@@ -12,6 +12,7 @@ jest.mock('librechat-data-provider', () => {
       foo: {},
       bar: {},
       custom: [],
+      moonshot: [],
       openrouter: [
         {
           key: 'promptCache',
@@ -474,6 +475,33 @@ describe('loadCustomConfig', () => {
           type: 'boolean',
         },
       ]);
+    });
+
+    it('adds native Kimi defaults for the official Moonshot endpoint', async () => {
+      const moonshotConfig = {
+        version: '1.0',
+        cache: false,
+        endpoints: {
+          custom: [
+            {
+              name: 'Kimi',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.moonshot.ai/v1',
+              models: { default: ['kimi-k3'] },
+            },
+          ],
+        },
+      };
+      loadYaml.mockReturnValue(moonshotConfig);
+
+      const parsedConfig = await loadCustomConfig();
+
+      expect(parsedConfig.endpoints.custom[0].customParams).toMatchObject({
+        defaultParamsEndpoint: 'moonshot',
+        reasoningKey: 'reasoning_content',
+        includeReasoningContent: true,
+        includeReasoningHistory: true,
+      });
     });
   });
 });
