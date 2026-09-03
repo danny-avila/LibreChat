@@ -1,8 +1,13 @@
 import React from 'react';
+import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { TConversation } from 'librechat-data-provider';
 import '@testing-library/jest-dom';
 import AgentDetailContent from '../AgentDetailContent';
+
+const mockNewConversation = jest.fn();
+let mockConversation: Partial<TConversation> | undefined;
 
 jest.mock('librechat-data-provider', () => ({
   QueryKeys: {
@@ -62,8 +67,8 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({
-    conversation: undefined,
-    newConversation: jest.fn(),
+    conversation: mockConversation,
+    newConversation: mockNewConversation,
   }),
 }));
 
@@ -71,6 +76,12 @@ jest.mock('~/utils', () => ({
   cn: (...classes: string[]) => classes.filter(Boolean).join(' '),
   clearMessagesCache: jest.fn(),
   renderAgentAvatar: () => <div data-testid="agent-avatar" />,
+  specDisplayFieldReset: {
+    spec: null,
+    iconURL: null,
+    modelLabel: null,
+    greeting: undefined,
+  },
 }));
 
 const renderWithClient = (children: React.ReactNode) => {
@@ -88,9 +99,14 @@ const baseAgent = {
   provider: 'openai',
   model: 'gpt-4',
   model_parameters: {},
-};
+} as React.ComponentProps<typeof AgentDetailContent>['agent'];
 
 describe('AgentDetailContent', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConversation = undefined;
+  });
+
   it('renders support contact with mailto link', () => {
     renderWithClient(
       <AgentDetailContent
@@ -126,5 +142,33 @@ describe('AgentDetailContent', () => {
 
     expect(screen.getByText('Owner User')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
+  });
+
+  it('clears model spec display fields when starting an agent chat', async () => {
+    const user = userEvent.setup();
+    mockConversation = {
+      conversationId: 'existing-conversation',
+      spec: 'ClickHouse Agent',
+      iconURL: '/images/clickhouse.svg',
+      modelLabel: 'ClickHouse Agent',
+    };
+
+    renderWithClient(<AgentDetailContent agent={baseAgent} />);
+    await user.click(screen.getByRole('button', { name: 'Start chat' }));
+
+    expect(mockNewConversation).toHaveBeenCalledWith({
+      template: expect.objectContaining({
+        endpoint: 'agents',
+        agent_id: 'agent-1',
+        spec: null,
+        iconURL: null,
+        modelLabel: null,
+      }),
+      preset: expect.objectContaining({
+        spec: null,
+        iconURL: null,
+        modelLabel: null,
+      }),
+    });
   });
 });
