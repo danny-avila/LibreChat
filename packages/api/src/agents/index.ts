@@ -27,6 +27,7 @@ export * from './legacy';
 export * from './lazySubagents';
 export * from './lazyHistory';
 export * from './memory';
+export * from './management';
 export * from './mcpIdentity';
 export * from './orphans';
 export * from './migration';
