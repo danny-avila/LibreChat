@@ -1,9 +1,11 @@
 // client/src/hooks/Audio/useTTSExternal.ts
 import { useRef, useEffect, useState } from 'react';
+import { useSetAtom } from 'jotai';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { parseTextParts } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import useTextToSpeechExternal from '~/hooks/Input/useTextToSpeechExternal';
+import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 import usePauseGlobalAudio from '~/hooks/Audio/usePauseGlobalAudio';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { logger } from '~/utils';
@@ -29,6 +31,7 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
   const globalIsPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
 
   const isSpeaking = isSpeakingState || (isLast && globalIsPlaying);
+  const setActiveSpeechMessageId = useSetAtom(activeSpeechMessageIdAtom);
   const {
     cancelSpeech,
     generateSpeechExternal: generateSpeech,
@@ -41,6 +44,14 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
     isLast,
     index,
   });
+
+  useEffect(() => {
+    setActiveSpeechMessageId((current) => {
+      if ((isLoading || isSpeaking) && messageId) return messageId;
+      return current === messageId ? null : current;
+    });
+    return () => setActiveSpeechMessageId((current) => (current === messageId ? null : current));
+  }, [isLoading, isSpeaking, messageId, setActiveSpeechMessageId]);
 
   useEffect(() => {
     const firstVoice = voices[0];

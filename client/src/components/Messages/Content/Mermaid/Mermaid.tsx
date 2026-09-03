@@ -279,6 +279,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
             />
           )}
           <div
+            data-row-layout-pending="true"
             className={cn(
               'relative w-full overflow-hidden rounded-lg border transition-all duration-200',
               fillContainer && 'h-full rounded-xl',
@@ -366,6 +367,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
     if (!showHeader) {
       return (
         <div
+          data-row-layout-pending="true"
           className={cn(
             'flex min-h-[200px] w-full items-center justify-center rounded-lg border border-border-light bg-surface-primary-alt text-text-secondary',
             fillContainer && 'h-full rounded-xl',
@@ -380,6 +382,7 @@ export const MermaidRenderer = memo(function MermaidRenderer({
 
     return (
       <div
+        data-row-layout-pending="true"
         className={cn(
           'w-full overflow-hidden rounded-lg border border-border-light',
           fillContainer && 'h-full rounded-xl',

@@ -474,6 +474,7 @@ describe('Mermaid Artifact expansion', () => {
     );
 
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_loading');
+    expect(screen.getByRole('status')).toHaveAttribute('data-row-layout-pending', 'true');
     expect(screen.getByRole('status')).toHaveClass('h-full', 'rounded-xl');
     expect(container.querySelector('pre')).toBeNull();
   });

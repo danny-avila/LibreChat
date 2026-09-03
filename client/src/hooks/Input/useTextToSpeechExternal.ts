@@ -34,6 +34,7 @@ function useTextToSpeechExternal({
   const playbackRate = useRecoilValue(store.playbackRate);
 
   const [downloadFile, setDownloadFile] = useState(false);
+  const [isCacheLoading, setIsCacheLoading] = useState(false);
 
   const promiseAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -46,7 +47,7 @@ function useTextToSpeechExternal({
     audioRef.current = newAudio;
   };
 
-  const playAudioPromise = (blobUrl: string) => {
+  const playAudioPromise = (blobUrl: string): Promise<void> => {
     const newAudio = new Audio(blobUrl);
     const initializeAudio = () => {
       if (playbackRate != null && playbackRate !== 1 && playbackRate > 0) {
@@ -57,7 +58,7 @@ function useTextToSpeechExternal({
     initializeAudio();
     const playPromise = () => newAudio.play().then(() => setIsSpeaking(true));
 
-    playPromise().catch((error: Error) => {
+    const playback = playPromise().catch((error: Error) => {
       if (
         error.message &&
         error.message.includes('The play() request was interrupted by a call to pause()')
@@ -80,6 +81,7 @@ function useTextToSpeechExternal({
     };
 
     promiseAudioRef.current = newAudio;
+    return playback;
   };
 
   const downloadAudio = (blobUrl: string) => {
@@ -147,16 +149,21 @@ function useTextToSpeechExternal({
   };
 
   const handleCachedResponse = async (text: string, download: boolean) => {
-    const cachedResponse = await caches.match(text);
-    if (!cachedResponse) {
-      return startMutation(text, download);
-    }
-    const audioBlob = await cachedResponse.blob();
-    const blobUrl = URL.createObjectURL(audioBlob);
-    if (download) {
-      downloadAudio(blobUrl);
-    } else {
-      playAudioPromise(blobUrl);
+    setIsCacheLoading(true);
+    try {
+      const cachedResponse = await caches.match(text);
+      if (!cachedResponse) {
+        return startMutation(text, download);
+      }
+      const audioBlob = await cachedResponse.blob();
+      const blobUrl = URL.createObjectURL(audioBlob);
+      if (download) {
+        downloadAudio(blobUrl);
+      } else {
+        await playAudioPromise(blobUrl);
+      }
+    } finally {
+      setIsCacheLoading(false);
     }
   };
 
@@ -195,7 +202,7 @@ function useTextToSpeechExternal({
   return {
     generateSpeechExternal,
     cancelSpeech,
-    isLoading: isFetching || isLoading,
+    isLoading: isFetching || isLoading || isCacheLoading,
     audioRef,
     voices: voicesData,
   };

@@ -14,6 +14,7 @@ import {
   isMacPlatform,
   parseBinding,
 } from '~/utils/shortcuts';
+import { withAllRowsMountedImmediately } from '~/hooks/Messages';
 import { mainTextareaId, NotificationSeverity } from '~/common';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { useArchiveConvoMutation } from '~/data-provider';
@@ -591,16 +592,17 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleCopyLastCode = useCallback(() => {
-    const blocks = document.querySelectorAll('.agent-turn pre code');
-    if (blocks.length === 0) {
-      return false;
-    }
-    const last = blocks[blocks.length - 1];
-    const text = last.textContent ?? '';
-    if (!text.trim()) {
-      return false;
-    }
-    return copy(text.trim(), { format: 'text/plain' });
+    const copyLastMountedCode = () => {
+      const blocks = document.querySelectorAll('.agent-turn pre code');
+      if (blocks.length === 0) return false;
+      const text = blocks[blocks.length - 1].textContent ?? '';
+      if (!text.trim()) return false;
+      return copy(text.trim(), { format: 'text/plain' });
+    };
+    /** The last code block may be in any historical response. Mount the full
+     * transcript in this keyboard event so both selection and the clipboard
+     * result remain synchronous and the shortcut only claims a real action. */
+    return withAllRowsMountedImmediately(copyLastMountedCode);
   }, []);
 
   const handleStopGenerating = useCallback(

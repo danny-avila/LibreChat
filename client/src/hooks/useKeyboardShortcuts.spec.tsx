@@ -15,6 +15,7 @@ import useKeyboardShortcuts, {
   useShortcutDisplay,
   useShortcutAriaKey,
 } from './useKeyboardShortcuts';
+import { withAllRowsMountedImmediately } from '~/hooks/Messages';
 import store from '~/store';
 
 jest.mock('copy-to-clipboard', () => ({
@@ -27,8 +28,15 @@ jest.mock('./useNewConvo', () => ({
   default: () => ({ newConversation: jest.fn() }),
 }));
 
+jest.mock('~/hooks/Messages', () => ({
+  withAllRowsMountedImmediately: jest.fn((action: () => unknown) => action()),
+}));
+
 const STORAGE_KEY = 'customKeyboardShortcuts';
 const copyMock = copy as jest.MockedFunction<typeof copy>;
+const mountRowsImmediatelyMock = withAllRowsMountedImmediately as jest.MockedFunction<
+  typeof withAllRowsMountedImmediately
+>;
 
 function buildConversation(conversationId: string, title: string): TConversation {
   return { conversationId, title, endpoint: 'agents' } as TConversation;
@@ -79,6 +87,8 @@ function renderHarness(
 beforeEach(() => {
   window.localStorage.clear();
   copyMock.mockClear();
+  mountRowsImmediatelyMock.mockReset();
+  mountRowsImmediatelyMock.mockImplementation((action) => action());
 });
 
 afterEach(() => {
@@ -436,6 +446,35 @@ describe('clipboard shortcuts', () => {
     const event = dispatchKey({ key: 'k', ctrlKey: true, shiftKey: true });
 
     expect(copyMock).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('mounts the full transcript before selecting the last code block', () => {
+    const placeholder = document.createElement('div');
+    placeholder.dataset.messageRowSlot = 'true';
+    placeholder.dataset.rowMounted = 'false';
+    renderHarness();
+    appendCodeBlock('mounted but older');
+    document.body.appendChild(placeholder);
+    mountRowsImmediatelyMock.mockImplementation((action) => {
+      appendCodeBlock('unmounted and newest');
+      return action();
+    });
+
+    const event = dispatchKey({ key: 'k', ctrlKey: true, shiftKey: true });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(copyMock).toHaveBeenCalledWith('unmounted and newest', { format: 'text/plain' });
+  });
+
+  it('does not claim the copy shortcut when the clipboard rejects the text', () => {
+    renderHarness();
+    appendCodeBlock('const rejected = true;');
+    copyMock.mockReturnValueOnce(false);
+
+    const event = dispatchKey({ key: 'k', ctrlKey: true, shiftKey: true });
+
+    expect(copyMock).toHaveBeenCalledWith('const rejected = true;', { format: 'text/plain' });
     expect(event.defaultPrevented).toBe(false);
   });
 });

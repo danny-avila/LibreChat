@@ -1,10 +1,13 @@
-import { memo, useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useMemo, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { useTheme } from '@librechat/client';
 import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
+import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
+import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
 import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
 import { MessagesViewProvider, useChatContext } from '~/Providers';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
@@ -99,6 +102,8 @@ function MessagesViewContent({
 }) {
   const localize = useLocalize();
   const fontSize = useAtomValue(fontSizeAtom);
+  const { theme, themeDefinition } = useTheme();
+  const { byMessageId: parentSubagentsByMessageId } = useParentSubagents();
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
 
@@ -119,6 +124,30 @@ function MessagesViewContent({
   const { index, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const autoScroll = useAtomValue(autoScrollAtom);
+  const chatSurface = useOptionalChatSurface();
+  const maximizeChatSpace = chatSurface?.maximizeChatSpace ?? false;
+  const collapseLongUserMessages = chatSurface?.collapseLongUserMessages ?? false;
+  const enableUserMsgMarkdown = chatSurface?.enableUserMsgMarkdown ?? true;
+  const rowLayoutKey = useMemo(
+    () => ({
+      maximizeChatSpace,
+      fontSize,
+      theme,
+      themeDefinition,
+      parentSubagentsByMessageId,
+      collapseLongUserMessages,
+      enableUserMsgMarkdown,
+    }),
+    [
+      maximizeChatSpace,
+      fontSize,
+      theme,
+      themeDefinition,
+      parentSubagentsByMessageId,
+      collapseLongUserMessages,
+      enableUserMsgMarkdown,
+    ],
+  );
   /** Re-arm from the conversation that owns the RENDERED tree: the Recoil
    *  conversation id lags the route during warm-cache navigation, and keying
    *  off it would first mount the new tree unwindowed, then narrow it after
@@ -130,6 +159,7 @@ function MessagesViewContent({
     isSubmitting,
     conversationId: treeConversationId,
     scrollableRef,
+    layoutKey: rowLayoutKey,
   });
 
   /** The in-flight steer overlay floats above the composer over the bottom of
@@ -154,7 +184,7 @@ function MessagesViewContent({
               /** The mount hook pins the anchor row itself (document-space
                *  measurement); native scroll anchoring reacting to the same
                *  insertions would double-correct. */
-              overflowAnchor: mountWindow != null ? 'none' : undefined,
+              overflowAnchor: mountWindow?.mode === 'progressive' ? 'none' : undefined,
             }}
           >
             <div
@@ -177,7 +207,11 @@ function MessagesViewContent({
                 </div>
               ) : (
                 <>
-                  <div ref={screenshotTargetRef} data-testid="screenshot-target">
+                  <div
+                    ref={screenshotTargetRef}
+                    data-testid="screenshot-target"
+                    data-screenshot-key={treeConversationId}
+                  >
                     <RowMountProvider mountWindow={mountWindow}>
                       <MultiMessage
                         messagesTree={_messagesTree}

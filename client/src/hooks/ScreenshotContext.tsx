@@ -77,13 +77,26 @@ export const useScreenshot = () => {
     if (ref instanceof Function) {
       throw new Error('Ref callback is not supported.');
     }
+    const target = ref?.current;
+    if (!target) {
+      throw new Error('Ref is not attached to any element.');
+    }
+    const screenshotKey = target.dataset.screenshotKey;
     /** A capture taken while a long thread is still progressively mounting
      *  would clone a truncated DOM; force the remaining rows in first. */
-    await completeProgressiveRowMounts();
-    if (ref?.current) {
-      return takeScreenShot(ref.current);
+    const releaseRowMounts = await completeProgressiveRowMounts();
+    try {
+      if (
+        ref?.current === target &&
+        target.isConnected &&
+        target.dataset.screenshotKey === screenshotKey
+      ) {
+        return await takeScreenShot(target);
+      }
+      throw new Error('Screenshot target changed while preparing the capture.');
+    } finally {
+      releaseRowMounts();
     }
-    throw new Error('Ref is not attached to any element.');
   };
 
   return { screenshotTargetRef: ref, captureScreenshot };

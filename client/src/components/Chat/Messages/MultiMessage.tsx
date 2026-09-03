@@ -1,12 +1,16 @@
-import { memo, useEffect, useRef, useCallback } from 'react';
+import { memo, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilState } from 'recoil';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
+import { ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import type { ReactElement } from 'react';
+import type { ReactNode, ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
 import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
+import { serializeMessageForClipboard } from '~/hooks/Messages/useCopyToClipboard';
+import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 import MessageContent from '~/components/Messages/MessageContent';
-import { useRowMountWindow } from '~/hooks/Messages';
+import { useLocalize, useRowMountWindow } from '~/hooks';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
@@ -14,6 +18,134 @@ import store from '~/store';
 /** First-run sentinel for `parentRef`: `messageId` itself may legitimately be
  *  null/undefined at the root level, so those can't mark "not yet bound". */
 const UNBOUND_PARENT: unique symbol = Symbol('multiMessageUnboundParent');
+
+function MessageRowSlot({
+  depth,
+  messageId,
+  measureRow,
+  mounted,
+  placeholderHeight,
+  placeholderAriaLabel,
+  placeholderAuthorHeading,
+  searchContent,
+  searchText,
+  steerAnchors,
+  pinRow,
+  children,
+}: {
+  depth: number;
+  messageId: string;
+  measureRow?: (depth: number, messageId: string, height: number) => void;
+  mounted: boolean;
+  placeholderHeight?: number;
+  placeholderAriaLabel: string;
+  placeholderAuthorHeading: string;
+  searchContent: TMessage['content'];
+  searchText: TMessage['text'];
+  steerAnchors?: Array<{ id: string; text: string }>;
+  pinRow?: (depth: number, messageId: string) => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const focusedSteerIdRef = useRef<string>();
+  const transferMessageFocusRef = useRef(false);
+  const searchableText = useMemo(
+    () => serializeMessageForClipboard({ content: searchContent, text: searchText }),
+    [searchContent, searchText],
+  );
+
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    if (transferMessageFocusRef.current) {
+      const target = document.getElementById(messageId);
+      if (target && target !== ref.current) {
+        if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+      }
+      transferMessageFocusRef.current = false;
+    }
+    const focusedSteerId = focusedSteerIdRef.current;
+    if (!focusedSteerId) return;
+    const target = document.getElementById(focusedSteerId);
+    if (target) {
+      if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      target.focus({ preventScroll: true });
+    }
+    focusedSteerIdRef.current = undefined;
+  }, [messageId, mounted]);
+
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!mounted || !element || !measureRow) {
+      return;
+    }
+    const measure = () => measureRow(depth, messageId, element.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [depth, measureRow, messageId, mounted]);
+
+  return (
+    <div
+      ref={ref}
+      id={mounted ? undefined : messageId}
+      role={mounted ? undefined : 'group'}
+      aria-label={mounted ? undefined : placeholderAriaLabel}
+      className={mounted ? undefined : 'message-render w-full'}
+      data-message-row-slot="true"
+      data-row-mounted={String(mounted)}
+      data-row-depth={depth}
+      data-row-message-id={messageId}
+      style={mounted ? undefined : { height: placeholderHeight }}
+      onFocusCapture={(event) => {
+        const focusedId = (event.target as HTMLElement).id;
+        if (!mounted && event.target === event.currentTarget)
+          transferMessageFocusRef.current = true;
+        if (focusedId && steerAnchors?.some((steer) => steer.id === focusedId)) {
+          focusedSteerIdRef.current = focusedId;
+        }
+        if (mounted) pinRow?.(depth, messageId);
+      }}
+      onBlurCapture={() => {
+        if (mounted) return;
+        transferMessageFocusRef.current = false;
+        focusedSteerIdRef.current = undefined;
+      }}
+      onPointerDownCapture={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          mounted &&
+          target.closest(
+            'button, a, input, textarea, select, [role="button"], [contenteditable="true"]',
+          )
+        ) {
+          pinRow?.(depth, messageId);
+        }
+      }}
+    >
+      {children}
+      {!mounted
+        ? [
+            <h2 key="author-heading" className="sr-only">
+              {placeholderAuthorHeading}
+            </h2>,
+            searchableText ? (
+              <span key="search-text" className="sr-only" data-message-search-text="true">
+                {searchableText}
+              </span>
+            ) : null,
+            ...(steerAnchors?.map((steer) => (
+              <span key={steer.id} id={steer.id} className="steer-render sr-only">
+                <span className="message-content">{steer.text}</span>
+              </span>
+            )) ?? []),
+          ]
+        : null}
+    </div>
+  );
+}
 
 function MultiMessage({
   // messageId is used recursively here
@@ -23,7 +155,10 @@ function MultiMessage({
   setCurrentEditId,
 }: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
-  const mountWindow = useRowMountWindow();
+  const localize = useLocalize();
+  const activeSpeechMessageId = useAtomValue(activeSpeechMessageIdAtom);
+  const selectedMessage = messagesTree?.[(messagesTree?.length ?? 0) - siblingIdx - 1];
+  const rowMountState = useRowMountWindow(selectedMessage?.depth, selectedMessage?.messageId);
 
   const setSiblingIdxRev = useCallback(
     (value: number) => {
@@ -139,7 +274,7 @@ function MultiMessage({
   }
 
   const currentSiblingIdx = messagesTree.length - siblingIdx - 1;
-  const message = messagesTree[currentSiblingIdx] as TMessage | undefined;
+  const message = selectedMessage as TMessage | undefined;
 
   if (!message) {
     return null;
@@ -168,12 +303,19 @@ function MultiMessage({
     setSiblingIdx: setSiblingIdxRev,
   };
 
-  /** A row outside the progressive mount window renders nothing while the
-   *  recursion continues, so descendants keep their atoms, effects, and
-   *  streaming spine; the window only ever widens, so rows never unmount. */
+  const depth = message.depth ?? 0;
+  const placeholderAriaLabel = getMessageAriaLabel(message, localize);
+  const placeholderAuthorHeading = `${getHeaderPrefixForScreenReader(message, localize)}${localize(
+    message.isCreatedByUser ? 'com_user_message' : 'com_ui_assistant',
+  )}`;
+  const measuredRow = rowMountState.measuredRow;
+  /** A bounded row with no measurement must render once before it can become
+   *  an exact-height slot. Editing also pins the row so local form state is
+   *  never released while the editor is active. */
   const rowMounted =
-    mountWindow == null ||
-    ((message.depth ?? 0) >= mountWindow.start && (message.depth ?? 0) <= mountWindow.end);
+    rowMountState.windowMounted ||
+    currentEditId === message.messageId ||
+    activeSpeechMessageId === message.messageId;
 
   let row: ReactElement | null = null;
   if (!rowMounted) {
@@ -202,6 +344,40 @@ function MultiMessage({
   const hasParallelContent =
     !message.isCreatedByUser && message.content?.some((part) => part?.groupId != null) === true;
 
+  const steerAnchors = message.content?.flatMap((part) => {
+    if (part?.type !== ContentTypes.STEER || !part.steerId) return [];
+    return [{ id: `steer-${part.steerId}`, text: part[ContentTypes.STEER] }];
+  });
+  let rowSlot: ReactElement | null = null;
+  if (rowMounted || (rowMountState.mode === 'bounded' && measuredRow)) {
+    rowSlot = (
+      <MessageRowSlot
+        depth={depth}
+        messageId={message.messageId}
+        mounted={rowMounted}
+        placeholderHeight={measuredRow?.height}
+        placeholderAriaLabel={placeholderAriaLabel}
+        placeholderAuthorHeading={placeholderAuthorHeading}
+        searchContent={message.content}
+        searchText={message.text}
+        steerAnchors={steerAnchors}
+        measureRow={rowMountState.measureRow}
+        pinRow={rowMountState.pinRow}
+      >
+        {rowMounted ? row : null}
+        {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
+          <div className="w-full border-0 bg-transparent">
+            <EventSubagentActivityGroup
+              conversationId={message.conversationId ?? ''}
+              parentMessageIds={activityParentMessageIds}
+              hasParallelContent={hasParallelContent}
+            />
+          </div>
+        ) : null}
+      </MessageRowSlot>
+    );
+  }
+
   /**
    * The child recursion is a sibling of the row (not rendered inside it), so a
    * row that bails via its memo comparator never severs the walk that delivers
@@ -211,16 +387,7 @@ function MultiMessage({
    */
   return (
     <>
-      {row}
-      {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
-        <div className="w-full border-0 bg-transparent">
-          <EventSubagentActivityGroup
-            conversationId={message.conversationId ?? ''}
-            parentMessageIds={activityParentMessageIds}
-            hasParallelContent={hasParallelContent}
-          />
-        </div>
-      ) : null}
+      {rowSlot}
       <MemoizedMultiMessage
         messageId={message.messageId}
         messagesTree={message.children ?? []}

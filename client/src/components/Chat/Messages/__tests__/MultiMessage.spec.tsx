@@ -1,7 +1,10 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { getDefaultStore } from 'jotai';
+import { ContentTypes } from 'librechat-data-provider';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TMessage } from 'librechat-data-provider';
+import { activeSpeechMessageIdAtom } from '~/hooks/Messages/rowWindowState';
 import MultiMessage from '../MultiMessage';
 
 type RowProps = {
@@ -13,17 +16,26 @@ type RowProps = {
 /** Row stub exposing the sibling switcher contract (display-order index). */
 const createRowStub = () => {
   const { createElement } = jest.requireActual<typeof React>('react');
-  return ({ message, siblingIdx = 0, setSiblingIdx }: RowProps) =>
-    createElement(
+  return ({ message, siblingIdx = 0, setSiblingIdx }: RowProps) => {
+    const steer = message.content?.find((part) => part?.type === ContentTypes.STEER);
+    return createElement(
       'div',
       null,
-      createElement('div', { 'data-testid': 'row' }, message.messageId),
+      createElement(
+        'div',
+        { 'data-testid': 'row', id: message.messageId, role: 'group' },
+        message.messageId,
+      ),
+      steer?.steerId
+        ? createElement('div', { id: `steer-${steer.steerId}`, className: 'steer-render' })
+        : null,
       createElement(
         'button',
         { 'data-testid': 'prev', onClick: () => setSiblingIdx?.(siblingIdx - 1) },
         'prev',
       ),
     );
+  };
 };
 
 jest.mock('~/components/Messages/MessageContent', () => ({
@@ -358,12 +370,23 @@ describe('MultiMessage row mount window', () => {
     return { ...msg('m0'), depth: 0, children: [mid] } as TMessage;
   };
 
-  const windowedTree = (mountWindow: { start: number; end: number } | null) => (
+  const windowedTree = (
+    mountWindow: {
+      mode: 'progressive' | 'bounded';
+      start: number;
+      end: number;
+      tailStart?: number;
+      heights?: ReadonlyMap<number, { messageId: string; height: number }>;
+      pinnedRows?: ReadonlyMap<number, string>;
+      pinRow?: (depth: number, messageId: string) => void;
+    } | null,
+    root: TMessage = chain(),
+  ) => (
     <RecoilRoot>
       <RowMountProvider mountWindow={mountWindow}>
         <MultiMessage
           messageId="parent-1"
-          messagesTree={[chain()]}
+          messagesTree={[root]}
           currentEditId={null}
           setCurrentEditId={jest.fn()}
         />
@@ -377,16 +400,153 @@ describe('MultiMessage row mount window', () => {
   });
 
   it('gates rows outside the window while the recursion continues below them', () => {
-    render(windowedTree({ start: 2, end: 2 }));
+    render(windowedTree({ mode: 'progressive', start: 2, end: 2 }));
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m2']);
   });
 
   it('mounts newly windowed rows above without disturbing deeper rows', () => {
-    const view = render(windowedTree({ start: 2, end: 2 }));
-    view.rerender(windowedTree({ start: 1, end: 2 }));
+    const view = render(windowedTree({ mode: 'progressive', start: 2, end: 2 }));
+    view.rerender(windowedTree({ mode: 'progressive', start: 1, end: 2 }));
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m1', 'm2']);
 
     view.rerender(windowedTree(null));
     expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m0', 'm1', 'm2']);
+  });
+
+  it('replaces measured rows outside a bounded window with exact-height message slots', () => {
+    const heights = new Map([
+      [0, { messageId: 'm0', height: 120 }],
+      [1, { messageId: 'm1', height: 240 }],
+      [2, { messageId: 'm2', height: 360 }],
+    ]);
+    const { container } = render(windowedTree({ mode: 'bounded', start: 1, end: 1, heights }));
+
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m1']);
+    expect(container.querySelector<HTMLElement>('#m0')?.style.height).toBe('120px');
+    expect(container.querySelector<HTMLElement>('#m2')?.style.height).toBe('360px');
+    expect(container.querySelectorAll('[data-message-row-slot="true"]')).toHaveLength(3);
+    expect(container.querySelector('#m0 [data-message-search-text="true"]')).toHaveTextContent(
+      'm0',
+    );
+    expect(container.querySelector('#m0')).toHaveAttribute('role', 'group');
+    expect(container.querySelector('#m0')).toHaveAttribute('aria-label', 'Message 1');
+    expect(container.querySelector('#m0 h2')).toHaveTextContent('Response 1: Assistant');
+    expect(container.querySelector('#m0')).not.toHaveAttribute('aria-hidden');
+  });
+
+  it('mounts a changed branch row until its new height is measured', () => {
+    const staleHeights = new Map([[0, { messageId: 'other-branch', height: 120 }]]);
+    render(windowedTree({ mode: 'bounded', start: 2, end: 2, heights: staleHeights }));
+
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m0', 'm1', 'm2']);
+  });
+
+  it('preserves focus on the stable row slot when its rich content mounts', () => {
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    const view = render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }));
+    const slot = view.container.querySelector<HTMLElement>('#m0');
+    if (slot) slot.tabIndex = -1;
+    slot?.focus();
+
+    view.rerender(windowedTree({ mode: 'bounded', start: 0, end: 2, heights }));
+    expect(document.activeElement).toHaveAttribute('id', 'm0');
+    expect(document.activeElement).toHaveAttribute('role', 'group');
+    expect(document.activeElement).not.toHaveAttribute('data-message-row-slot');
+  });
+
+  it('retains lightweight steer anchors in an off-window response', () => {
+    const root = chain();
+    root.content = [
+      { type: ContentTypes.STEER, steer: 'Keep this direction', steerId: 'steer-1' },
+    ] as TMessage['content'];
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    const { container } = render(
+      windowedTree({ mode: 'bounded', start: 1, end: 2, heights }, root),
+    );
+
+    expect(container.querySelector('#steer-steer-1')).toHaveClass('steer-render');
+    expect(container.querySelector('#steer-steer-1 .message-content')).toHaveTextContent(
+      'Keep this direction',
+    );
+  });
+
+  it('transfers focus from a placeholder steer anchor to its mounted content', () => {
+    const root = chain();
+    root.content = [
+      { type: ContentTypes.STEER, steer: 'Keep this direction', steerId: 'steer-1' },
+    ] as TMessage['content'];
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    const view = render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }, root));
+    const placeholderAnchor = view.container.querySelector<HTMLElement>('#steer-steer-1');
+    placeholderAnchor?.setAttribute('tabindex', '-1');
+    placeholderAnchor?.focus();
+
+    view.rerender(windowedTree({ mode: 'bounded', start: 0, end: 2, heights }, root));
+
+    expect(document.activeElement).toHaveAttribute('id', 'steer-steer-1');
+    expect(document.activeElement).not.toHaveClass('sr-only');
+  });
+
+  it('does not reclaim placeholder focus after the user moves elsewhere', () => {
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    const view = render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }));
+    const placeholder = view.container.querySelector<HTMLElement>('#m0');
+    if (placeholder) placeholder.tabIndex = -1;
+    placeholder?.focus();
+    const destination = document.createElement('button');
+    document.body.appendChild(destination);
+    destination.focus();
+
+    view.rerender(windowedTree({ mode: 'bounded', start: 0, end: 2, heights }));
+
+    expect(document.activeElement).toBe(destination);
+  });
+
+  it('keeps the row owning active speech playback mounted', () => {
+    const heights = new Map([[0, { messageId: 'm0', height: 120 }]]);
+    getDefaultStore().set(activeSpeechMessageIdAtom, 'm0');
+    render(windowedTree({ mode: 'bounded', start: 1, end: 2, heights }));
+
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toContain('m0');
+    act(() => getDefaultStore().set(activeSpeechMessageIdAtom, null));
+  });
+
+  it('keeps an interacted row mounted outside the visible window', () => {
+    const heights = new Map([
+      [0, { messageId: 'm0', height: 120 }],
+      [1, { messageId: 'm1', height: 120 }],
+      [2, { messageId: 'm2', height: 120 }],
+    ]);
+    render(
+      windowedTree({
+        mode: 'bounded',
+        start: 1,
+        end: 2,
+        heights,
+        pinnedRows: new Map([[0, 'm0']]),
+      }),
+    );
+
+    expect(screen.getAllByTestId('row').map((row) => row.textContent)).toContain('m0');
+  });
+
+  it('pins a mounted row before its pointer interaction updates local state', () => {
+    const pinRow = jest.fn();
+    render(windowedTree({ mode: 'bounded', start: 0, end: 0, pinRow }));
+
+    fireEvent.pointerDown(screen.getAllByTestId('prev')[0]);
+
+    expect(pinRow).toHaveBeenCalledWith(0, 'm0');
+  });
+
+  it('keeps shortcut controls in the conversation tail mounted', () => {
+    const heights = new Map([
+      [0, { messageId: 'm0', height: 120 }],
+      [1, { messageId: 'm1', height: 120 }],
+      [2, { messageId: 'm2', height: 120 }],
+    ]);
+    render(windowedTree({ mode: 'bounded', start: 0, end: 0, tailStart: 1, heights }));
+
+    expect(screen.getAllByTestId('row').map((row) => row.textContent)).toEqual(['m0', 'm1', 'm2']);
   });
 });

@@ -11,6 +11,8 @@ export type JotaiStore = ReturnType<typeof createStore>;
 export const testChatSurface = (overrides: Partial<ChatSurface> = {}): ChatSurface => ({
   enterToSend: true,
   maximizeChatSpace: false,
+  collapseLongUserMessages: false,
+  enableUserMsgMarkdown: true,
   showScrollButton: true,
   composerBindings: {
     shortcutsEnabled: true,

@@ -14,6 +14,8 @@ import store from '~/store';
 export default function AppChatSurface({ children }: { children: ReactNode }) {
   const enterToSend = useRecoilValue(store.enterToSend);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const collapseLongUserMessages = useRecoilValue(store.collapseLongUserMessages);
+  const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showScrollButton = useRecoilValue(store.showScrollButton);
   const composerBindings = useComposerBindings();
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
@@ -29,6 +31,8 @@ export default function AppChatSurface({ children }: { children: ReactNode }) {
     () => ({
       enterToSend,
       maximizeChatSpace,
+      collapseLongUserMessages,
+      enableUserMsgMarkdown,
       showScrollButton,
       composerBindings,
       /** The artifacts panel and the subagent panel share one slot. */
@@ -40,6 +44,8 @@ export default function AppChatSurface({ children }: { children: ReactNode }) {
     }),
     [
       composerBindings,
+      collapseLongUserMessages,
+      enableUserMsgMarkdown,
       enterToSend,
       handOffComposerText,
       maximizeChatSpace,
