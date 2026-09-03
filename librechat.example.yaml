@@ -591,6 +591,15 @@ endpoints:
   #         # receive a one-time code for an outbound @librechat/code worker.
   #         # The administrator secret stays in the named environment variable.
   #         owner: deployment
+  #         # Optionally expose only these bounded preferences to environment owners.
+  #         configSchema:
+  #           permissions:
+  #             fileWrite:
+  #               allowed: [allow, ask, deny]
+  #               default: ask
+  #             commandExecution:
+  #               allowed: [ask, deny]
+  #               default: ask
   #         pairing:
   #           allowPrincipalWorkers: true
   #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
