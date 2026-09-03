@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import type { HeartbeatClient } from '~/cache/heartbeat';
 import type { RespServer } from './resp.helper';
 import { startRedisHeartbeat, forceRedisReconnect } from '~/cache/heartbeat';
 import { startRespServer, waitFor } from './resp.helper';
@@ -51,9 +52,10 @@ describe('startRedisHeartbeat', () => {
   });
 
   it('sends one probe at a time while a reply is outstanding', async () => {
-    stop = startRedisHeartbeat({ client, intervalMs: 20, timeoutMs: 300, label: 'test' });
+    stop = startRedisHeartbeat({ client, intervalMs: 20, timeoutMs: 5000, label: 'test' });
     server.silent = true;
-    await sleep(150);
+    await waitFor(() => countCommands(server, 'PING') >= 1);
+    await sleep(100);
     expect(countCommands(server, 'PING')).toBe(1);
     expect(server.connections).toBe(1);
   });
@@ -86,6 +88,91 @@ describe('startRedisHeartbeat', () => {
   it('does nothing when the interval is not positive', () => {
     stop = startRedisHeartbeat({ client, intervalMs: 0, timeoutMs: 200, label: 'test' });
     expect(client.listenerCount('end')).toBe(0);
+  });
+
+  it('disables itself instead of reconnecting on every tick when the deadline is not positive', async () => {
+    stop = startRedisHeartbeat({ client, intervalMs: 20, timeoutMs: 0, label: 'test' });
+    expect(client.listenerCount('end')).toBe(0);
+    await sleep(100);
+    expect(countCommands(server, 'PING')).toBe(0);
+    expect(server.connections).toBe(1);
+  });
+});
+
+describe('startRedisHeartbeat on a cluster', () => {
+  type FakeNode = HeartbeatClient & {
+    destroy: jest.Mock;
+    pings: number;
+    pingsAtDestroy: number[];
+  };
+
+  const fakeNode = (host: string, answers: boolean, status = 'ready'): FakeNode => {
+    const node: FakeNode = {
+      status,
+      options: { host, port: 6379 },
+      pings: 0,
+      pingsAtDestroy: [],
+      destroy: jest.fn(() => {
+        node.pingsAtDestroy.push(node.pings);
+      }),
+      ping: () => {
+        node.pings += 1;
+        return answers ? Promise.resolve('PONG') : new Promise(() => undefined);
+      },
+      on: () => undefined,
+      off: () => undefined,
+      disconnect: jest.fn(),
+      stream: { destroyed: false, destroy: (error?: Error) => node.destroy(error) },
+    };
+    return node;
+  };
+
+  const fakeCluster = (nodes: FakeNode[]): HeartbeatClient & { ping: jest.Mock } => ({
+    status: 'ready',
+    ping: jest.fn(() => Promise.resolve('PONG')),
+    on: () => undefined,
+    off: () => undefined,
+    disconnect: jest.fn(),
+    nodes: () => nodes,
+  });
+
+  it('probes every node and tears down only the one that stops answering', async () => {
+    const healthy = fakeNode('10.0.0.1', true);
+    const dead = fakeNode('10.0.0.2', false);
+    const cluster = fakeCluster([healthy, dead]);
+    const stop = startRedisHeartbeat({
+      client: cluster,
+      intervalMs: 10,
+      timeoutMs: 40,
+      label: 'cluster',
+    });
+
+    await waitFor(() => dead.destroy.mock.calls.length >= 1);
+    stop();
+
+    expect(cluster.ping).not.toHaveBeenCalled();
+    expect(healthy.pings).toBeGreaterThanOrEqual(2);
+    expect(healthy.destroy).not.toHaveBeenCalled();
+    expect(dead.pingsAtDestroy[0]).toBe(1);
+    expect((dead.destroy.mock.calls[0][0] as Error).message).toContain('10.0.0.2:6379');
+  });
+
+  it('skips nodes that are not ready', async () => {
+    const ready = fakeNode('10.0.0.1', true);
+    const reconnecting = fakeNode('10.0.0.2', false, 'reconnecting');
+    const stop = startRedisHeartbeat({
+      client: fakeCluster([ready, reconnecting]),
+      intervalMs: 10,
+      timeoutMs: 40,
+      label: 'cluster',
+    });
+
+    await waitFor(() => ready.pings >= 2);
+    await sleep(60);
+    stop();
+
+    expect(reconnecting.pings).toBe(0);
+    expect(reconnecting.destroy).not.toHaveBeenCalled();
   });
 });
 
