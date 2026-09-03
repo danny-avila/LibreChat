@@ -716,7 +716,11 @@ export default function InsightsView() {
           )}
           {data && (
             <>
-              <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-3">
+              {/** Fixed column counts, not `auto-fit`: auto-fit packs as many 220px
+               *  tracks as will fit, so mid-range widths land on three columns and
+               *  orphan the fourth card on its own row. Four KPIs divide evenly by
+               *  two or four, so those are the only counts that leave no gap. */}
+              <div className="grid w-full grid-cols-2 gap-3 xl:grid-cols-4">
                 {kpiCards.map((card) => (
                   <KpiCard key={card.id} card={card} locale={locale} />
                 ))}
