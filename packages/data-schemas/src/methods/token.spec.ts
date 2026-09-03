@@ -1160,7 +1160,7 @@ describe('Token email normalization', () => {
     expect(await Token.countDocuments({ userId })).toBe(0);
   });
 
-  it('leaves a null email alone', async () => {
+  it('leaves a token written without an email alone', async () => {
     await methods.createToken({
       userId,
       token: 'no-email-token',
@@ -1169,5 +1169,24 @@ describe('Token email normalization', () => {
 
     const stored = await Token.findOne({ userId });
     expect(stored?.email).toBeUndefined();
+  });
+
+  it('leaves an explicitly null email as null, which the read side matches on', async () => {
+    /** `TokenCreateData.email` is `string | undefined`, so a null is only reachable by
+     *  writing the model directly — but `findToken` and `deleteTokens` both branch on
+     *  `email === null`, so the setters must not coerce it into something else. */
+    await Token.create({
+      userId,
+      email: null,
+      token: 'null-email-token',
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 3600000),
+    });
+
+    const stored = await Token.findOne({ userId });
+    expect(stored?.email).toBeNull();
+
+    const found = await methods.findToken({ token: 'null-email-token', email: null });
+    expect(found).not.toBeNull();
   });
 });

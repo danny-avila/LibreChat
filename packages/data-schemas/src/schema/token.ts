@@ -9,10 +9,11 @@ const tokenSchema: Schema<IToken> = new Schema({
   },
   email: {
     type: String,
-    /** `findToken` and `deleteTokens` normalize the email before querying, so the
-     * write side has to match or a token created with mixed case or surrounding
-     * whitespace can never be found again — an invite issued to `User@Example.com`
-     * was unredeemable. Mirrors `User.email`, which is already normalized here. */
+    /** `findToken` and `deleteTokens` both apply `.trim().toLowerCase()` to the email
+     * before querying, so the write side has to match on both counts or a token
+     * created with mixed case or surrounding whitespace can never be found again —
+     * an invite issued to `User@Example.com` was unredeemable. `User.email` sets
+     * `lowercase` alone; the read contract here also trims, so this adds `trim`. */
     lowercase: true,
     trim: true,
   },
