@@ -17,8 +17,8 @@ import {
   AgentListResponse,
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
+import { renderAgentAvatar, clearMessagesCache, specDisplayFieldReset } from '~/utils';
 import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
-import { renderAgentAvatar, clearMessagesCache } from '~/utils';
 import { useChatContext } from '~/Providers';
 
 interface SupportContact {
@@ -79,6 +79,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
         endpoint: EModelEndpoint.agents,
         agent_id: agent.id,
         title: localize('com_agents_chat_with', { name: agent.name || localize('com_ui_agent') }),
+        ...specDisplayFieldReset,
       };
 
       const currentConvo = getDefaultConversation({
