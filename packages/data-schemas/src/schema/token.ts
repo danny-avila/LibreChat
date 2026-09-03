@@ -9,6 +9,12 @@ const tokenSchema: Schema<IToken> = new Schema({
   },
   email: {
     type: String,
+    /** `findToken` and `deleteTokens` normalize the email before querying, so the
+     * write side has to match or a token created with mixed case or surrounding
+     * whitespace can never be found again — an invite issued to `User@Example.com`
+     * was unredeemable. Mirrors `User.email`, which is already normalized here. */
+    lowercase: true,
+    trim: true,
   },
   type: {
     type: String,
