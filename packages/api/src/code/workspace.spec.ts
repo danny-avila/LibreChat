@@ -185,6 +185,28 @@ describe('executeWorkspaceTool', () => {
     ).rejects.toMatchObject({ reason: 'invalid' });
   });
 
+  test.each(['./src/app.ts', 'src/./app.ts', 'src//app.ts'])(
+    'rejects the non-canonical request path %s before dispatch',
+    async (path) => {
+      const fetchImpl = jest.fn();
+
+      await expect(
+        executeWorkspaceTool({
+          baseURL: 'https://code.example.com/v1',
+          authHeaders: { Authorization: 'Bearer jwt' },
+          request: {
+            protocolVersion: 1,
+            operation: 'read_file',
+            workspaceId: 'primary',
+            path,
+          },
+          fetchImpl,
+        }),
+      ).rejects.toMatchObject({ reason: 'invalid' });
+      expect(fetchImpl).not.toHaveBeenCalled();
+    },
+  );
+
   test('rejects read content that exceeds its declared line range', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response(

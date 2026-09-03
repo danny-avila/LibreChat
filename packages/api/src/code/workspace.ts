@@ -93,7 +93,7 @@ function isSafePath(value: unknown): value is string {
     !value.includes('\\') &&
     !value.startsWith('/') &&
     !/^[A-Za-z]:/.test(value) &&
-    value.split('/').every((segment) => segment !== '..')
+    value.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
   );
 }
 
