@@ -150,6 +150,11 @@ export const MAX_SKILL_NAME_LENGTH = 200;
  */
 export const SKILL_FILE_PREFIX = 'skills/';
 
+/** Whether a model-facing file path is routed to persistent LibreChat skill storage. */
+export function isSkillFilePath(filePath: string): boolean {
+  return filePath.startsWith(SKILL_FILE_PREFIX);
+}
+
 /**
  * Marker tagged onto every skill-primed message (as `additional_kwargs.source`
  * on a LangChain `HumanMessage`, or as `source` on the `InjectedMessage` that

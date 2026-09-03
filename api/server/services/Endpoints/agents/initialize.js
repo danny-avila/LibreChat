@@ -495,7 +495,8 @@ const initializeClient = async ({
   /** Latest visible context snapshot + every emitted usage payload for this
    *  response, captured by the handlers and persisted on the response message's
    *  metadata so the breakdown and branch/total cost survive a reload.
-   *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null, count: number }} */
+   *  `onSnapshot` is installed by the client to publish run state after each snapshot.
+   *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null, count: number, onSnapshot?: () => void }} */
   const contextUsageSink = { latest: null, count: 0 };
   /** @type {Array<import('librechat-data-provider').TTokenUsageEvent>} */
   const usageEmitSink = [];
@@ -969,12 +970,16 @@ const initializeClient = async ({
             conversationId,
           })
         : undefined;
-    const { alwaysApplySkillPrimes, historicalToolNames, historicalMcpServerNames } =
-      await lazyHistoryResolver.resolve({
-        agent,
-        codeExecutionAvailable: lazyCodeEnvAvailable,
-        memoryAvailable,
-      });
+    const {
+      alwaysApplySkillPrimes,
+      historicalToolNames,
+      historicalMcpServerNames,
+      skillAuthoringAvailable,
+    } = await lazyHistoryResolver.resolve({
+      agent,
+      codeExecutionAvailable: lazyCodeEnvAvailable,
+      memoryAvailable,
+    });
     return {
       id: agent.id,
       name: agent.name,
@@ -997,6 +1002,7 @@ const initializeClient = async ({
       alwaysApplySkillPrimes,
       historicalToolNames,
       historicalMcpServerNames,
+      skillAuthoringAvailable: skillAuthoringAvailable === true,
     };
   };
 
@@ -1238,6 +1244,7 @@ const initializeClient = async ({
           codeExecutionContext: metadata.codeExecutionContext,
           codeSessionKey: metadata.codeSessionKey,
           includeReasoningHistory: metadata.includeReasoningHistory,
+          skillAuthoringAvailable: metadata.skillAuthoringAvailable,
           alwaysApplySkillPrimes: metadata.alwaysApplySkillPrimes,
           historicalToolNames: metadata.historicalToolNames,
           historicalMcpServerNames: metadata.historicalMcpServerNames,

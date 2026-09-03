@@ -72,6 +72,7 @@
     "e2e:benchmark:agents": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.benchmark.ts agent-startup.latency.spec.ts",
     "e2e:benchmark:navigation": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.navigation-perf.ts",
     "e2e:benchmark:reasoning": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.reasoning-perf.ts",
+    "e2e:benchmark:mobile-chat": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mobile-chat-perf.ts",
     "e2e:bombadil": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.bombadil.ts",
     "e2e:bombadil:run": "playwright test --config=e2e/playwright.config.bombadil.ts",
     "e2e:bombadil:branch-reload": "npm run e2e:prepare && cross-env BOMBADIL_SPECIFICATION=branch-reload.specification.ts BOMBADIL_TIME_LIMIT=30s playwright test --config=e2e/playwright.config.bombadil.ts",
@@ -196,7 +197,9 @@
     "minimatch@10": {
       "brace-expansion": "^5.0.8"
     },
-    "@xmldom/xmldom": "^0.8.13",
+    "@xmldom/xmldom": "^0.8.15",
+    "@humanfs/node": "^0.16.8",
+    "qs": "^6.16.0",
     "baseline-browser-mapping": "^2.11.0",
     "browserslist": "^4.28.7",
     "elliptic": "^6.6.1",

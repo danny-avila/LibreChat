@@ -21,6 +21,7 @@ import {
   getBoundedOwnEnumerableEntries,
   isDataUri,
   isLikelyEncodedPayload,
+  isContentTraversalProtected,
 } from '../protection/adapters/nested';
 import {
   getBlockedUninspectableFileField,
@@ -1604,7 +1605,13 @@ export function assertSharedFileMetadataAllowed({
     payloadInspection.traversalClassifications,
   );
   if (traversalClassifications.length > 0) {
-    throw new ContentTraversalLimitError([], traversalClassifications.map(toTraversalScope));
+    const traversalError = new ContentTraversalLimitError(
+      [],
+      traversalClassifications.map(toTraversalScope),
+    );
+    if (isContentTraversalProtected({ error: traversalError, filters })) {
+      throw traversalError;
+    }
   }
   for (const field of payloadInspection.uninspectableFileFields) {
     const blockedField = getBlockedUninspectableFileField(filters, [field]);

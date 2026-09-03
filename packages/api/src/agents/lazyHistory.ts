@@ -47,6 +47,7 @@ export interface LazyAgentHistoryMetadata {
   alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[];
   historicalToolNames: string[];
   historicalMcpServerNames: string[];
+  skillAuthoringAvailable: boolean;
 }
 
 export interface LazyAgentHistoryResolver {
@@ -162,6 +163,7 @@ export function createLazyAgentHistoryResolver(
       return {
         alwaysApplySkillPrimes,
         historicalMcpServerNames,
+        skillAuthoringAvailable,
         historicalToolNames: Array.from(
           buildHistoricalToolNames({
             configuredToolNames: agent.tools,

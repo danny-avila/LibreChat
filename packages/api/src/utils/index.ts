@@ -6,6 +6,7 @@ export * from './content';
 export * from './email';
 export * from './env';
 export * from './errors';
+export * from './promises';
 export * from './events';
 export * from './files';
 export * from './import';

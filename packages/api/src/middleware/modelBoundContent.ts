@@ -3399,15 +3399,18 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     return;
   }
   const inspectionSession = inspector?.createSession();
+  const shouldContinueAfterFinding = inspectionSession?.hasAuditRules === true;
   let finding: ReturnType<NonNullable<typeof inspectionSession>['inspect']> = null;
   const inspectFragments = (fragments: Iterable<TextContentFragment>): void => {
-    if (finding == null) {
-      finding = inspectionSession?.inspect(fragments) ?? null;
+    if (finding == null || shouldContinueAfterFinding) {
+      const nextFinding = inspectionSession?.inspect(fragments) ?? null;
+      finding ??= nextFinding;
     }
   };
   const inspectFragment = (fragment: TextContentFragment): void => {
-    if (finding == null) {
-      finding = inspectionSession?.inspectFragment(fragment) ?? null;
+    if (finding == null || shouldContinueAfterFinding) {
+      const nextFinding = inspectionSession?.inspectFragment(fragment) ?? null;
+      finding ??= nextFinding;
     }
   };
   const traversalErrors: ContentTraversalLimitError[] = [
@@ -3616,17 +3619,17 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
        *  assistant row as submitted content. Structured tool calls/results
        *  remain externally sourced model-bound content. Explicit paths and
        *  semantic steer parts identify user-authored fragments in mixed rows. */
-      if (finding == null) {
+      if (finding == null || shouldContinueAfterFinding) {
         const submittedPathSet = new Set<string>(userSubmittedPaths);
         for (const fragment of messageFragments) {
           if (fragment.source === 'tool_argument') {
             inspectFragment(fragment);
-            if (finding != null) {
+            if (finding != null && !shouldContinueAfterFinding) {
               break;
             }
           }
         }
-        if (finding == null) {
+        if (finding == null || shouldContinueAfterFinding) {
           const submittedToolOutputs: Array<
             Extract<TextContentFragment, { source: 'tool_argument' }>
           > = [];
@@ -3637,7 +3640,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
             }
             if (fragment.source !== 'tool_argument') {
               inspectFragment(fragment);
-              if (finding != null) {
+              if (finding != null && !shouldContinueAfterFinding) {
                 break;
               }
             }
@@ -3651,19 +3654,19 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
               assembledText.push(fragment.text);
             }
           }
-          if (finding == null) {
+          if (finding == null || shouldContinueAfterFinding) {
             for (const fragment of submittedToolOutputs) {
               inspectFragment(asUserSubmittedMessageFragment(fragment));
-              if (finding != null) {
+              if (finding != null && !shouldContinueAfterFinding) {
                 break;
               }
             }
           }
-          if (finding == null) {
+          if (finding == null || shouldContinueAfterFinding) {
             inspectFragments(exactMessageFragments);
           }
           if (
-            finding == null &&
+            (finding == null || shouldContinueAfterFinding) &&
             (hasActivePiiPatterns(input.legacyPii) ||
               hasActivePiiFields(input.filters?.messages?.pii, ['assembled_context']))
           ) {
