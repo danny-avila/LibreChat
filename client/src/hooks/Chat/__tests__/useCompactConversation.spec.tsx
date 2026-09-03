@@ -1,6 +1,6 @@
-import { render, act, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { RecoilRoot } from 'recoil';
+import { render, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import useCompactConversation, { useIsConversationCompacting } from '../useCompactConversation';
 

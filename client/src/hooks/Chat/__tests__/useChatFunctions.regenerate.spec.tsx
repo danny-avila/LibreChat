@@ -46,7 +46,9 @@ jest.mock('recoil', () => ({
     }),
 }));
 
+jest.mock('~/hooks/Files/useSetFilesToDelete', () => () => mockSetFilesToDelete);
 jest.mock('~/hooks/Conversations/useGetSender', () => () => mockGetSender);
+jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry }));
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: null }),
 }));
