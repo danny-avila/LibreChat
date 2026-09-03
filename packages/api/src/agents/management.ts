@@ -5,12 +5,55 @@ const MAX_LIST_LIMIT = 100;
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_CURSOR_LENGTH = 512;
 
+export type AgentManagementCreate = z.output<typeof agentCreateSchema>;
+export type AgentManagementUpdate = z.output<typeof agentUpdateSchema>;
+export type AgentManagementList = {
+  limit: number;
+  cursor?: string;
+};
+export type AgentManagementResponse = Omit<
+  z.output<typeof agentUpdateSchema>,
+  'provider' | 'model'
+> & {
+  id: string;
+  provider: string;
+  model: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type AgentManagementListResponse = {
+  object: 'list';
+  data: AgentManagementResponse[];
+  first_id: string | null;
+  last_id: string | null;
+  has_more: boolean;
+  after: string | null;
+};
+export type AgentManagementErrorCode =
+  | 'invalid_request'
+  | 'not_found'
+  | 'permission_denied'
+  | 'internal_error';
+export type AgentManagementError = {
+  error: {
+    code: AgentManagementErrorCode;
+    message: string;
+    details?: Array<{ path: Array<string | number>; message: string }>;
+  };
+};
+
 /**
  * Agent Management accepts the browser-supported configuration fields, but unlike the
  * browser endpoints it rejects unknown top-level fields instead of silently stripping them.
  */
-export const agentManagementCreateSchema = agentCreateSchema.strict();
-export const agentManagementUpdateSchema = agentUpdateSchema.strict();
+export const agentManagementCreateSchema: z.ZodType<
+  AgentManagementCreate,
+  z.ZodTypeDef,
+  z.input<typeof agentCreateSchema>
+> = agentCreateSchema.strict();
+export const agentManagementUpdateSchema: z.ZodType<AgentManagementUpdate> =
+  agentUpdateSchema.strict();
 
 const agentManagementCursorSchema = z
   .string()
@@ -35,7 +78,7 @@ const agentManagementCursorSchema = z
     }
   });
 
-export const agentManagementListSchema = z
+export const agentManagementListSchema: z.ZodType<AgentManagementList, z.ZodTypeDef, unknown> = z
   .object({
     limit: z.coerce.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT),
     cursor: agentManagementCursorSchema.optional(),
@@ -45,7 +88,7 @@ export const agentManagementListSchema = z
 const timestampSchema = z.string().datetime();
 
 /** The externally supported Agent shape. Persistence and ownership fields are intentionally absent. */
-export const agentManagementResponseSchema = agentUpdateSchema
+export const agentManagementResponseSchema: z.ZodType<AgentManagementResponse> = agentUpdateSchema
   .extend({
     id: z.string().min(1),
     provider: z.string(),
@@ -56,7 +99,7 @@ export const agentManagementResponseSchema = agentUpdateSchema
   })
   .strict();
 
-export const agentManagementListResponseSchema = z
+export const agentManagementListResponseSchema: z.ZodType<AgentManagementListResponse> = z
   .object({
     object: z.literal('list'),
     data: z.array(agentManagementResponseSchema),
@@ -76,7 +119,7 @@ export const agentManagementListResponseSchema = z
     }
   });
 
-export const agentManagementErrorCodeSchema = z.enum([
+export const agentManagementErrorCodeSchema: z.ZodType<AgentManagementErrorCode> = z.enum([
   'invalid_request',
   'not_found',
   'permission_denied',
@@ -90,7 +133,7 @@ const agentManagementValidationIssueSchema = z
   })
   .strict();
 
-export const agentManagementErrorSchema = z
+export const agentManagementErrorSchema: z.ZodType<AgentManagementError> = z
   .object({
     error: z
       .object({
@@ -101,14 +144,6 @@ export const agentManagementErrorSchema = z
       .strict(),
   })
   .strict();
-
-export type AgentManagementCreate = z.infer<typeof agentManagementCreateSchema>;
-export type AgentManagementUpdate = z.infer<typeof agentManagementUpdateSchema>;
-export type AgentManagementList = z.infer<typeof agentManagementListSchema>;
-export type AgentManagementResponse = z.infer<typeof agentManagementResponseSchema>;
-export type AgentManagementListResponse = z.infer<typeof agentManagementListResponseSchema>;
-export type AgentManagementError = z.infer<typeof agentManagementErrorSchema>;
-export type AgentManagementErrorCode = z.infer<typeof agentManagementErrorCodeSchema>;
 
 const RESPONSE_CONFIG_FIELDS = [
   'name',
