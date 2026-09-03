@@ -80,6 +80,14 @@ export type MCPToolCallResponse =
   | {
       _meta?: Record<string, unknown>;
       content?: Array<ToolContentPart>;
+      /**
+       * Structured tool output, added in MCP spec revision 2025-06-18 for tools
+       * that declare an `outputSchema`. Servers SHOULD also mirror this into a
+       * text content block for backwards compatibility, but that is a SHOULD —
+       * some servers send `structuredContent` with an empty `content` array.
+       * Without this, such results are indistinguishable from an empty response.
+       */
+      structuredContent?: Record<string, unknown>;
       isError?: boolean;
     };
 
