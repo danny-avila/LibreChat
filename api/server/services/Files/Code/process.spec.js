@@ -2090,6 +2090,7 @@ describe('Code Process', () => {
         workspaceId: 'primary',
         path: 'src/app.ts',
         content: 'prefix SECRET',
+        hasUtf8Bom: false,
         baseSha256: 'b'.repeat(64),
         replacements: 1,
         bytesWritten: 13,

@@ -78,6 +78,7 @@ const PREVIEW_EDIT_RESULT_KEYS = new Set([
   'workspaceId',
   'path',
   'content',
+  'hasUtf8Bom',
   'baseSha256',
   'replacements',
   'bytesWritten',
@@ -226,6 +227,7 @@ export interface WorkspacePreviewEditResult {
   workspaceId: string;
   path: string;
   content: string;
+  hasUtf8Bom: boolean;
   baseSha256: string;
   replacements: number;
   bytesWritten: number;
@@ -566,10 +568,12 @@ function isValidResult(
       value.path === request.path &&
       content != null &&
       Buffer.from(content).toString('utf8') === content &&
+      typeof value.hasUtf8Bom === 'boolean' &&
       /^[a-f0-9]{64}$/.test(typeof value.baseSha256 === 'string' ? value.baseSha256 : '') &&
       value.replacements === request.edits.length &&
       Number.isSafeInteger(value.bytesWritten) &&
-      Number(value.bytesWritten) === new TextEncoder().encode(content).byteLength &&
+      Number(value.bytesWritten) ===
+        new TextEncoder().encode(content).byteLength + (value.hasUtf8Bom ? 3 : 0) &&
       Number(value.bytesWritten) <= WORKSPACE_WRITE_MAX_BYTES
     );
   }

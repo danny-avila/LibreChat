@@ -752,6 +752,7 @@ describe('executeWorkspaceTool', () => {
           workspaceId: 'primary',
           path: 'src/app.ts',
           content: 'prefix SECRET suffix',
+          hasUtf8Bom: false,
           baseSha256,
           replacements: 1,
           bytesWritten: 20,
