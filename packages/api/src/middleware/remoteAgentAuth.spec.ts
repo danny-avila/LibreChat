@@ -760,34 +760,23 @@ describe('createRemoteAgentAuth', () => {
       );
     });
 
-    it('tries signing keys until a token without kid verifies', async () => {
+    it('rejects a token without kid before querying JWKS', async () => {
       const payload = { sub: 'sub123', email: 'agent@test.com' };
       setupOidcMocks(payload, null);
-      mockGetSigningKeys.mockResolvedValue([
-        { kid: 'first-kid', getPublicKey: () => 'first-public-key' },
-        { kid: 'second-kid', getPublicKey: () => 'second-public-key' },
-      ]);
-      (jwt.verify as jest.Mock).mockImplementation(
-        (_t: string, key: string, _o: VerifyOptions, cb: JwtVerifyCallback) => {
-          if (key === 'first-public-key') {
-            cb(new Error('invalid signature'));
-            return;
-          }
-          cb(null, payload);
-        },
+      const deps = makeDeps(makeConfig({}, { enabled: false }));
+      const { res, status } = makeRes();
+
+      await createRemoteAgentAuth(asDeps(deps))(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
       );
 
-      const deps = makeDeps();
-      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
-
-      await createRemoteAgentAuth(asDeps(deps))(req as Request, makeRes().res, mockNext);
-
+      expect(status).toHaveBeenCalledWith(401);
+      expect(jwksRsa).not.toHaveBeenCalled();
       expect(mockGetSigningKey).not.toHaveBeenCalled();
-      expect(jwt.verify).toHaveBeenCalledTimes(2);
-      expect((jwt.verify as jest.Mock).mock.calls[0][1]).toBe('first-public-key');
-      expect((jwt.verify as jest.Mock).mock.calls[1][1]).toBe('second-public-key');
-      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
-      expect(mockNext).toHaveBeenCalledWith();
+      expect(jwt.verify).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('attaches federatedTokens with access_token and expires_at', async () => {
@@ -1270,7 +1259,7 @@ describe('createRemoteAgentAuth', () => {
       );
     });
 
-    it('disables signing-key caching without recreating the rate-limited JWKS client', async () => {
+    it('retains a short signing-key safety cache when global JWKS caching is disabled', async () => {
       process.env.OPENID_JWKS_URL_CACHE_ENABLED = 'false';
       const deps = makeDeps(
         makeConfig({
@@ -1299,7 +1288,8 @@ describe('createRemoteAgentAuth', () => {
       expect(jwksRsa).toHaveBeenCalledTimes(1);
       expect(jwksRsa).toHaveBeenCalledWith(
         expect.objectContaining({
-          cache: false,
+          cache: true,
+          cacheMaxAge: 60000,
           rateLimit: true,
           jwksRequestsPerMinute: 10,
         }),

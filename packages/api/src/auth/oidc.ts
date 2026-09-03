@@ -153,9 +153,12 @@ async function resolveJwksUri(
 }
 
 function buildJwksClient(uri: string, cacheOptions: JwksCacheOptions): jwksRsa.JwksClient {
+  const cacheMaxAge = cacheOptions.enabled
+    ? Math.max(cacheOptions.maxAge, OIDC_THROTTLE_WINDOW_MS)
+    : OIDC_THROTTLE_WINDOW_MS;
   const options: jwksRsa.Options = {
-    cache: cacheOptions.enabled,
-    cacheMaxAge: cacheOptions.maxAge,
+    cache: true,
+    cacheMaxAge,
     jwksUri: uri,
     rateLimit: true,
     jwksRequestsPerMinute: JWKS_REQUESTS_PER_MINUTE,
@@ -226,24 +229,6 @@ function verifyJwt(
   });
 }
 
-async function verifyWithSigningKeys(
-  token: string,
-  signingKeys: jwksRsa.SigningKey[],
-  oidcConfig: OidcAccessTokenConfig,
-): Promise<JwtPayload> {
-  let lastError: Error | null = null;
-
-  for (const signingKey of signingKeys) {
-    try {
-      return await verifyJwt(token, signingKey, oidcConfig);
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    }
-  }
-
-  throw lastError ?? new Error('No signing keys in JWKS');
-}
-
 export async function verifyOidcAccessToken(
   token: string,
   oidcConfig: OidcAccessTokenConfig,
@@ -255,12 +240,9 @@ export async function verifyOidcAccessToken(
   if (decoded == null || typeof decoded === 'string') throw new Error('Invalid JWT: cannot decode');
 
   const kid = typeof decoded.header?.kid === 'string' ? decoded.header.kid : undefined;
+  if (!kid) throw new Error('Invalid JWT: missing signing key ID');
+
   const client = await getJwksClient(oidcConfig, options);
-
-  if (kid != null) {
-    const signingKey = await client.getSigningKey(kid);
-    return verifyJwt(token, signingKey, oidcConfig);
-  }
-
-  return verifyWithSigningKeys(token, await client.getSigningKeys(), oidcConfig);
+  const signingKey = await client.getSigningKey(kid);
+  return verifyJwt(token, signingKey, oidcConfig);
 }
