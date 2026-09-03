@@ -112,6 +112,8 @@ function renderUseResumeOnLoad({
     defaultOptions: { queries: { retry: false } },
   });
   let setSubmissionState: ((submission: TSubmission | null) => void) | undefined;
+  let setIsSubmittingState: ((value: boolean) => void) | undefined;
+  let setAttachedEpochState: ((value: number | null) => void) | undefined;
   const initializeState = (snapshot: MutableSnapshot) => {
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
     snapshot.set(store.submissionByIndex(0), submission);
@@ -131,6 +133,10 @@ function renderUseResumeOnLoad({
   const SubmissionProbe = () => {
     const currentSubmission = useRecoilValue(store.submissionByIndex(0));
     setSubmissionState = useSetRecoilState(store.submissionByIndex(0));
+    setIsSubmittingState = useSetRecoilState(store.isSubmittingFamily(0));
+    setAttachedEpochState = useSetRecoilState(
+      store.activeGenerationCreatedAtByConvoId(conversationId),
+    );
     onSubmission?.(currentSubmission);
     return null;
   };
@@ -174,6 +180,8 @@ function renderUseResumeOnLoad({
     queryClient,
     getMessages,
     setSubmission: (nextSubmission: TSubmission | null) => setSubmissionState?.(nextSubmission),
+    setIsSubmitting: (value: boolean) => setIsSubmittingState?.(value),
+    setAttachedGenerationCreatedAt: (value: number | null) => setAttachedEpochState?.(value),
     ...renderHook(() => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded), {
       wrapper,
     }),
@@ -925,6 +933,101 @@ describe('useResumeOnLoad', () => {
       rerender();
       expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
       jest.useRealTimers();
+    });
+
+    it('does not count the predecessor attachment as delivery of the successor', async () => {
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      /**
+       * The turn was queued behind this pane's own run, so its receipt is
+       * admitted while that predecessor is still attached. If that attachment
+       * counted as delivery the latch would be cleared — or never recorded —
+       * and once the predecessor closes and the receipt is gone, nothing would
+       * be left to notice the successor.
+       */
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ status: 'admitted' }],
+        dataUpdatedAt: 2,
+      });
+      const { rerender, setIsSubmitting, setAttachedGenerationCreatedAt } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: true,
+        attachedGenerationCreatedAt: 1000,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      /** Attached to the predecessor: nothing to poll for yet, nothing to arm. */
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+
+      /** Predecessor ends: its FINAL clears the epoch and submitting state and
+       *  leaves the finished submission installed; the list is already empty
+       *  from the optimistic removal, and the receipt is dropped. */
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
+      mockUseStreamStatus.mockClear();
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** The latch carried the handover: with the receipt gone and the list
+       *  empty, the pane still declared the successor owed... */
+      expect(mockUseActiveJobs).toHaveBeenCalledWith(true, true);
+      /** ...which armed the status read, which attached to the successor. */
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+      const attached = observedSubmissions[observedSubmissions.length - 1] as
+        | (TSubmission & { resumeStreamId?: string; resumeGenerationCreatedAt?: number })
+        | null;
+      expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
+      expect(attached?.resumeGenerationCreatedAt).toBe(4242);
+      /** And attaching to a generation other than the predecessor's is the
+       *  delivery that releases it. */
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
+    });
+
+    it('treats attachment to a different generation as delivery', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      mockUseAgentQueuedTurns.mockReturnValue({
+        data: [{ status: 'admitted' }],
+        dataUpdatedAt: 2,
+      });
+      const { rerender, setIsSubmitting, setAttachedGenerationCreatedAt } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        isSubmitting: true,
+        attachedGenerationCreatedAt: 1000,
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** Receipt gone, and this pane is now attached to a newer epoch — that
+       *  IS the successor, so nothing remains owed once it detaches again. */
+      mockUseAgentQueuedTurns.mockReturnValue({ data: [], dataUpdatedAt: 3 });
+      await act(async () => {
+        setAttachedGenerationCreatedAt(2000);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        setIsSubmitting(false);
+        setAttachedGenerationCreatedAt(null);
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseActiveJobs).toHaveBeenLastCalledWith(true, false);
     });
 
     it('does not re-arm for a conversation that is not the one being viewed', async () => {

@@ -505,7 +505,21 @@ export default function useResumeOnLoad(
    * only once the receipt has gone quiet, so a long wait behind an unadmitted
    * turn does not burn the window before the handover begins.
    */
-  const [owedSuccessorFor, setOwedSuccessorFor] = useState<string | null>(null);
+  /**
+   * The latch remembers which generation was live when the turn became owed,
+   * because the successor is usually announced while its predecessor is still
+   * attached — the turn was queued behind it. That attachment is not delivery:
+   * the successor is only observed once this pane is attached to a *different*
+   * generation, or the list names the conversation while nothing of ours is
+   * live. Counting the predecessor would clear the latch just as it is needed,
+   * and a successor that starts and finishes between two list polls would then
+   * never be seen at all.
+   */
+  const [owedSuccessor, setOwedSuccessor] = useState<{
+    conversationId: string;
+    predecessorCreatedAt: number | null;
+  } | null>(null);
+  const owedSuccessorFor = owedSuccessor?.conversationId ?? null;
   const successorOwed =
     !hasLiveSubmissionForThisConvo &&
     (successorOwedByReceipt || (conversationId != null && owedSuccessorFor === conversationId));
@@ -517,27 +531,37 @@ export default function useResumeOnLoad(
     !!conversationId &&
     conversationId !== Constants.NEW_CONVO &&
     activeJobsData?.activeJobIds?.includes(conversationId) === true;
-  const successorDelivered = hasLiveSubmissionForThisConvo || hasActiveJobForThisConvo;
+  const attachedToSuccessor =
+    owedSuccessor != null &&
+    owedSuccessor.conversationId === conversationId &&
+    attachedGenerationCreatedAt != null &&
+    attachedGenerationCreatedAt !== owedSuccessor.predecessorCreatedAt;
+  const successorDelivered =
+    attachedToSuccessor || (hasActiveJobForThisConvo && !hasLiveSubmissionForThisConvo);
 
   useEffect(() => {
     if (!conversationId) {
       return;
     }
     if (successorDelivered) {
-      setOwedSuccessorFor((current) => (current === conversationId ? null : current));
+      setOwedSuccessor((current) => (current?.conversationId === conversationId ? null : current));
       return;
     }
     if (successorOwedByReceipt) {
-      setOwedSuccessorFor(conversationId);
+      setOwedSuccessor((current) =>
+        current?.conversationId === conversationId
+          ? current
+          : { conversationId, predecessorCreatedAt: attachedGenerationCreatedAt },
+      );
     }
-  }, [conversationId, successorOwedByReceipt, successorDelivered]);
+  }, [conversationId, successorOwedByReceipt, successorDelivered, attachedGenerationCreatedAt]);
 
   useEffect(() => {
     if (conversationId == null || owedSuccessorFor !== conversationId || successorOwedByReceipt) {
       return;
     }
     const expiry = setTimeout(() => {
-      setOwedSuccessorFor((current) => (current === conversationId ? null : current));
+      setOwedSuccessor((current) => (current?.conversationId === conversationId ? null : current));
     }, ACTIVE_JOBS_SUCCESSOR_GRACE_MS);
     return () => clearTimeout(expiry);
   }, [conversationId, owedSuccessorFor, successorOwedByReceipt]);
