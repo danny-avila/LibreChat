@@ -5,8 +5,11 @@ import React from 'react';
 import { Providers } from 'librechat-data-provider';
 import { FormProvider, useForm } from 'react-hook-form';
 import { fireEvent, render } from '@testing-library/react';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import ModelPanel from './ModelPanel';
+
+let mockEndpointsConfig: TEndpointsConfig = {};
 
 jest.mock('@librechat/client', () => ({
   Alert: ({ children }: { children: React.ReactNode }) => <div role="alert">{children}</div>,
@@ -21,6 +24,7 @@ jest.mock('@librechat/client', () => ({
     items,
     selectId,
     selectedValue,
+    displayValue,
     selectPlaceholder,
     setValue,
   }: {
@@ -29,14 +33,16 @@ jest.mock('@librechat/client', () => ({
     items: Array<{ label: string; value: string }>;
     selectId?: string;
     selectedValue: string;
+    displayValue?: string;
     selectPlaceholder?: string;
     setValue: (value: string) => void;
   }) => (
     <div>
       <button id={selectId} type="button" disabled={disabled} aria-label={ariaLabel}>
-        {selectedValue || selectPlaceholder}
+        {displayValue || selectedValue || selectPlaceholder}
       </button>
       <span data-testid={`${ariaLabel}-selected`}>{selectedValue}</span>
+      <span data-testid={`${ariaLabel}-display`}>{displayValue}</span>
       <span data-testid={`${ariaLabel}-placeholder`}>{selectPlaceholder}</span>
       {items.map((item) => (
         <button
@@ -58,7 +64,7 @@ jest.mock('~/components/SidePanel/Parameters/components', () => ({
 }));
 
 jest.mock('~/data-provider', () => ({
-  useGetEndpointsQuery: () => ({ data: {} }),
+  useGetEndpointsQuery: () => ({ data: mockEndpointsConfig }),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -110,7 +116,28 @@ function TestForm({
 }
 
 describe('ModelPanel', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    mockEndpointsConfig = {};
+  });
+
+  it('displays a configured model label while retaining the model id', () => {
+    mockEndpointsConfig = {
+      custom: { order: 0, modelLabels: { 'custom-model': ' Custom Model ' } },
+    };
+    const { getByTestId } = render(
+      <TestForm
+        defaultProvider="custom"
+        defaultModel="custom-model"
+        models={{ custom: ['custom-model'] }}
+        modelsReady={true}
+      />,
+    );
+
+    expect(getByTestId('com_ui_model-display')).toHaveTextContent('Custom Model');
+    expect(getByTestId('com_ui_model-selected')).toHaveTextContent('custom-model');
+    expect(getByTestId('com_ui_model-custom-model')).toHaveTextContent('Custom Model');
+  });
 
   it('disables model selection until the model catalogue is ready', () => {
     const { getByTestId } = render(
