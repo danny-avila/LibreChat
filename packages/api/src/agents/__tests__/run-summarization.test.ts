@@ -1490,6 +1490,99 @@ describe('custom-endpoint provider resolution', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Suite: built-in provider request shaping (#15598)
+// ---------------------------------------------------------------------------
+/**
+ * A built-in provider produces no custom-endpoint config, so `getOpenAIConfig`
+ * was skipped entirely and the summarizer learned neither which API its model
+ * takes nor whether its endpoint is first-party. The agents SDK defaults its
+ * model-specific constraints off without that declaration, so configured
+ * parameters reached the model unshaped.
+ *
+ * These assert the declaration LibreChat emits, which is the half it owns; the
+ * SDK's honoring of it is covered by its own tests.
+ */
+describe('built-in provider request shaping', () => {
+  const anthropicAgent = () =>
+    makeAgent({
+      provider: 'anthropic',
+      endpoint: 'anthropic',
+      model: 'claude-sonnet-4.6',
+      model_parameters: { model: 'claude-sonnet-4.6' },
+    });
+
+  const summarizeWith = async (
+    parameters?: Record<string, unknown>,
+    model = 'gpt-6-astra',
+  ): Promise<Record<string, unknown>> => {
+    const agents = await callAndCapture({
+      agents: [anthropicAgent()],
+      appConfig: makeAppConfig([]),
+      summarizationConfig: {
+        provider: 'openAI',
+        model,
+        parameters: parameters as SummarizationConfig['parameters'],
+      },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    return config.parameters as Record<string, unknown>;
+  };
+
+  it('declares the first-party endpoint for a cross-provider built-in summarizer', async () => {
+    expect(await summarizeWith(undefined, 'gpt-4o')).toMatchObject({ firstPartyEndpoint: true });
+  });
+
+  it('routes a Responses-only model to the Responses API', async () => {
+    expect(await summarizeWith()).toMatchObject({
+      firstPartyEndpoint: true,
+      useResponsesApi: true,
+    });
+  });
+
+  it('keeps the declaration alongside a translated reasoning effort', async () => {
+    /**
+     * The reachable failure from #15598: `resolveReasoningParams` translates the
+     * scalar effort for the summarizer, and without the declaration an effort
+     * the model rejects reached it verbatim.
+     */
+    expect(await summarizeWith({ reasoning_effort: 'minimal' })).toMatchObject({
+      firstPartyEndpoint: true,
+      reasoning: { effort: 'minimal' },
+    });
+  });
+
+  it('does not claim a first-party endpoint behind a user configuration.baseURL', async () => {
+    expect(
+      await summarizeWith({ configuration: { baseURL: 'https://gateway.internal/v1' } }),
+    ).toEqual({ configuration: { baseURL: 'https://gateway.internal/v1' } });
+  });
+
+  it('does not claim a first-party endpoint behind a user baseURL', async () => {
+    expect(await summarizeWith({ baseURL: 'https://gateway.internal/v1' })).toEqual({
+      baseURL: 'https://gateway.internal/v1',
+    });
+  });
+
+  it('leaves credentials and transport to the client', async () => {
+    const parameters = await summarizeWith();
+    expect(parameters.apiKey).toBeUndefined();
+    expect(parameters.model).toBeUndefined();
+    expect(parameters.modelName).toBeUndefined();
+    expect(parameters.streaming).toBeUndefined();
+    expect(parameters.configuration).toBeUndefined();
+  });
+
+  it('leaves a same-endpoint summarizer on the agent client options', async () => {
+    const agents = await callAndCapture({
+      appConfig: makeAppConfig([]),
+      summarizationConfig: { provider: 'openAI', model: 'gpt-6-astra' },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.parameters).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Suite 8: subagentConfigs
 // ---------------------------------------------------------------------------
 describe('subagentConfigs', () => {

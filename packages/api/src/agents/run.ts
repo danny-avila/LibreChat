@@ -589,6 +589,56 @@ interface SummarizationClientOverrides {
 }
 
 /**
+ * A user-supplied base URL in `summarization.parameters` points the summarizer
+ * at a gateway whose contract is not the built-in provider's, so no built-in
+ * request shaping may be claimed for it.
+ */
+function hasBaseURLOverride(parameters: SummarizationConfig['parameters']): boolean {
+  if (!isPlainObject(parameters)) {
+    return false;
+  }
+  const params = parameters as Record<string, unknown>;
+  if (isNonEmptyString(params.baseURL)) {
+    return true;
+  }
+  return isPlainObject(params.configuration) && 'baseURL' in params.configuration;
+}
+
+/**
+ * Builds the model-specific request shaping a built-in provider's client needs,
+ * for the cross-provider case where the SDK cannot reuse the agent's own client
+ * options.
+ *
+ * The custom-endpoint path below already runs `getOpenAIConfig`; built-in
+ * providers skipped it entirely, so a summarizer never learned which API its
+ * model takes or whether its endpoint is first-party — and the agents SDK
+ * defaults its model-specific constraints off without that declaration
+ * (LibreChat#15598).
+ *
+ * Credentials and transport are deliberately not touched. A built-in provider
+ * has no configured key or base URL here, so the client resolves both the way
+ * it does today; emitting an empty `apiKey` would break that.
+ */
+function resolveBuiltInClientOverrides(
+  provider: string,
+  model: string | undefined,
+  parameters: SummarizationConfig['parameters'],
+): SummarizationClientOverrides | undefined {
+  if (!isNonEmptyString(model) || hasBaseURLOverride(parameters)) {
+    return undefined;
+  }
+  const { llmConfig } = getOpenAIConfig('', { modelOptions: { model } }, provider);
+  const {
+    apiKey: _apiKey,
+    model: _model,
+    modelName: _modelName,
+    streaming: _streaming,
+    ...shaping
+  } = llmConfig as Record<string, unknown>;
+  return Object.keys(shaping).length > 0 ? shaping : undefined;
+}
+
+/**
  * Resolves a summarization provider string (which may be a custom-endpoint name
  * like "Ollama") into the SDK-recognized provider and any client-option
  * overrides required to talk to that endpoint.
@@ -601,6 +651,7 @@ function resolveSummarizationProvider(
   rawProvider: string,
   appConfig: AppConfig | undefined,
   headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  target: { model?: string; parameters?: SummarizationConfig['parameters'] } = {},
 ): {
   provider: string;
   clientOverrides?: SummarizationClientOverrides;
@@ -614,7 +665,14 @@ function resolveSummarizationProvider(
       appConfig,
     });
     if (!customEndpointConfig) {
-      return { provider: overrideProvider };
+      return {
+        provider: overrideProvider,
+        clientOverrides: resolveBuiltInClientOverrides(
+          overrideProvider,
+          target.model,
+          target.parameters,
+        ),
+      };
     }
     const rawApiKey = customEndpointConfig.apiKey ?? '';
     const rawBaseURL = customEndpointConfig.baseURL ?? '';
@@ -775,11 +833,14 @@ function shapeSummarizationConfig(
     isNonEmptyString(rawProvider) &&
     normalizeEndpointName(rawProvider) === normalizeEndpointName(agentEndpoint);
 
+  const model = config?.model ?? fallbackModel;
+
   const { provider, clientOverrides } = isSameEndpointAsAgent
     ? { provider: fallbackProvider, clientOverrides: undefined }
-    : resolveSummarizationProvider(rawProvider, appConfig, headerContext);
-
-  const model = config?.model ?? fallbackModel;
+    : resolveSummarizationProvider(rawProvider, appConfig, headerContext, {
+        model,
+        parameters: config?.parameters,
+      });
   const trigger =
     config?.trigger?.type && typeof config?.trigger?.value === 'number'
       ? { type: config.trigger.type, value: config.trigger.value }
