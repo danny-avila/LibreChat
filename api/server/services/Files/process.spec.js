@@ -172,6 +172,8 @@ jest.mock('~/models', () => ({
   findFileById: jest.fn(),
   getConvo: jest.fn(),
   getExpiredFiles: jest.fn(),
+  incrementFileDeletionAttempts: jest.fn(),
+  deferExpiredFile: jest.fn(),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
@@ -1840,6 +1842,8 @@ describe('sweepExpiredFiles', () => {
       expect.objectContaining({
         getExpiredFiles: db.getExpiredFiles,
         processDeleteRequest: expect.any(Function),
+        incrementFileDeletionAttempts: db.incrementFileDeletionAttempts,
+        deferExpiredFile: db.deferExpiredFile,
         logger: expect.objectContaining({
           error: expect.any(Function),
           info: expect.any(Function),
