@@ -126,6 +126,18 @@ function readResourceBody(resource: t.ResourceContents): t.ResourceBody {
   }
 }
 
+const LINE_BREAKS = /[\r\n\u2028\u2029]+/g;
+
+/**
+ * Resource metadata renders as a single labeled line, so a line break inside one lets whoever
+ * controls it — a hostile server, or merely whoever named a file the server relays — close the
+ * line early and forge further labels, passing attacker text off as another field. Only these
+ * one-line fields are flattened; resource bodies keep their line breaks, being the payload.
+ */
+function flattenMetadata(value: string): string {
+  return value.replace(LINE_BREAKS, ' ');
+}
+
 function describeBinaryResource(bytes: number): string {
   return `Resource Content: ${bytes} bytes of binary data (omitted; not UTF-8 text)`;
 }
@@ -133,16 +145,16 @@ function describeBinaryResource(bytes: number): string {
 function describeResourceLink(item: t.ResourceLink): string[] {
   const lines: string[] = [];
   if (item.name) {
-    lines.push(`Resource Name: ${item.name}`);
+    lines.push(`Resource Name: ${flattenMetadata(item.name)}`);
   }
   if (item.description) {
-    lines.push(`Resource Description: ${item.description}`);
+    lines.push(`Resource Description: ${flattenMetadata(item.description)}`);
   }
   if (item.uri) {
-    lines.push(`Resource URI: ${item.uri}`);
+    lines.push(`Resource URI: ${flattenMetadata(item.uri)}`);
   }
   if (item.mimeType) {
-    lines.push(`Resource MIME Type: ${item.mimeType}`);
+    lines.push(`Resource MIME Type: ${flattenMetadata(item.mimeType)}`);
   }
   return lines;
 }
@@ -173,10 +185,10 @@ function parseAsString(result: t.MCPToolCallResponse): string {
           resourceText.push(describeBinaryResource(body.binaryBytes));
         }
         if (item.resource.uri) {
-          resourceText.push(`Resource URI: ${item.resource.uri}`);
+          resourceText.push(`Resource URI: ${flattenMetadata(item.resource.uri)}`);
         }
         if (item.resource.mimeType != null && item.resource.mimeType) {
-          resourceText.push(`Type: ${item.resource.mimeType}`);
+          resourceText.push(`Type: ${flattenMetadata(item.resource.mimeType)}`);
         }
         return resourceText.join('\n');
       }
@@ -274,10 +286,10 @@ export function formatToolContent(
       }
 
       if (item.resource.uri.length) {
-        resourceText.push(`Resource URI: ${item.resource.uri}`);
+        resourceText.push(`Resource URI: ${flattenMetadata(item.resource.uri)}`);
       }
       if (item.resource.mimeType != null && item.resource.mimeType) {
-        resourceText.push(`Resource MIME Type: ${item.resource.mimeType}`);
+        resourceText.push(`Resource MIME Type: ${flattenMetadata(item.resource.mimeType)}`);
       }
 
       if (resourceText.length) {
