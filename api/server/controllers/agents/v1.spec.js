@@ -105,6 +105,7 @@ const {
   createAgentManagementAuth,
   createAgentManagementCreateHandler,
   createAgentManagementReadHandlers,
+  createAgentManagementUpdateHandler,
   mergeDeploymentSkillIds,
   refreshS3Url,
 } = require('@librechat/api');
@@ -380,7 +381,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.author.toString()).toBe(mockReq.user.id);
     });
 
-    test('management creation can be read back through the authenticated management API', async () => {
+    test('management creation can be updated and read through the authenticated management API', async () => {
       const tenantId = `tenant-${nanoid(8)}`;
       const clientId = `client-${nanoid(8)}`;
       const principal = await tenantStorage.run({ tenantId }, () => createOwner());
@@ -435,6 +436,14 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         getRoleByName,
         createAgent: createAgentHandler,
       });
+      const checkEditPermission = async ({ userId: accessibleUserId, resourceType, resourceId }) =>
+        (await AclEntry.exists({
+          principalId: accessibleUserId,
+          resourceType,
+          resourceId,
+          permBits: { $bitsAllSet: PermissionBits.EDIT },
+        })) != null;
+      const hasCapability = jest.fn().mockResolvedValue(false);
       const reads = createAgentManagementReadHandlers({
         getRoleByName,
         getAgentWithVersionCount: db.getAgentWithVersionCount,
@@ -445,14 +454,15 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
             resourceType,
             permBits: { $bitsAllSet: PermissionBits.EDIT },
           }),
-        checkPermission: async ({ userId: accessibleUserId, resourceType, resourceId }) =>
-          (await AclEntry.exists({
-            principalId: accessibleUserId,
-            resourceType,
-            resourceId,
-            permBits: { $bitsAllSet: PermissionBits.EDIT },
-          })) != null,
-        hasCapability: jest.fn().mockResolvedValue(false),
+        checkPermission: checkEditPermission,
+        hasCapability,
+      });
+      const update = createAgentManagementUpdateHandler({
+        getRoleByName,
+        getAgentWithVersionCount: db.getAgentWithVersionCount,
+        checkPermission: checkEditPermission,
+        hasCapability,
+        updateAgent: updateAgentHandler,
       });
       const app = express();
       app.use(express.json());
@@ -463,14 +473,21 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
       app.get('/api/agents/v1/agents', reads.list);
       app.get('/api/agents/v1/agents/:id', reads.get);
+      app.patch('/api/agents/v1/agents/:id', (req, res) => {
+        req.config = {};
+        return update(req, res);
+      });
 
       const createdResponse = await request(app)
         .post('/api/agents/v1/agents')
         .set('Authorization', 'Bearer valid-token')
         .send({
           name: 'Managed Agent',
+          description: 'Description that remains unchanged',
           provider: 'openai',
           model: 'gpt-4',
+          avatar: { filepath: 'avatars/managed.png', source: 'local' },
+          conversation_starters: ['Help me get started'],
         });
 
       expect(createdResponse.status).toBe(201);
@@ -499,11 +516,63 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(listedResponse.status).toBe(200);
       expect(listedResponse.body.data).toEqual([createdResponse.body]);
 
-      const created = await tenantStorage.run({ tenantId }, () =>
-        Agent.findOne({ id: createdResponse.body.id }).lean(),
+      const otherTenantId = `tenant-${nanoid(8)}`;
+      await tenantStorage.run({ tenantId: otherTenantId }, () =>
+        Agent.create({
+          id: createdResponse.body.id,
+          name: 'Other tenant Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(),
+        }),
       );
+
+      const updatedResponse = await request(app)
+        .patch(`/api/agents/v1/agents/${createdResponse.body.id}`)
+        .set('Authorization', 'Bearer valid-token')
+        .send({
+          name: 'Updated Managed Agent',
+          avatar: null,
+          conversation_starters: [],
+        });
+
+      expect(updatedResponse.status).toBe(200);
+      expect(updatedResponse.body).toEqual(
+        expect.objectContaining({
+          id: createdResponse.body.id,
+          name: 'Updated Managed Agent',
+          description: 'Description that remains unchanged',
+          avatar: null,
+          conversation_starters: [],
+          version: 2,
+        }),
+      );
+      expect(updatedResponse.body).not.toHaveProperty('_id');
+      expect(updatedResponse.body).not.toHaveProperty('author');
+      expect(updatedResponse.body).not.toHaveProperty('tenantId');
+
+      const retrievedAfterUpdate = await request(app)
+        .get(`/api/agents/v1/agents/${createdResponse.body.id}`)
+        .set('Authorization', 'Bearer valid-token');
+      expect(retrievedAfterUpdate.status).toBe(200);
+      expect(retrievedAfterUpdate.body).toEqual(updatedResponse.body);
+
+      const created = await Agent.collection.findOne({
+        id: createdResponse.body.id,
+        tenantId,
+      });
+      const otherTenantAgent = await Agent.collection.findOne({
+        id: createdResponse.body.id,
+        tenantId: otherTenantId,
+      });
       expect(created.tenantId).toBe(tenantId);
       expect(created.author.toString()).toBe(userId);
+      expect(created.name).toBe('Updated Managed Agent');
+      expect(created.description).toBe('Description that remains unchanged');
+      expect(created.avatar).toBeNull();
+      expect(created.conversation_starters).toEqual([]);
+      expect(created.versions).toHaveLength(2);
+      expect(otherTenantAgent.name).toBe('Other tenant Agent');
       expect(grantPermission).toHaveBeenCalledWith(
         expect.objectContaining({
           principalType: PrincipalType.USER,
