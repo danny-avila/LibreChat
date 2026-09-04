@@ -5006,6 +5006,26 @@ describe('MCPConnectionFactory', () => {
       );
     });
 
+    it('surfaces why the re-exchange failed instead of the generic 401', async () => {
+      const authError = new Error('HTTP 401 Unauthorized');
+      resolveOboToken
+        .mockResolvedValueOnce(connectionTokens)
+        .mockRejectedValueOnce(new Error('Your sign-in session expired. Please sign in again.'));
+      /**
+       * `connectClient` rethrows the server's original 401 after the handler fails,
+       * so without propagation the caller would only ever see `authError`.
+       */
+      mockConnectionInstance.connect.mockImplementationOnce(async () => {
+        await getAuthHandler()();
+        throw authError;
+      });
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(createOboConnection()).rejects.toThrow(
+        'Your sign-in session expired. Please sign in again.',
+      );
+    });
+
     it('re-exchanges at most once per connection attempt', async () => {
       resolveOboToken
         .mockResolvedValueOnce(connectionTokens)

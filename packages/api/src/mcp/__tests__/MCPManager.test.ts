@@ -2804,6 +2804,7 @@ describe('MCPManager', () => {
         mockOboTokenResolver,
         mockUpstreamTokenProvider,
         undefined,
+        false,
       );
       expect(appConnections.get).not.toHaveBeenCalled();
       expect(getUserConnectionSpy).toHaveBeenCalled();
@@ -2933,6 +2934,113 @@ describe('MCPManager', () => {
         message: expect.stringContaining('upstreamTokenProvider not plumbed'),
       });
       expect(mockResolveOboToken).not.toHaveBeenCalled();
+    });
+
+    it('re-exchanges past the token cache when the server rejects the bearer mid-call', async () => {
+      const authError = new Error('HTTP 401 Unauthorized');
+      const rejectingConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        isOAuthAuthenticationError: jest.fn().mockReturnValue(true),
+        timeout: 30000,
+        client: {
+          request: jest
+            .fn()
+            .mockRejectedValueOnce(authError)
+            .mockResolvedValueOnce({
+              content: [{ type: 'text', text: 'Tool result' }],
+              isError: false,
+            }),
+        },
+      } as unknown as MCPConnection;
+
+      mockResolveOboToken
+        .mockResolvedValueOnce({
+          access_token: 'rejected-obo-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          expires_at: Date.now() + 3600_000,
+        })
+        .mockResolvedValueOnce({
+          access_token: 'reminted-obo-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          expires_at: Date.now() + 3600_000,
+        });
+
+      mockAppConnections({ get: jest.fn().mockResolvedValue(rejectingConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(rejectingConnection);
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        oboTokenResolver: mockOboTokenResolver,
+        upstreamTokenProvider: mockUpstreamTokenProvider,
+      });
+
+      /** The rejected token is still inside its cached lifetime, so the cache is bypassed. */
+      expect(mockResolveOboToken).toHaveBeenNthCalledWith(
+        2,
+        mockUser,
+        serverConfig.obo,
+        mockOboTokenResolver,
+        mockUpstreamTokenProvider,
+        undefined,
+        true,
+      );
+      expect(rejectingConnection.setRequestHeaders as jest.Mock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ Authorization: 'Bearer reminted-obo-token' }),
+      );
+      expect((rejectingConnection.client.request as jest.Mock).mock.calls).toHaveLength(2);
+    });
+
+    it('does not retry a non-auth failure', async () => {
+      const toolError = new Error('tool blew up');
+      const failingConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        isOAuthAuthenticationError: jest.fn().mockReturnValue(false),
+        timeout: 30000,
+        client: { request: jest.fn().mockRejectedValue(toolError) },
+      } as unknown as MCPConnection;
+
+      mockResolveOboToken.mockResolvedValue({
+        access_token: 'fresh-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        expires_at: Date.now() + 3600_000,
+      });
+
+      mockAppConnections({ get: jest.fn().mockResolvedValue(failingConnection) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(failingConnection);
+
+      await expect(
+        manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          oboTokenResolver: mockOboTokenResolver,
+          upstreamTokenProvider: mockUpstreamTokenProvider,
+        }),
+      ).rejects.toThrow('tool blew up');
+
+      expect(mockResolveOboToken).toHaveBeenCalledTimes(1);
+      expect((failingConnection.client.request as jest.Mock).mock.calls).toHaveLength(1);
     });
   });
 

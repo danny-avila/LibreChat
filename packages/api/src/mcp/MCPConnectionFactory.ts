@@ -77,6 +77,8 @@ export class MCPConnectionFactory {
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected readonly upstreamTokenProvider?: UpstreamTokenProvider;
   protected readonly oboIdentityContext?: AuthIdentityContext;
+  /** Why the OBO re-exchange failed, when that is more actionable than the server's 401. */
+  private oboRefreshError?: Error;
   private connectionReady = false;
   /**
    * Snapshot of the tenant context at factory construction time. Captured eagerly
@@ -582,6 +584,9 @@ export class MCPConnectionFactory {
         await connection.dispose();
       } catch {
         logger.warn(`${this.logPrefix} Failed to clean up rejected MCP connection`);
+      }
+      if (this.oboRefreshError) {
+        throw this.oboRefreshError;
       }
       throw error;
     }
@@ -1160,7 +1165,15 @@ export class MCPConnectionFactory {
         connection.emit('oauthHandled');
       } catch (error) {
         logger.error(`${this.logPrefix} OBO token re-exchange failed`, error);
-        this.abandonOboConnection(connection, this.toOboRefreshError(error));
+        /**
+         * `connectClient` rejects its handling promise with this error and then
+         * rethrows the server's original 401, so a diagnosis like an unrefreshable
+         * sign-in session would be lost. `createConnection` reads it back and
+         * surfaces it in place of the generic 401 — the same substitution the
+         * initial OBO resolution already makes.
+         */
+        this.oboRefreshError = this.toOboRefreshError(error);
+        this.abandonOboConnection(connection, this.oboRefreshError);
       }
     };
 
