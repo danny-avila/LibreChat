@@ -105,6 +105,22 @@ describe('Agent Management create handler', () => {
     expect(deps.createAgent).not.toHaveBeenCalled();
   });
 
+  it('rejects a null model as invalid input before persistence', async () => {
+    const deps = makeDeps();
+    const response = makeResponse();
+
+    await createAgentManagementCreateHandler(deps)(
+      makeRequest({ body: { ...validBody, model: null } }),
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ code: 'invalid_request' }) }),
+    );
+    expect(deps.createAgent).not.toHaveBeenCalled();
+  });
+
   it('requires the same AGENTS USE and CREATE permissions as browser creation', async () => {
     const deps = makeDeps({
       getRoleByName: jest.fn().mockResolvedValue({
