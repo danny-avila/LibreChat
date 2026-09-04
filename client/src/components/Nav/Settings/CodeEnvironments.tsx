@@ -14,9 +14,11 @@ import {
   Spinner,
   useToastContext,
 } from '@librechat/client';
+import { createCodeWorkerSetupCommand } from 'librechat-data-provider';
 import type {
   CodeEnvironmentPermissionDecision,
   TCodeEnvironmentSummary,
+  CodeWorkerShell,
 } from 'librechat-data-provider';
 import type { CodeEnvironmentPairingResponse } from '~/data-provider/CodeEnvironments';
 import {
@@ -30,13 +32,29 @@ import { useLocalize } from '~/hooks';
 function WorkerCommand({ pairing }: { pairing: CodeEnvironmentPairingResponse['pairing'] }) {
   const { showToast } = useToastContext();
   const localize = useLocalize();
-  const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
-  const command = `librechat-code pair ${shellQuote(pairing.endpoint)} ${shellQuote(pairing.code)} --worker-id ${shellQuote(pairing.workerId)}`;
+  const [shell, setShell] = useState<CodeWorkerShell>('posix');
+  const command = createCodeWorkerSetupCommand(pairing, shell);
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border-medium bg-surface-secondary p-3">
-      <p className="text-sm font-medium text-text-primary">
-        {localize('com_ui_code_environment_pairing_ready')}
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-text-primary">
+          {localize('com_ui_code_environment_pairing_ready')}
+        </p>
+        <Select value={shell} onValueChange={(value) => setShell(value as CodeWorkerShell)}>
+          <SelectTrigger
+            className="w-auto min-w-36"
+            aria-label={localize('com_ui_code_environment_shell')}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="posix">{localize('com_ui_code_environment_shell_posix')}</SelectItem>
+            <SelectItem value="powershell">
+              {localize('com_ui_code_environment_shell_powershell')}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       <p className="text-xs text-text-secondary">
         {localize('com_ui_code_environment_pairing_description')}
       </p>
