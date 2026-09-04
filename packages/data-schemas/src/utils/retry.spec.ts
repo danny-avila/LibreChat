@@ -92,12 +92,12 @@ describe('createIndexesWithRetry on a single-index-build engine', () => {
     expect(engine.rejected()).toBe(0);
   });
 
-  test('retries a build rejected by another replica until the collection is free', async () => {
+  test('keeps polling while another replica holds the collection, then builds', async () => {
     const model = compileDeliveryModel();
     await model.init();
     const collection = model.collection;
     const createIndex = collection.createIndex.bind(collection);
-    let remainingRejections = 2;
+    let remainingRejections = 6;
     let attempts = 0;
     collection.createIndex = async (fields, options) => {
       attempts += 1;
@@ -108,11 +108,30 @@ describe('createIndexesWithRetry on a single-index-build engine', () => {
       return createIndex(fields, options);
     };
 
-    await createIndexesWithRetry(model, { baseDelayMs: 1, jitter: false });
+    await createIndexesWithRetry(model, { maxAttempts: 1, peerBuildPollMs: 1 });
 
     expect(remainingRejections).toBe(0);
-    expect(attempts).toBeGreaterThan(2);
+    expect(attempts).toBeGreaterThan(6);
     expect((await indexNames(model)).has('deliveryKey_1')).toBe(true);
+  });
+
+  test('surfaces the conflict once the peer-build deadline passes', async () => {
+    const model = compileDeliveryModel();
+    await model.init();
+    let attempts = 0;
+    model.collection.createIndex = async () => {
+      attempts += 1;
+      throw indexBuildInProgressError();
+    };
+
+    await expect(
+      createIndexesWithRetry(model, {
+        maxAttempts: 1,
+        peerBuildPollMs: 1,
+        peerBuildDeadlineMs: 20,
+      }),
+    ).rejects.toMatchObject({ code: INDEX_BUILD_ALREADY_IN_PROGRESS });
+    expect(attempts).toBeGreaterThan(triggerDeliverySchema.indexes().length);
   });
 
   test('still fails fast on errors that are not transient', async () => {
