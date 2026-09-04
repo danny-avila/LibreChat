@@ -153,6 +153,7 @@ html {
   --text-secondary: var(--gray-600);
   --text-secondary-alt: var(--gray-500);
   --text-tertiary: var(--gray-500);
+  --text-muted: 105 110 121; /* Click UI global.color.text.muted #696e79 */
   --shimmer-dip: 129 130 134;
   --shimmer-dip-alpha: 0.18;
   --text-warning: var(--amber-700);
@@ -263,6 +264,7 @@ html {
   --text-secondary: var(--gray-300);
   --text-secondary-alt: var(--gray-400);
   --text-tertiary: var(--gray-400);
+  --text-muted: 179 182 189; /* Click UI global.color.text.muted #b3b6bd */
   --shimmer-base: 255 255 255;
   --shimmer-base-alpha: 0.8;
   --shimmer-dip: 179 179 179;
@@ -355,6 +357,7 @@ html {
   --text-primary: var(--gizmo-gray-950);
   --text-secondary: var(--gizmo-gray-600);
   --text-tertiary: var(--gizmo-gray-500);
+  --text-muted: 105 110 121; /* Click UI global.color.text.muted #696e79 */
   --surface-primary: var(--white);
   --chart-widget-surface: 255 255 255; /* Click UI dashboards.chartWidget.color.background.default #ffffff */
   --chart-widget-stroke: 230 231 233; /* Click UI dashboards.chartWidget.color.stroke.default #e6e7e9 */
@@ -373,6 +376,7 @@ html {
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
   --text-tertiary: var(--gizmo-gray-500);
+  --text-muted: 179 182 189; /* Click UI global.color.text.muted #b3b6bd */
   --surface-primary: var(--gray-900);
   --chart-widget-surface: 40 40 40; /* Click UI dashboards.chartWidget.color.background.default #282828 */
   --chart-widget-stroke: 50 50 50; /* Click UI dashboards.chartWidget.color.stroke.default #323232 */
@@ -438,6 +442,14 @@ html {
 
 .bg-token-surface-secondary {
   background-color: rgb(var(--surface-secondary));
+}
+
+/* Forced-colors overrides the inline `background-color: currentColor` a masked
+ * CustomIcon paints with; `!important` is needed to beat that inline style. */
+@media (forced-colors: active) {
+  .custom-icon-tint {
+    background-color: CanvasText !important;
+  }
 }
 
 .ellipsis {

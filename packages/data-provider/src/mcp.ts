@@ -2,6 +2,13 @@ import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
+/**
+ * Upper bound on a stored MCP `iconPath` (URL or data URI). Enforced by
+ * `sanitizeMcpIconPath`, not a schema `.max()`, so re-submitting a server whose
+ * stored icon predates the cap clears the icon instead of rejecting the update.
+ */
+export const MAX_MCP_ICON_PATH_LENGTH = 256 * 1024;
+
 const validateOAuthClientCredentials = (
   oauth: {
     client_id?: string;

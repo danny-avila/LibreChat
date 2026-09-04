@@ -94,6 +94,30 @@ describe('resolveOboToken', () => {
     expect(result.access_token).toBe('exchanged-mcp-token');
   });
 
+  it('bypasses the resolver cache when forceRefresh is set', async () => {
+    /**
+     * A downstream 401 can arrive while the credential is still inside its cached
+     * lifetime (revoked, or its scopes invalidated), so a cached read would hand
+     * back the same rejected bearer.
+     */
+    await resolveOboToken(
+      mockUser as IUser,
+      oboConfig,
+      mockResolver,
+      liveProvider,
+      undefined,
+      true,
+    );
+
+    expect(mockResolver).toHaveBeenCalledWith(
+      mockUser,
+      'live-access-token',
+      'api://mcp-server-id/Mcp.Tools.ReadWrite',
+      false,
+      undefined,
+    );
+  });
+
   it('throws missing_upstream_token when federated fallback token is invalid', async () => {
     mockExtractOpenIDTokenInfo.mockReturnValue({
       accessToken: 'federated-access-token',

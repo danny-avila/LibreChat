@@ -1,8 +1,9 @@
 import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { X, Clock, Pencil } from 'lucide-react';
 import { useSetAtom, useAtomValue } from 'jotai';
-import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
-import { X, Zap, ZapOff, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
+import { Zap, ZapOff, ChevronUp, ChevronDown } from 'lucide';
+import { MorphIcon, useToastContext } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { SteerReceiptState } from '~/components/Chat/Steering/Receipt';
@@ -517,11 +518,10 @@ const InFlightSteer = memo(function InFlightSteer({
             sending && 'opacity-70',
           )}
         >
-          {preempting ? (
-            <ZapOff className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-          ) : (
-            <Zap className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-          )}
+          <MorphIcon
+            icon={preempting ? ZapOff : Zap}
+            className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500"
+          />
           <span className="sr-only">
             {localize(preempting ? 'com_ui_steer_in_flight_preempt' : 'com_ui_steer_in_flight')}
           </span>
@@ -565,11 +565,7 @@ const InFlightSteer = memo(function InFlightSteer({
                 aria-controls={contentId}
                 className="inline-flex items-center gap-1 rounded text-xs font-medium text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
               >
-                {expanded ? (
-                  <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-                )}
+                <MorphIcon icon={expanded ? ChevronUp : ChevronDown} className="h-3.5 w-3.5" />
                 {expanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
               </button>
             )}

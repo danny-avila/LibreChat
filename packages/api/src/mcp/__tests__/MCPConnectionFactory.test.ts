@@ -136,6 +136,8 @@ describe('MCPConnectionFactory', () => {
       connect: jest.fn(),
       isConnected: jest.fn(),
       setOAuthTokens: jest.fn(),
+      setAuthorizationHeader: jest.fn(),
+      stopReconnecting: jest.fn(),
       on: jest.fn().mockReturnValue(mockConnectionInstance),
       once: jest.fn().mockReturnValue(mockConnectionInstance),
       off: jest.fn().mockReturnValue(mockConnectionInstance),
@@ -4859,6 +4861,7 @@ describe('MCPConnectionFactory', () => {
         oboTokenResolver,
         upstreamTokenProvider,
         undefined,
+        false,
       );
     });
 
@@ -4888,6 +4891,175 @@ describe('MCPConnectionFactory', () => {
         ),
       ).rejects.toThrow(/upstreamTokenProvider not plumbed/);
       expect(resolveOboToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('OBO authentication failures', () => {
+    const oboServerConfig = {
+      type: 'sse' as const,
+      url: 'https://obo.example.com',
+      requiresOAuth: false,
+      obo: { scopes: 'api://obo-server/Mcp.Tools.ReadWrite' },
+    } as unknown as t.MCPOptions;
+
+    const connectionTokens = {
+      access_token: 'rejected-obo-token',
+      token_type: 'Bearer' as const,
+      obtained_at: Date.now(),
+      expires_at: Date.now() + 3600_000,
+    };
+    const refreshedTokens = {
+      access_token: 'refreshed-obo-token',
+      token_type: 'Bearer' as const,
+      obtained_at: Date.now(),
+      expires_at: Date.now() + 3600_000,
+    };
+
+    let resolveOboToken: jest.Mock;
+
+    /** The `oauthRequired` listener the factory attached for this connection. */
+    const getAuthHandler = (): (() => Promise<void>) => {
+      const onCall = (mockConnectionInstance.on as jest.Mock).mock.calls.find(
+        ([event]: [string]) => event === 'oauthRequired',
+      );
+      return onCall![1] as () => Promise<void>;
+    };
+
+    const createOboConnection = () =>
+      MCPConnectionFactory.create(
+        { serverName: 'obo-srv', serverConfig: oboServerConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+          oboTokenResolver: jest.fn(),
+          upstreamTokenProvider: jest.fn(),
+        },
+      );
+
+    beforeEach(() => {
+      mockProcessMCPEnv.mockReturnValue(oboServerConfig);
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      ({ resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      });
+      resolveOboToken.mockReset();
+      resolveOboToken.mockResolvedValue(connectionTokens);
+    });
+
+    it('re-exchanges a rejected token and lets the connect retry proceed', async () => {
+      resolveOboToken
+        .mockResolvedValueOnce(connectionTokens)
+        .mockResolvedValueOnce(refreshedTokens);
+      /** The real handler runs inside `connectClient`, so fire it from within `connect()`. */
+      mockConnectionInstance.connect.mockImplementationOnce(async () => {
+        await getAuthHandler()();
+      });
+
+      await createOboConnection();
+
+      expect(resolveOboToken).toHaveBeenCalledTimes(2);
+      /** The rejected credential is still inside its cached lifetime, so the cache is bypassed. */
+      expect(resolveOboToken).toHaveBeenLastCalledWith(
+        mockUser,
+        oboServerConfig.obo,
+        expect.any(Function),
+        expect.any(Function),
+        undefined,
+        true,
+      );
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
+      /** Runtime headers outrank the transport's, so the stale bearer has to be replaced too. */
+      expect(mockConnectionInstance.setAuthorizationHeader).toHaveBeenCalledWith(
+        'refreshed-obo-token',
+      );
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled');
+      expect(mockConnectionInstance.emit).not.toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.anything(),
+      );
+      expect(mockConnectionInstance.stopReconnecting).not.toHaveBeenCalled();
+    });
+
+    it('retires the connection when the re-exchange fails', async () => {
+      resolveOboToken
+        .mockResolvedValueOnce(connectionTokens)
+        .mockRejectedValueOnce(new Error('IdP rejected the exchange'));
+      mockConnectionInstance.connect.mockImplementationOnce(async () => {
+        await getAuthHandler()();
+      });
+
+      await createOboConnection();
+
+      expect(mockConnectionInstance.setOAuthTokens).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.stopReconnecting).toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'IdP rejected the exchange' }),
+      );
+    });
+
+    it('surfaces why the re-exchange failed instead of the generic 401', async () => {
+      const authError = new Error('HTTP 401 Unauthorized');
+      resolveOboToken
+        .mockResolvedValueOnce(connectionTokens)
+        .mockRejectedValueOnce(new Error('Your sign-in session expired. Please sign in again.'));
+      /**
+       * `connectClient` rethrows the server's original 401 after the handler fails,
+       * so without propagation the caller would only ever see `authError`.
+       */
+      mockConnectionInstance.connect.mockImplementationOnce(async () => {
+        await getAuthHandler()();
+        throw authError;
+      });
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(createOboConnection()).rejects.toThrow(
+        'Your sign-in session expired. Please sign in again.',
+      );
+    });
+
+    it('re-exchanges at most once per connection attempt', async () => {
+      resolveOboToken
+        .mockResolvedValueOnce(connectionTokens)
+        .mockResolvedValueOnce(refreshedTokens);
+      mockConnectionInstance.connect.mockImplementationOnce(async () => {
+        const handler = getAuthHandler();
+        await handler();
+        await handler();
+      });
+
+      await createOboConnection();
+
+      expect(resolveOboToken).toHaveBeenCalledTimes(2);
+      expect(mockConnectionInstance.stopReconnecting).toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'Refreshed OBO token was rejected' }),
+      );
+    });
+
+    it('defers to a live request instead of re-exchanging on a cached connection', async () => {
+      await createOboConnection();
+      expect(resolveOboToken).toHaveBeenCalledTimes(1);
+
+      await getAuthHandler()();
+
+      /** The creating request is over, so `upstreamTokenProvider` no longer has a live session. */
+      expect(resolveOboToken).toHaveBeenCalledTimes(1);
+      expect(mockConnectionInstance.setOAuthTokens).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.stopReconnecting).toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'OBO re-exchange requires a live request' }),
+      );
     });
   });
 });

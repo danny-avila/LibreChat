@@ -324,6 +324,35 @@ afterAll(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Suite: agent endpoint projection
+// ---------------------------------------------------------------------------
+describe('agent endpoint projection', () => {
+  it('preserves each logical endpoint independently from its resolved provider', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({ id: 'sales-copilot', provider: 'bedrock', endpoint: 'bedrock' }),
+        makeAgent({ id: 'dwaine', provider: 'openAI', endpoint: 'DWAINE' }),
+      ],
+    });
+
+    expect(agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          agentId: 'sales-copilot',
+          endpoint: 'bedrock',
+          provider: 'bedrock',
+        }),
+        expect.objectContaining({
+          agentId: 'dwaine',
+          endpoint: 'DWAINE',
+          provider: 'openAI',
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Suite: custom endpoint stream usage defaults
 // ---------------------------------------------------------------------------
 describe('custom endpoint stream usage defaults', () => {
@@ -1457,6 +1486,152 @@ describe('custom-endpoint provider resolution', () => {
     /** Summarization.model must win — parameters must not carry a stale model/modelName. */
     expect(parameters.model).toBeUndefined();
     expect(parameters.modelName).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: built-in provider request shaping (#15598)
+// ---------------------------------------------------------------------------
+/**
+ * A built-in provider produces no custom-endpoint config, so `getOpenAIConfig`
+ * was skipped entirely and the summarizer learned neither which API its model
+ * takes nor whether its endpoint is first-party. The agents SDK defaults its
+ * model-specific constraints off without that declaration, so configured
+ * parameters reached the model unshaped.
+ *
+ * These assert the declaration LibreChat emits, which is the half it owns; the
+ * SDK's honoring of it is covered by its own tests.
+ */
+describe('built-in provider request shaping', () => {
+  const anthropicAgent = () =>
+    makeAgent({
+      provider: 'anthropic',
+      endpoint: 'anthropic',
+      model: 'claude-sonnet-4.6',
+      model_parameters: { model: 'claude-sonnet-4.6' },
+    });
+
+  const summarizeWith = async (
+    parameters?: Record<string, unknown>,
+    model = 'gpt-6-astra',
+  ): Promise<Record<string, unknown>> => {
+    const agents = await callAndCapture({
+      agents: [anthropicAgent()],
+      appConfig: makeAppConfig([]),
+      summarizationConfig: {
+        provider: 'openAI',
+        model,
+        parameters: parameters as SummarizationConfig['parameters'],
+      },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    return config.parameters as Record<string, unknown>;
+  };
+
+  it('declares the first-party endpoint for a cross-provider built-in summarizer', async () => {
+    expect(await summarizeWith(undefined, 'gpt-4o')).toMatchObject({ firstPartyEndpoint: true });
+  });
+
+  it('routes a Responses-only model to the Responses API', async () => {
+    expect(await summarizeWith()).toMatchObject({
+      firstPartyEndpoint: true,
+      useResponsesApi: true,
+    });
+  });
+
+  it('keeps the declaration alongside a translated reasoning effort', async () => {
+    /**
+     * The reachable failure from #15598: `resolveReasoningParams` translates the
+     * scalar effort for the summarizer, and without the declaration an effort
+     * the model rejects reached it verbatim.
+     */
+    expect(await summarizeWith({ reasoning_effort: 'minimal' })).toMatchObject({
+      firstPartyEndpoint: true,
+      reasoning: { effort: 'minimal' },
+    });
+  });
+
+  it('does not claim a first-party endpoint behind a user configuration.baseURL', async () => {
+    expect(
+      await summarizeWith({ configuration: { baseURL: 'https://gateway.internal/v1' } }),
+    ).toEqual({ configuration: { baseURL: 'https://gateway.internal/v1' } });
+  });
+
+  it('does not claim a first-party endpoint behind a user baseURL', async () => {
+    expect(await summarizeWith({ baseURL: 'https://gateway.internal/v1' })).toEqual({
+      baseURL: 'https://gateway.internal/v1',
+    });
+  });
+
+  it('leaves credentials and transport to the client', async () => {
+    const parameters = await summarizeWith();
+    expect(parameters.apiKey).toBeUndefined();
+    expect(parameters.model).toBeUndefined();
+    expect(parameters.modelName).toBeUndefined();
+    expect(parameters.streaming).toBeUndefined();
+    expect(parameters.configuration).toBeUndefined();
+  });
+
+  it('leaves a same-endpoint summarizer on the agent client options', async () => {
+    const agents = await callAndCapture({
+      appConfig: makeAppConfig([]),
+      summarizationConfig: { provider: 'openAI', model: 'gpt-6-astra' },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.parameters).toBeUndefined();
+  });
+
+  it('routes a reasoning model the way the agent flow would', async () => {
+    /** `getOpenAIConfig` reads the effort from modelOptions, not from the merged
+     * parameters, so it has to be handed the summarizer's own effort. */
+    expect(await summarizeWith({ reasoning_effort: 'medium' }, 'gpt-5.6')).toMatchObject({
+      firstPartyEndpoint: true,
+      useResponsesApi: true,
+      reasoning: { effort: 'medium' },
+    });
+  });
+
+  it('withholds the declaration when a reverse proxy serves the built-in endpoint', async () => {
+    process.env.OPENAI_REVERSE_PROXY = 'https://gateway.internal/v1';
+    try {
+      expect(await summarizeWith()).toBeUndefined();
+    } finally {
+      delete process.env.OPENAI_REVERSE_PROXY;
+    }
+  });
+
+  it('withholds the declaration when the base URL is user-provided', async () => {
+    process.env.OPENAI_REVERSE_PROXY = 'user_provided';
+    try {
+      expect(await summarizeWith()).toBeUndefined();
+    } finally {
+      delete process.env.OPENAI_REVERSE_PROXY;
+    }
+  });
+
+  it('declares nothing for an agent whose custom endpoint normalized to openAI', async () => {
+    /**
+     * `initializeAgent` rewrites a custom-endpoint agent's provider to `openAI`
+     * while its endpoint keeps the custom name. With summarization omitted, the
+     * summarizer reuses that agent's client — which points at the gateway, not
+     * at OpenAI.
+     */
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          provider: 'openAI',
+          endpoint: 'MyGateway',
+          model: 'gpt-6-astra',
+          model_parameters: { model: 'gpt-6-astra' },
+        }),
+      ],
+      appConfig: makeAppConfig([
+        { name: 'MyGateway', baseURL: 'https://gateway.internal/v1', apiKey: 'gw-key' },
+      ]),
+      summarizationConfig: { model: 'gpt-6-astra' },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.parameters).toBeUndefined();
   });
 });
 
