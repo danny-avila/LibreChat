@@ -716,11 +716,10 @@ export default function InsightsView() {
           )}
           {data && (
             <>
-              {/** Fixed column counts, not `auto-fit`: auto-fit packs as many 220px
-               *  tracks as will fit, so mid-range widths land on three columns and
-               *  orphan the fourth card on its own row. Four KPIs divide evenly by
-               *  two or four, so those are the only counts that leave no gap. */}
-              <div className="grid w-full grid-cols-2 gap-3 xl:grid-cols-4">
+              {/** Use explicit responsive counts: one column on narrow screens,
+               *  two through mid-range, and four at xl. This avoids auto-fit's
+               *  three-plus-one orphan without making mobile cards too narrow. */}
+              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {kpiCards.map((card) => (
                   <KpiCard key={card.id} card={card} locale={locale} />
                 ))}
