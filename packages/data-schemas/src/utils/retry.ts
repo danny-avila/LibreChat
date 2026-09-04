@@ -77,18 +77,53 @@ export async function retryWithBackoff<T>(
   }
 }
 
+interface IndexedModel {
+  createIndexes: () => Promise<unknown>;
+  init?: () => Promise<unknown>;
+  modelName: string;
+}
+
+/** Amazon DocumentDB rejects a createIndex that arrives while another build on the
+ * same collection is running (code 40333), where MongoDB would serialize it. */
+const INDEX_BUILD_IN_PROGRESS = 'index build in progress';
+
+/** Index builds wait out a peer replica's build of the same collection: the
+ * delays sum to roughly half a minute before the caller learns of the failure. */
+const INDEX_BUILD_RETRY_OPTIONS: Required<Omit<RetryOptions, 'onRetry'>> = {
+  ...DEFAULT_OPTIONS,
+  maxAttempts: 8,
+  baseDelayMs: 500,
+  retryableErrors: [...DEFAULT_OPTIONS.retryableErrors, INDEX_BUILD_IN_PROGRESS],
+};
+
+/**
+ * Mongoose starts every compiled model's automatic index build in the background
+ * as soon as its connection opens. An explicit build issued while that one is
+ * still running is a second concurrent build of the same collection, which
+ * single-build engines reject outright. Letting the automatic build settle first
+ * keeps the two from overlapping; if it failed, the explicit build below is the
+ * retry, so its outcome is deliberately ignored here.
+ */
+async function settleAutomaticIndexBuild(model: IndexedModel): Promise<void> {
+  if (model.init == null) {
+    return;
+  }
+  await model.init().catch(() => undefined);
+}
+
 /**
  * Creates all indexes for a Mongoose model with deadlock retry.
- * Use this instead of raw `model.createIndexes()` on FerretDB.
+ * Use this instead of raw `model.createIndexes()` on FerretDB or DocumentDB.
  */
 export async function createIndexesWithRetry(
-  model: { createIndexes: () => Promise<unknown>; modelName: string },
+  model: IndexedModel,
   options: RetryOptions = {},
 ): Promise<void> {
+  await settleAutomaticIndexBuild(model);
   await retryWithBackoff(
     () => model.createIndexes() as Promise<unknown>,
     `createIndexes(${model.modelName})`,
-    options,
+    { ...INDEX_BUILD_RETRY_OPTIONS, ...options },
   );
 }
 
@@ -98,14 +133,7 @@ export async function createIndexesWithRetry(
  * contention on the DocumentDB catalog.
  */
 export async function initializeOrgCollections(
-  models: Record<
-    string,
-    {
-      createCollection: () => Promise<unknown>;
-      createIndexes: () => Promise<unknown>;
-      modelName: string;
-    }
-  >,
+  models: Record<string, IndexedModel & { createCollection: () => Promise<unknown> }>,
   options: RetryOptions = {},
 ): Promise<{ totalMs: number; perModel: Array<{ name: string; ms: number }> }> {
   const perModel: Array<{ name: string; ms: number }> = [];
