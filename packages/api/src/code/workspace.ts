@@ -8,6 +8,8 @@ const MAX_READ_LINES = 500;
 const MAX_SEARCH_RESULTS = 200;
 const MAX_SEARCH_TEXT_LENGTH = 2000;
 const MAX_LIST_RESULTS = 500;
+export const WORKSPACE_WRITE_MAX_BYTES: number = 1024 * 1024;
+export const WORKSPACE_EDIT_MAX_COUNT: number = 100;
 const MAX_COMMAND_BYTES = 32 * 1024;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const MAX_COMMAND_TIMEOUT_MS = 5 * 60_000;
@@ -54,6 +56,34 @@ const COMMAND_RESULT_KEYS = new Set([
   'truncated',
   'timedOut',
 ]);
+const WRITE_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'path',
+  'created',
+  'bytesWritten',
+]);
+const EDIT_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'path',
+  'replacements',
+  'bytesWritten',
+]);
+const PREVIEW_EDIT_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'path',
+  'content',
+  'hasUtf8Bom',
+  'baseSha256',
+  'replacements',
+  'bytesWritten',
+]);
+const TEXT_EDIT_KEYS = new Set(['oldText', 'newText']);
 
 export interface WorkspaceReadRequest {
   protocolVersion: 1;
@@ -92,10 +122,44 @@ export interface WorkspaceExecuteCommandRequest {
   maxOutputBytes?: number;
 }
 
+export interface WorkspaceWriteRequest {
+  protocolVersion: 1;
+  operation: 'write_file';
+  workspaceId: string;
+  path: string;
+  content: string;
+  overwrite?: boolean;
+}
+
+export interface WorkspaceTextEdit {
+  oldText: string;
+  newText: string;
+}
+
+export interface WorkspaceEditRequest {
+  protocolVersion: 1;
+  operation: 'edit_file';
+  workspaceId: string;
+  path: string;
+  edits: WorkspaceTextEdit[];
+  expectedBaseSha256?: string;
+}
+
+export interface WorkspacePreviewEditRequest {
+  protocolVersion: 1;
+  operation: 'preview_edit';
+  workspaceId: string;
+  path: string;
+  edits: WorkspaceTextEdit[];
+}
+
 export type WorkspaceToolRequest =
   | WorkspaceReadRequest
   | WorkspaceSearchRequest
   | WorkspaceListRequest
+  | WorkspaceWriteRequest
+  | WorkspacePreviewEditRequest
+  | WorkspaceEditRequest
   | WorkspaceExecuteCommandRequest;
 
 export interface WorkspaceReadResult {
@@ -139,10 +203,43 @@ export interface WorkspaceExecuteCommandResult {
   timedOut: boolean;
 }
 
+export interface WorkspaceWriteResult {
+  protocolVersion: 1;
+  operation: 'write_file';
+  workspaceId: string;
+  path: string;
+  created: boolean;
+  bytesWritten: number;
+}
+
+export interface WorkspaceEditResult {
+  protocolVersion: 1;
+  operation: 'edit_file';
+  workspaceId: string;
+  path: string;
+  replacements: number;
+  bytesWritten: number;
+}
+
+export interface WorkspacePreviewEditResult {
+  protocolVersion: 1;
+  operation: 'preview_edit';
+  workspaceId: string;
+  path: string;
+  content: string;
+  hasUtf8Bom: boolean;
+  baseSha256: string;
+  replacements: number;
+  bytesWritten: number;
+}
+
 export type WorkspaceToolResult =
   | WorkspaceReadResult
   | WorkspaceSearchResult
   | WorkspaceListResult
+  | WorkspaceWriteResult
+  | WorkspacePreviewEditResult
+  | WorkspaceEditResult
   | WorkspaceExecuteCommandResult;
 
 export class WorkspaceToolHttpError extends Error {
@@ -184,6 +281,28 @@ function isUtf8StringWithinBytes(value: unknown, maximum: number): value is stri
     Buffer.from(value).toString('utf8') === value &&
     new TextEncoder().encode(value).byteLength <= maximum
   );
+}
+
+function areValidWorkspaceEdits(edits: unknown): edits is WorkspaceTextEdit[] {
+  if (!Array.isArray(edits)) return false;
+  if (edits.length < 1 || edits.length > WORKSPACE_EDIT_MAX_COUNT) return false;
+  let bytes = 0;
+  for (const edit of edits) {
+    if (
+      !isRecord(edit) ||
+      !hasOnlyKeys(edit, TEXT_EDIT_KEYS) ||
+      !isUtf8StringWithinBytes(edit.oldText, WORKSPACE_WRITE_MAX_BYTES) ||
+      edit.oldText.length === 0 ||
+      !isUtf8StringWithinBytes(edit.newText, WORKSPACE_WRITE_MAX_BYTES)
+    ) {
+      return false;
+    }
+    bytes +=
+      new TextEncoder().encode(edit.oldText).byteLength +
+      new TextEncoder().encode(edit.newText).byteLength;
+    if (bytes > WORKSPACE_WRITE_MAX_BYTES) return false;
+  }
+  return true;
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
@@ -296,6 +415,23 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
         isPositiveInteger(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES))
     );
   }
+  if (request.operation === 'write_file') {
+    return (
+      isSafePath(request.path) &&
+      isUtf8StringWithinBytes(request.content, WORKSPACE_WRITE_MAX_BYTES) &&
+      (request.overwrite === undefined || typeof request.overwrite === 'boolean')
+    );
+  }
+  if (request.operation === 'preview_edit') {
+    return isSafePath(request.path) && areValidWorkspaceEdits(request.edits);
+  }
+  if (request.operation === 'edit_file') {
+    return (
+      isSafePath(request.path) &&
+      areValidWorkspaceEdits(request.edits) &&
+      (request.expectedBaseSha256 == null || /^[a-f0-9]{64}$/.test(request.expectedBaseSha256))
+    );
+  }
   if (request.operation !== 'search_text') {
     return false;
   }
@@ -317,8 +453,7 @@ function isValidResult(
     !isRecord(value) ||
     value.protocolVersion !== 1 ||
     value.operation !== request.operation ||
-    value.workspaceId !== request.workspaceId ||
-    typeof value.truncated !== 'boolean'
+    value.workspaceId !== request.workspaceId
   ) {
     return false;
   }
@@ -339,6 +474,7 @@ function isValidResult(
       value.path === request.path &&
       isSafePath(value.path) &&
       content != null &&
+      typeof value.truncated === 'boolean' &&
       new TextEncoder().encode(content).byteLength <= MAX_READ_BYTES &&
       value.startLine === startLine &&
       Number.isSafeInteger(value.endLine) &&
@@ -358,6 +494,7 @@ function isValidResult(
     const maxResults = request.maxResults ?? 100;
     if (
       !hasOnlyKeys(value, LIST_RESULT_KEYS) ||
+      typeof value.truncated !== 'boolean' ||
       !Array.isArray(value.paths) ||
       value.paths.length > maxResults
     ) {
@@ -384,6 +521,7 @@ function isValidResult(
     const outputLimit = request.maxOutputBytes ?? DEFAULT_COMMAND_OUTPUT_BYTES;
     return (
       hasOnlyKeys(value, COMMAND_RESULT_KEYS) &&
+      typeof value.truncated === 'boolean' &&
       stdout != null &&
       stderr != null &&
       Buffer.from(stdout).toString('utf8') === stdout &&
@@ -404,9 +542,46 @@ function isValidResult(
         : value.timedOut === false && value.signal == null)
     );
   }
+  if (request.operation === 'write_file') {
+    return (
+      hasOnlyKeys(value, WRITE_RESULT_KEYS) &&
+      value.path === request.path &&
+      typeof value.created === 'boolean' &&
+      (request.overwrite !== false || value.created === true) &&
+      Number.isSafeInteger(value.bytesWritten) &&
+      Number(value.bytesWritten) === new TextEncoder().encode(request.content).byteLength
+    );
+  }
+  if (request.operation === 'edit_file') {
+    return (
+      hasOnlyKeys(value, EDIT_RESULT_KEYS) &&
+      value.path === request.path &&
+      value.replacements === request.edits.length &&
+      Number.isSafeInteger(value.bytesWritten) &&
+      Number(value.bytesWritten) >= 0 &&
+      Number(value.bytesWritten) <= WORKSPACE_WRITE_MAX_BYTES
+    );
+  }
+  if (request.operation === 'preview_edit') {
+    const content = typeof value.content === 'string' ? value.content : null;
+    return (
+      hasOnlyKeys(value, PREVIEW_EDIT_RESULT_KEYS) &&
+      value.path === request.path &&
+      content != null &&
+      Buffer.from(content).toString('utf8') === content &&
+      typeof value.hasUtf8Bom === 'boolean' &&
+      /^[a-f0-9]{64}$/.test(typeof value.baseSha256 === 'string' ? value.baseSha256 : '') &&
+      value.replacements === request.edits.length &&
+      Number.isSafeInteger(value.bytesWritten) &&
+      Number(value.bytesWritten) ===
+        new TextEncoder().encode(content).byteLength + (value.hasUtf8Bom ? 3 : 0) &&
+      Number(value.bytesWritten) <= WORKSPACE_WRITE_MAX_BYTES
+    );
+  }
   const maxResults = request.maxResults ?? 50;
   return (
     hasOnlyKeys(value, SEARCH_RESULT_KEYS) &&
+    typeof value.truncated === 'boolean' &&
     Array.isArray(value.matches) &&
     value.matches.length <= maxResults &&
     value.matches.every(
