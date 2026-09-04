@@ -47,7 +47,7 @@ describe('sanitizeMcpIconPath', () => {
     const escaped = encodeURIComponent(Buffer.from(raw, 'utf-8').toString('base64'));
     expect(escaped).toContain('%3D');
     const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml;base64,${escaped}`));
-    expect(clean).toBe('<svg><path d="M0 0h1v1z"></path></svg>');
+    expect(clean).toBe('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1v1z"></path></svg>');
   });
 
   it('drops a base64 body with a malformed percent escape', () => {
@@ -213,6 +213,20 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('viewBox');
     expect(clean).toContain('linearGradient');
     expect(clean).toContain('fill="url(#g)"');
+  });
+
+  it('declares the SVG namespace on a root that omits it', () => {
+    const raw = '<svg viewBox="0 0 8 8"><path d="M0 0h1v1z"/></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean.startsWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8">')).toBe(
+      true,
+    );
+  });
+
+  it('does not duplicate an existing namespace declaration', () => {
+    const raw = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1v1z"/></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean.match(/xmlns=/g)).toHaveLength(1);
   });
 
   it('sanitizes an SVG data URI hidden behind leading whitespace or controls', () => {

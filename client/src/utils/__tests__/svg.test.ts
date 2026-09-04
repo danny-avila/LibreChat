@@ -297,14 +297,26 @@ describe('sanitizeSvg', () => {
     const clean = sanitizeSvg(dirty);
     expect(clean).toContain('feDropShadow');
     expect(clean).not.toContain('fedropshadow');
-    const parsed = new DOMParser().parseFromString(
-      clean.startsWith('<svg xmlns')
-        ? clean
-        : clean.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'),
-      'image/svg+xml',
-    );
+    const parsed = new DOMParser().parseFromString(clean, 'image/svg+xml');
     expect(parsed.querySelector('parsererror')).toBeNull();
     expect(parsed.querySelector('filter')?.children.length).toBe(1);
+  });
+
+  it('declares the SVG namespace on a root that omits it so the icon renders standalone', () => {
+    const clean = sanitizeSvg('<svg viewBox="0 0 8 8"><path d="M0 0h1v1z" /></svg>');
+    expect(clean.startsWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8">')).toBe(
+      true,
+    );
+    const root = new DOMParser().parseFromString(clean, 'image/svg+xml').documentElement;
+    expect(root.namespaceURI).toBe('http://www.w3.org/2000/svg');
+  });
+
+  it('does not duplicate an existing namespace declaration', () => {
+    const clean = sanitizeSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><path d="M0 0h1v1z" /></svg>',
+    );
+    expect(clean.match(/xmlns=/g)).toHaveLength(1);
+    expect(clean).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
   });
 });
 

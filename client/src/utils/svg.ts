@@ -2,7 +2,7 @@ import DOMPurify from 'dompurify';
 import {
   SVG_SANITIZE_CONFIG,
   restrictSvgReferences,
-  restoreSvgTagCase,
+  finalizeSvgMarkup,
 } from 'librechat-data-provider';
 import type { DOMPurify as SvgPurifier } from 'dompurify';
 
@@ -123,7 +123,7 @@ function getSvgPurifier(): SvgPurifier {
 
 /** Strips active content from SVG markup with the policy the server re-applies. */
 export function sanitizeSvg(svg: string): string {
-  return restoreSvgTagCase(getSvgPurifier().sanitize(svg, SVG_SANITIZE_CONFIG));
+  return finalizeSvgMarkup(getSvgPurifier().sanitize(svg, SVG_SANITIZE_CONFIG));
 }
 
 /** Encodes SVG markup as a base64 data URI; the escape round-trip keeps `btoa` UTF-8 safe. */

@@ -2,7 +2,7 @@ import {
   MAX_MCP_ICON_PATH_LENGTH,
   SVG_SANITIZE_CONFIG,
   restrictSvgReferences,
-  restoreSvgTagCase,
+  finalizeSvgMarkup,
 } from 'librechat-data-provider';
 import type { DOMPurify } from 'dompurify';
 import type { JSDOM } from 'jsdom';
@@ -60,7 +60,7 @@ export function sanitizeMcpIconPath(iconPath: string): string {
   if (svg == null || svg.length > MAX_MCP_ICON_PATH_LENGTH) {
     return '';
   }
-  const clean = restoreSvgTagCase(getSvgPurifier().sanitize(svg, SVG_SANITIZE_CONFIG));
+  const clean = finalizeSvgMarkup(getSvgPurifier().sanitize(svg, SVG_SANITIZE_CONFIG));
   const encoded = `data:image/svg+xml;base64,${Buffer.from(clean, 'utf-8').toString('base64')}`;
   return encoded.length > MAX_MCP_ICON_PATH_LENGTH ? '' : encoded;
 }

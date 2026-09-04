@@ -80,14 +80,22 @@ export function restrictSvgReferences(node: SvgAttributeHost): void {
 /** SVG names the HTML parser lowercases and its adjustment table does not restore. */
 const UNADJUSTED_SVG_TAGS: Array<[RegExp, string]> = [[/(<\/?)fedropshadow\b/gi, '$1feDropShadow']];
 
+const SVG_ROOT_TAG = /<svg(\s[^>]*)?>/i;
+
 /**
- * Restores camelCase element names after HTML-mode sanitization, since the
- * output is re-parsed as case-sensitive `image/svg+xml`.
+ * Makes HTML-mode sanitizer output valid as a standalone `image/svg+xml`
+ * document: restores camelCase element names the HTML parser lowercased and
+ * declares the SVG namespace on the root, without which an XML parser puts the
+ * root in no namespace and the icon renders blank.
  */
-export function restoreSvgTagCase(markup: string): string {
+export function finalizeSvgMarkup(markup: string): string {
   let restored = markup;
   for (const [pattern, canonical] of UNADJUSTED_SVG_TAGS) {
     restored = restored.replace(pattern, canonical);
   }
-  return restored;
+  return restored.replace(SVG_ROOT_TAG, (tag, attributes: string | undefined) =>
+    attributes != null && /\sxmlns\s*=/i.test(attributes)
+      ? tag
+      : `<svg xmlns="http://www.w3.org/2000/svg"${attributes ?? ''}>`,
+  );
 }

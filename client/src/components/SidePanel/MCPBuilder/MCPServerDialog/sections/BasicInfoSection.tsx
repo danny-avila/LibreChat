@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { Input, Label, Textarea } from '@librechat/client';
 import { MAX_MCP_ICON_PATH_LENGTH, MCP_SERVER_TITLE_PATTERN } from 'librechat-data-provider';
@@ -16,27 +17,22 @@ export default function BasicInfoSection() {
     register,
     watch,
     setValue,
-    setError,
-    clearErrors,
     formState: { errors },
   } = useFormContext<MCPServerFormData>();
 
   const iconValue = watch('icon');
-
-  const rejectIcon = () =>
-    setError('icon', {
-      type: 'validate',
-      message: localize('com_ui_icon_too_large', { 0: MAX_ICON_FILE_KB }),
-    });
+  /* Local rather than a form error: a rejected pick keeps the previous icon, so it
+   * must not block saving the rest of the form. */
+  const [iconRejected, setIconRejected] = useState(false);
 
   /* The server drops any icon over the cap, so refuse it here instead of previewing
    * an icon that vanishes on save. */
   const applyIcon = (dataUri: string) => {
     if (dataUri.length > MAX_MCP_ICON_PATH_LENGTH) {
-      rejectIcon();
+      setIconRejected(true);
       return;
     }
-    clearErrors('icon');
+    setIconRejected(false);
     setValue('icon', dataUri);
   };
 
@@ -46,7 +42,7 @@ export default function BasicInfoSection() {
       return;
     }
     if (file.size > MAX_ICON_FILE_BYTES) {
-      rejectIcon();
+      setIconRejected(true);
       return;
     }
 
@@ -73,11 +69,11 @@ export default function BasicInfoSection() {
           <MCPIcon
             icon={iconValue}
             onIconChange={handleIconChange}
-            errorId={errors.icon ? 'mcp-icon-error' : undefined}
+            errorId={iconRejected ? 'mcp-icon-error' : undefined}
           />
-          {errors.icon && (
+          {iconRejected && (
             <p id="mcp-icon-error" role="alert" className="text-xs text-text-destructive">
-              {errors.icon.message}
+              {localize('com_ui_icon_too_large', { 0: MAX_ICON_FILE_KB })}
             </p>
           )}
         </div>

@@ -1,8 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { MAX_MCP_ICON_PATH_LENGTH } from 'librechat-data-provider';
-import type * as ReactNS from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import type * as ReactNS from 'react';
 import type { MCPServerFormData } from '../../hooks/useMCPServerForm';
 import BasicInfoSection from '../BasicInfoSection';
 
@@ -39,12 +39,13 @@ jest.mock('@librechat/client', () => {
 });
 
 function renderSection() {
+  const onSubmit = jest.fn();
   function Wrapper() {
     const methods = useForm<MCPServerFormData>({
       defaultValues: {
-        title: '',
+        title: 'Existing',
         description: '',
-        icon: '',
+        icon: 'data:image/png;base64,existing',
         url: '',
         type: 'streamable-http',
         auth: { auth_type: 'none' as MCPServerFormData['auth']['auth_type'] },
@@ -53,7 +54,10 @@ function renderSection() {
     });
     return (
       <FormProvider {...methods}>
-        <BasicInfoSection />
+        <form onSubmit={methods.handleSubmit((data) => onSubmit(data))}>
+          <BasicInfoSection />
+          <button type="submit" aria-label="save" />
+        </form>
       </FormProvider>
     );
   }
@@ -63,7 +67,7 @@ function renderSection() {
   if (input == null) {
     throw new Error('icon file input not rendered');
   }
-  return { ...view, input };
+  return { ...view, input, onSubmit };
 }
 
 function rasterFile(bytes: number): File {
@@ -71,14 +75,29 @@ function rasterFile(bytes: number): File {
 }
 
 describe('BasicInfoSection icon upload', () => {
-  it('rejects a file too large to store and explains why', async () => {
+  it('rejects a file too large to store, explains why, and keeps the current icon', async () => {
     const { input } = renderSection();
 
     fireEvent.change(input, { target: { files: [rasterFile(MAX_MCP_ICON_PATH_LENGTH)] } });
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('com_ui_icon_too_large:192');
-    expect(screen.queryByTestId('icon-preview')).not.toBeInTheDocument();
+    expect(screen.getByTestId('icon-preview')).toHaveAttribute(
+      'src',
+      'data:image/png;base64,existing',
+    );
+  });
+
+  it('still submits the form after a rejected pick', async () => {
+    const { input, onSubmit } = renderSection();
+
+    fireEvent.change(input, { target: { files: [rasterFile(MAX_MCP_ICON_PATH_LENGTH)] } });
+    await screen.findByRole('alert');
+
+    fireEvent.click(screen.getByRole('button', { name: 'save' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0].icon).toBe('data:image/png;base64,existing');
   });
 
   it('refuses an oversized SVG before reading or sanitizing it', async () => {
@@ -135,7 +154,7 @@ describe('BasicInfoSection icon upload', () => {
     await waitFor(() => {
       expect(screen.getByTestId('icon-preview')).toHaveAttribute(
         'src',
-        expect.stringContaining('data:image/png;base64,'),
+        expect.stringMatching(/^data:image\/png;base64,A/),
       );
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -152,6 +171,9 @@ describe('BasicInfoSection icon upload', () => {
     await waitFor(() => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
-    expect(screen.getByTestId('icon-preview')).toBeInTheDocument();
+    expect(screen.getByTestId('icon-preview')).toHaveAttribute(
+      'src',
+      expect.stringMatching(/^data:image\/png;base64,A/),
+    );
   });
 });
