@@ -500,6 +500,43 @@ describe('File Methods', () => {
       expect(files[0].deletionAttempts).toBeUndefined();
       expect(files[0].deletionRetryAt).toBeUndefined();
     });
+
+    it('keeps the retry budget across writes that only touch the record', async () => {
+      const now = new Date('2030-01-01T00:00:00.000Z');
+      const fileId = uuidv4();
+      await seedExpiredFile({
+        file_id: fileId,
+        expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+        attempts: 10,
+        retryAt: new Date('2029-06-01T00:00:00.000Z'),
+      });
+
+      /* `prepareImagesLocal` clears the upload TTL with nothing but the id
+       * every time an existing image is encoded for another chat, and the
+       * deferred preview only transitions `status`. Neither installs new
+       * bytes, so neither may hand a stranded record a fresh budget. */
+      await fileMethods.updateFile({ file_id: fileId });
+      await fileMethods.updateFile({ file_id: fileId, status: 'ready' });
+
+      expect(await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 })).toHaveLength(0);
+    });
+
+    it('records retry bookkeeping without posing as a content write', async () => {
+      const fileId = uuidv4();
+      await seedExpiredFile({ file_id: fileId, expiredAt: new Date('2029-01-01T00:00:00.000Z') });
+      const [before] = (await fileMethods.getFiles({ file_id: fileId }))!;
+
+      /* `processCodeOutput` falls back to `updatedAt` as the writer-order
+       * stamp for records predating `metadata.sourceDispatchedAt`. A sweep
+       * that bumped it would look like a newer content writer and a
+       * background harvest would drop its attachment. */
+      await fileMethods.incrementFileDeletionAttempts(fileId);
+      await fileMethods.deferExpiredFile(fileId, new Date('2030-06-01T00:00:00.000Z'));
+
+      const [after] = (await fileMethods.getFiles({ file_id: fileId }))!;
+      expect(after.deletionAttempts).toBe(1);
+      expect(after.updatedAt).toEqual(before.updatedAt);
+    });
   });
 
   describe('deferExpiredFile', () => {

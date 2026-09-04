@@ -1,5 +1,5 @@
 import { EToolResources, FileContext } from 'librechat-data-provider';
-import type { FilterQuery, SortOrder, Model } from 'mongoose';
+import type { FilterQuery, UpdateQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '../config/winston';
@@ -9,15 +9,23 @@ export type FileOwnerScope = {
   tenantId?: string | null;
 };
 
+const DELETION_RETRY_STATE = { deletionAttempts: '', deletionRetryAt: '' } as const;
+
 /**
- * Sweep bookkeeping belongs to the storage a record currently points at, so
- * a write that (re)describes its content restarts the budget. Code-output
- * records are reused across turns for a repeated `(filename, conversationId)`
- * — new bytes, new storage key, fresh `expiredAt` — and a record carried to
- * the give-up cap by its previous content would otherwise stay excluded from
- * the sweep forever, stranding the new object exactly as before.
+ * The sweep's retry budget belongs to a retention lifecycle, so only a write
+ * that starts a new one clears it.
+ *
+ * Code-output records are reused across turns for a repeated
+ * `(filename, conversationId)` — new bytes, new storage key, and a fresh
+ * `expiredAt` — and a record carried to the give-up cap by its previous
+ * content would otherwise stay excluded from the sweep forever, stranding
+ * the new object. Writes that leave `expiredAt` alone are touches rather
+ * than replacements: `prepareImages*` clears the upload TTL on every reuse
+ * of an existing image, and the deferred preview only transitions `status`.
+ * Neither installs new bytes, and neither should hand a stranded record
+ * another full budget and another give-up notice.
  */
-const CLEARED_DELETION_RETRY_STATE = { deletionAttempts: '', deletionRetryAt: '' } as const;
+const startsRetentionLifecycle = (data: Partial<IMongoFile>): boolean => 'expiredAt' in data;
 
 export type ExpiredFileQueryOptions = {
   now?: Date;
@@ -195,7 +203,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const file = await File.findOneAndUpdate(
       { file_id },
       { $inc: { deletionAttempts: 1 } },
-      { new: true, projection: { deletionAttempts: 1 } },
+      /** `timestamps: false`: sweep bookkeeping is not a content write.
+       *  `processCodeOutput` falls back to `updatedAt` as the writer-order
+       *  stamp for records predating `metadata.sourceDispatchedAt`, so
+       *  bumping it here would make a failed sweep look like a newer writer
+       *  and a background harvest would drop its attachment. Same reasoning
+       *  as `claimCodeFile`. */
+      { new: true, projection: { deletionAttempts: 1 }, timestamps: false },
     ).lean<Pick<IMongoFile, 'deletionAttempts'> | null>();
 
     return file?.deletionAttempts ?? 0;
@@ -210,7 +224,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    */
   async function deferExpiredFile(file_id: string, deletionRetryAt: Date): Promise<void> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    await File.updateOne({ file_id }, { $max: { deletionRetryAt } }).exec();
+    await File.updateOne({ file_id }, { $max: { deletionRetryAt } }, { timestamps: false }).exec();
   }
 
   /**
@@ -450,11 +464,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       delete fileData.expiresAt;
     }
 
-    return File.findOneAndUpdate(
-      { file_id: data.file_id },
-      { $set: fileData, $unset: CLEARED_DELETION_RETRY_STATE },
-      { new: true, upsert: true },
-    ).lean<IMongoFile>();
+    /* An empty `$unset` is rejected outright, so the operator is added only
+     * when there is something to clear. */
+    const update: UpdateQuery<IMongoFile> = { $set: fileData };
+    if (startsRetentionLifecycle(data)) {
+      update.$unset = DELETION_RETRY_STATE;
+    }
+
+    return File.findOneAndUpdate({ file_id: data.file_id }, update, {
+      new: true,
+      upsert: true,
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -482,7 +502,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const { file_id, ...update } = data;
     const updateOperation = {
       $set: update,
-      $unset: { expiresAt: '', ...CLEARED_DELETION_RETRY_STATE },
+      $unset: { expiresAt: '', ...(startsRetentionLifecycle(update) ? DELETION_RETRY_STATE : {}) },
     };
     const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {
