@@ -150,6 +150,7 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gpt-5.6': { prompt: 4, completion: 20 },
     'gpt-5.6-terra': { prompt: 2, completion: 12 },
     'gpt-5.6-luna': { prompt: 0.2, completion: 1.2 },
+    'gpt-6-astra': { prompt: 10, completion: 50 },
     'chat-latest': { prompt: 5, completion: 30 },
     'gpt-5-chat-latest': { prompt: 1.25, completion: 10 },
     'gpt-5.1-chat-latest': { prompt: 1.25, completion: 10 },
@@ -389,6 +390,7 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gpt-5.6': { write: 5, read: 0.4 },
   'gpt-5.6-terra': { write: 2.5, read: 0.2 },
   'gpt-5.6-luna': { write: 0.25, read: 0.02 },
+  'gpt-6-astra': { write: 12.5, read: 1 },
   'chat-latest': { write: 5, read: 0.5 },
   'gpt-5-chat-latest': { write: 1.25, read: 0.125 },
   'gpt-5.1-chat-latest': { write: 1.25, read: 0.125 },
@@ -445,6 +447,7 @@ export const premiumTokenValues: Record<
   'gpt-5.6': { threshold: 272000, prompt: 8, completion: 30 },
   'gpt-5.6-terra': { threshold: 272000, prompt: 4, completion: 18 },
   'gpt-5.6-luna': { threshold: 272000, prompt: 0.4, completion: 1.8 },
+  'gpt-6-astra': { threshold: 272000, prompt: 20, completion: 75 },
   'grok-4.5': { threshold: 200000, prompt: 4, completion: 12 },
   'grok-4-5': { threshold: 200000, prompt: 4, completion: 12 },
   'grok-4.6': { threshold: 200000, prompt: 4, completion: 12 },
@@ -466,6 +469,7 @@ export const premiumCacheTokenValues: Record<
   'gpt-5.6': { threshold: 272000, write: 10, read: 0.8 },
   'gpt-5.6-terra': { threshold: 272000, write: 5, read: 0.4 },
   'gpt-5.6-luna': { threshold: 272000, write: 0.5, read: 0.04 },
+  'gpt-6-astra': { threshold: 272000, write: 25, read: 2 },
 };
 
 export function createTxMethods(
