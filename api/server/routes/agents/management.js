@@ -1,13 +1,18 @@
 const express = require('express');
-const { createAgentManagementReadHandlers, mapAgentManagementError } = require('@librechat/api');
-const { checkBan } = require('~/server/middleware');
+const {
+  createAgentManagementCreateHandler,
+  createAgentManagementReadHandlers,
+  mapAgentManagementError,
+} = require('@librechat/api');
+const { checkBan, configMiddleware } = require('~/server/middleware');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
+const v1 = require('~/server/controllers/agents/v1');
 const db = require('~/models');
 const { requireAgentManagementAuth } = require('./middleware');
 
 const router = express.Router();
-const handlers = createAgentManagementReadHandlers({
+const readHandlers = createAgentManagementReadHandlers({
   getRoleByName: db.getRoleByName,
   getAgentWithVersionCount: db.getAgentWithVersionCount,
   getAgentManagementListByAccess: db.getAgentManagementListByAccess,
@@ -15,12 +20,17 @@ const handlers = createAgentManagementReadHandlers({
   checkPermission,
   hasCapability,
 });
+const createHandler = createAgentManagementCreateHandler({
+  getRoleByName: db.getRoleByName,
+  createAgent: v1.createAgent,
+});
 
 router.use(requireAgentManagementAuth);
 router.use(checkBan);
 
-router.get('/', handlers.list);
-router.get('/:id', handlers.get);
+router.post('/', configMiddleware, createHandler);
+router.get('/', readHandlers.list);
+router.get('/:id', readHandlers.get);
 
 router.use((_req, res) => {
   const { status, body } = mapAgentManagementError('not_found');
