@@ -15,6 +15,7 @@ const Redis = require('ioredis');
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const mongoose = require('mongoose');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
@@ -48,6 +49,7 @@ const {
   configureAgentEventRuntime,
   GenerationJobManager,
   createAgentEventTerminalHandler,
+  startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -466,6 +468,7 @@ if (cluster.isMaster) {
     /** Connect to MongoDB */
     await connectDb();
     logger.info(`Worker ${process.pid}: Connected to MongoDB`);
+    startCodeEnvironmentLifecycleReconciler({ mongoose });
 
     /** Background index sync (non-blocking) */
     indexSync().catch((err) => {
