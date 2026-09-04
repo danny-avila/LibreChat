@@ -30,14 +30,18 @@ const attachedCommandSchema: NonNullable<LCTool['parameters']> = {
     'The bash command or script to execute from the attached workspace root. Files written in the workspace persist between calls, but each call starts a fresh process.',
 };
 
-export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> = Object.freeze({
+/**
+ * LangChain's JSON Schema dereferencer annotates schemas during validation, so
+ * this object must remain extensible while it is owned by the tool runtime.
+ */
+export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> = {
   type: 'object',
   properties: {
     ...bashSchema.properties,
     command: attachedCommandSchema,
   },
   required: ['command'],
-});
+};
 
 export function buildAttachedWorkspaceBashDescription(enableToolOutputReferences: boolean): string {
   return enableToolOutputReferences

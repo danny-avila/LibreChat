@@ -56,6 +56,19 @@ describe('createAttachedWorkspaceBashTool', () => {
     });
   });
 
+  test('validates and invokes commands through the LangChain tool runtime', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      fetchImpl,
+    });
+
+    await expect(bashTool.invoke({ command: 'pwd' })).resolves.toBeDefined();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   test('preserves legacy positional args without interpolating shell metacharacters', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const bashTool = createAttachedWorkspaceBashTool({
