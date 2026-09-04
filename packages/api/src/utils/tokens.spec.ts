@@ -91,6 +91,24 @@ describe('Gemini 3.8 Flash', () => {
   });
 });
 
+describe('GPT-6 Astra', () => {
+  it('resolves 1.05M context and 128K output', () => {
+    expect(getModelMaxTokens('gpt-6-astra', EModelEndpoint.openAI)).toBe(1050000);
+    expect(getModelMaxOutputTokens('gpt-6-astra', EModelEndpoint.openAI)).toBe(128000);
+  });
+
+  it('matches its own key for snapshots and provider prefixes', () => {
+    for (const model of [
+      'gpt-6-astra-2026-04-30',
+      'openai/gpt-6-astra',
+      'gpt-6-astra-2026-04-30/openai',
+    ]) {
+      expect(getModelMaxTokens(model, EModelEndpoint.openAI)).toBe(1050000);
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(128000);
+    }
+  });
+});
+
 describe('Qwen3.5 and later generations', () => {
   it('resolves 262K for the vLLM model id that regressed to the qwen3 window', () => {
     expect(getModelMaxTokens('Qwen/Qwen3.5-397B-A17B-FP8', EModelEndpoint.openAI)).toBe(262144);

@@ -432,6 +432,14 @@ html {
   background-color: rgb(var(--surface-secondary));
 }
 
+/* Forced-colors overrides the inline `background-color: currentColor` a masked
+ * CustomIcon paints with; `!important` is needed to beat that inline style. */
+@media (forced-colors: active) {
+  .custom-icon-tint {
+    background-color: CanvasText !important;
+  }
+}
+
 .ellipsis {
   overflow: hidden;
   white-space: nowrap;

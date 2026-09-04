@@ -60,6 +60,11 @@ jest.mock('~/server/routes/agents/v1', () => ({
 }));
 jest.mock('~/server/routes/agents/openai', () => require('express').Router());
 jest.mock('~/server/routes/agents/responses', () => require('express').Router());
+jest.mock('~/server/routes/agents/management', () => {
+  const router = require('express').Router();
+  router.use((_req, res) => res.status(200).json({ surface: 'management' }));
+  return router;
+});
 jest.mock('~/server/controllers/agents/steer', () => {
   const controller = (_req, _res, next) => next();
   controller.SteerDeliveryController = (_req, _res, next) => next();
@@ -79,6 +84,15 @@ const agentsRouter = require('../index');
 const app = express();
 app.use(express.json());
 app.use('/agents', agentsRouter);
+
+describe('Agent Management route precedence', () => {
+  it('reaches management before the catch-all execution router', async () => {
+    const response = await request(app).get('/agents/v1/agents');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ surface: 'management' });
+  });
+});
 
 describe('start-generation idempotency before message limiters', () => {
   beforeEach(() => {
