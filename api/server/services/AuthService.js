@@ -25,6 +25,7 @@ const {
   normalizeExpiresIn,
   createOpenIDSessionIdentity,
   resolveAppConfigForUser,
+  extractSubFromAccessToken,
 } = require('@librechat/api');
 const {
   findUser,
@@ -929,6 +930,27 @@ const setOpenIDAuthTokens = (
       refreshExpiryMs: expiryInMilliseconds,
       refreshToken,
     });
+
+    if (isEnabled(process.env.OPENID_EXPOSE_SUB_COOKIE)) {
+      if (!process.env.JWT_REFRESH_SECRET) {
+        logger.error(
+          '[setOpenIDAuthTokens] JWT_REFRESH_SECRET not configured for openid_sub cookie',
+        );
+      } else {
+        const { sub } = extractSubFromAccessToken(tokenset.access_token);
+        if (sub) {
+          const signedSub = jwt.sign({ sub }, process.env.JWT_REFRESH_SECRET, {
+            expiresIn: expiryInMilliseconds / 1000,
+          });
+          res.cookie('openid_sub', signedSub, {
+            expires: expirationDate,
+            httpOnly: true,
+            secure: shouldUseSecureCookie(),
+            sameSite: 'lax',
+          });
+        }
+      }
+    }
 
     setCloudFrontAuthCookies(req, res, req.user, { userId, tenantId });
 
