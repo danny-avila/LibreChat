@@ -420,7 +420,7 @@ const CODE_READ_FILE_DESCRIPTION = `Read a known file from the code-execution sa
 
 Use for text, CSV, JSON, Markdown, logs, small source files, and images at paths returned by tool output, just written, or under /mnt/data/. Do not run ls/find just to rediscover known paths. Use bash_tool for other binary files, large files, transforms, metadata, or true filesystem discovery. /tmp is per-call scratch and unavailable later.`;
 
-const ATTACHED_WORKSPACE_READ_FILE_INSTRUCTIONS = `For an attached environment, use "workspace/{relativePath}" to read a file from the workspace directory registered on the worker. It may be an existing project, a Git repository, or an empty directory; Git is not required. The worker's host path stays private. Use start_line and max_lines for bounded pagination.`;
+const ATTACHED_WORKSPACE_READ_FILE_INSTRUCTIONS = `For an attached environment, use "workspace/{relativePath}" to read a file from the workspace directory registered on the worker. Use a canonical relative path without empty, ".", or ".." segments. It may be an existing project, a Git repository, or an empty directory; Git is not required. The worker's host path stays private. Use start_line and max_lines for bounded pagination.`;
 
 const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
@@ -440,7 +440,7 @@ const ATTACHED_WORKSPACE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.fre
     path: {
       type: 'string',
       description:
-        'Use "workspace/{relativePath}" for a file in the attached worker workspace directory, or a code-execution sandbox path such as "/mnt/data/result.csv".',
+        'Use "workspace/{relativePath}" with a canonical relative path (no empty, ".", or ".." segments) for a file in the attached worker workspace directory, or a code-execution sandbox path such as "/mnt/data/result.csv".',
     },
     start_line: {
       type: 'integer',
@@ -492,7 +492,8 @@ const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
       },
       path: {
         type: 'string',
-        description: 'Optional relative file or directory within the attached workspace.',
+        description:
+          'Optional canonical relative file or directory within the attached workspace; do not use empty, ".", or ".." segments.',
       },
       max_results: {
         type: 'integer',
@@ -514,7 +515,8 @@ const LIST_WORKSPACE_FILES_TOOL_DEF: LCTool = Object.freeze({
     properties: {
       path: {
         type: 'string',
-        description: 'Optional relative file or directory within the attached workspace.',
+        description:
+          'Optional canonical relative file or directory within the attached workspace; do not use empty, ".", or ".." segments.',
       },
       max_results: {
         type: 'integer',

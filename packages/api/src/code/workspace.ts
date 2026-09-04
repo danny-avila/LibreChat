@@ -120,6 +120,8 @@ function isSafePath(value: unknown): value is string {
     value.length > 0 &&
     value.length <= MAX_PATH_LENGTH &&
     !value.includes('\0') &&
+    !value.includes('\r') &&
+    !value.includes('\n') &&
     !value.includes('\\') &&
     !value.startsWith('/') &&
     !/^[A-Za-z]:/.test(value) &&
