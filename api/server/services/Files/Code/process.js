@@ -1798,6 +1798,97 @@ async function listWorkspaceFiles({
   });
 }
 
+/** Writes a UTF-8 file in the workspace registered by an attached worker. */
+async function writeWorkspaceFile({
+  file_path,
+  content,
+  overwrite,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'write_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      content,
+      overwrite,
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** Applies an ordered exact-edit batch in one attached-worker mutation. */
+async function editWorkspaceFile({
+  file_path,
+  edits,
+  expected_base_sha256,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'edit_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      edits,
+      ...(expected_base_sha256 ? { expectedBaseSha256: expected_base_sha256 } : {}),
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** Previews an ordered exact-edit batch without mutating the attached workspace. */
+async function previewWorkspaceEdit({
+  file_path,
+  edits,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'preview_edit',
+      workspaceId: workspace_id,
+      path: file_path,
+      edits,
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
 /**
  * Reads a small code artifact as base64 so `read_file` can surface it to
  * vision-capable models. Reuses bytes fetched by the current request's
@@ -2067,6 +2158,9 @@ module.exports = {
   readWorkspaceFile,
   searchWorkspace,
   listWorkspaceFiles,
+  writeWorkspaceFile,
+  previewWorkspaceEdit,
+  editWorkspaceFile,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,

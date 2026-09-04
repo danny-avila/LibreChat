@@ -287,6 +287,21 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-text-primary'] !== undefined
       ? { 'rgb-shimmer-base': customColors['rgb-text-primary'] }
       : {};
+  const textMutedFallback =
+    customColors?.['rgb-text-muted'] === undefined &&
+    customColors?.['rgb-text-tertiary'] !== undefined
+      ? { 'rgb-text-muted': customColors['rgb-text-tertiary'] }
+      : {};
+  const chartWidgetSurfaceFallback =
+    customColors?.['rgb-chart-widget-surface'] === undefined &&
+    customColors?.['rgb-surface-primary'] !== undefined
+      ? { 'rgb-chart-widget-surface': customColors['rgb-surface-primary'] }
+      : {};
+  const chartWidgetStrokeFallback =
+    customColors?.['rgb-chart-widget-stroke'] === undefined &&
+    customColors?.['rgb-border-light'] !== undefined
+      ? { 'rgb-chart-widget-stroke': customColors['rgb-border-light'] }
+      : {};
 
   return {
     version: THEME_VERSION,
@@ -297,6 +312,9 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...customColors,
       ...composerHoverFallback,
       ...shimmerBaseFallback,
+      ...textMutedFallback,
+      ...chartWidgetSurfaceFallback,
+      ...chartWidgetStrokeFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     brands: { ...defaultBrands, ...theme.brands },

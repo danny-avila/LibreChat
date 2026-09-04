@@ -1537,6 +1537,7 @@ export async function initializeAgent(
       toolRegistry,
       toolDefinitions,
       includeSkillFileInstructions: skillAuthoringAvailable,
+      workspaceTools: attachedWorkspaceTools,
     });
     toolDefinitions = fileAuthoringResult.toolDefinitions;
     /** File authoring is owned by whichever capability switched it on —

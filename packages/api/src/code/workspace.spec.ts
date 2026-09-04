@@ -562,7 +562,7 @@ describe('executeWorkspaceTool', () => {
   });
 
   test('accepts a bounded command result from the selected attached worker', async () => {
-    const fetchImpl: CodeBridgeFetch = jest.fn(async () =>
+    const fetchImpl = jest.fn(async () =>
       Response.json({
         protocolVersion: 1,
         operation: 'execute_command',
@@ -633,5 +633,188 @@ describe('executeWorkspaceTool', () => {
         fetchImpl,
       }),
     ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
+  test('validates atomic create-only workspace writes', async () => {
+    const fetchImpl = jest.fn(async () =>
+      Response.json({
+        protocolVersion: 1,
+        operation: 'write_file',
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: true,
+        bytesWritten: 5,
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'write_file',
+          workspaceId: 'primary',
+          path: 'src/new.ts',
+          content: 'ready',
+          overwrite: false,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ created: true, bytesWritten: 5 });
+
+    fetchImpl.mockResolvedValueOnce(
+      Response.json({
+        protocolVersion: 1,
+        operation: 'write_file',
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: false,
+        bytesWritten: 5,
+      }),
+    );
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'write_file',
+          workspaceId: 'primary',
+          path: 'src/new.ts',
+          content: 'ready',
+          overwrite: false,
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
+  test('validates bounded atomic workspace edit batches', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () =>
+      Response.json({
+        protocolVersion: 1,
+        operation: 'edit_file',
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        replacements: 2,
+        bytesWritten: 18,
+      }),
+    );
+    const request = {
+      protocolVersion: 1 as const,
+      operation: 'edit_file' as const,
+      workspaceId: 'primary',
+      path: 'src/app.ts',
+      edits: [
+        { oldText: 'false', newText: 'true' },
+        { oldText: 'draft', newText: 'ready' },
+      ],
+    };
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request,
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ replacements: 2 });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: { ...request, edits: [] },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: { ...request, edits: undefined } as unknown as typeof request,
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('validates exact edit previews and revision-fenced commits', async () => {
+    const edits = [{ oldText: ' suffix', newText: 'RET suffix' }];
+    const baseSha256 = 'a'.repeat(64);
+    const fetchImpl: CodeBridgeFetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          protocolVersion: 1,
+          operation: 'preview_edit',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          content: 'prefix SECRET suffix',
+          hasUtf8Bom: false,
+          baseSha256,
+          replacements: 1,
+          bytesWritten: 20,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          replacements: 1,
+          bytesWritten: 20,
+        }),
+      );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'preview_edit',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ content: 'prefix SECRET suffix', baseSha256 });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+          expectedBaseSha256: baseSha256,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ replacements: 1 });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+          expectedBaseSha256: 'invalid',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
