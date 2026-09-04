@@ -444,19 +444,7 @@ describe('document-level paths reach the wire scoped', () => {
     expect(describeLeaks(records)).toBe('');
   });
 
-  /**
-   * KNOWN GAP, found by this probe. Saving an already-persisted document issues
-   * `update` filtered on `_id` alone — the tenant is stamped onto the payload but
-   * never asserted in the predicate. It is scoped by provenance (you can only
-   * fetch a document your tenant can see), so the normal flow is safe, but an
-   * `_id` obtained from an unscoped source — `runAsSystem`, a cached id, a
-   * client-supplied id — writes across tenants unguarded.
-   *
-   * Pinned here rather than fixed: closing it changes runtime behaviour and
-   * belongs in its own change. The assertion is written to FAIL once the
-   * predicate is added, so the fix cannot land without updating this test.
-   */
-  it('doc.save() on a fetched document is scoped by provenance, not by predicate', async () => {
+  it('doc.save() on a fetched document asserts the tenant in its predicate', async () => {
     await asTenant(async () => void (await Widget.create({ name: 'fetched', parts: [] })));
 
     const records = await probe.record(() =>
@@ -469,8 +457,8 @@ describe('document-level paths reach the wire scoped', () => {
 
     const updates = records.filter((record) => record.commandName === 'update');
     expect(updates).toHaveLength(1);
-    expect(updates[0].scoped).toBe(false);
-    expect(updates[0].predicate).toContain('_id');
+    expect(updates[0].predicate).toContain('tenantId');
+    expect(describeLeaks(records)).toBe('');
   });
 
   it('doc.updateOne()', async () => {
@@ -551,5 +539,72 @@ describe('system scope', () => {
     );
 
     expect(unscoped(records)).toHaveLength(1);
+  });
+});
+
+/**
+ * The predicate added to `save()` must harden the cross-tenant case without
+ * refusing writes that were always legitimate.
+ */
+describe('save predicate does not break legitimate writes', () => {
+  it('a document that never carried a tenant still saves', async () => {
+    const created = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.create({ name: 'pre-tenancy', parts: [] }),
+    );
+
+    await asTenant(async () => {
+      const widget = await Widget.findById(created._id).where({ tenantId: { $exists: false } });
+      expect(widget).toBeNull();
+    });
+
+    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => {
+      const widget = await Widget.findById(created._id);
+      widget!.name = 'renamed';
+      await widget!.save();
+    });
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(created._id).lean(),
+    );
+    expect(fresh!.name).toBe('renamed');
+  });
+
+  it('refuses to save a document belonging to another tenant', async () => {
+    const foreign = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      Widget.create({ name: 'foreign', parts: [] }),
+    );
+
+    const smuggled = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id),
+    );
+
+    await expect(
+      asTenant(async () => {
+        smuggled!.name = 'stolen';
+        await smuggled!.save();
+      }),
+    ).rejects.toThrow('No document found');
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).lean(),
+    );
+    expect(fresh!.name).toBe('foreign');
+  });
+
+  it('leaves system-scoped saves unfiltered', async () => {
+    const created = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      Widget.create({ name: 'sys-target', parts: [] }),
+    );
+
+    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => {
+      const widget = await Widget.findById(created._id);
+      widget!.name = 'sys-renamed';
+      await widget!.save();
+    });
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(created._id).lean(),
+    );
+    expect(fresh!.name).toBe('sys-renamed');
   });
 });
