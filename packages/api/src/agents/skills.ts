@@ -95,10 +95,12 @@ const MAX_CATALOG_PAGES = 10;
 /** Page size used when paginating to fill the active-skill quota. */
 const CATALOG_PAGE_SIZE = 100;
 /**
- * Per-entry description cap applied by `formatSkillCatalog` before the
- * catalog is injected into agent context. `@librechat/agents` truncates
- * silently, so this mirrors the default so we can warn when authors' skill
- * descriptions will not reach the model verbatim.
+ * Per-entry description cap requested of `formatSkillCatalog`, mirroring the
+ * SDK default. It is a ceiling, not a guarantee: `@librechat/agents` applies
+ * it first, then truncates further — proportionally against its own context
+ * budget, and finally to names-only — so a description well under this cap
+ * can still be cut. Delivered length is measured from the emitted catalog
+ * rather than assumed from this value.
  */
 const SKILL_CATALOG_MAX_ENTRY_CHARS = 250;
 /** Hard ceiling on skill names a model spec can request by config. */
@@ -583,6 +585,54 @@ export async function resolveSkillCatalog(
   };
 }
 
+/** Filler used to build the measurement probe; never reaches the model. */
+const CATALOG_PROBE_CHAR = 'x';
+
+/**
+ * How much of each skill's description reaches the model, aligned to `skills`.
+ *
+ * Measured on a probe rather than on the real catalog. Every decision in
+ * `formatSkillCatalog`'s truncation ladder reads description `.length` and
+ * never description content, so formatting same-length filler reproduces the
+ * real cuts exactly — while guaranteeing the output can be parsed, since
+ * filler carries no newline and no entry marker and skill names are validated
+ * to `^[a-z0-9][a-z0-9-]*$`.
+ *
+ * The real catalog cannot be measured: a description may contain newlines, so
+ * an entry is not one line; duplicate names share a rendering; and truncation
+ * can splice one entry's tail onto the next, so even a whole-entry match can
+ * be satisfied by text the model never received as that entry.
+ */
+function measureCatalogDescriptions(
+  skills: Array<{ name: string; description: string }>,
+  options: Parameters<typeof formatSkillCatalog>[1],
+): number[] {
+  const probe = formatSkillCatalog(
+    skills.map((s) => ({
+      name: s.name,
+      description: CATALOG_PROBE_CHAR.repeat(s.description.length),
+    })),
+    options,
+  );
+  const delivered = new Array<number>(skills.length).fill(0);
+  let index = 0;
+  for (const line of probe.split('\n')) {
+    if (index >= skills.length) {
+      break;
+    }
+    const prefix = `- ${skills[index].name}`;
+    if (line === prefix) {
+      index++;
+      continue;
+    }
+    if (line.startsWith(`${prefix}: `)) {
+      delivered[index] = line.length - prefix.length - 2;
+      index++;
+    }
+  }
+  return delivered;
+}
+
 /**
  * Queries accessible skills, formats a budget-aware catalog, appends it to the
  * agent's additional_instructions, and registers the SkillTool definition.
@@ -695,21 +745,28 @@ export async function injectSkillCatalog(
    * and those reads would otherwise be impossible.
    */
   if (catalogVisibleSkills.length > 0) {
-    for (const s of catalogVisibleSkills) {
-      if (s.description.length > SKILL_CATALOG_MAX_ENTRY_CHARS) {
-        logger.warn(
-          `[injectSkillCatalog] skill "${s.name}" description truncated to ${SKILL_CATALOG_MAX_ENTRY_CHARS} chars for the model catalog (was ${s.description.length})`,
-        );
-      }
-    }
+    const catalogOptions = {
+      contextWindowTokens: contextWindowTokens || 200_000,
+      maxEntryChars: SKILL_CATALOG_MAX_ENTRY_CHARS,
+    };
     const catalog = formatSkillCatalog(
       catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
-      {
-        contextWindowTokens: contextWindowTokens || 200_000,
-        maxEntryChars: SKILL_CATALOG_MAX_ENTRY_CHARS,
-      },
+      catalogOptions,
     );
     if (catalog) {
+      const delivered = measureCatalogDescriptions(catalogVisibleSkills, catalogOptions);
+      for (let i = 0; i < catalogVisibleSkills.length; i++) {
+        const s = catalogVisibleSkills[i];
+        const reached = delivered[i];
+        if (reached >= s.description.length) {
+          continue;
+        }
+        logger.warn(
+          reached === 0
+            ? `[injectSkillCatalog] skill "${s.name}" description was dropped from the model catalog (was ${s.description.length} chars) — the catalog exceeded its context budget`
+            : `[injectSkillCatalog] skill "${s.name}" description reached the model truncated to ${reached} of ${s.description.length} chars`,
+        );
+      }
       agent.additional_instructions = agent.additional_instructions
         ? `${agent.additional_instructions}\n\n${catalog}`
         : catalog;
