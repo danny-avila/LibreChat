@@ -52,17 +52,24 @@ const PREDICATE_PATHS: ReadonlyMap<string, { readonly key: string; readonly list
 
 type CommandDocument = Record<string, unknown>;
 
+/** A value that identifies exactly one tenant: a primitive, or an absent one. */
+function isEqualityValue(value: unknown): boolean {
+  return value == null || (typeof value !== 'object' && typeof value !== 'function');
+}
+
 /**
- * Whether a `tenantId` condition pins the query to a single tenant.
+ * Whether a `tenantId` condition pins the query to at most one tenant identity.
  *
- * Presence of the key is not enough: `{ $ne }`, `{ $nin }`, a regex, a
- * multi-valued `$in` and `{ $exists: true }` all *mention* the tenant while
- * matching rows from many. Only equality, a singleton `$in`, and the explicit
- * no-tenant partition (`{ $exists: false }`, used for platform-level audit
- * rows) actually constrain.
+ * This deliberately accepts only the shapes the bindings actually emit, rather
+ * than trying to decide tenant-safety for arbitrary MongoDB filter algebra —
+ * that problem is unbounded, and every operator left open is a way for a
+ * regression to look scoped. Production emits exactly three shapes: plain
+ * equality, `{ $exists: false }`, and `{ $in: [null, undefined] }` (both of the
+ * latter selecting the no-tenant partition used by platform audit rows and base
+ * roles). Anything else is reported unscoped, which fails closed.
  */
 function pinsSingleTenant(condition: unknown): boolean {
-  if (condition === null || typeof condition !== 'object') {
+  if (isEqualityValue(condition)) {
     return true;
   }
   if (Array.isArray(condition)) {
@@ -71,26 +78,29 @@ function pinsSingleTenant(condition: unknown): boolean {
 
   const operators = condition as CommandDocument;
   const keys = Object.keys(operators);
-  if (keys.length === 0) {
+  if (keys.length === 0 || !keys.every((key) => key.startsWith('$'))) {
     return false;
-  }
-  if (!keys.every((key) => key.startsWith('$'))) {
-    return true;
   }
 
   return keys.every((key) => {
     const value = operators[key];
-    if (key === '$eq') {
-      return true;
-    }
-    if (key === '$in') {
-      return Array.isArray(value) && value.length === 1;
-    }
     if (key === '$exists') {
       return value === false;
     }
+    if (key === '$in') {
+      return Array.isArray(value) && pinsAtMostOneIdentity(value);
+    }
     return false;
   });
+}
+
+/** An `$in` list pins a tenant when it names at most one, ignoring absent values. */
+function pinsAtMostOneIdentity(values: readonly unknown[]): boolean {
+  if (!values.every(isEqualityValue)) {
+    return false;
+  }
+  const named = new Set(values.filter((value) => value != null));
+  return named.size <= 1;
 }
 
 /**
@@ -153,30 +163,57 @@ function foreignStageConstrainsTenant(stage: unknown): boolean {
 }
 
 /**
- * A pipeline is scoped when some `$match` stage constrains the tenant and every
- * collection-reading stage is scoped in its own right.
+ * Stages that cannot combine, rewrite or drop tenant data, and so may precede
+ * the tenant restriction without letting other tenants' rows through.
+ */
+const TENANT_PRESERVING_STAGES: ReadonlySet<string> = new Set([
+  '$match',
+  '$sort',
+  '$limit',
+  '$skip',
+  '$unwind',
+]);
+
+/**
+ * A pipeline is scoped when the tenant restriction lands *before* any stage
+ * that could combine or rewrite tenant data, and every collection-reading stage
+ * scopes its own read.
+ *
+ * Position matters: a pipeline can `$group` across every tenant, project a
+ * `tenantId` onto the global result and then `$match` it, which mentions the
+ * tenant while having already leaked a collection-wide aggregate.
  */
 function pipelineConstrainsTenant(pipeline: unknown): boolean {
   if (!Array.isArray(pipeline)) {
     return false;
   }
 
-  let matched = false;
   for (const stage of pipeline) {
     if (stage == null || typeof stage !== 'object') {
       continue;
     }
     const record = stage as CommandDocument;
-    if (constrainsTenant(record.$match)) {
-      matched = true;
-    }
     for (const name of COLLECTION_READING_STAGES) {
       if (name in record && !foreignStageConstrainsTenant(record[name])) {
         return false;
       }
     }
   }
-  return matched;
+
+  for (const stage of pipeline) {
+    if (stage == null || typeof stage !== 'object') {
+      return false;
+    }
+    const record = stage as CommandDocument;
+    if (constrainsTenant(record.$match)) {
+      return true;
+    }
+    if (!Object.keys(record).every((name) => TENANT_PRESERVING_STAGES.has(name))) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 /** Every predicate a command carries, so a partially-scoped batch still fails. */

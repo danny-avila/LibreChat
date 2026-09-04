@@ -108,6 +108,8 @@ describe('the probe itself', () => {
     ['a multi-valued $in', { tenantId: { $in: [TENANT, 'tenant-b'] } }],
     ['a regex over tenants', { tenantId: { $regex: '.*' } }],
     ['$exists: true, which matches any tenant', { tenantId: { $exists: true } }],
+    ['a regex inside a singleton $in', { tenantId: { $in: [/^tenant-/] } }],
+    ['$eq, which the bindings never emit', { tenantId: { $eq: TENANT } }],
   ])('does not accept %s as scoping', async (_label, filter) => {
     const records = await probe.record(() =>
       asTenant(async () => {
@@ -129,7 +131,7 @@ describe('the probe itself', () => {
     ['one $and branch constrained', { $and: [{ tenantId: TENANT }, { name: 'x' }] }],
     ['an explicitly unset tenant', { tenantId: { $exists: false } }],
     ['a singleton $in', { tenantId: { $in: [TENANT] } }],
-    ['an explicit $eq', { tenantId: { $eq: TENANT } }],
+    ['the no-tenant partition as $in', { tenantId: { $in: [null] } }],
   ])('accepts %s as scoping', async (_label, filter) => {
     const records = await probe.record(() =>
       asTenant(async () => {
@@ -208,6 +210,44 @@ describe('the probe itself', () => {
                 as: 'joined',
               },
             },
+          ])
+          .toArray();
+      }),
+    );
+
+    expect(unscoped(records)).toHaveLength(0);
+  });
+
+  /**
+   * Position matters: a pipeline can combine every tenant's rows, project a
+   * `tenantId` onto the global result and then `$match` it. The tenant is
+   * mentioned, but a collection-wide aggregate has already been computed.
+   */
+  it('does not accept a $match that lands after the data was combined', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .aggregate([
+            { $group: { _id: null, total: { $sum: 1 } } },
+            { $addFields: { tenantId: TENANT } },
+            { $match: { tenantId: TENANT } },
+          ])
+          .toArray();
+      }),
+    );
+
+    expect(unscoped(records)).toHaveLength(1);
+  });
+
+  it('accepts a $match that precedes the combining stages', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .aggregate([
+            { $match: { tenantId: TENANT } },
+            { $group: { _id: null, total: { $sum: 1 } } },
           ])
           .toArray();
       }),
