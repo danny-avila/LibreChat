@@ -1504,6 +1504,29 @@ describe('MCPManager', () => {
       mockProcessMCPEnv.mockReturnValue(serverConfig);
     });
 
+    it('keeps the configured timeout on tool calls even with elicitation enabled', async () => {
+      /** elicitationStart is supplied for every server that has not opted out, so
+       *  stretching the transport timeout to cover the user wait would let any
+       *  hung non-eliciting tool hold the connection far past its configured
+       *  limit. The wait happens between requests and the flow manager bounds it. */
+      const request = jest.fn().mockResolvedValue(toolResult);
+      const connection = createConnection(request);
+      const manager = await createManager(connection);
+
+      await manager.callTool({
+        user: mockUser,
+        serverName,
+        toolName: 'oauth_tool',
+        provider: 'openai',
+        oauthStart: jest.fn(),
+        flowManager: mockFlowManager,
+        elicitationStart: jest.fn().mockResolvedValue(undefined),
+      });
+
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request.mock.calls[0][2]).toMatchObject({ timeout: connection.timeout });
+    });
+
     it('routes a 401-wrapped -32042 to elicitation instead of OAuth recovery', async () => {
       /** A gateway may return the URL-elicitation body under HTTP 401. The
        *  connection's OAuth check matches on status alone, so without an

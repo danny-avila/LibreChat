@@ -45,13 +45,6 @@ import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
-/** Buffer (ms) added over the flow TTL so the tool-call SDK timeout always
- *  outlives the {@link FlowStateManager} wait that actually bounds the user. A
- *  user who authorizes near the TTL deadline then gets their retried result
- *  instead of a premature transport timeout. Mirrors the OAuth connect-timeout
- *  floor in {@link MCPConnectionFactory.attemptToConnect}. */
-const ELICITATION_TIMEOUT_BUFFER_MS = 60 * 1000;
-
 /** Max elicitation flows a single (userId, serverName) may keep pending at once.
  *  A misbehaving or hostile server can emit `elicitation/create` in a loop; each
  *  one spawns a flow-store entry and an SSE card, so the count is capped to stop
@@ -904,9 +897,8 @@ Please follow these instructions when using tools from the respective MCP server
     upstreamTokenProvider?: UpstreamTokenProvider;
     oboIdentityContext?: AuthIdentityContext;
     /**
-     * When provided: (1) declares support for MCP elicitation, extending the
-     * `tools/call` timeout to outlive the flow-state wait (see
-     * {@link ELICITATION_TIMEOUT_BUFFER_MS}); and (2) catches the -32042
+     * When provided: (1) declares support for MCP elicitation; and (2) catches
+     * the -32042
      * `UrlElicitationRequired` exception on the initial `tools/call` response
      * and retries once after the user authorizes. Called once per elicitation
      * with enough context to render an in-chat card; resolution arrives via
@@ -1235,13 +1227,6 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         const elicitationFlowManager = asElicitationFlowManager(flowManager);
-        /** The SDK tool-call timeout must outlive the flow-state wait that actually
-         *  bounds the user, so authorizing near the TTL still returns the retried
-         *  result instead of a premature transport timeout. */
-        const elicitationTimeout = Math.max(
-          connection!.timeout ?? 0,
-          mcpConfig.OAUTH_FLOW_TTL + ELICITATION_TIMEOUT_BUFFER_MS,
-        );
         const requestTool = () =>
           connection!.client.request(
             {
@@ -1253,7 +1238,13 @@ Please follow these instructions when using tools from the respective MCP server
             },
             CallToolResultSchema,
             {
-              timeout: elicitationStart ? elicitationTimeout : connection!.timeout,
+              /** Each SDK request keeps the server's configured timeout. The user
+               *  wait happens BETWEEN requests (the first has already failed with
+               *  -32042; the retry is a separate request), and is bounded by the
+               *  flow manager's own TTL, so stretching the transport timeout would
+               *  only let a hung non-eliciting tool hold the connection for
+               *  minutes past its configured limit. */
+              timeout: connection!.timeout,
               resetTimeoutOnProgress: true,
               ...options,
             },

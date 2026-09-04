@@ -120,6 +120,8 @@ function createMCPPermissionContext(req) {
 const elicitationFlowContext = new Map();
 const ELICITATION_CONTEXT_TTL_MS = 10 * 60 * 1000;
 
+const entryTimestamp = (value) => (typeof value === 'number' ? value : value?.createdAt);
+
 function evictStale(map, ttl) {
   if (map.size <= MAX_CACHE_SIZE) {
     return;
@@ -129,13 +131,30 @@ function evictStale(map, ttl) {
     // Entries are either a bare timestamp (number) or an object carrying a
     // `createdAt` field (e.g. elicitationFlowContext). Extract the timestamp
     // for either shape; drop entries whose age can't be determined.
-    const timestamp = typeof value === 'number' ? value : value?.createdAt;
+    const timestamp = entryTimestamp(value);
     if (timestamp == null || now - timestamp >= ttl) {
       map.delete(key);
     }
     if (map.size <= MAX_CACHE_SIZE) {
       return;
     }
+  }
+  /** Staleness alone does not enforce the cap: a burst of distinct users or
+   *  servers inside one TTL window leaves every entry fresh, and each one holds
+   *  a response object and a timer. Fall back to evicting oldest-first so the
+   *  map is bounded by MAX_CACHE_SIZE rather than by the TTL-window request
+   *  rate. Insertion order approximates age, so only entries without a usable
+   *  timestamp need the explicit sort. */
+  const byAge = [...map.entries()].sort((a, b) => {
+    const left = entryTimestamp(a[1]);
+    const right = entryTimestamp(b[1]);
+    return (left ?? 0) - (right ?? 0);
+  });
+  for (const [key] of byAge) {
+    if (map.size <= MAX_CACHE_SIZE) {
+      return;
+    }
+    map.delete(key);
   }
 }
 
