@@ -7,6 +7,7 @@ import type { CodeEnvironmentDocument } from '~/types';
 import type { IAclEntry } from '~/types';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import logger from '~/config/winston';
+import { createIndexesWithRetry } from '~/utils/retry';
 
 const CODE_ENVIRONMENT_TOMBSTONES = 'code_environment_tombstones';
 const REFERENCE_LEASE_MS = 2 * 60_000;
@@ -193,6 +194,7 @@ type CreateCodeEnvironmentInput = Pick<
   Pick<Partial<CodeEnvironmentDocument>, 'workerId' | 'revocationTokenEnv' | 'workerPrincipal'>;
 
 export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')): {
+  ensureCodeEnvironmentIndexes: () => Promise<void>;
   createCodeEnvironment: (input: CreateCodeEnvironmentInput) => Promise<CodeEnvironmentDocument>;
   createCodeEnvironmentWithinOwnerLimit: (
     input: CreateCodeEnvironmentInput,
@@ -225,6 +227,10 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   deleteUserCodeEnvironments: (userId: string | Types.ObjectId) => Promise<number>;
 } {
   const model = () => mongoose.models.CodeEnvironment as Model<CodeEnvironmentDocument>;
+
+  async function ensureCodeEnvironmentIndexes(): Promise<void> {
+    await createIndexesWithRetry(model());
+  }
 
   async function createCodeEnvironment(
     input: CreateCodeEnvironmentInput,
@@ -509,6 +515,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   }
 
   return {
+    ensureCodeEnvironmentIndexes,
     createCodeEnvironment,
     createCodeEnvironmentWithinOwnerLimit,
     findCodeEnvironmentsByIds,

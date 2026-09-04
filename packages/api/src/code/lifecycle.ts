@@ -3,6 +3,7 @@ import { createMethods, logger, runAsSystem } from '@librechat/data-schemas';
 import type { AppConfig, CodeEnvironmentDocument } from '@librechat/data-schemas';
 import type { CodeBridgeFetch } from './bridge';
 import { readCodeBridgeSecret, revokeCodeBridgeWorker } from './bridge';
+import { isLeader } from '~/cluster';
 
 const RECONCILE_INTERVAL_MS = 60_000;
 const RECONCILE_LEASE_MS = 2 * 60_000;
@@ -11,6 +12,7 @@ const REGISTRATION_RETRY_MS = 5 * 60_000;
 const REVOCATION_RETRY_MS = 5 * 60_000;
 let reconcileTimer: NodeJS.Timeout | undefined;
 let reconcileInFlight: Promise<void> | undefined;
+let reconcileInitialization: Promise<void> | undefined;
 
 function agentReferenceFilter(environmentId: string, tenantId?: string) {
   return {
@@ -36,10 +38,19 @@ export async function reconcileCodeEnvironmentLifecycle({
     if (CodeEnvironment == null || AclEntry == null) return;
     const methods = createMethods(mongoose);
     const now = new Date();
-    await CodeEnvironment.updateMany(
-      {},
-      { $pull: { pendingAgentReferences: { expiresAt: { $lte: now } } } },
-    );
+    const expiredReferenceCandidates = await CodeEnvironment.find({
+      'pendingAgentReferences.expiresAt': { $lte: now },
+    })
+      .sort({ 'pendingAgentReferences.expiresAt': 1, _id: 1 })
+      .limit(limit)
+      .select('_id')
+      .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
+    if (expiredReferenceCandidates.length > 0) {
+      await CodeEnvironment.updateMany(
+        { _id: { $in: expiredReferenceCandidates.map(({ _id }) => _id) } },
+        { $pull: { pendingAgentReferences: { expiresAt: { $lte: now } } } },
+      );
+    }
     const expiredRemovals = await CodeEnvironment.find({
       deletionCommittedAt: { $exists: false },
       deletionLeaseExpiresAt: { $lte: now },
@@ -325,11 +336,19 @@ export async function reconcileCodeEnvironmentLifecycle({
 
 export function startCodeEnvironmentLifecycleReconciler(
   options: Parameters<typeof reconcileCodeEnvironmentLifecycle>[0],
+  {
+    ensureIndexes = () =>
+      runAsSystem(() => createMethods(options.mongoose).ensureCodeEnvironmentIndexes()),
+  }: { ensureIndexes?: () => Promise<void> } = {},
 ): void {
-  if (reconcileTimer != null) return;
+  if (reconcileTimer != null || reconcileInitialization != null) return;
   const run = (): void => {
     if (reconcileInFlight != null) return;
-    const current = reconcileCodeEnvironmentLifecycle(options)
+    const current = isLeader()
+      .then(async (leader) => {
+        if (!leader) return;
+        await reconcileCodeEnvironmentLifecycle(options);
+      })
       .catch((error) => {
         logger.error('[code-environments] lifecycle reconciliation failed:', error);
       })
@@ -338,9 +357,22 @@ export function startCodeEnvironmentLifecycleReconciler(
       });
     reconcileInFlight = current;
   };
-  run();
-  reconcileTimer = setInterval(run, RECONCILE_INTERVAL_MS);
-  reconcileTimer.unref();
+  const initialization = ensureIndexes()
+    .then(() => {
+      run();
+      reconcileTimer = setInterval(run, RECONCILE_INTERVAL_MS);
+      reconcileTimer.unref();
+    })
+    .catch((error) => {
+      logger.error(
+        '[code-environments] index creation failed — lifecycle reconciler NOT started:',
+        error,
+      );
+    })
+    .finally(() => {
+      if (reconcileInitialization === initialization) reconcileInitialization = undefined;
+    });
+  reconcileInitialization = initialization;
 }
 
 export async function revokeUserCodeEnvironmentWorkers({

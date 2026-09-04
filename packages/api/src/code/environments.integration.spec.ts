@@ -1159,6 +1159,60 @@ describe('code environment registry', () => {
     expect(claimed?.deletionLeaseId).not.toBe('abandoned-removal');
   });
 
+  test('bounds expired agent reservation cleanup per reconciliation tick', async () => {
+    const methods = createMethods(mongoose);
+    const ownerId = new Types.ObjectId();
+    const expiredAt = new Date(Date.now() - 1_000);
+    await mongoose.models.User.create({
+      _id: ownerId,
+      email: 'reservation-owner@example.com',
+      provider: 'local',
+    });
+    const environments = await Promise.all(
+      ['first', 'second'].map((suffix) =>
+        methods.createCodeEnvironment({
+          environmentId: `expired-reservation-${suffix}`,
+          name: `Expired reservation ${suffix}`,
+          type: 'attached',
+          baseURL: 'https://code.example.com',
+          controlPlaneId: 'shared-code-api',
+          createdBy: ownerId,
+        }),
+      ),
+    );
+    await Promise.all(
+      environments.map((environment, index) =>
+        mongoose.models.CodeEnvironment.updateOne(
+          { _id: environment._id },
+          {
+            $set: {
+              pendingAgentReferences: [
+                { reservationId: `reservation-${index}`, expiresAt: expiredAt },
+              ],
+            },
+          },
+        ),
+      ),
+    );
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+
+    const afterFirstTick = await mongoose.models.CodeEnvironment.countDocuments({
+      _id: { $in: environments.map(({ _id }) => _id) },
+      'pendingAgentReferences.0': { $exists: true },
+    });
+    expect(afterFirstTick).toBe(1);
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+
+    await expect(
+      mongoose.models.CodeEnvironment.countDocuments({
+        _id: { $in: environments.map(({ _id }) => _id) },
+        'pendingAgentReferences.0': { $exists: true },
+      }),
+    ).resolves.toBe(0);
+  });
+
   test('preserves persisted agent references during interrupted-removal recovery', async () => {
     const ownerId = new Types.ObjectId();
     const registry = createCodeEnvironmentRegistry(mongoose);
