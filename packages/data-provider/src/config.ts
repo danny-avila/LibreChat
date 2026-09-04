@@ -1432,6 +1432,8 @@ export const endpointSchema = baseEndpointSchema.merge(
         includeReasoningContent: z.boolean().optional(),
         /** Also reconstructs `reasoning_content` from persisted history across turns (implies `includeReasoningContent`). */
         includeReasoningHistory: z.boolean().optional(),
+        /** If true, the endpoint label is shown as a prefix in the model name in the flat dropdown. */
+        showEndpointInModelName: z.boolean().optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
@@ -1783,6 +1785,7 @@ export const interfaceSchema = z
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
+    modelSelectMenuMode: z.enum(['auto', 'nested', 'flat']).optional(),
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
