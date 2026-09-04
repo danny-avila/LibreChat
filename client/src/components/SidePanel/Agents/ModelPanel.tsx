@@ -114,6 +114,10 @@ export default function ModelPanel({
    * if the endpoint config later stops dropping it, with no control to inspect or clear it.
    */
   useEffect(() => {
+    if (parameters.length === 0) {
+      return;
+    }
+
     const paramKeys = new Set(
       parameters.filter((setting) => setting != null).map((setting) => setting.key),
     );

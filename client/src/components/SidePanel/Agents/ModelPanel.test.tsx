@@ -314,4 +314,23 @@ describe('ModelPanel', () => {
       top_p: 0.9,
     });
   });
+
+  it('keeps saved model_parameters when the provider has no known parameter settings', () => {
+    const formRef: React.MutableRefObject<UseFormReturn<AgentForm> | null> = { current: null };
+    render(
+      <TestForm
+        defaultProvider="removed-provider"
+        defaultModel="removed-model"
+        defaultModelParameters={{ temperature: 0.5, top_p: 0.9 }}
+        formRef={formRef}
+        models={{ 'removed-provider': ['removed-model'] }}
+        modelsReady={true}
+      />,
+    );
+
+    expect(formRef.current?.getValues('model_parameters')).toEqual({
+      temperature: 0.5,
+      top_p: 0.9,
+    });
+  });
 });
