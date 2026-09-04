@@ -523,8 +523,12 @@ describe('callTool generated-content protection', () => {
     expect(mockProcessCodeOutput).toHaveBeenCalledWith(
       expect.objectContaining({ downloadFallback: true, preparedBuffer: undefined }),
     );
+    /* The cause rides the warning so the failure is diagnosable at all, but
+     * only through `getSafeErrorMetadata` — the upstream message here is
+     * `PRIVATE-DOWNLOAD-ERROR`, and that is precisely what must not appear. */
     expect(mockLogger.warn).toHaveBeenCalledWith(
       '[preflightCodeOutputBatch] Generated artifact 1 could not be inspected',
+      { type: 'Error' },
     );
     expect(JSON.stringify(mockLogger.warn.mock.calls)).not.toContain('PRIVATE-');
     expect(res.status).toHaveBeenCalledWith(200);

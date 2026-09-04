@@ -88,6 +88,7 @@ import {
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { createSkillContentDigest } from './compatibility';
+import { isMissingSandboxPathError } from '~/files/code';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -1879,24 +1880,6 @@ function looksBinary(content: string): boolean {
 }
 
 /**
- * True for the errors a sandbox raises about the requested PATH, and only
- * those. Deliberately narrower than {@link isSandboxMissingFileError}: that
- * predicate also accepts a bare "not found", which the sandbox reader emits
- * for a missing interpreter (`python3: not found`). Reporting that as a
- * missing image would send the model to `ls /mnt/data` while hiding a
- * runner dependency the operator needs to see.
- */
-function isMissingSandboxPathError(reason: string): boolean {
-  const message = reason.toLowerCase();
-  return (
-    message.includes('no such file or directory') ||
-    message.includes('cannot access') ||
-    message.includes('cannot find the path') ||
-    message.includes('enoent')
-  );
-}
-
-/**
  * Model-visible error for an image the sandbox could not hand back. The
  * read is a supported operation that FAILED, so the message must not reuse
  * the "images cannot be read as text" phrasing — that reads as a permanent
@@ -2209,13 +2192,15 @@ function mergeSandboxSessionArtifact(
   }
 }
 
+/**
+ * Broader than {@link isMissingSandboxPathError}: the authoring flow also
+ * treats a bare "not found" as an absent file, because a `cat` that cannot
+ * start is indistinguishable from a `cat` that found nothing as far as
+ * "should this create or overwrite?" is concerned.
+ */
 function isSandboxMissingFileError(error: unknown): boolean {
-  const message = getThrownValueMessage(error).toLowerCase();
-  return (
-    message.includes('no such file or directory') ||
-    message.includes('cannot access') ||
-    message.includes('not found')
-  );
+  const message = getThrownValueMessage(error);
+  return isMissingSandboxPathError(message) || message.toLowerCase().includes('not found');
 }
 
 function invalidSandboxAuthoringPath(filePath: string): string | null {
