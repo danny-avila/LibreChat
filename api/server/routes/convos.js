@@ -141,7 +141,7 @@ const isValidProjectFilter = (projectId) =>
   !projectId || projectId === 'unassigned' || /^[a-f\d]{24}$/i.test(projectId);
 
 router.get('/', async (req, res) => {
-  const limit = parseInt(req.query.limit, 10) || 25;
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
   const pinned = isEnabled(req.query.pinned);

@@ -1387,6 +1387,61 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / limit clamping', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    /** `parseInt('-1', 10) || 25` is -1 (truthy), which reached Mongo as `.limit(-1 + 1)` =
+     * `.limit(0)` — MongoDB treats 0 as "no limit" and returns every conversation the user
+     * owns, a pagination bypass / self-inflicted DoS on the highest-traffic list route. */
+    it('clamps a negative limit up to the floor of 1', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '-1' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 1 }),
+      );
+    });
+
+    it('clamps an oversized limit down to the ceiling of 100', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '100000' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 100 }),
+      );
+    });
+
+    it('falls back to the default of 25 for a non-numeric or absent limit', async () => {
+      await request(app).get('/api/convos').query({ limit: 'abc' });
+      expect(getConvosByCursor).toHaveBeenLastCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 25 }),
+      );
+
+      await request(app).get('/api/convos');
+      expect(getConvosByCursor).toHaveBeenLastCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 25 }),
+      );
+    });
+
+    it('preserves a valid in-range limit unchanged', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '50' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 50 }),
+      );
+    });
+  });
+
   describe('GET / pinned filter', () => {
     const { getConvosByCursor } = require('~/models');
 
