@@ -72,6 +72,10 @@ export function getCodeEnvironments(): Promise<t.TCodeEnvironmentsResponse> {
   return request.get(endpoints.codeEnvironments());
 }
 
+export function getCodeEnvironmentStatus(id: string): Promise<t.TCodeEnvironmentStatusResponse> {
+  return request.get(endpoints.codeEnvironmentStatus(id));
+}
+
 export function pairCodeEnvironment(payload: {
   name: string;
   controlPlaneId: string;

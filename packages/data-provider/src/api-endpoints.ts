@@ -54,6 +54,7 @@ export const codeEnvironmentPairings = () => `${codeEnvironments()}/pairings`;
 export const codeEnvironmentById = (id: string) =>
   `${codeEnvironments()}/${encodeURIComponent(id)}`;
 export const codeEnvironmentSettings = (id: string) => `${codeEnvironmentById(id)}/settings`;
+export const codeEnvironmentStatus = (id: string) => `${codeEnvironmentById(id)}/status`;
 
 const messagesRoot = `${BASE_URL}/api/messages`;
 
