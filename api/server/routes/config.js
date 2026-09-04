@@ -11,6 +11,7 @@ const {
   sanitizeModelSpecs,
   excludeHiddenModelSpecs,
   isFileSnapshotEnabled,
+  getEndpointsDropParamsMap,
 } = require('@librechat/api');
 const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
@@ -249,6 +250,8 @@ router.get('/', async function (req, res) {
 
     const appConfig = await getAppConfig(getAppConfigOptionsFromUser(req.user));
 
+    const endpointsDropParamsMap = getEndpointsDropParamsMap(appConfig?.endpoints);
+
     const balanceConfig = getBalanceConfig(appConfig);
     const cloudFront = buildCloudFrontStartupConfig();
     const langfuseFanoutEnabled = isLangfuseFanoutEnabled();
@@ -308,6 +311,7 @@ router.get('/', async function (req, res) {
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),
+      endpointsDropParamsMap: endpointsDropParamsMap,
     };
 
     const webSearch = buildWebSearchConfig(appConfig);

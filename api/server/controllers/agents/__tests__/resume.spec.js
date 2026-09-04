@@ -1530,7 +1530,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const res = await post(approveBody());
 
       expect(res.status).toBe(400);
-      expect(mockGetActions).toHaveBeenCalledWith({ agent_id: { $in: [AGENT_ID] } }, false);
+      expect(mockGetActions).toHaveBeenCalledWith({ agentId: [AGENT_ID] }, false);
       expect(mockDecryptMetadata).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
       expect(mockInitializeClient).not.toHaveBeenCalled();

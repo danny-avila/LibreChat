@@ -18,6 +18,7 @@ const mockGetMCPServerTools = jest.fn();
 const mockGetCachedTools = jest.fn();
 const mockSendEvent = jest.fn();
 const mockEmitChunk = jest.fn();
+const mockCreateAttachedWorkspaceBashTool = jest.fn(() => ({ name: AgentConstants.BASH_TOOL }));
 const mockResolveCodeExecutionContext = jest.fn(
   ({ statefulSessions, environment, userId, agentId, conversationId }) => {
     if (!statefulSessions) {
@@ -80,6 +81,7 @@ jest.mock('@librechat/api', () => ({
     emitChunk: (...args) => mockEmitChunk(...args),
   },
   resolveCodeExecutionContext: (...args) => mockResolveCodeExecutionContext(...args),
+  createAttachedWorkspaceBashTool: (...args) => mockCreateAttachedWorkspaceBashTool(...args),
 }));
 
 const mockLoadToolsUtil = jest.fn();
@@ -2328,7 +2330,7 @@ describe('ToolService - Action Capability Gating', () => {
         definitionsOnly: false,
       });
 
-      expect(mockLoadActionSets).toHaveBeenCalledWith({ agent_id: 'agent_123' });
+      expect(mockLoadActionSets).toHaveBeenCalledWith({ agentId: 'agent_123' });
     });
 
     it('blocks persisted action metadata before generic tool initialization', async () => {
@@ -2629,6 +2631,47 @@ describe('ToolService - Action Capability Gating', () => {
       } finally {
         delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
       }
+    });
+
+    it('loads bash execution through the attached worker transport', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockResolveCodeExecutionContext.mockReturnValueOnce({
+        baseUrl: 'http://attached-code.test/v1',
+        codeSessionKey: 'execute_code:stateful:attached',
+        executionProfile: 'stateful',
+        statefulSessions: true,
+        environmentType: 'attached',
+        bridgeWorkerId: 'worker-abc',
+      });
+      const toolRegistry = new Map([
+        [AgentConstants.BASH_TOOL, { name: AgentConstants.BASH_TOOL }],
+      ]);
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: {
+          id: 'attached-agent',
+          tools: [Tools.execute_code],
+          stateful_code_sessions: true,
+          stateful_code_environment: 'agent-user',
+        },
+        toolNames: [AgentConstants.BASH_TOOL],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(mockCreateAttachedWorkspaceBashTool).toHaveBeenCalledWith({
+        authHeaders: expect.any(Function),
+        baseUrl: 'http://attached-code.test/v1',
+      });
+      expect(result.loadedTools).toContainEqual({ name: AgentConstants.BASH_TOOL });
     });
 
     it('resolves stateful routing when handle_skill is the only requested tool', async () => {
@@ -2970,7 +3013,7 @@ describe('ToolService - Action Capability Gating', () => {
         actionsEnabled: true,
       });
 
-      expect(mockLoadActionSets).toHaveBeenCalledWith({ agent_id: 'agent_123' });
+      expect(mockLoadActionSets).toHaveBeenCalledWith({ agentId: 'agent_123' });
     });
 
     it('blocks decrypted persisted action secrets before execution-time domain work', async () => {

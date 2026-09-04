@@ -263,10 +263,16 @@ matrices (`SWEEP_REPORT_PATH`).
 Corrected-harness baseline (replica-set MongoDB, real ACL cascades, index DDL
 and transaction-lifecycle instrumentation, per-invocation async attribution,
 seeded authority-transaction case, constructor exports excluded, a fresh
-method bundle per case): **370 of 509 methods issue at least one query; zero
-rejections on MongoDB**. The remaining 139 issue none (validation
+method bundle per case, criteria-shaped parameters synthesized as objects):
+**385 of 518 methods issue at least one query; zero rejections on MongoDB**.
+The remaining 133 issue none (validation
 rejected the synthesized arguments, or a guard short-circuited); they are
-listed in the matrix and shrink by adding `ARG_OVERRIDES` entries. The report's `rows` payload is normalized for
+listed in the matrix and shrink by adding `ARG_OVERRIDES` entries. Watch this count across releases: the typed
+criteria refactor (#15580) silently took six adjudicated methods to
+un-driven because the sweep synthesized a string for a `query` parameter and
+`buildFilter` fails closed on it — a coverage regression that a green suite
+hides. Diffing matrices, not reading the pass line, is what catches it. The
+report's `rows` payload is normalized for
 cross-engine diffing (`diff <(jq .rows a.json) <(jq .rows b.json)`); run
 metadata lives outside it.
 

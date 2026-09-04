@@ -13,6 +13,10 @@ import {
 import type { AgentToolOptions, GraphEdge } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { ReachableAgent } from './traversal';
+import {
+  ATTACHED_WORKSPACE_BASH_SCHEMA,
+  buildAttachedWorkspaceBashDescription,
+} from '~/code/command';
 import { toolkitExpansion } from '~/tools/toolkits/mapping';
 import { normalizeAgentToolKeys } from '~/mcp/utils';
 import { collectReachableAgents } from './traversal';
@@ -396,6 +400,8 @@ export interface RegisterFileAuthoringToolsParams {
    * descriptions stay focused on code-execution sandbox files.
    */
   includeSkillFileInstructions?: boolean;
+  /** When true, non-skill paths use the attached worker's workspace/ namespace. */
+  workspaceTools?: boolean;
 }
 
 /**
@@ -705,6 +711,70 @@ const CODE_EDIT_FILE_DEF: LCTool = Object.freeze({
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
 }) as LCTool;
 
+const ATTACHED_CODE_CREATE_FILE_DESCRIPTION = `Create a new file in the selected attached environment, or overwrite one with explicit intent.
+
+Use a path in the form "workspace/{relativePath}". Requires overwrite: true to replace an existing file and refuses otherwise. The workspace may be an existing project, a Git repository, or an empty directory.
+
+Very long content can exceed the streamed tool-argument limit (64 KB by default). The attached workspace also limits each write to 1 MiB. Keep each call bounded.`;
+
+const ATTACHED_CODE_EDIT_FILE_DESCRIPTION = `Apply one or more ordered exact text replacements to an existing file in the selected attached environment.
+
+Use a path in the form "workspace/{relativePath}". Every old_text must match exactly one location at its step in the batch. Up to 100 replacements and 1 MiB of edit text are allowed; the entire batch commits atomically or makes no change.`;
+
+const ATTACHED_SKILL_CREATE_FILE_DESCRIPTION = `${SKILL_CREATE_FILE_DESCRIPTION.replace(
+  'Non-skills paths target the code-execution sandbox when enabled. Prefer /mnt/data/{file}.',
+  'For the selected attached environment, non-skill paths must use "workspace/{relativePath}".',
+)}`;
+
+const ATTACHED_SKILL_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
+
+For skills/{skillName}/... paths, exact matching falls back to whitespace-tolerant matching when needed and the result includes a unified diff. Keep SKILL.md YAML frontmatter name equal to {skillName}; create a new skills/{newName}/SKILL.md to rename a skill.
+
+For workspace/{relativePath} paths in the selected attached environment, every old_text must match exactly one location at its step. There is no whitespace-tolerant fallback. Up to 100 replacements and 1 MiB of edit text commit atomically, and the result is a write summary rather than a unified diff.`;
+
+function attachedFileAuthoringParameters(
+  parameters: LCTool['parameters'],
+  includeSkillFileInstructions: boolean,
+): LCTool['parameters'] {
+  const properties = parameters?.properties ?? {};
+  return Object.freeze({
+    ...parameters,
+    properties: {
+      ...properties,
+      path: {
+        type: 'string',
+        description: includeSkillFileInstructions
+          ? 'Use "skills/{skillName}/..." for a LibreChat skill file, or "workspace/{relativePath}" for a file in the selected attached environment.'
+          : 'Use "workspace/{relativePath}" for a file in the selected attached environment.',
+      },
+    },
+  }) as LCTool['parameters'];
+}
+
+const ATTACHED_CODE_CREATE_FILE_DEF: LCTool = Object.freeze({
+  ...CODE_CREATE_FILE_DEF,
+  description: ATTACHED_CODE_CREATE_FILE_DESCRIPTION,
+  parameters: attachedFileAuthoringParameters(CODE_CREATE_FILE_PARAMETERS, false),
+}) as LCTool;
+
+const ATTACHED_CODE_EDIT_FILE_DEF: LCTool = Object.freeze({
+  ...CODE_EDIT_FILE_DEF,
+  description: ATTACHED_CODE_EDIT_FILE_DESCRIPTION,
+  parameters: attachedFileAuthoringParameters(CODE_EDIT_FILE_PARAMETERS, false),
+}) as LCTool;
+
+const ATTACHED_SKILL_CREATE_FILE_DEF: LCTool = Object.freeze({
+  ...SKILL_CREATE_FILE_DEF,
+  description: ATTACHED_SKILL_CREATE_FILE_DESCRIPTION,
+  parameters: attachedFileAuthoringParameters(SKILL_CREATE_FILE_PARAMETERS, true),
+}) as LCTool;
+
+const ATTACHED_SKILL_EDIT_FILE_DEF: LCTool = Object.freeze({
+  ...SKILL_EDIT_FILE_DEF,
+  description: ATTACHED_SKILL_EDIT_FILE_DESCRIPTION,
+  parameters: attachedFileAuthoringParameters(SKILL_EDIT_FILE_PARAMETERS, true),
+}) as LCTool;
+
 function buildReadFileDef(includeSkillFileInstructions: boolean, workspaceTools: boolean): LCTool {
   if (workspaceTools) {
     return includeSkillFileInstructions
@@ -714,7 +784,15 @@ function buildReadFileDef(includeSkillFileInstructions: boolean, workspaceTools:
   return includeSkillFileInstructions ? READ_FILE_DEF : CODE_READ_FILE_DEF;
 }
 
-function buildFileAuthoringDefs(includeSkillFileInstructions: boolean): LCTool[] {
+function buildFileAuthoringDefs(
+  includeSkillFileInstructions: boolean,
+  workspaceTools: boolean,
+): LCTool[] {
+  if (workspaceTools) {
+    return includeSkillFileInstructions
+      ? [ATTACHED_SKILL_CREATE_FILE_DEF, ATTACHED_SKILL_EDIT_FILE_DEF]
+      : [ATTACHED_CODE_CREATE_FILE_DEF, ATTACHED_CODE_EDIT_FILE_DEF];
+  }
   return includeSkillFileInstructions
     ? [SKILL_CREATE_FILE_DEF, SKILL_EDIT_FILE_DEF]
     : [CODE_CREATE_FILE_DEF, CODE_EDIT_FILE_DEF];
@@ -730,10 +808,16 @@ function isCodeOnlyReadFileDef(def: LCTool | undefined): boolean {
 
 function isCodeOnlyFileAuthoringDef(def: LCTool | undefined): boolean {
   if (def?.name === CREATE_FILE_TOOL_NAME) {
-    return def.description === CODE_CREATE_FILE_DESCRIPTION;
+    return (
+      def.description === CODE_CREATE_FILE_DESCRIPTION ||
+      def.description === ATTACHED_CODE_CREATE_FILE_DESCRIPTION
+    );
   }
   if (def?.name === EDIT_FILE_TOOL_NAME) {
-    return def.description === CODE_EDIT_FILE_DESCRIPTION;
+    return (
+      def.description === CODE_EDIT_FILE_DESCRIPTION ||
+      def.description === ATTACHED_CODE_EDIT_FILE_DESCRIPTION
+    );
   }
   return false;
 }
@@ -742,13 +826,17 @@ export function isFileAuthoringToolDefinition(def: LCTool | undefined): boolean 
   if (def?.name === CREATE_FILE_TOOL_NAME) {
     return (
       def.description === CODE_CREATE_FILE_DESCRIPTION ||
-      def.description === SKILL_CREATE_FILE_DESCRIPTION
+      def.description === SKILL_CREATE_FILE_DESCRIPTION ||
+      def.description === ATTACHED_CODE_CREATE_FILE_DESCRIPTION ||
+      def.description === ATTACHED_SKILL_CREATE_FILE_DESCRIPTION
     );
   }
   if (def?.name === EDIT_FILE_TOOL_NAME) {
     return (
       def.description === CODE_EDIT_FILE_DESCRIPTION ||
-      def.description === SKILL_EDIT_FILE_DESCRIPTION
+      def.description === SKILL_EDIT_FILE_DESCRIPTION ||
+      def.description === ATTACHED_CODE_EDIT_FILE_DESCRIPTION ||
+      def.description === ATTACHED_SKILL_EDIT_FILE_DESCRIPTION
     );
   }
   return false;
@@ -765,15 +853,23 @@ export function isFileAuthoringToolDefinition(def: LCTool | undefined): boolean 
  * intent of the original constant while keeping the per-agent gate
  * behavior introduced for tool-output references.
  */
-function createBashToolDef(enableToolOutputReferences: boolean, statefulSessions = false): LCTool {
+function createBashToolDef(
+  enableToolOutputReferences: boolean,
+  statefulSessions = false,
+  workspaceTools = false,
+): LCTool {
   /* Passed as a variable (not an inline literal) so the extra
    * `statefulSessions` key stays assignable against pinned SDK versions
    * whose builder predates it (ignored at runtime there). */
   const descriptionOpts = { enableToolOutputReferences, statefulSessions };
   return Object.freeze({
     name: BashExecutionToolDefinition.name,
-    description: buildBashExecutionToolDescription(descriptionOpts),
-    parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
+    description: workspaceTools
+      ? buildAttachedWorkspaceBashDescription(enableToolOutputReferences)
+      : buildBashExecutionToolDescription(descriptionOpts),
+    parameters: (workspaceTools
+      ? ATTACHED_WORKSPACE_BASH_SCHEMA
+      : BashExecutionToolDefinition.schema) as unknown as LCTool['parameters'],
   }) as LCTool;
 }
 
@@ -783,11 +879,16 @@ const BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS = createBashToolDef(false);
 function buildBashToolDef(opts: {
   enableToolOutputReferences: boolean;
   statefulSessions?: boolean;
+  workspaceTools?: boolean;
 }): LCTool {
   /* Stateful defs are built on demand: the stateless pair covers the
    * default path, and per-run construction is negligible next to init. */
-  if (opts.statefulSessions === true) {
-    return createBashToolDef(opts.enableToolOutputReferences, true);
+  if (opts.statefulSessions === true || opts.workspaceTools === true) {
+    return createBashToolDef(
+      opts.enableToolOutputReferences,
+      opts.statefulSessions === true,
+      opts.workspaceTools === true,
+    );
   }
   return opts.enableToolOutputReferences
     ? BASH_TOOL_DEF_WITH_OUTPUT_REFS
@@ -823,7 +924,10 @@ export function registerCodeExecutionTools(
 
   const readFileDef = buildReadFileDef(includeSkillFileInstructions, workspaceTools);
   const codeTools: LCTool[] = includeBash
-    ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
+    ? [
+        readFileDef,
+        buildBashToolDef({ enableToolOutputReferences, statefulSessions, workspaceTools }),
+      ]
     : [readFileDef];
   const candidates = workspaceTools
     ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF, LIST_WORKSPACE_FILES_TOOL_DEF]
@@ -883,9 +987,14 @@ export function registerCodeExecutionTools(
 export function registerFileAuthoringTools(
   params: RegisterFileAuthoringToolsParams,
 ): RegisterFileAuthoringToolsResult {
-  const { toolRegistry, toolDefinitions, includeSkillFileInstructions = true } = params;
+  const {
+    toolRegistry,
+    toolDefinitions,
+    includeSkillFileInstructions = true,
+    workspaceTools = false,
+  } = params;
 
-  const candidates = buildFileAuthoringDefs(includeSkillFileInstructions);
+  const candidates = buildFileAuthoringDefs(includeSkillFileInstructions, workspaceTools);
   const toolNames = candidates.map((def) => def.name);
   const inputDefinitions = toolDefinitions ?? [];
   let workingDefinitions = inputDefinitions;

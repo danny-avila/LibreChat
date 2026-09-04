@@ -21,6 +21,8 @@ const mockCanAccessSharedLink = jest.fn((req, _res, next) => {
   next();
 });
 const mockGetAppConfig = jest.fn();
+const mockShareIpLimiter = jest.fn((_req, _res, next) => next());
+const mockShareUserLimiter = jest.fn((_req, _res, next) => next());
 const mockParseSharedLinksPageSize = jest.fn(() => 10);
 const mockIsValidSharedLinksCursor = jest.fn(() => true);
 const mockAssertConversationContentAllowed = jest.fn();
@@ -205,6 +207,10 @@ jest.mock('~/server/middleware/limiters', () => ({
     forkIpLimiter: (_req, _res, next) => next(),
     forkUserLimiter: (_req, _res, next) => next(),
   }),
+  createShareLimiters: () => ({
+    shareIpLimiter: (req, res, next) => mockShareIpLimiter(req, res, next),
+    shareUserLimiter: (req, res, next) => mockShareUserLimiter(req, res, next),
+  }),
 }));
 
 jest.mock('~/server/utils/import/fork', () => ({
@@ -368,6 +374,15 @@ describe('share routes', () => {
 
     expect(response.status).toBe(200);
     expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+  });
+
+  it('rate limits shared message retrieval by IP and by user', async () => {
+    mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
+
+    await request(buildApp()).get('/api/share/share-123').expect(200);
+
+    expect(mockShareIpLimiter).toHaveBeenCalledTimes(1);
+    expect(mockShareUserLimiter).toHaveBeenCalledTimes(1);
   });
 
   it('prevents successful shared message responses from being cached', async () => {

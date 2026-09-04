@@ -45,6 +45,7 @@ const {
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
   codeExecutionAuthHeaders,
+  createAttachedWorkspaceBashTool,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
   LIST_WORKSPACE_FILES_TOOL_NAME,
@@ -198,7 +199,7 @@ const prepareActionSnapshotForTools = async ({ agentId, toolNames, filters, decr
   if (!toolNames.some((toolName) => isActionTool(toolName))) {
     return null;
   }
-  const storedActions = (await loadActionSets({ agent_id: agentId })) ?? [];
+  const storedActions = (await loadActionSets({ agentId })) ?? [];
   if (storedActions.length === 0) {
     return { storedActions, actionSets: [] };
   }
@@ -517,7 +518,7 @@ async function processRequiredActions(client, requiredActions) {
         /** @type {Action[]} */
         const storedActions =
           (await loadActionSets({
-            assistant_id: client.req.body.assistant_id,
+            assistantId: client.req.body.assistant_id,
           })) ?? [];
         const actionSets = await prepareStoredActionsForUse({
           actions: storedActions,
@@ -2122,14 +2123,21 @@ async function loadToolsForExecution({
   }
   if (isBashTool) {
     try {
-      const bashTool = createBashExecutionTool({
-        authHeaders: () =>
-          codeExecutionAuthHeaders(
-            (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
-            codeExecutionContext,
-          ),
-        ...codeExecutionContext,
-      });
+      const authHeaders = () =>
+        codeExecutionAuthHeaders(
+          (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+          codeExecutionContext,
+        );
+      const bashTool =
+        codeExecutionContext.environmentType === 'attached'
+          ? createAttachedWorkspaceBashTool({
+              authHeaders,
+              baseUrl: codeExecutionContext.baseUrl,
+            })
+          : createBashExecutionTool({
+              authHeaders,
+              ...codeExecutionContext,
+            });
       allLoadedTools.push(bashTool);
     } catch (error) {
       logger.error(

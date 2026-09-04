@@ -8,6 +8,15 @@ const MAX_READ_LINES = 500;
 const MAX_SEARCH_RESULTS = 200;
 const MAX_SEARCH_TEXT_LENGTH = 2000;
 const MAX_LIST_RESULTS = 500;
+export const WORKSPACE_WRITE_MAX_BYTES: number = 1024 * 1024;
+export const WORKSPACE_EDIT_MAX_COUNT: number = 100;
+const MAX_COMMAND_BYTES = 32 * 1024;
+const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+const MAX_COMMAND_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;
+const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
+const MAX_COMMAND_SIGNAL_LENGTH = 32;
+const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const READ_RESULT_KEYS = new Set([
   'protocolVersion',
@@ -36,6 +45,45 @@ const LIST_RESULT_KEYS = new Set([
   'truncated',
   'nextAfterPath',
 ]);
+const COMMAND_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'exitCode',
+  'signal',
+  'stdout',
+  'stderr',
+  'truncated',
+  'timedOut',
+]);
+const WRITE_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'path',
+  'created',
+  'bytesWritten',
+]);
+const EDIT_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'path',
+  'replacements',
+  'bytesWritten',
+]);
+const PREVIEW_EDIT_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'path',
+  'content',
+  'hasUtf8Bom',
+  'baseSha256',
+  'replacements',
+  'bytesWritten',
+]);
+const TEXT_EDIT_KEYS = new Set(['oldText', 'newText']);
 
 export interface WorkspaceReadRequest {
   protocolVersion: 1;
@@ -64,10 +112,55 @@ export interface WorkspaceListRequest {
   afterPath?: string;
 }
 
+export interface WorkspaceExecuteCommandRequest {
+  protocolVersion: 1;
+  operation: 'execute_command';
+  workspaceId: string;
+  command: string;
+  cwd?: string;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+}
+
+export interface WorkspaceWriteRequest {
+  protocolVersion: 1;
+  operation: 'write_file';
+  workspaceId: string;
+  path: string;
+  content: string;
+  overwrite?: boolean;
+}
+
+export interface WorkspaceTextEdit {
+  oldText: string;
+  newText: string;
+}
+
+export interface WorkspaceEditRequest {
+  protocolVersion: 1;
+  operation: 'edit_file';
+  workspaceId: string;
+  path: string;
+  edits: WorkspaceTextEdit[];
+  expectedBaseSha256?: string;
+}
+
+export interface WorkspacePreviewEditRequest {
+  protocolVersion: 1;
+  operation: 'preview_edit';
+  workspaceId: string;
+  path: string;
+  edits: WorkspaceTextEdit[];
+}
+
 export type WorkspaceToolRequest =
   | WorkspaceReadRequest
   | WorkspaceSearchRequest
-  | WorkspaceListRequest;
+  | WorkspaceListRequest
+  | WorkspaceWriteRequest
+  | WorkspacePreviewEditRequest
+  | WorkspaceEditRequest
+  | WorkspaceExecuteCommandRequest;
 
 export interface WorkspaceReadResult {
   protocolVersion: 1;
@@ -98,7 +191,56 @@ export interface WorkspaceListResult {
   nextAfterPath?: string;
 }
 
-export type WorkspaceToolResult = WorkspaceReadResult | WorkspaceSearchResult | WorkspaceListResult;
+export interface WorkspaceExecuteCommandResult {
+  protocolVersion: 1;
+  operation: 'execute_command';
+  workspaceId: string;
+  exitCode: number | null;
+  signal?: string;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  timedOut: boolean;
+}
+
+export interface WorkspaceWriteResult {
+  protocolVersion: 1;
+  operation: 'write_file';
+  workspaceId: string;
+  path: string;
+  created: boolean;
+  bytesWritten: number;
+}
+
+export interface WorkspaceEditResult {
+  protocolVersion: 1;
+  operation: 'edit_file';
+  workspaceId: string;
+  path: string;
+  replacements: number;
+  bytesWritten: number;
+}
+
+export interface WorkspacePreviewEditResult {
+  protocolVersion: 1;
+  operation: 'preview_edit';
+  workspaceId: string;
+  path: string;
+  content: string;
+  hasUtf8Bom: boolean;
+  baseSha256: string;
+  replacements: number;
+  bytesWritten: number;
+}
+
+export type WorkspaceToolResult =
+  | WorkspaceReadResult
+  | WorkspaceSearchResult
+  | WorkspaceListResult
+  | WorkspaceWriteResult
+  | WorkspacePreviewEditResult
+  | WorkspaceEditResult
+  | WorkspaceExecuteCommandResult;
 
 export class WorkspaceToolHttpError extends Error {
   constructor(
@@ -131,6 +273,36 @@ function isSafePath(value: unknown): value is string {
 
 function isPositiveInteger(value: unknown, maximum: number): boolean {
   return Number.isSafeInteger(value) && Number(value) >= 1 && Number(value) <= maximum;
+}
+
+function isUtf8StringWithinBytes(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === 'string' &&
+    Buffer.from(value).toString('utf8') === value &&
+    new TextEncoder().encode(value).byteLength <= maximum
+  );
+}
+
+function areValidWorkspaceEdits(edits: unknown): edits is WorkspaceTextEdit[] {
+  if (!Array.isArray(edits)) return false;
+  if (edits.length < 1 || edits.length > WORKSPACE_EDIT_MAX_COUNT) return false;
+  let bytes = 0;
+  for (const edit of edits) {
+    if (
+      !isRecord(edit) ||
+      !hasOnlyKeys(edit, TEXT_EDIT_KEYS) ||
+      !isUtf8StringWithinBytes(edit.oldText, WORKSPACE_WRITE_MAX_BYTES) ||
+      edit.oldText.length === 0 ||
+      !isUtf8StringWithinBytes(edit.newText, WORKSPACE_WRITE_MAX_BYTES)
+    ) {
+      return false;
+    }
+    bytes +=
+      new TextEncoder().encode(edit.oldText).byteLength +
+      new TextEncoder().encode(edit.newText).byteLength;
+    if (bytes > WORKSPACE_WRITE_MAX_BYTES) return false;
+  }
+  return true;
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
@@ -232,6 +404,34 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
       (request.maxResults == null || isPositiveInteger(request.maxResults, MAX_LIST_RESULTS))
     );
   }
+  if (request.operation === 'execute_command') {
+    return (
+      isUtf8StringWithinBytes(request.command, MAX_COMMAND_BYTES) &&
+      request.command.trim().length > 0 &&
+      !request.command.includes('\0') &&
+      (request.cwd == null || isSafePath(request.cwd)) &&
+      (request.timeoutMs == null || isPositiveInteger(request.timeoutMs, MAX_COMMAND_TIMEOUT_MS)) &&
+      (request.maxOutputBytes == null ||
+        isPositiveInteger(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES))
+    );
+  }
+  if (request.operation === 'write_file') {
+    return (
+      isSafePath(request.path) &&
+      isUtf8StringWithinBytes(request.content, WORKSPACE_WRITE_MAX_BYTES) &&
+      (request.overwrite === undefined || typeof request.overwrite === 'boolean')
+    );
+  }
+  if (request.operation === 'preview_edit') {
+    return isSafePath(request.path) && areValidWorkspaceEdits(request.edits);
+  }
+  if (request.operation === 'edit_file') {
+    return (
+      isSafePath(request.path) &&
+      areValidWorkspaceEdits(request.edits) &&
+      (request.expectedBaseSha256 == null || /^[a-f0-9]{64}$/.test(request.expectedBaseSha256))
+    );
+  }
   if (request.operation !== 'search_text') {
     return false;
   }
@@ -253,8 +453,7 @@ function isValidResult(
     !isRecord(value) ||
     value.protocolVersion !== 1 ||
     value.operation !== request.operation ||
-    value.workspaceId !== request.workspaceId ||
-    typeof value.truncated !== 'boolean'
+    value.workspaceId !== request.workspaceId
   ) {
     return false;
   }
@@ -275,6 +474,7 @@ function isValidResult(
       value.path === request.path &&
       isSafePath(value.path) &&
       content != null &&
+      typeof value.truncated === 'boolean' &&
       new TextEncoder().encode(content).byteLength <= MAX_READ_BYTES &&
       value.startLine === startLine &&
       Number.isSafeInteger(value.endLine) &&
@@ -294,6 +494,7 @@ function isValidResult(
     const maxResults = request.maxResults ?? 100;
     if (
       !hasOnlyKeys(value, LIST_RESULT_KEYS) ||
+      typeof value.truncated !== 'boolean' ||
       !Array.isArray(value.paths) ||
       value.paths.length > maxResults
     ) {
@@ -314,9 +515,73 @@ function isValidResult(
       ? value.paths.length > 0 && value.nextAfterPath === value.paths[value.paths.length - 1]
       : value.nextAfterPath == null;
   }
+  if (request.operation === 'execute_command') {
+    const stdout = typeof value.stdout === 'string' ? value.stdout : null;
+    const stderr = typeof value.stderr === 'string' ? value.stderr : null;
+    const outputLimit = request.maxOutputBytes ?? DEFAULT_COMMAND_OUTPUT_BYTES;
+    return (
+      hasOnlyKeys(value, COMMAND_RESULT_KEYS) &&
+      typeof value.truncated === 'boolean' &&
+      stdout != null &&
+      stderr != null &&
+      Buffer.from(stdout).toString('utf8') === stdout &&
+      Buffer.from(stderr).toString('utf8') === stderr &&
+      new TextEncoder().encode(stdout).byteLength + new TextEncoder().encode(stderr).byteLength <=
+        outputLimit &&
+      (value.exitCode === null ||
+        (Number.isSafeInteger(value.exitCode) &&
+          Number(value.exitCode) >= 0 &&
+          Number(value.exitCode) <= 255)) &&
+      (value.signal == null ||
+        (typeof value.signal === 'string' &&
+          value.signal.length <= MAX_COMMAND_SIGNAL_LENGTH &&
+          /^SIG[A-Z0-9]+$/.test(value.signal))) &&
+      typeof value.timedOut === 'boolean' &&
+      (value.exitCode === null
+        ? value.timedOut === true || value.signal != null
+        : value.timedOut === false && value.signal == null)
+    );
+  }
+  if (request.operation === 'write_file') {
+    return (
+      hasOnlyKeys(value, WRITE_RESULT_KEYS) &&
+      value.path === request.path &&
+      typeof value.created === 'boolean' &&
+      (request.overwrite !== false || value.created === true) &&
+      Number.isSafeInteger(value.bytesWritten) &&
+      Number(value.bytesWritten) === new TextEncoder().encode(request.content).byteLength
+    );
+  }
+  if (request.operation === 'edit_file') {
+    return (
+      hasOnlyKeys(value, EDIT_RESULT_KEYS) &&
+      value.path === request.path &&
+      value.replacements === request.edits.length &&
+      Number.isSafeInteger(value.bytesWritten) &&
+      Number(value.bytesWritten) >= 0 &&
+      Number(value.bytesWritten) <= WORKSPACE_WRITE_MAX_BYTES
+    );
+  }
+  if (request.operation === 'preview_edit') {
+    const content = typeof value.content === 'string' ? value.content : null;
+    return (
+      hasOnlyKeys(value, PREVIEW_EDIT_RESULT_KEYS) &&
+      value.path === request.path &&
+      content != null &&
+      Buffer.from(content).toString('utf8') === content &&
+      typeof value.hasUtf8Bom === 'boolean' &&
+      /^[a-f0-9]{64}$/.test(typeof value.baseSha256 === 'string' ? value.baseSha256 : '') &&
+      value.replacements === request.edits.length &&
+      Number.isSafeInteger(value.bytesWritten) &&
+      Number(value.bytesWritten) ===
+        new TextEncoder().encode(content).byteLength + (value.hasUtf8Bom ? 3 : 0) &&
+      Number(value.bytesWritten) <= WORKSPACE_WRITE_MAX_BYTES
+    );
+  }
   const maxResults = request.maxResults ?? 50;
   return (
     hasOnlyKeys(value, SEARCH_RESULT_KEYS) &&
+    typeof value.truncated === 'boolean' &&
     Array.isArray(value.matches) &&
     value.matches.length <= maxResults &&
     value.matches.every(
@@ -331,6 +596,11 @@ function isValidResult(
         match.text.length <= MAX_SEARCH_TEXT_LENGTH,
     )
   );
+}
+
+function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
+  if (request.operation !== 'execute_command') return WORKSPACE_TOOL_TIMEOUT_MS;
+  return (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
 }
 
 export async function executeWorkspaceTool({
@@ -350,7 +620,7 @@ export async function executeWorkspaceTool({
     throw new WorkspaceToolHttpError('invalid');
   }
   try {
-    const timeoutSignal = AbortSignal.timeout(WORKSPACE_TOOL_TIMEOUT_MS);
+    const timeoutSignal = AbortSignal.timeout(getWorkspaceToolTimeoutMs(request));
     const requestSignal =
       signal != null && typeof AbortSignal.any === 'function'
         ? AbortSignal.any([signal, timeoutSignal])

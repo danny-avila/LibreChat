@@ -560,4 +560,261 @@ describe('executeWorkspaceTool', () => {
     ).rejects.toMatchObject({ reason: 'invalid' });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  test('accepts a bounded command result from the selected attached worker', async () => {
+    const fetchImpl = jest.fn(async () =>
+      Response.json({
+        protocolVersion: 1,
+        operation: 'execute_command',
+        workspaceId: 'primary',
+        exitCode: 2,
+        stdout: '',
+        stderr: 'not found',
+        truncated: false,
+        timedOut: false,
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'execute_command',
+          workspaceId: 'primary',
+          command: 'test -f package.json',
+          maxOutputBytes: 256 * 1024,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ exitCode: 2, stderr: 'not found' });
+  });
+
+  test('rejects command requests and results outside protocol limits', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () =>
+      Response.json({
+        protocolVersion: 1,
+        operation: 'execute_command',
+        workspaceId: 'primary',
+        exitCode: 0,
+        stdout: 'x'.repeat(9),
+        stderr: '',
+        truncated: false,
+        timedOut: false,
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'execute_command',
+          workspaceId: 'primary',
+          command: 'printf x',
+          maxOutputBytes: 8,
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'execute_command',
+          workspaceId: 'primary',
+          command: 'x'.repeat(32 * 1024 + 1),
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
+  test('validates atomic create-only workspace writes', async () => {
+    const fetchImpl = jest.fn(async () =>
+      Response.json({
+        protocolVersion: 1,
+        operation: 'write_file',
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: true,
+        bytesWritten: 5,
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'write_file',
+          workspaceId: 'primary',
+          path: 'src/new.ts',
+          content: 'ready',
+          overwrite: false,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ created: true, bytesWritten: 5 });
+
+    fetchImpl.mockResolvedValueOnce(
+      Response.json({
+        protocolVersion: 1,
+        operation: 'write_file',
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: false,
+        bytesWritten: 5,
+      }),
+    );
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'write_file',
+          workspaceId: 'primary',
+          path: 'src/new.ts',
+          content: 'ready',
+          overwrite: false,
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
+  test('validates bounded atomic workspace edit batches', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () =>
+      Response.json({
+        protocolVersion: 1,
+        operation: 'edit_file',
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        replacements: 2,
+        bytesWritten: 18,
+      }),
+    );
+    const request = {
+      protocolVersion: 1 as const,
+      operation: 'edit_file' as const,
+      workspaceId: 'primary',
+      path: 'src/app.ts',
+      edits: [
+        { oldText: 'false', newText: 'true' },
+        { oldText: 'draft', newText: 'ready' },
+      ],
+    };
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request,
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ replacements: 2 });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: { ...request, edits: [] },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: { ...request, edits: undefined } as unknown as typeof request,
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('validates exact edit previews and revision-fenced commits', async () => {
+    const edits = [{ oldText: ' suffix', newText: 'RET suffix' }];
+    const baseSha256 = 'a'.repeat(64);
+    const fetchImpl: CodeBridgeFetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          protocolVersion: 1,
+          operation: 'preview_edit',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          content: 'prefix SECRET suffix',
+          hasUtf8Bom: false,
+          baseSha256,
+          replacements: 1,
+          bytesWritten: 20,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          replacements: 1,
+          bytesWritten: 20,
+        }),
+      );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'preview_edit',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ content: 'prefix SECRET suffix', baseSha256 });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+          expectedBaseSha256: baseSha256,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({ replacements: 1 });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: {},
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits,
+          expectedBaseSha256: 'invalid',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });

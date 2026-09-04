@@ -8,7 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
-import type { IAgent, IAclEntry } from '~/types';
+import type { IAgent, IAclEntry, ActionQuery } from '~/types';
 import { withCodeEnvironmentReference } from './codeEnvironment';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
@@ -116,10 +116,7 @@ export interface AgentDeps {
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
   removeAllPermissions: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
   /** Gets actions. Created by createActionMethods. */
-  getActions: (
-    searchParams: FilterQuery<unknown>,
-    includeSensitive?: boolean,
-  ) => Promise<unknown[]>;
+  getActions: (query: ActionQuery, includeSensitive?: boolean) => Promise<unknown[]>;
   /** Returns resource IDs solely owned by the given user. From createAclEntryMethods. */
   getSoleOwnedResourceIds: (
     userObjectId: Types.ObjectId,
@@ -802,7 +799,7 @@ export function createAgentMethods(
 
         if (actionIds.length > 0) {
           try {
-            const actions = await getActions({ action_id: { $in: actionIds } }, true);
+            const actions = await getActions({ actionId: actionIds }, true);
 
             actionsHash = await generateActionMetadataHash(
               currentAgent.actions,
