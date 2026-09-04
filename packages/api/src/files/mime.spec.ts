@@ -40,4 +40,9 @@ describe('resolveImageMimeType', () => {
     expect(resolveImageMimeType({ format: 'svg' })).toBeUndefined();
     expect(resolveImageMimeType({ format: 'raw' })).toBeUndefined();
   });
+
+  it('declines to name a heif container whose compression sharp did not report', () => {
+    expect(resolveImageMimeType({ format: 'heif' })).toBeUndefined();
+    expect(resolveImageMimeType({ format: 'heif', compression: undefined })).toBeUndefined();
+  });
 });
