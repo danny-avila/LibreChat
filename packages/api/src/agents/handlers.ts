@@ -23,8 +23,8 @@ import type {
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
+import type { WorkspaceReadResult, WorkspaceSearchResult } from '~/code/workspace';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
-import type { WorkspaceReadResult } from '~/code/workspace';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
@@ -63,6 +63,7 @@ import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
+  SEARCH_WORKSPACE_TOOL_NAME,
   isCodeSessionToolName,
 } from './tools';
 import {
@@ -455,6 +456,18 @@ export interface ToolExecuteOptions {
     req?: ServerRequest;
     signal?: AbortSignal;
   }) => Promise<WorkspaceReadResult>;
+  /** Searches literal text within an attached worker's logical workspace. */
+  searchWorkspace?: (params: {
+    query: string;
+    workspace_id: string;
+    path?: string;
+    max_results: number;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceSearchResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
    * sandbox `/exec` endpoint. The host implementation supplies the
@@ -2282,6 +2295,87 @@ async function handleWorkspaceFileRead(
       content: '',
       errorMessage: `"${filePath}" could not be read from the attached workspace.`,
     };
+  }
+}
+
+async function handleWorkspaceSearchCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown> | undefined,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+  signal?: AbortSignal,
+): Promise<ToolExecuteResult> {
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable ?? {});
+  if (
+    mergedConfigurable?.codeEnvAvailable !== true ||
+    codeExecutionContext?.environmentType !== 'attached'
+  ) {
+    return errorResult(tc, 'search_workspace requires an attached code environment.');
+  }
+  if (!options.searchWorkspace) {
+    return errorResult(tc, 'Attached workspace search is not configured.');
+  }
+
+  const args = tc.args as { query?: unknown; path?: unknown; max_results?: unknown };
+  const maxResults = args.max_results ?? 50;
+  if (
+    typeof args.query !== 'string' ||
+    args.query.length === 0 ||
+    args.query.length > 4096 ||
+    (args.path != null && typeof args.path !== 'string') ||
+    !Number.isSafeInteger(maxResults) ||
+    Number(maxResults) < 1 ||
+    Number(maxResults) > 200
+  ) {
+    return errorResult(tc, 'query, path, or max_results is invalid for workspace search.');
+  }
+
+  try {
+    const result = await options.searchWorkspace({
+      query: args.query,
+      workspace_id: 'primary',
+      ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
+      max_results: Number(maxResults),
+      codeApiBaseUrl: codeExecutionContext.baseUrl,
+      executionProfile: codeExecutionContext.executionProfile,
+      ...(codeExecutionContext.bridgeWorkerId
+        ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
+        : {}),
+      ...(req ? { req } : {}),
+      ...(signal ? { signal } : {}),
+    });
+
+    for (const match of result.matches) {
+      const filtered = filteredFileResult(tc, req, match.path, match.text);
+      if (filtered != null) return filtered;
+    }
+    const unboundedContent =
+      result.matches.length === 0
+        ? 'No matches found.'
+        : result.matches
+            .map((match) => `workspace/${match.path}:${match.line}:${match.column}: ${match.text}`)
+            .join('\n');
+    const truncationNotice = '\n\n[results truncated]';
+    const locallyTruncated = Buffer.byteLength(unboundedContent, 'utf8') > MAX_READABLE_BYTES;
+    const truncated = locallyTruncated || result.truncated;
+    const content = truncated
+      ? truncateUtf8(
+          unboundedContent,
+          MAX_READABLE_BYTES - Buffer.byteLength(truncationNotice, 'utf8'),
+        )
+      : unboundedContent;
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: truncated ? `${content}${truncationNotice}` : content,
+    };
+  } catch (error) {
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn(
+      '[handleWorkspaceSearchCall] Attached workspace search failed',
+      getSafeErrorMetadata(error),
+    );
+    return errorResult(tc, 'The attached workspace could not be searched.');
   }
 }
 
@@ -5769,6 +5863,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   if (
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||
+                    tc.name === SEARCH_WORKSPACE_TOOL_NAME ||
                     isFileAuthoringCall
                   ) {
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
@@ -5795,6 +5890,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           () => {
                             sandboxReadSucceeded = true;
                           },
+                          runSignal,
+                        );
+                      } else if (tc.name === SEARCH_WORKSPACE_TOOL_NAME) {
+                        handlerResult = await handleWorkspaceSearchCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
                           runSignal,
                         );
                       } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {

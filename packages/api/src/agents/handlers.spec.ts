@@ -4694,6 +4694,7 @@ describe('createToolExecuteHandler', () => {
       codeExecutionContext?: CodeExecutionContext;
       req?: unknown;
       readWorkspaceFile?: ToolExecuteOptions['readWorkspaceFile'];
+      searchWorkspace?: ToolExecuteOptions['searchWorkspace'];
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
       readSandboxImage?: ToolExecuteOptions['readSandboxImage'];
       getSkillByName?: ToolExecuteOptions['getSkillByName'];
@@ -4716,6 +4717,7 @@ describe('createToolExecuteHandler', () => {
         getSkillByName: params.getSkillByName,
         getAuthorSkillByName: params.getAuthorSkillByName,
         readWorkspaceFile: params.readWorkspaceFile,
+        searchWorkspace: params.searchWorkspace,
         readSandboxFile: params.readSandboxFile,
         readSandboxImage: params.readSandboxImage,
       });
@@ -5023,6 +5025,181 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('could not be read');
       expect(result.errorMessage).not.toContain('/Users/operator/private');
+    });
+
+    it('searches literal text through the selected attached worker', async () => {
+      const controller = new AbortController();
+      const searchWorkspace = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'search_text' as const,
+        workspaceId: 'primary',
+        matches: [{ path: 'src/app.ts', line: 7, column: 3, text: 'const needle = true;' }],
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_workspace_search',
+              name: 'search_workspace',
+              args: { query: 'needle', path: 'src', max_results: 20 },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(searchWorkspace).toHaveBeenCalledWith({
+        query: 'needle',
+        workspace_id: 'primary',
+        path: 'src',
+        max_results: 20,
+        codeApiBaseUrl: 'https://code.example.com/v1',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+        signal: controller.signal,
+      });
+      expect(result).toMatchObject({
+        status: 'success',
+        content: 'workspace/src/app.ts:7:3: const needle = true;',
+      });
+    });
+
+    it('bounds workspace search output in UTF-8 bytes', async () => {
+      const searchWorkspace = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'search_text' as const,
+        workspaceId: 'primary',
+        matches: Array.from({ length: 200 }, (_, index) => ({
+          path: `src/result-${index}.txt`,
+          line: index + 1,
+          column: 1,
+          text: '界'.repeat(600),
+        })),
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_large_workspace_search',
+          name: 'search_workspace',
+          args: { query: '界', max_results: 200 },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('[results truncated]');
+      expect(Buffer.byteLength(result.content as string, 'utf8')).toBeLessThanOrEqual(262_144);
+    });
+
+    it('rejects workspace search outside attached environments', async () => {
+      const searchWorkspace = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:managed',
+          executionProfile: 'stateful',
+          environmentType: 'managed',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_managed_workspace_search',
+          name: 'search_workspace',
+          args: { query: 'needle' },
+        },
+      ]);
+
+      expect(result.errorMessage).toContain('requires an attached code environment');
+      expect(searchWorkspace).not.toHaveBeenCalled();
+    });
+
+    it('filters every workspace search match before returning any result', async () => {
+      const protectedValue = 'PROTECTED-WORKSPACE-MATCH';
+      const searchWorkspace = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'search_text' as const,
+        workspaceId: 'primary',
+        matches: [
+          { path: 'safe.txt', line: 1, column: 1, text: 'safe match' },
+          { path: 'secret.txt', line: 2, column: 1, text: protectedValue },
+        ],
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        req: {
+          user: { id: 'user-1' },
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['content'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'protected-workspace-match',
+                      label: 'protected workspace match',
+                      regex: protectedValue,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_workspace_search',
+          name: 'search_workspace',
+          args: { query: 'match' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('content_filter_block');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(result.content).toBe('');
     });
 
     it('routes /mnt/data/ paths to the sandbox fallback when codeEnv is available', async () => {

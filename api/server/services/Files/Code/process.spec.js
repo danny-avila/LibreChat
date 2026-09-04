@@ -249,6 +249,7 @@ const {
   getSessionInfo,
   readSandboxFile,
   readWorkspaceFile,
+  searchWorkspace,
   readSandboxImage,
   writeSandboxFile,
   primeFiles,
@@ -1886,6 +1887,53 @@ describe('Code Process', () => {
           path: 'src/app.ts',
           startLine: 1,
           maxLines: 200,
+        },
+        signal: controller.signal,
+      });
+    });
+  });
+
+  describe('searchWorkspace', () => {
+    it('forwards authenticated literal search to the selected attached worker', async () => {
+      const controller = new AbortController();
+      const result = {
+        protocolVersion: 1,
+        operation: 'search_text',
+        workspaceId: 'primary',
+        matches: [],
+        truncated: false,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        searchWorkspace({
+          query: 'needle',
+          workspace_id: 'primary',
+          path: 'src',
+          max_results: 20,
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith({
+        baseURL: 'https://attached-code.example.com/v1',
+        authHeaders: {
+          Authorization: 'Bearer workspace-token',
+          'X-CodeAPI-Expected-Profile': 'stateful',
+          'X-LibreChat-Code-Worker-ID': 'worker-user-1',
+        },
+        request: {
+          protocolVersion: 1,
+          operation: 'search_text',
+          workspaceId: 'primary',
+          query: 'needle',
+          path: 'src',
+          maxResults: 20,
         },
         signal: controller.signal,
       });

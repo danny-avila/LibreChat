@@ -47,6 +47,7 @@ const {
   codeExecutionAuthHeaders,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
+  SEARCH_WORKSPACE_TOOL_NAME,
   getTransactionsConfig,
 } = require('@librechat/api');
 const {
@@ -2000,7 +2001,9 @@ async function loadToolsForExecution({
   const isPTCRequested = ptcToolNames.length > 0;
   const isBashToolRequested = toolNames.includes(AgentConstants.BASH_TOOL);
   const isLegacyExecuteCodeRequested = toolNames.includes(Tools.execute_code);
-  const isCodeExecutionToolRequested = isBashToolRequested || isLegacyExecuteCodeRequested;
+  const isWorkspaceSearchRequested = toolNames.includes(SEARCH_WORKSPACE_TOOL_NAME);
+  const isCodeExecutionToolRequested =
+    isBashToolRequested || isLegacyExecuteCodeRequested || isWorkspaceSearchRequested;
   const isSkillToolRequested = toolNames.includes(AgentConstants.SKILL_TOOL);
   const isSandboxFileToolRequested = toolNames.some((name) =>
     [AgentConstants.READ_FILE, AgentConstants.CREATE_FILE, AgentConstants.EDIT_FILE].includes(name),

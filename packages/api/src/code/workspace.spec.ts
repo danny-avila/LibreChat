@@ -300,6 +300,44 @@ describe('executeWorkspaceTool', () => {
     expect(cancel).toHaveBeenCalledTimes(1);
   });
 
+  test('validates bounded search matches before returning them', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          operation: 'search_text',
+          workspaceId: 'primary',
+          matches: [
+            {
+              path: 'src/app.ts',
+              line: 7,
+              column: 3,
+              text: 'const needle = true;',
+              hostRoot: '/Users/operator/private',
+            },
+          ],
+          truncated: false,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'search_text',
+          workspaceId: 'primary',
+          query: 'needle',
+          maxResults: 20,
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
   test('rejects an oversized response before parsing worker-controlled JSON', async () => {
     const cancel = jest.fn();
     const json = jest.fn().mockResolvedValue({

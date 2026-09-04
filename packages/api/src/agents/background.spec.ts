@@ -507,6 +507,15 @@ describe('selection policy at injection time', () => {
     expect(backgroundToolNames).toEqual(['search_mcp_overlay_server']);
   });
 
+  it('keeps host-side workspace search in the foreground', () => {
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('search_workspace')],
+      toolRegistry: undefined,
+      toolOptions: { search_workspace: { run_in_background: true } },
+    });
+    expect(backgroundToolNames).toEqual([]);
+  });
+
   it('rejects and diagnoses a marker whose runtime definitions are all excluded', () => {
     /** `runInBackground: ['memory']` used to record a successful-looking
      *  option under the marker while set_memory/delete_memory — the

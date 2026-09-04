@@ -6,6 +6,7 @@ const mockGetStorageMetadata = jest.fn();
 const mockResolveRequestTenantId = jest.fn();
 const mockCreateDeploymentSkillMethods = jest.fn((methods) => methods);
 const mockReadWorkspaceFile = jest.fn();
+const mockSearchWorkspace = jest.fn();
 
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: (...args) => mockGetStrategyFunctions(...args),
@@ -20,6 +21,7 @@ jest.mock('~/server/services/Files/Code/process', () => ({
   checkIfActive: jest.fn(),
   readSandboxFile: jest.fn(),
   readWorkspaceFile: (...args) => mockReadWorkspaceFile(...args),
+  searchWorkspace: (...args) => mockSearchWorkspace(...args),
   writeSandboxFile: jest.fn(),
 }));
 
@@ -85,6 +87,12 @@ describe('skillDeps saveSkillFileContent', () => {
     expect(getSkillToolDeps().readWorkspaceFile).toBeDefined();
     getSkillToolDeps().readWorkspaceFile({ file_path: 'src/app.ts' });
     expect(mockReadWorkspaceFile).toHaveBeenCalledWith({ file_path: 'src/app.ts' });
+  });
+
+  it('exposes the stable attached-workspace searcher to agent handlers', () => {
+    expect(getSkillToolDeps().searchWorkspace).toBeDefined();
+    getSkillToolDeps().searchWorkspace({ query: 'needle' });
+    expect(mockSearchWorkspace).toHaveBeenCalledWith({ query: 'needle' });
   });
 
   it('cleans up the uploaded object when metadata upsert returns no row', async () => {
