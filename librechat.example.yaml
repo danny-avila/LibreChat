@@ -795,6 +795,29 @@ endpoints:
       titleModel: 'mixtral-8x7b-32768'
       modelDisplayLabel: 'groq'
 
+    # NeuronPool Example
+    # OpenAI-compatible social compute (pool machines + public buyers).
+    # Mint a key at https://neuronpool.damnknee.workers.dev/dashboard
+    # Keep NEURONPOOL_API_KEY in the environment — never inline the key.
+    - name: 'NeuronPool'
+      apiKey: '${NEURONPOOL_API_KEY}'
+      baseURL: 'https://neuronpool.damnknee.workers.dev/v1'
+      models:
+        default:
+          - 'gpt-oss-20b'
+          - 'llama-3.1-8b-instruct'
+          - 'qwen2.5-7b-instruct'
+          - 'gemma-3-12b-it'
+          - 'qwen3-30b-a3b'
+          - 'llama-3.2-1b-instruct'
+          - 'neuronpool-tiny-chat'
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-oss-20b'
+      modelDisplayLabel: 'NeuronPool'
+      addParams:
+        stream: true
+
     # Mistral AI Example
     - name: 'Mistral' # Unique name for the endpoint
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
