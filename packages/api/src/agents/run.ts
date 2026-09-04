@@ -684,7 +684,7 @@ function resolveBuiltInClientOverrides(
     modelName: _modelName,
     streaming: _streaming,
     ...shaping
-  } = llmConfig as Record<string, unknown>;
+  } = llmConfig;
   return Object.keys(shaping).length > 0 ? shaping : undefined;
 }
 
