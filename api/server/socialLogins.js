@@ -46,7 +46,7 @@ const getOpenIdRetryAttempts = () => {
     process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
     DEFAULT_OPENID_DISCOVERY_RETRY_ATTEMPTS,
   );
-  return Number.isFinite(attempts) && attempts > 0
+  return Number.isFinite(attempts) && attempts >= 0
     ? Math.trunc(attempts)
     : DEFAULT_OPENID_DISCOVERY_RETRY_ATTEMPTS;
 };
@@ -62,17 +62,22 @@ const getOpenIdRetryDelay = () => {
 const wait = (delay) => new Promise((resolve) => setTimeout(resolve, delay));
 
 async function registerOpenIdStrategies() {
-  const config = await setupOpenId();
-  if (!config) {
+  try {
+    const config = await setupOpenId();
+    if (!config) {
+      return false;
+    }
+
+    if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+      logger.info('OpenID token reuse is enabled.');
+      passport.use('openidJwt', openIdJwtLogin(config));
+    }
+    logger.info('OpenID Connect configured successfully.');
+    return true;
+  } catch (error) {
+    logger.error('OpenID Connect strategy registration failed.', error);
     return false;
   }
-
-  if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-    logger.info('OpenID token reuse is enabled.');
-    passport.use('openidJwt', openIdJwtLogin(config));
-  }
-  logger.info('OpenID Connect configured successfully.');
-  return true;
 }
 
 function scheduleOpenIdRetry() {
