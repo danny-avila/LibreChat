@@ -104,6 +104,7 @@ const {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   createAgentManagementAuth,
   createAgentManagementCreateHandler,
+  createAgentManagementDeleteHandler,
   createAgentManagementReadHandlers,
   createAgentManagementUpdateHandler,
   mergeDeploymentSkillIds,
@@ -436,12 +437,17 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         getRoleByName,
         createAgent: createAgentHandler,
       });
-      const checkEditPermission = async ({ userId: accessibleUserId, resourceType, resourceId }) =>
+      const checkAgentPermission = async ({
+        userId: accessibleUserId,
+        resourceType,
+        resourceId,
+        requiredPermission,
+      }) =>
         (await AclEntry.exists({
           principalId: accessibleUserId,
           resourceType,
           resourceId,
-          permBits: { $bitsAllSet: PermissionBits.EDIT },
+          permBits: { $bitsAllSet: requiredPermission },
         })) != null;
       const hasCapability = jest.fn().mockResolvedValue(false);
       const reads = createAgentManagementReadHandlers({
@@ -454,15 +460,22 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
             resourceType,
             permBits: { $bitsAllSet: PermissionBits.EDIT },
           }),
-        checkPermission: checkEditPermission,
+        checkPermission: checkAgentPermission,
         hasCapability,
       });
       const update = createAgentManagementUpdateHandler({
         getRoleByName,
         getAgentWithVersionCount: db.getAgentWithVersionCount,
-        checkPermission: checkEditPermission,
+        checkPermission: checkAgentPermission,
         hasCapability,
         updateAgent: updateAgentHandler,
+      });
+      const remove = createAgentManagementDeleteHandler({
+        getRoleByName,
+        getAgentWithVersionCount: db.getAgentWithVersionCount,
+        checkPermission: checkAgentPermission,
+        hasCapability,
+        deleteAgent: db.deleteAgent,
       });
       const app = express();
       app.use(express.json());
@@ -477,6 +490,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         req.config = {};
         return update(req, res);
       });
+      app.delete('/api/agents/v1/agents/:id', remove);
 
       const createdResponse = await request(app)
         .post('/api/agents/v1/agents')
@@ -580,6 +594,27 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           resourceType: ResourceType.AGENT,
         }),
       );
+
+      const deletedResponse = await request(app)
+        .delete(`/api/agents/v1/agents/${createdResponse.body.id}`)
+        .set('Authorization', 'Bearer valid-token');
+      expect(deletedResponse.status).toBe(200);
+      expect(deletedResponse.body).toEqual({ id: createdResponse.body.id, deleted: true });
+
+      const [retrievedAfterDelete, repeatedDelete] = await Promise.all([
+        request(app)
+          .get(`/api/agents/v1/agents/${createdResponse.body.id}`)
+          .set('Authorization', 'Bearer valid-token'),
+        request(app)
+          .delete(`/api/agents/v1/agents/${createdResponse.body.id}`)
+          .set('Authorization', 'Bearer valid-token'),
+      ]);
+      expect(retrievedAfterDelete.status).toBe(404);
+      expect(repeatedDelete.status).toBe(404);
+      await expect(Agent.exists({ id: createdResponse.body.id, tenantId })).resolves.toBeNull();
+      await expect(
+        Agent.exists({ id: createdResponse.body.id, tenantId: otherTenantId }),
+      ).resolves.not.toBeNull();
     });
 
     test('management creation rejects caller-controlled ownership', async () => {

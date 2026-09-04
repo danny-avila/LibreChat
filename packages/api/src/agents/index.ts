@@ -12,6 +12,7 @@ export * from './context';
 export * from './control';
 export * from './conversation';
 export * from './creates';
+export * from './deletion';
 export * from './discovery';
 export * from './edges';
 export * from './errors';

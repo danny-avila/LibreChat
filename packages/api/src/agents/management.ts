@@ -69,6 +69,10 @@ export type AgentManagementListResponse = {
   has_more: boolean;
   after: string | null;
 };
+export type AgentManagementDeleteResponse = {
+  id: string;
+  deleted: true;
+};
 export type AgentManagementErrorCode =
   | 'invalid_request'
   | 'not_found'
@@ -195,6 +199,14 @@ export const agentManagementListResponseSchema: z.ZodType<AgentManagementListRes
       });
     }
   });
+
+/** Minimal tombstone returned after an Agent is successfully deleted. */
+export const agentManagementDeleteResponseSchema: z.ZodType<AgentManagementDeleteResponse> = z
+  .object({
+    id: z.string().min(1),
+    deleted: z.literal(true),
+  })
+  .strict();
 
 export const agentManagementErrorCodeSchema: z.ZodType<AgentManagementErrorCode> = z.enum([
   'invalid_request',
