@@ -9,6 +9,16 @@ export type FileOwnerScope = {
   tenantId?: string | null;
 };
 
+/**
+ * Sweep bookkeeping belongs to the storage a record currently points at, so
+ * a write that (re)describes its content restarts the budget. Code-output
+ * records are reused across turns for a repeated `(filename, conversationId)`
+ * — new bytes, new storage key, fresh `expiredAt` — and a record carried to
+ * the give-up cap by its previous content would otherwise stay excluded from
+ * the sweep forever, stranding the new object exactly as before.
+ */
+const CLEARED_DELETION_RETRY_STATE = { deletionAttempts: '', deletionRetryAt: '' } as const;
+
 export type ExpiredFileQueryOptions = {
   now?: Date;
   /** Consecutive-failure count at which a file stops being retried. */
@@ -440,10 +450,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       delete fileData.expiresAt;
     }
 
-    return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
-      new: true,
-      upsert: true,
-    }).lean<IMongoFile>();
+    return File.findOneAndUpdate(
+      { file_id: data.file_id },
+      { $set: fileData, $unset: CLEARED_DELETION_RETRY_STATE },
+      { new: true, upsert: true },
+    ).lean<IMongoFile>();
   }
 
   /**
@@ -471,7 +482,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const { file_id, ...update } = data;
     const updateOperation = {
       $set: update,
-      $unset: { expiresAt: '' },
+      $unset: { expiresAt: '', ...CLEARED_DELETION_RETRY_STATE },
     };
     const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {

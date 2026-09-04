@@ -264,6 +264,11 @@ export async function sweepExpiredFiles(
   }: SweepDependencies,
 ): Promise<ExpiredFileSweepResult> {
   const maxAttempts = getFileRetentionMaxAttempts();
+  /* Deadlines are anchored here rather than at the moment of failure. The
+   * interval timer is armed before the sweep runs, so a deadline measured
+   * after the deletion I/O lands just past the next scheduled pass and the
+   * file waits a whole extra interval. */
+  const sweepStartedAt = Date.now();
   const files = (await getExpiredFiles(limit, { maxAttempts })) ?? [];
   let resolvedAppConfig = appConfig;
   let deleted = 0;
@@ -279,13 +284,8 @@ export async function sweepExpiredFiles(
     try {
       /* The attempt number comes from the increment rather than from the
        * snapshot this batch queried, so two nodes sweeping the same file
-       * each get a distinct one and exactly one of them observes the cap
-       * being reached. */
+       * each get a distinct one. */
       attempts = await incrementFileDeletionAttempts(file.file_id);
-      await deferExpiredFile(
-        file.file_id,
-        new Date(Date.now() + getExpiredFileRetryDelay(attempts)),
-      );
     } catch (error) {
       logger.error(
         `[sweepExpiredFiles] Error recording failed deletion of expired file ${file.file_id}:`,
@@ -294,12 +294,25 @@ export async function sweepExpiredFiles(
       return;
     }
 
-    if (attempts < maxAttempts) {
-      return;
+    /* Reported before the deferral, which fails independently. The counter
+     * is already durable, so the file is already excluded from the query
+     * and this line is the only notice the exclusion ever gets. Exactly the
+     * attempt that lands on the cap reports it — `>=` would have every
+     * later node past the threshold repeat it. */
+    if (attempts === maxAttempts) {
+      logger.error(
+        `[sweepExpiredFiles] Giving up on expired file ${file.file_id} after ${attempts} failed deletions. Its backing storage was not removed; the record is kept so the reference survives for reconciliation. Raise FILE_RETENTION_SWEEP_MAX_ATTEMPTS to retry it.`,
+      );
     }
-    logger.error(
-      `[sweepExpiredFiles] Giving up on expired file ${file.file_id} after ${attempts} failed deletions. Its backing storage was not removed; the record is kept so the reference survives for reconciliation. Raise FILE_RETENTION_SWEEP_MAX_ATTEMPTS to retry it.`,
-    );
+
+    try {
+      await deferExpiredFile(
+        file.file_id,
+        new Date(sweepStartedAt + getExpiredFileRetryDelay(attempts)),
+      );
+    } catch (error) {
+      logger.error(`[sweepExpiredFiles] Error deferring expired file ${file.file_id}:`, error);
+    }
   };
 
   for (const file of files) {

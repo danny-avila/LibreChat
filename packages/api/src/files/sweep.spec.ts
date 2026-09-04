@@ -155,6 +155,7 @@ describe('expired file sweep helpers', () => {
   it('reports giving up once the file reaches the attempt cap', async () => {
     process.env.FILE_RETENTION_SWEEP_MAX_ATTEMPTS = '3';
     attemptCount = 2;
+    deferExpiredFile.mockRejectedValue(new Error('mongo unreachable'));
     const getExpiredFiles = jest
       .fn()
       .mockResolvedValue([{ file_id: 'stranded-file', user: 'user-1' }]);
@@ -174,9 +175,72 @@ describe('expired file sweep helpers', () => {
     );
 
     expect(getExpiredFiles).toHaveBeenCalledWith(1, { maxAttempts: 3 });
+    /* The counter is durable once the increment lands, so the file is
+     * already excluded; a deferral that fails afterwards must not swallow
+     * the only notice of that. */
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('Giving up on expired file stranded-file after 3 failed deletions'),
     );
+  });
+
+  it('reports the cap once, on the attempt that reaches it', async () => {
+    process.env.FILE_RETENTION_SWEEP_MAX_ATTEMPTS = '3';
+    attemptCount = 2;
+    const getExpiredFiles = jest.fn().mockResolvedValue([
+      { file_id: 'stranded-file', user: 'user-1' },
+      { file_id: 'stranded-file', user: 'user-1' },
+    ]);
+    const processDeleteRequest = jest
+      .fn()
+      .mockResolvedValue({ deletedFileIds: [], failedFileIds: ['stranded-file'] });
+
+    await sweepExpiredFiles(
+      { appConfig: {} as AppConfig, limit: 2 },
+      {
+        getExpiredFiles,
+        processDeleteRequest,
+        incrementFileDeletionAttempts,
+        deferExpiredFile,
+        logger,
+      },
+    );
+
+    /* Increments returned 3 and 4. Only the one that landed on the cap
+     * reports it — another node past the threshold would otherwise repeat
+     * the notice once per replica, per file. */
+    const givingUp = logger.error.mock.calls.filter(([message]) =>
+      String(message).includes('Giving up on expired file'),
+    );
+    expect(givingUp).toHaveLength(1);
+  });
+
+  it('anchors retry deadlines to the start of the sweep', async () => {
+    const getExpiredFiles = jest.fn().mockImplementation(async () => {
+      /* Deletion I/O pushes wall-clock past the sweep's start. Measuring
+       * the deadline from here would land it just after the next scheduled
+       * pass, costing the file a whole extra interval. */
+      jest.setSystemTime(Date.now() + 30_000);
+      return [{ file_id: 'stuck-file', user: 'user-1' }];
+    });
+    const processDeleteRequest = jest
+      .fn()
+      .mockResolvedValue({ deletedFileIds: [], failedFileIds: ['stuck-file'] });
+
+    jest.useFakeTimers();
+    const sweepStartedAt = Date.now();
+    await sweepExpiredFiles(
+      { appConfig: {} as AppConfig, limit: 1 },
+      {
+        getExpiredFiles,
+        processDeleteRequest,
+        incrementFileDeletionAttempts,
+        deferExpiredFile,
+        logger,
+      },
+    );
+
+    const [, retryAt] = deferExpiredFile.mock.calls[0];
+    expect(retryAt.getTime()).toBe(sweepStartedAt + 60 * 60 * 1000);
   });
 
   it('keeps sweeping the batch when recording a failure fails', async () => {

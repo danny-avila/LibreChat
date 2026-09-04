@@ -385,40 +385,56 @@ describe('File Methods', () => {
       expect(files.map((file) => file.file_id)).toEqual([expiredFileId]);
     });
 
+    /** Seeds a sweep-eligible file, then drives its retry state through the
+     *  same methods the sweep itself uses. */
+    const seedExpiredFile = async ({
+      file_id,
+      expiredAt,
+      attempts = 0,
+      retryAt,
+    }: {
+      file_id: string;
+      expiredAt: Date;
+      attempts?: number;
+      retryAt?: Date;
+    }) => {
+      await fileMethods.createFile(
+        {
+          file_id,
+          user: new mongoose.Types.ObjectId(),
+          filename: `${file_id}.txt`,
+          filepath: `/uploads/${file_id}.txt`,
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt,
+        },
+        true,
+      );
+      for (let i = 0; i < attempts; i++) {
+        await fileMethods.incrementFileDeletionAttempts(file_id);
+      }
+      if (retryAt) {
+        await fileMethods.deferExpiredFile(file_id, retryAt);
+      }
+    };
+
     it('holds back files whose deletion backoff has not elapsed', async () => {
-      const userId = new mongoose.Types.ObjectId();
       const now = new Date('2030-01-01T00:00:00.000Z');
       const readyFileId = uuidv4();
       const backedOffFileId = uuidv4();
 
-      await fileMethods.createFile(
-        {
-          file_id: backedOffFileId,
-          user: userId,
-          filename: 'backed-off.txt',
-          filepath: '/uploads/backed-off.txt',
-          type: 'text/plain',
-          bytes: 100,
-          expiredAt: new Date('2029-12-01T00:00:00.000Z'),
-          deletionAttempts: 2,
-          deletionRetryAt: new Date('2030-01-01T00:00:01.000Z'),
-        },
-        true,
-      );
-      await fileMethods.createFile(
-        {
-          file_id: readyFileId,
-          user: userId,
-          filename: 'ready.txt',
-          filepath: '/uploads/ready.txt',
-          type: 'text/plain',
-          bytes: 100,
-          expiredAt: new Date('2029-12-31T00:00:00.000Z'),
-          deletionAttempts: 2,
-          deletionRetryAt: new Date('2029-12-31T23:00:00.000Z'),
-        },
-        true,
-      );
+      await seedExpiredFile({
+        file_id: backedOffFileId,
+        expiredAt: new Date('2029-12-01T00:00:00.000Z'),
+        attempts: 2,
+        retryAt: new Date('2030-01-01T00:00:01.000Z'),
+      });
+      await seedExpiredFile({
+        file_id: readyFileId,
+        expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+        attempts: 2,
+        retryAt: new Date('2029-12-31T23:00:00.000Z'),
+      });
 
       const files = await fileMethods.getExpiredFiles(100, { now });
 
@@ -426,7 +442,6 @@ describe('File Methods', () => {
     });
 
     it('drops files that reached the attempt cap so they cannot starve the batch', async () => {
-      const userId = new mongoose.Types.ObjectId();
       const now = new Date('2030-01-01T00:00:00.000Z');
       const exhaustedFileId = uuidv4();
       const retriableFileId = uuidv4();
@@ -434,39 +449,56 @@ describe('File Methods', () => {
       /* The exhausted file expired first, so without the cap it sorts to
        * the front of every batch and a limit-sized run of them starves
        * everything that expired afterwards. */
-      await fileMethods.createFile(
-        {
-          file_id: exhaustedFileId,
-          user: userId,
-          filename: 'exhausted.txt',
-          filepath: '/uploads/exhausted.txt',
-          type: 'text/plain',
-          bytes: 100,
-          expiredAt: new Date('2029-01-01T00:00:00.000Z'),
-          deletionAttempts: 10,
-          deletionRetryAt: new Date('2029-06-01T00:00:00.000Z'),
-        },
-        true,
-      );
-      await fileMethods.createFile(
-        {
-          file_id: retriableFileId,
-          user: userId,
-          filename: 'retriable.txt',
-          filepath: '/uploads/retriable.txt',
-          type: 'text/plain',
-          bytes: 100,
-          expiredAt: new Date('2029-12-31T00:00:00.000Z'),
-          deletionAttempts: 9,
-        },
-        true,
-      );
+      await seedExpiredFile({
+        file_id: exhaustedFileId,
+        expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+        attempts: 10,
+        retryAt: new Date('2029-06-01T00:00:00.000Z'),
+      });
+      await seedExpiredFile({
+        file_id: retriableFileId,
+        expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+        attempts: 9,
+      });
 
       const capped = await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 });
       expect(capped.map((file) => file.file_id)).toEqual([retriableFileId]);
 
       const raised = await fileMethods.getExpiredFiles(100, { now, maxAttempts: 20 });
       expect(raised.map((file) => file.file_id)).toEqual([exhaustedFileId, retriableFileId]);
+    });
+
+    it('restarts the retry budget when a record is repurposed for new content', async () => {
+      const now = new Date('2030-01-01T00:00:00.000Z');
+      const fileId = uuidv4();
+      await seedExpiredFile({
+        file_id: fileId,
+        expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+        attempts: 10,
+        retryAt: new Date('2029-06-01T00:00:00.000Z'),
+      });
+      expect(await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 })).toHaveLength(0);
+
+      /* A repeated (filename, conversationId) reuses the record for a new
+       * code output: new bytes, new storage key, fresh retention deadline.
+       * Carrying the exhausted budget over would strand that new object. */
+      await fileMethods.createFile(
+        {
+          file_id: fileId,
+          user: new mongoose.Types.ObjectId(),
+          filename: `${fileId}.txt`,
+          filepath: `/uploads/${fileId}-v2.txt`,
+          type: 'text/plain',
+          bytes: 200,
+          expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+        },
+        true,
+      );
+
+      const files = await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 });
+      expect(files.map((file) => file.file_id)).toEqual([fileId]);
+      expect(files[0].deletionAttempts).toBeUndefined();
+      expect(files[0].deletionRetryAt).toBeUndefined();
     });
   });
 
