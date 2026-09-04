@@ -38,6 +38,8 @@ export const darkTheme: IThemeRGB = {
   'rgb-surface-hover-alt': '66 66 66', // #424242 (gray-600)
   'rgb-surface-composer-hover': '66 66 66', // #424242 (gray-600)
   'rgb-surface-primary': '13 13 13', // #0d0d0d (gray-900)
+  'rgb-chart-widget-surface': '40 40 40', // #282828 (Click UI chart widget)
+  'rgb-chart-widget-stroke': '50 50 50', // #323232 (Click UI chart widget)
   'rgb-surface-primary-alt': '23 23 23', // #171717 (gray-850)
   'rgb-surface-primary-contrast': '23 23 23', // #171717 (gray-850)
   'rgb-surface-secondary': '33 33 33', // #212121 (gray-800)

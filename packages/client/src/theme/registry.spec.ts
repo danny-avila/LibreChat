@@ -121,6 +121,50 @@ describe('theme registry', () => {
     expect(resolved.colors['rgb-text-muted']).toBe('90 91 92');
   });
 
+  it('derives omitted chart widget colors from the previous panel roles', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-chart-widget-reference',
+        modes: {
+          dark: {
+            colors: {
+              'rgb-surface-primary': '20 21 22',
+              'rgb-border-light': '30 31 32',
+            },
+          },
+        },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-chart-widget-surface']).toBe('20 21 22');
+    expect(resolved.colors['rgb-chart-widget-stroke']).toBe('30 31 32');
+  });
+
+  it('preserves explicit chart widget colors', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-chart-widget-reference',
+        modes: {
+          dark: {
+            colors: {
+              'rgb-surface-primary': '20 21 22',
+              'rgb-border-light': '30 31 32',
+              'rgb-chart-widget-surface': '40 41 42',
+              'rgb-chart-widget-stroke': '50 51 52',
+            },
+          },
+        },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-chart-widget-surface']).toBe('40 41 42');
+    expect(resolved.colors['rgb-chart-widget-stroke']).toBe('50 51 52');
+  });
+
   it('resolves provider brand tokens and lets a theme override them', () => {
     const defaults = resolveTheme(libreChatTheme, 'light');
     expect(defaults.brands['provider-anthropic']).toBe('#d09a74');

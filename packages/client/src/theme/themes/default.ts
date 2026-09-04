@@ -38,6 +38,8 @@ export const defaultTheme: IThemeRGB = {
   'rgb-surface-hover-alt': '205 205 205', // #cdcdcd (gray-300)
   'rgb-surface-composer-hover': '227 227 227', // #e3e3e3 (gray-200)
   'rgb-surface-primary': '255 255 255', // #fff (white)
+  'rgb-chart-widget-surface': '255 255 255', // #fff (Click UI chart widget)
+  'rgb-chart-widget-stroke': '230 231 233', // #e6e7e9 (Click UI chart widget)
   'rgb-surface-primary-alt': '247 247 248', // #f7f7f8 (gray-50)
   'rgb-surface-primary-contrast': '236 236 236', // #ececec (gray-100)
   'rgb-surface-secondary': '247 247 248', // #f7f7f8 (gray-50)

@@ -15,6 +15,8 @@ const semanticProperties = [
   '--accent-primary-hover',
   '--text-destructive',
   '--text-muted',
+  '--chart-widget-surface',
+  '--chart-widget-stroke',
   '--border-destructive',
   '--status-success',
   '--status-success-subtle',
@@ -200,6 +202,32 @@ describe('applyTheme', () => {
     applyTheme({ 'rgb-text-tertiary': '80 81 82', 'rgb-text-muted': '100 101 102' }, root);
 
     expect(root.style.getPropertyValue('--text-muted')).toBe('100 101 102');
+  });
+
+  it('carries legacy panel colors onto chart widgets', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-surface-primary': '20 21 22', 'rgb-border-light': '30 31 32' }, root);
+
+    expect(root.style.getPropertyValue('--chart-widget-surface')).toBe('20 21 22');
+    expect(root.style.getPropertyValue('--chart-widget-stroke')).toBe('30 31 32');
+  });
+
+  it('leaves explicit chart widget colors alone', () => {
+    const root = document.documentElement;
+
+    applyTheme(
+      {
+        'rgb-surface-primary': '20 21 22',
+        'rgb-border-light': '30 31 32',
+        'rgb-chart-widget-surface': '40 41 42',
+        'rgb-chart-widget-stroke': '50 51 52',
+      },
+      root,
+    );
+
+    expect(root.style.getPropertyValue('--chart-widget-surface')).toBe('40 41 42');
+    expect(root.style.getPropertyValue('--chart-widget-stroke')).toBe('50 51 52');
   });
 
   it('clears only properties owned by the theme module', () => {

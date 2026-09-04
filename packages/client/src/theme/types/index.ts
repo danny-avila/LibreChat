@@ -39,6 +39,8 @@ export interface IThemeRGB {
   'rgb-surface-hover-alt'?: string;
   'rgb-surface-composer-hover'?: string;
   'rgb-surface-primary'?: string;
+  'rgb-chart-widget-surface'?: string;
+  'rgb-chart-widget-stroke'?: string;
   'rgb-surface-primary-alt'?: string;
   'rgb-surface-primary-contrast'?: string;
   'rgb-surface-secondary'?: string;
@@ -137,6 +139,8 @@ export interface IThemeVariables {
   '--surface-hover-alt': string;
   '--surface-composer-hover': string;
   '--surface-primary': string;
+  '--chart-widget-surface': string;
+  '--chart-widget-stroke': string;
   '--surface-primary-alt': string;
   '--surface-primary-contrast': string;
   '--surface-secondary': string;
@@ -225,6 +229,8 @@ export interface IThemeColors {
   'surface-hover-alt'?: string;
   'surface-composer-hover'?: string;
   'surface-primary'?: string;
+  'chart-widget-surface'?: string;
+  'chart-widget-stroke'?: string;
   'surface-primary-alt'?: string;
   'surface-primary-contrast'?: string;
   'surface-secondary'?: string;
