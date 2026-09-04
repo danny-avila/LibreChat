@@ -32,6 +32,7 @@ jest.mock('@aws-sdk/client-bedrock-runtime', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
   checkUserKeyExpiry: jest.fn(),
 }));
 

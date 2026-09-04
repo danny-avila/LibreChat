@@ -171,6 +171,7 @@
     "zod": "^3.22.4"
   },
   "dependencies": {
+    "@aws/bedrock-token-generator": "^1.1.0",
     "@langchain/langgraph-checkpoint": "^1.1.2",
     "@langchain/langgraph-checkpoint-mongodb": "^1.4.0",
     "cluster-key-slot": "^1.1.2",

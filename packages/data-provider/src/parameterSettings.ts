@@ -1134,6 +1134,40 @@ const bedrockZAICol2: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
+/** OpenAI models on Bedrock go through the `bedrock-mantle` Responses API, so
+ *  Converse-only controls (prompt caching, thinking) are omitted. */
+const bedrockOpenAI: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  bedrock.maxTokens,
+  meta.temperature,
+  meta.topP,
+  baseDefinitions.stop,
+  librechat.resendFiles,
+  bedrock.region,
+  bedrock.reasoning_effort,
+  librechat.fileTokenLimit,
+];
+
+const bedrockOpenAICol1: SettingsConfiguration = [
+  baseDefinitions.model as SettingDefinition,
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  baseDefinitions.stop,
+];
+
+const bedrockOpenAICol2: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  bedrock.maxTokens,
+  meta.temperature,
+  meta.topP,
+  librechat.resendFiles,
+  bedrock.region,
+  bedrock.reasoning_effort,
+  librechat.fileTokenLimit,
+];
+
 const bedrockMoonshot: SettingsConfiguration = [
   librechat.modelLabel,
   bedrock.system,
@@ -1185,7 +1219,7 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
   [`${EModelEndpoint.bedrock}-${BedrockProviders.DeepSeek}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Moonshot}`]: bedrockMoonshot,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MoonshotAI}`]: bedrockMoonshot,
-  [`${EModelEndpoint.bedrock}-${BedrockProviders.OpenAI}`]: bedrockGeneral,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.OpenAI}`]: bedrockOpenAI,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.ZAI}`]: bedrockZAI,
   [EModelEndpoint.google]: googleConfig,
 };
@@ -1243,7 +1277,10 @@ export const presetSettings: Record<
     col1: bedrockMoonshotCol1,
     col2: bedrockMoonshotCol2,
   },
-  [`${EModelEndpoint.bedrock}-${BedrockProviders.OpenAI}`]: bedrockGeneralColumns,
+  [`${EModelEndpoint.bedrock}-${BedrockProviders.OpenAI}`]: {
+    col1: bedrockOpenAICol1,
+    col2: bedrockOpenAICol2,
+  },
   [`${EModelEndpoint.bedrock}-${BedrockProviders.ZAI}`]: {
     col1: bedrockZAICol1,
     col2: bedrockZAICol2,
