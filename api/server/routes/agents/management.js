@@ -2,6 +2,7 @@ const express = require('express');
 const {
   createAgentManagementCreateHandler,
   createAgentManagementReadHandlers,
+  createAgentManagementUpdateHandler,
   mapAgentManagementError,
 } = require('@librechat/api');
 const { checkBan, configMiddleware } = require('~/server/middleware');
@@ -24,6 +25,13 @@ const createHandler = createAgentManagementCreateHandler({
   getRoleByName: db.getRoleByName,
   createAgent: v1.createAgent,
 });
+const updateHandler = createAgentManagementUpdateHandler({
+  getRoleByName: db.getRoleByName,
+  getAgentWithVersionCount: db.getAgentWithVersionCount,
+  checkPermission,
+  hasCapability,
+  updateAgent: v1.updateAgent,
+});
 
 router.use(requireAgentManagementAuth);
 router.use(checkBan);
@@ -31,6 +39,7 @@ router.use(checkBan);
 router.post('/', configMiddleware, createHandler);
 router.get('/', readHandlers.list);
 router.get('/:id', readHandlers.get);
+router.patch('/:id', configMiddleware, updateHandler);
 
 router.use((_req, res) => {
   const { status, body } = mapAgentManagementError('not_found');
