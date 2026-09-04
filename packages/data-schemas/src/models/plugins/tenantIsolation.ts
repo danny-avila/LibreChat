@@ -7,6 +7,7 @@ import {
   resolveTenantScope,
   stampTenantOnDocument,
   sanitizeTenantMutation,
+  tenantWritePredicate,
   resetTenantStrictCache,
   warnOnInvalidStrictSetting,
 } from '~/tenant/policy';
@@ -108,7 +109,25 @@ export function applyTenantIsolation(schema: Schema): void {
   });
 
   schema.pre('save', function () {
-    stampTenantOnDocument(resolveTenantScope('Save'), this as unknown as TenantDocument);
+    const scope = resolveTenantScope('Save');
+    const carriedTenantId = this.get('tenantId');
+    stampTenantOnDocument(scope, this as unknown as TenantDocument);
+
+    if (this.isNew) {
+      return;
+    }
+
+    /**
+     * `save()` on a persisted document is filtered on `_id` alone, so the
+     * stamped tenant above is never asserted. `$where` is Mongoose's public
+     * hook for adding conditions to that query — its own sharding plugin uses
+     * it the same way. A mismatch surfaces as `DocumentNotFoundError`.
+     */
+    const predicate = tenantWritePredicate(scope, carriedTenantId);
+    if (predicate) {
+      const document = this as unknown as { $where?: Record<string, unknown> };
+      document.$where = { ...document.$where, ...predicate };
+    }
   });
 
   schema.pre('insertMany', function (next, docs) {

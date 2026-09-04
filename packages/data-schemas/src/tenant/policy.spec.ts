@@ -7,6 +7,7 @@ import {
   TenantIsolationError,
   stampTenantOnDocument,
   sanitizeTenantMutation,
+  tenantWritePredicate,
   resetTenantStrictCache,
 } from './policy';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
@@ -251,6 +252,26 @@ describe('scopeReplacement', () => {
     const replacement = { name: 'x' };
     scopeReplacement(SCOPED, replacement);
     expect(replacement).toEqual({ name: 'x' });
+  });
+});
+
+describe('tenantWritePredicate', () => {
+  it('asserts the active tenant for a document that carries one', () => {
+    expect(tenantWritePredicate(SCOPED, 'tenant-a')).toEqual({ tenantId: 'tenant-a' });
+  });
+
+  it('asserts the active tenant even when the document names another', () => {
+    expect(tenantWritePredicate(SCOPED, 'tenant-b')).toEqual({ tenantId: 'tenant-a' });
+  });
+
+  it('yields nothing for a document that never carried a tenant', () => {
+    expect(tenantWritePredicate(SCOPED, undefined)).toBeUndefined();
+    expect(tenantWritePredicate(SCOPED, null)).toBeUndefined();
+  });
+
+  it('yields nothing for system or unscoped writes', () => {
+    expect(tenantWritePredicate(SYSTEM, 'tenant-a')).toBeUndefined();
+    expect(tenantWritePredicate(UNSCOPED, 'tenant-a')).toBeUndefined();
   });
 });
 
