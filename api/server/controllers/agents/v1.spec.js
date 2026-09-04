@@ -531,14 +531,47 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(listedResponse.body.data).toEqual([createdResponse.body]);
 
       const otherTenantId = `tenant-${nanoid(8)}`;
-      await tenantStorage.run({ tenantId: otherTenantId }, () =>
-        Agent.create({
-          id: createdResponse.body.id,
-          name: 'Other tenant Agent',
+      const currentTenantGraphId = `agent_${nanoid()}`;
+      const otherTenantGraphId = `agent_${nanoid()}`;
+      await tenantStorage.run({ tenantId }, async () => {
+        await Agent.create({
+          id: currentTenantGraphId,
+          name: 'Current tenant graph',
           provider: 'openai',
           model: 'gpt-4',
-          author: new mongoose.Types.ObjectId(),
-        }),
+          author: principal._id,
+          edges: [{ from: '', to: createdResponse.body.id, edgeType: 'handoff' }],
+        });
+        await User.updateOne(
+          { _id: principal._id },
+          { $set: { favorites: [{ agentId: createdResponse.body.id }] } },
+        );
+      });
+      const otherTenantPrincipal = await tenantStorage.run(
+        { tenantId: otherTenantId },
+        async () => {
+          const owner = await createOwner();
+          await Agent.create({
+            id: createdResponse.body.id,
+            name: 'Other tenant Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            author: owner._id,
+          });
+          await Agent.create({
+            id: otherTenantGraphId,
+            name: 'Other tenant graph',
+            provider: 'openai',
+            model: 'gpt-4',
+            author: owner._id,
+            edges: [{ from: '', to: createdResponse.body.id, edgeType: 'handoff' }],
+          });
+          await User.updateOne(
+            { _id: owner._id },
+            { $set: { favorites: [{ agentId: createdResponse.body.id }] } },
+          );
+          return owner;
+        },
       );
 
       const updatedResponse = await request(app)
@@ -614,6 +647,34 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       await expect(Agent.exists({ id: createdResponse.body.id, tenantId })).resolves.toBeNull();
       await expect(
         Agent.exists({ id: createdResponse.body.id, tenantId: otherTenantId }),
+      ).resolves.not.toBeNull();
+      await expect(
+        Agent.exists({
+          id: currentTenantGraphId,
+          tenantId,
+          'edges.to': createdResponse.body.id,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        Agent.exists({
+          id: otherTenantGraphId,
+          tenantId: otherTenantId,
+          'edges.to': createdResponse.body.id,
+        }),
+      ).resolves.not.toBeNull();
+      await expect(
+        User.exists({
+          _id: principal._id,
+          tenantId,
+          'favorites.agentId': createdResponse.body.id,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        User.exists({
+          _id: otherTenantPrincipal._id,
+          tenantId: otherTenantId,
+          'favorites.agentId': createdResponse.body.id,
+        }),
       ).resolves.not.toBeNull();
     });
 
