@@ -2294,6 +2294,7 @@ export const ocrSchema = z.object({
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
   apiKeyPreview: apiKeyPreviewSchema,
   baseURL: z.string().optional().default('${OCR_BASEURL}'),
+  region: z.string().optional(),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
