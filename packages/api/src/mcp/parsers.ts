@@ -94,6 +94,59 @@ function isImageContent(item: t.ToolContentPart): item is t.ImageContent {
   return item.type === 'image';
 }
 
+const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+
+/**
+ * Reads the body an MCP server embedded in a resource result. A server may deliver the same file
+ * either as `text` or, under the very same schema, as a base64 `blob`, so both halves are unwrapped
+ * here — reading only `text` leaves a blob-delivered file as bare URI and MIME type metadata.
+ *
+ * Image blobs become artifacts, matching standalone image content. Blobs whose bytes are not valid
+ * UTF-8 are summarized rather than emitted, so binary payloads never reach the model as base64.
+ */
+function readResourceBody(resource: t.ResourceContents): t.ResourceBody {
+  if ('text' in resource && typeof resource.text === 'string' && resource.text) {
+    return { text: resource.text };
+  }
+  if (!('blob' in resource) || typeof resource.blob !== 'string' || !resource.blob) {
+    return {};
+  }
+
+  const mimeType = resource.mimeType;
+  if (mimeType != null && mimeType.startsWith('image/')) {
+    return { image: { type: 'image', data: resource.blob, mimeType } };
+  }
+
+  const bytes = Buffer.from(resource.blob, 'base64');
+  try {
+    const text = utf8Decoder.decode(bytes);
+    return text ? { text } : {};
+  } catch {
+    return { binaryBytes: bytes.byteLength };
+  }
+}
+
+function describeBinaryResource(bytes: number): string {
+  return `Resource Content: ${bytes} bytes of binary data (omitted; not UTF-8 text)`;
+}
+
+function describeResourceLink(item: t.ResourceLink): string[] {
+  const lines: string[] = [];
+  if (item.name) {
+    lines.push(`Resource Name: ${item.name}`);
+  }
+  if (item.description) {
+    lines.push(`Resource Description: ${item.description}`);
+  }
+  if (item.uri) {
+    lines.push(`Resource URI: ${item.uri}`);
+  }
+  if (item.mimeType) {
+    lines.push(`Resource MIME Type: ${item.mimeType}`);
+  }
+  return lines;
+}
+
 function parseAsString(result: t.MCPToolCallResponse): string {
   const content = result?.content ?? [];
   if (!content.length) {
@@ -105,10 +158,19 @@ function parseAsString(result: t.MCPToolCallResponse): string {
       if (item.type === 'text') {
         return item.text;
       }
+      if (item.type === 'resource_link') {
+        return describeResourceLink(item).join('\n');
+      }
       if (item.type === 'resource') {
         const resourceText = [];
-        if ('text' in item.resource && item.resource.text != null && item.resource.text) {
-          resourceText.push(item.resource.text);
+        const body = readResourceBody(item.resource);
+        if (body.text) {
+          resourceText.push(body.text);
+        } else if (body.image) {
+          assertImageDataWithinLimit(body.image);
+          resourceText.push(`data:${body.image.mimeType};base64,${body.image.data}`);
+        } else if (body.binaryBytes != null) {
+          resourceText.push(describeBinaryResource(body.binaryBytes));
         }
         if (item.resource.uri) {
           resourceText.push(`Resource URI: ${item.resource.uri}`);
@@ -157,10 +219,20 @@ export function formatToolContent(
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
+  const collectImage = (item: t.ImageContent): void => {
+    assertImageDataWithinLimit(item);
+    const formatter = imageFormatters.default as t.ImageFormatter;
+    const formattedImage = formatter(item);
+    if (formattedImage.type === 'image_url') {
+      imageUrls.push(formattedImage);
+    }
+  };
+
   const contentHandlers: {
     text: (item: Extract<t.ToolContentPart, { type: 'text' }>) => void;
     image: (item: t.ToolContentPart) => void;
     resource: (item: Extract<t.ToolContentPart, { type: 'resource' }>) => void;
+    resource_link: (item: t.ResourceLink) => void;
   } = {
     text: (item) => {
       currentTextBlock += (currentTextBlock ? '\n\n' : '') + item.text;
@@ -170,13 +242,7 @@ export function formatToolContent(
       if (!isImageContent(item)) {
         return;
       }
-      assertImageDataWithinLimit(item);
-      const formatter = imageFormatters.default as t.ImageFormatter;
-      const formattedImage = formatter(item);
-
-      if (formattedImage.type === 'image_url') {
-        imageUrls.push(formattedImage);
-      }
+      collectImage(item);
     },
 
     resource: (item) => {
@@ -196,8 +262,15 @@ export function formatToolContent(
         uiResources.push(uiResource);
         resourceText.push(`UI Resource ID: ${resourceId}`);
         resourceText.push(`UI Resource Marker: \\ui{${resourceId}}`);
-      } else if ('text' in item.resource && item.resource.text != null && item.resource.text) {
-        resourceText.push(`Resource Text: ${item.resource.text}`);
+      } else {
+        const body = readResourceBody(item.resource);
+        if (body.text) {
+          resourceText.push(`Resource Text: ${body.text}`);
+        } else if (body.image) {
+          collectImage(body.image);
+        } else if (body.binaryBytes != null) {
+          resourceText.push(describeBinaryResource(body.binaryBytes));
+        }
       }
 
       if (item.resource.uri.length) {
@@ -209,6 +282,13 @@ export function formatToolContent(
 
       if (resourceText.length) {
         currentTextBlock += (currentTextBlock ? '\n\n' : '') + resourceText.join('\n');
+      }
+    },
+
+    resource_link: (item) => {
+      const lines = describeResourceLink(item);
+      if (lines.length) {
+        currentTextBlock += (currentTextBlock ? '\n\n' : '') + lines.join('\n');
       }
     },
   };
