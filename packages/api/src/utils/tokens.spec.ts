@@ -92,13 +92,20 @@ describe('Gemini 3.8 Flash', () => {
 });
 
 describe('GPT-6 Astra', () => {
-  it('resolves the 1,050,000-token context window', () => {
+  it('resolves 1.05M context and 128K output', () => {
     expect(getModelMaxTokens('gpt-6-astra', EModelEndpoint.openAI)).toBe(1050000);
+    expect(getModelMaxOutputTokens('gpt-6-astra', EModelEndpoint.openAI)).toBe(128000);
   });
 
   it('matches its own key for snapshots and provider prefixes', () => {
-    expect(getModelMaxTokens('gpt-6-astra-2026-04-30', EModelEndpoint.openAI)).toBe(1050000);
-    expect(getModelMaxTokens('openai/gpt-6-astra', EModelEndpoint.openAI)).toBe(1050000);
+    for (const model of [
+      'gpt-6-astra-2026-04-30',
+      'openai/gpt-6-astra',
+      'gpt-6-astra-2026-04-30/openai',
+    ]) {
+      expect(getModelMaxTokens(model, EModelEndpoint.openAI)).toBe(1050000);
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(128000);
+    }
   });
 });
 
