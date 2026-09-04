@@ -7,6 +7,7 @@ const MAX_READ_BYTES = 1024 * 1024;
 const MAX_READ_LINES = 500;
 const MAX_SEARCH_RESULTS = 200;
 const MAX_SEARCH_TEXT_LENGTH = 2000;
+const MAX_LIST_RESULTS = 500;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const READ_RESULT_KEYS = new Set([
   'protocolVersion',
@@ -27,6 +28,14 @@ const SEARCH_RESULT_KEYS = new Set([
   'truncated',
 ]);
 const SEARCH_MATCH_KEYS = new Set(['path', 'line', 'column', 'text']);
+const LIST_RESULT_KEYS = new Set([
+  'protocolVersion',
+  'operation',
+  'workspaceId',
+  'paths',
+  'truncated',
+  'nextAfterPath',
+]);
 
 export interface WorkspaceReadRequest {
   protocolVersion: 1;
@@ -46,7 +55,19 @@ export interface WorkspaceSearchRequest {
   maxResults?: number;
 }
 
-export type WorkspaceToolRequest = WorkspaceReadRequest | WorkspaceSearchRequest;
+export interface WorkspaceListRequest {
+  protocolVersion: 1;
+  operation: 'list_files';
+  workspaceId: string;
+  path?: string;
+  maxResults?: number;
+  afterPath?: string;
+}
+
+export type WorkspaceToolRequest =
+  | WorkspaceReadRequest
+  | WorkspaceSearchRequest
+  | WorkspaceListRequest;
 
 export interface WorkspaceReadResult {
   protocolVersion: 1;
@@ -68,7 +89,16 @@ export interface WorkspaceSearchResult {
   truncated: boolean;
 }
 
-export type WorkspaceToolResult = WorkspaceReadResult | WorkspaceSearchResult;
+export interface WorkspaceListResult {
+  protocolVersion: 1;
+  operation: 'list_files';
+  workspaceId: string;
+  paths: string[];
+  truncated: boolean;
+  nextAfterPath?: string;
+}
+
+export type WorkspaceToolResult = WorkspaceReadResult | WorkspaceSearchResult | WorkspaceListResult;
 
 export class WorkspaceToolHttpError extends Error {
   constructor(
@@ -90,6 +120,8 @@ function isSafePath(value: unknown): value is string {
     value.length > 0 &&
     value.length <= MAX_PATH_LENGTH &&
     !value.includes('\0') &&
+    !value.includes('\r') &&
+    !value.includes('\n') &&
     !value.includes('\\') &&
     !value.startsWith('/') &&
     !/^[A-Za-z]:/.test(value) &&
@@ -103,6 +135,32 @@ function isPositiveInteger(value: unknown, maximum: number): boolean {
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function normalizeRelativePath(value: string): string {
+  return value
+    .split('/')
+    .filter((segment) => segment !== '' && segment !== '.')
+    .join('/');
+}
+
+function isWithinRequestedPath(candidate: string, requestedPath: string | undefined): boolean {
+  const prefix = requestedPath == null ? '' : normalizeRelativePath(requestedPath);
+  if (prefix === '') return true;
+  const normalizedCandidate = normalizeRelativePath(candidate);
+  return normalizedCandidate === prefix || normalizedCandidate.startsWith(`${prefix}/`);
+}
+
+function comparePortablePaths(left: string, right: string): number {
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  const sharedLength = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    const difference = leftBytes[index] - rightBytes[index];
+    if (difference !== 0) return difference;
+  }
+  return leftBytes.length - rightBytes.length;
 }
 
 async function readBoundedJson(response: Response, signal?: AbortSignal): Promise<unknown> {
@@ -165,6 +223,15 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
       (request.maxLines == null || isPositiveInteger(request.maxLines, MAX_READ_LINES))
     );
   }
+  if (request.operation === 'list_files') {
+    return (
+      (request.path == null || isSafePath(request.path)) &&
+      (request.afterPath == null ||
+        (isSafePath(request.afterPath) &&
+          isWithinRequestedPath(request.afterPath, request.path))) &&
+      (request.maxResults == null || isPositiveInteger(request.maxResults, MAX_LIST_RESULTS))
+    );
+  }
   if (request.operation !== 'search_text') {
     return false;
   }
@@ -223,6 +290,30 @@ function isValidResult(
         : value.nextStartLine == null)
     );
   }
+  if (request.operation === 'list_files') {
+    const maxResults = request.maxResults ?? 100;
+    if (
+      !hasOnlyKeys(value, LIST_RESULT_KEYS) ||
+      !Array.isArray(value.paths) ||
+      value.paths.length > maxResults
+    ) {
+      return false;
+    }
+    let previousPath = request.afterPath;
+    for (const path of value.paths) {
+      if (
+        !isSafePath(path) ||
+        !isWithinRequestedPath(path, request.path) ||
+        (previousPath != null && comparePortablePaths(path, previousPath) <= 0)
+      ) {
+        return false;
+      }
+      previousPath = path;
+    }
+    return value.truncated === true
+      ? value.paths.length > 0 && value.nextAfterPath === value.paths[value.paths.length - 1]
+      : value.nextAfterPath == null;
+  }
   const maxResults = request.maxResults ?? 50;
   return (
     hasOnlyKeys(value, SEARCH_RESULT_KEYS) &&
@@ -233,6 +324,7 @@ function isValidResult(
         isRecord(match) &&
         hasOnlyKeys(match, SEARCH_MATCH_KEYS) &&
         isSafePath(match.path) &&
+        isWithinRequestedPath(match.path, request.path) &&
         isPositiveInteger(match.line, Number.MAX_SAFE_INTEGER) &&
         isPositiveInteger(match.column, Number.MAX_SAFE_INTEGER) &&
         typeof match.text === 'string' &&

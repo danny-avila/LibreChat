@@ -338,6 +338,173 @@ describe('executeWorkspaceTool', () => {
     ).rejects.toMatchObject({ reason: 'invalid' });
   });
 
+  test('rejects non-canonical dot-segment request paths before dispatch', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      Response.json({
+        protocolVersion: 1,
+        operation: 'search_text',
+        workspaceId: 'primary',
+        matches: [{ path: 'src/app.ts', line: 1, column: 1, text: 'needle' }],
+        truncated: false,
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'search_text',
+          workspaceId: 'primary',
+          query: 'needle',
+          path: './src',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('validates bounded file listings within the requested subtree', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      Response.json({
+        protocolVersion: 1,
+        operation: 'list_files',
+        workspaceId: 'primary',
+        paths: ['src/app.ts', 'src/worker.ts'],
+        truncated: true,
+        nextAfterPath: 'src/worker.ts',
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+          path: 'src',
+          afterPath: 'src/000.ts',
+          maxResults: 20,
+        },
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      paths: ['src/app.ts', 'src/worker.ts'],
+      nextAfterPath: 'src/worker.ts',
+    });
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+          path: './src',
+          maxResults: 20,
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    fetchImpl.mockResolvedValueOnce(
+      Response.json({
+        protocolVersion: 1,
+        operation: 'list_files',
+        workspaceId: 'primary',
+        paths: ['outside.txt'],
+        truncated: false,
+      }),
+    );
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+          path: 'src',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
+  test('rejects newline-delimited paths returned by an attached worker', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      Response.json({
+        protocolVersion: 1,
+        operation: 'list_files',
+        workspaceId: 'primary',
+        paths: ['src/safe.ts\nworkspace/src/injected.ts'],
+        truncated: false,
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
+  test('rejects invalid workspace listing continuations on both sides of the bridge', async () => {
+    const fetchImpl = jest.fn();
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+          path: 'src',
+          afterPath: 'outside/file.ts',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    fetchImpl.mockResolvedValueOnce(
+      Response.json({
+        protocolVersion: 1,
+        operation: 'list_files',
+        workspaceId: 'primary',
+        paths: ['src/worker.ts'],
+        truncated: true,
+      }),
+    );
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com/v1',
+        authHeaders: { Authorization: 'Bearer jwt' },
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+          path: 'src',
+          afterPath: 'src/app.ts',
+        },
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ reason: 'invalid' });
+  });
+
   test('rejects an oversized response before parsing worker-controlled JSON', async () => {
     const cancel = jest.fn();
     const json = jest.fn().mockResolvedValue({

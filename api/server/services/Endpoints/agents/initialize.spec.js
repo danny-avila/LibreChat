@@ -1053,6 +1053,7 @@ describe('initializeClient — subagent loading', () => {
       'create_file',
       'edit_file',
       'search_workspace',
+      'list_workspace_files',
     ]);
 
     await expect(

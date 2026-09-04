@@ -20,6 +20,7 @@ import { collectReachableAgents } from './traversal';
 export const CREATE_FILE_TOOL_NAME = 'create_file';
 export const EDIT_FILE_TOOL_NAME = 'edit_file';
 export const SEARCH_WORKSPACE_TOOL_NAME = 'search_workspace';
+export const LIST_WORKSPACE_FILES_TOOL_NAME = 'list_workspace_files';
 export const HOST_FILE_AUTHORING_ARTIFACT_KEY = '__librechat_file_authoring';
 export const FILE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_FILE_TOOL_NAME,
@@ -33,6 +34,7 @@ export function isCodeSessionToolName(
   return (
     CODE_EXECUTION_TOOLS.has(name) ||
     name === SEARCH_WORKSPACE_TOOL_NAME ||
+    name === LIST_WORKSPACE_FILES_TOOL_NAME ||
     hostFileAuthoringToolNames?.has(name) === true
   );
 }
@@ -103,6 +105,7 @@ export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig)
     toolNames.add(CREATE_FILE_TOOL_NAME);
     toolNames.add(EDIT_FILE_TOOL_NAME);
     toolNames.add(SEARCH_WORKSPACE_TOOL_NAME);
+    toolNames.add(LIST_WORKSPACE_FILES_TOOL_NAME);
   }
   if (config.memoryAvailable === true) {
     toolNames.add('set_memory');
@@ -417,7 +420,7 @@ const CODE_READ_FILE_DESCRIPTION = `Read a known file from the code-execution sa
 
 Use for text, CSV, JSON, Markdown, logs, small source files, and images at paths returned by tool output, just written, or under /mnt/data/. Do not run ls/find just to rediscover known paths. Use bash_tool for other binary files, large files, transforms, metadata, or true filesystem discovery. /tmp is per-call scratch and unavailable later.`;
 
-const ATTACHED_WORKSPACE_READ_FILE_INSTRUCTIONS = `For an attached environment, use "workspace/{relativePath}" to read a file from the workspace directory registered on the worker. It may be an existing project, a Git repository, or an empty directory; Git is not required. The worker's host path stays private. Use start_line and max_lines for bounded pagination.`;
+const ATTACHED_WORKSPACE_READ_FILE_INSTRUCTIONS = `For an attached environment, use "workspace/{relativePath}" to read a file from the workspace directory registered on the worker. Use a canonical relative path without empty, ".", or ".." segments. It may be an existing project, a Git repository, or an empty directory; Git is not required. The worker's host path stays private. Use start_line and max_lines for bounded pagination.`;
 
 const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
@@ -437,7 +440,7 @@ const ATTACHED_WORKSPACE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.fre
     path: {
       type: 'string',
       description:
-        'Use "workspace/{relativePath}" for a file in the attached worker workspace directory, or a code-execution sandbox path such as "/mnt/data/result.csv".',
+        'Use "workspace/{relativePath}" with a canonical relative path (no empty, ".", or ".." segments) for a file in the attached worker workspace directory, or a code-execution sandbox path such as "/mnt/data/result.csv".',
     },
     start_line: {
       type: 'integer',
@@ -489,7 +492,8 @@ const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
       },
       path: {
         type: 'string',
-        description: 'Optional relative file or directory within the attached workspace.',
+        description:
+          'Optional canonical relative file or directory within the attached workspace; do not use empty, ".", or ".." segments.',
       },
       max_results: {
         type: 'integer',
@@ -499,6 +503,33 @@ const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
       },
     },
     required: ['query'],
+  }) as LCTool['parameters'],
+}) as LCTool;
+
+const LIST_WORKSPACE_FILES_TOOL_DEF: LCTool = Object.freeze({
+  name: LIST_WORKSPACE_FILES_TOOL_NAME,
+  description:
+    'List relative file paths in the attached worker workspace directory. Use this to discover files in an existing project, Git repository, or empty directory before reading or searching them. Respects normal ignore files, does not follow symlinks, and returns a bounded deterministic listing. When a result supplies an after_path continuation, pass it unchanged with the same path to fetch the next page.',
+  parameters: Object.freeze({
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description:
+          'Optional canonical relative file or directory within the attached workspace; do not use empty, ".", or ".." segments.',
+      },
+      max_results: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 500,
+        description: 'Optional maximum number of relative file paths to return. Defaults to 100.',
+      },
+      after_path: {
+        type: 'string',
+        description:
+          'Optional canonical continuation path from the preceding truncated result. Pass it back unchanged with the same path.',
+      },
+    },
   }) as LCTool['parameters'],
 }) as LCTool;
 
@@ -794,7 +825,9 @@ export function registerCodeExecutionTools(
   const codeTools: LCTool[] = includeBash
     ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
     : [readFileDef];
-  const candidates = workspaceTools ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF] : codeTools;
+  const candidates = workspaceTools
+    ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF, LIST_WORKSPACE_FILES_TOOL_DEF]
+    : codeTools;
   const toolNames = candidates.map((def) => def.name);
 
   const inputDefinitions = toolDefinitions ?? [];

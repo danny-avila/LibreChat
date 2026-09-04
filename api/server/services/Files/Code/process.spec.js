@@ -250,6 +250,7 @@ const {
   readSandboxFile,
   readWorkspaceFile,
   searchWorkspace,
+  listWorkspaceFiles,
   readSandboxImage,
   writeSandboxFile,
   primeFiles,
@@ -1933,6 +1934,53 @@ describe('Code Process', () => {
           workspaceId: 'primary',
           query: 'needle',
           path: 'src',
+          maxResults: 20,
+        },
+        signal: controller.signal,
+      });
+    });
+  });
+
+  describe('listWorkspaceFiles', () => {
+    it('forwards authenticated listing to the selected attached worker', async () => {
+      const controller = new AbortController();
+      const result = {
+        protocolVersion: 1,
+        operation: 'list_files',
+        workspaceId: 'primary',
+        paths: ['src/app.ts'],
+        truncated: false,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        listWorkspaceFiles({
+          workspace_id: 'primary',
+          path: 'src',
+          after_path: 'src/app.ts',
+          max_results: 20,
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith({
+        baseURL: 'https://attached-code.example.com/v1',
+        authHeaders: {
+          Authorization: 'Bearer workspace-token',
+          'X-CodeAPI-Expected-Profile': 'stateful',
+          'X-LibreChat-Code-Worker-ID': 'worker-user-1',
+        },
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+          path: 'src',
+          afterPath: 'src/app.ts',
           maxResults: 20,
         },
         signal: controller.signal,
