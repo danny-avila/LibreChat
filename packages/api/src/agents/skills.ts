@@ -585,23 +585,52 @@ export async function resolveSkillCatalog(
   };
 }
 
+/** Filler used to build the measurement probe; never reaches the model. */
+const CATALOG_PROBE_CHAR = 'x';
+
 /**
- * Whether `catalog` carries this skill's description in full.
+ * How much of each skill's description reaches the model, aligned to `skills`.
  *
- * An entry the formatter kept renders as `- name: description` on a line of
- * its own, so the whole rendering is what gets matched. Matching the
- * description alone would miss a drop whenever its text happens to appear
- * elsewhere in the catalog — a one-word description is enough to collide with
- * another skill's name once the catalog falls back to names-only.
+ * Measured on a probe rather than on the real catalog. Every decision in
+ * `formatSkillCatalog`'s truncation ladder reads description `.length` and
+ * never description content, so formatting same-length filler reproduces the
+ * real cuts exactly — while guaranteeing the output can be parsed, since
+ * filler carries no newline and no entry marker and skill names are validated
+ * to `^[a-z0-9][a-z0-9-]*$`.
  *
- * Matching the rendering rather than parsing entries also keeps this correct
- * where boundaries are not recoverable: descriptions may contain newlines, so
- * an entry is not one physical line, and a continuation line can imitate the
- * next entry's marker.
+ * The real catalog cannot be measured: a description may contain newlines, so
+ * an entry is not one line; duplicate names share a rendering; and truncation
+ * can splice one entry's tail onto the next, so even a whole-entry match can
+ * be satisfied by text the model never received as that entry.
  */
-function catalogKeptDescription(catalog: string, name: string, description: string): boolean {
-  const entry = `\n- ${name}: ${description}`;
-  return catalog.includes(`${entry}\n`) || catalog.endsWith(entry);
+function measureCatalogDescriptions(
+  skills: Array<{ name: string; description: string }>,
+  options: Parameters<typeof formatSkillCatalog>[1],
+): number[] {
+  const probe = formatSkillCatalog(
+    skills.map((s) => ({
+      name: s.name,
+      description: CATALOG_PROBE_CHAR.repeat(s.description.length),
+    })),
+    options,
+  );
+  const delivered = new Array<number>(skills.length).fill(0);
+  let index = 0;
+  for (const line of probe.split('\n')) {
+    if (index >= skills.length) {
+      break;
+    }
+    const prefix = `- ${skills[index].name}`;
+    if (line === prefix) {
+      index++;
+      continue;
+    }
+    if (line.startsWith(`${prefix}: `)) {
+      delivered[index] = line.length - prefix.length - 2;
+      index++;
+    }
+  }
+  return delivered;
 }
 
 /**
@@ -716,20 +745,26 @@ export async function injectSkillCatalog(
    * and those reads would otherwise be impossible.
    */
   if (catalogVisibleSkills.length > 0) {
+    const catalogOptions = {
+      contextWindowTokens: contextWindowTokens || 200_000,
+      maxEntryChars: SKILL_CATALOG_MAX_ENTRY_CHARS,
+    };
     const catalog = formatSkillCatalog(
       catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
-      {
-        contextWindowTokens: contextWindowTokens || 200_000,
-        maxEntryChars: SKILL_CATALOG_MAX_ENTRY_CHARS,
-      },
+      catalogOptions,
     );
     if (catalog) {
-      for (const s of catalogVisibleSkills) {
-        if (!s.description || catalogKeptDescription(catalog, s.name, s.description)) {
+      const delivered = measureCatalogDescriptions(catalogVisibleSkills, catalogOptions);
+      for (let i = 0; i < catalogVisibleSkills.length; i++) {
+        const s = catalogVisibleSkills[i];
+        const reached = delivered[i];
+        if (reached >= s.description.length) {
           continue;
         }
         logger.warn(
-          `[injectSkillCatalog] skill "${s.name}" description (${s.description.length} chars) does not reach the model verbatim — the catalog caps entries at ${SKILL_CATALOG_MAX_ENTRY_CHARS} and cuts further to fit its context budget`,
+          reached === 0
+            ? `[injectSkillCatalog] skill "${s.name}" description was dropped from the model catalog (was ${s.description.length} chars) — the catalog exceeded its context budget`
+            : `[injectSkillCatalog] skill "${s.name}" description reached the model truncated to ${reached} of ${s.description.length} chars`,
         );
       }
       agent.additional_instructions = agent.additional_instructions
