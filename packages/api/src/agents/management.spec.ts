@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { MAX_SUBAGENTS, setMaxSubagents } from 'librechat-data-provider';
 import {
   agentManagementCreateSchema,
+  agentManagementDeleteResponseSchema,
   agentManagementListResponseSchema,
   agentManagementListSchema,
   agentManagementResponseSchema,
@@ -167,6 +168,19 @@ describe('Agent Management contract', () => {
   });
 
   describe('responses', () => {
+    it('validates the minimal deletion tombstone', () => {
+      expect(
+        agentManagementDeleteResponseSchema.parse({ id: 'agent_public_id', deleted: true }),
+      ).toEqual({ id: 'agent_public_id', deleted: true });
+      expect(
+        agentManagementDeleteResponseSchema.safeParse({
+          id: 'agent_public_id',
+          deleted: true,
+          tenantId: 'tenant-secret',
+        }).success,
+      ).toBe(false);
+    });
+
     it('allowlists supported configuration and stable metadata', () => {
       const response = projectAgentManagementResponse(persistedAgent);
 
