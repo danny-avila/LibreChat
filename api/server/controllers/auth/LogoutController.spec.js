@@ -375,20 +375,7 @@ describe('LogoutController', () => {
       });
     });
 
-    it('clears openid_sub cookie when OPENID_EXPOSE_SUB_COOKIE is enabled', async () => {
-      mockIsEnabled.mockImplementation(
-        (val) => val === 'true' || val === true || val === process.env.OPENID_EXPOSE_SUB_COOKIE,
-      );
-      process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
-      const req = buildReq();
-      const res = buildRes();
-
-      await logoutController(req, res);
-
-      expect(res.clearCookie).toHaveBeenCalledWith('openid_sub');
-    });
-
-    it('does not clear openid_sub cookie when OPENID_EXPOSE_SUB_COOKIE is not enabled', async () => {
+    it('clears openid_sub cookie unconditionally on logout', async () => {
       mockIsEnabled.mockImplementation(() => false);
       delete process.env.OPENID_EXPOSE_SUB_COOKIE;
       const req = buildReq();
@@ -396,7 +383,7 @@ describe('LogoutController', () => {
 
       await logoutController(req, res);
 
-      expect(res.clearCookie).not.toHaveBeenCalledWith('openid_sub');
+      expect(res.clearCookie).toHaveBeenCalledWith('openid_sub');
     });
   });
 
