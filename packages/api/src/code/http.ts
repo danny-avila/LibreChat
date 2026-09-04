@@ -14,18 +14,20 @@ import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
 import type { CodeBridgeFetch } from './bridge';
 import {
+  CodeBridgeLifecycleError,
+  CodeBridgePairingError,
+  CodeBridgeStatusError,
+  createCodeBridgePairing,
+  getCodeBridgeWorkerStatus,
+  readCodeBridgeSecret,
+  revokeCodeBridgeWorker,
+} from './bridge';
+import {
   CodeEnvironmentInUseError,
   CodeEnvironmentLimitError,
   CodeEnvironmentValidationError,
   normalizeCodeEnvironmentName,
 } from './environments';
-import {
-  CodeBridgeLifecycleError,
-  CodeBridgePairingError,
-  createCodeBridgePairing,
-  readCodeBridgeSecret,
-  revokeCodeBridgeWorker,
-} from './bridge';
 import {
   assertCodeApiJwtSigningReady,
   getCodeApiTenantId,
@@ -184,6 +186,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   list: (req: ServerRequest, res: Response) => Promise<Response>;
   register: (req: ServerRequest, res: Response) => Promise<Response>;
   pair: (req: ServerRequest, res: Response) => Promise<Response>;
+  status: (req: ServerRequest, res: Response) => Promise<Response>;
   updateSettings: (req: ServerRequest, res: Response) => Promise<Response>;
   remove: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
@@ -619,6 +622,75 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     });
   }
 
+  async function status(req: ServerRequest, res: Response): Promise<Response> {
+    const principal = actor(req);
+    if (principal == null) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const environmentId = (
+      req.params as { environmentId?: string } | undefined
+    )?.environmentId?.trim();
+    if (!environmentId) {
+      return res.status(400).json({ error: 'Code environment id is required' });
+    }
+
+    let configuration: AccessibleCodeEnvironmentConfiguration | undefined;
+    let controlPlane: ConfiguredCodeEnvironment | undefined;
+    try {
+      const principals = await deps.registry.resolvePrincipals?.(principal);
+      const resolvedPrincipal = principals == null ? principal : { ...principal, principals };
+      const [configurations, effectiveConfig, deploymentConfig] = await Promise.all([
+        deps.registry.listAccessibleConfigurations?.(resolvedPrincipal) ?? Promise.resolve([]),
+        deps.getAppConfig({
+          ...getAppConfigOptionsFromUser(req.user),
+          ...(principals == null ? {} : { resolvedPrincipals: principals }),
+          failClosed: true,
+          skipRuntimeAugmentation: true,
+        }),
+        deps.getAppConfig({ baseOnly: true }),
+      ]);
+      configuration = configurations.find(({ id }) => id === environmentId);
+      const controlPlaneId = configuration?.controlPlaneId;
+      const effectiveControlPlane =
+        controlPlaneId == null
+          ? undefined
+          : configuredAttachedControlPlane(effectiveConfig, controlPlaneId);
+      controlPlane =
+        effectiveControlPlane == null || controlPlaneId == null
+          ? undefined
+          : configuredAttachedControlPlane(deploymentConfig, controlPlaneId);
+    } catch (error) {
+      logger.error('[codeEnvironments] status policy resolution failed:', error);
+      return res.status(503).json({ error: 'Code environment policy is unavailable' });
+    }
+    if (configuration?.workerId == null || controlPlane == null) {
+      return res.status(404).json({ error: 'Code environment was not found' });
+    }
+    const workerId = configuration.workerId;
+    const tokenEnv = controlPlane.pairing?.tokenEnv;
+    const token = tokenEnv == null ? undefined : readSecret(tokenEnv)?.trim();
+    if (!token) {
+      return res.status(503).json({ error: 'Code environment status is not configured' });
+    }
+    try {
+      const workerStatus = await getCodeBridgeWorkerStatus({
+        baseURL: controlPlane.baseURL,
+        token,
+        workerId,
+        fetchImpl: deps.fetchImpl,
+      });
+      return res.status(200).json({ environmentId, ...workerStatus });
+    } catch (error) {
+      if (error instanceof CodeBridgeStatusError) {
+        return res.status(error.reason === 'timeout' ? 504 : 502).json({
+          error: 'Code environment status is unavailable',
+          ...(error.upstreamStatus == null ? {} : { upstreamStatus: error.upstreamStatus }),
+        });
+      }
+      throw error;
+    }
+  }
+
   async function remove(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
     if (principal == null) {
@@ -672,5 +744,5 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
   }
 
-  return { list, register, pair, updateSettings, remove };
+  return { list, register, pair, status, updateSettings, remove };
 }

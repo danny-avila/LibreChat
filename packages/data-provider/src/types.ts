@@ -569,6 +569,15 @@ export type TCodeEnvironmentPairingResponse = {
   };
 };
 
+export type TCodeEnvironmentStatusResponse = {
+  environmentId: string;
+  status: 'offline' | 'starting' | 'ready';
+  leaseExpiresInMs?: number;
+  sandboxProfile?: string;
+  runtimes?: string[];
+  operations?: string[];
+};
+
 export type TConfig = {
   order: number;
   type?: EModelEndpoint;

@@ -34,6 +34,7 @@ router.post('/pairings', codeEnvironmentPairingLimiter, (req, res, next) =>
 router.post('/', requireCodeEnvironmentManage, (req, res, next) =>
   getHandlers().register(req, res, next),
 );
+router.get('/:environmentId/status', (req, res, next) => getHandlers().status(req, res, next));
 router.patch('/:environmentId/settings', (req, res, next) =>
   getHandlers().updateSettings(req, res, next),
 );

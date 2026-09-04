@@ -21,6 +21,9 @@ const mockHandlers = {
   list: jest.fn((_req, res) => res.status(200).json({ environments: [] })),
   register: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
   pair: jest.fn((_req, res) => res.status(201).json({ environment: { id: 'code-1' } })),
+  status: jest.fn((_req, res) =>
+    res.status(200).json({ environmentId: 'code-1', status: 'ready' }),
+  ),
   updateSettings: jest.fn((_req, res) => res.status(200).json({ environment: { id: 'code-1' } })),
   remove: jest.fn((_req, res) => res.status(200).json({ environment: { id: 'code-1' } })),
 };
@@ -102,6 +105,16 @@ describe('code environment routes', () => {
 
     expect(middlewareCalls).toEqual(['jwt']);
     expect(mockHandlers.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an authenticated principal to read environment status', async () => {
+    await request(createApp()).get('/api/code-environments/code-1/status').expect(200, {
+      environmentId: 'code-1',
+      status: 'ready',
+    });
+
+    expect(middlewareCalls).toEqual(['jwt']);
+    expect(mockHandlers.status).toHaveBeenCalledTimes(1);
   });
 
   it('allows an authenticated owner to update exposed environment settings', async () => {
