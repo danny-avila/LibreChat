@@ -1,7 +1,8 @@
 import { useState, useMemo, memo, useCallback, useRef, useId, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
-import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Lightbulb, ChevronDown } from 'lucide-react';
+import { Button, MorphIcon, TooltipAnchor } from '@librechat/client';
+import { Copy, Check, ChevronUp as ChevronUpNode, ChevronDown as ChevronDownNode } from 'lucide';
 import type { FocusEvent, FC } from 'react';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
@@ -157,11 +158,7 @@ export const ThinkingButton = memo(
                 ? localize('com_ui_copied_to_clipboard')
                 : localize('com_ui_copy_thoughts_to_clipboard')}
             </span>
-            {isCopied ? (
-              <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
-            ) : (
-              <Clipboard size="19" aria-hidden="true" />
-            )}
+            <MorphIcon icon={isCopied ? Check : Copy} size={18} />
           </Button>
         )}
       </div>
@@ -257,11 +254,10 @@ export const FloatingThinkingBar = memo(
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
               )}
             >
-              {isExpanded ? (
-                <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
-              ) : (
-                <ChevronDown className="h-[18px] w-[18px]" aria-hidden="true" />
-              )}
+              <MorphIcon
+                icon={isExpanded ? ChevronUpNode : ChevronDownNode}
+                className="h-[18px] w-[18px]"
+              />
             </button>
           }
         />
@@ -280,11 +276,7 @@ export const FloatingThinkingBar = memo(
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
                 )}
               >
-                {isCopied ? (
-                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
-                ) : (
-                  <Clipboard size="18" aria-hidden="true" />
-                )}
+                <MorphIcon icon={isCopied ? Check : Copy} size={18} />
               </button>
             }
           />

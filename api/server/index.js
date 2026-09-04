@@ -45,6 +45,7 @@ const {
   preAuthTenantMiddleware,
   requestContextMiddleware,
   registerShutdownTask,
+  getRemainingShutdownMs,
   configureServerTimeouts,
   setupGracefulShutdown,
   updateInterfacePermissions,
@@ -143,11 +144,23 @@ const configureGenerationStreams = () => {
       priority: 100,
     },
   );
+  /** Spend the shutdown budget that is actually left waiting for detached generations to
+   *  record their own provider drains, holding back a reserve for the tasks after this one.
+   *  Abandoning an unrecorded drain fences the next generation permanently. */
+  const destroyGenerationJobManager = () => {
+    const remaining = getRemainingShutdownMs();
+    return GenerationJobManager.destroy(
+      remaining == null
+        ? undefined
+        : { settlementBudgetMs: Math.max(0, remaining - SHUTDOWN_TEARDOWN_RESERVE_MS) },
+    );
+  };
   // Tear down stream resources before shared caches and telemetry exporters shut down.
-  registerShutdownTask('generation job manager', () => GenerationJobManager.destroy(), {
-    priority: 100,
-  });
+  registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
 };
+
+/** Reserved for the shutdown tasks that run after the generation job manager. */
+const SHUTDOWN_TEARDOWN_RESERVE_MS = 10_000;
 
 const startServer = async () => {
   await waitForKeyvRedisClient();
