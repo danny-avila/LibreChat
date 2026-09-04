@@ -17,7 +17,14 @@ const mockCreateAgentManagementCreateHandler = jest.fn((deps) => {
   mockCreateDeps = deps;
   return mockCreate;
 });
+const mockUpdate = jest.fn((_req, res) => res.status(200).json({ id: 'agent-updated' }));
+let mockUpdateDeps;
+const mockCreateAgentManagementUpdateHandler = jest.fn((deps) => {
+  mockUpdateDeps = deps;
+  return mockUpdate;
+});
 const mockBrowserCreate = jest.fn();
+const mockBrowserUpdate = jest.fn();
 const mockCheckBan = jest.fn((_req, _res, next) => next());
 const mockConfigMiddleware = jest.fn((_req, _res, next) => next());
 const mockUaParser = jest.fn((_req, _res, next) => next());
@@ -37,13 +44,17 @@ jest.mock('@librechat/api', () => ({
   mapAgentManagementError: mockMapAgentManagementError,
   createAgentManagementCreateHandler: mockCreateAgentManagementCreateHandler,
   createAgentManagementReadHandlers: mockCreateAgentManagementReadHandlers,
+  createAgentManagementUpdateHandler: mockCreateAgentManagementUpdateHandler,
 }));
 jest.mock('~/server/middleware', () => ({
   checkBan: mockCheckBan,
   configMiddleware: mockConfigMiddleware,
   uaParser: mockUaParser,
 }));
-jest.mock('~/server/controllers/agents/v1', () => ({ createAgent: mockBrowserCreate }));
+jest.mock('~/server/controllers/agents/v1', () => ({
+  createAgent: mockBrowserCreate,
+  updateAgent: mockBrowserUpdate,
+}));
 jest.mock('~/server/middleware/roles/capabilities', () => ({ hasCapability: jest.fn() }));
 jest.mock('~/server/services/PermissionService', () => ({
   checkPermission: jest.fn(),
@@ -120,5 +131,22 @@ describe('Agent Management route boundary', () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(mockCreateDeps.getRoleByName).toEqual(expect.any(Function));
     expect(mockCreateDeps.createAgent).toBe(mockBrowserCreate);
+  });
+
+  it('loads Agent configuration and dispatches authenticated update requests', async () => {
+    const response = await request(app)
+      .patch('/api/agents/v1/agents/agent-one')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ name: 'Updated Agent' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ id: 'agent-updated' });
+    expect(mockConfigMiddleware).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdateDeps.getRoleByName).toEqual(expect.any(Function));
+    expect(mockUpdateDeps.getAgentWithVersionCount).toEqual(expect.any(Function));
+    expect(mockUpdateDeps.checkPermission).toEqual(expect.any(Function));
+    expect(mockUpdateDeps.hasCapability).toEqual(expect.any(Function));
+    expect(mockUpdateDeps.updateAgent).toBe(mockBrowserUpdate);
   });
 });
