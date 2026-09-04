@@ -237,6 +237,63 @@ describe('the probe itself', () => {
     expect(records.some((record) => record.commandName === 'getMore')).toBe(true);
   });
 
+  /**
+   * A collation can broaden equality — under a case-insensitive one,
+   * `tenantId: 'tenant-a'` also matches `TENANT-A` — so the literal predicate
+   * no longer proves isolation.
+   */
+  it('does not accept a predicate broadened by a collation', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .find({ tenantId: TENANT }, { collation: { locale: 'en', strength: 2 } })
+          .toArray();
+      }),
+    );
+
+    expect(unscoped(records)).toHaveLength(1);
+  });
+
+  /**
+   * `.explain()` nests the real command inside an `explain` envelope. Without
+   * unwrapping it the operation is invisible, though `executionStats` still
+   * reveals cross-tenant cardinality.
+   */
+  it('unwraps an explain envelope instead of dropping it', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .find({ name: 'x' })
+          .explain('queryPlanner');
+      }),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0].commandName).toBe('find');
+    expect(records[0].scoped).toBe(false);
+  });
+
+  /**
+   * Diagnostics run inside the driver's synchronous event handler, so a
+   * serialization throw would escape into the database operation itself.
+   */
+  it('does not throw out of the listener on a value JSON cannot serialize', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .find({ tenantId: TENANT, big: { $gt: BigInt(1) } } as unknown as Record<string, unknown>)
+          .toArray()
+          .catch(() => undefined);
+      }),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0].predicate).toContain('tenantId');
+  });
+
   it('reports nothing for collections it does not watch', async () => {
     const records = await probe.record(() =>
       asTenant(async () => {

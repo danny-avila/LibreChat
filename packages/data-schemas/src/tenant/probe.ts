@@ -62,6 +62,35 @@ const PREDICATE_PATHS: ReadonlyMap<string, { readonly key: string; readonly list
     ['insert', { key: '', list: 'documents' }],
   ]);
 
+/**
+ * Commands that touch a collection but carry no tenant-bearing data. Anything
+ * outside this list and `PREDICATE_PATHS` is reported unscoped rather than
+ * dropped, so a command shape the probe does not understand fails closed
+ * instead of passing unseen.
+ */
+const UNJUDGED_COMMANDS: ReadonlySet<string> = new Set([
+  'createIndexes',
+  'listIndexes',
+  'dropIndexes',
+  'listCollections',
+  'collMod',
+  'create',
+  'drop',
+]);
+
+/**
+ * `JSON.stringify` throws on BSON values it does not know, and this runs inside
+ * the driver's synchronous event handler — a throw would escape into the
+ * database operation itself. Diagnostics must never do that.
+ */
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, (_key, item) => (typeof item === 'bigint' ? `${item}n` : item));
+  } catch {
+    return '(unserializable predicate)';
+  }
+}
+
 /** Stages that rewrite another collection from inside the aggregate command. */
 const COLLECTION_WRITING_STAGES = ['$out', '$merge'] as const;
 
@@ -136,30 +165,61 @@ function predicatesOf(command: CommandDocument, commandName: string): unknown[] 
   return path.key ? operations.map((operation) => operation?.[path.key]) : operations;
 }
 
-/** The collection a command targets, or undefined when it names none. */
-function collectionOf(command: CommandDocument, commandName: string): string | undefined {
+/** A command reduced to the operation the probe should actually judge. */
+interface ResolvedCommand {
+  readonly command: CommandDocument;
+  readonly commandName: string;
+  readonly collection: string;
+}
+
+/**
+ * Resolves the operation a wire command represents, unwrapping `explain` —
+ * whose payload is the nested command rather than a collection name, and which
+ * would otherwise be dropped even though `executionStats` reveals cross-tenant
+ * cardinality.
+ */
+function resolveCommand(
+  command: CommandDocument,
+  commandName: string,
+): ResolvedCommand | undefined {
+  if (commandName === 'explain') {
+    const inner = command.explain;
+    if (inner == null || typeof inner !== 'object') {
+      return undefined;
+    }
+    const innerCommand = inner as CommandDocument;
+    const [innerName] = Object.keys(innerCommand);
+    return innerName ? resolveCommand(innerCommand, innerName) : undefined;
+  }
+
   // `getMore` carries the cursor id under its own name and the collection separately.
   const value = commandName === 'getMore' ? command.collection : command[commandName];
-  return typeof value === 'string' ? value : undefined;
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  return { command, commandName, collection: value };
 }
 
 /** The predicates a command carries, for test failure output. */
 function describePredicates(command: CommandDocument, commandName: string): string {
   if (commandName === 'aggregate') {
-    return JSON.stringify(command.pipeline);
+    return safeStringify(command.pipeline);
   }
   if (commandName === 'getMore') {
     return '(cursor continuation — no predicate)';
   }
-  return JSON.stringify(predicatesOf(command, commandName));
+  return safeStringify(predicatesOf(command, commandName));
 }
 
 /** Whether this command is one the probe can judge at all. */
 function carriesPredicate(command: CommandDocument, commandName: string): boolean {
+  if (UNJUDGED_COMMANDS.has(commandName)) {
+    return false;
+  }
   if (commandName === 'aggregate') {
     return Array.isArray(command.pipeline);
   }
-  if (commandName === 'getMore') {
+  if (!PREDICATE_PATHS.has(commandName)) {
     return true;
   }
   return predicatesOf(command, commandName).length > 0;
@@ -170,12 +230,21 @@ function carriesPredicate(command: CommandDocument, commandName: string): boolea
  * Only called for commands `carriesPredicate` has already accepted.
  */
 function isScoped(command: CommandDocument, commandName: string, tenantId: string): boolean {
+  // A collation can broaden equality — under a case-insensitive one,
+  // `tenantId: 'tenant-a'` also matches `TENANT-A` — so literal equality no
+  // longer proves isolation and the command cannot be called scoped.
+  if ('collation' in command) {
+    return false;
+  }
   if (commandName === 'aggregate') {
     return pipelineTargetsTenant(command.pipeline, tenantId);
   }
   // A cursor continuation carries no predicate, and the scope it was opened
   // under is not visible here, so it fails closed rather than passing unseen.
   if (commandName === 'getMore') {
+    return false;
+  }
+  if (!PREDICATE_PATHS.has(commandName)) {
     return false;
   }
   return predicatesOf(command, commandName).every((predicate) => pinsTenant(predicate, tenantId));
@@ -186,36 +255,48 @@ export function attachTenantProbe(
   collections: Iterable<string>,
 ): TenantProbe {
   const watched = new Set(collections);
+  const databaseName = connection.db?.databaseName;
   let recording: TenantCommandRecord[] | null = null;
 
-  const onCommandStarted = (event: { commandName: string; command: CommandDocument }): void => {
+  const onCommandStarted = (event: {
+    commandName: string;
+    command: CommandDocument;
+    databaseName?: string;
+  }): void => {
     if (recording == null) {
       return;
     }
-    const collection = collectionOf(event.command, event.commandName);
-    if (collection == null || !watched.has(collection)) {
+    // A shared MongoClient emits for every database it serves, and collection
+    // names are only unique within one.
+    if (event.databaseName != null && event.databaseName !== databaseName) {
       return;
     }
 
-    if (!carriesPredicate(event.command, event.commandName)) {
+    const resolved = resolveCommand(event.command, event.commandName);
+    if (resolved == null || !watched.has(resolved.collection)) {
+      return;
+    }
+
+    const { command, commandName, collection } = resolved;
+    if (!carriesPredicate(command, commandName)) {
       return;
     }
 
     // Async context reaches this handler, so each command is judged against the
     // tenant that was actually active when it was issued.
     const tenantId = getTenantId();
-    const predicate = describePredicates(event.command, event.commandName);
+    const predicate = describePredicates(command, commandName);
 
     if (tenantId == null || tenantId === SYSTEM_TENANT_ID) {
-      recording.push({ commandName: event.commandName, collection, scoped: false, predicate });
+      recording.push({ commandName, collection, scoped: false, predicate });
       return;
     }
 
     recording.push({
-      commandName: event.commandName,
+      commandName,
       collection,
       tenantId,
-      scoped: isScoped(event.command, event.commandName, tenantId),
+      scoped: isScoped(command, commandName, tenantId),
       predicate,
     });
   };
