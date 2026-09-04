@@ -19,6 +19,7 @@ import {
 import type { Agent, AgentUpdateParams } from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { AgentParameterConfig } from './parameters';
 import type { AgentForm, StringOption } from '~/common';
 import {
   useCreateAgentMutation,
@@ -32,6 +33,7 @@ import {
   getAvailableAgentSelection,
   getDefaultAgentFormValues,
 } from '~/utils';
+import { pruneAgentModelParameters, resolveAgentParameterSettings } from './parameters';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
@@ -68,14 +70,18 @@ function getUpdateToastMessage(
  * @param {string | null} [agent_id] - Agent identifier, if the agent already exists.
  * @returns {{ payload: Partial<AgentForm>; provider: string; model: string }} Payload metadata.
  */
-export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
+export function composeAgentUpdatePayload(
+  data: AgentForm,
+  agent_id?: string | null,
+  parameterConfig?: AgentParameterConfig,
+) {
   const {
     name,
     artifacts,
     description,
     instructions,
     model: _model,
-    model_parameters,
+    model_parameters: currentModelParameters,
     provider: _provider,
     agent_ids,
     edges,
@@ -110,6 +116,12 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+  const modelParameterSettings = parameterConfig
+    ? resolveAgentParameterSettings({ ...parameterConfig, model, provider })
+    : undefined;
+  const model_parameters = modelParameterSettings
+    ? pruneAgentModelParameters(currentModelParameters, modelParameterSettings)
+    : currentModelParameters;
 
   return {
     payload: {
@@ -297,6 +309,7 @@ export default function AgentPanel() {
   const {
     activePanel,
     agentsConfig,
+    startupConfig,
     setActivePanel,
     endpointsConfig,
     setCurrentAgentId,
@@ -570,7 +583,14 @@ export default function AgentPanel() {
     async (data: AgentForm) => {
       const tools = Array.from(new Set([...(data.tools ?? []), ...resolveCapabilityTools(data)]));
 
-      const { payload: basePayload, provider, model } = composeAgentUpdatePayload(data, agent_id);
+      const {
+        payload: basePayload,
+        provider,
+        model,
+      } = composeAgentUpdatePayload(data, agent_id, {
+        endpointsConfig,
+        startupConfig,
+      });
 
       if (agent_id) {
         if (data.avatar_action === 'upload' && isAvatarUploadOnlyDirty(dirtyFields)) {
@@ -626,12 +646,14 @@ export default function AgentPanel() {
       agent_id,
       create,
       dirtyFields,
+      endpointsConfig,
       handleAvatarUpload,
       models,
       modelsError,
       modelsReady,
       update,
       showToast,
+      startupConfig,
       localize,
     ],
   );
