@@ -18,6 +18,7 @@ const {
   normalizeServerName,
   findShadowedServerNames,
   redactServerSecrets,
+  sanitizeMcpIconPath,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
@@ -460,6 +461,9 @@ const createMCPServerController = async (req, res) => {
         errors: validation.error.errors,
       });
     }
+    if (validation.data.iconPath) {
+      validation.data.iconPath = sanitizeMcpIconPath(validation.data.iconPath);
+    }
     if (configHasObo(validation.data) && !(await callerCanConfigureObo(req))) {
       logger.warn(
         `[createMCPServer] User ${userId} attempted to configure OBO without ${Permissions.CONFIGURE_OBO} permission`,
@@ -548,6 +552,9 @@ const updateMCPServerController = async (req, res) => {
         message: 'Invalid configuration',
         errors: validation.error.errors,
       });
+    }
+    if (validation.data.iconPath) {
+      validation.data.iconPath = sanitizeMcpIconPath(validation.data.iconPath);
     }
 
     /**

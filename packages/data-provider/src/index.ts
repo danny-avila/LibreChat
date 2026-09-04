@@ -57,6 +57,8 @@ export { dataService };
 import * as dataService from './data-service';
 /* provider identity */
 export * from './providers';
+/* icon sanitization policy */
+export * from './svg';
 /* general helpers */
 export * from './utils';
 export * from './actions';
@@ -69,3 +71,4 @@ export * from './parameterSettings';
 export * from './agentToolOptions';
 /* code-execution sandbox */
 export * from './codeEnvRef';
+export * from './code/worker';

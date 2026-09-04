@@ -23,6 +23,14 @@ const mockCreateAgentManagementUpdateHandler = jest.fn((deps) => {
   mockUpdateDeps = deps;
   return mockUpdate;
 });
+const mockDelete = jest.fn((_req, res) =>
+  res.status(200).json({ id: 'agent-deleted', deleted: true }),
+);
+let mockDeleteDeps;
+const mockCreateAgentManagementDeleteHandler = jest.fn((deps) => {
+  mockDeleteDeps = deps;
+  return mockDelete;
+});
 const mockBrowserCreate = jest.fn();
 const mockBrowserUpdate = jest.fn();
 const mockCheckBan = jest.fn((_req, _res, next) => next());
@@ -43,6 +51,7 @@ jest.mock('../middleware', () => ({
 jest.mock('@librechat/api', () => ({
   mapAgentManagementError: mockMapAgentManagementError,
   createAgentManagementCreateHandler: mockCreateAgentManagementCreateHandler,
+  createAgentManagementDeleteHandler: mockCreateAgentManagementDeleteHandler,
   createAgentManagementReadHandlers: mockCreateAgentManagementReadHandlers,
   createAgentManagementUpdateHandler: mockCreateAgentManagementUpdateHandler,
 }));
@@ -64,6 +73,7 @@ jest.mock('~/models', () => ({
   getRoleByName: jest.fn(),
   getAgentWithVersionCount: jest.fn(),
   getAgentManagementListByAccess: jest.fn(),
+  deleteAgent: jest.fn(),
 }));
 
 const router = require('../management');
@@ -148,5 +158,20 @@ describe('Agent Management route boundary', () => {
     expect(mockUpdateDeps.checkPermission).toEqual(expect.any(Function));
     expect(mockUpdateDeps.hasCapability).toEqual(expect.any(Function));
     expect(mockUpdateDeps.updateAgent).toBe(mockBrowserUpdate);
+  });
+
+  it('dispatches authenticated deletion requests with the shared Agent dependencies', async () => {
+    const response = await request(app)
+      .delete('/api/agents/v1/agents/agent-deleted')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ id: 'agent-deleted', deleted: true });
+    expect(mockDelete).toHaveBeenCalledTimes(1);
+    expect(mockDeleteDeps.getRoleByName).toEqual(expect.any(Function));
+    expect(mockDeleteDeps.getAgentWithVersionCount).toEqual(expect.any(Function));
+    expect(mockDeleteDeps.checkPermission).toEqual(expect.any(Function));
+    expect(mockDeleteDeps.hasCapability).toEqual(expect.any(Function));
+    expect(mockDeleteDeps.deleteAgent).toEqual(expect.any(Function));
   });
 });

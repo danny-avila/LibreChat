@@ -104,6 +104,7 @@ const {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   createAgentManagementAuth,
   createAgentManagementCreateHandler,
+  createAgentManagementDeleteHandler,
   createAgentManagementReadHandlers,
   createAgentManagementUpdateHandler,
   mergeDeploymentSkillIds,
@@ -436,12 +437,17 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         getRoleByName,
         createAgent: createAgentHandler,
       });
-      const checkEditPermission = async ({ userId: accessibleUserId, resourceType, resourceId }) =>
+      const checkAgentPermission = async ({
+        userId: accessibleUserId,
+        resourceType,
+        resourceId,
+        requiredPermission,
+      }) =>
         (await AclEntry.exists({
           principalId: accessibleUserId,
           resourceType,
           resourceId,
-          permBits: { $bitsAllSet: PermissionBits.EDIT },
+          permBits: { $bitsAllSet: requiredPermission },
         })) != null;
       const hasCapability = jest.fn().mockResolvedValue(false);
       const reads = createAgentManagementReadHandlers({
@@ -454,15 +460,22 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
             resourceType,
             permBits: { $bitsAllSet: PermissionBits.EDIT },
           }),
-        checkPermission: checkEditPermission,
+        checkPermission: checkAgentPermission,
         hasCapability,
       });
       const update = createAgentManagementUpdateHandler({
         getRoleByName,
         getAgentWithVersionCount: db.getAgentWithVersionCount,
-        checkPermission: checkEditPermission,
+        checkPermission: checkAgentPermission,
         hasCapability,
         updateAgent: updateAgentHandler,
+      });
+      const remove = createAgentManagementDeleteHandler({
+        getRoleByName,
+        getAgentWithVersionCount: db.getAgentWithVersionCount,
+        checkPermission: checkAgentPermission,
+        hasCapability,
+        deleteAgent: db.deleteAgent,
       });
       const app = express();
       app.use(express.json());
@@ -477,6 +490,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         req.config = {};
         return update(req, res);
       });
+      app.delete('/api/agents/v1/agents/:id', remove);
 
       const createdResponse = await request(app)
         .post('/api/agents/v1/agents')
@@ -517,14 +531,47 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(listedResponse.body.data).toEqual([createdResponse.body]);
 
       const otherTenantId = `tenant-${nanoid(8)}`;
-      await tenantStorage.run({ tenantId: otherTenantId }, () =>
-        Agent.create({
-          id: createdResponse.body.id,
-          name: 'Other tenant Agent',
+      const currentTenantGraphId = `agent_${nanoid()}`;
+      const otherTenantGraphId = `agent_${nanoid()}`;
+      await tenantStorage.run({ tenantId }, async () => {
+        await Agent.create({
+          id: currentTenantGraphId,
+          name: 'Current tenant graph',
           provider: 'openai',
           model: 'gpt-4',
-          author: new mongoose.Types.ObjectId(),
-        }),
+          author: principal._id,
+          edges: [{ from: '', to: createdResponse.body.id, edgeType: 'handoff' }],
+        });
+        await User.updateOne(
+          { _id: principal._id },
+          { $set: { favorites: [{ agentId: createdResponse.body.id }] } },
+        );
+      });
+      const otherTenantPrincipal = await tenantStorage.run(
+        { tenantId: otherTenantId },
+        async () => {
+          const owner = await createOwner();
+          await Agent.create({
+            id: createdResponse.body.id,
+            name: 'Other tenant Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            author: owner._id,
+          });
+          await Agent.create({
+            id: otherTenantGraphId,
+            name: 'Other tenant graph',
+            provider: 'openai',
+            model: 'gpt-4',
+            author: owner._id,
+            edges: [{ from: '', to: createdResponse.body.id, edgeType: 'handoff' }],
+          });
+          await User.updateOne(
+            { _id: owner._id },
+            { $set: { favorites: [{ agentId: createdResponse.body.id }] } },
+          );
+          return owner;
+        },
       );
 
       const updatedResponse = await request(app)
@@ -580,6 +627,55 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           resourceType: ResourceType.AGENT,
         }),
       );
+
+      const deletedResponse = await request(app)
+        .delete(`/api/agents/v1/agents/${createdResponse.body.id}`)
+        .set('Authorization', 'Bearer valid-token');
+      expect(deletedResponse.status).toBe(200);
+      expect(deletedResponse.body).toEqual({ id: createdResponse.body.id, deleted: true });
+
+      const [retrievedAfterDelete, repeatedDelete] = await Promise.all([
+        request(app)
+          .get(`/api/agents/v1/agents/${createdResponse.body.id}`)
+          .set('Authorization', 'Bearer valid-token'),
+        request(app)
+          .delete(`/api/agents/v1/agents/${createdResponse.body.id}`)
+          .set('Authorization', 'Bearer valid-token'),
+      ]);
+      expect(retrievedAfterDelete.status).toBe(404);
+      expect(repeatedDelete.status).toBe(404);
+      await expect(Agent.exists({ id: createdResponse.body.id, tenantId })).resolves.toBeNull();
+      await expect(
+        Agent.exists({ id: createdResponse.body.id, tenantId: otherTenantId }),
+      ).resolves.not.toBeNull();
+      await expect(
+        Agent.exists({
+          id: currentTenantGraphId,
+          tenantId,
+          'edges.to': createdResponse.body.id,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        Agent.exists({
+          id: otherTenantGraphId,
+          tenantId: otherTenantId,
+          'edges.to': createdResponse.body.id,
+        }),
+      ).resolves.not.toBeNull();
+      await expect(
+        User.exists({
+          _id: principal._id,
+          tenantId,
+          'favorites.agentId': createdResponse.body.id,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        User.exists({
+          _id: otherTenantPrincipal._id,
+          tenantId: otherTenantId,
+          'favorites.agentId': createdResponse.body.id,
+        }),
+      ).resolves.not.toBeNull();
     });
 
     test('management creation rejects caller-controlled ownership', async () => {
