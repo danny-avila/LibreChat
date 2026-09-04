@@ -27,6 +27,53 @@ const baseFile = (overrides: Partial<TFile> = {}): Partial<TFile> => ({
   ...overrides,
 });
 
+/** Utilities that take something out of the visual flow, or put it back. Matched as whole class
+ * tokens, never as substrings — `overflow-hidden` and `truncate` hide nothing on their own. */
+const HIDING_UTILITIES = new Set([
+  'hidden',
+  'invisible',
+  'collapse',
+  'opacity-0',
+  'sr-only',
+  'scale-0',
+  'w-0',
+  'h-0',
+  'size-0',
+  'max-w-0',
+  'max-h-0',
+]);
+const REVEALING_UTILITIES = new Set([
+  'visible',
+  'not-sr-only',
+  'block',
+  'inline',
+  'inline-block',
+  'flex',
+  'inline-flex',
+  'grid',
+  'inline-grid',
+  'contents',
+  'table',
+  'flow-root',
+  'opacity-100',
+]);
+
+/** A Tailwind token is `variant:variant:utility`; the utility is what follows the last colon,
+ * which holds for bracketed variants too (`[@media(hover:none)]:inline` -> `inline`). */
+const utilityOf = (token: string): string => token.split(':').pop() ?? token;
+const variantOf = (token: string): string => token.slice(0, token.length - utilityOf(token).length);
+const isPointerConditional = (variant: string): boolean => /hover|focus/.test(variant);
+
+/**
+ * Every class token in an element's subtree, paired with whether it applies only while the
+ * element is pointed at or focused.
+ */
+const classTokensIn = (root: HTMLElement): Array<{ token: string; conditional: boolean }> =>
+  [root, ...Array.from(root.querySelectorAll<HTMLElement>('[class]'))]
+    .flatMap((element) => element.className.split(/\s+/))
+    .filter(Boolean)
+    .map((token) => ({ token, conditional: isPointerConditional(variantOf(token)) }));
+
 describe('FileContainer chip label', () => {
   it('shows the raw filename when no `displayName` is supplied (upload context)', () => {
     /** A user-uploaded file whose name happens to look like the
@@ -93,14 +140,21 @@ describe('FileContainer subtitle action', () => {
     const control = screen.getByRole('button', { name: 'Move back into message' });
     expect(control).toHaveTextContent(/^Move back into message$/);
 
-    const gatedTokens = ['group-hover', 'group-focus-within', 'hover:none'];
-    const classNames = [control, ...Array.from(control.querySelectorAll('[class]'))].map(
-      (element) => element.className,
-    );
-    for (const className of classNames) {
-      for (const token of gatedTokens) {
-        expect(className).not.toContain(token);
+    /** Stated as what the tokens MEAN rather than as a list of the ones this bug happened to
+     * use. A denylist of `group-hover` and friends is bypassed by the next spelling of the same
+     * idea — `invisible hover:visible`, `hidden focus:block` — which is why both halves of a
+     * gate are rejected: nothing may hide the label at rest, and nothing may make it visible
+     * only under a pointer or focus. Colour under those variants stays permitted, and is
+     * asserted separately. */
+    for (const { token, conditional } of classTokensIn(control)) {
+      const utility = utilityOf(token);
+      if (conditional) {
+        expect(
+          REVEALING_UTILITIES.has(utility) || HIDING_UTILITIES.has(utility) ? token : null,
+        ).toBeNull();
+        continue;
       }
+      expect(HIDING_UTILITIES.has(utility) ? token : null).toBeNull();
     }
   });
 
