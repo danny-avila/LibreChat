@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { logger } from '@librechat/data-schemas';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
 import type {
   CodeEnvironmentUserConfigSchema,
@@ -192,14 +193,29 @@ export function codeExecutionHeaders(
   };
 }
 
+/**
+ * `@librechat/agents` replaces any throw from this callback with a fixed
+ * "not authorized" string before the model or the operator sees it, and its own
+ * console diagnostic carries no request or user id. This log is the only
+ * request-correlated record of why the headers could not be resolved.
+ */
 export async function codeExecutionAuthHeaders(
   authHeaders: (
     bridgeWorkerId?: string,
   ) => Promise<Record<string, string>> | Record<string, string>,
   context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
 ): Promise<Record<string, string>> {
-  return {
-    ...(await authHeaders(context.bridgeWorkerId)),
-    ...codeExecutionHeaders(context),
-  };
+  try {
+    return {
+      ...(await authHeaders(context.bridgeWorkerId)),
+      ...codeExecutionHeaders(context),
+    };
+  } catch (error) {
+    logger.error(
+      `[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: ${context.executionProfile}` +
+        (context.bridgeWorkerId != null ? ` | Worker: ${context.bridgeWorkerId}` : ''),
+      error,
+    );
+    throw error;
+  }
 }

@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import {
   codeExecutionAuthHeaders,
   codeExecutionHeaders,
@@ -315,5 +316,50 @@ describe('resolveCodeExecutionContext', () => {
         userId: 'user-1',
       }),
     ).toThrow('Stateful code environment "missing-vm" is not configured');
+  });
+});
+
+describe('codeExecutionAuthHeaders', () => {
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it('logs the failure that reaches the model as a generic authorization error', async () => {
+    const failure = new Error('code API signing key is not configured');
+
+    await expect(
+      codeExecutionAuthHeaders(() => Promise.reject(failure), {
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'opaque-worker-id',
+      }),
+    ).rejects.toBe(failure);
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: stateful | Worker: opaque-worker-id',
+      failure,
+    );
+  });
+
+  it('omits the worker from the log when the request is not bridged', async () => {
+    await expect(
+      codeExecutionAuthHeaders(
+        () => {
+          throw new Error('boom');
+        },
+        { executionProfile: 'default' },
+      ),
+    ).rejects.toThrow('boom');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default',
+      expect.any(Error),
+    );
   });
 });
