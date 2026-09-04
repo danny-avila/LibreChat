@@ -441,7 +441,7 @@ async function runIndexSync() {
       return;
     }
 
-    if (err.message.includes('not found')) {
+    if (err.code === 'index_not_found') {
       logger.debug('[indexSync] Creating indices...');
       try {
         const Message = mongoose.models.Message;

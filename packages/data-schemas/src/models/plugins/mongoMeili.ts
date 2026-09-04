@@ -70,7 +70,7 @@ export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
   processSyncBatch(
     index: Index<MeiliIndexable>,
     documents: Array<Record<string, unknown>>,
-  ): Promise<void>;
+  ): Promise<number>;
   cleanupExcludedMeiliIndex(): Promise<void>;
   cleanupMeiliIndex(
     index: Index<MeiliIndexable>,
@@ -117,10 +117,68 @@ const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 const previouslyIndexedFlagKey = 'meiliPreviouslyIndexed';
 const meiliCleanupVersion = 1;
 const meiliRequestTimeoutMs = 10_000;
+const meiliTaskTimeoutMs = 10 * 60 * 1000;
 const meiliWriteMaxAttempts = 3;
 const meiliRetryBaseDelayMs = 250;
 const meiliVersionReconcileMaxAttempts = 3;
 const completeDetachedOperation: CallbackWithoutResultAndOptionalError = () => undefined;
+
+interface MeiliTaskResult {
+  status: string;
+  error?: MeiliSearchErrorInfo | null;
+}
+
+interface MeiliTaskWaiter {
+  waitForTask(
+    taskUid: number,
+    options: { timeOutMs: number; intervalMs: number },
+  ): Promise<MeiliTaskResult>;
+}
+
+class MeiliTaskDeadlineError extends Error {
+  constructor(operation: string, taskUid: number) {
+    super(`${operation} task ${taskUid} did not complete within ${meiliTaskTimeoutMs}ms`);
+    this.name = 'MeiliTaskDeadlineError';
+  }
+}
+
+const waitForTerminalMeiliTask = async (
+  waiter: MeiliTaskWaiter,
+  taskUid: number,
+  operation: string,
+): Promise<MeiliTaskResult> => {
+  const startedAt = Date.now();
+
+  while (true) {
+    const remainingMs = meiliTaskTimeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) {
+      throw new MeiliTaskDeadlineError(operation, taskUid);
+    }
+
+    try {
+      return await waiter.waitForTask(taskUid, {
+        timeOutMs: Math.min(meiliRequestTimeoutMs, remainingMs),
+        intervalMs: 100,
+      });
+    } catch (error) {
+      if (error instanceof MeiliSearchTimeOutError) {
+        continue;
+      }
+      throw error;
+    }
+  }
+};
+
+const waitForSuccessfulMeiliTask = async (
+  waiter: MeiliTaskWaiter,
+  taskUid: number,
+  operation: string,
+): Promise<void> => {
+  const task = await waitForTerminalMeiliTask(waiter, taskUid, operation);
+  if (task.status !== 'succeeded') {
+    throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
+  }
+};
 
 const retryDetachedMeiliWrite = async (
   operation: () => Promise<unknown>,
@@ -302,23 +360,7 @@ const createMeiliMongooseModel = ({
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
 
   const waitForSuccessfulTask = async (taskUid: number): Promise<void> => {
-    while (true) {
-      try {
-        const task = await index.waitForTask(taskUid, {
-          timeOutMs: meiliRequestTimeoutMs,
-          intervalMs: 100,
-        });
-        if (task.status !== 'succeeded') {
-          throw new Error(`Meilisearch task ${taskUid} ended with ${task.status}`);
-        }
-        return;
-      } catch (error) {
-        if (error instanceof MeiliSearchTimeOutError) {
-          continue;
-        }
-        throw error;
-      }
-    }
+    await waitForSuccessfulMeiliTask(index, taskUid, 'Meilisearch');
   };
 
   const reconcileDeletedSnapshots = async (
@@ -365,13 +407,7 @@ const createMeiliMongooseModel = ({
     const deletion = await index.deleteDocument(
       String(doc[primaryKey as keyof DocumentWithMeiliIndex]),
     );
-    const deletionTask = await client.waitForTask(deletion.taskUid, {
-      timeOutMs: meiliRequestTimeoutMs,
-      intervalMs: 100,
-    });
-    if (deletionTask.status !== 'succeeded') {
-      throw new Error(`Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`);
-    }
+    await waitForSuccessfulMeiliTask(client, deletion.taskUid, 'Meili cleanup');
   };
 
   /**
@@ -416,13 +452,7 @@ const createMeiliMongooseModel = ({
               ? index.updateDocuments([object], { primaryKey })
               : index.addDocuments([object], { primaryKey });
           const task = await enqueued;
-          const completedTask = await client.waitForTask(task.taskUid, {
-            timeOutMs: meiliRequestTimeoutMs,
-            intervalMs: 100,
-          });
-          if (completedTask.status !== 'succeeded') {
-            throw new Error(`Meili write task ${task.taskUid} ended with ${completedTask.status}`);
-          }
+          await waitForSuccessfulMeiliTask(client, task.taskUid, 'Meili write');
         }, '[mongoMeili] Failed to submit a document to Meili.');
         // eslint-disable-next-line no-restricted-syntax -- versioned internal bookkeeping must not re-enter document middleware
         const acknowledgement = await doc.collection.updateOne(
@@ -520,7 +550,7 @@ const createMeiliMongooseModel = ({
         `[syncWithMeili] Starting sync for ${collectionName} with batch size ${batchSize}`,
       );
 
-      // Get approximate total count for raw estimation, the sync should not overcome this number
+      // Get an approximate count for logging only; documents may arrive while the sync is running.
       const approxTotalCount = await this.estimatedDocumentCount();
       logger.info(
         `[syncWithMeili] Approximate total number of all ${collectionName}: ${approxTotalCount}`,
@@ -537,8 +567,7 @@ const createMeiliMongooseModel = ({
       }
 
       let processedCount = 0;
-      let batchPasses = 0;
-      const maxBatchPasses = Math.ceil(approxTotalCount / batchSize) + MAX_SYNC_RETRY_PASSES;
+      let consecutiveRetryPasses = 0;
 
       while (true) {
         const indexableQuery = getIndexableQuery();
@@ -568,16 +597,19 @@ const createMeiliMongooseModel = ({
             logger.info('[syncWithMeili] No more documents to process');
             break;
           }
-          if (batchPasses >= maxBatchPasses) {
-            throw new Error(
-              `[syncWithMeili] Reconciliation did not converge after ${maxBatchPasses} batches`,
-            );
-          }
-          batchPasses += 1;
-
           // Process the batch
-          await this.processSyncBatch(index, documents);
-          processedCount += documents.length;
+          const durableProgress = await this.processSyncBatch(index, documents);
+          processedCount += durableProgress;
+          if (durableProgress > 0) {
+            consecutiveRetryPasses = 0;
+          } else {
+            consecutiveRetryPasses += 1;
+            if (consecutiveRetryPasses >= MAX_SYNC_RETRY_PASSES) {
+              throw new Error(
+                `[syncWithMeili] Reconciliation did not converge after ${MAX_SYNC_RETRY_PASSES} consecutive retry batches`,
+              );
+            }
+          }
           logger.info(`[syncWithMeili] Processed: ${processedCount}`);
 
           // Add delay before every subsequent pass to prevent hot-looping on changed documents
@@ -603,9 +635,9 @@ const createMeiliMongooseModel = ({
       this: SchemaWithMeiliMethods,
       index: Index<MeiliIndexable>,
       documents: Array<Record<string, unknown>>,
-    ): Promise<void> {
+    ): Promise<number> {
       if (documents.length === 0) {
-        return;
+        return 0;
       }
 
       // Format documents for MeiliSearch
@@ -655,6 +687,12 @@ const createMeiliMongooseModel = ({
           { timestamps: false },
         );
 
+        const currentDocuments = await this.find({ _id: { $in: docsIds } })
+          .select('_id updatedAt +_meiliIndex +_meiliIndexSchemaVersion')
+          .lean();
+        const currentDocumentsById = new Map(
+          currentDocuments.map((doc: Record<string, unknown>) => [String(doc._id), doc]),
+        );
         const currentIndexableDocuments = await this.find({
           _id: { $in: docsIds },
           ...getIndexableQuery(),
@@ -664,14 +702,59 @@ const createMeiliMongooseModel = ({
         const currentIndexableIds = new Set(
           currentIndexableDocuments.map((doc: Record<string, unknown>) => String(doc._id)),
         );
-        const staleSnapshots = documents.filter((doc) => !currentIndexableIds.has(String(doc._id)));
+
+        let durableProgress = 0;
+        const retryDocumentIds: unknown[] = [];
+        const staleSnapshots: Array<Record<string, unknown>> = [];
+        for (const snapshot of documents) {
+          const id = String(snapshot._id);
+          const currentDocument = currentDocumentsById.get(id);
+          if (!currentDocument || !currentIndexableIds.has(id)) {
+            staleSnapshots.push(snapshot);
+            continue;
+          }
+
+          const snapshotHasUpdatedAt = Object.prototype.hasOwnProperty.call(snapshot, 'updatedAt');
+          const currentHasUpdatedAt = Object.prototype.hasOwnProperty.call(
+            currentDocument,
+            'updatedAt',
+          );
+          const snapshotStillMatches =
+            snapshotHasUpdatedAt === currentHasUpdatedAt &&
+            (!snapshotHasUpdatedAt || _.isEqual(snapshot.updatedAt, currentDocument.updatedAt));
+          if (!snapshotStillMatches) {
+            retryDocumentIds.push(snapshot._id);
+            continue;
+          }
+
+          if (
+            currentDocument._meiliIndex !== true ||
+            currentDocument._meiliIndexSchemaVersion !== MEILI_INDEX_SCHEMA_VERSION
+          ) {
+            throw new Error(
+              `[processSyncBatch] ${primaryKey} ${String(snapshot[primaryKey])} remained unacknowledged`,
+            );
+          }
+          durableProgress += 1;
+        }
+
+        if (retryDocumentIds.length > 0) {
+          await this.updateMany(
+            { _id: { $in: retryDocumentIds } },
+            { $set: { _meiliIndex: false, _meiliIndexAttempted: true } },
+            { timestamps: false },
+          );
+        }
+
         if (staleSnapshots.length > 0) {
           const staleDocumentIds = staleSnapshots.map((doc) => doc._id);
           const stalePrimaryKeys = staleSnapshots.map((doc) => doc[primaryKey as keyof typeof doc]);
           const deletion = await index.deleteDocuments(stalePrimaryKeys.map(String));
           await waitForSuccessfulTask(deletion.taskUid);
           await reconcileDeletedSnapshots(this, staleDocumentIds);
+          durableProgress += staleSnapshots.length;
         }
+        return durableProgress;
       } catch (error) {
         logger.error('[processSyncBatch] Error processing batch:', error);
         throw error;
@@ -1098,10 +1181,11 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         try {
           logger.info(`[mongoMeili] Creating new index: ${indexName}`);
           const enqueued = await client.createIndex(indexName, { primaryKey });
-          const task = await client.waitForTask(enqueued.taskUid, {
-            timeOutMs: 10000,
-            intervalMs: 100,
-          });
+          const task = await waitForTerminalMeiliTask(
+            client,
+            enqueued.taskUid,
+            'Meili index creation',
+          );
           logger.debug(`[mongoMeili] Index ${indexName} creation task:`, task);
           if (task.status !== 'succeeded') {
             const taskError = task.error as MeiliSearchErrorInfo | null;
@@ -1114,7 +1198,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
             logger.info(`[mongoMeili] Successfully created index: ${indexName}`);
           }
         } catch (createError) {
-          if (createError instanceof MeiliSearchTimeOutError) {
+          if (createError instanceof MeiliTaskDeadlineError) {
             logger.warn(`[mongoMeili] Timed out waiting for index ${indexName} creation`);
           } else {
             logger.warn(`[mongoMeili] Error creating index ${indexName}:`, createError);
