@@ -586,27 +586,36 @@ export async function resolveSkillCatalog(
 }
 
 /**
- * Description length that survived into `catalog`, per skill name.
+ * Description length that survived into `catalog`, positionally aligned to
+ * `names` — index `i` is how much of skill `i`'s description the model got.
  *
  * `formatSkillCatalog` truncates on a ladder — the per-entry cap, then a
  * proportional cut sized to its context budget, then names-only — so the
  * requested cap is an upper bound and not the delivered length. Reading the
- * emitted text back is the only accurate source. A skill missing from the
- * returned map had its description dropped entirely.
+ * emitted text back is the only accurate source.
+ *
+ * Matching is positional rather than keyed by name because the catalog
+ * deliberately keeps duplicate-named skills as separate entries; keying by
+ * name would collapse them and misreport every occurrence but the last.
+ * Entry order is the order passed to the formatter, and the names-only
+ * fallback drops from the tail, so a skill the catalog never reached keeps
+ * its `0` and reads as dropped.
  */
-function measureCatalogDescriptions(catalog: string, names: Set<string>): Map<string, number> {
-  const delivered = new Map<string, number>();
+function measureCatalogDescriptions(catalog: string, names: string[]): number[] {
+  const delivered = new Array<number>(names.length).fill(0);
+  let index = 0;
   for (const line of catalog.split('\n')) {
-    if (!line.startsWith('- ')) {
+    if (index >= names.length) {
+      break;
+    }
+    const prefix = `- ${names[index]}`;
+    if (line === prefix) {
+      index++;
       continue;
     }
-    const separator = line.indexOf(': ');
-    if (separator === -1) {
-      continue;
-    }
-    const name = line.slice(2, separator);
-    if (names.has(name)) {
-      delivered.set(name, line.length - separator - 2);
+    if (line.startsWith(`${prefix}: `)) {
+      delivered[index] = line.length - prefix.length - 2;
+      index++;
     }
   }
   return delivered;
@@ -734,10 +743,11 @@ export async function injectSkillCatalog(
     if (catalog) {
       const delivered = measureCatalogDescriptions(
         catalog,
-        new Set(catalogVisibleSkills.map((s) => s.name)),
+        catalogVisibleSkills.map((s) => s.name),
       );
-      for (const s of catalogVisibleSkills) {
-        const reached = delivered.get(s.name) ?? 0;
+      for (let i = 0; i < catalogVisibleSkills.length; i++) {
+        const s = catalogVisibleSkills[i];
+        const reached = delivered[i];
         if (reached >= s.description.length) {
           continue;
         }

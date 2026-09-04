@@ -1009,6 +1009,33 @@ describe('injectSkillCatalog', () => {
     warnSpy.mockRestore();
   });
 
+  it('measures duplicate-named skills per entry rather than collapsing them', async () => {
+    const { logger } = await import('@librechat/data-schemas');
+    const warnSpy = jest.spyOn(logger, 'warn');
+    /* The catalog keeps both entries, so measuring by name alone would report
+       the last entry's length for both and understate the first. */
+    const longDup: PageSkill = {
+      ...makeSkill('dup-skill', userObjectId),
+      description: 'x'.repeat(400),
+    };
+    const shortDup: PageSkill = {
+      ...makeSkill('dup-skill', userObjectId),
+      description: 'y'.repeat(100),
+    };
+    const listSkillsByAccess = buildPager([[longDup, shortDup]]);
+    const agent = makeAgent();
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
+
+    /* Only the 400-char entry is truncated; the 100-char one fits untouched. */
+    const warnings = truncationWarnings(warnSpy);
+    expect(warnings).toHaveLength(1);
+    const [name, reached, authored] = warnings[0];
+    expect(name).toBe('dup-skill');
+    expect(authored).toBe(400);
+    expect(reached).toBeGreaterThan(100);
+    warnSpy.mockRestore();
+  });
+
   it('warns that descriptions were dropped when the catalog falls back to names-only', async () => {
     const { logger } = await import('@librechat/data-schemas');
     const warnSpy = jest.spyOn(logger, 'warn');
