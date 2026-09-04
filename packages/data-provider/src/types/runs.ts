@@ -31,7 +31,9 @@ export const UI_ONLY_CONTENT_TYPES: ReadonlySet<ContentTypes> = new Set([Content
  * removed from each message's `content`, for use right before the payload reaches
  * `formatAgentMessages`. Non-mutating: only messages that actually contain such a
  * part are shallow-cloned, so the persisted message and UI copy keep the card.
- * String/absent content and non-array inputs pass through untouched.
+ * When nothing is stripped the original array is returned by reference, so the
+ * common path is a true no-op. String/absent content and non-array inputs pass
+ * through untouched.
  */
 export function stripUiOnlyContentParts<T extends { content?: unknown }>(messages: T[]): T[];
 export function stripUiOnlyContentParts<T>(messages: T): T;
@@ -39,7 +41,8 @@ export function stripUiOnlyContentParts(messages: unknown): unknown {
   if (!Array.isArray(messages)) {
     return messages;
   }
-  return messages.map((message) => {
+  let stripped = false;
+  const next = messages.map((message) => {
     const content = (message as { content?: unknown } | null | undefined)?.content;
     if (!Array.isArray(content)) {
       return message;
@@ -48,10 +51,16 @@ export function stripUiOnlyContentParts(messages: unknown): unknown {
       const type = (part as { type?: ContentTypes | string } | null | undefined)?.type;
       return type == null || !UI_ONLY_CONTENT_TYPES.has(type as ContentTypes);
     });
-    return filtered.length === content.length
-      ? message
-      : { ...(message as object), content: filtered };
+    if (filtered.length === content.length) {
+      return message;
+    }
+    stripped = true;
+    return { ...(message as object), content: filtered };
   });
+  /** Hand back the SAME array when nothing was stripped, which is the common
+   *  case: callers (and their tests) treat an untouched payload as identical,
+   *  and a fresh array would defeat downstream identity checks for no gain. */
+  return stripped ? next : messages;
 }
 
 export enum StepTypes {
