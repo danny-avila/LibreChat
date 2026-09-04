@@ -801,10 +801,14 @@ describe('getOpenAILLMConfig', () => {
       );
     });
 
-    it('declares it for Azure OpenAI', () => {
-      expect(configFor({ endpoint: EModelEndpoint.azureOpenAI }).llmConfig).toHaveProperty(
+    /**
+     * Astra is not documented as available on Azure OpenAI, and Azure's
+     * first-party hosts do not satisfy the OpenAI-host check, so declaring it
+     * there would claim a surface this cannot verify.
+     */
+    it('does not declare it for Azure OpenAI', () => {
+      expect(configFor({ endpoint: EModelEndpoint.azureOpenAI }).llmConfig).not.toHaveProperty(
         'firstPartyEndpoint',
-        true,
       );
     });
 

@@ -45,13 +45,6 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
    * layer knows whether a URL is a faithful first-party route or a gateway.
    */
   firstPartyEndpoint?: boolean;
-  /**
-   * The model actually serving the request, when `model` carries something
-   * else. Azure addresses a deployment, so `model` is overwritten with the
-   * deployment name below and the served model would otherwise be unknowable
-   * downstream.
-   */
-  servedModel?: string;
   _lc_stream_delay?: number;
   verbosity?: string | null;
 };

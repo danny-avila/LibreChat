@@ -165,8 +165,6 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           streaming: true,
           model: 'gpt-5',
           useResponsesApi: true,
-          firstPartyEndpoint: true,
-          servedModel: 'gpt-5',
           user: 'some_user_id',
           apiKey: 'some_azure_key',
           reasoning: {

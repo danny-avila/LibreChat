@@ -893,7 +893,7 @@ export function getOpenAILLMConfig({
    */
   if (
     !useOpenRouter &&
-    isOpenAIEndpoint(endpoint) &&
+    endpoint === EModelEndpoint.openAI &&
     isCanonicalOpenAIBaseURL(baseURL) &&
     llmConfig.useResponsesApi == null &&
     !responsesApiExplicitlyOptedOut &&
@@ -908,8 +908,13 @@ export function getOpenAILLMConfig({
    * above uses, so the decision lives in one place: OpenRouter and custom
    * gateways route through endpoints whose contract is not OpenAI's, and only
    * this layer can tell them apart.
+   *
+   * Scoped to the canonical OpenAI endpoint. Astra is not documented as
+   * available on Azure OpenAI, and Azure's first-party hosts do not satisfy the
+   * OpenAI-host check, so declaring it there would claim a surface this cannot
+   * verify.
    */
-  if (!useOpenRouter && isOpenAIEndpoint(endpoint) && isCanonicalOpenAIBaseURL(baseURL)) {
+  if (!useOpenRouter && endpoint === EModelEndpoint.openAI && isCanonicalOpenAIBaseURL(baseURL)) {
     llmConfig.firstPartyEndpoint = true;
   }
 
@@ -1055,15 +1060,6 @@ export function getOpenAILLMConfig({
 
   constructAzureResponsesApi();
 
-  /**
-   * Azure addresses a deployment, not a model, so `model` becomes the deployment
-   * name. Record what it actually serves first: the agents SDK's model-specific
-   * request constraints cannot recognize an arbitrary deployment alias, and this
-   * is the last point that still knows the real id.
-   */
-  if (llmConfig.firstPartyEndpoint === true && llmConfig.model != null) {
-    llmConfig.servedModel = llmConfig.model;
-  }
   llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
   return { llmConfig, tools, azure: updatedAzure };
 }
