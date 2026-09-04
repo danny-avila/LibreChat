@@ -95,165 +95,146 @@ describe('the probe itself', () => {
     expect(records[0].commandName).toBe('find');
   });
 
+  const rawFind = (filter: Record<string, unknown>) =>
+    probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .find(filter)
+          .toArray();
+      }),
+    );
+
   /**
-   * The probe must never over-report scoping: a filter it wrongly calls scoped
-   * turns a leak into a green test, which is worse than having no probe.
+   * The probe accepts only the binding's own contribution — `tenantId` equal to
+   * the active tenant, at the top level of the filter. Everything else is
+   * reported unscoped, because deciding tenant-safety for arbitrary filter
+   * algebra is unbounded and every operator left open is a way for a regression
+   * to look scoped.
    */
   it.each([
+    ['a different tenant entirely', { tenantId: 'tenant-b' }],
     ['a permissive $or branch', { $or: [{ tenantId: TENANT }, {}] }],
     ['tenantId nested under an unrelated field', { meta: { tenantId: TENANT } }],
-    ['$nor, which negates its branches', { $nor: [{ tenantId: TENANT }] }],
-    ['an $or branch that matches other tenants', { $or: [{ tenantId: TENANT }, { name: 'x' }] }],
     ['$ne, which selects every other tenant', { tenantId: { $ne: TENANT } }],
     ['a multi-valued $in', { tenantId: { $in: [TENANT, 'tenant-b'] } }],
+    ['a regex inside a singleton $in', { tenantId: { $in: [/^tenant-/] } }],
     ['a regex over tenants', { tenantId: { $regex: '.*' } }],
     ['$exists: true, which matches any tenant', { tenantId: { $exists: true } }],
-    ['a regex inside a singleton $in', { tenantId: { $in: [/^tenant-/] } }],
-    ['$eq, which the bindings never emit', { tenantId: { $eq: TENANT } }],
+    ['operator forms the binding never emits', { tenantId: { $eq: TENANT } }],
   ])('does not accept %s as scoping', async (_label, filter) => {
-    const records = await probe.record(() =>
-      asTenant(async () => {
-        await mongoose.connection
-          .db!.collection(Widget.collection.collectionName)
-          .find(filter)
-          .toArray();
-      }),
-    );
-
-    expect(unscoped(records)).toHaveLength(1);
+    expect(unscoped(await rawFind(filter))).toHaveLength(1);
   });
 
-  it.each([
-    [
-      'every $or branch constrained',
-      { $or: [{ tenantId: TENANT }, { tenantId: TENANT, name: 'x' }] },
-    ],
-    ['one $and branch constrained', { $and: [{ tenantId: TENANT }, { name: 'x' }] }],
-    ['an explicitly unset tenant', { tenantId: { $exists: false } }],
-    ['a singleton $in', { tenantId: { $in: [TENANT] } }],
-    ['the no-tenant partition as $in', { tenantId: { $in: [null] } }],
-  ])('accepts %s as scoping', async (_label, filter) => {
-    const records = await probe.record(() =>
-      asTenant(async () => {
-        await mongoose.connection
-          .db!.collection(Widget.collection.collectionName)
-          .find(filter)
-          .toArray();
-      }),
-    );
+  it('accepts the shape the binding actually emits', async () => {
+    const records = await rawFind({ tenantId: TENANT, name: 'x' });
 
     expect(records).toHaveLength(1);
     expect(unscoped(records)).toHaveLength(0);
+    expect(records[0].tenantId).toBe(TENANT);
   });
 
-  it('judges an aggregate by its $match stages, not by any mention', async () => {
-    const unmatched = await probe.record(() =>
+  const rawAggregate = (pipeline: Record<string, unknown>[]) =>
+    probe.record(() =>
       asTenant(async () => {
         await mongoose.connection
           .db!.collection(Widget.collection.collectionName)
-          .aggregate([{ $group: { _id: '$tenantId' } }])
+          .aggregate(pipeline)
           .toArray();
       }),
     );
-    expect(unscoped(unmatched)).toHaveLength(1);
-
-    const matched = await probe.record(() =>
-      asTenant(async () => {
-        await mongoose.connection
-          .db!.collection(Widget.collection.collectionName)
-          .aggregate([{ $match: { tenantId: TENANT } }])
-          .toArray();
-      }),
-    );
-    expect(unscoped(matched)).toHaveLength(0);
-  });
 
   /**
-   * A `$lookup` reads its foreign collection inside the *outer* command, so the
-   * listener never sees a separate predicate for it. An outer `$match` alone
-   * therefore proves nothing about the joined read, and the probe fails closed.
+   * Position is the whole point. A `$match` that lands after data has been
+   * combined, limited or skipped mentions the tenant without having restricted
+   * what the earlier stages saw.
    */
+  it.each([
+    ['after a $group', [{ $group: { _id: null } }, { $match: { tenantId: TENANT } }]],
+    ['after a $limit', [{ $limit: 1 }, { $match: { tenantId: TENANT } }]],
+    ['after a $skip', [{ $skip: 1 }, { $match: { tenantId: TENANT } }]],
+    ['after a $sort', [{ $sort: { name: 1 } }, { $match: { tenantId: TENANT } }]],
+  ])('does not accept a tenant $match %s', async (_label, pipeline) => {
+    expect(unscoped(await rawAggregate(pipeline))).toHaveLength(1);
+  });
+
+  it('accepts a pipeline whose first stage is the tenant $match', async () => {
+    const records = await rawAggregate([
+      { $match: { tenantId: TENANT } },
+      { $group: { _id: null, total: { $sum: 1 } } },
+    ]);
+
+    expect(unscoped(records)).toHaveLength(0);
+  });
+
   it('does not accept an outer $match as scoping a joined collection', async () => {
-    const records = await probe.record(() =>
-      asTenant(async () => {
-        await mongoose.connection
-          .db!.collection(Widget.collection.collectionName)
-          .aggregate([
-            { $match: { tenantId: TENANT } },
-            {
-              $lookup: {
-                from: Part.collection.collectionName,
-                localField: 'parts',
-                foreignField: '_id',
-                as: 'joined',
-              },
-            },
-          ])
-          .toArray();
-      }),
-    );
+    const records = await rawAggregate([
+      { $match: { tenantId: TENANT } },
+      {
+        $lookup: {
+          from: Part.collection.collectionName,
+          localField: 'parts',
+          foreignField: '_id',
+          as: 'joined',
+        },
+      },
+    ]);
 
     expect(unscoped(records)).toHaveLength(1);
   });
 
-  it('accepts a $lookup whose sub-pipeline constrains the tenant', async () => {
-    const records = await probe.record(() =>
-      asTenant(async () => {
-        await mongoose.connection
-          .db!.collection(Widget.collection.collectionName)
-          .aggregate([
-            { $match: { tenantId: TENANT } },
-            {
-              $lookup: {
-                from: Part.collection.collectionName,
-                pipeline: [{ $match: { tenantId: TENANT } }],
-                as: 'joined',
-              },
-            },
-          ])
-          .toArray();
-      }),
-    );
+  it('accepts a $lookup whose sub-pipeline leads with the tenant $match', async () => {
+    const records = await rawAggregate([
+      { $match: { tenantId: TENANT } },
+      {
+        $lookup: {
+          from: Part.collection.collectionName,
+          pipeline: [{ $match: { tenantId: TENANT } }],
+          as: 'joined',
+        },
+      },
+    ]);
 
     expect(unscoped(records)).toHaveLength(0);
   });
 
   /**
-   * Position matters: a pipeline can combine every tenant's rows, project a
-   * `tenantId` onto the global result and then `$match` it. The tenant is
-   * mentioned, but a collection-wide aggregate has already been computed.
+   * `$out` and `$merge` rewrite another collection from inside the aggregate,
+   * so the destination write never surfaces as its own command to inspect.
    */
-  it('does not accept a $match that lands after the data was combined', async () => {
-    const records = await probe.record(() =>
-      asTenant(async () => {
-        await mongoose.connection
-          .db!.collection(Widget.collection.collectionName)
-          .aggregate([
-            { $group: { _id: null, total: { $sum: 1 } } },
-            { $addFields: { tenantId: TENANT } },
-            { $match: { tenantId: TENANT } },
-          ])
-          .toArray();
-      }),
-    );
+  it('rejects a pipeline that writes to another collection', async () => {
+    const records = await rawAggregate([
+      { $match: { tenantId: TENANT } },
+      { $out: 'probe_out_target' },
+    ]);
 
     expect(unscoped(records)).toHaveLength(1);
   });
 
-  it('accepts a $match that precedes the combining stages', async () => {
+  /**
+   * A cursor continuation carries no predicate, and the scope its cursor was
+   * opened under is not visible here — so it must be reported rather than
+   * silently dropped, or a cursor primed under one scope could be drained under
+   * another with the probe seeing nothing at all.
+   */
+  it('reports a cursor continuation rather than discarding it', async () => {
+    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => {
+      await Widget.insertMany(
+        Array.from({ length: 6 }, (_, index) => ({ name: `batched-${index}`, tenantId: TENANT })),
+      );
+    });
+
     const records = await probe.record(() =>
       asTenant(async () => {
-        await mongoose.connection
+        const cursor = mongoose.connection
           .db!.collection(Widget.collection.collectionName)
-          .aggregate([
-            { $match: { tenantId: TENANT } },
-            { $group: { _id: null, total: { $sum: 1 } } },
-          ])
-          .toArray();
+          .find({ tenantId: TENANT })
+          .batchSize(2);
+        await cursor.toArray();
       }),
     );
 
-    expect(unscoped(records)).toHaveLength(0);
+    expect(records.some((record) => record.commandName === 'getMore')).toBe(true);
   });
 
   it('reports nothing for collections it does not watch', async () => {

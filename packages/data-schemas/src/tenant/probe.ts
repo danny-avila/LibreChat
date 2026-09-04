@@ -1,4 +1,5 @@
 import type { Connection } from 'mongoose';
+import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 
 /**
  * Driver-level completeness probe for tenant isolation.
@@ -7,10 +8,17 @@ import type { Connection } from 'mongoose';
  * middleware today. That leaves one question no amount of reading the binding
  * can answer: does it cover *every* path, including the ones nobody enumerated?
  *
- * This probe answers it from below. It observes the commands that actually
- * reach the wire, so a query issued through a path the binding never hooked is
- * still caught. The check does not depend on the binding being correct, which
+ * This probe answers it from below, by observing the commands that actually
+ * reach the wire. The check does not depend on the binding being correct, which
  * is the whole point of putting it here.
+ *
+ * It asks one narrow, decidable question: **did the binding's own contribution
+ * arrive, for the tenant that was active when the command was issued?** It does
+ * not try to decide tenant-safety for arbitrary filter algebra — that problem is
+ * unbounded, and every operator left open is a way for a regression to look
+ * scoped. The binding emits `{ tenantId: <active> }` at the top level of a
+ * filter, or unshifts `{ $match: { tenantId: <active> } }` onto a pipeline, so
+ * that is exactly what is checked. Anything else is reported unscoped.
  *
  * Requires the connection to have been opened with `monitorCommands: true`.
  */
@@ -19,7 +27,9 @@ import type { Connection } from 'mongoose';
 export interface TenantCommandRecord {
   readonly commandName: string;
   readonly collection: string;
-  /** True when every predicate this command carries constrains `tenantId`. */
+  /** The tenant active when the command was issued, if any. */
+  readonly tenantId?: string;
+  /** True when the command provably restricts itself to that tenant. */
   readonly scoped: boolean;
   /** The predicates as sent, for test failure output. */
   readonly predicate: string;
@@ -34,6 +44,8 @@ export interface TenantProbe {
   /** Detaches the listener. */
   close(): void;
 }
+
+type CommandDocument = Record<string, unknown>;
 
 /**
  * Predicate locations per command, as the wire protocol names them.
@@ -50,141 +62,39 @@ const PREDICATE_PATHS: ReadonlyMap<string, { readonly key: string; readonly list
     ['insert', { key: '', list: 'documents' }],
   ]);
 
-type CommandDocument = Record<string, unknown>;
-
-/** A value that identifies exactly one tenant: a primitive, or an absent one. */
-function isEqualityValue(value: unknown): boolean {
-  return value == null || (typeof value !== 'object' && typeof value !== 'function');
-}
+/** Stages that rewrite another collection from inside the aggregate command. */
+const COLLECTION_WRITING_STAGES = ['$out', '$merge'] as const;
 
 /**
- * Whether a `tenantId` condition pins the query to at most one tenant identity.
- *
- * This deliberately accepts only the shapes the bindings actually emit, rather
- * than trying to decide tenant-safety for arbitrary MongoDB filter algebra —
- * that problem is unbounded, and every operator left open is a way for a
- * regression to look scoped. Production emits exactly three shapes: plain
- * equality, `{ $exists: false }`, and `{ $in: [null, undefined] }` (both of the
- * latter selecting the no-tenant partition used by platform audit rows and base
- * roles). Anything else is reported unscoped, which fails closed.
+ * Whether a filter carries the binding's own contribution: `tenantId` equal to
+ * the active tenant, at the top level, as a plain equality.
  */
-function pinsSingleTenant(condition: unknown): boolean {
-  if (isEqualityValue(condition)) {
-    return true;
-  }
-  if (Array.isArray(condition)) {
-    return false;
-  }
-
-  const operators = condition as CommandDocument;
-  const keys = Object.keys(operators);
-  if (keys.length === 0 || !keys.every((key) => key.startsWith('$'))) {
-    return false;
-  }
-
-  return keys.every((key) => {
-    const value = operators[key];
-    if (key === '$exists') {
-      return value === false;
-    }
-    if (key === '$in') {
-      return Array.isArray(value) && pinsAtMostOneIdentity(value);
-    }
-    return false;
-  });
-}
-
-/** An `$in` list pins a tenant when it names at most one, ignoring absent values. */
-function pinsAtMostOneIdentity(values: readonly unknown[]): boolean {
-  if (!values.every(isEqualityValue)) {
-    return false;
-  }
-  const named = new Set(values.filter((value) => value != null));
-  return named.size <= 1;
-}
-
-/**
- * Whether a filter genuinely restricts the query to one tenant.
- *
- * Deliberately conservative — a probe that over-reports scoping is worse than
- * useless, because it turns a leak into a green test. So `tenantId` counts only
- * where it actually constrains the match: at the top level, in any `$and`
- * branch, or in *every* `$or` branch. A `tenantId` nested under an unrelated
- * field constrains nothing, and `$nor` negates its branches, so it never
- * contributes a constraint.
- */
-function constrainsTenant(filter: unknown): boolean {
+function pinsTenant(filter: unknown, tenantId: string): boolean {
   if (filter == null || typeof filter !== 'object' || Array.isArray(filter)) {
     return false;
   }
-
-  const record = filter as CommandDocument;
-  if ('tenantId' in record) {
-    return pinsSingleTenant(record.tenantId);
-  }
-
-  const and = record.$and;
-  if (Array.isArray(and) && and.some(constrainsTenant)) {
-    return true;
-  }
-
-  const or = record.$or;
-  if (Array.isArray(or) && or.length > 0 && or.every(constrainsTenant)) {
-    return true;
-  }
-
-  return false;
+  return (filter as CommandDocument).tenantId === tenantId;
 }
 
-/**
- * Stages that read a second collection inside the same aggregate command.
- *
- * Only `$lookup` appears here: the other two collection-reading stages are
- * rejected by Amazon DocumentDB and banned repo-wide by the compatibility
- * guard in `methods/documentdb.spec.ts`, so they cannot occur.
- */
-const COLLECTION_READING_STAGES = ['$lookup'] as const;
-
-/**
- * A joined or unioned collection is read as part of the outer command, so the
- * connection listener never sees a separate predicate for it. It counts as
- * scoped only if its own sub-pipeline constrains the tenant — otherwise the
- * whole aggregate is reported unscoped, which fails closed.
- */
-function foreignStageConstrainsTenant(stage: unknown): boolean {
-  if (stage == null || typeof stage !== 'object') {
+/** A `$lookup` reads its foreign collection inside the outer command. */
+function lookupTargetsTenant(lookup: unknown, tenantId: string): boolean {
+  if (lookup == null || typeof lookup !== 'object') {
     return false;
   }
-  const record = stage as CommandDocument;
-  if (constrainsTenant(record.restrictSearchWithMatch)) {
-    return true;
-  }
-  return pipelineConstrainsTenant(record.pipeline);
+  return pipelineTargetsTenant((lookup as CommandDocument).pipeline, tenantId);
 }
 
 /**
- * Stages that cannot combine, rewrite or drop tenant data, and so may precede
- * the tenant restriction without letting other tenants' rows through.
- */
-const TENANT_PRESERVING_STAGES: ReadonlySet<string> = new Set([
-  '$match',
-  '$sort',
-  '$limit',
-  '$skip',
-  '$unwind',
-]);
-
-/**
- * A pipeline is scoped when the tenant restriction lands *before* any stage
- * that could combine or rewrite tenant data, and every collection-reading stage
- * scopes its own read.
+ * A pipeline is scoped when its *first* stage is the tenant `$match` the
+ * binding unshifts, it writes to no other collection, and every joined read
+ * scopes itself.
  *
- * Position matters: a pipeline can `$group` across every tenant, project a
- * `tenantId` onto the global result and then `$match` it, which mentions the
- * tenant while having already leaked a collection-wide aggregate.
+ * Position is the whole point: `[{ $limit: 1 }, { $match: { tenantId } }]`
+ * mentions the tenant but lets another tenant's row take the limited slot, and
+ * a `$group` before the match has already combined every tenant's data.
  */
-function pipelineConstrainsTenant(pipeline: unknown): boolean {
-  if (!Array.isArray(pipeline)) {
+function pipelineTargetsTenant(pipeline: unknown, tenantId: string): boolean {
+  if (!Array.isArray(pipeline) || pipeline.length === 0) {
     return false;
   }
 
@@ -193,27 +103,21 @@ function pipelineConstrainsTenant(pipeline: unknown): boolean {
       continue;
     }
     const record = stage as CommandDocument;
-    for (const name of COLLECTION_READING_STAGES) {
-      if (name in record && !foreignStageConstrainsTenant(record[name])) {
+    for (const name of COLLECTION_WRITING_STAGES) {
+      if (name in record) {
         return false;
       }
     }
-  }
-
-  for (const stage of pipeline) {
-    if (stage == null || typeof stage !== 'object') {
-      return false;
-    }
-    const record = stage as CommandDocument;
-    if (constrainsTenant(record.$match)) {
-      return true;
-    }
-    if (!Object.keys(record).every((name) => TENANT_PRESERVING_STAGES.has(name))) {
+    if ('$lookup' in record && !lookupTargetsTenant(record.$lookup, tenantId)) {
       return false;
     }
   }
 
-  return false;
+  const first = pipeline[0];
+  if (first == null || typeof first !== 'object') {
+    return false;
+  }
+  return pinsTenant((first as CommandDocument).$match, tenantId);
 }
 
 /** Every predicate a command carries, so a partially-scoped batch still fails. */
@@ -232,25 +136,49 @@ function predicatesOf(command: CommandDocument, commandName: string): unknown[] 
   return path.key ? operations.map((operation) => operation?.[path.key]) : operations;
 }
 
-/**
- * Whether every predicate this command carries is tenant-scoped.
- * Returns null for commands that carry no predicate at all.
- */
-function isScoped(command: CommandDocument, commandName: string): boolean | null {
-  if (commandName === 'aggregate') {
-    return pipelineConstrainsTenant(command.pipeline);
-  }
-  const predicates = predicatesOf(command, commandName);
-  if (predicates.length === 0) {
-    return null;
-  }
-  return predicates.every(constrainsTenant);
+/** The collection a command targets, or undefined when it names none. */
+function collectionOf(command: CommandDocument, commandName: string): string | undefined {
+  // `getMore` carries the cursor id under its own name and the collection separately.
+  const value = commandName === 'getMore' ? command.collection : command[commandName];
+  return typeof value === 'string' ? value : undefined;
 }
 
 /** The predicates a command carries, for test failure output. */
 function describePredicates(command: CommandDocument, commandName: string): string {
-  const value = commandName === 'aggregate' ? command.pipeline : predicatesOf(command, commandName);
-  return JSON.stringify(value);
+  if (commandName === 'aggregate') {
+    return JSON.stringify(command.pipeline);
+  }
+  if (commandName === 'getMore') {
+    return '(cursor continuation — no predicate)';
+  }
+  return JSON.stringify(predicatesOf(command, commandName));
+}
+
+/** Whether this command is one the probe can judge at all. */
+function carriesPredicate(command: CommandDocument, commandName: string): boolean {
+  if (commandName === 'aggregate') {
+    return Array.isArray(command.pipeline);
+  }
+  if (commandName === 'getMore') {
+    return true;
+  }
+  return predicatesOf(command, commandName).length > 0;
+}
+
+/**
+ * Whether every predicate this command carries targets `tenantId`.
+ * Only called for commands `carriesPredicate` has already accepted.
+ */
+function isScoped(command: CommandDocument, commandName: string, tenantId: string): boolean {
+  if (commandName === 'aggregate') {
+    return pipelineTargetsTenant(command.pipeline, tenantId);
+  }
+  // A cursor continuation carries no predicate, and the scope it was opened
+  // under is not visible here, so it fails closed rather than passing unseen.
+  if (commandName === 'getMore') {
+    return false;
+  }
+  return predicatesOf(command, commandName).every((predicate) => pinsTenant(predicate, tenantId));
 }
 
 export function attachTenantProbe(
@@ -264,19 +192,31 @@ export function attachTenantProbe(
     if (recording == null) {
       return;
     }
-    const collection = event.command[event.commandName];
-    if (typeof collection !== 'string' || !watched.has(collection)) {
+    const collection = collectionOf(event.command, event.commandName);
+    if (collection == null || !watched.has(collection)) {
       return;
     }
-    const scoped = isScoped(event.command, event.commandName);
-    if (scoped == null) {
+
+    if (!carriesPredicate(event.command, event.commandName)) {
       return;
     }
+
+    // Async context reaches this handler, so each command is judged against the
+    // tenant that was actually active when it was issued.
+    const tenantId = getTenantId();
+    const predicate = describePredicates(event.command, event.commandName);
+
+    if (tenantId == null || tenantId === SYSTEM_TENANT_ID) {
+      recording.push({ commandName: event.commandName, collection, scoped: false, predicate });
+      return;
+    }
+
     recording.push({
       commandName: event.commandName,
       collection,
-      scoped,
-      predicate: describePredicates(event.command, event.commandName),
+      tenantId,
+      scoped: isScoped(event.command, event.commandName, tenantId),
+      predicate,
     });
   };
 
