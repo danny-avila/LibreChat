@@ -845,30 +845,36 @@ const remoteApiOidcScopeSchema = z.string().refine((scope) => !scope.includes(',
   message: 'scopes must be space-separated',
 });
 
-const remoteApiOidcSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-    issuer: remoteApiOidcUrlSchema.optional(),
-    audience: z.string().min(1).optional(),
-    jwksUri: remoteApiOidcUrlSchema.optional(),
-    scope: remoteApiOidcScopeSchema.optional(),
-  })
-  .superRefine((oidc, ctx) => {
-    if (oidc.enabled === true && !oidc.issuer) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['issuer'],
-        message: 'issuer is required when OIDC auth is enabled',
-      });
-    }
-    if (oidc.enabled === true && !oidc.audience) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['audience'],
-        message: 'audience is required when OIDC auth is enabled',
-      });
-    }
-  });
+const oidcAccessTokenSchema = z.object({
+  enabled: z.boolean().default(false),
+  issuer: remoteApiOidcUrlSchema.optional(),
+  audience: z.string().min(1).optional(),
+  jwksUri: remoteApiOidcUrlSchema.optional(),
+});
+
+function validateEnabledOidc(
+  oidc: z.infer<typeof oidcAccessTokenSchema>,
+  ctx: z.RefinementCtx,
+): void {
+  if (oidc.enabled === true && !oidc.issuer) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['issuer'],
+      message: 'issuer is required when OIDC auth is enabled',
+    });
+  }
+  if (oidc.enabled === true && !oidc.audience) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['audience'],
+      message: 'audience is required when OIDC auth is enabled',
+    });
+  }
+}
+
+const remoteApiOidcSchema = oidcAccessTokenSchema
+  .extend({ scope: remoteApiOidcScopeSchema.optional() })
+  .superRefine(validateEnabledOidc);
 
 const remoteApiAuthSchema = z.object({
   apiKey: z
@@ -882,6 +888,59 @@ const remoteApiAuthSchema = z.object({
 const remoteApiSchema = z.object({
   auth: remoteApiAuthSchema.optional(),
 });
+
+const managementClientBindingSchema = z
+  .object({
+    clientId: z.string().trim().min(1).max(128),
+    subject: z.string().trim().min(1).max(512).optional(),
+    userId: z
+      .string()
+      .trim()
+      .regex(/^[a-f\d]{24}$/i, 'must be a MongoDB ObjectId')
+      .transform((userId) => userId.toLowerCase()),
+    tenantId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/, 'must be a valid tenant id')
+      .refine((tenantId) => tenantId !== '__SYSTEM__', 'system tenant is not allowed'),
+    enabled: z.boolean().default(true),
+  })
+  .strict();
+
+const managementApiOidcSchema = oidcAccessTokenSchema.strict().superRefine(validateEnabledOidc);
+
+const managementApiAuthSchema = z
+  .object({
+    oidc: managementApiOidcSchema,
+    clients: z.array(managementClientBindingSchema).max(100).default([]),
+  })
+  .strict()
+  .superRefine((auth, ctx) => {
+    if (auth.oidc.enabled === true && auth.clients.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['clients'],
+        message: 'at least one client binding is required when management auth is enabled',
+      });
+    }
+
+    const clientIds = new Set<string>();
+    for (let index = 0; index < auth.clients.length; index++) {
+      const client = auth.clients[index];
+      if (clientIds.has(client.clientId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['clients', index, 'clientId'],
+          message: 'client IDs must be unique',
+        });
+      }
+      clientIds.add(client.clientId);
+    }
+  });
+
+const managementApiSchema = z.object({ auth: managementApiAuthSchema.optional() }).strict();
 
 /**
  * Permission mode applied to a tool call. Mirrors `@librechat/agents`'s
@@ -1269,6 +1328,7 @@ export const agentsEndpointSchema = baseEndpointSchema
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),
         })
         .optional(),
+      managementApi: managementApiSchema.optional(),
       remoteApi: remoteApiSchema.optional(),
       /** Human-in-the-loop tool approval policy. Off by default. */
       toolApproval: toolApprovalPolicySchema,

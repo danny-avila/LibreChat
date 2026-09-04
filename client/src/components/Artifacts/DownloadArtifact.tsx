@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Button } from '@librechat/client';
-import { Download, CircleCheckBig } from 'lucide-react';
+import { Download, CircleCheckBig } from 'lucide';
+import { Button, MorphIcon } from '@librechat/client';
 import type { Artifact } from '~/common';
 import {
   useAttachmentLink,
@@ -94,11 +94,7 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
       onClick={handleDownload}
       aria-label={localize('com_ui_download_artifact')}
     >
-      {isDownloaded ? (
-        <CircleCheckBig size={16} aria-hidden="true" />
-      ) : (
-        <Download size={16} aria-hidden="true" />
-      )}
+      <MorphIcon icon={isDownloaded ? CircleCheckBig : Download} size={16} />
     </Button>
   );
 };

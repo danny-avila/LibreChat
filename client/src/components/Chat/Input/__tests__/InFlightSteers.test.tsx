@@ -27,18 +27,24 @@ jest.mock('~/hooks', () => ({
   useSteerReclaim: jest.requireActual('~/hooks/Chat/useSteerCancel').useSteerReclaim,
 }));
 
-jest.mock('@librechat/client', () => ({
-  useToastContext: () => ({ showToast: mockShowToast }),
-  /** Trigger-only stand-in: the receipt renders its marks as the hover card's
-   *  custom trigger, so the mock must render children under the accessible
-   *  name rather than swallowing them. */
-  InfoHoverCard: ({ text, children }: { text: string; children?: React.ReactNode }) => (
-    <button type="button" aria-label={text}>
-      {children}
-    </button>
-  ),
-  ESide: { Top: 'top', Bottom: 'bottom' },
-}));
+jest.mock('~/../test/mockMorphIcon', () => jest.requireActual('~/../test/mockMorphIcon'));
+
+jest.mock('@librechat/client', () => {
+  const { createSteerMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  return {
+    useToastContext: () => ({ showToast: mockShowToast }),
+    /** Trigger-only stand-in: the receipt renders its marks as the hover card's
+     *  custom trigger, so the mock must render children under the accessible
+     *  name rather than swallowing them. */
+    InfoHoverCard: ({ text, children }: { text: string; children?: React.ReactNode }) => (
+      <button type="button" aria-label={text}>
+        {children}
+      </button>
+    ),
+    ESide: { Top: 'top', Bottom: 'bottom' },
+    MorphIcon: createSteerMorphIconMock(),
+  };
+});
 
 jest.mock('~/data-provider', () => ({
   useCancelSteerMutation: () => ({ mutateAsync: mockCancelMutateAsync }),
@@ -730,9 +736,11 @@ describe('InFlightSteers', () => {
       ]);
       const toggle = screen.getByRole('button', { name: 'com_ui_show_more' });
       expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(toggle.querySelector('[data-icon="chevron-down"]')).not.toBeNull();
       fireEvent.click(toggle);
       const collapse = screen.getByRole('button', { name: 'com_ui_show_less' });
       expect(collapse).toHaveAttribute('aria-expanded', 'true');
+      expect(collapse.querySelector('[data-icon="chevron-up"]')).not.toBeNull();
     } finally {
       scrollHeight.mockRestore();
     }
@@ -813,6 +821,10 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     expect(screen.queryByTestId('steer-escalate-now')).toBeNull();
     expect(document.activeElement).toBe(screen.getByLabelText('com_ui_more_options'));
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_steer_in_flight_preempt');
+    // Preempting steers use ZapOff; non-preempt uses Zap.
+    expect(
+      screen.getByTestId('in-flight-steer').querySelector('[data-icon="zap-off"]'),
+    ).not.toBeNull();
   });
 
   it('flips the receipt to interrupting on the click, confirming its check only on the ACK', async () => {
