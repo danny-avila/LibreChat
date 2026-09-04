@@ -47,6 +47,10 @@ function mapColors(colors: IThemeRGB): Array<[string, string]> {
     variables.push(['--shimmer-base', colors['rgb-text-primary']]);
   }
 
+  if (colors['rgb-text-muted'] === undefined && colors['rgb-text-tertiary'] !== undefined) {
+    variables.push(['--text-muted', colors['rgb-text-tertiary']]);
+  }
+
   return variables;
 }
 

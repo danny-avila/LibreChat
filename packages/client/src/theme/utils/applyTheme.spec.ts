@@ -14,6 +14,7 @@ const semanticProperties = [
   '--accent-primary',
   '--accent-primary-hover',
   '--text-destructive',
+  '--text-muted',
   '--border-destructive',
   '--status-success',
   '--status-success-subtle',
@@ -183,6 +184,22 @@ describe('applyTheme', () => {
     applyTheme({ 'rgb-text-primary': '10 20 30', 'rgb-shimmer-base': '90 80 70' }, root);
 
     expect(root.style.getPropertyValue('--shimmer-base')).toBe('90 80 70');
+  });
+
+  it('carries a legacy theme without muted text onto its tertiary text color', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-text-tertiary': '80 81 82' }, root);
+
+    expect(root.style.getPropertyValue('--text-muted')).toBe('80 81 82');
+  });
+
+  it('leaves a legacy theme that names muted text alone', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-text-tertiary': '80 81 82', 'rgb-text-muted': '100 101 102' }, root);
+
+    expect(root.style.getPropertyValue('--text-muted')).toBe('100 101 102');
   });
 
   it('clears only properties owned by the theme module', () => {

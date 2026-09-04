@@ -88,6 +88,39 @@ describe('theme registry', () => {
     );
   });
 
+  it('derives omitted muted text from a theme that restates tertiary text', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-muted-reference',
+        modes: { dark: { colors: { 'rgb-text-tertiary': '120 121 122' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-text-muted']).toBe('120 121 122');
+  });
+
+  it('preserves an explicit muted text color', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-muted-reference',
+        modes: {
+          light: {
+            colors: {
+              'rgb-text-tertiary': '120 121 122',
+              'rgb-text-muted': '90 91 92',
+            },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(resolved.colors['rgb-text-muted']).toBe('90 91 92');
+  });
+
   it('resolves provider brand tokens and lets a theme override them', () => {
     const defaults = resolveTheme(libreChatTheme, 'light');
     expect(defaults.brands['provider-anthropic']).toBe('#d09a74');

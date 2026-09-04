@@ -287,6 +287,11 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-text-primary'] !== undefined
       ? { 'rgb-shimmer-base': customColors['rgb-text-primary'] }
       : {};
+  const textMutedFallback =
+    customColors?.['rgb-text-muted'] === undefined &&
+    customColors?.['rgb-text-tertiary'] !== undefined
+      ? { 'rgb-text-muted': customColors['rgb-text-tertiary'] }
+      : {};
 
   return {
     version: THEME_VERSION,
@@ -297,6 +302,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...customColors,
       ...composerHoverFallback,
       ...shimmerBaseFallback,
+      ...textMutedFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     brands: { ...defaultBrands, ...theme.brands },

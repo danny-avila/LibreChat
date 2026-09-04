@@ -8,6 +8,7 @@ export interface IThemeRGB {
   'rgb-text-secondary'?: string;
   'rgb-text-secondary-alt'?: string;
   'rgb-text-tertiary'?: string;
+  'rgb-text-muted'?: string;
   'rgb-text-warning'?: string;
   'rgb-text-destructive'?: string;
   /** Bright and dipped stops of the in-flight label sweep (`.shimmer`). Their
@@ -116,6 +117,7 @@ export interface IThemeVariables {
   '--text-secondary': string;
   '--text-secondary-alt': string;
   '--text-tertiary': string;
+  '--text-muted': string;
   '--text-warning': string;
   '--text-destructive': string;
   '--shimmer-base': string;
@@ -205,6 +207,7 @@ export interface IThemeColors {
   'text-secondary'?: string;
   'text-secondary-alt'?: string;
   'text-tertiary'?: string;
+  'text-muted'?: string;
   'text-warning'?: string;
   'text-destructive'?: string;
   link?: string;
