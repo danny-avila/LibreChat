@@ -319,3 +319,43 @@ export function isOpenIDAvailable(): boolean {
 
   return !!(openidClientId && openidClientSecret && openidIssuer);
 }
+
+export interface ExtractedSubClaim {
+  sub: string | null;
+  error?: string;
+}
+
+/**
+ * Extracts the OpenID 'sub' claim from a JWT access token.
+ * Used for exposing the identity provider's user identifier in cookies for callbacks (e.g. 3LO).
+ */
+export function extractSubFromAccessToken(accessToken: string | undefined): ExtractedSubClaim {
+  if (!accessToken) {
+    logger.debug('[extractSubFromAccessToken] No access token provided');
+    return { sub: null, error: 'No access token provided' };
+  }
+
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length !== 3) {
+      logger.debug('[extractSubFromAccessToken] Invalid JWT format');
+      return { sub: null, error: 'Invalid JWT format' };
+    }
+
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+
+    if (!payload.sub) {
+      logger.debug('[extractSubFromAccessToken] No sub claim in access token');
+      return { sub: null, error: 'No sub claim in access token' };
+    }
+
+    logger.debug('[extractSubFromAccessToken] Successfully extracted sub claim:', payload.sub);
+    return { sub: payload.sub };
+  } catch (error) {
+    logger.error('[extractSubFromAccessToken] Failed to decode access token:', error);
+    return {
+      sub: null,
+      error: error instanceof Error ? error.message : 'Failed to decode access token',
+    };
+  }
+}
