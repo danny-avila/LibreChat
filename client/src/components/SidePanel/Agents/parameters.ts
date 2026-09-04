@@ -24,6 +24,8 @@ export type ResolvedAgentParameterSettings = {
   schemaResolved: boolean;
 };
 
+const NON_CONTROL_PARAMETER_KEYS = new Set<keyof AgentModelParameters>(['model']);
+
 export function resolveAgentParameterSettings({
   endpointsConfig,
   model,
@@ -80,7 +82,11 @@ export function pruneAgentModelParameters(
   let prunedParameters: Partial<AgentModelParameters> | undefined;
 
   for (const key of currentKeys) {
-    if (parameterKeys.has(key) || normalizedParameters[key] == null) {
+    if (
+      NON_CONTROL_PARAMETER_KEYS.has(key) ||
+      parameterKeys.has(key) ||
+      normalizedParameters[key] == null
+    ) {
       continue;
     }
 

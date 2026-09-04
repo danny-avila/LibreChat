@@ -285,7 +285,7 @@ describe('ModelPanel', () => {
       <TestForm
         defaultProvider={EModelEndpoint.openAI}
         defaultModel="gpt-4o"
-        defaultModelParameters={{ temperature: 0.5, top_p: 0.9 }}
+        defaultModelParameters={{ model: 'deployment-override', temperature: 0.5, top_p: 0.9 }}
         formRef={formRef}
         models={{ [EModelEndpoint.openAI]: ['gpt-4o'] }}
         modelsReady={true}
@@ -293,7 +293,10 @@ describe('ModelPanel', () => {
     );
 
     await waitFor(() => {
-      expect(formRef.current?.getValues('model_parameters')).toEqual({ temperature: 0.5 });
+      expect(formRef.current?.getValues('model_parameters')).toEqual({
+        model: 'deployment-override',
+        temperature: 0.5,
+      });
     });
   });
 

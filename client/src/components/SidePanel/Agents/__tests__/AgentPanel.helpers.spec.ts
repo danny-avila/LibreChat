@@ -175,6 +175,7 @@ describe('composeAgentUpdatePayload', () => {
   it('prunes dropped model parameters during submission', () => {
     const form = createForm();
     form.provider = EModelEndpoint.openAI;
+    form.model_parameters.model = 'deployment-override';
 
     const { payload } = composeAgentUpdatePayload(form, 'agent_123', {
       endpointsConfig: {},
@@ -185,6 +186,7 @@ describe('composeAgentUpdatePayload', () => {
 
     expect(payload.model_parameters?.temperature).toBe(1);
     expect(payload.model_parameters?.top_p).toBeUndefined();
+    expect(payload.model_parameters?.model).toBe('deployment-override');
   });
 
   it('preserves model parameters during submission when the provider schema is unknown', () => {
