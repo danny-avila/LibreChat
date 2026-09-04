@@ -20,7 +20,8 @@ const {
   ensurePrincipalExists,
   ensureGroupPrincipalExists,
 } = require('./PermissionService');
-const { findRoleByIdentifier, getUserPrincipals, seedDefaultRoles } = require('~/models');
+const db = require('~/models');
+const { findRoleByIdentifier, getUserPrincipals, seedDefaultRoles } = db;
 
 // Mock the getTransactionSupport function for testing
 jest.mock('@librechat/data-schemas', () => ({
@@ -954,6 +955,78 @@ describe('PermissionService', () => {
         expect.objectContaining({ action: 'removed' }),
       ]);
     });
+
+    test.each([
+      {
+        concurrentChange: 'grant',
+        initialInsights: false,
+        concurrentBitUpdate: { or: PermissionBits.VIEW_INSIGHTS },
+        expectedInsights: PermissionBits.VIEW_INSIGHTS,
+      },
+      {
+        concurrentChange: 'revocation',
+        initialInsights: true,
+        concurrentBitUpdate: { and: ~PermissionBits.VIEW_INSIGHTS },
+        expectedInsights: 0,
+      },
+    ])(
+      'atomically preserves a concurrent Insights $concurrentChange during a role-only update',
+      async ({ initialInsights, concurrentBitUpdate, expectedInsights }) => {
+        if (initialInsights) {
+          await AclEntry.updateOne(
+            {
+              principalType: PrincipalType.USER,
+              principalId: userId,
+              resourceType: ResourceType.AGENT,
+              resourceId,
+            },
+            { $bit: { permBits: { or: PermissionBits.VIEW_INSIGHTS } } },
+          );
+        }
+
+        const originalBulkWriteAclEntries = db.bulkWriteAclEntries;
+        const bulkWriteSpy = jest
+          .spyOn(db, 'bulkWriteAclEntries')
+          .mockImplementationOnce(async (...args) => {
+            await AclEntry.updateOne(
+              {
+                principalType: PrincipalType.USER,
+                principalId: userId,
+                resourceType: ResourceType.AGENT,
+                resourceId,
+              },
+              { $bit: { permBits: concurrentBitUpdate } },
+            );
+            return originalBulkWriteAclEntries(...args);
+          });
+
+        try {
+          await bulkUpdateResourcePermissions({
+            resourceType: ResourceType.AGENT,
+            resourceId,
+            updatedPrincipals: [
+              {
+                type: PrincipalType.USER,
+                id: userId,
+                accessRoleId: AccessRoleIds.AGENT_EDITOR,
+              },
+            ],
+            grantedBy: grantedById,
+          });
+        } finally {
+          bulkWriteSpy.mockRestore();
+        }
+
+        const entry = await AclEntry.findOne({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.AGENT,
+          resourceId,
+        }).populate('roleId', 'accessRoleId');
+        expect(entry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
+        expect(entry.permBits & PermissionBits.VIEW_INSIGHTS).toBe(expectedInsights);
+      },
+    );
 
     test('restores the prior ACL document after an Insights audit failure', async () => {
       const before = await AclEntry.findOne({

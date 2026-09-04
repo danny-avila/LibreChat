@@ -5,6 +5,7 @@ const {
   tenantStorage,
   getTenantId,
   logger,
+  RoleBits,
   runAfterTransaction,
 } = require('@librechat/data-schemas');
 const {
@@ -845,6 +846,11 @@ const bulkUpdateResourcePermissions = async ({
         const roleCanView = (role.permBits & PermissionBits.VIEW) === PermissionBits.VIEW;
         const requestedInsights =
           typeof principal.viewInsights === 'boolean' ? principal.viewInsights : undefined;
+        const preserveInsights =
+          resourceType === ResourceType.AGENT &&
+          principal.type !== PrincipalType.PUBLIC &&
+          roleCanView &&
+          requestedInsights === undefined;
         const wantsInsights =
           resourceType === ResourceType.AGENT &&
           principal.type !== PrincipalType.PUBLIC &&
@@ -862,11 +868,20 @@ const bulkUpdateResourcePermissions = async ({
 
         const update = {
           $set: {
-            permBits,
+            ...(!preserveInsights && { permBits }),
             roleId: role._id,
             grantedBy,
             grantedAt: new Date(),
           },
+          ...(preserveInsights && {
+            $bit: {
+              permBits: {
+                // Replace role-controlled bits while preserving independent flags at write time.
+                or: role.permBits & RoleBits.OWNER,
+                and: ~(RoleBits.OWNER & ~role.permBits),
+              },
+            },
+          }),
           $setOnInsert: {
             principalType: principal.type,
             resourceType,
