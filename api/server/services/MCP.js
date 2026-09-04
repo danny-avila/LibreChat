@@ -767,7 +767,7 @@ function resolveToolCallUserId({ effectiveUser, capturedUser, invocationUserId, 
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @returns {(params: { flowId: string; mode: 'url'; message: string; serverName?: string; toolName?: string; url?: string; elicitationId?: string }) => Promise<void>}
  */
-function createElicitationStart({ res, stepId, streamId = null }) {
+function createElicitationStart({ res, stepId, streamId = null, jobCreatedAt }) {
   return async function ({ flowId, mode, message, serverName, toolName, url, elicitationId }) {
     // Capture stream context so the out-of-band completion route can emit
     // `on_elicitation_resolved` onto this stream. `elicitationId` is retained
@@ -788,6 +788,7 @@ function createElicitationStart({ res, stepId, streamId = null }) {
       stepId,
       elicitationId,
       cleanupTimer,
+      jobCreatedAt,
       createdAt: Date.now(),
     });
     evictStale(elicitationFlowContext, ELICITATION_CONTEXT_TTL_MS);
@@ -799,7 +800,9 @@ function createElicitationStart({ res, stepId, streamId = null }) {
     };
     const eventData = { event: 'on_elicitation', data };
     if (streamId) {
-      await GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData, {
+        expectedCreatedAt: jobCreatedAt,
+      });
     } else {
       sendEvent(res, eventData);
     }
@@ -869,7 +872,11 @@ async function resolveElicitationFlow({
     if (!job) {
       return false;
     }
-    context = { streamId, stepId };
+    /** Stream IDs are conversation-scoped, so a completion arriving after the
+     *  conversation started a new generation would otherwise publish this stale
+     *  flow's resolution into the successor. Fence on the hydrated job's
+     *  creation time. */
+    context = { streamId, stepId, jobCreatedAt: job.createdAt };
   }
 
   const eventData = {
@@ -885,7 +892,9 @@ async function resolveElicitationFlow({
 
   try {
     if (context.streamId) {
-      await GenerationJobManager.emitChunk(context.streamId, eventData);
+      await GenerationJobManager.emitChunk(context.streamId, eventData, {
+        expectedCreatedAt: context.jobCreatedAt,
+      });
     } else if (context.res) {
       sendEvent(context.res, eventData);
     } else {
@@ -1449,7 +1458,22 @@ function createToolInstance({
               res,
               stepId,
               streamId,
+              jobCreatedAt,
             });
+      /** Settles an already-rendered card when the wait ends without the user
+       *  submitting an action (Stop, or the flow TTL expiring). Only the
+       *  completion route emits `on_elicitation_resolved`, so without this the
+       *  card stays interactive and later submissions get a 404. */
+      const elicitationEnd = elicitationStart
+        ? async ({ flowId, action }) => {
+            await resolveElicitationFlow({
+              flowId,
+              action,
+              fallbackStreamId: streamId ?? null,
+              fallbackStepId: stepId,
+            });
+          }
+        : undefined;
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
@@ -1490,6 +1514,7 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
         elicitationStart,
+        elicitationEnd,
         elicitationStreamId: streamId,
         elicitationStepId: stepId,
         graphTokenResolver: getGraphApiToken,

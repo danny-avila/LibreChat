@@ -51,6 +51,12 @@ import { mcpConfig } from './mcpConfig';
  *  a memory/resource DoS. Further requests past the cap are declined outright. */
 const MAX_PENDING_ELICITATIONS = 3;
 
+/** Max sequential authorizations resolved for a single tool call. A server may
+ *  legitimately need more than one (several `data.elicitations` entries, or a
+ *  fresh -32042 after the first is satisfied), but an unbounded chain would let
+ *  a misbehaving server keep a run alive indefinitely. */
+const MAX_ELICITATION_ROUNDS = 3;
+
 function createOboToolCallErrorMessage(
   logPrefix: string,
   toolName: string,
@@ -873,6 +879,7 @@ Please follow these instructions when using tools from the respective MCP server
     upstreamTokenProvider,
     oboIdentityContext,
     elicitationStart,
+    elicitationEnd,
     elicitationStreamId,
     elicitationStepId,
   }: {
@@ -916,6 +923,11 @@ Please follow these instructions when using tools from the respective MCP server
        *  `notifications/elicitation/complete` correlation. */
       elicitationId?: string;
     }) => Promise<void>;
+    /** Settles an already-rendered card when the wait ends without the user
+     *  submitting an action (a Stop, or the flow TTL expiring). Only the
+     *  completion route emits `on_elicitation_resolved`, so without this the card
+     *  stays interactive and every later Continue/Cancel gets a 404. */
+    elicitationEnd?: (params: { flowId: string; action: 'cancel' }) => Promise<void>;
     /** Resumable-stream id capturing the elicitation's SSE context, so the
      *  out-of-band completion route (a different process/request) can resolve
      *  it via {@link FlowStateManager.completeFlowIfPending} even when the
@@ -1250,7 +1262,9 @@ Please follow these instructions when using tools from the respective MCP server
             },
           );
 
-        let result: Awaited<ReturnType<typeof requestTool>>;
+        /** Definite assignment: every path out of the elicitation loop below
+         *  either assigns `result` or throws. */
+        let result!: Awaited<ReturnType<typeof requestTool>>;
         try {
           try {
             result = await requestTool();
@@ -1331,8 +1345,8 @@ Please follow these instructions when using tools from the respective MCP server
           if (!elicitationStart || !userId) {
             throw error;
           }
-          const first = extractUrlElicitation(error);
-          if (!first) {
+          let pending = extractUrlElicitation(error);
+          if (!pending) {
             throw error;
           }
 
@@ -1342,76 +1356,115 @@ Please follow these instructions when using tools from the respective MCP server
           if (sharedAppConnection && sharedAppConnection === connection) {
             throw new McpError(
               ErrorCode.InvalidRequest,
-              `${first.message} This server requires per-user authorization but is connected at ` +
+              `${pending.message} This server requires per-user authorization but is connected at ` +
                 `the app level; configure it to use a user-scoped connection, then retry.`,
             );
           }
 
-          const flowId = generateElicitationFlowId(userId, serverName, toolName, getTenantId());
-          // Apply the same per-(user, server) pending-elicitation cap as the
-          // server-initiated `elicitation/create` path, so a gateway that keeps
-          // returning -32042 can't spawn unbounded concurrent flows/cards.
-          if (!this.reserveElicitation(userId, serverName)) {
-            throw new McpError(
-              ErrorCode.InvalidRequest,
-              `${first.message} Too many pending authorizations for ${serverName}; complete or cancel one, then retry. Open ${first.url} to authorize.`,
-            );
-          }
-          try {
-            logger.info(
-              `${logPrefix}[${toolName}] URL elicitation required (-32042), flowId: ${flowId}`,
-            );
-            await elicitationStart({
-              flowId,
-              mode: 'url',
-              message: first.message,
-              serverName,
-              toolName,
-              url: first.url,
-              elicitationId: first.elicitationId,
-            });
+          /** A server may require more than one authorization for a single call:
+           *  several entries in `data.elicitations`, or a fresh -32042 once the
+           *  first is satisfied. Resolve them in sequence and retry after each,
+           *  bounded by {@link MAX_ELICITATION_ROUNDS}. */
+          for (let round = 0; pending != null; round++) {
+            if (round >= MAX_ELICITATION_ROUNDS) {
+              throw new McpError(
+                ErrorCode.InvalidRequest,
+                `${pending.message} This tool still requires authorization after ${MAX_ELICITATION_ROUNDS} attempts; use the authorization card above, then retry.`,
+              );
+            }
 
-            let flowResult: ElicitationFlowResult;
+            const flowId = generateElicitationFlowId(userId, serverName, toolName, getTenantId());
+            // Apply the same per-(user, server) pending-elicitation cap as the
+            // server-initiated `elicitation/create` path, so a gateway that keeps
+            // returning -32042 can't spawn unbounded concurrent flows/cards.
+            if (!this.reserveElicitation(userId, serverName)) {
+              throw new McpError(
+                ErrorCode.InvalidRequest,
+                `${pending.message} Too many pending authorizations for ${serverName}; complete or cancel one, then retry using the authorization card above.`,
+              );
+            }
+
+            const current = pending;
+            /** Whether the user actually submitted an action. When they did, the
+             *  completion route has already emitted the resolution; when they did
+             *  not, this call has to settle the card itself. */
+            let waitResolved = false;
             try {
-              flowResult = await elicitationFlowManager.createFlow(
+              logger.info(
+                `${logPrefix}[${toolName}] URL elicitation required (-32042), flowId: ${flowId}`,
+              );
+              await elicitationStart({
                 flowId,
-                'mcp_elicit',
-                {
-                  elicitationId: first.elicitationId,
-                  streamId: elicitationStreamId ?? null,
-                  stepId: elicitationStepId,
-                },
-                options?.signal,
-              );
-            } catch (flowError) {
-              /** A user Stop rejects the flow wait too. That is the cancellation
-               *  working, not a failed authorization, so it must stay an abort:
-               *  wrapping it as InvalidRequest would show the user an
-               *  "open this URL and retry" message for a run they just stopped,
-               *  and hide it from the abort-aware logging below. */
-              if (options?.signal?.aborted === true) {
-                throw flowError;
+                mode: 'url',
+                message: current.message,
+                serverName,
+                toolName,
+                url: current.url,
+                elicitationId: current.elicitationId,
+              });
+
+              let flowResult: ElicitationFlowResult;
+              try {
+                flowResult = await elicitationFlowManager.createFlow(
+                  flowId,
+                  'mcp_elicit',
+                  {
+                    elicitationId: current.elicitationId,
+                    streamId: elicitationStreamId ?? null,
+                    stepId: elicitationStepId,
+                  },
+                  options?.signal,
+                );
+                waitResolved = true;
+              } catch (flowError) {
+                /** A user Stop rejects the flow wait too. That is the cancellation
+                 *  working, not a failed authorization, so it must stay an abort:
+                 *  wrapping it as InvalidRequest would show the user an
+                 *  "authorize and retry" message for a run they just stopped, and
+                 *  hide it from the abort-aware logging below. */
+                if (options?.signal?.aborted === true) {
+                  throw flowError;
+                }
+                const reason = flowError instanceof Error ? flowError.message : String(flowError);
+                throw new McpError(
+                  ErrorCode.InvalidRequest,
+                  `${current.message} Use the authorization card above, then retry. (${reason})`,
+                );
               }
-              const reason = flowError instanceof Error ? flowError.message : String(flowError);
-              throw new McpError(
-                ErrorCode.InvalidRequest,
-                `${first.message} Open ${first.url} to authorize, then retry. (${reason})`,
-              );
-            }
 
-            if (!isElicitationSuccess(flowResult.action)) {
-              throw new McpError(
-                ErrorCode.InvalidRequest,
-                `${first.message} Authorization was cancelled. Open ${first.url} to authorize, then retry.`,
-              );
-            }
+              if (!isElicitationSuccess(flowResult.action)) {
+                throw new McpError(
+                  ErrorCode.InvalidRequest,
+                  `${current.message} Authorization was cancelled. Use the authorization card above, then retry.`,
+                );
+              }
 
-            logger.debug(
-              `${logPrefix}[${toolName}] URL elicitation authorized, retrying tools/call`,
-            );
-            result = await requestTool();
-          } finally {
-            this.releaseElicitation(userId, serverName);
+              logger.debug(
+                `${logPrefix}[${toolName}] URL elicitation authorized, retrying tools/call`,
+              );
+              try {
+                result = await requestTool();
+                pending = null;
+              } catch (retryError) {
+                const next = extractUrlElicitation(retryError);
+                if (!next) {
+                  throw retryError;
+                }
+                pending = next;
+              }
+            } finally {
+              this.releaseElicitation(userId, serverName);
+              if (!waitResolved && elicitationEnd) {
+                try {
+                  await elicitationEnd({ flowId, action: 'cancel' });
+                } catch (endError) {
+                  logger.warn(
+                    `${logPrefix}[${toolName}] Failed to settle elicitation card ${flowId}`,
+                    endError,
+                  );
+                }
+              }
+            }
           }
         }
         const hasPersistentUserConnections =

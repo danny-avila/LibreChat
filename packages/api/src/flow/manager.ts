@@ -39,8 +39,13 @@ export function normalizeExpiresAt(timestamp: number): number {
 /** How many times {@link FlowStateManager.completeFlowIfPending} retries the
  *  distributed lock before conceding. Covers the window where the holder has
  *  acquired the lock but not yet written the terminal state. */
-const COMPLETE_LOCK_ATTEMPTS = 5;
 const COMPLETE_LOCK_RETRY_MS = 50;
+/** Must span the store's lock TTL (5s in `cache/flows.ts`): if the holder dies
+ *  after acquiring the lock, nothing settles the flow until that TTL expires,
+ *  and conceding earlier returns a 409 with no winning action while the flow is
+ *  still PENDING. Retrying to the TTL lets a later attempt take the lock over. */
+const COMPLETE_LOCK_TIMEOUT_MS = 6000;
+const COMPLETE_LOCK_ATTEMPTS = Math.ceil(COMPLETE_LOCK_TIMEOUT_MS / COMPLETE_LOCK_RETRY_MS);
 
 export class FlowStateManager<T = unknown> {
   private keyv: Keyv;

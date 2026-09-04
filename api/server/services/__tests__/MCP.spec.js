@@ -431,7 +431,12 @@ describe('createElicitationStart', () => {
   });
 
   it('emits the on_elicitation event via emitChunk when a streamId is set', async () => {
-    const start = createElicitationStart({ res: {}, stepId: 'step-2', streamId: 'stream-9' });
+    const start = createElicitationStart({
+      res: {},
+      stepId: 'step-2',
+      streamId: 'stream-9',
+      jobCreatedAt: 1234,
+    });
 
     await start({ flowId: 'u:s:t:n2', mode: 'url', message: 'Authorize', url: 'https://x/auth' });
 
@@ -448,6 +453,7 @@ describe('createElicitationStart', () => {
           }),
         }),
       }),
+      { expectedCreatedAt: 1234 },
     );
   });
 
@@ -482,6 +488,7 @@ describe('createElicitationStart', () => {
           elicitation: expect.not.objectContaining({ elicitationId: expect.anything() }),
         }),
       }),
+      { expectedCreatedAt: undefined },
     );
   });
 });
@@ -510,6 +517,7 @@ describe('resolveElicitationFlow', () => {
           action: 'complete',
         }),
       }),
+      { expectedCreatedAt: undefined },
     );
     // Local-context fast path never needs to hydrate cross-process job state.
     expect(GenerationJobManager.getJob).not.toHaveBeenCalled();
@@ -544,7 +552,10 @@ describe('resolveElicitationFlow', () => {
 
   describe('cross-process fallback (no local context)', () => {
     it('hydrates the job via getJob, then emits on_elicitation_resolved onto the fallback stream', async () => {
-      GenerationJobManager.getJob.mockResolvedValue({ streamId: 'stream-fallback' });
+      GenerationJobManager.getJob.mockResolvedValue({
+        streamId: 'stream-fallback',
+        createdAt: 777,
+      });
 
       const emitted = await resolveElicitationFlow({
         flowId: 'flow-fallback',
@@ -565,6 +576,7 @@ describe('resolveElicitationFlow', () => {
             action: 'complete',
           }),
         }),
+        { expectedCreatedAt: 777 },
       );
     });
 

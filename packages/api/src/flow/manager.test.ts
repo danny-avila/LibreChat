@@ -283,7 +283,7 @@ describe('FlowStateManager', () => {
           result: 'holder-result',
           createdAt: Date.now(),
           completedAt: Date.now(),
-        });
+        } as never);
       }, 60);
 
       const won = await locked.completeFlowIfPending(flowId, type, 'loser-result');
