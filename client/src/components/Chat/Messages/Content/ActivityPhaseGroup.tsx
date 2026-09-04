@@ -1,6 +1,6 @@
 import { useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
-import { Button, useMediaQuery } from '@librechat/client';
 import { Check, ChevronDown, TriangleAlert } from 'lucide-react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
@@ -93,23 +93,24 @@ function PhaseLabel({
   animate: boolean;
   failed: boolean;
 }) {
-  const [lines, setLines] = useState<{ current: string; retired: string | null }>({
-    current: text,
-    retired: null,
-  });
+  const [lines, setLines] = useState<{ current: string; retired: string | null; entered: boolean }>(
+    { current: text, retired: null, entered: false },
+  );
 
-  useEffect(() => {
-    setLines((previous) => {
-      if (previous.current === text) {
-        return previous;
-      }
-      return {
-        current: text,
-        retired: animate && previous.current.length > 0 ? previous.current : null,
-      };
-    });
-  }, [text, animate]);
+  /** Adjusted during render rather than in an effect. A passive effect runs
+   *  after paint, so a swap with no animation would leave the previous summary
+   *  on screen for a frame while the button's `aria-label` already carried the
+   *  new one. React re-renders this component immediately instead. */
+  if (lines.current !== text) {
+    const swaps = animate && lines.current.length > 0;
+    setLines({ current: text, retired: swaps ? lines.current : null, entered: swaps });
+  }
 
+  /** Clears only the retired line. `entered` outlives it on purpose: dropping
+   *  the incoming line's animation class the moment its partner's
+   *  `animationend` fires would snap a still-running slide back to its resting
+   *  position. The class is inert once the animation has finished, and the
+   *  element is keyed by its text, so it cannot replay. */
   const clearRetired = useCallback(() => {
     setLines((previous) => (previous.retired == null ? previous : { ...previous, retired: null }));
   }, []);
@@ -139,7 +140,7 @@ function PhaseLabel({
         key={`current-${lines.current}`}
         className={cn(
           'block truncate',
-          lines.retired != null && `animate-in fade-in-0 slide-in-from-bottom-5 ${FOLD_EASING}`,
+          lines.entered && `animate-in fade-in-0 slide-in-from-bottom-5 ${FOLD_EASING}`,
           failed && 'text-text-warning',
         )}
       >
@@ -174,8 +175,10 @@ export default function ActivityPhaseGroup({
 }) {
   const label = getActivityLabelText(labelPart);
   const hasFailure = labelPart.status === 'failed' || labelPart.status === 'partial';
+  /** Already `smoothStreaming && !reducedMotion` — it owns the media query, so
+   *  a second subscription here would install one `matchMedia` listener per
+   *  phase card without changing the answer. */
   const smoothStreaming = useSmoothStreaming();
-  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   /** Capture the marker's arrival state. The parent renderer records the new
    *  marker after this commit; a later sibling update must not cancel the
    *  already-scheduled fold before its first animation frame. */
@@ -321,11 +324,7 @@ export default function ActivityPhaseGroup({
             aria-label={label}
           >
             <PhaseGlyph failed={hasFailure} />
-            <PhaseLabel
-              text={label}
-              failed={hasFailure}
-              animate={smoothStreaming && !reducedMotion}
-            />
+            <PhaseLabel text={label} failed={hasFailure} animate={smoothStreaming} />
             <ChevronDown
               className={cn(
                 'size-4 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none',

@@ -26,14 +26,15 @@ jest.mock('~/hooks', () => {
 const LABEL = 'Compared both release paths';
 const NEXT_LABEL = 'Confirmed the rollback path is clean';
 
-const makeLabelPart = (text: string) =>
-  ({
-    type: ContentTypes.ACTIVITY_LABEL,
-    [ContentTypes.ACTIVITY_LABEL]: text,
-    activity_label_type: 'phase',
-    activity_start_index: 0,
-    pending: false,
-  }) as unknown as Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }>;
+const makeLabelPart = (
+  text: string,
+): Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> => ({
+  type: ContentTypes.ACTIVITY_LABEL,
+  activity_label: text,
+  activity_label_type: 'phase',
+  activity_start_index: 0,
+  pending: false,
+});
 
 const labelPart = makeLabelPart(LABEL);
 const nextLabelPart = makeLabelPart(NEXT_LABEL);
@@ -168,9 +169,12 @@ describe('ActivityPhaseGroup', () => {
     expect(retired).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByText(NEXT_LABEL)).toHaveClass('animate-in', 'slide-in-from-bottom-5');
 
+    /** Retiring the outgoing line must not strip the incoming one's animation
+     *  class: both run for the same 300ms, so removing it on the partner's
+     *  `animationend` would snap a slide that is still in flight. */
     fireEvent.animationEnd(retired);
     expect(screen.queryByText(LABEL)).not.toBeInTheDocument();
-    expect(screen.getByText(NEXT_LABEL)).toBeInTheDocument();
+    expect(screen.getByText(NEXT_LABEL)).toHaveClass('animate-in', 'slide-in-from-bottom-5');
   });
 
   test('swaps the header outright when smooth streaming is off', () => {
