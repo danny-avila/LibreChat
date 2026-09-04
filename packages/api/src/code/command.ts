@@ -30,6 +30,11 @@ const attachedCommandSchema: NonNullable<LCTool['parameters']> = {
     'The bash command or script to execute from the attached workspace root. Files written in the workspace persist between calls, but each call starts a fresh process.',
 };
 
+/**
+ * This definition is shared with agent metadata. LangChain's JSON Schema
+ * dereferencer annotates schemas during validation, so each tool receives an
+ * isolated mutable clone instead of mutating this shared definition.
+ */
 export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> = Object.freeze({
   type: 'object',
   properties: {
@@ -104,7 +109,7 @@ export function createAttachedWorkspaceBashTool({
     {
       name: BashExecutionToolDefinition.name,
       description: ATTACHED_WORKSPACE_BASH_DESCRIPTION,
-      schema: ATTACHED_WORKSPACE_BASH_SCHEMA,
+      schema: structuredClone(ATTACHED_WORKSPACE_BASH_SCHEMA),
       responseFormat: 'content_and_artifact',
     },
   ) as unknown as DynamicStructuredTool;

@@ -1,5 +1,5 @@
 import type { CodeBridgeFetch } from './bridge';
-import { createAttachedWorkspaceBashTool } from './command';
+import { ATTACHED_WORKSPACE_BASH_SCHEMA, createAttachedWorkspaceBashTool } from './command';
 
 function commandResponse(overrides: Record<string, unknown> = {}): Response {
   return new Response(
@@ -54,6 +54,22 @@ describe('createAttachedWorkspaceBashTool', () => {
       command: 'pwd',
       maxOutputBytes: 256 * 1024,
     });
+  });
+
+  test('validates and invokes commands through the LangChain tool runtime', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      fetchImpl,
+    });
+
+    await expect(bashTool.invoke({ command: 'pwd' })).resolves.toBeDefined();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(
+      Object.getOwnPropertyDescriptor(ATTACHED_WORKSPACE_BASH_SCHEMA, '__absolute_uri__'),
+    ).toBeUndefined();
   });
 
   test('preserves legacy positional args without interpolating shell metacharacters', async () => {
