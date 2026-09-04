@@ -1,3 +1,5 @@
+import winston from 'winston';
+import { Writable } from 'node:stream';
 import { logger } from '@librechat/data-schemas';
 import {
   codeExecutionAuthHeaders,
@@ -344,6 +346,56 @@ describe('codeExecutionAuthHeaders', () => {
     expect(errorSpy).toHaveBeenCalledWith(
       '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: stateful | Worker: opaque-worker-id',
       failure,
+    );
+  });
+
+  it('renders the cause on a console format that prints only the message', async () => {
+    errorSpy.mockRestore();
+    const rendered: string[] = [];
+    const capture = new winston.transports.Stream({
+      stream: new Writable({
+        write(chunk: Buffer, _encoding: string, done: () => void) {
+          rendered.push(String(chunk));
+          done();
+        },
+      }),
+      format: winston.format.printf((info) => `${info.level}: ${info.message}`),
+    });
+    const existing = [...logger.transports];
+    existing.forEach((transport) => {
+      transport.silent = true;
+    });
+    logger.add(capture);
+
+    try {
+      await codeExecutionAuthHeaders(
+        () => Promise.reject(new Error('code API signing key is not configured')),
+        { executionProfile: 'stateful' },
+      ).catch(() => undefined);
+      await codeExecutionAuthHeaders(() => Promise.reject('signing service unreachable'), {
+        executionProfile: 'stateful',
+      }).catch(() => undefined);
+    } finally {
+      logger.remove(capture);
+      existing.forEach((transport) => {
+        transport.silent = false;
+      });
+    }
+
+    expect(rendered.join('')).toContain('code API signing key is not configured');
+    expect(rendered.join('')).toContain('signing service unreachable');
+  });
+
+  it('carries a non-Error rejection in the message, which winston would otherwise drop', async () => {
+    await expect(
+      codeExecutionAuthHeaders(() => Promise.reject('signing service unreachable'), {
+        executionProfile: 'default',
+      }),
+    ).rejects.toBe('signing service unreachable');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: signing service unreachable',
+      'signing service unreachable',
     );
   });
 

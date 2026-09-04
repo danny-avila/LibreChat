@@ -211,9 +211,15 @@ export async function codeExecutionAuthHeaders(
       ...codeExecutionHeaders(context),
     };
   } catch (error) {
+    /* winston folds an Error meta's message and stack into `info.message`, so
+     * an Error cause survives even the plain console format that prints
+     * `info.message` alone. A non-Error rejection is dropped by that format,
+     * so it has to ride in the message itself. */
+    const cause = error instanceof Error ? '' : ` | Cause: ${String(error)}`;
     logger.error(
       `[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: ${context.executionProfile}` +
-        (context.bridgeWorkerId != null ? ` | Worker: ${context.bridgeWorkerId}` : ''),
+        (context.bridgeWorkerId != null ? ` | Worker: ${context.bridgeWorkerId}` : '') +
+        cause,
       error,
     );
     throw error;
