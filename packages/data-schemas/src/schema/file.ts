@@ -152,6 +152,17 @@ const file: Schema<IMongoFile> = new Schema(
        * backing storage first, then removes this metadata record. */
       type: Date,
     },
+    deletionAttempts: {
+      /* Consecutive failed sweep deletions. Files at or past
+       * `FILE_RETENTION_SWEEP_MAX_ATTEMPTS` are excluded from the sweep
+       * query so a permanently undeletable file cannot starve the bounded
+       * batch; raising that limit re-admits them. */
+      type: Number,
+    },
+    deletionRetryAt: {
+      /* Earliest next sweep attempt, backed off from `deletionAttempts`. */
+      type: Date,
+    },
   },
   {
     timestamps: true,

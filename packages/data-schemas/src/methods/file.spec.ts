@@ -380,9 +380,121 @@ describe('File Methods', () => {
         true,
       );
 
-      const files = await fileMethods.getExpiredFiles(100, now);
+      const files = await fileMethods.getExpiredFiles(100, { now });
 
       expect(files.map((file) => file.file_id)).toEqual([expiredFileId]);
+    });
+
+    it('holds back files whose deletion backoff has not elapsed', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const now = new Date('2030-01-01T00:00:00.000Z');
+      const readyFileId = uuidv4();
+      const backedOffFileId = uuidv4();
+
+      await fileMethods.createFile(
+        {
+          file_id: backedOffFileId,
+          user: userId,
+          filename: 'backed-off.txt',
+          filepath: '/uploads/backed-off.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2029-12-01T00:00:00.000Z'),
+          deletionAttempts: 2,
+          deletionRetryAt: new Date('2030-01-01T00:00:01.000Z'),
+        },
+        true,
+      );
+      await fileMethods.createFile(
+        {
+          file_id: readyFileId,
+          user: userId,
+          filename: 'ready.txt',
+          filepath: '/uploads/ready.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+          deletionAttempts: 2,
+          deletionRetryAt: new Date('2029-12-31T23:00:00.000Z'),
+        },
+        true,
+      );
+
+      const files = await fileMethods.getExpiredFiles(100, { now });
+
+      expect(files.map((file) => file.file_id)).toEqual([readyFileId]);
+    });
+
+    it('drops files that reached the attempt cap so they cannot starve the batch', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const now = new Date('2030-01-01T00:00:00.000Z');
+      const exhaustedFileId = uuidv4();
+      const retriableFileId = uuidv4();
+
+      /* The exhausted file expired first, so without the cap it sorts to
+       * the front of every batch and a limit-sized run of them starves
+       * everything that expired afterwards. */
+      await fileMethods.createFile(
+        {
+          file_id: exhaustedFileId,
+          user: userId,
+          filename: 'exhausted.txt',
+          filepath: '/uploads/exhausted.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+          deletionAttempts: 10,
+          deletionRetryAt: new Date('2029-06-01T00:00:00.000Z'),
+        },
+        true,
+      );
+      await fileMethods.createFile(
+        {
+          file_id: retriableFileId,
+          user: userId,
+          filename: 'retriable.txt',
+          filepath: '/uploads/retriable.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+          deletionAttempts: 9,
+        },
+        true,
+      );
+
+      const capped = await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 });
+      expect(capped.map((file) => file.file_id)).toEqual([retriableFileId]);
+
+      const raised = await fileMethods.getExpiredFiles(100, { now, maxAttempts: 20 });
+      expect(raised.map((file) => file.file_id)).toEqual([exhaustedFileId, retriableFileId]);
+    });
+  });
+
+  describe('deferExpiredFile', () => {
+    it('increments the attempt count and stamps the next retry', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      const retryAt = new Date('2030-02-01T00:00:00.000Z');
+
+      await fileMethods.createFile(
+        {
+          file_id: fileId,
+          user: userId,
+          filename: 'deferred.txt',
+          filepath: '/uploads/deferred.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+        },
+        true,
+      );
+
+      await fileMethods.deferExpiredFile(fileId, retryAt);
+      await fileMethods.deferExpiredFile(fileId, retryAt);
+
+      const [file] = (await fileMethods.getFiles({ file_id: fileId }))!;
+      expect(file.deletionAttempts).toBe(2);
+      expect(file.deletionRetryAt).toEqual(retryAt);
     });
   });
 

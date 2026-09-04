@@ -7,12 +7,16 @@ import {
 import type { AppConfig } from '@librechat/data-schemas';
 
 const DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const DEFAULT_FILE_RETENTION_MAX_ATTEMPTS = 10;
+const FILE_RETENTION_RETRY_BASE_MS = 60 * 60 * 1000;
+const FILE_RETENTION_RETRY_MAX_MS = 24 * 60 * 60 * 1000;
 
 type ExpiredFile = {
   file_id: string;
   source?: string;
   user?: string | { toString?: () => string };
   tenantId?: string;
+  deletionAttempts?: number;
 };
 
 type SweepRequest = {
@@ -46,11 +50,15 @@ type VersionedEndpointConfig = {
 };
 
 type SweepDependencies = {
-  getExpiredFiles: (limit: number) => Promise<ExpiredFile[] | null | undefined>;
+  getExpiredFiles: (
+    limit: number,
+    options: { maxAttempts: number },
+  ) => Promise<ExpiredFile[] | null | undefined>;
   processDeleteRequest: (params: {
     req: SweepRequest;
     files: ExpiredFile[];
   }) => Promise<{ deletedFileIds: string[]; failedFileIds: string[] }>;
+  deferExpiredFile: (file_id: string, deletionRetryAt: Date) => Promise<void>;
   logger: SweepLogger;
 };
 
@@ -84,6 +92,37 @@ export function getFileRetentionSweepInterval(
     return DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS;
   }
   return value;
+}
+
+/**
+ * Consecutive failures after which the sweep stops retrying a file.
+ *
+ * The record is kept so the reference survives for reconciliation, and
+ * raising this limit re-admits everything previously given up on — that is
+ * the supported way to resume once the underlying storage failure is fixed.
+ */
+export function getFileRetentionMaxAttempts(
+  maxAttempts: string | undefined = process.env.FILE_RETENTION_SWEEP_MAX_ATTEMPTS,
+): number {
+  if (maxAttempts == null || maxAttempts.trim() === '') {
+    return DEFAULT_FILE_RETENTION_MAX_ATTEMPTS;
+  }
+
+  const value = Number(maxAttempts);
+  if (!Number.isInteger(value) || value < 1) {
+    return DEFAULT_FILE_RETENTION_MAX_ATTEMPTS;
+  }
+  return value;
+}
+
+/**
+ * Backoff before the next attempt, doubling from one sweep interval up to a
+ * day. `attempts` is the file's failure count including the one just
+ * recorded, so the first retry lands on the following sweep.
+ */
+export function getExpiredFileRetryDelay(attempts: number): number {
+  const exponent = Math.max(0, attempts - 1);
+  return Math.min(FILE_RETENTION_RETRY_BASE_MS * 2 ** exponent, FILE_RETENTION_RETRY_MAX_MS);
 }
 
 export function getExpiredFileEndpoint(source?: string): string {
@@ -205,18 +244,45 @@ export async function resolveExpiredFileSweepConfig({
 
 export async function sweepExpiredFiles(
   { appConfig, limit = 100, loadAppConfig }: ExpiredFileSweepOptions | undefined = {},
-  { getExpiredFiles, processDeleteRequest, logger }: SweepDependencies,
+  { getExpiredFiles, processDeleteRequest, deferExpiredFile, logger }: SweepDependencies,
 ): Promise<ExpiredFileSweepResult> {
-  const files = (await getExpiredFiles(limit)) ?? [];
+  const maxAttempts = getFileRetentionMaxAttempts();
+  const files = (await getExpiredFiles(limit, { maxAttempts })) ?? [];
   let resolvedAppConfig = appConfig;
   let deleted = 0;
   let failed = 0;
+
+  /* Every failure has to be recorded, not just counted: an unrecorded one
+   * leaves the file at the head of the next `expiredAt`-ordered batch, and
+   * a file that can never be deleted then crowds out every file that
+   * expired after it for the life of the deployment. */
+  const recordFailure = async (file: ExpiredFile): Promise<void> => {
+    failed++;
+    const attempts = (file.deletionAttempts ?? 0) + 1;
+    const retryAt = new Date(Date.now() + getExpiredFileRetryDelay(attempts));
+    try {
+      await deferExpiredFile(file.file_id, retryAt);
+    } catch (error) {
+      logger.error(
+        `[sweepExpiredFiles] Error recording failed deletion of expired file ${file.file_id}:`,
+        error,
+      );
+      return;
+    }
+
+    if (attempts < maxAttempts) {
+      return;
+    }
+    logger.error(
+      `[sweepExpiredFiles] Giving up on expired file ${file.file_id} after ${attempts} failed deletions. Its backing storage was not removed; the record is kept so the reference survives for reconciliation. Raise FILE_RETENTION_SWEEP_MAX_ATTEMPTS to retry it.`,
+    );
+  };
 
   for (const file of files) {
     const userId = typeof file.user === 'string' ? file.user : file.user?.toString?.();
     if (!userId) {
       logger.warn(`[sweepExpiredFiles] Skipping expired file without user: ${file.file_id}`);
-      failed++;
+      await recordFailure(file);
       continue;
     }
 
@@ -229,21 +295,21 @@ export async function sweepExpiredFiles(
       const req = createExpiredFileSweepRequest({ appConfig: resolvedAppConfig, file, userId });
       const { deletedFileIds, failedFileIds } = await processDeleteRequest({ req, files: [file] });
       if (failedFileIds.includes(file.file_id)) {
-        failed++;
+        await recordFailure(file);
         continue;
       }
 
       if (deletedFileIds.includes(file.file_id)) {
         deleted++;
       } else {
-        failed++;
         logger.error(
           `[sweepExpiredFiles] Delete request finished without resolving expired file ${file.file_id}`,
         );
+        await recordFailure(file);
       }
     } catch (error) {
-      failed++;
       logger.error(`[sweepExpiredFiles] Error deleting expired file ${file.file_id}:`, error);
+      await recordFailure(file);
     }
   }
 

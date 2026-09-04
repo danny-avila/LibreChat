@@ -349,6 +349,7 @@ async function sweepExpiredFiles(options = {}) {
   return sweepExpiredFilesWithDeps(options, {
     getExpiredFiles: db.getExpiredFiles,
     processDeleteRequest,
+    deferExpiredFile: db.deferExpiredFile,
     logger,
   });
 }

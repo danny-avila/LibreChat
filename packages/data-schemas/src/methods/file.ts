@@ -9,6 +9,12 @@ export type FileOwnerScope = {
   tenantId?: string | null;
 };
 
+export type ExpiredFileQueryOptions = {
+  now?: Date;
+  /** Consecutive-failure count at which a file stops being retried. */
+  maxAttempts?: number;
+};
+
 function withOwnerScope<T extends FilterQuery<IMongoFile>>(
   filter: T,
   ownerScope?: FileOwnerScope,
@@ -35,7 +41,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     _sortOptions?: Record<string, SortOrder> | null,
     selectFields?: Record<string, 0 | 1> | string | null,
   ) => Promise<IMongoFile[] | null>;
-  getExpiredFiles: (limit?: number, now?: Date) => Promise<IMongoFile[]>;
+  getExpiredFiles: (limit?: number, options?: ExpiredFileQueryOptions) => Promise<IMongoFile[]>;
+  deferExpiredFile: (file_id: string, deletionRetryAt: Date) => Promise<void>;
   getToolFilesByIds: (
     fileIds: string[],
     toolResourceSet?: Set<EToolResources>,
@@ -130,12 +137,49 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     return await query.sort(sortOptions).lean<IMongoFile[]>();
   }
 
-  async function getExpiredFiles(limit = 100, now: Date = new Date()): Promise<IMongoFile[]> {
+  /**
+   * Expired files the sweep may attempt right now, oldest deadline first.
+   *
+   * Files whose storage deletion keeps failing are held back twice over:
+   * `deletionRetryAt` defers them until their backoff elapses, and
+   * `maxAttempts` drops them entirely once they have failed that many
+   * times. Without both, a permanently undeletable file sorts to the front
+   * of this bounded batch on every pass and starves every file that
+   * expired after it. Absent fields mean "never attempted", so records
+   * written before these fields existed remain eligible.
+   */
+  async function getExpiredFiles(
+    limit = 100,
+    { now = new Date(), maxAttempts }: ExpiredFileQueryOptions = {},
+  ): Promise<IMongoFile[]> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return await File.find({ expiredAt: { $ne: null, $lte: now } })
+    const eligible: FilterQuery<IMongoFile>[] = [
+      { $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }] },
+    ];
+    if (maxAttempts != null) {
+      eligible.push({
+        $or: [{ deletionAttempts: null }, { deletionAttempts: { $lt: maxAttempts } }],
+      });
+    }
+
+    return await File.find({ expiredAt: { $ne: null, $lte: now }, $and: eligible })
       .sort({ expiredAt: 1 })
       .limit(limit)
       .lean<IMongoFile[]>();
+  }
+
+  /**
+   * Records a failed sweep deletion and holds the file back until
+   * `deletionRetryAt`. The counter is incremented server-side so
+   * concurrent sweeps on separate nodes cannot overwrite each other's
+   * progress toward the give-up cap.
+   */
+  async function deferExpiredFile(file_id: string, deletionRetryAt: Date): Promise<void> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    await File.updateOne(
+      { file_id },
+      { $inc: { deletionAttempts: 1 }, $set: { deletionRetryAt } },
+    ).exec();
   }
 
   /**
@@ -679,6 +723,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     findFileById,
     getFiles,
     getExpiredFiles,
+    deferExpiredFile,
     getToolFilesByIds,
     getCodeGeneratedFiles,
     getUserCodeFiles,
