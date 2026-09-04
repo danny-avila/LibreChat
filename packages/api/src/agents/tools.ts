@@ -13,6 +13,10 @@ import {
 import type { AgentToolOptions, GraphEdge } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { ReachableAgent } from './traversal';
+import {
+  ATTACHED_WORKSPACE_BASH_SCHEMA,
+  buildAttachedWorkspaceBashDescription,
+} from '~/code/command';
 import { toolkitExpansion } from '~/tools/toolkits/mapping';
 import { normalizeAgentToolKeys } from '~/mcp/utils';
 import { collectReachableAgents } from './traversal';
@@ -765,15 +769,23 @@ export function isFileAuthoringToolDefinition(def: LCTool | undefined): boolean 
  * intent of the original constant while keeping the per-agent gate
  * behavior introduced for tool-output references.
  */
-function createBashToolDef(enableToolOutputReferences: boolean, statefulSessions = false): LCTool {
+function createBashToolDef(
+  enableToolOutputReferences: boolean,
+  statefulSessions = false,
+  workspaceTools = false,
+): LCTool {
   /* Passed as a variable (not an inline literal) so the extra
    * `statefulSessions` key stays assignable against pinned SDK versions
    * whose builder predates it (ignored at runtime there). */
   const descriptionOpts = { enableToolOutputReferences, statefulSessions };
   return Object.freeze({
     name: BashExecutionToolDefinition.name,
-    description: buildBashExecutionToolDescription(descriptionOpts),
-    parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
+    description: workspaceTools
+      ? buildAttachedWorkspaceBashDescription(enableToolOutputReferences)
+      : buildBashExecutionToolDescription(descriptionOpts),
+    parameters: (workspaceTools
+      ? ATTACHED_WORKSPACE_BASH_SCHEMA
+      : BashExecutionToolDefinition.schema) as unknown as LCTool['parameters'],
   }) as LCTool;
 }
 
@@ -783,11 +795,16 @@ const BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS = createBashToolDef(false);
 function buildBashToolDef(opts: {
   enableToolOutputReferences: boolean;
   statefulSessions?: boolean;
+  workspaceTools?: boolean;
 }): LCTool {
   /* Stateful defs are built on demand: the stateless pair covers the
    * default path, and per-run construction is negligible next to init. */
-  if (opts.statefulSessions === true) {
-    return createBashToolDef(opts.enableToolOutputReferences, true);
+  if (opts.statefulSessions === true || opts.workspaceTools === true) {
+    return createBashToolDef(
+      opts.enableToolOutputReferences,
+      opts.statefulSessions === true,
+      opts.workspaceTools === true,
+    );
   }
   return opts.enableToolOutputReferences
     ? BASH_TOOL_DEF_WITH_OUTPUT_REFS
@@ -823,7 +840,10 @@ export function registerCodeExecutionTools(
 
   const readFileDef = buildReadFileDef(includeSkillFileInstructions, workspaceTools);
   const codeTools: LCTool[] = includeBash
-    ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
+    ? [
+        readFileDef,
+        buildBashToolDef({ enableToolOutputReferences, statefulSessions, workspaceTools }),
+      ]
     : [readFileDef];
   const candidates = workspaceTools
     ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF, LIST_WORKSPACE_FILES_TOOL_DEF]
