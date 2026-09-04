@@ -36,6 +36,7 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-text-secondary': '0 0 0', // #000000
   'rgb-text-secondary-alt': '0 0 0', // #000000
   'rgb-text-tertiary': '0 0 0', // #000000
+  'rgb-text-muted': '0 0 0', // #000000
   'rgb-text-warning': '122 61 0', // #7a3d00
   'rgb-text-destructive': '161 0 0', // #a10000
   'rgb-shimmer-base': '0 0 0', // #000000, 21:1 on white
@@ -68,6 +69,11 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-surface-hover-alt': '184 184 184', // #b8b8b8
   'rgb-surface-composer-hover': '212 212 212', // #d4d4d4
   'rgb-surface-primary': '255 255 255', // #ffffff
+  /** The chart widget canvas and its edge, which default to `surface-primary`
+   *  and `border-light` elsewhere: here the panel is the plain canvas and its
+   *  outline is pure ink, so a widget stays legible without a grey wash. */
+  'rgb-chart-widget-surface': '255 255 255', // #ffffff
+  'rgb-chart-widget-stroke': '0 0 0', // #000000
   'rgb-surface-primary-alt': '255 255 255', // #ffffff
   'rgb-surface-primary-contrast': '255 255 255', // #ffffff
   'rgb-surface-secondary': '255 255 255', // #ffffff
@@ -163,6 +169,7 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-text-secondary': '255 255 255', // #ffffff
   'rgb-text-secondary-alt': '255 255 255', // #ffffff
   'rgb-text-tertiary': '255 255 255', // #ffffff
+  'rgb-text-muted': '255 255 255', // #ffffff
   'rgb-text-warning': '255 201 77', // #ffc94d
   'rgb-text-destructive': '255 143 143', // #ff8f8f
   'rgb-shimmer-base': '255 255 255', // #ffffff, 21:1 on black
@@ -195,6 +202,10 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-surface-hover-alt': '87 87 87', // #575757
   'rgb-surface-composer-hover': '61 61 61', // #3d3d3d
   'rgb-surface-primary': '0 0 0', // #000000
+  /** See the light mode note: the widget takes the plain canvas and a pure-ink
+   *  edge rather than the dimmed panel the standard themes use. */
+  'rgb-chart-widget-surface': '0 0 0', // #000000
+  'rgb-chart-widget-stroke': '255 255 255', // #ffffff
   'rgb-surface-primary-alt': '0 0 0', // #000000
   'rgb-surface-primary-contrast': '0 0 0', // #000000
   'rgb-surface-secondary': '0 0 0', // #000000

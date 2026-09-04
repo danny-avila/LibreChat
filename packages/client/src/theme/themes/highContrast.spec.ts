@@ -40,6 +40,7 @@ const WCAG_NON_TEXT = 3;
  *  carries no state-contrast duty of its own and can afford AAA text. */
 const surfaces: Array<keyof IThemeRGB> = [
   'rgb-surface-primary',
+  'rgb-chart-widget-surface',
   'rgb-surface-primary-alt',
   'rgb-surface-primary-contrast',
   'rgb-surface-secondary',
@@ -71,6 +72,7 @@ const textTokens: Array<keyof IThemeRGB> = [
   'rgb-text-secondary',
   'rgb-text-secondary-alt',
   'rgb-text-tertiary',
+  'rgb-text-muted',
 ];
 
 /** `--surface-code` resolves to `surface-primary-alt` in light mode and
@@ -109,6 +111,7 @@ const borderTokens: Array<keyof IThemeRGB> = [
   'rgb-border-heavy',
   'rgb-border-xheavy',
   'rgb-border-destructive',
+  'rgb-chart-widget-stroke',
   'rgb-ring-primary',
 ];
 
