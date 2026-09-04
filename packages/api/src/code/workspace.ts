@@ -494,6 +494,7 @@ function isValidResult(
     const maxResults = request.maxResults ?? 100;
     if (
       !hasOnlyKeys(value, LIST_RESULT_KEYS) ||
+      typeof value.truncated !== 'boolean' ||
       !Array.isArray(value.paths) ||
       value.paths.length > maxResults
     ) {
