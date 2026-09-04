@@ -27,10 +27,13 @@ describe('shared link limiters', () => {
     process.env = originalEnv;
   });
 
-  const buildApp = (user) => {
+  const buildApp = (user, { trustProxy = false } = {}) => {
     const { createShareLimiters } = require('./shareLimiters');
     const { shareIpLimiter, shareUserLimiter } = createShareLimiters();
     const app = express();
+    if (trustProxy) {
+      app.set('trust proxy', true);
+    }
     app.get(
       '/api/share/:shareId',
       (req, _res, next) => {
@@ -59,8 +62,37 @@ describe('shared link limiters', () => {
       expect.anything(),
       'share_limit',
       expect.objectContaining({ limiter: 'ip', max: 2, windowInMinutes: 1 }),
-      undefined,
+      0,
     );
+  });
+
+  it('keeps an unset violation score from banning shared link viewers', async () => {
+    process.env.SHARE_IP_MAX = '1';
+    delete process.env.SHARE_VIOLATION_SCORE;
+    const app = buildApp({ id: 'user-1' });
+
+    await request(app).get('/api/share/share-1').expect(200);
+    await request(app).get('/api/share/share-1').expect(429);
+
+    expect(mockLogViolation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'share_limit',
+      expect.anything(),
+      0,
+    );
+  });
+
+  it('buckets IPv6 viewers by subnet so address rotation cannot mint a bucket', async () => {
+    process.env.SHARE_IP_MAX = '1';
+    const app = buildApp(undefined, { trustProxy: true });
+
+    const retrieve = (address) =>
+      request(app).get('/api/share/share-1').set('X-Forwarded-For', address);
+
+    expect((await retrieve('2001:db8:1234:5600::1')).status).toBe(200);
+    expect((await retrieve('2001:db8:1234:5622::9')).status).toBe(429);
+    expect((await retrieve('2001:db8:1234:5700::1')).status).toBe(200);
   });
 
   it('rejects an authenticated retrieval flood by user', async () => {

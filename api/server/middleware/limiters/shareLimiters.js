@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = rateLimit;
 const { ViolationTypes } = require('librechat-data-provider');
 const { limiterCache, removePorts } = require('@librechat/api');
 const logViolation = require('~/cache/logViolation');
@@ -8,7 +9,7 @@ const getEnvironmentVariables = () => {
   const SHARE_IP_WINDOW = parseInt(process.env.SHARE_IP_WINDOW) || 1;
   const SHARE_USER_MAX = parseInt(process.env.SHARE_USER_MAX) || 60;
   const SHARE_USER_WINDOW = parseInt(process.env.SHARE_USER_WINDOW) || 1;
-  const SHARE_VIOLATION_SCORE = process.env.SHARE_VIOLATION_SCORE;
+  const SHARE_VIOLATION_SCORE = process.env.SHARE_VIOLATION_SCORE ?? 0;
 
   const shareIpWindowMs = SHARE_IP_WINDOW * 60 * 1000;
   const shareIpMax = SHARE_IP_MAX;
@@ -27,6 +28,15 @@ const getEnvironmentVariables = () => {
     shareUserWindowInMinutes,
     shareViolationScore: SHARE_VIOLATION_SCORE,
   };
+};
+
+/**
+ * Groups IPv6 clients by subnet so an address rotation cannot mint a fresh
+ * bucket; this limiter is the only bound on anonymous shared-link retrieval.
+ */
+const shareIpKey = (req) => {
+  const address = removePorts(req);
+  return address == null ? address : ipKeyGenerator(address);
 };
 
 const createShareHandler = (ip = true) => {
@@ -64,7 +74,7 @@ const createShareLimiters = () => {
     windowMs: shareIpWindowMs,
     max: shareIpMax,
     handler: createShareHandler(),
-    keyGenerator: removePorts,
+    keyGenerator: shareIpKey,
     store: limiterCache('share_ip_limiter'),
   };
   const userLimiterOptions = {

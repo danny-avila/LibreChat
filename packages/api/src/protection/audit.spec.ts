@@ -145,6 +145,37 @@ describe('audit finding aggregation', () => {
     ]);
   });
 
+  it('keeps rules whose ids and labels differ only by spacing separate', async () => {
+    const preflight = createShareContentPreflight({
+      messages: {
+        pii: {
+          action: 'audit',
+          starterPatterns: [],
+          customPatterns: [
+            { id: 'a', label: 'b c', regex: 'ALPHA' },
+            { id: 'a b', label: 'c', regex: 'BETA' },
+          ],
+        },
+      },
+    });
+
+    await preflight?.({
+      title: 'Safe title',
+      messages: [
+        { role: 'user', isCreatedByUser: true, text: 'ALPHA' },
+        { role: 'user', isCreatedByUser: true, text: 'BETA' },
+      ],
+      shareId: 'share-1',
+    });
+
+    expect(auditCalls().map(([, metadata]) => metadata)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ruleId: 'a', label: 'b c', occurrences: 1 }),
+        expect.objectContaining({ ruleId: 'a b', label: 'c', occurrences: 1 }),
+      ]),
+    );
+  });
+
   it('reports findings immediately outside an aggregation scope', () => {
     const fragment = {
       id: 'message.text',

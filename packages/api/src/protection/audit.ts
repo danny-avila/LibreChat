@@ -32,15 +32,17 @@ const MAX_AGGREGATED_AUDIT_FINDINGS = 1_024;
 
 const auditAggregationStorage = new AsyncLocalStorage<AuditFindingAggregation>();
 
+/** Serialized rather than joined: configured rule ids and labels may contain any character. */
 function aggregationKey(metadata: AuditFindingMetadata): string {
-  return [
+  return JSON.stringify([
+    metadata.action,
     metadata.detectorId,
     metadata.ruleId,
     metadata.label,
     metadata.source,
     metadata.field,
     metadata.provenance,
-  ].join(' ');
+  ]);
 }
 
 function emitAuditFinding(metadata: AuditFindingMetadata, occurrences: number): void {
