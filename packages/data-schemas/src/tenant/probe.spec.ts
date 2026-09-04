@@ -104,6 +104,10 @@ describe('the probe itself', () => {
     ['tenantId nested under an unrelated field', { meta: { tenantId: TENANT } }],
     ['$nor, which negates its branches', { $nor: [{ tenantId: TENANT }] }],
     ['an $or branch that matches other tenants', { $or: [{ tenantId: TENANT }, { name: 'x' }] }],
+    ['$ne, which selects every other tenant', { tenantId: { $ne: TENANT } }],
+    ['a multi-valued $in', { tenantId: { $in: [TENANT, 'tenant-b'] } }],
+    ['a regex over tenants', { tenantId: { $regex: '.*' } }],
+    ['$exists: true, which matches any tenant', { tenantId: { $exists: true } }],
   ])('does not accept %s as scoping', async (_label, filter) => {
     const records = await probe.record(() =>
       asTenant(async () => {
@@ -124,6 +128,8 @@ describe('the probe itself', () => {
     ],
     ['one $and branch constrained', { $and: [{ tenantId: TENANT }, { name: 'x' }] }],
     ['an explicitly unset tenant', { tenantId: { $exists: false } }],
+    ['a singleton $in', { tenantId: { $in: [TENANT] } }],
+    ['an explicit $eq', { tenantId: { $eq: TENANT } }],
   ])('accepts %s as scoping', async (_label, filter) => {
     const records = await probe.record(() =>
       asTenant(async () => {
@@ -160,6 +166,56 @@ describe('the probe itself', () => {
     expect(unscoped(matched)).toHaveLength(0);
   });
 
+  /**
+   * A `$lookup` reads its foreign collection inside the *outer* command, so the
+   * listener never sees a separate predicate for it. An outer `$match` alone
+   * therefore proves nothing about the joined read, and the probe fails closed.
+   */
+  it('does not accept an outer $match as scoping a joined collection', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .aggregate([
+            { $match: { tenantId: TENANT } },
+            {
+              $lookup: {
+                from: Part.collection.collectionName,
+                localField: 'parts',
+                foreignField: '_id',
+                as: 'joined',
+              },
+            },
+          ])
+          .toArray();
+      }),
+    );
+
+    expect(unscoped(records)).toHaveLength(1);
+  });
+
+  it('accepts a $lookup whose sub-pipeline constrains the tenant', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .aggregate([
+            { $match: { tenantId: TENANT } },
+            {
+              $lookup: {
+                from: Part.collection.collectionName,
+                pipeline: [{ $match: { tenantId: TENANT } }],
+                as: 'joined',
+              },
+            },
+          ])
+          .toArray();
+      }),
+    );
+
+    expect(unscoped(records)).toHaveLength(0);
+  });
+
   it('reports nothing for collections it does not watch', async () => {
     const records = await probe.record(() =>
       asTenant(async () => {
@@ -191,6 +247,24 @@ describe('query paths reach the wire scoped', () => {
 
     expect(records.length).toBeGreaterThan(0);
     expect(describeLeaks(records)).toBe('');
+  });
+});
+
+/**
+ * `estimatedDocumentCount()` reads collection metadata and takes no filter, so
+ * no binding can scope it — it is a genuine global side channel, currently used
+ * once at `models/plugins/mongoMeili.ts` for a sync progress log on a boot path.
+ * Pinned so it stays visible; making scoped callers fail closed is a runtime
+ * change and belongs in its own PR.
+ */
+describe('estimatedDocumentCount is a known unscoped side channel', () => {
+  it('reaches the wire with no tenant predicate', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => void (await Widget.estimatedDocumentCount())),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0].scoped).toBe(false);
   });
 });
 
