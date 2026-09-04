@@ -1,12 +1,16 @@
 const mongoose = require('mongoose');
+const express = require('express');
+const request = require('supertest');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { agentSchema, aclEntrySchema, fileSchema, userSchema } = require('@librechat/data-schemas');
+const { createModels, tenantStorage } = require('@librechat/data-schemas');
 const {
   Tools,
   SkillsScope,
   FileSources,
+  Permissions,
   PermissionBits,
+  PermissionTypes,
   PrincipalModel,
   PrincipalType,
   ResourceType,
@@ -98,9 +102,14 @@ const {
 
 const {
   CONTENT_TRAVERSAL_MAX_DEPTH,
+  createAgentManagementAuth,
+  createAgentManagementCreateHandler,
+  createAgentManagementReadHandlers,
   mergeDeploymentSkillIds,
   refreshS3Url,
 } = require('@librechat/api');
+const { grantPermission } = require('~/server/services/PermissionService');
+const db = require('~/models');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -153,12 +162,10 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     mongoServer = await MongoMemoryServer.create();
     const mongoUri = mongoServer.getUri();
     await mongoose.connect(mongoUri);
-    Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
-    AclEntry = mongoose.models.AclEntry || mongoose.model('AclEntry', aclEntrySchema);
-    User = mongoose.models.User || mongoose.model('User', userSchema);
-    // Register File so orphan-pruning tests (and the tool_resources validation
-    // test, which now needs real File docs for its ids) have a working model.
-    mongoose.models.File || mongoose.model('File', fileSchema);
+    createModels(mongoose);
+    Agent = mongoose.models.Agent;
+    AclEntry = mongoose.models.AclEntry;
+    User = mongoose.models.User;
   }, 20000);
 
   afterAll(async () => {
@@ -371,6 +378,165 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb).toBeDefined();
       expect(agentInDb.name).toBe('Test Agent');
       expect(agentInDb.author.toString()).toBe(mockReq.user.id);
+    });
+
+    test('management creation can be read back through the authenticated management API', async () => {
+      const tenantId = `tenant-${nanoid(8)}`;
+      const clientId = `client-${nanoid(8)}`;
+      const principal = await tenantStorage.run({ tenantId }, () => createOwner());
+      const userId = principal._id.toString();
+      const getRoleByName = jest.fn().mockResolvedValue({
+        permissions: {
+          [PermissionTypes.AGENTS]: {
+            [Permissions.USE]: true,
+            [Permissions.CREATE]: true,
+          },
+        },
+      });
+      grantPermission.mockImplementation(
+        async ({ principalType, principalId, resourceType, resourceId, grantedBy }) =>
+          AclEntry.create({
+            principalType,
+            principalModel: PrincipalModel.USER,
+            principalId,
+            resourceType,
+            resourceId,
+            permBits: OWNER_PERMISSION_BITS,
+            grantedBy,
+            grantedAt: new Date(),
+          }),
+      );
+      const auth = createAgentManagementAuth({
+        findUser: db.findUser,
+        isPrincipalActive: jest.fn().mockResolvedValue(true),
+        getAppConfig: jest.fn().mockResolvedValue({
+          endpoints: {
+            agents: {
+              managementApi: {
+                auth: {
+                  oidc: {
+                    enabled: true,
+                    audience: 'agent-management',
+                    issuer: 'https://issuer.example.com/',
+                  },
+                  clients: [{ clientId, tenantId, userId }],
+                },
+              },
+            },
+          },
+        }),
+        verifyAccessToken: jest.fn().mockResolvedValue({
+          azp: clientId,
+          sub: `${clientId}@clients`,
+          exp: Math.floor(Date.now() / 1000) + 300,
+        }),
+      });
+      const create = createAgentManagementCreateHandler({
+        getRoleByName,
+        createAgent: createAgentHandler,
+      });
+      const reads = createAgentManagementReadHandlers({
+        getRoleByName,
+        getAgentWithVersionCount: db.getAgentWithVersionCount,
+        getAgentManagementListByAccess: db.getAgentManagementListByAccess,
+        findAccessibleResources: async ({ userId: accessibleUserId, resourceType }) =>
+          AclEntry.distinct('resourceId', {
+            principalId: accessibleUserId,
+            resourceType,
+            permBits: { $bitsAllSet: PermissionBits.EDIT },
+          }),
+        checkPermission: async ({ userId: accessibleUserId, resourceType, resourceId }) =>
+          (await AclEntry.exists({
+            principalId: accessibleUserId,
+            resourceType,
+            resourceId,
+            permBits: { $bitsAllSet: PermissionBits.EDIT },
+          })) != null,
+        hasCapability: jest.fn().mockResolvedValue(false),
+      });
+      const app = express();
+      app.use(express.json());
+      app.use('/api/agents/v1/agents', auth);
+      app.post('/api/agents/v1/agents', (req, res) => {
+        req.config = {};
+        return create(req, res);
+      });
+      app.get('/api/agents/v1/agents', reads.list);
+      app.get('/api/agents/v1/agents/:id', reads.get);
+
+      const createdResponse = await request(app)
+        .post('/api/agents/v1/agents')
+        .set('Authorization', 'Bearer valid-token')
+        .send({
+          name: 'Managed Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+        });
+
+      expect(createdResponse.status).toBe(201);
+      expect(createdResponse.body).toEqual(
+        expect.objectContaining({
+          id: expect.stringMatching(/^agent_/),
+          name: 'Managed Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          version: 1,
+        }),
+      );
+      expect(createdResponse.body).not.toHaveProperty('_id');
+      expect(createdResponse.body).not.toHaveProperty('author');
+      expect(createdResponse.body).not.toHaveProperty('tenantId');
+
+      const [retrievedResponse, listedResponse] = await Promise.all([
+        request(app)
+          .get(`/api/agents/v1/agents/${createdResponse.body.id}`)
+          .set('Authorization', 'Bearer valid-token'),
+        request(app).get('/api/agents/v1/agents').set('Authorization', 'Bearer valid-token'),
+      ]);
+
+      expect(retrievedResponse.status).toBe(200);
+      expect(retrievedResponse.body).toEqual(createdResponse.body);
+      expect(listedResponse.status).toBe(200);
+      expect(listedResponse.body.data).toEqual([createdResponse.body]);
+
+      const created = await tenantStorage.run({ tenantId }, () =>
+        Agent.findOne({ id: createdResponse.body.id }).lean(),
+      );
+      expect(created.tenantId).toBe(tenantId);
+      expect(created.author.toString()).toBe(userId);
+      expect(grantPermission).toHaveBeenCalledWith(
+        expect.objectContaining({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.AGENT,
+        }),
+      );
+    });
+
+    test('management creation rejects caller-controlled ownership', async () => {
+      const handler = createAgentManagementCreateHandler({
+        getRoleByName: jest.fn().mockResolvedValue({
+          permissions: {
+            [PermissionTypes.AGENTS]: {
+              [Permissions.USE]: true,
+              [Permissions.CREATE]: true,
+            },
+          },
+        }),
+        createAgent: createAgentHandler,
+      });
+      mockReq.user.tenantId = 'tenant-a';
+      mockReq.body = {
+        name: 'Managed Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId().toString(),
+      };
+
+      await handler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(await Agent.countDocuments()).toBe(0);
     });
 
     test('should reject creation with unauthorized fields (mass assignment protection)', async () => {
