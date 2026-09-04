@@ -3185,6 +3185,10 @@ export enum ViolationTypes {
    * Registration violations.
    */
   REGISTRATIONS = 'registrations',
+  /**
+   * Shared link retrieval limit violations.
+   */
+  SHARE_LIMIT = 'share_limit',
 }
 
 /**
