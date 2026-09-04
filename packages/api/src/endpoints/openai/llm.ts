@@ -130,6 +130,24 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
  */
 const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
 
+/**
+ * Models that take the Responses API for every turn, not only reasoning ones.
+ * OpenAI's guidance for GPT-6 Astra is to use Responses, and tool calls require
+ * it outright.
+ *
+ * Decided here rather than in the agents SDK at invocation time: the max-tokens
+ * field below is shaped from `useResponsesApi`, so a later switch would send
+ * `max_completion_tokens` to an endpoint expecting `max_output_tokens`. Config
+ * time is also the only place that knows the model before Azure replaces it
+ * with a deployment name.
+ * @see https://developers.openai.com/api/docs/guides/latest-model
+ */
+const responsesApiPreferredPattern = /^gpt-6-astra(?:-|$)/i;
+
+function prefersResponsesApi(model?: string): boolean {
+  return typeof model === 'string' && responsesApiPreferredPattern.test(model);
+}
+
 function requiresResponsesApiForReasoning({
   model,
   reasoningEffort,
@@ -856,6 +874,22 @@ export function getOpenAILLMConfig({
     llmConfig.useResponsesApi == null &&
     !responsesApiOptedOut &&
     requiresResponsesApiForReasoning({ model: llmConfig.model, reasoningEffort })
+  ) {
+    llmConfig.useResponsesApi = true;
+  }
+
+  /**
+   * Route GPT-6 Astra to the Responses API for every turn. Unlike the GPT-5.6
+   * rule above this does not depend on reasoning params: Astra serves tool calls
+   * only from Responses, and OpenAI recommends it generally.
+   */
+  if (
+    !useOpenRouter &&
+    isOpenAIEndpoint(endpoint) &&
+    isCanonicalOpenAIBaseURL(baseURL) &&
+    llmConfig.useResponsesApi == null &&
+    !responsesApiOptedOut &&
+    prefersResponsesApi(llmConfig.model)
   ) {
     llmConfig.useResponsesApi = true;
   }

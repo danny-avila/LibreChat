@@ -709,6 +709,60 @@ describe('getOpenAILLMConfig', () => {
     });
   });
 
+  describe('GPT-6 Astra Responses API routing', () => {
+    const astraConfig = (overrides: Record<string, unknown> = {}) =>
+      getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-6-astra' },
+        ...overrides,
+      });
+
+    it('routes every Astra turn to the Responses API, not only reasoning ones', () => {
+      expect(astraConfig().llmConfig).toHaveProperty('useResponsesApi', true);
+    });
+
+    /**
+     * The reason routing is decided here rather than at invocation time: the
+     * max-tokens field is shaped from `useResponsesApi`, so switching APIs later
+     * would send `max_completion_tokens` to an endpoint expecting
+     * `max_output_tokens`.
+     */
+    it('shapes max tokens for the API it actually uses', () => {
+      const result = astraConfig({
+        modelOptions: { model: 'gpt-6-astra', max_tokens: 4096 },
+      });
+      const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+      expect(kwargs).not.toHaveProperty('max_completion_tokens');
+      expect(kwargs.max_output_tokens ?? result.llmConfig.maxTokens).toBeDefined();
+    });
+
+    it('respects an explicit opt-out', () => {
+      expect(astraConfig({ dropParams: ['useResponsesApi'] }).llmConfig).not.toHaveProperty(
+        'useResponsesApi',
+        true,
+      );
+    });
+
+    it('leaves a custom gateway on its configured path', () => {
+      expect(astraConfig({ baseURL: 'https://gateway.internal/v1' }).llmConfig).not.toHaveProperty(
+        'useResponsesApi',
+        true,
+      );
+    });
+
+    it('does not change routing for other models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-5.5' },
+      });
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi', true);
+    });
+  });
+
   describe('First-party endpoint declaration', () => {
     /**
      * The agents SDK gates its model-specific request constraints on this flag
