@@ -1,4 +1,6 @@
 export * from './app';
+export * from './acl/accessControlService';
+export * from './acl/insightsPermissions';
 export * from './credentials';
 /* Artifacts */
 export * from './artifacts';

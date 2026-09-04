@@ -4,16 +4,15 @@
 
 const mongoose = require('mongoose');
 const { logger, getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
-const {
-  ResourceType,
-  PrincipalType,
-  PermissionBits,
-  SystemRoles,
-} = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
 const {
   enrichRemoteAgentPrincipals,
   backfillRemoteAgentPermissions,
-  buildAuditContext,
+  auditInsightsPermissionChanges,
+  getInsightsPrincipalState,
+  maskAgentInsightsBit,
+  sanitizeInsightsPermissionPrincipals,
+  validateInsightsPermissionUpdates,
 } = require('@librechat/api');
 const {
   bulkUpdateResourcePermissions,
@@ -38,89 +37,6 @@ const matchesCurrentTenant = (principal, tenantId) => {
   }
   return principal?.tenantId === tenantId;
 };
-
-const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
-
-const maskInsightsBit = (req, resourceType, permBits) =>
-  resourceType === ResourceType.AGENT && req.user?.role !== SystemRoles.ADMIN
-    ? permBits & ~PermissionBits.VIEW_INSIGHTS
-    : permBits;
-
-async function auditInsightsChanges(req, resourceId, changes) {
-  if (changes.length === 0) {
-    return;
-  }
-  const failClosed = process.env.AUDIT_LOG_FAIL_CLOSED === 'true';
-  let agent;
-  try {
-    agent = await db.getAgent(
-      {
-        _id: resourceId,
-        ...(req.user.tenantId ? { tenantId: req.user.tenantId } : { tenantId: { $exists: false } }),
-      },
-      '_id id name',
-    );
-    if (!agent) {
-      throw new Error('Agent not found for Insights permission audit');
-    }
-  } catch (error) {
-    if (!failClosed) {
-      logger.error('[PermissionsController] Insights permission audit target lookup failed', error);
-      return;
-    }
-    await restoreInsightsPermissionChanges({
-      resourceType: ResourceType.AGENT,
-      resourceId,
-      changes,
-    }).catch((restoreError) =>
-      logger.error('[PermissionsController] Insights permission rollback failed', restoreError),
-    );
-    if (error && typeof error === 'object') {
-      error.statusCode = 500;
-    }
-    throw error;
-  }
-
-  const actorId = req.user._id?.toString() ?? req.user.id;
-  const actorName = req.user.name || req.user.username || req.user.email || actorId;
-  for (let index = 0; index < changes.length; index++) {
-    const change = changes[index];
-    const input = {
-      action:
-        change.action === 'assigned'
-          ? 'permission.insights_assigned'
-          : 'permission.insights_removed',
-      outcome: 'success',
-      severity: 'warning',
-      actor: { type: 'user', id: actorId, name: actorName },
-      target: { type: ResourceType.AGENT, id: agent.id, name: agent.name || agent.id },
-      metadata: {
-        principalType: change.principal.type,
-        principalId: change.principal.id?.toString() ?? '',
-      },
-      context: buildAuditContext(req),
-      tenantId: req.user.tenantId,
-    };
-    try {
-      await db.recordAuditEntry(input, { failClosed });
-    } catch (error) {
-      if (failClosed) {
-        await restoreInsightsPermissionChanges({
-          resourceType: ResourceType.AGENT,
-          resourceId,
-          changes: changes.slice(index),
-        }).catch((restoreError) =>
-          logger.error('[PermissionsController] Insights permission rollback failed', restoreError),
-        );
-        if (error && typeof error === 'object') {
-          error.statusCode = 500;
-        }
-        throw error;
-      }
-      logger.error('[PermissionsController] Insights permission audit failed', error);
-    }
-  }
-}
 
 /**
  * Generic controller for resource permission endpoints
@@ -160,33 +76,13 @@ const updateResourcePermissions = async (req, res) => {
     const { id: userId } = req.user;
     const updatedList = Array.isArray(updated) ? updated : [];
     const removedList = Array.isArray(removed) ? removed : [];
-    const includesInsightsMutation = updatedList.some(
-      (principal) => principal && hasOwn(principal, 'viewInsights'),
-    );
-    const hasInvalidInsightsValue = updatedList.some(
-      (principal) =>
-        principal &&
-        hasOwn(principal, 'viewInsights') &&
-        typeof principal.viewInsights !== 'boolean',
-    );
-    if (resourceType === ResourceType.AGENT && hasInvalidInsightsValue) {
-      return res.status(400).json({ error: 'viewInsights must be a boolean when provided' });
-    }
-    if (
-      resourceType === ResourceType.AGENT &&
-      includesInsightsMutation &&
-      req.user.role !== SystemRoles.ADMIN
-    ) {
-      return res.status(403).json({ error: 'Only administrators can change Insights access' });
-    }
-    if (
-      resourceType === ResourceType.AGENT &&
-      updatedList.some(
-        (principal) =>
-          principal?.type === PrincipalType.PUBLIC && hasOwn(principal, 'viewInsights'),
-      )
-    ) {
-      return res.status(400).json({ error: 'Public principals cannot receive Insights access' });
+    const insightsValidation = validateInsightsPermissionUpdates({
+      resourceType,
+      userRole: req.user.role,
+      updatedPrincipals: updatedList,
+    });
+    if (insightsValidation) {
+      return res.status(insightsValidation.status).json({ error: insightsValidation.error });
     }
 
     // Prepare principals for the service call
@@ -281,7 +177,23 @@ const updateResourcePermissions = async (req, res) => {
       grantedBy: userId,
     });
 
-    await auditInsightsChanges(req, resourceId, results.insightsChanges ?? []);
+    await auditInsightsPermissionChanges({
+      req,
+      resourceId,
+      changes: results.insightsChanges ?? [],
+      failClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
+      deps: {
+        getAgent: db.getAgent,
+        recordAuditEntry: db.recordAuditEntry,
+        restoreInsightsPermissionChanges: (changes) =>
+          restoreInsightsPermissionChanges({
+            resourceType: ResourceType.AGENT,
+            resourceId,
+            changes,
+          }),
+        logger,
+      },
+    });
 
     if (resourceType === ResourceType.CODE_ENVIRONMENT) {
       await invalidateCodeEnvironmentConfigCache(req.user.tenantId).catch((error) => {
@@ -304,10 +216,11 @@ const updateResourcePermissions = async (req, res) => {
     }
 
     /** @type {TUpdateResourcePermissionsResponse} */
-    const responsePrincipals =
-      resourceType === ResourceType.AGENT && req.user.role !== SystemRoles.ADMIN
-        ? results.granted.map(({ viewInsights: _protected, ...principal }) => principal)
-        : results.granted;
+    const responsePrincipals = sanitizeInsightsPermissionPrincipals({
+      resourceType,
+      userRole: req.user.role,
+      principals: results.granted,
+    });
     const response = {
       message: 'Permissions updated successfully',
       results: {
@@ -411,13 +324,12 @@ const getResourcePermissions = async (req, res) => {
           source: !result.userInfo._id ? 'entra' : 'local',
           idOnTheSource: result.userInfo.idOnTheSource || result.userInfo._id.toString(),
           accessRoleId: result.accessRoleId,
-          isAdmin: result.userInfo.role === SystemRoles.ADMIN,
-          ...(req.user.role === SystemRoles.ADMIN
-            ? {
-                viewInsights:
-                  (result.permBits & PermissionBits.VIEW_INSIGHTS) === PermissionBits.VIEW_INSIGHTS,
-              }
-            : {}),
+          ...getInsightsPrincipalState({
+            principalType: PrincipalType.USER,
+            principalRole: result.userInfo.role,
+            requesterRole: req.user.role,
+            permBits: result.permBits,
+          }),
         });
       } else if (
         result.principalType === PrincipalType.GROUP &&
@@ -434,12 +346,11 @@ const getResourcePermissions = async (req, res) => {
           source: result.groupInfo.source || 'local',
           idOnTheSource: result.groupInfo.idOnTheSource || result.groupInfo._id.toString(),
           accessRoleId: result.accessRoleId,
-          ...(req.user.role === SystemRoles.ADMIN
-            ? {
-                viewInsights:
-                  (result.permBits & PermissionBits.VIEW_INSIGHTS) === PermissionBits.VIEW_INSIGHTS,
-              }
-            : {}),
+          ...getInsightsPrincipalState({
+            principalType: PrincipalType.GROUP,
+            requesterRole: req.user.role,
+            permBits: result.permBits,
+          }),
         });
       } else if (result.principalType === PrincipalType.ROLE) {
         principals.push({
@@ -450,13 +361,12 @@ const getResourcePermissions = async (req, res) => {
           name: result.principalId,
           description: `System role: ${result.principalId}`,
           accessRoleId: result.accessRoleId,
-          isAdmin: result.principalId === SystemRoles.ADMIN,
-          ...(req.user.role === SystemRoles.ADMIN
-            ? {
-                viewInsights:
-                  (result.permBits & PermissionBits.VIEW_INSIGHTS) === PermissionBits.VIEW_INSIGHTS,
-              }
-            : {}),
+          ...getInsightsPrincipalState({
+            principalType: PrincipalType.ROLE,
+            principalRole: result.principalId,
+            requesterRole: req.user.role,
+            permBits: result.permBits,
+          }),
         });
       }
     }
@@ -541,7 +451,11 @@ const getUserEffectivePermissions = async (req, res) => {
     });
 
     res.status(200).json({
-      permissionBits: maskInsightsBit(req, resourceType, permissionBits),
+      permissionBits: maskAgentInsightsBit({
+        resourceType,
+        userRole: req.user.role,
+        permBits: permissionBits,
+      }),
     });
   } catch (error) {
     logger.error('Error getting user effective permissions:', error);
@@ -706,7 +620,11 @@ const getAllEffectivePermissions = async (req, res) => {
     // Convert Map to plain object for JSON response
     const result = {};
     for (const [resourceId, permBits] of permissionsMap) {
-      result[resourceId] = maskInsightsBit(req, resourceType, permBits);
+      result[resourceId] = maskAgentInsightsBit({
+        resourceType,
+        userRole: req.user.role,
+        permBits,
+      });
     }
 
     res.status(200).json(result);

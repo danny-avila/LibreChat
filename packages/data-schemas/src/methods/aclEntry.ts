@@ -7,7 +7,7 @@ import type {
   DeleteResult,
   Model,
 } from 'mongoose';
-import type { AclEntry, IAclEntry } from '~/types';
+import type { IAclEntry } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { MAX_PERM_BITS } from '~/common/permissions';
 
@@ -147,7 +147,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     options?: { session?: ClientSession },
   ) => Promise<DeleteResult>;
   bulkWriteAclEntries: (
-    ops: AnyBulkWriteOperation<AclEntry>[],
+    ops: AnyBulkWriteOperation[],
     options?: { session?: ClientSession },
   ) => Promise<import('mongodb').BulkWriteResult>;
   findPublicResourceIds: (
@@ -549,7 +549,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
    * @param options - Optional query options (e.g., { session })
    */
   async function bulkWriteAclEntries(
-    ops: AnyBulkWriteOperation<AclEntry>[],
+    ops: AnyBulkWriteOperation[],
     options?: { session?: ClientSession },
   ): Promise<import('mongodb').BulkWriteResult> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;

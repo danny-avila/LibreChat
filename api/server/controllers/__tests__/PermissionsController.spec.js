@@ -16,11 +16,14 @@ jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
 }));
 
-jest.mock('@librechat/api', () => ({
-  enrichRemoteAgentPrincipals: jest.fn(),
-  backfillRemoteAgentPermissions: jest.fn(),
-  buildAuditContext: jest.fn(() => ({ ip: '127.0.0.1' })),
-}));
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    ...actual,
+    enrichRemoteAgentPrincipals: jest.fn(),
+    backfillRemoteAgentPermissions: jest.fn(),
+  };
+});
 
 const mockInvalidateCodeEnvironmentConfigCache = jest.fn().mockResolvedValue(undefined);
 jest.mock('~/server/services/Config', () => ({

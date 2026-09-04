@@ -23,6 +23,7 @@ import type {
   TInsightsUser,
 } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
+import { clearAgentFilters, shouldRecoverAgentFilters } from './agentFilters';
 import { useGetStartupConfig, useInsightsQuery } from '~/data-provider';
 import { useAuthContext, useDocumentTitle, useLocalize } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
@@ -598,6 +599,8 @@ export default function InsightsView() {
     retry: false,
   });
   const data = insights.data;
+  const insightsStatus = responseStatus(insights.error);
+  const isRecoveringAgentFilters = shouldRecoverAgentFilters(insightsStatus, selectedAgentIds);
   const agentItems = useMemo(() => {
     if (!data) {
       return [];
@@ -642,6 +645,14 @@ export default function InsightsView() {
     }, searchDelayMs);
     return () => window.clearTimeout(timeout);
   }, [search, searchInput]);
+
+  useEffect(() => {
+    if (!isRecoveringAgentFilters) {
+      return;
+    }
+    setUrlSearchParams(clearAgentFilters(urlSearchParams), { replace: true });
+    setPage(1);
+  }, [isRecoveringAgentFilters, setUrlSearchParams, urlSearchParams]);
 
   const kpiCards = useMemo<KpiCardData[]>(() => {
     if (!data) {
@@ -707,7 +718,10 @@ export default function InsightsView() {
     setPage(1);
   };
 
-  if (configLoading || (insightsFeatureEnabled && insights.isLoading)) {
+  if (
+    configLoading ||
+    (insightsFeatureEnabled && (insights.isLoading || isRecoveringAgentFilters))
+  ) {
     return (
       <div className="h-full w-full bg-presentation p-4">
         <LoadingState message={localize('com_insights_loading')} />
@@ -717,8 +731,6 @@ export default function InsightsView() {
   if (!insightsFeatureEnabled) {
     return <Navigate to="/c/new" replace />;
   }
-
-  const insightsStatus = responseStatus(insights.error);
 
   return (
     <div className="flex h-full w-full min-w-0 flex-col bg-presentation text-text-primary">
