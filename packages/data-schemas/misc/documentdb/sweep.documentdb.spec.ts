@@ -260,6 +260,12 @@ const ARRAY_PARAMS =
 function valueFor(name: string): unknown {
   if (name === 'mongoose') return mongoose;
   if (name === 'kind') return 'manual';
+  /** Typed-criteria parameters (see `utils/criteria.ts`) are validated
+   * key-by-key and fail closed on anything unrecognized, so a synthesized
+   * string is read as a criteria object and rejected at index '0'. An empty
+   * criteria object is valid and builds an empty filter, which still reaches
+   * the engine — the point of the sweep. */
+  if (/^(query|criteria|filter)$/.test(name)) return {};
   if (/pipeline/i.test(name)) return [{ $match: { _id: objectId() } }];
   if (OBJECT_ID_PARAMS.test(name)) return objectId();
   if (ARRAY_PARAMS.test(name)) return [`sweep-${name}-${runId}`];
