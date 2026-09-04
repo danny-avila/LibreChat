@@ -1047,6 +1047,15 @@ export function getOpenAILLMConfig({
 
   constructAzureResponsesApi();
 
+  /**
+   * Azure addresses a deployment, not a model, so `model` becomes the deployment
+   * name. Record what it actually serves first: the agents SDK's model-specific
+   * request constraints cannot recognize an arbitrary deployment alias, and this
+   * is the last point that still knows the real id.
+   */
+  if (llmConfig.firstPartyEndpoint === true && llmConfig.model != null) {
+    llmConfig.servedModel = llmConfig.model;
+  }
   llmConfig.model = updatedAzure.azureOpenAIApiDeploymentName;
   return { llmConfig, tools, azure: updatedAzure };
 }
