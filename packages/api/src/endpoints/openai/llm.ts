@@ -130,6 +130,24 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
  */
 const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
 
+/**
+ * Models that take the Responses API for every turn, not only reasoning ones.
+ * OpenAI's guidance for GPT-6 Astra is to use Responses, and tool calls require
+ * it outright.
+ *
+ * Decided here rather than in the agents SDK at invocation time: the max-tokens
+ * field below is shaped from `useResponsesApi`, so a later switch would send
+ * `max_completion_tokens` to an endpoint expecting `max_output_tokens`. Config
+ * time is also the only place that knows the model before Azure replaces it
+ * with a deployment name.
+ * @see https://developers.openai.com/api/docs/guides/latest-model
+ */
+const responsesApiPreferredPattern = /^gpt-6-astra(?:-|$)/i;
+
+function prefersResponsesApi(model?: string): boolean {
+  return typeof model === 'string' && responsesApiPreferredPattern.test(model);
+}
+
 function requiresResponsesApiForReasoning({
   model,
   reasoningEffort,
@@ -848,6 +866,14 @@ export function getOpenAILLMConfig({
   const responsesApiOptedOut =
     dropParams != null &&
     (dropParams.includes('reasoning_effort') || dropParams.includes('useResponsesApi'));
+  /**
+   * The GPT-5.6 default above is reasoning-driven, so dropping `reasoning_effort`
+   * removes its reason to route. Astra's is not: it takes Responses for every
+   * turn, and a drop rule clearing an unsupported stored effort must not also
+   * disable its routing. Only an explicit `useResponsesApi` drop does that.
+   */
+  const responsesApiExplicitlyOptedOut =
+    dropParams != null && dropParams.includes('useResponsesApi');
   if (
     !useOpenRouter &&
     endpoint === EModelEndpoint.openAI &&
@@ -858,6 +884,38 @@ export function getOpenAILLMConfig({
     requiresResponsesApiForReasoning({ model: llmConfig.model, reasoningEffort })
   ) {
     llmConfig.useResponsesApi = true;
+  }
+
+  /**
+   * Route GPT-6 Astra to the Responses API for every turn. Unlike the GPT-5.6
+   * rule above this does not depend on reasoning params: Astra serves tool calls
+   * only from Responses, and OpenAI recommends it generally.
+   */
+  if (
+    !useOpenRouter &&
+    endpoint === EModelEndpoint.openAI &&
+    isCanonicalOpenAIBaseURL(baseURL) &&
+    llmConfig.useResponsesApi == null &&
+    !responsesApiExplicitlyOptedOut &&
+    prefersResponsesApi(llmConfig.model)
+  ) {
+    llmConfig.useResponsesApi = true;
+  }
+
+  /**
+   * Declare the first-party surface for the agents SDK's model-specific request
+   * constraints. Computed here, from the same checks the Responses default
+   * above uses, so the decision lives in one place: OpenRouter and custom
+   * gateways route through endpoints whose contract is not OpenAI's, and only
+   * this layer can tell them apart.
+   *
+   * Scoped to the canonical OpenAI endpoint. Astra is not documented as
+   * available on Azure OpenAI, and Azure's first-party hosts do not satisfy the
+   * OpenAI-host check, so declaring it there would claim a surface this cannot
+   * verify.
+   */
+  if (!useOpenRouter && endpoint === EModelEndpoint.openAI && isCanonicalOpenAIBaseURL(baseURL)) {
+    llmConfig.firstPartyEndpoint = true;
   }
 
   if (!useOpenRouter) {

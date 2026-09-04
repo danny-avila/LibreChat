@@ -64,6 +64,7 @@ const openAIModels = {
   'gpt-5.6': 1050000,
   'gpt-5.6-terra': 1050000,
   'gpt-5.6-luna': 1050000,
+  'gpt-6-astra': 1050000, // >272K input prices at the long-context tier (2x input/cache, 1.5x output)
   'chat-latest': 400000,
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
@@ -508,6 +509,7 @@ export const modelMaxOutputs = {
   'gpt-5.6': 128000,
   'gpt-5.6-terra': 128000,
   'gpt-5.6-luna': 128000,
+  'gpt-6-astra': 128000,
   'chat-latest': 128000,
   'gpt-5-mini': 128000,
   'gpt-5-nano': 128000,
