@@ -53,13 +53,10 @@ function makeRequest(overrides: Partial<Request> = {}): Request {
 }
 
 function makeResponse(): Response {
-  const response = {
-    status: jest.fn(),
-    json: jest.fn(),
-  };
-  response.status.mockReturnValue(response);
-  response.json.mockReturnValue(response);
-  return response as unknown as Response;
+  const response = {} as Response;
+  response.status = jest.fn(() => response);
+  response.json = jest.fn(() => response);
+  return response;
 }
 
 function makeDeps(overrides: Partial<AgentManagementUpdateDeps> = {}): AgentManagementUpdateDeps {
@@ -71,7 +68,7 @@ function makeDeps(overrides: Partial<AgentManagementUpdateDeps> = {}): AgentMana
           [Permissions.CREATE]: true,
         },
       },
-    } as unknown as IRole),
+    } as IRole),
     getAgentWithVersionCount: jest.fn().mockResolvedValue(existingAgent),
     checkPermission: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(false),
