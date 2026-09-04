@@ -709,6 +709,53 @@ describe('getOpenAILLMConfig', () => {
     });
   });
 
+  describe('First-party endpoint declaration', () => {
+    /**
+     * The agents SDK gates its model-specific request constraints on this flag
+     * and defaults them off, rather than inferring the endpoint from a base
+     * URL. Only this layer can tell a faithful first-party route from a
+     * gateway, so the decision is made here and declared downstream.
+     */
+    const configFor = (overrides: Record<string, unknown> = {}) =>
+      getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-6-astra' },
+        ...overrides,
+      });
+
+    it('declares the first-party endpoint for canonical OpenAI', () => {
+      expect(configFor().llmConfig).toHaveProperty('firstPartyEndpoint', true);
+    });
+
+    it('declares it for an explicit api.openai.com base URL', () => {
+      expect(configFor({ baseURL: 'https://api.openai.com/v1' }).llmConfig).toHaveProperty(
+        'firstPartyEndpoint',
+        true,
+      );
+    });
+
+    it('declares it for Azure OpenAI', () => {
+      expect(configFor({ endpoint: EModelEndpoint.azureOpenAI }).llmConfig).toHaveProperty(
+        'firstPartyEndpoint',
+        true,
+      );
+    });
+
+    it('does not declare it for a custom gateway base URL', () => {
+      expect(configFor({ baseURL: 'https://gateway.internal/v1' }).llmConfig).not.toHaveProperty(
+        'firstPartyEndpoint',
+      );
+    });
+
+    it('does not declare it for a non-OpenAI endpoint', () => {
+      expect(configFor({ endpoint: EModelEndpoint.custom }).llmConfig).not.toHaveProperty(
+        'firstPartyEndpoint',
+      );
+    });
+  });
+
   describe('GPT-5.6 Responses API Requirement', () => {
     it.each(['gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6'])(
       'should default to Responses API for %s when reasoning_effort is set',

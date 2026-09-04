@@ -860,6 +860,17 @@ export function getOpenAILLMConfig({
     llmConfig.useResponsesApi = true;
   }
 
+  /**
+   * Declare the first-party surface for the agents SDK's model-specific request
+   * constraints. Computed here, from the same checks the Responses default
+   * above uses, so the decision lives in one place: OpenRouter and custom
+   * gateways route through endpoints whose contract is not OpenAI's, and only
+   * this layer can tell them apart.
+   */
+  if (!useOpenRouter && isOpenAIEndpoint(endpoint) && isCanonicalOpenAIBaseURL(baseURL)) {
+    llmConfig.firstPartyEndpoint = true;
+  }
+
   if (!useOpenRouter) {
     hasModelKwargs =
       applyReasoningConfig({
