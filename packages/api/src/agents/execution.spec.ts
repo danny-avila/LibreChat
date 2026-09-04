@@ -344,58 +344,7 @@ describe('codeExecutionAuthHeaders', () => {
 
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith(
-      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: stateful | Worker: opaque-worker-id',
-      failure,
-    );
-  });
-
-  it('renders the cause on a console format that prints only the message', async () => {
-    errorSpy.mockRestore();
-    const rendered: string[] = [];
-    const capture = new winston.transports.Stream({
-      stream: new Writable({
-        write(chunk: Buffer, _encoding: string, done: () => void) {
-          rendered.push(String(chunk));
-          done();
-        },
-      }),
-      format: winston.format.printf((info) => `${info.level}: ${info.message}`),
-    });
-    const existing = [...logger.transports];
-    existing.forEach((transport) => {
-      transport.silent = true;
-    });
-    logger.add(capture);
-
-    try {
-      await codeExecutionAuthHeaders(
-        () => Promise.reject(new Error('code API signing key is not configured')),
-        { executionProfile: 'stateful' },
-      ).catch(() => undefined);
-      await codeExecutionAuthHeaders(() => Promise.reject('signing service unreachable'), {
-        executionProfile: 'stateful',
-      }).catch(() => undefined);
-    } finally {
-      logger.remove(capture);
-      existing.forEach((transport) => {
-        transport.silent = false;
-      });
-    }
-
-    expect(rendered.join('')).toContain('code API signing key is not configured');
-    expect(rendered.join('')).toContain('signing service unreachable');
-  });
-
-  it('carries a non-Error rejection in the message, which winston would otherwise drop', async () => {
-    await expect(
-      codeExecutionAuthHeaders(() => Promise.reject('signing service unreachable'), {
-        executionProfile: 'default',
-      }),
-    ).rejects.toBe('signing service unreachable');
-
-    expect(errorSpy).toHaveBeenCalledWith(
-      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: signing service unreachable',
-      'signing service unreachable',
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: stateful | Worker: opaque-worker-id | Cause: Error: code API signing key is not configured',
     );
   });
 
@@ -410,8 +359,67 @@ describe('codeExecutionAuthHeaders', () => {
     ).rejects.toThrow('boom');
 
     expect(errorSpy).toHaveBeenCalledWith(
-      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default',
-      expect.any(Error),
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: Error: boom',
     );
+  });
+
+  it('describes a rejection that cannot be converted to a string, and still rethrows it', async () => {
+    const hostile = Object.create(null) as Record<string, never>;
+
+    await expect(
+      codeExecutionAuthHeaders(() => Promise.reject(hostile), {
+        executionProfile: 'default',
+      }),
+    ).rejects.toBe(hostile);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: unstringifiable rejection',
+    );
+  });
+
+  it('renders the cause verbatim through the formats a deployment actually uses', async () => {
+    errorSpy.mockRestore();
+    const rendered: string[] = [];
+    const capture = new winston.transports.Stream({
+      stream: new Writable({
+        write(chunk: Buffer, _encoding: string, done: () => void) {
+          rendered.push(String(chunk));
+          done();
+        },
+      }),
+      /* `splat()` is what would consume a `%s` in the cause as a substitution
+         token, and the bare printf is the console transport that prints
+         `info.message` alone. Both have to leave the cause intact. */
+      format: winston.format.combine(
+        winston.format.errors({ stack: true }),
+        winston.format.splat(),
+        winston.format.printf((info) => `${info.level}: ${info.message}`),
+      ),
+    });
+    const silenced = logger.transports.map((transport) => {
+      const previous = transport.silent;
+      transport.silent = true;
+      return { transport, previous };
+    });
+    logger.add(capture);
+
+    try {
+      await codeExecutionAuthHeaders(
+        () => Promise.reject(new Error('code API signing key is not configured')),
+        { executionProfile: 'stateful' },
+      ).catch(() => undefined);
+      await codeExecutionAuthHeaders(() => Promise.reject('service said %s unavailable'), {
+        executionProfile: 'stateful',
+      }).catch(() => undefined);
+    } finally {
+      logger.remove(capture);
+      silenced.forEach(({ transport, previous }) => {
+        transport.silent = previous;
+      });
+    }
+
+    const output = rendered.join('');
+    expect(output).toContain('Cause: Error: code API signing key is not configured');
+    expect(output).toContain('Cause: service said %s unavailable');
   });
 });

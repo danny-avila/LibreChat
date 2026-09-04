@@ -194,6 +194,26 @@ export function codeExecutionHeaders(
 }
 
 /**
+ * The cause belongs in the message rather than in winston metadata. A caught
+ * value passed as metadata is merged onto the log record, so a rejection
+ * carrying `tenantId`, `userId` or `event_name` would overwrite the request
+ * identity this log exists to provide; and any metadata makes `format.splat()`
+ * treat a `%s` in the cause as a substitution token. Conversion is guarded
+ * because `String()` throws on a null-prototype object, which would otherwise
+ * replace the rejection with a formatting error and log nothing.
+ */
+function describeAuthFailure(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  try {
+    return String(error);
+  } catch {
+    return 'unstringifiable rejection';
+  }
+}
+
+/**
  * `@librechat/agents` replaces any throw from this callback with a fixed
  * "not authorized" string before the model or the operator sees it, and its own
  * console diagnostic carries no request or user id. This log is the only
@@ -211,16 +231,10 @@ export async function codeExecutionAuthHeaders(
       ...codeExecutionHeaders(context),
     };
   } catch (error) {
-    /* winston folds an Error meta's message and stack into `info.message`, so
-     * an Error cause survives even the plain console format that prints
-     * `info.message` alone. A non-Error rejection is dropped by that format,
-     * so it has to ride in the message itself. */
-    const cause = error instanceof Error ? '' : ` | Cause: ${String(error)}`;
     logger.error(
       `[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: ${context.executionProfile}` +
         (context.bridgeWorkerId != null ? ` | Worker: ${context.bridgeWorkerId}` : '') +
-        cause,
-      error,
+        ` | Cause: ${describeAuthFailure(error)}`,
     );
     throw error;
   }
