@@ -2209,12 +2209,24 @@ function mergeSandboxSessionArtifact(
     }
     /* Carry the ref whole: the Code API reads fields this host never
      * inspects, so a copy is a downgrade. Only the storage session is
-     * defaulted, to the execution session that produced the file. */
-    const merged: SandboxFileRef =
-      ref.storage_session_id == null && execSessionId != null
-        ? { ...ref, storage_session_id: execSessionId }
-        : { ...ref };
-    incomingByIdentity.set(sandboxFileIdentity(merged), incoming.length);
+     * defaulted, and it resolves exactly as `getPreparedCodeOutputBuffer`
+     * resolves it — the legacy per-file `session_id` outranks the execution
+     * session, or an older Code API response would be remounted against the
+     * bucket that merely produced it. */
+    const merged: SandboxFileRef = { ...ref };
+    merged.storage_session_id ??= ref.session_id ?? execSessionId;
+
+    /* One artifact can name the same stored file twice. Fold the repeat into
+     * the entry already collected rather than mounting it again: codeapi
+     * rejects an `/exec` whose files collide on a destination, taking the
+     * whole call down with it. */
+    const identity = sandboxFileIdentity(merged);
+    const seen = incomingByIdentity.get(identity);
+    if (seen !== undefined) {
+      incoming[seen] = { ...incoming[seen], ...merged };
+      continue;
+    }
+    incomingByIdentity.set(identity, incoming.length);
     incomingNames.add(merged.name);
     incoming.push(merged);
   }
