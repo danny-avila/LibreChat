@@ -1580,6 +1580,59 @@ describe('built-in provider request shaping', () => {
     const config = agents[0].summarizationConfig as Record<string, unknown>;
     expect(config.parameters).toBeUndefined();
   });
+
+  it('routes a reasoning model the way the agent flow would', async () => {
+    /** `getOpenAIConfig` reads the effort from modelOptions, not from the merged
+     * parameters, so it has to be handed the summarizer's own effort. */
+    expect(await summarizeWith({ reasoning_effort: 'medium' }, 'gpt-5.6')).toMatchObject({
+      firstPartyEndpoint: true,
+      useResponsesApi: true,
+      reasoning: { effort: 'medium' },
+    });
+  });
+
+  it('withholds the declaration when a reverse proxy serves the built-in endpoint', async () => {
+    process.env.OPENAI_REVERSE_PROXY = 'https://gateway.internal/v1';
+    try {
+      expect(await summarizeWith()).toBeUndefined();
+    } finally {
+      delete process.env.OPENAI_REVERSE_PROXY;
+    }
+  });
+
+  it('withholds the declaration when the base URL is user-provided', async () => {
+    process.env.OPENAI_REVERSE_PROXY = 'user_provided';
+    try {
+      expect(await summarizeWith()).toBeUndefined();
+    } finally {
+      delete process.env.OPENAI_REVERSE_PROXY;
+    }
+  });
+
+  it('declares nothing for an agent whose custom endpoint normalized to openAI', async () => {
+    /**
+     * `initializeAgent` rewrites a custom-endpoint agent's provider to `openAI`
+     * while its endpoint keeps the custom name. With summarization omitted, the
+     * summarizer reuses that agent's client — which points at the gateway, not
+     * at OpenAI.
+     */
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          provider: 'openAI',
+          endpoint: 'MyGateway',
+          model: 'gpt-6-astra',
+          model_parameters: { model: 'gpt-6-astra' },
+        }),
+      ],
+      appConfig: makeAppConfig([
+        { name: 'MyGateway', baseURL: 'https://gateway.internal/v1', apiKey: 'gw-key' },
+      ]),
+      summarizationConfig: { model: 'gpt-6-astra' },
+    });
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    expect(config.parameters).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
