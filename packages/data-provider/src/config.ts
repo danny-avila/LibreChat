@@ -2695,8 +2695,16 @@ export const alternateName = {
   [KnownEndpoints.helicone]: 'Helicone',
 };
 
+/**
+ * Models the Assistants endpoints cannot run. GPT-6 Astra serves tool calls only
+ * from the Responses API, and the Assistants surface does not route through
+ * `getOpenAILLMConfig`, so listing it there would offer a configuration the
+ * provider rejects. Kept out of `sharedOpenAIModels`, which both Assistants
+ * catalogs consume.
+ */
+const responsesOnlyOpenAIModels = ['gpt-6-astra'];
+
 const sharedOpenAIModels = [
-  'gpt-6-astra',
   'gpt-5.6',
   'gpt-5.6-terra',
   'gpt-5.6-luna',
@@ -2798,7 +2806,8 @@ export const bedrockModels = [
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
-  [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
+  // TODO: Add agent models (agentsModels)
+  [EModelEndpoint.agents]: [...responsesOnlyOpenAIModels, ...sharedOpenAIModels],
   [EModelEndpoint.google]: [
     // Gemini 3.8 Models
     'gemini-3.8-flash',
@@ -2823,6 +2832,7 @@ export const defaultModels = {
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
+    ...responsesOnlyOpenAIModels,
     ...sharedOpenAIModels,
     'chatgpt-4o-latest',
     'gpt-4-vision-preview',
