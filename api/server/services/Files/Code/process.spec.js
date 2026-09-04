@@ -48,6 +48,7 @@ const mockExtractCodeArtifactInspectionText = jest.fn(async () => ({
   complete: false,
 }));
 const mockExtractCodeArtifactText = jest.fn(async () => null);
+const mockExecuteWorkspaceTool = jest.fn();
 const mockGetExtractedTextFormat = jest.fn((_name, _mime, text) => (text == null ? null : 'text'));
 /* `hasOfficeHtmlPath` gates the persist-then-render split: when true, processCodeOutput
  * returns `{ file, finalize }` with the file persisted at `status: 'pending'`
@@ -66,10 +67,17 @@ jest.mock('@librechat/api', () => {
   const https = require('https');
   return {
     logAxiosError: jest.fn(),
+    /* Behaviourally identical to the real predicate in
+     * `packages/api/src/files/code/errors.ts`, which owns the contract and
+     * its own spec. Inlined because this factory replaces the whole module
+     * and `requireActual` here would load the entire package. */
+    isMissingSandboxPathError: (reason) =>
+      /no such file or directory|cannot access|cannot find the path|enoent/i.test(reason),
     getBasePath: jest.fn(() => ''),
     sanitizeArtifactPath: jest.fn((name) => name),
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
+    executeWorkspaceTool: (...args) => mockExecuteWorkspaceTool(...args),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
     /* Windowing, sizing and rate-limit policy are real code in
      * `packages/api` with their own tests (`files/code/image.spec.ts`,
@@ -240,6 +248,12 @@ const {
   prepareCodeOutputForInspection,
   getSessionInfo,
   readSandboxFile,
+  readWorkspaceFile,
+  searchWorkspace,
+  listWorkspaceFiles,
+  writeWorkspaceFile,
+  previewWorkspaceEdit,
+  editWorkspaceFile,
   readSandboxImage,
   writeSandboxFile,
   primeFiles,
@@ -1832,6 +1846,282 @@ describe('Code Process', () => {
     });
   });
 
+  describe('readWorkspaceFile', () => {
+    it('forwards authenticated reads to the selected attached worker', async () => {
+      const controller = new AbortController();
+      const result = {
+        protocolVersion: 1,
+        operation: 'read_file',
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        content: 'const ready = true;',
+        startLine: 1,
+        endLine: 1,
+        truncated: false,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        readWorkspaceFile({
+          file_path: 'src/app.ts',
+          workspace_id: 'primary',
+          start_line: 1,
+          max_lines: 200,
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(result);
+
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq, 'worker-user-1');
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith({
+        baseURL: 'https://attached-code.example.com/v1',
+        authHeaders: {
+          Authorization: 'Bearer workspace-token',
+          'X-CodeAPI-Expected-Profile': 'stateful',
+          'X-LibreChat-Code-Worker-ID': 'worker-user-1',
+        },
+        request: {
+          protocolVersion: 1,
+          operation: 'read_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          startLine: 1,
+          maxLines: 200,
+        },
+        signal: controller.signal,
+      });
+    });
+  });
+
+  describe('searchWorkspace', () => {
+    it('forwards authenticated literal search to the selected attached worker', async () => {
+      const controller = new AbortController();
+      const result = {
+        protocolVersion: 1,
+        operation: 'search_text',
+        workspaceId: 'primary',
+        matches: [],
+        truncated: false,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        searchWorkspace({
+          query: 'needle',
+          workspace_id: 'primary',
+          path: 'src',
+          max_results: 20,
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith({
+        baseURL: 'https://attached-code.example.com/v1',
+        authHeaders: {
+          Authorization: 'Bearer workspace-token',
+          'X-CodeAPI-Expected-Profile': 'stateful',
+          'X-LibreChat-Code-Worker-ID': 'worker-user-1',
+        },
+        request: {
+          protocolVersion: 1,
+          operation: 'search_text',
+          workspaceId: 'primary',
+          query: 'needle',
+          path: 'src',
+          maxResults: 20,
+        },
+        signal: controller.signal,
+      });
+    });
+  });
+
+  describe('listWorkspaceFiles', () => {
+    it('forwards authenticated listing to the selected attached worker', async () => {
+      const controller = new AbortController();
+      const result = {
+        protocolVersion: 1,
+        operation: 'list_files',
+        workspaceId: 'primary',
+        paths: ['src/app.ts'],
+        truncated: false,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        listWorkspaceFiles({
+          workspace_id: 'primary',
+          path: 'src',
+          after_path: 'src/app.ts',
+          max_results: 20,
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith({
+        baseURL: 'https://attached-code.example.com/v1',
+        authHeaders: {
+          Authorization: 'Bearer workspace-token',
+          'X-CodeAPI-Expected-Profile': 'stateful',
+          'X-LibreChat-Code-Worker-ID': 'worker-user-1',
+        },
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+          path: 'src',
+          afterPath: 'src/app.ts',
+          maxResults: 20,
+        },
+        signal: controller.signal,
+      });
+    });
+  });
+
+  describe('workspace mutations', () => {
+    it('forwards create-only writes to the selected attached worker', async () => {
+      const controller = new AbortController();
+      const result = {
+        protocolVersion: 1,
+        operation: 'write_file',
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: true,
+        bytesWritten: 5,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        writeWorkspaceFile({
+          file_path: 'src/new.ts',
+          content: 'ready',
+          overwrite: false,
+          workspace_id: 'primary',
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith({
+        baseURL: 'https://attached-code.example.com/v1',
+        authHeaders: {
+          Authorization: 'Bearer workspace-token',
+          'X-CodeAPI-Expected-Profile': 'stateful',
+          'X-LibreChat-Code-Worker-ID': 'worker-user-1',
+        },
+        request: {
+          protocolVersion: 1,
+          operation: 'write_file',
+          workspaceId: 'primary',
+          path: 'src/new.ts',
+          content: 'ready',
+          overwrite: false,
+        },
+        signal: controller.signal,
+      });
+    });
+
+    it('forwards an edit batch as one attached-worker request', async () => {
+      const result = {
+        protocolVersion: 1,
+        operation: 'edit_file',
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        replacements: 2,
+        bytesWritten: 20,
+      };
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer workspace-token' });
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        editWorkspaceFile({
+          file_path: 'src/app.ts',
+          edits: [
+            { oldText: 'draft', newText: 'ready' },
+            { oldText: 'false', newText: 'true' },
+          ],
+          workspace_id: 'primary',
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          bridgeWorkerId: 'worker-user-1',
+          req: mockReq,
+          expected_base_sha256: 'a'.repeat(64),
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          request: {
+            protocolVersion: 1,
+            operation: 'edit_file',
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+            edits: [
+              { oldText: 'draft', newText: 'ready' },
+              { oldText: 'false', newText: 'true' },
+            ],
+            expectedBaseSha256: 'a'.repeat(64),
+          },
+        }),
+      );
+    });
+
+    it('forwards a non-mutating attached-workspace edit preview', async () => {
+      const result = {
+        protocolVersion: 1,
+        operation: 'preview_edit',
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        content: 'prefix SECRET',
+        hasUtf8Bom: false,
+        baseSha256: 'b'.repeat(64),
+        replacements: 1,
+        bytesWritten: 13,
+      };
+      mockExecuteWorkspaceTool.mockResolvedValueOnce(result);
+
+      await expect(
+        previewWorkspaceEdit({
+          file_path: 'src/app.ts',
+          edits: [{ oldText: ' SEC', newText: ' SECRET' }],
+          workspace_id: 'primary',
+          codeApiBaseUrl: 'https://attached-code.example.com/v1',
+          executionProfile: 'stateful',
+          req: mockReq,
+        }),
+      ).resolves.toBe(result);
+
+      expect(mockExecuteWorkspaceTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          request: {
+            protocolVersion: 1,
+            operation: 'preview_edit',
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+            edits: [{ oldText: ' SEC', newText: ' SECRET' }],
+          },
+        }),
+      );
+    });
+  });
+
   describe('readSandboxFile', () => {
     /**
      * `readSandboxFile` shells `cat <file_path>` through the sandbox
@@ -2070,6 +2360,43 @@ describe('Code Process', () => {
             error: transportError,
           }),
         );
+      });
+
+      /* `create_file` reads its target before writing so it can tell a create
+       * from an overwrite, so an absent path is the ordinary case. Reported at
+       * error level it made every file creation look like a lost file — and
+       * `logAxiosError` rendered the sandbox's own stderr as "An error occurred
+       * while setting up the request", which reads as a transport fault. */
+      it('logs an absent path at debug, not through the error-level axios logger', async () => {
+        const { logAxiosError } = require('@librechat/api');
+        mockAxios.mockResolvedValueOnce({
+          data: { stdout: '', stderr: 'cat: /mnt/data/SKILL.md: No such file or directory\n' },
+        });
+
+        await expect(readSandboxFile({ file_path: '/mnt/data/SKILL.md' })).rejects.toThrow(
+          'No such file or directory',
+        );
+
+        expect(logAxiosError).not.toHaveBeenCalled();
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('/mnt/data/SKILL.md'));
+      });
+
+      it('still reports a non-missing sandbox read failure at error level', async () => {
+        const { logAxiosError } = require('@librechat/api');
+        mockAxios.mockResolvedValueOnce({
+          data: { stdout: '', stderr: 'cat: /mnt/data/x.txt: Permission denied\n' },
+        });
+
+        await expect(readSandboxFile({ file_path: '/mnt/data/x.txt' })).rejects.toThrow(
+          'Permission denied',
+        );
+
+        expect(logger.debug).not.toHaveBeenCalled();
+        expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Permission denied'));
+        /* The sandbox answered; nothing about the request failed, so the
+         * axios-shaped logger would misattribute this to the transport. */
+        expect(logAxiosError).not.toHaveBeenCalled();
       });
     });
 

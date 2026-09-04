@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Link, CopyCheck } from 'lucide';
+import { Share2Icon, Users, UserCheck, AlertCircle } from 'lucide-react';
 import { AccessRoleIds, ResourceType, SystemRoles } from 'librechat-data-provider';
-import { Share2Icon, Users, Link, CopyCheck, UserCheck, AlertCircle } from 'lucide-react';
 import {
   Alert,
   Label,
@@ -8,6 +9,7 @@ import {
   Spinner,
   Skeleton,
   OGDialog,
+  MorphIcon,
   OGDialogHeader,
   OGDialogFooter,
   OGDialogTitle,
@@ -450,11 +452,7 @@ export default function GenericGrantAccessDialog({
                     className={cn('shrink-0 gap-2', isCopying ? 'cursor-default' : '')}
                     aria-label={localize('com_ui_copy_url_to_clipboard')}
                   >
-                    {isCopying ? (
-                      <CopyCheck className="size-4" aria-hidden="true" />
-                    ) : (
-                      <Link className="size-4" aria-hidden="true" />
-                    )}
+                    <MorphIcon icon={isCopying ? CopyCheck : Link} className="size-4" />
                     {isCopying
                       ? config?.getCopyUrlMessage()
                       : localize('com_ui_copy_url_to_clipboard')}

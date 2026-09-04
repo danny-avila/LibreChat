@@ -94,7 +94,7 @@ const createAssistant = async (req, res) => {
       createData.append_current_datetime = append_current_datetime;
     }
 
-    const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
+    const document = await updateAssistantDoc({ assistantId: assistant.id }, createData);
 
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
@@ -135,7 +135,7 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
 
   if (updateData?.conversation_starters) {
     const conversationStartersUpdate = await updateAssistantDoc(
-      { assistant_id: assistant_id },
+      { assistantId: assistant_id },
       { conversation_starters: updateData.conversation_starters },
     );
     conversation_starters = conversationStartersUpdate.conversation_starters;
@@ -145,7 +145,7 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
 
   if (updateData?.append_current_datetime !== undefined) {
     await updateAssistantDoc(
-      { assistant_id: assistant_id },
+      { assistantId: assistant_id },
       { append_current_datetime: updateData.append_current_datetime },
     );
     delete updateData.append_current_datetime;

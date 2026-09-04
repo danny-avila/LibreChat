@@ -8,7 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
-import type { IAgent, IAclEntry } from '~/types';
+import type { IAgent, IAclEntry, ActionQuery } from '~/types';
 import { withCodeEnvironmentReference } from './codeEnvironment';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
@@ -93,14 +93,19 @@ function createEdgeCleanupPipeline(agentIds: string[]): PipelineStage[] {
   ];
 }
 
-/** Removes deleted agent references from every active graph that contains them. */
-async function removeAgentIdsFromEdges(Agent: Model<IAgent>, agentIds: string[]): Promise<void> {
+/** Removes deleted agent references from active graphs in the requested tenant. */
+async function removeAgentIdsFromEdges(
+  Agent: Model<IAgent>,
+  agentIds: string[],
+  tenantId?: string,
+): Promise<void> {
   if (agentIds.length === 0) {
     return;
   }
 
   await Agent.updateMany(
     {
+      ...(tenantId !== undefined ? { tenantId } : {}),
       $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
     },
     createEdgeCleanupPipeline(agentIds),
@@ -111,10 +116,7 @@ export interface AgentDeps {
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
   removeAllPermissions: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
   /** Gets actions. Created by createActionMethods. */
-  getActions: (
-    searchParams: FilterQuery<unknown>,
-    includeSensitive?: boolean,
-  ) => Promise<unknown[]>;
+  getActions: (query: ActionQuery, includeSensitive?: boolean) => Promise<unknown[]>;
   /** Returns resource IDs solely owned by the given user. From createAclEntryMethods. */
   getSoleOwnedResourceIds: (
     userObjectId: Types.ObjectId,
@@ -535,6 +537,22 @@ export function createAgentMethods(
     has_more: boolean;
     after: string | null;
   }>;
+  getAgentManagementListByAccess: ({
+    accessibleIds,
+    tenantId,
+    limit,
+    after,
+  }: {
+    /** `null` means the caller already passed the unrestricted management-capability check. */
+    accessibleIds: Types.ObjectId[] | null;
+    tenantId: string;
+    limit: number;
+    after?: string | null;
+  }) => Promise<{
+    data: Array<IAgent & { version: number; createdAt: Date; updatedAt: Date }>;
+    has_more: boolean;
+    after: string | null;
+  }>;
   removeAgentResourceFiles: ({
     agent_id,
     files,
@@ -787,7 +805,7 @@ export function createAgentMethods(
 
         if (actionIds.length > 0) {
           try {
-            const actions = await getActions({ action_id: { $in: actionIds } }, true);
+            const actions = await getActions({ actionId: actionIds }, true);
 
             actionsHash = await generateActionMetadataHash(
               currentAgent.actions,
@@ -1053,6 +1071,7 @@ export function createAgentMethods(
     const User = mongoose.models.User as Model<unknown>;
     const agent = await Agent.findOneAndDelete(searchParameter);
     if (agent) {
+      const deletedAgent = agent as unknown as { id: string; tenantId?: string };
       await Promise.all([
         removeAllPermissions({
           resourceType: ResourceType.AGENT,
@@ -1064,14 +1083,17 @@ export function createAgentMethods(
         }),
       ]);
       try {
-        await removeAgentIdsFromEdges(Agent, [(agent as unknown as { id: string }).id]);
+        await removeAgentIdsFromEdges(Agent, [deletedAgent.id], deletedAgent.tenantId);
       } catch (error) {
         logger.error('[deleteAgent] Error removing agent from handoff edges', error);
       }
       try {
         await User.updateMany(
-          { 'favorites.agentId': (agent as unknown as { id: string }).id },
-          { $pull: { favorites: { agentId: (agent as unknown as { id: string }).id } } },
+          {
+            ...(deletedAgent.tenantId !== undefined ? { tenantId: deletedAgent.tenantId } : {}),
+            'favorites.agentId': deletedAgent.id,
+          },
+          { $pull: { favorites: { agentId: deletedAgent.id } } },
         );
       } catch (error) {
         logger.error('[deleteAgent] Error removing agent from user favorites', error);
@@ -1280,6 +1302,72 @@ export function createAgentMethods(
   }
 
   /**
+   * Returns the full Agent configuration required by the management response projector.
+   * Unlike the browser list path, this query performs no avatar refresh or persistence write.
+   */
+  async function getAgentManagementListByAccess({
+    accessibleIds,
+    tenantId,
+    limit,
+    after = null,
+  }: {
+    /** `null` means the caller already passed the unrestricted management-capability check. */
+    accessibleIds: Types.ObjectId[] | null;
+    tenantId: string;
+    limit: number;
+    after?: string | null;
+  }): Promise<{
+    data: Array<IAgent & { version: number; createdAt: Date; updatedAt: Date }>;
+    has_more: boolean;
+    after: string | null;
+  }> {
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const match: FilterQuery<IAgent> = {
+      tenantId,
+      ...(accessibleIds != null ? { _id: { $in: accessibleIds } } : {}),
+    };
+
+    if (after) {
+      const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8')) as {
+        updatedAt: string;
+        _id: string;
+      };
+      match.$or = [
+        { updatedAt: { $lt: new Date(cursor.updatedAt) } },
+        {
+          updatedAt: new Date(cursor.updatedAt),
+          _id: { $gt: new mongoose.Types.ObjectId(cursor._id) },
+        },
+      ];
+    }
+
+    const agents = await Agent.aggregate<
+      IAgent & { version: number; createdAt: Date; updatedAt: Date }
+    >([
+      { $match: match },
+      { $sort: { updatedAt: -1, _id: 1 } },
+      { $limit: limit + 1 },
+      { $addFields: { version: { $size: { $ifNull: ['$versions', []] } } } },
+      { $project: { versions: 0 } },
+    ]);
+
+    const hasMore = agents.length > limit;
+    const data = hasMore ? agents.slice(0, limit) : agents;
+    const lastAgent = data[data.length - 1];
+    const nextCursor =
+      hasMore && lastAgent
+        ? Buffer.from(
+            JSON.stringify({
+              updatedAt: lastAgent.updatedAt.toISOString(),
+              _id: lastAgent._id.toString(),
+            }),
+          ).toString('base64')
+        : null;
+
+    return { data, has_more: hasMore, after: nextCursor };
+  }
+
+  /**
    * Reverts an agent to a specific version in its version history.
    */
   async function revertAgentVersion(
@@ -1376,13 +1464,17 @@ export function createAgentMethods(
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const User = mongoose.models.User as Model<unknown>;
 
-    const agent = await Agent.findOne({ _id: resourceId }, { id: 1 }).lean();
+    const agent = await Agent.findOne({ _id: resourceId }, { id: 1, tenantId: 1 }).lean();
     if (!agent) {
       return;
     }
 
     await User.updateMany(
-      { _id: { $in: userIds }, 'favorites.agentId': agent.id },
+      {
+        _id: { $in: userIds },
+        ...(agent.tenantId !== undefined ? { tenantId: agent.tenantId } : {}),
+        'favorites.agentId': agent.id,
+      },
       { $pull: { favorites: { agentId: agent.id } } },
     );
   }
@@ -1402,6 +1494,7 @@ export function createAgentMethods(
     countPromotedAgents,
     addAgentResourceFile,
     getListAgentsByAccess,
+    getAgentManagementListByAccess,
     removeAgentResourceFiles,
     generateActionMetadataHash,
     removeAgentFromUserFavorites,

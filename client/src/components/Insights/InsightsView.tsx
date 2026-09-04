@@ -113,6 +113,10 @@ function Panel({ children, className }: { children: React.ReactNode; className?:
     <section
       className={cn(
         'min-w-0 rounded-lg border border-border-light bg-surface-primary p-5',
+        /** Dark mode only: Click UI gives dashboard widgets their own surface and
+         *  stroke, a step lighter than the page behind them. Light mode keeps the
+         *  shared surface/border tokens. */
+        'dark:border-chart-widget-stroke dark:bg-chart-widget-surface',
         className,
       )}
     >
@@ -245,7 +249,7 @@ function KpiCard({ card, locale }: { card: KpiCardData; locale: string }) {
   const localize = useLocalize();
   return (
     <Panel>
-      <h2 className="inline-flex items-center gap-1.5 text-lg font-normal text-text-secondary">
+      <h2 className="inline-flex items-center gap-1.5 text-sm font-normal text-text-muted">
         {card.title}
         {card.description && (
           <TooltipAnchor
@@ -254,9 +258,9 @@ function KpiCard({ card, locale }: { card: KpiCardData; locale: string }) {
               <button
                 type="button"
                 aria-label={card.description}
-                className="text-text-secondary hover:text-text-primary"
+                className="text-text-muted hover:text-text-secondary"
               >
-                <Info className="size-4" aria-hidden="true" />
+                <Info className="size-3.5" aria-hidden="true" />
               </button>
             }
           />
@@ -807,7 +811,7 @@ export default function InsightsView() {
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="flex w-full min-w-0 flex-col gap-5 px-4 py-4 sm:px-5 md:px-6 lg:px-8">
+        <div className="flex w-full min-w-0 flex-col gap-3 px-8 pb-4 pt-8">
           {insights.isLoading && <LoadingState message={localize('com_insights_loading')} />}
           {insights.isError && (
             <Panel className="flex items-center gap-2">
@@ -821,7 +825,10 @@ export default function InsightsView() {
           )}
           {data && (
             <>
-              <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-3">
+              {/** Use explicit responsive counts: one column on narrow screens,
+               *  two through mid-range, and four at xl. This avoids auto-fit's
+               *  three-plus-one orphan without making mobile cards too narrow. */}
+              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {kpiCards.map((card) => (
                   <KpiCard key={card.id} card={card} locale={locale} />
                 ))}

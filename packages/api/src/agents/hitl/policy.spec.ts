@@ -90,10 +90,22 @@ describe('resolveToolApprovalPolicy', () => {
     });
   });
 
-  test('keeps the BYOM bypass baseline when the endpoint normally uses default mode', () => {
+  test.each(['default', 'dontAsk', 'bypass'] as const)(
+    'preserves an enabled endpoint %s policy when BYOM is active',
+    (mode) => {
+      const endpoint: TToolApprovalPolicy = {
+        enabled: true,
+        mode,
+        deny: ['dangerous_tool'],
+      };
+      expect(resolveToolApprovalPolicy({ endpoint, attachedCodeEnvironment: true })).toBe(endpoint);
+    },
+  );
+
+  test('uses the BYOM bypass baseline for a configured but inactive endpoint policy', () => {
     expect(
       resolveToolApprovalPolicy({
-        endpoint: { enabled: true, mode: 'default', deny: ['dangerous_tool'] },
+        endpoint: { mode: 'dontAsk', deny: ['dangerous_tool'] },
         attachedCodeEnvironment: true,
       }),
     ).toEqual({

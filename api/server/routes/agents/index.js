@@ -54,6 +54,7 @@ const {
   acknowledgeScheduledStopPersistence,
 } = require('~/server/services/Schedules');
 const responses = require('./responses');
+const management = require('./management');
 const openai = require('./openai');
 const { v1 } = require('./v1');
 const chat = require('./chat');
@@ -119,6 +120,13 @@ const router = express.Router();
  * @see https://openresponses.org/specification
  */
 router.use('/v1/responses', responses);
+
+/**
+ * Machine-authenticated Agent Management routes.
+ * Mounted before the catch-all execution router so management requests cannot
+ * inherit execution authentication or API-key fallback behavior.
+ */
+router.use('/v1/agents', management);
 
 /**
  * OpenAI-compatible API routes (API key authentication handled in route file)

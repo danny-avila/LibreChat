@@ -470,6 +470,59 @@ describe('getMultiplier', () => {
     }
   });
 
+  it('should use the documented gpt-6-astra pricing', () => {
+    expect(tokenValues['gpt-6-astra']).toEqual({ prompt: 10, completion: 50 });
+    expect(cacheTokenValues['gpt-6-astra']).toEqual({ write: 12.5, read: 1 });
+    expect(premiumTokenValues['gpt-6-astra']).toEqual({
+      threshold: 272000,
+      prompt: 20,
+      completion: 75,
+    });
+    expect(premiumCacheTokenValues['gpt-6-astra']).toEqual({
+      threshold: 272000,
+      write: 25,
+      read: 2,
+    });
+  });
+
+  it('should bill gpt-6-astra cache writes at the documented 1.25x input surcharge', () => {
+    expect(cacheTokenValues['gpt-6-astra'].write).toBeCloseTo(
+      tokenValues['gpt-6-astra'].prompt * 1.25,
+    );
+  });
+
+  it('should apply the documented gpt-6-astra long-context multipliers', () => {
+    const standard = tokenValues['gpt-6-astra'];
+    const premium = premiumTokenValues['gpt-6-astra'];
+    const standardCache = cacheTokenValues['gpt-6-astra'];
+    const premiumCache = premiumCacheTokenValues['gpt-6-astra'];
+    /** >272K input: 2x input and cache rates, 1.5x output, for the full request. */
+    expect(premium.prompt).toBeCloseTo(standard.prompt * 2);
+    expect(premium.completion).toBeCloseTo(standard.completion * 1.5);
+    expect(premiumCache.write).toBeCloseTo(standardCache.write * 2);
+    expect(premiumCache.read).toBeCloseTo(standardCache.read * 2);
+  });
+
+  it('should resolve gpt-6-astra to its own key rather than a gpt-6 prefix', () => {
+    for (const model of [
+      'gpt-6-astra',
+      'gpt-6-astra-2026-04-30',
+      'openai/gpt-6-astra',
+      'gpt-6-astra/openai',
+    ]) {
+      expect(getValueKey(model)).toBe('gpt-6-astra');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(10);
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(50);
+    }
+  });
+
+  it('should charge gpt-6-astra premium rates only past the 272K threshold', () => {
+    const model = 'gpt-6-astra';
+    expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: 272000 })).toBe(10);
+    expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: 272001 })).toBe(20);
+    expect(getMultiplier({ model, tokenType: 'completion', inputTokenCount: 272001 })).toBe(75);
+  });
+
   it('should use the documented gpt-5.6 pricing', () => {
     const expectedPricing = {
       'gpt-5.6': {
