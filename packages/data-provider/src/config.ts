@@ -2848,12 +2848,22 @@ const fitlerAssistantModels = (str: string) => {
 
 const openAIModels = defaultModels[EModelEndpoint.openAI];
 
+/**
+ * The OpenAI catalog without the models only the first-party OpenAI endpoint
+ * can run. Azure OpenAI shares this list, but Astra is neither routed to the
+ * Responses API nor given its request constraints there, and listing it first
+ * would let it become the default selection.
+ */
+const nonResponsesOnlyOpenAIModels = openAIModels.filter(
+  (model) => !responsesOnlyOpenAIModels.includes(model),
+);
+
 export const initialModelsConfig: TModelsConfig = {
   initial: [],
   [EModelEndpoint.openAI]: openAIModels,
   [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
-  [EModelEndpoint.azureOpenAI]: openAIModels,
+  [EModelEndpoint.azureOpenAI]: nonResponsesOnlyOpenAIModels,
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
