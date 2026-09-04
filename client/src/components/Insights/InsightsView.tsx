@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AlertCircle, Info, Search } from 'lucide-react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { AlertCircle, Bot, Info, Search } from 'lucide-react';
 import {
   Button,
   Input,
@@ -746,10 +746,11 @@ export default function InsightsView() {
               selectedValues={effectiveAgentIds}
               setSelectedValues={handleAgentSelection}
               disabled={agentItems.length === 1}
+              showSelectedValues
               className="w-full min-w-0 sm:w-56"
-              selectClassName="h-9 w-full rounded-lg border border-border-light bg-surface-primary"
-              popoverClassName="max-h-80"
-              selectIcon={<Bot className="size-4 text-text-secondary" aria-hidden="true" />}
+              selectClassName="h-8 w-full rounded border border-border-medium bg-surface-tertiary px-3 py-1 shadow-none hover:border-border-heavy data-[state=open]:border-border-heavy dark:hover:bg-chart-widget-stroke dark:data-[state=open]:bg-chart-widget-stroke"
+              itemClassName="rounded-none px-4 py-1.5"
+              popoverClassName="max-h-80 rounded border-border-medium bg-surface-primary px-0 py-2 dark:bg-chart-widget-surface"
               renderSelectedValues={(values) => {
                 if (values.length === agentItems.length) {
                   return localize('com_insights_all_agents', { count: agentItems.length });
@@ -760,12 +761,12 @@ export default function InsightsView() {
                 return localize('com_insights_agents_selected', { count: values.length });
               }}
               popoverHeader={
-                <div className="mb-1 border-b border-border-light pb-1">
+                <div className="border-b border-border-light pb-2">
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="h-8 w-full justify-start rounded-lg px-2"
+                    className="h-8 w-full justify-start rounded-none px-4 font-normal text-text-secondary hover:bg-surface-hover hover:text-text-primary"
                     disabled={effectiveAgentIds.length === agentItems.length}
                     onClick={() => handleAgentSelection(agentItems.map((agent) => agent.value))}
                   >

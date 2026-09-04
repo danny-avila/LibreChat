@@ -1317,7 +1317,7 @@ class BaseClient {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
       noUpsert: req?._agentEventBindingParentConversationId != null,
-      initialAgentId: hasNonEphemeralAgent ? this.options.agent?.id : null,
+      initialAgentId: hasNonEphemeralAgent ? options.agent?.id : null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
       ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });

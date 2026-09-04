@@ -170,16 +170,6 @@ const conversationOwnerMatch = ({ conversationId, userId }: ConversationOwner) =
   user: userId,
 });
 
-function selectedPrimaryAgentExpression(agentIds: string[], prefix = '') {
-  return {
-    $cond: [
-      { $in: [`$${prefix}initial_agent_id`, agentIds] },
-      `$${prefix}initial_agent_id`,
-      `$${prefix}agent_id`,
-    ],
-  };
-}
-
 function conversationScope(match: Record<string, unknown>, agentIds: string[]): PipelineStage[] {
   return [
     {
@@ -191,7 +181,7 @@ function conversationScope(match: Record<string, unknown>, agentIds: string[]): 
         ],
       },
     },
-    { $addFields: { insightsAgentId: selectedPrimaryAgentExpression(agentIds) } },
+    { $addFields: { insightsAgentId: { $ifNull: ['$initial_agent_id', '$agent_id'] } } },
   ];
 }
 
