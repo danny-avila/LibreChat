@@ -441,19 +441,18 @@ describe('File Methods', () => {
       expect(files.map((file) => file.file_id)).toEqual([readyFileId]);
     });
 
-    it('drops files that reached the attempt cap so they cannot starve the batch', async () => {
-      const now = new Date('2030-01-01T00:00:00.000Z');
-      const exhaustedFileId = uuidv4();
+    it('holds a parked file back without excluding it for good', async () => {
+      const parkedFileId = uuidv4();
       const retriableFileId = uuidv4();
 
-      /* The exhausted file expired first, so without the cap it sorts to
-       * the front of every batch and a limit-sized run of them starves
-       * everything that expired afterwards. */
+      /* The parked file expired first, so with nothing holding it back it
+       * sorts to the front of every batch and a limit-sized run of them
+       * starves everything that expired afterwards. */
       await seedExpiredFile({
-        file_id: exhaustedFileId,
+        file_id: parkedFileId,
         expiredAt: new Date('2029-01-01T00:00:00.000Z'),
         attempts: 10,
-        retryAt: new Date('2029-06-01T00:00:00.000Z'),
+        retryAt: new Date('2030-02-01T00:00:00.000Z'),
       });
       await seedExpiredFile({
         file_id: retriableFileId,
@@ -461,64 +460,39 @@ describe('File Methods', () => {
         attempts: 9,
       });
 
-      const capped = await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 });
-      expect(capped.map((file) => file.file_id)).toEqual([retriableFileId]);
-
-      const raised = await fileMethods.getExpiredFiles(100, { now, maxAttempts: 20 });
-      expect(raised.map((file) => file.file_id)).toEqual([exhaustedFileId, retriableFileId]);
-    });
-
-    it('restarts the retry budget when a record is repurposed for new content', async () => {
-      const now = new Date('2030-01-01T00:00:00.000Z');
-      const fileId = uuidv4();
-      await seedExpiredFile({
-        file_id: fileId,
-        expiredAt: new Date('2029-01-01T00:00:00.000Z'),
-        attempts: 10,
-        retryAt: new Date('2029-06-01T00:00:00.000Z'),
+      const parked = await fileMethods.getExpiredFiles(100, {
+        now: new Date('2030-01-01T00:00:00.000Z'),
       });
-      expect(await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 })).toHaveLength(0);
+      expect(parked.map((file) => file.file_id)).toEqual([retriableFileId]);
 
-      /* A repeated (filename, conversationId) reuses the record for a new
-       * code output: new bytes, new storage key, fresh retention deadline.
-       * Carrying the exhausted budget over would strand that new object. */
-      await fileMethods.createFile(
-        {
-          file_id: fileId,
-          user: new mongoose.Types.ObjectId(),
-          filename: `${fileId}.txt`,
-          filepath: `/uploads/${fileId}-v2.txt`,
-          type: 'text/plain',
-          bytes: 200,
-          expiredAt: new Date('2029-12-31T00:00:00.000Z'),
-        },
-        true,
-      );
-
-      const files = await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 });
-      expect(files.map((file) => file.file_id)).toEqual([fileId]);
-      expect(files[0].deletionAttempts).toBeUndefined();
-      expect(files[0].deletionRetryAt).toBeUndefined();
+      /* Nothing is excluded permanently — a record reused for different
+       * content in the meantime gets its object swept rather than stranded. */
+      const afterPark = await fileMethods.getExpiredFiles(100, {
+        now: new Date('2030-02-01T00:00:01.000Z'),
+      });
+      expect(afterPark.map((file) => file.file_id)).toEqual([parkedFileId, retriableFileId]);
     });
 
-    it('keeps the retry budget across writes that only touch the record', async () => {
-      const now = new Date('2030-01-01T00:00:00.000Z');
+    it('leaves retry state alone on writes that touch the record', async () => {
       const fileId = uuidv4();
       await seedExpiredFile({
         file_id: fileId,
         expiredAt: new Date('2029-01-01T00:00:00.000Z'),
-        attempts: 10,
-        retryAt: new Date('2029-06-01T00:00:00.000Z'),
+        attempts: 4,
+        retryAt: new Date('2030-02-01T00:00:00.000Z'),
       });
 
       /* `prepareImagesLocal` clears the upload TTL with nothing but the id
-       * every time an existing image is encoded for another chat, and the
-       * deferred preview only transitions `status`. Neither installs new
-       * bytes, so neither may hand a stranded record a fresh budget. */
+       * on every reuse of an image, the deferred preview only transitions
+       * `status`, and `processCodeOutput` repurposes a row for new content.
+       * None of them need to reason about sweep bookkeeping: the deferral
+       * is a deadline, so the worst a survivor can do is delay. */
       await fileMethods.updateFile({ file_id: fileId });
       await fileMethods.updateFile({ file_id: fileId, status: 'ready' });
 
-      expect(await fileMethods.getExpiredFiles(100, { now, maxAttempts: 10 })).toHaveLength(0);
+      const [file] = (await fileMethods.getFiles({ file_id: fileId }))!;
+      expect(file.deletionAttempts).toBe(4);
+      expect(file.deletionRetryAt).toEqual(new Date('2030-02-01T00:00:00.000Z'));
     });
 
     it('records retry bookkeeping without posing as a content write', async () => {

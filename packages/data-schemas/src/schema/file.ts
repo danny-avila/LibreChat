@@ -153,14 +153,15 @@ const file: Schema<IMongoFile> = new Schema(
       type: Date,
     },
     deletionAttempts: {
-      /* Consecutive failed sweep deletions. Files at or past
-       * `FILE_RETENTION_SWEEP_MAX_ATTEMPTS` are excluded from the sweep
-       * query so a permanently undeletable file cannot starve the bounded
-       * batch; raising that limit re-admits them. */
+      /* Consecutive failed sweep deletions, driving the backoff below. A
+       * file at or past `FILE_RETENTION_SWEEP_MAX_ATTEMPTS` is parked
+       * rather than retried on the ordinary ladder. */
       type: Number,
     },
     deletionRetryAt: {
-      /* Earliest next sweep attempt, backed off from `deletionAttempts`. */
+      /* Earliest next sweep attempt, backed off from `deletionAttempts`.
+       * The sweep's only hold: a deadline, never a flag, so a record reused
+       * for different content can be delayed but not stranded. */
       type: Date,
     },
   },

@@ -1,5 +1,5 @@
 import { EToolResources, FileContext } from 'librechat-data-provider';
-import type { FilterQuery, UpdateQuery, SortOrder, Model } from 'mongoose';
+import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '../config/winston';
@@ -9,28 +9,8 @@ export type FileOwnerScope = {
   tenantId?: string | null;
 };
 
-const DELETION_RETRY_STATE = { deletionAttempts: '', deletionRetryAt: '' } as const;
-
-/**
- * The sweep's retry budget belongs to a retention lifecycle, so only a write
- * that starts a new one clears it.
- *
- * Code-output records are reused across turns for a repeated
- * `(filename, conversationId)` — new bytes, new storage key, and a fresh
- * `expiredAt` — and a record carried to the give-up cap by its previous
- * content would otherwise stay excluded from the sweep forever, stranding
- * the new object. Writes that leave `expiredAt` alone are touches rather
- * than replacements: `prepareImages*` clears the upload TTL on every reuse
- * of an existing image, and the deferred preview only transitions `status`.
- * Neither installs new bytes, and neither should hand a stranded record
- * another full budget and another give-up notice.
- */
-const startsRetentionLifecycle = (data: Partial<IMongoFile>): boolean => 'expiredAt' in data;
-
 export type ExpiredFileQueryOptions = {
   now?: Date;
-  /** Consecutive-failure count at which a file stops being retried. */
-  maxAttempts?: number;
 };
 
 function withOwnerScope<T extends FilterQuery<IMongoFile>>(
@@ -159,29 +139,32 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   /**
    * Expired files the sweep may attempt right now, oldest deadline first.
    *
-   * Files whose storage deletion keeps failing are held back twice over:
-   * `deletionRetryAt` defers them until their backoff elapses, and
-   * `maxAttempts` drops them entirely once they have failed that many
-   * times. Without both, a permanently undeletable file sorts to the front
-   * of this bounded batch on every pass and starves every file that
-   * expired after it. Absent fields mean "never attempted", so records
-   * written before these fields existed remain eligible.
+   * `deletionRetryAt` is the only thing holding a file back: one that keeps
+   * failing is deferred on a growing backoff, and one that exhausts its
+   * attempts is parked far enough out to stop crowding the batch. Without
+   * it a permanently undeletable file sorts to the front of this bounded
+   * batch on every pass and starves every file that expired after it.
+   *
+   * The deferral is deliberately a deadline rather than a flag, so nothing
+   * here is ever excluded for good. File records are reused across content
+   * lifecycles — a code-output row is repurposed for a repeated
+   * `(filename, conversationId)`, keeping fields it was not asked to change
+   * — so bookkeeping that permanently excluded a row would eventually
+   * strand a *different* object than the one it was recorded against. A
+   * deadline can only ever delay that; it cannot lose it.
+   *
+   * An absent field means "never attempted", so records written before it
+   * existed remain eligible.
    */
   async function getExpiredFiles(
     limit = 100,
-    { now = new Date(), maxAttempts }: ExpiredFileQueryOptions = {},
+    { now = new Date() }: ExpiredFileQueryOptions = {},
   ): Promise<IMongoFile[]> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    const eligible: FilterQuery<IMongoFile>[] = [
-      { $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }] },
-    ];
-    if (maxAttempts != null) {
-      eligible.push({
-        $or: [{ deletionAttempts: null }, { deletionAttempts: { $lt: maxAttempts } }],
-      });
-    }
-
-    return await File.find({ expiredAt: { $ne: null, $lte: now }, $and: eligible })
+    return await File.find({
+      expiredAt: { $ne: null, $lte: now },
+      $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }],
+    })
       .sort({ expiredAt: 1 })
       .limit(limit)
       .lean<IMongoFile[]>();
@@ -464,14 +447,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       delete fileData.expiresAt;
     }
 
-    /* An empty `$unset` is rejected outright, so the operator is added only
-     * when there is something to clear. */
-    const update: UpdateQuery<IMongoFile> = { $set: fileData };
-    if (startsRetentionLifecycle(data)) {
-      update.$unset = DELETION_RETRY_STATE;
-    }
-
-    return File.findOneAndUpdate({ file_id: data.file_id }, update, {
+    return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
       new: true,
       upsert: true,
     }).lean<IMongoFile>();
@@ -502,7 +478,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const { file_id, ...update } = data;
     const updateOperation = {
       $set: update,
-      $unset: { expiresAt: '', ...(startsRetentionLifecycle(update) ? DELETION_RETRY_STATE : {}) },
+      $unset: { expiresAt: '' },
     };
     const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {

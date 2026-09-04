@@ -64,7 +64,7 @@ describe('expired file sweep helpers', () => {
       },
     );
 
-    expect(getExpiredFiles).toHaveBeenCalledWith(1, { maxAttempts: 10 });
+    expect(getExpiredFiles).toHaveBeenCalledWith(1);
     expect(deferExpiredFile).not.toHaveBeenCalled();
     expect(loadAppConfig).toHaveBeenCalledTimes(1);
     expect(processDeleteRequest).toHaveBeenCalledWith({
@@ -152,7 +152,7 @@ describe('expired file sweep helpers', () => {
     expect(result).toEqual({ scanned: 1, deleted: 0, failed: 1 });
   });
 
-  it('reports giving up once the file reaches the attempt cap', async () => {
+  it('reports parking once the file reaches the attempt cap', async () => {
     process.env.FILE_RETENTION_SWEEP_MAX_ATTEMPTS = '3';
     attemptCount = 2;
     deferExpiredFile.mockRejectedValue(new Error('mongo unreachable'));
@@ -174,12 +174,10 @@ describe('expired file sweep helpers', () => {
       },
     );
 
-    expect(getExpiredFiles).toHaveBeenCalledWith(1, { maxAttempts: 3 });
-    /* The counter is durable once the increment lands, so the file is
-     * already excluded; a deferral that fails afterwards must not swallow
-     * the only notice of that. */
+    /* The counter is durable once the increment lands, so a deferral that
+     * fails afterwards must not swallow the notice. */
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('Giving up on expired file stranded-file after 3 failed deletions'),
+      expect.stringContaining('Parking expired file stranded-file after 3 failed deletions'),
     );
   });
 
@@ -208,10 +206,10 @@ describe('expired file sweep helpers', () => {
     /* Increments returned 3 and 4. Only the one that landed on the cap
      * reports it — another node past the threshold would otherwise repeat
      * the notice once per replica, per file. */
-    const givingUp = logger.error.mock.calls.filter(([message]) =>
-      String(message).includes('Giving up on expired file'),
+    const parked = logger.error.mock.calls.filter(([message]) =>
+      String(message).includes('Parking expired file'),
     );
-    expect(givingUp).toHaveLength(1);
+    expect(parked).toHaveLength(1);
   });
 
   it('anchors retry deadlines to the start of the sweep', async () => {
@@ -272,19 +270,24 @@ describe('expired file sweep helpers', () => {
     expect(result).toEqual({ scanned: 2, deleted: 1, failed: 1 });
   });
 
-  it('caps the retry delay at a day and ignores unusable attempt limits', () => {
-    expect(getExpiredFileRetryDelay(1)).toBe(60 * 60 * 1000);
-    expect(getExpiredFileRetryDelay(4)).toBe(8 * 60 * 60 * 1000);
-    expect(getExpiredFileRetryDelay(64)).toBe(24 * 60 * 60 * 1000);
+  it('climbs to a daily ladder, then parks, and ignores unusable attempt limits', () => {
+    expect(getExpiredFileRetryDelay(1, 10)).toBe(60 * 60 * 1000);
+    expect(getExpiredFileRetryDelay(4, 10)).toBe(8 * 60 * 60 * 1000);
+    expect(getExpiredFileRetryDelay(9, 10)).toBe(24 * 60 * 60 * 1000);
+
+    /* At the cap the file is parked rather than excluded, so a record
+     * reused for different content is delayed at worst, never stranded. */
+    expect(getExpiredFileRetryDelay(10, 10)).toBe(30 * 24 * 60 * 60 * 1000);
+    expect(getExpiredFileRetryDelay(64, 10)).toBe(30 * 24 * 60 * 60 * 1000);
 
     /* The base tracks the configured cadence rather than a fixed hour. */
     process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = String(5 * 60 * 1000);
-    expect(getExpiredFileRetryDelay(1)).toBe(5 * 60 * 1000);
-    expect(getExpiredFileRetryDelay(3)).toBe(20 * 60 * 1000);
+    expect(getExpiredFileRetryDelay(1, 10)).toBe(5 * 60 * 1000);
+    expect(getExpiredFileRetryDelay(3, 10)).toBe(20 * 60 * 1000);
 
-    /* ...but never drops below the floor that protects the give-up budget. */
+    /* ...but never drops below the floor that protects the budget. */
     process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '5';
-    expect(getExpiredFileRetryDelay(1)).toBe(60 * 1000);
+    expect(getExpiredFileRetryDelay(1, 10)).toBe(60 * 1000);
     delete process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
 
     expect(getFileRetentionMaxAttempts('0')).toBe(10);

@@ -10,6 +10,7 @@ const DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_FILE_RETENTION_MAX_ATTEMPTS = 10;
 const MIN_FILE_RETENTION_RETRY_BASE_MS = 60 * 1000;
 const FILE_RETENTION_RETRY_MAX_MS = 24 * 60 * 60 * 1000;
+const FILE_RETENTION_PARK_MS = 30 * 24 * 60 * 60 * 1000;
 
 type ExpiredFile = {
   file_id: string;
@@ -49,10 +50,7 @@ type VersionedEndpointConfig = {
 };
 
 type SweepDependencies = {
-  getExpiredFiles: (
-    limit: number,
-    options: { maxAttempts: number },
-  ) => Promise<ExpiredFile[] | null | undefined>;
+  getExpiredFiles: (limit: number) => Promise<ExpiredFile[] | null | undefined>;
   processDeleteRequest: (params: {
     req: SweepRequest;
     files: ExpiredFile[];
@@ -95,11 +93,12 @@ export function getFileRetentionSweepInterval(
 }
 
 /**
- * Consecutive failures after which the sweep stops retrying a file.
+ * Consecutive failures after which a file is parked rather than retried on
+ * the ordinary ladder.
  *
- * The record is kept so the reference survives for reconciliation, and
- * raising this limit re-admits everything previously given up on — that is
- * the supported way to resume once the underlying storage failure is fixed.
+ * Lower it when working through a large backlog: every attempt costs a slot
+ * in the bounded batch, so N stranded files take N × this many passes to
+ * settle before the queue frees up for files expiring behind them.
  */
 export function getFileRetentionMaxAttempts(
   maxAttempts: string | undefined = process.env.FILE_RETENTION_SWEEP_MAX_ATTEMPTS,
@@ -120,13 +119,25 @@ export function getFileRetentionMaxAttempts(
  * day. `attempts` is the file's failure count including the one just
  * recorded, so the first retry lands on the following sweep.
  *
+ * A file that exhausts `maxAttempts` is parked for a month instead. Parking
+ * rather than excluding is what keeps this safe against record reuse: a
+ * code-output row is repurposed for a repeated `(filename, conversationId)`
+ * and keeps fields it was not asked to change, so state that survived into
+ * a new lifecycle would strand a different object than the one it was
+ * recorded against. A deadline can only delay that object; a flag would
+ * lose it.
+ *
  * The base tracks the configured interval so the schedule stays meaningful
  * at any cadence — a fixed hour would be inert for the first three attempts
  * of a six-hour sweep, and would skip twelve passes of a five-minute one.
  * The floor keeps a pathologically short interval from spending the whole
- * give-up budget on a transient outage.
+ * budget on a transient outage.
  */
-export function getExpiredFileRetryDelay(attempts: number): number {
+export function getExpiredFileRetryDelay(attempts: number, maxAttempts: number): number {
+  if (attempts >= maxAttempts) {
+    return FILE_RETENTION_PARK_MS;
+  }
+
   const interval = getFileRetentionSweepInterval();
   const base = Math.max(
     interval > 0 ? interval : DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS,
@@ -269,7 +280,7 @@ export async function sweepExpiredFiles(
    * after the deletion I/O lands just past the next scheduled pass and the
    * file waits a whole extra interval. */
   const sweepStartedAt = Date.now();
-  const files = (await getExpiredFiles(limit, { maxAttempts })) ?? [];
+  const files = (await getExpiredFiles(limit)) ?? [];
   let resolvedAppConfig = appConfig;
   let deleted = 0;
   let failed = 0;
@@ -294,21 +305,19 @@ export async function sweepExpiredFiles(
       return;
     }
 
-    /* Reported before the deferral, which fails independently. The counter
-     * is already durable, so the file is already excluded from the query
-     * and this line is the only notice the exclusion ever gets. Exactly the
-     * attempt that lands on the cap reports it — `>=` would have every
-     * later node past the threshold repeat it. */
+    /* Exactly the attempt that lands on the cap reports it — `>=` would
+     * have every later node past the threshold repeat the notice once per
+     * replica, per file. */
     if (attempts === maxAttempts) {
       logger.error(
-        `[sweepExpiredFiles] Giving up on expired file ${file.file_id} after ${attempts} failed deletions. Its backing storage was not removed; the record is kept so the reference survives for reconciliation. Raise FILE_RETENTION_SWEEP_MAX_ATTEMPTS to retry it.`,
+        `[sweepExpiredFiles] Parking expired file ${file.file_id} after ${attempts} failed deletions. Its backing storage was not removed and the record is kept, so the reference survives for reconciliation; the sweep will try again in about a month rather than on every pass.`,
       );
     }
 
     try {
       await deferExpiredFile(
         file.file_id,
-        new Date(sweepStartedAt + getExpiredFileRetryDelay(attempts)),
+        new Date(sweepStartedAt + getExpiredFileRetryDelay(attempts, maxAttempts)),
       );
     } catch (error) {
       logger.error(`[sweepExpiredFiles] Error deferring expired file ${file.file_id}:`, error);
