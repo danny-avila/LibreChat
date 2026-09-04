@@ -24,14 +24,19 @@ jest.mock('~/hooks', () => {
 });
 
 const LABEL = 'Compared both release paths';
+const NEXT_LABEL = 'Confirmed the rollback path is clean';
 
-const labelPart = {
-  type: ContentTypes.ACTIVITY_LABEL,
-  [ContentTypes.ACTIVITY_LABEL]: LABEL,
-  activity_label_type: 'phase',
-  activity_start_index: 0,
-  pending: false,
-} as unknown as Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }>;
+const makeLabelPart = (text: string) =>
+  ({
+    type: ContentTypes.ACTIVITY_LABEL,
+    [ContentTypes.ACTIVITY_LABEL]: text,
+    activity_label_type: 'phase',
+    activity_start_index: 0,
+    pending: false,
+  }) as unknown as Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }>;
+
+const labelPart = makeLabelPart(LABEL);
+const nextLabelPart = makeLabelPart(NEXT_LABEL);
 
 describe('ActivityPhaseGroup', () => {
   let frames: Array<FrameRequestCallback | undefined>;
@@ -93,7 +98,7 @@ describe('ActivityPhaseGroup', () => {
     expect(container.querySelector('.result-thinking')).toBeInTheDocument();
   });
 
-  test('renders the label flush left with no leading glyph', () => {
+  test('opens the summary on the same glyph rail as the rows it replaces', () => {
     render(
       <ActivityPhaseGroup labelPart={labelPart} hasContent>
         <div data-testid="phase-content" />
@@ -101,9 +106,12 @@ describe('ActivityPhaseGroup', () => {
     );
 
     const trigger = screen.getByRole('button', { name: LABEL });
-    expect(trigger).toHaveClass('justify-start', 'text-left');
-    expect(screen.getByText(LABEL)).toHaveClass('flex-1', 'text-left');
-    expect(trigger.querySelectorAll('svg')).toHaveLength(1);
+    expect(trigger).toHaveClass('justify-start', 'gap-2', 'p-0');
+    /** Leading glyph plus the chevron: a summary with no glyph slot sits 24px
+     *  left of every tool row in the same list. */
+    expect(trigger.querySelectorAll('svg')).toHaveLength(2);
+    expect(trigger.firstElementChild).toHaveClass('size-4', 'shrink-0');
+    expect(screen.getByText(LABEL).parentElement).toHaveClass('flex-1', 'text-left');
   });
 
   test('mounts in the pre-marker shape, then folds the activity into the summary', () => {
@@ -113,15 +121,13 @@ describe('ActivityPhaseGroup', () => {
       </ActivityPhaseGroup>,
     );
 
-    const card = container.querySelector('.my-2') as HTMLElement;
+    const card = screen.getByTestId('activity-phase-card');
     const trigger = screen.getByRole('button', { name: LABEL });
     const header = trigger.parentElement?.parentElement as HTMLElement;
     const panel = screen.getByTestId('activity-phase-panel');
 
     /** Frame zero must be indistinguishable from the layout the marker
-     *  replaced: no chrome, no header height, activity still open. */
-    expect(card).toHaveClass('border-transparent');
-    expect(card).not.toHaveClass('bg-surface-secondary/40');
+     *  replaced: no header height, activity still open. */
     expect(header).toHaveStyle({ gridTemplateRows: '0fr', opacity: '0' });
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(panel).toHaveAttribute('aria-hidden', 'false');
@@ -129,10 +135,61 @@ describe('ActivityPhaseGroup', () => {
     flushFrames();
 
     expect(header).toHaveStyle({ gridTemplateRows: '1fr', opacity: '1' });
-    expect(card).toHaveClass('border-border-light', 'bg-surface-secondary/40');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(panel).toHaveAttribute('aria-hidden', 'true');
     expect(mockScheduleLayoutReconcile).toHaveBeenCalledTimes(1);
+    /** The two grid rows are the whole entrance. Chrome that materializes on
+     *  the same curve is what made the fold read as four movements, and its
+     *  inset is what stepped every folded row sideways. */
+    expect(card.className).not.toMatch(/border|bg-surface|rounded|px-/);
+    expect(container.querySelector('[style*="padding"]')).toBeNull();
+  });
+
+  test('tickers the header when the phase absorbs another finished block', () => {
+    const { rerender } = render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    expect(screen.queryByText(NEXT_LABEL)).not.toBeInTheDocument();
+
+    rerender(
+      <ActivityPhaseGroup labelPart={nextLabelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    /** The retired summary stays on screen, clipped, and rises out while the
+     *  new one comes up from below — the absorbed block is the thing that
+     *  moved, so it has to be visible while it moves. */
+    const retired = screen.getByText(LABEL);
+    expect(retired).toHaveClass('animate-out', 'slide-out-to-top-5');
+    expect(retired).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText(NEXT_LABEL)).toHaveClass('animate-in', 'slide-in-from-bottom-5');
+
+    fireEvent.animationEnd(retired);
+    expect(screen.queryByText(LABEL)).not.toBeInTheDocument();
+    expect(screen.getByText(NEXT_LABEL)).toBeInTheDocument();
+  });
+
+  test('swaps the header outright when smooth streaming is off', () => {
+    mockUseSmoothStreaming.mockReturnValue(false);
+
+    const { rerender } = render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    rerender(
+      <ActivityPhaseGroup labelPart={nextLabelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    expect(screen.queryByText(LABEL)).not.toBeInTheDocument();
+    expect(screen.getByText(NEXT_LABEL)).not.toHaveClass('animate-in');
   });
 
   test('keeps historical phases closed without replaying the entrance', () => {
@@ -163,7 +220,9 @@ describe('ActivityPhaseGroup', () => {
 
     const trigger = screen.getByRole('button', { name: LABEL });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    expect(container.querySelector('.my-2')).toHaveClass('border-border-light');
+    expect(container.querySelector('[style*="grid-template-rows"]')).toBe(
+      screen.getByTestId('activity-phase-panel'),
+    );
     expect(pendingFrames()).toBe(0);
   });
 

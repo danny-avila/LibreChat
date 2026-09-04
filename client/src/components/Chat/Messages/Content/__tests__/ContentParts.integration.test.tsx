@@ -51,7 +51,10 @@ jest.mock('../ProgressText', () => ({
   ),
 }));
 
+/** Spread the real module: an icon set listed export-by-export goes silently
+ *  undefined the moment a component imports one more glyph. */
 jest.mock('lucide-react', () => ({
+  ...jest.requireActual('lucide-react'),
   ChevronDown: () => <span>{'chevron'}</span>,
   TriangleAlert: () => <span>{'alert'}</span>,
   Users: () => <span>{'users'}</span>,
